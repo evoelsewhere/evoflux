@@ -119,14 +119,14 @@ Language servers provide semantic feedback in the active project. Sandbox contro
 
 ## Download
 
-Current stable release: **[EvoFlux v0.0.8](https://github.com/evoelsewhere/evoflux/releases/tag/v0.0.8)**
+Current stable release: **[EvoFlux v1.0.0](https://github.com/evoelsewhere/evoflux/releases/tag/v1.0.0)** — the first stable release.
 
 | Platform | Package | SHA-256 |
 |---|---|---|
-| macOS · Apple Silicon | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/EvoFlux_0.0.8_aarch64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/evoflux-macos-apple-silicon-SHA256SUMS.txt) |
-| macOS · Intel | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/EvoFlux_0.0.8_x64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/evoflux-macos-intel-SHA256SUMS.txt) |
-| Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/EvoFlux_0.0.8_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/evoflux-windows-x64-SHA256SUMS.txt) |
-| Linux · x64 | [Download DEB](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/EvoFlux_0.0.8_amd64.deb) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v0.0.8/evoflux-linux-x64-SHA256SUMS.txt) |
+| macOS · Apple Silicon | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v1.0.0/EvoFlux_1.0.0_aarch64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v1.0.0/evoflux-macos-apple-silicon-SHA256SUMS.txt) |
+| macOS · Intel | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v1.0.0/EvoFlux_1.0.0_x64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v1.0.0/evoflux-macos-intel-SHA256SUMS.txt) |
+| Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v1.0.0/EvoFlux_1.0.0_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v1.0.0/evoflux-windows-x64-SHA256SUMS.txt) |
+| Linux · x64 | [Download DEB](https://github.com/evoelsewhere/evoflux/releases/download/v1.0.0/EvoFlux_1.0.0_amd64.deb) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v1.0.0/evoflux-linux-x64-SHA256SUMS.txt) |
 
 Install the Linux package with `sudo apt install ./EvoFlux_*_amd64.deb`.
 Linux updates use the same package-managed flow instead of replacing
@@ -138,7 +138,7 @@ installation instructions live in the separate
 [evo-webbridge repository](https://github.com/evoelsewhere/evo-webbridge).
 
 > [!NOTE]
-> The v0.0.8 macOS packages use an ad-hoc signature and the Windows installer
+> The v1.0.0 macOS packages use an ad-hoc signature and the Windows installer
 > is not Authenticode-signed, so the operating system may show a trust prompt.
 > Tauri updater archives remain minisign-signed.
 
