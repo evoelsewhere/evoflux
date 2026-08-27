@@ -536,6 +536,7 @@ def test_easd_is_canonical_in_openapi_and_trace_path_is_legacy(client):
     assert "/api/easd/runs/{run_id}/planning/retry" in paths
     assert "/api/easd/runs/{run_id}/review/start" in paths
     assert "/api/easd/runs/{run_id}/verification/start" in paths
+    assert "/api/easd/runs/{run_id}/stream" in paths
     assert "/api/easd/runs/{run_id}/plans/{revision_id}/accept" in paths
     assert "/api/easd/runs/{run_id}/activate" not in paths
     assert "/api/trace/runs" not in paths

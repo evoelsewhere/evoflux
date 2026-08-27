@@ -106,6 +106,11 @@ Evo Agent Specs routes are Coding-scoped:
   and idempotency key; stale generations return `409`. Redraft/Replan use their
   existing transitions, while implementation/Review/Verify retries remain in
   phase and append an ordered recovery event;
+- `GET /api/easd/runs/{id}/stream` is a Run-scoped SSE feed. `after_sequence`
+  replays only newer repository events before live delivery; `client_id`
+  participates in ephemeral presence. Events are `easd_event`,
+  `easd_presence`, `easd_resync_required`, diagnostics, and keepalive. Presence
+  is not durable and queue overflow requires query resync;
 - spec revision and `/plans` create/accept endpoints preserve separate immutable
   hash-bound contracts; Spec acceptance also publishes an immutable
   hash-identical common-catalogue revision, while a plan is valid only for its

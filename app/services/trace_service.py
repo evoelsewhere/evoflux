@@ -57,6 +57,11 @@ from app.services.easd_repository_store import (
     registered_run_root,
     spec_catalog_directory,
 )
+from app.services.easd_projection_state import (
+    RUN_GENERATIONS as _REPOSITORY_RUN_GENERATIONS,
+    RUN_HASHES as _REPOSITORY_RUN_HASHES,
+    RUN_MISSIONS as _REPOSITORY_MISSIONS,
+)
 
 ACTIVE_RUN_STATUSES = frozenset(
     {"planning", "plan_review", "planned", "active", "reviewing", "verifying"}
@@ -76,9 +81,6 @@ SESSION_OWNING_RUN_STATUSES = frozenset(
         "verifying",
     }
 )
-_REPOSITORY_MISSIONS: dict[UUID, list[dict[str, Any]]] = {}
-_REPOSITORY_RUN_HASHES: dict[UUID, str] = {}
-_REPOSITORY_RUN_GENERATIONS: dict[UUID, int] = {}
 DEVIATION_STATUSES = frozenset({"open", "approved", "rejected", "resolved"})
 TERMINAL_MISSION_STATUSES = frozenset({"completed", "cancelled"})
 

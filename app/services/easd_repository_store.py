@@ -312,7 +312,12 @@ class EasdRepositoryStore:
         )
         if event is not None:
             self.append_event(
-                run_id, event | {"run_document_hash": updated["document_hash"]}
+                run_id,
+                event
+                | {
+                    "run_document_hash": updated["document_hash"],
+                    "repository_generation": updated["store_generation"],
+                },
             )
         return updated
 

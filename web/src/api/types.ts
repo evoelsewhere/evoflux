@@ -1271,6 +1271,27 @@ export interface EasdRecoveryExecuteResponse {
   recovery: EasdRecoveryAction & { recorded_at: string; session_id: string }
 }
 
+export interface EasdRealtimeEvent {
+  type: 'easd_event'
+  run_id: string
+  sequence: number
+  repository_generation: number | null
+  event: Record<string, unknown> & { event: string; sequence: number }
+}
+
+export interface EasdPresenceEvent {
+  type: 'easd_presence'
+  run_id: string
+  client_ids: string[]
+  count: number
+}
+
+export interface EasdResyncEvent {
+  type: 'easd_resync_required'
+  run_id: string
+  reason: string
+}
+
 export interface EasdRunDetail {
   run: EasdRun
   revisions: EasdSpecRevision[]

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
+import json
 from pathlib import Path
-from uuid import UUID
+from typing import AsyncGenerator
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
+from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import DbSessionFactory, WriteDbSession
 from app.api.schemas.easd import (
@@ -88,6 +91,7 @@ from app.services.trace_service import (
     start_verification_in_session,
 )
 from app.services import memory_stream_store as stream_store
+from app.services.easd_event_stream import subscribe_run
 
 router = APIRouter()
 _RECOVERY_RESULTS: OrderedDict[tuple[UUID, UUID], dict] = OrderedDict()
@@ -456,6 +460,75 @@ async def get_easd_run_trace(
     except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
         _raise_easd(exc)
         raise AssertionError("unreachable")
+
+
+@router.get("/runs/{run_id}/stream")
+async def stream_easd_run(
+    run_id: UUID,
+    request: Request,
+    db_factory: DbSessionFactory,
+    after_sequence: int = Query(default=0, ge=0),
+    client_id: UUID | None = None,
+) -> EventSourceResponse:
+    try:
+        async with db_factory() as db:
+            run = await get_run(db, run_id)
+    except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+    resolved_client_id = str(client_id or uuid4())
+
+    async def generate() -> AsyncGenerator[dict[str, str], None]:
+        last_sequence = after_sequence
+        async with subscribe_run(run_id, resolved_client_id) as queue:
+            events, diagnostics = await asyncio.to_thread(
+                read_run_trace_events,
+                run.workspace,
+                run_id,
+            )
+            for event in events:
+                sequence = int(event.get("sequence") or 0)
+                if sequence <= last_sequence:
+                    continue
+                last_sequence = sequence
+                yield {
+                    "event": "easd_event",
+                    "id": str(sequence),
+                    "data": json.dumps(
+                        {
+                            "type": "easd_event",
+                            "run_id": str(run_id),
+                            "sequence": sequence,
+                            "repository_generation": event.get("repository_generation"),
+                            "event": event,
+                        }
+                    ),
+                }
+            for diagnostic in diagnostics:
+                yield {
+                    "event": "easd_diagnostic",
+                    "data": json.dumps(
+                        {"type": "easd_diagnostic", "run_id": str(run_id), **diagnostic}
+                    ),
+                }
+            while not await request.is_disconnected():
+                try:
+                    payload = await asyncio.wait_for(queue.get(), timeout=20)
+                except TimeoutError:
+                    yield {"event": "keepalive", "data": "{}"}
+                    continue
+                if payload.get("type") == "easd_event":
+                    sequence = int(payload.get("sequence") or 0)
+                    if sequence <= last_sequence:
+                        continue
+                    last_sequence = sequence
+                yield {
+                    "event": str(payload.get("type") or "easd_event"),
+                    "id": str(payload.get("sequence") or ""),
+                    "data": json.dumps(payload),
+                }
+
+    return EventSourceResponse(generate())
 
 
 @router.get(

@@ -91,10 +91,6 @@ export function useEasdRunQuery(runId: string | null, enabled = true) {
     queryKey: queryKeys.easd.detail(runId ?? ''),
     queryFn: () => getEasdRun(runId!),
     enabled: Boolean(runId) && enabled,
-    refetchInterval: (query) => {
-      const status = query.state.data?.run.status
-      return ['authoring', 'planning', 'active', 'reviewing', 'verifying'].includes(status ?? '') ? 2_500 : false
-    },
   })
 }
 
