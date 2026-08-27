@@ -24,12 +24,15 @@ import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
 import { FileCard } from './FileCard'
+import { EasdChatMessage } from './easd/EasdChatMessage'
+import { EasdCommandBlock } from './easd/EasdTechnicalText'
 import { extractSleepPrefix, formatTime, hasSleepLifecycle } from '@/utils/format'
 import { isConsolidatedDelegationMessage } from '@/utils/blocks'
 import { findCommittedMentions } from './InputBar.mentions'
 import { findSkillDirectives } from './InputBar.skills'
 import { resolveApiUrl } from '@/api/client'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
+import { parseEasdChatMessage } from '@/utils/easd-chat-message'
 
 const USER_COLLAPSE_LINES = 10
 const USER_COLLAPSE_CHARS = 700
@@ -54,6 +57,16 @@ function shortModelName(modelId: string | null | undefined): string | null {
  * ``findCommittedMentions`` without refs falls back to syntax-only range
  * detection — same code path the overlay relies on.
  */
+function findCommandDirectives(content: string): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = []
+  const pattern = /(^|\n)\/(?!skill:)[a-zA-Z0-9][a-zA-Z0-9._:-]*(?=\s|$)/g
+  for (const match of content.matchAll(pattern)) {
+    const start = (match.index ?? 0) + match[1].length
+    ranges.push({ start, end: start + match[0].length - match[1].length })
+  }
+  return ranges
+}
+
 function renderMentionSegments(content: string): React.ReactNode[] {
   const ranges = [
     ...findCommittedMentions(content, null).map((range) => ({
@@ -63,6 +76,10 @@ function renderMentionSegments(content: string): React.ReactNode[] {
     ...findSkillDirectives(content).map((range) => ({
       ...range,
       kind: 'skill' as const,
+    })),
+    ...findCommandDirectives(content).map((range) => ({
+      ...range,
+      kind: 'command' as const,
     })),
   ].sort((a, b) => a.start - b.start)
   if (ranges.length === 0) return [content]
@@ -76,7 +93,20 @@ function renderMentionSegments(content: string): React.ReactNode[] {
         <span
           key={`skill-${r.start}`}
           data-testid="skill-chip"
-          className="bg-(--color-accent)/15 font-semibold text-(--color-accent)"
+          className="rounded bg-(--color-accent)/10 px-1 py-0.5 font-mono text-[0.92em] font-semibold text-(--color-accent)"
+        >
+          {token}
+        </span>,
+      )
+      cursor = r.end
+      continue
+    }
+    if (r.kind === 'command') {
+      out.push(
+        <span
+          key={`command-${r.start}`}
+          data-testid="command-chip"
+          className="rounded bg-(--color-accent)/10 px-1 py-0.5 font-mono text-[0.92em] font-semibold text-(--color-accent)"
         >
           {token}
         </span>,
@@ -151,6 +181,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
       ? lines.slice(0, USER_COLLAPSE_LINES).join('\n')
       : `${messageContent.slice(0, USER_COLLAPSE_CHARS).trimEnd()}...`
     : messageContent
+  const easdMessage = parseEasdChatMessage(visibleContent)
 
   // Always expose copy; revert/timestamp/model appear when available.
   // Touch: full opacity. Desktop: reveal on group hover / focus-within.
@@ -234,7 +265,11 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
                </p>
              </div>
            )}
-           <p data-i18n-ignore className={`min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${shell ? 'font-mono' : ''}`}>{renderMentionSegments(visibleContent)}</p>
+           {shell
+             ? <EasdCommandBlock commands={visibleContent.split('\n').map((line, index) => index === 0 ? line.replace(/^!\s*/, '') : line)} prompt="!" className="border-0 bg-transparent p-0 text-xs" />
+             : easdMessage
+             ? <EasdChatMessage content={visibleContent} />
+             : <p data-i18n-ignore className={`min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${shell ? 'font-mono' : ''}`}>{renderMentionSegments(visibleContent)}</p>}
            {/* Gradient fade at bottom when collapsed */}
            {needsCollapse && !expanded && (
              <div

@@ -1456,6 +1456,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Run đang mở stream repository events theo realtime. Header hiển thị connection/viewer state; reconnect tiếp tục sau event sequence cuối, còn mutation stale vẫn fail thay vì overwrite công việc collaborator.',
       'Review outcome, Scope, risk, evidence policy từng AC và commands; edit bằng revision draft mới rồi tự Approve specification. Agent không thể approve.',
       'Spec đề xuất flow direct hoặc planned. Direct chỉ skip Plan cho thay đổi low-risk một boundary; planned persist mission graph typed và chỉ user Approve plan mới mở khóa implementation.',
+      'Plan summary highlight symbol và path nằm trong backticks. Verification command block phân biệt executable, flags và path arguments nhưng vẫn giữ nguyên command để select/copy. EASD chat message có phase label và ẩn full contract hash/Run ID khỏi presentation nhưng vẫn giữ exact prompt cho copy/runtime; built-in, Skill, Workflow và custom slash command dùng chung syntax highlighter.',
       'Dùng Board để theo dõi workflow, Table để so sánh hoặc List để điều hướng gọn. Search theo title, status, risk và repository.',
       'Accept đóng băng Spec revision/hash và publish một bản immutable cùng hash vào specs catalogue chung; thay đổi sau đó tạo revision mới.',
       'Run review là phase read-only riêng. Delegated evidence phải khớp approved review mission và dùng runtime reviewer identity; Run verify vẫn là action riêng của user.',

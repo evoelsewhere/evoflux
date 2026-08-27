@@ -1473,6 +1473,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '開いている Run は repository event を realtime stream します。Header は connection/viewer state を表示し、reconnect は最後の event sequence から再開します。Stale mutation は collaborator の作業を上書きせず失敗します。',
       'Outcome、Scope、risk、各 AC evidence policy、commands を review し、必要なら新しい draft revision を保存してからユーザーが Approve specification します。Agent は approve できません。',
       'Spec は direct または planned flow を推奨します。Direct は low-risk single-boundary だけ Plan を skip し、planned は typed mission graph を永続化して user の Approve plan 後に implementation を解除します。',
+      'Plan summary は backtick 内の symbol と path を highlight します。Verification command block は executable、flag、path argument を区別し、元の command は選択可能なままです。EASD chat message は phase label を表示し、presentation では full contract hash/Run ID を隠しながら copy/runtime 用の exact prompt を保持します。Built-in、Skill、Workflow、custom slash command は共通 syntax highlighter を使います。',
       'Board は進行状態、Table は比較、List はコンパクトな移動に使います。Title、status、risk、repository を検索できます。',
       'Accept は正規化された Spec revision/hash を固定し、同じ hash の immutable copy を共通 specs catalogue に publish します。',
       'Run review は独立した read-only phase です。Delegated evidence は approved review mission と一致し、runtime reviewer identity を使います。Run verify も user の別 action です。',

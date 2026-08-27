@@ -80,6 +80,7 @@ import { SpecificationDiff } from '@/components/easd/SpecificationDiff'
 import { EasdActionRail } from '@/components/easd/EasdActionRail'
 import { EasdTraceWorkspace } from '@/components/easd/EasdTraceWorkspace'
 import { EasdRecoveryWorkspace } from '@/components/easd/EasdRecoveryWorkspace'
+import { EasdCommandBlock, EasdTechnicalText } from '@/components/easd/EasdTechnicalText'
 import {
   EasdActionConfirmationDialog,
   type EasdConfirmableAction,
@@ -1749,7 +1750,7 @@ function RunDetail({
 
           {detail.run.status === 'draft' && draft && (
             <section className="overflow-hidden rounded-2xl border border-(--color-accent)/30 bg-(--bg-card)">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-(--color-border) bg-(--color-accent)/7 p-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-accent)">Specification draft · v{draft.version}</p><h2 className="mt-1 text-sm font-semibold text-(--color-text)">Review before approval</h2><p className="mt-1 font-mono text-[9px] text-(--color-text-subtle)">{draft.content_hash}</p></div><span className="rounded-full bg-(--bg-page) px-2.5 py-1 text-[10px] text-(--color-text-muted)">{agentAuthoring ? `Agent draft · ${Math.round(agentAuthoring.confidence * 100)}% confidence` : 'User-authored draft'}</span></div>
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-(--color-border) bg-(--color-accent)/7 p-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-accent)">Specification draft · v{draft.version}</p><h2 className="mt-1 text-sm font-semibold text-(--color-text)">Review before approval</h2></div><span className="rounded-full bg-(--bg-page) px-2.5 py-1 text-[10px] text-(--color-text-muted)">{agentAuthoring ? `Agent draft · ${Math.round(agentAuthoring.confidence * 100)}% confidence` : 'User-authored draft'}</span></div>
               <div className="space-y-4 p-4">
                 {agentAuthoring?.summary && <p className="rounded-lg bg-(--bg-key)/45 p-3 text-xs leading-5 text-(--color-text-2)">{agentAuthoring.summary}</p>}
                 <div className="grid gap-3 @3xl/easd:grid-cols-2"><div><p className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">Problem</p><p className="mt-1 text-xs leading-5 text-(--color-text-2)">{draft.spec.problem}</p></div><div><p className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">Intended outcome</p><p className="mt-1 text-xs leading-5 text-(--color-text-2)">{draft.spec.outcome}</p></div></div>
@@ -1757,14 +1758,14 @@ function RunDetail({
                 <div className="grid gap-3 @3xl/easd:grid-cols-2"><div><p className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">Goals</p><ul className="mt-1 space-y-1 text-xs text-(--color-text-2)">{draft.spec.goals.map((item) => <li key={item}>• {item}</li>)}</ul></div><div><p className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">Non-goals</p><ul className="mt-1 space-y-1 text-xs text-(--color-text-2)">{draft.spec.non_goals.map((item) => <li key={item}>• {item}</li>)}</ul></div></div>
                 <div><p className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">Impact targets</p><div className="mt-1 space-y-1">{(draft.spec.impact_targets ?? []).map((item) => <p key={`${item.repository}:${item.path}`} className="font-mono text-[10px] text-(--color-text-2)">{item.repository}:{item.path} · {item.reason}</p>)}</div></div>
                 <div><p className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">Acceptance criteria &amp; evidence policy</p><div className="mt-2 grid gap-2 @4xl/easd:grid-cols-2">{draft.spec.criteria.map((criterion) => <article key={criterion.id} className="rounded-xl border border-(--color-border) bg-(--bg-page) p-3"><p className="font-mono text-[10px] font-semibold text-(--color-accent)">{criterion.id}</p><p className="mt-1 text-xs leading-5 text-(--color-text-2)">{criterion.statement}</p><p className="mt-1 text-[9px] text-(--color-text-subtle)">{criterion.evidence_policy.allowed_kinds.join(', ')} · machine={String(criterion.evidence_policy.machine_required)} · min={criterion.evidence_policy.minimum_passes}</p></article>)}</div></div>
-                {(draft.spec.verification_commands ?? []).length > 0 && <div><p className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">Planned verification</p><pre className="mt-1 whitespace-pre-wrap rounded-lg bg-(--bg-key)/45 p-3 font-mono text-[10px] text-(--color-text-2)">{draft.spec.verification_commands?.join('\n')}</pre></div>}
+                {(draft.spec.verification_commands ?? []).length > 0 && <div><p className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">Planned verification</p><EasdCommandBlock commands={draft.spec.verification_commands ?? []} className="mt-1 text-[10px]" /></div>}
               </div>
             </section>
           )}
 
           {detail.active_spec && ['accepted', 'planning', 'plan_review', 'planned'].includes(detail.run.status) && (
             <section className="rounded-2xl border border-(--color-border) bg-(--bg-card) p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-success)">Approved specification · v{detail.active_spec.version}</p><h2 className="mt-1 text-sm font-semibold text-(--color-text)">{detail.active_spec.spec.outcome}</h2></div><p className="font-mono text-[9px] text-(--color-text-subtle)">{detail.active_spec.content_hash}</p></div>
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-success)">Approved specification · v{detail.active_spec.version}</p><h2 className="mt-1 text-sm font-semibold text-(--color-text)"><EasdTechnicalText text={detail.active_spec.spec.outcome} /></h2></div><p className="text-[9px] text-(--color-text-subtle)">Accepted revision</p></div>
               <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-(--color-text-muted)"><span>{detail.active_spec.spec.criteria.length} ACs</span><span>·</span><span>{detail.active_spec.spec.impact_targets?.length ?? 0} impact targets</span><span>·</span><span>{detail.active_spec.spec.verification_commands?.length ?? 0} verification commands</span><span>·</span><span className="font-medium capitalize text-(--color-accent)">{deliveryMode} flow</span></div>
             </section>
           )}
@@ -1775,24 +1776,23 @@ function RunDetail({
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-accent)">Implementation plan · v{displayedPlan.version}</p>
                   <h2 className="mt-1 text-sm font-semibold text-(--color-text)">{displayedPlan.status === 'draft' ? 'Review before approval' : 'Approved execution contract'}</h2>
-                  <p className="mt-1 font-mono text-[9px] text-(--color-text-subtle)">{displayedPlan.content_hash}</p>
                 </div>
                 <div className="text-right text-[10px] text-(--color-text-muted)">
-                  <p>{displayedPlan.plan.missions.length} missions · spec {displayedPlan.spec_hash.slice(0, 8)}</p>
+                  <p>{displayedPlan.plan.missions.length} missions · Spec v{detail.active_spec?.version ?? 'draft'}</p>
                   <p className="mt-1">{displayedPlan.plan.review_required ? 'Independent review required' : 'Standard review required'}</p>
                 </div>
               </div>
-              {displayedPlan.authoring?.summary && <p className="mx-4 mt-4 rounded-lg bg-(--bg-key)/45 p-3 text-xs leading-5 text-(--color-text-2)">{displayedPlan.authoring.summary}</p>}
+              {displayedPlan.authoring?.summary && <p className="mx-4 mt-4 rounded-lg bg-(--bg-key)/45 p-3 text-xs leading-5 text-(--color-text-2)"><EasdTechnicalText text={displayedPlan.authoring.summary} /></p>}
               <div className="grid gap-2 p-4 @4xl/easd:grid-cols-2">
                 {displayedPlan.plan.missions.map((mission) => (
                   <article key={mission.id} className="rounded-xl border border-(--color-border) bg-(--bg-page) p-3">
                     <div className="flex items-start justify-between gap-2"><div><p className="font-mono text-[10px] font-semibold text-(--color-accent)">{mission.id} · {mission.kind}</p><h3 className="mt-1 text-xs font-medium text-(--color-text)">{mission.title}</h3></div><span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-[9px] text-(--color-text-muted)">{mission.isolation}</span></div>
-                    <p className="mt-2 text-[11px] leading-4 text-(--color-text-2)">{mission.goal}</p>
+                    <p className="mt-2 text-[11px] leading-4 text-(--color-text-2)"><EasdTechnicalText text={mission.goal} /></p>
                     <p className="mt-2 font-mono text-[9px] text-(--color-text-subtle)">ACs {mission.acceptance_criteria.join(', ')} · depends {mission.depends_on.join(', ') || 'none'}</p>
                     <p className="mt-1 break-all font-mono text-[9px] text-(--color-text-subtle)">{mission.target_repositories.join(', ') || 'all accepted repos'} · {mission.target_paths.join(', ') || 'read-only scope'}</p>
-                    <p className="mt-2 text-[10px] text-(--color-text-muted)"><span className="font-medium">Output:</span> {mission.expected_output}</p>
-                    {mission.constraints.length > 0 && <p className="mt-1 text-[10px] text-(--color-text-muted)"><span className="font-medium">Constraints:</span> {mission.constraints.join(' · ')}</p>}
-                    {mission.verification_commands.length > 0 && <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-(--bg-key)/55 p-2 font-mono text-[9px] text-(--color-text-2)">{mission.verification_commands.join('\n')}</pre>}
+                    <p className="mt-2 text-[10px] text-(--color-text-muted)"><span className="font-medium">Output:</span> <EasdTechnicalText text={mission.expected_output} /></p>
+                    {mission.constraints.length > 0 && <p className="mt-1 text-[10px] text-(--color-text-muted)"><span className="font-medium">Constraints:</span> <EasdTechnicalText text={mission.constraints.join(' · ')} /></p>}
+                    {mission.verification_commands.length > 0 && <EasdCommandBlock commands={mission.verification_commands} className="mt-2" />}
                   </article>
                 ))}
               </div>
@@ -1809,7 +1809,7 @@ function RunDetail({
               <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-(--bg-key)"><div className="h-full rounded-full bg-(--color-accent) transition-[width]" style={{ width: `${acceptanceProgress}%` }} /></div>
             </div>
             <div className="grid grid-cols-3 border-t border-(--color-border) bg-(--bg-page)/45 text-[10px]">
-              <div className="px-3 py-2.5"><p className="uppercase tracking-wide text-(--color-text-subtle)">Spec</p><p className="mt-0.5 truncate font-mono text-(--color-text-2)">{detail.active_spec ? `v${detail.active_spec.version} · ${detail.active_spec.content_hash.slice(0, 8)}` : 'Draft'}</p></div>
+              <div className="px-3 py-2.5"><p className="uppercase tracking-wide text-(--color-text-subtle)">Spec</p><p className="mt-0.5 truncate text-(--color-text-2)">{detail.active_spec ? `v${detail.active_spec.version} · accepted` : 'Draft'}</p></div>
               <div className="border-x border-(--color-border) px-3 py-2.5"><p className="uppercase tracking-wide text-(--color-text-subtle)">Missions</p><p className="mt-0.5 font-medium text-(--color-text-2)">{detail.missions.length} assigned</p></div>
               <div className="px-3 py-2.5"><p className="uppercase tracking-wide text-(--color-text-subtle)">Evidence</p><p className="mt-0.5 font-medium text-(--color-text-2)">{detail.evidence.length} records</p></div>
             </div>
@@ -1872,7 +1872,7 @@ function RunDetail({
                 <article key={item.id} className="rounded-xl border border-(--color-border) bg-(--bg-card) p-3 text-xs">
                   <div className="flex items-center justify-between gap-2"><span className="font-medium text-(--color-text)">{item.kind} · {item.result}</span><span className="font-mono text-[10px] text-(--color-text-subtle)">{item.criterion_ids.join(', ')}</span></div>
                   <p className="mt-1 text-(--color-text-2)">{item.summary}</p>
-                  <p className="mt-1 truncate font-mono text-[10px] text-(--color-text-subtle)">{item.artifact_hash ? `artifact ${item.artifact_hash.slice(0, 12)}` : item.producer}</p>
+                  <p className="mt-1 truncate text-[10px] text-(--color-text-subtle)">{item.artifact_hash ? 'Artifact identity recorded' : item.producer}</p>
                 </article>
               ))}
             </div>
