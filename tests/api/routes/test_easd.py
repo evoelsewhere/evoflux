@@ -744,6 +744,108 @@ def test_easd_minimal_intent_starts_spec_authoring_without_a_draft(
     assert retried.json()["status"] == "authoring"
 
 
+def test_easd_recovery_redrafts_idempotently_and_rejects_stale_generation(
+    client, tmp_path
+):
+    _initialize(client, str(tmp_path))
+    session = client.post(
+        "/api/team/sessions/resolve",
+        json={"mode": "coding", "workspace": str(tmp_path), "create": True},
+    ).json()
+    payload = _payload(str(tmp_path))
+    payload["session_id"] = session["id"]
+    created = client.post("/api/easd/runs", json=payload).json()
+    run_id = created["run"]["id"]
+
+    preview = client.get(f"/api/easd/runs/{run_id}/recovery")
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["store_generation"] == 1
+    assert body["actions"][0]["id"] == "redraft_specification"
+    assert "Prior revisions and attempts" in body["actions"][0]["preserves"]
+    request = {
+        "action_id": "redraft_specification",
+        "session_id": session["id"],
+        "expected_generation": body["store_generation"],
+        "idempotency_key": "00000000-0000-0000-0000-000000000101",
+    }
+
+    recovered = client.post(f"/api/easd/runs/{run_id}/recovery", json=request)
+    repeated = client.post(f"/api/easd/runs/{run_id}/recovery", json=request)
+
+    assert recovered.status_code == 200, recovered.text
+    assert recovered.json()["run"]["status"] == "authoring"
+    assert repeated.status_code == 200
+    assert repeated.json() == recovered.json()
+    stale = client.post(
+        f"/api/easd/runs/{run_id}/recovery",
+        json={
+            **request,
+            "action_id": "retry_specification",
+            "idempotency_key": "00000000-0000-0000-0000-000000000102",
+        },
+    )
+    assert stale.status_code == 409
+    assert "generation changed" in stale.json()["detail"]
+
+    fresh = client.get(f"/api/easd/runs/{run_id}/recovery").json()
+    wrong_session = client.post(
+        f"/api/easd/runs/{run_id}/recovery",
+        json={
+            "action_id": "retry_specification",
+            "session_id": "00000000-0000-0000-0000-000000000999",
+            "expected_generation": fresh["store_generation"],
+            "idempotency_key": "00000000-0000-0000-0000-000000000104",
+        },
+    )
+    assert wrong_session.status_code == 422
+    assert "requires a Coding session" in wrong_session.json()["detail"]
+
+    trace = client.get(f"/api/easd/runs/{run_id}/trace").json()
+    assert [
+        event["event"]
+        for event in trace["events"]
+        if event["event"] == "specification_authoring_retried"
+    ] == ["specification_authoring_retried"]
+
+
+def test_easd_recovery_retries_active_phase_without_deleting_history(client, tmp_path):
+    _initialize(client, str(tmp_path))
+    session = client.post(
+        "/api/team/sessions/resolve",
+        json={"mode": "coding", "workspace": str(tmp_path), "create": True},
+    ).json()
+    payload = _payload(str(tmp_path))
+    payload["session_id"] = session["id"]
+    created = client.post("/api/easd/runs", json=payload).json()
+    run_id = created["run"]["id"]
+    draft = created["revisions"][0]
+    client.post(
+        f"/api/easd/runs/{run_id}/revisions/{draft['id']}/accept",
+        json={"expected_hash": draft["content_hash"]},
+    )
+    _approve_plan(client, client.get(f"/api/easd/runs/{run_id}").json())
+    assert _start_run(client, str(tmp_path), run_id, session["id"]).status_code == 200
+    preview = client.get(f"/api/easd/runs/{run_id}/recovery").json()
+    assert preview["actions"][0]["id"] == "retry_implementation"
+
+    recovered = client.post(
+        f"/api/easd/runs/{run_id}/recovery",
+        json={
+            "action_id": "retry_implementation",
+            "session_id": session["id"],
+            "expected_generation": preview["store_generation"],
+            "idempotency_key": "00000000-0000-0000-0000-000000000103",
+        },
+    )
+
+    assert recovered.status_code == 200, recovered.text
+    assert recovered.json()["run"]["status"] == "active"
+    assert recovered.json()["recovery"]["from_status"] == "active"
+    trace = client.get(f"/api/easd/runs/{run_id}/trace").json()
+    assert trace["events"][-1]["event"] == "implementation_retried"
+
+
 def test_easd_project_setup_initializes_each_repository(client, tmp_path):
     api_repo = tmp_path / "api"
     web_repo = tmp_path / "web"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from pathlib import Path
 from uuid import UUID
 
@@ -22,6 +23,9 @@ from app.api.schemas.easd import (
     EasdPlanRevisionCreateRequest,
     EasdPlanRevisionOut,
     EasdRepositorySetupOut,
+    EasdRecoveryExecuteRequest,
+    EasdRecoveryExecuteResponse,
+    EasdRecoveryPreviewResponse,
     EasdRevisionAcceptRequest,
     EasdRevisionCreateRequest,
     EasdRunCreateRequest,
@@ -66,6 +70,10 @@ from app.services.trace_service import (
     retry_plan_authoring_in_session,
     retry_spec_authoring_in_session,
     read_run_trace_events,
+    read_run_repository_state,
+    recover_run_in_session,
+    recovery_preview,
+    register_run_repository_state,
     resolve_deviation,
     run_detail,
     serialize_deviation,
@@ -82,6 +90,7 @@ from app.services.trace_service import (
 from app.services import memory_stream_store as stream_store
 
 router = APIRouter()
+_RECOVERY_RESULTS: OrderedDict[tuple[UUID, UUID], dict] = OrderedDict()
 
 
 def _workspace(raw: str) -> str:
@@ -444,6 +453,85 @@ async def get_easd_run_trace(
         return EasdRunTraceResponse.model_validate(
             build_run_trace(detail, events=events, diagnostics=diagnostics)
         )
+    except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+
+
+@router.get(
+    "/runs/{run_id}/recovery",
+    response_model=EasdRecoveryPreviewResponse,
+)
+async def get_easd_recovery(
+    run_id: UUID,
+    db_factory: DbSessionFactory,
+) -> EasdRecoveryPreviewResponse:
+    try:
+        async with db_factory() as db:
+            run = await get_run(db, run_id)
+            preview = await recovery_preview(db, run_id)
+        repository_state = await asyncio.to_thread(
+            read_run_repository_state,
+            run.workspace,
+            run_id,
+        )
+        register_run_repository_state(run_id, repository_state)
+        preview["store_generation"] = repository_state["store_generation"]
+        return EasdRecoveryPreviewResponse.model_validate(preview)
+    except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+
+
+@router.post(
+    "/runs/{run_id}/recovery",
+    response_model=EasdRecoveryExecuteResponse,
+)
+async def execute_easd_recovery(
+    run_id: UUID,
+    body: EasdRecoveryExecuteRequest,
+    db_factory: DbSessionFactory,
+) -> EasdRecoveryExecuteResponse:
+    cache_key = (run_id, body.idempotency_key)
+    cached = _RECOVERY_RESULTS.get(cache_key)
+    if cached is not None:
+        _RECOVERY_RESULTS.move_to_end(cache_key)
+        if cached["recovery"]["id"] != body.action_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Idempotency key belongs to another recovery action",
+            )
+        return EasdRecoveryExecuteResponse.model_validate(cached)
+    try:
+        async with db_factory() as db:
+            existing_run = await get_run(db, run_id)
+        repository_state = await asyncio.to_thread(
+            read_run_repository_state,
+            existing_run.workspace,
+            run_id,
+        )
+        register_run_repository_state(run_id, repository_state)
+        if body.expected_generation != repository_state["store_generation"]:
+            raise TraceConflict(
+                "EASD repository generation changed; refresh Recovery before retrying"
+            )
+        async with db_factory() as db:
+            run, recovery = await recover_run_in_session(
+                db,
+                run_id=run_id,
+                action_id=body.action_id,
+                session_id=body.session_id,
+                expected_generation=body.expected_generation,
+            )
+            response = EasdRecoveryExecuteResponse.model_validate(
+                {"run": serialize_run(run), "recovery": recovery}
+            )
+            await db.commit()
+        payload = response.model_dump(mode="json")
+        _RECOVERY_RESULTS[cache_key] = payload
+        if len(_RECOVERY_RESULTS) > 512:
+            _RECOVERY_RESULTS.popitem(last=False)
+        return response
     except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
         _raise_easd(exc)
         raise AssertionError("unreachable")

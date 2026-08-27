@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   setup: vi.fn(),
   detail: vi.fn(),
   trace: vi.fn(),
+  recovery: vi.fn(),
+  recoveryAction: vi.fn(),
   action: vi.fn(),
   generate: vi.fn(),
   projectSessions: vi.fn(),
@@ -25,6 +27,8 @@ vi.mock('@/queries', () => ({
   useInitializeEasdSetupMutation: () => mocks.action(),
   useEasdRunQuery: () => mocks.detail(),
   useEasdRunTraceQuery: () => mocks.trace(),
+  useEasdRecoveryQuery: () => mocks.recovery(),
+  useExecuteEasdRecoveryMutation: () => mocks.recoveryAction(),
   useAcceptEasdPlanRevisionMutation: () => mocks.action(),
   useCreateEasdRunMutation: () => mocks.action(),
   useCreateEasdRevisionMutation: () => mocks.action(),
@@ -157,6 +161,17 @@ const trace: EasdRunTrace = {
   events: [{ id: 'event-1', sequence: 1, event: 'intent_created', actor: 'human', created_at: run.created_at, from_status: null, to_status: 'intent', entity_refs: [`run:${run.id}`], data: {} }],
   gaps: [],
   diagnostics: [],
+}
+
+const recoveryAction = {
+  id: 'retry_implementation' as const,
+  label: 'Retry implementation',
+  summary: 'Resume the accepted implementation contract.',
+  from_status: 'active' as const,
+  to_status: 'active' as const,
+  prompt_phase: 'implementation' as const,
+  reuses: [`Spec ${'f'.repeat(64)}`, 'Coding session session-1'],
+  preserves: ['Prior revisions and attempts', 'Existing evidence and deviations', 'Append-only Trace events'],
 }
 
 const planRevision = {
@@ -318,6 +333,8 @@ beforeEach(() => {
   mocks.setup.mockReset()
   mocks.detail.mockReset()
   mocks.trace.mockReset()
+  mocks.recovery.mockReset()
+  mocks.recoveryAction.mockReset()
   mocks.action.mockReset()
   mocks.generate.mockReset()
   mocks.projectSessions.mockReset()
@@ -329,6 +346,20 @@ beforeEach(() => {
   mocks.setup.mockReturnValue({ data: readySetup, isLoading: false, error: null, refetch: vi.fn() })
   mocks.detail.mockReturnValue({ data: detail, isLoading: false })
   mocks.trace.mockReturnValue({ data: trace, isLoading: false, error: null, refetch: vi.fn() })
+  mocks.recovery.mockReturnValue({
+    data: { run_id: run.id, store_generation: 7, actions: [recoveryAction], unavailable_reason: null },
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  })
+  mocks.recoveryAction.mockReturnValue({
+    error: null,
+    isPending: false,
+    mutateAsync: vi.fn().mockResolvedValue({
+      run,
+      recovery: { ...recoveryAction, recorded_at: run.updated_at, session_id: run.session_id },
+    }),
+  })
   mocks.action.mockReturnValue({
     error: null,
     isPending: false,
@@ -387,6 +418,37 @@ describe('EvoAgentSpecsPanel', () => {
     fireEvent.mouseUp(option)
     fireEvent.click(option)
     await waitFor(() => expect(within(screen.getByRole('complementary', { name: 'Trace entity inspector' })).getByRole('heading', { name: 'AC-1' })).toBeInTheDocument())
+  })
+
+  it('previews, confirms, and persists recovery before reopening chat', async () => {
+    const onRunInChat = vi.fn()
+    const mutateAsync = vi.fn().mockResolvedValue({
+      run,
+      recovery: { ...recoveryAction, recorded_at: run.updated_at, session_id: run.session_id },
+    })
+    mocks.recoveryAction.mockReturnValue({ error: null, isPending: false, mutateAsync })
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" onRunInChat={onRunInChat} />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Recovery' }))
+
+    expect(await screen.findByText('Retry without losing history')).toBeInTheDocument()
+    expect(screen.getByText(/Spec f{12}/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Retry implementation/ }))
+    expect(screen.getByRole('heading', { name: 'Retry implementation?' })).toBeInTheDocument()
+    expect(mutateAsync).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm retry' }))
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({
+      action_id: 'retry_implementation',
+      session_id: 'session-1',
+      expected_generation: 7,
+      idempotency_key: expect.any(String),
+    })))
+    expect(onRunInChat).toHaveBeenCalledWith(expect.objectContaining({
+      phase: 'implementation',
+      autoSend: true,
+      prompt: expect.stringMatching(/^\$easd-implement/),
+    }))
   })
 
   it('does not render a false empty state while the run list is loading', () => {

@@ -347,6 +347,14 @@ preference state stored through `STORAGE_KEYS`; it never becomes run truth.
 Trace has its own lazily enabled query and remains read-only. AC filtering and
 entity selection are local presentation state over the server projection.
 
+Recovery preview is another lazy server query. Before execution, the route
+closes its DB read, loads the current repository generation/hash, registers that
+CAS snapshot, and then opens the mutation transaction. Redraft/Replan call the
+existing service transitions. Same-phase implementation/review/verification
+retry updates only Run recency and queues an append-only recovery event after
+commit. Process-local idempotency returns the first response for a repeated key;
+repository generation protects distinct stale requests.
+
 ## Observability
 
 Structured logs include bounded run/spec/risk/count fields. Prometheus counter

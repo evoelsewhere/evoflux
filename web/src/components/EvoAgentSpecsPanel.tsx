@@ -36,6 +36,7 @@ import type {
   EasdCriterionInput,
   EasdDeliveryMode,
   EasdRepositorySetup,
+  EasdRecoveryAction,
   EasdRiskTier,
   EasdRun,
   EasdRunDetail,
@@ -52,6 +53,8 @@ import {
   useCreateEasdRevisionMutation,
   useEasdRunQuery,
   useEasdRunTraceQuery,
+  useEasdRecoveryQuery,
+  useExecuteEasdRecoveryMutation,
   useEasdRunsQuery,
   useEasdSetupQuery,
   useGenerateEasdScopeAndProofMutation,
@@ -75,6 +78,7 @@ import { SegmentedControl } from '@/components/ui/segmented-control'
 import { SpecificationDiff } from '@/components/easd/SpecificationDiff'
 import { EasdActionRail } from '@/components/easd/EasdActionRail'
 import { EasdTraceWorkspace } from '@/components/easd/EasdTraceWorkspace'
+import { EasdRecoveryWorkspace } from '@/components/easd/EasdRecoveryWorkspace'
 import {
   EasdActionConfirmationDialog,
   type EasdConfirmableAction,
@@ -99,7 +103,7 @@ export interface EasdRunChatRequest {
 }
 
 type RunsView = 'board' | 'table' | 'list'
-type RunWorkspaceView = 'overview' | 'trace'
+type RunWorkspaceView = 'overview' | 'trace' | 'recovery'
 
 const EASD_DISPLAY_NAME = 'Agent Specification-Driven Development'
 
@@ -1312,6 +1316,8 @@ function RunDetail({
   const evidenceMutation = useAddEasdEvidenceMutation(runId)
   const deviationMutation = useAddEasdDeviationMutation(runId)
   const traceQuery = useEasdRunTraceQuery(runId, workspaceView === 'trace')
+  const recoveryQuery = useEasdRecoveryQuery(runId, workspaceView === 'recovery')
+  const recoveryMutation = useExecuteEasdRecoveryMutation(runId)
   const [evidenceCriterion, setEvidenceCriterion] = useState('')
   const [evidenceSummary, setEvidenceSummary] = useState('')
   const [evidenceKind, setEvidenceKind] = useState<EasdAppendableEvidenceKind>('manual')
@@ -1517,6 +1523,39 @@ function RunDetail({
     }
   }
 
+  const executeRecovery = async (action: EasdRecoveryAction): Promise<boolean> => {
+    if (!detail?.run.session_id || !onRunInChat || !recoveryQuery.data) return false
+    try {
+      const result = await recoveryMutation.mutateAsync({
+        action_id: action.id,
+        session_id: detail.run.session_id,
+        expected_generation: recoveryQuery.data.store_generation,
+        idempotency_key: crypto.randomUUID(),
+      })
+      const recoveredDetail = { ...detail, run: result.run }
+      const prompt = action.prompt_phase === 'authoring'
+        ? specificationAuthoringPrompt(recoveredDetail)
+        : action.prompt_phase === 'planning'
+          ? planningPrompt(recoveredDetail)
+          : action.prompt_phase === 'implementation'
+            ? implementationPrompt(recoveredDetail, true)
+            : action.prompt_phase === 'review'
+              ? reviewPrompt(recoveredDetail)
+              : verificationPrompt(recoveredDetail)
+      onRunInChat({
+        sessionId: detail.run.session_id,
+        workspace: detail.run.workspace,
+        projectId: detail.run.project_id,
+        prompt,
+        autoSend: true,
+        phase: action.prompt_phase,
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
   if (detailQuery.isLoading) {
     return <div className="flex h-full items-center justify-center"><Loader2 className="animate-spin text-(--color-accent)" /></div>
   }
@@ -1669,6 +1708,7 @@ function RunDetail({
             options={[
               { value: 'overview', label: 'Overview' },
               { value: 'trace', label: 'Trace' },
+              { value: 'recovery', label: 'Recovery' },
             ]}
           />
           {workspaceView === 'trace' ? (
@@ -1677,6 +1717,16 @@ function RunDetail({
               loading={traceQuery.isLoading}
               error={traceQuery.error}
               onRetry={() => void traceQuery.refetch()}
+            />
+          ) : workspaceView === 'recovery' ? (
+            <EasdRecoveryWorkspace
+              preview={recoveryQuery.data}
+              loading={recoveryQuery.isLoading}
+              error={recoveryQuery.error}
+              busy={recoveryMutation.isPending}
+              actionError={recoveryMutation.error}
+              onRetry={() => void recoveryQuery.refetch()}
+              onExecute={executeRecovery}
             />
           ) : <>
           {(detail.run.status === 'intent' || detail.run.status === 'authoring') && (

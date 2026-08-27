@@ -8,10 +8,12 @@ import {
   convergeEasdRun,
   createEasdRun,
   createEasdRevision,
+  executeEasdRecovery,
   getEasdSetup,
   generateEasdScopeAndProof,
   getEasdRun,
   getEasdRunTrace,
+  getEasdRecovery,
   initializeEasdSetup,
   listEasdRuns,
   retryEasdPlanningInChat,
@@ -26,6 +28,7 @@ import type {
   EasdAppendableEvidenceKind,
   EasdAuthoringMetadata,
   EasdEvidenceResult,
+  EasdRecoveryActionId,
   EasdGenerateRequest,
   EasdSpecificationInput,
 } from '@/api/types'
@@ -100,6 +103,33 @@ export function useEasdRunTraceQuery(runId: string | null, enabled = true) {
     queryKey: queryKeys.easd.trace(runId ?? ''),
     queryFn: () => getEasdRunTrace(runId!),
     enabled: Boolean(runId) && enabled,
+  })
+}
+
+export function useEasdRecoveryQuery(runId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.easd.recovery(runId ?? ''),
+    queryFn: () => getEasdRecovery(runId!),
+    enabled: Boolean(runId) && enabled,
+  })
+}
+
+export function useExecuteEasdRecoveryMutation(runId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (body: {
+      action_id: EasdRecoveryActionId
+      session_id: string
+      expected_generation: number | null
+      idempotency_key: string
+    }) => executeEasdRecovery(runId, body),
+    onSuccess: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: queryKeys.easd.runs() }),
+        client.invalidateQueries({ queryKey: queryKeys.easd.trace(runId) }),
+        client.invalidateQueries({ queryKey: queryKeys.easd.recovery(runId) }),
+      ])
+    },
   })
 }
 

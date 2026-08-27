@@ -12,6 +12,9 @@ import type {
   EasdGenerateRequest,
   EasdGenerateResponse,
   EasdPlanRevision,
+  EasdRecoveryActionId,
+  EasdRecoveryExecuteResponse,
+  EasdRecoveryPreview,
   EasdRun,
   EasdRunDetail,
   EasdRunTrace,
@@ -105,6 +108,28 @@ export async function getEasdRun(runId: string): Promise<EasdRunDetail> {
 export async function getEasdRunTrace(runId: string): Promise<EasdRunTrace> {
   const response = await fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/trace`)
   return easdResponse(response, 'getEasdRunTrace')
+}
+
+export async function getEasdRecovery(runId: string): Promise<EasdRecoveryPreview> {
+  const response = await fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/recovery`)
+  return easdResponse(response, 'getEasdRecovery')
+}
+
+export async function executeEasdRecovery(
+  runId: string,
+  body: {
+    action_id: EasdRecoveryActionId
+    session_id: string
+    expected_generation: number | null
+    idempotency_key: string
+  },
+): Promise<EasdRecoveryExecuteResponse> {
+  const response = await fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/recovery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return easdResponse(response, 'executeEasdRecovery')
 }
 
 export async function createEasdRun(body: {

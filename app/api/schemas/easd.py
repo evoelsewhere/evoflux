@@ -438,6 +438,56 @@ class EasdRunTraceResponse(BaseModel):
     diagnostics: list[EasdTraceDiagnosticOut]
 
 
+EasdRecoveryActionId = Literal[
+    "retry_specification",
+    "redraft_specification",
+    "retry_planning",
+    "replan",
+    "retry_implementation",
+    "retry_review",
+    "retry_verification",
+]
+
+
+class EasdRecoveryActionOut(BaseModel):
+    id: EasdRecoveryActionId
+    label: str
+    summary: str
+    from_status: EasdRunStatus
+    to_status: EasdRunStatus
+    prompt_phase: Literal[
+        "authoring", "planning", "implementation", "review", "verification"
+    ]
+    reuses: list[str]
+    preserves: list[str]
+
+
+class EasdRecoveryPreviewResponse(BaseModel):
+    run_id: UUID
+    store_generation: int | None
+    actions: list[EasdRecoveryActionOut]
+    unavailable_reason: str | None
+
+
+class EasdRecoveryExecuteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_id: EasdRecoveryActionId
+    session_id: UUID
+    expected_generation: int | None
+    idempotency_key: UUID
+
+
+class EasdRecoveryResultOut(EasdRecoveryActionOut):
+    recorded_at: datetime
+    session_id: UUID
+
+
+class EasdRecoveryExecuteResponse(BaseModel):
+    run: EasdRunOut
+    recovery: EasdRecoveryResultOut
+
+
 class EasdRunListResponse(BaseModel):
     runs: list[EasdRunOut]
 

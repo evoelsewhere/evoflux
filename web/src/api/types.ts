@@ -1239,6 +1239,38 @@ export interface EasdRunTrace {
   diagnostics: Array<{ code: string; message: string }>
 }
 
+export type EasdRecoveryActionId =
+  | 'retry_specification'
+  | 'redraft_specification'
+  | 'retry_planning'
+  | 'replan'
+  | 'retry_implementation'
+  | 'retry_review'
+  | 'retry_verification'
+
+export interface EasdRecoveryAction {
+  id: EasdRecoveryActionId
+  label: string
+  summary: string
+  from_status: EasdRun['status']
+  to_status: EasdRun['status']
+  prompt_phase: 'authoring' | 'planning' | 'implementation' | 'review' | 'verification'
+  reuses: string[]
+  preserves: string[]
+}
+
+export interface EasdRecoveryPreview {
+  run_id: string
+  store_generation: number | null
+  actions: EasdRecoveryAction[]
+  unavailable_reason: string | null
+}
+
+export interface EasdRecoveryExecuteResponse {
+  run: EasdRun
+  recovery: EasdRecoveryAction & { recorded_at: string; session_id: string }
+}
+
 export interface EasdRunDetail {
   run: EasdRun
   revisions: EasdSpecRevision[]
