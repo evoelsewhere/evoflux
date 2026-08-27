@@ -1493,6 +1493,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'The panel changes phase only after a durable repository write. Agent prose cannot unlock specification approval, required plan approval, implementation, Review, Verify, or Converge.',
       'The Run header action rail shows Intent → Spec → Plan → Implement → Review → Verify → Done. It marks direct Plan as skipped, names the next action, and explains server-derived blockers before you click; Spec approval, Plan approval, and Converge require confirmation.',
       'Open Trace to follow repository events and relationships from Spec/Plan through AC ownership, mission attempts, evidence, deviations, and convergence. Filter by AC and select an entity to inspect its persisted identity; Trace never changes Run state.',
+      'Open Recovery to preview a safe retry. It shows the phase transition, reused Spec/Plan/session identities, and preserved history before confirmation. A stale repository generation stops the retry; converged Runs remain immutable.',
       'Review outcome, Scope, risk, AC evidence policy and commands; edit by saving a newer draft revision, then explicitly Approve specification. The agent cannot approve it.',
       'The Spec recommends direct or planned flow. Direct skips Plan only for low-risk single-boundary work; planned persists a typed mission graph and only user Approve plan unlocks implementation.',
       'Use Board for workflow state, Table for comparison, or List for compact navigation. Search spans title, status, risk, and repository.',

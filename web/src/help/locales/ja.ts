@@ -1469,6 +1469,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Panel は durable repository write の後だけ phase を変更します。Agent prose では Spec/required Plan approval、implementation、Review、Verify、Converge を解除できません。',
       'Run header の action rail は Intent → Spec → Plan → Implement → Review → Verify → Done を表示します。Direct flow では Plan を skipped と明示し、next action と server-derived blocker を操作前に示します。Spec approval、Plan approval、Converge には確認が必要です。',
       'Trace では repository event と、Spec/Plan から AC ownership、mission attempt、evidence、deviation、convergence までの関係を追跡できます。AC で filter し entity の永続 identity を確認できますが、Trace は Run state を変更しません。',
+      'Recovery では安全な retry を事前確認できます。確認前に phase transition、再利用する Spec/Plan/session identity、保持する履歴を表示します。Repository generation が stale なら retry を停止し、converged Run は immutable のままです。',
       'Outcome、Scope、risk、各 AC evidence policy、commands を review し、必要なら新しい draft revision を保存してからユーザーが Approve specification します。Agent は approve できません。',
       'Spec は direct または planned flow を推奨します。Direct は low-risk single-boundary だけ Plan を skip し、planned は typed mission graph を永続化して user の Approve plan 後に implementation を解除します。',
       'Board は進行状態、Table は比較、List はコンパクトな移動に使います。Title、status、risk、repository を検索できます。',

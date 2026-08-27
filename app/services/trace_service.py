@@ -3748,6 +3748,29 @@ def read_run_trace_events(
         return [], [{"code": "events_unavailable", "message": str(exc)}]
 
 
+def read_run_repository_state(
+    workspace: str,
+    run_id: str | UUID,
+) -> dict[str, Any]:
+    try:
+        stored = EasdRepositoryStore(workspace).load_run(run_id).run
+    except EasdStoreError as exc:
+        raise TraceConflict(f"EASD repository state is unavailable: {exc}") from exc
+    return {
+        "store_generation": int(stored.get("store_generation") or 0),
+        "document_hash": str(stored.get("document_hash") or ""),
+    }
+
+
+def register_run_repository_state(
+    run_id: str | UUID,
+    state: dict[str, Any],
+) -> None:
+    normalized = _uuid(str(run_id), label="EASD run ID")
+    _REPOSITORY_RUN_GENERATIONS[normalized] = int(state.get("store_generation") or 0)
+    _REPOSITORY_RUN_HASHES[normalized] = str(state.get("document_hash") or "")
+
+
 def _trace_events(
     detail: dict[str, Any],
     events: list[dict[str, Any]],
@@ -3855,6 +3878,257 @@ def build_run_trace(
         len(diagnostics),
     )
     return trace
+
+
+def _recovery_action(
+    action_id: str,
+    label: str,
+    summary: str,
+    *,
+    from_status: str,
+    to_status: str,
+    prompt_phase: str,
+    reuses: list[str],
+    preserves: list[str],
+) -> dict[str, Any]:
+    return {
+        "id": action_id,
+        "label": label,
+        "summary": summary,
+        "from_status": from_status,
+        "to_status": to_status,
+        "prompt_phase": prompt_phase,
+        "reuses": reuses,
+        "preserves": preserves,
+    }
+
+
+async def recovery_preview(db: AsyncSession, run_id: str | UUID) -> dict[str, Any]:
+    detail = await run_detail(db, run_id)
+    run = detail["run"]
+    status = run["status"]
+    spec = detail["active_spec"] or next(
+        (item for item in reversed(detail["revisions"]) if item["status"] == "draft"),
+        None,
+    )
+    plan = detail["active_plan"] or next(
+        (
+            item
+            for item in reversed(detail["plan_revisions"])
+            if item["status"] == "draft"
+        ),
+        None,
+    )
+    reuses = [
+        value
+        for value in (
+            f"Spec {spec['content_hash']}" if spec else None,
+            f"Plan {plan['content_hash']}" if plan else None,
+            f"Coding session {run['session_id']}" if run["session_id"] else None,
+        )
+        if value
+    ]
+    common_preserves = [
+        "Prior revisions and attempts",
+        "Existing evidence and deviations",
+        "Append-only Trace events",
+    ]
+    actions: list[dict[str, Any]] = []
+    if status == "authoring":
+        actions.append(
+            _recovery_action(
+                "retry_specification",
+                "Retry specification drafting",
+                "Repeat the interrupted Specify attempt in the same Coding session.",
+                from_status=status,
+                to_status="authoring",
+                prompt_phase="authoring",
+                reuses=reuses,
+                preserves=common_preserves,
+            )
+        )
+    elif status == "draft":
+        actions.append(
+            _recovery_action(
+                "redraft_specification",
+                "Redraft specification",
+                "Return to Specify; the current draft stays durable until its replacement is persisted.",
+                from_status=status,
+                to_status="authoring",
+                prompt_phase="authoring",
+                reuses=reuses,
+                preserves=common_preserves,
+            )
+        )
+    elif status == "planning":
+        actions.append(
+            _recovery_action(
+                "retry_planning",
+                "Retry planning",
+                "Repeat the interrupted Plan attempt against the accepted Spec.",
+                from_status=status,
+                to_status="planning",
+                prompt_phase="planning",
+                reuses=reuses,
+                preserves=common_preserves,
+            )
+        )
+    elif status == "plan_review":
+        actions.append(
+            _recovery_action(
+                "replan",
+                "Replan",
+                "Return to Plan; the current Plan draft stays durable until replacement persistence.",
+                from_status=status,
+                to_status="planning",
+                prompt_phase="planning",
+                reuses=reuses,
+                preserves=common_preserves,
+            )
+        )
+    elif status == "active":
+        actions.append(
+            _recovery_action(
+                "retry_implementation",
+                "Retry implementation",
+                "Resume the accepted implementation contract and inspect existing mission attempts before redispatch.",
+                from_status=status,
+                to_status="active",
+                prompt_phase="implementation",
+                reuses=reuses,
+                preserves=common_preserves,
+            )
+        )
+    elif status == "reviewing":
+        actions.append(
+            _recovery_action(
+                "retry_review",
+                "Rerun review",
+                "Repeat read-only Review and append fresh review evidence without deleting prior findings.",
+                from_status=status,
+                to_status="reviewing",
+                prompt_phase="review",
+                reuses=reuses,
+                preserves=common_preserves,
+            )
+        )
+    elif status == "verifying":
+        actions.append(
+            _recovery_action(
+                "retry_verification",
+                "Rerun verification",
+                "Repeat accepted Proof commands and append fresh machine evidence.",
+                from_status=status,
+                to_status="verifying",
+                prompt_phase="verification",
+                reuses=reuses,
+                preserves=common_preserves,
+            )
+        )
+    unavailable_reason = None
+    if not actions:
+        unavailable_reason = (
+            "Converged Runs are immutable; create a new Run for additional work."
+            if status == "converged"
+            else f"No safe recovery action is available while the Run is {status}."
+        )
+    return {
+        "run_id": str(run["id"]),
+        "store_generation": run.get("store_generation"),
+        "actions": actions,
+        "unavailable_reason": unavailable_reason,
+    }
+
+
+async def recover_run_in_session(
+    db: AsyncSession,
+    *,
+    run_id: str | UUID,
+    action_id: str,
+    session_id: str | UUID,
+    expected_generation: int | None,
+) -> tuple[TraceRun, dict[str, Any]]:
+    preview = await recovery_preview(db, run_id)
+    action = next(
+        (item for item in preview["actions"] if item["id"] == action_id),
+        None,
+    )
+    if action is None:
+        raise TraceConflict(f"Recovery action {action_id} is not available")
+    actual_generation = preview["store_generation"]
+    if actual_generation != expected_generation:
+        raise TraceConflict(
+            "EASD repository generation changed; refresh Recovery before retrying"
+        )
+    run = await get_run(db, run_id)
+    session = await _session_for_run(db, run, session_id)
+    if run.session_id != session.id:
+        raise TraceConflict("EASD recovery belongs to another Coding session")
+    from_status = run.status
+    if action_id == "redraft_specification":
+        run = await retry_spec_authoring_in_session(
+            db,
+            run_id=run.id,
+            session_id=session.id,
+        )
+    elif action_id == "replan":
+        run = await retry_plan_authoring_in_session(
+            db,
+            run_id=run.id,
+            session_id=session.id,
+        )
+    else:
+        event_by_action = {
+            "retry_specification": "specification_authoring_retried",
+            "retry_planning": "planning_retried",
+            "retry_implementation": "implementation_retried",
+            "retry_review": "review_retried",
+            "retry_verification": "verification_retried",
+        }
+        event = event_by_action.get(action_id)
+        if event is None:
+            raise TraceValidationError(f"Unknown EASD recovery action: {action_id}")
+        run.updated_at = _utcnow()
+        db.add(run)
+        await db.flush()
+        detail = await run_detail(db, run.id)
+        _queue_run_state(
+            db,
+            run,
+            from_status=from_status,
+            event=event,
+            actor="human",
+            delivery_flow=(
+                detail["active_spec"]["spec"].get("delivery_flow")
+                if detail["active_spec"]
+                else None
+            ),
+            event_data={
+                "recovery_action": action_id,
+                "session_id": str(session.id),
+                "spec_hash": (
+                    detail["active_spec"]["content_hash"]
+                    if detail["active_spec"]
+                    else None
+                ),
+                "plan_hash": (
+                    detail["active_plan"]["content_hash"]
+                    if detail["active_plan"]
+                    else None
+                ),
+            },
+        )
+    recovery = {
+        **action,
+        "recorded_at": _utcnow().isoformat(),
+        "session_id": str(session.id),
+    }
+    TRACE_OPERATIONS.labels(
+        operation="recovery",
+        status="ok",
+        risk_tier=run.risk_tier,
+    ).inc()
+    return run, recovery
 
 
 async def converge_run(

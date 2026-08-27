@@ -115,6 +115,8 @@ export {
   useCreateEasdRevisionMutation,
   useEasdRunQuery,
   useEasdRunTraceQuery,
+  useEasdRecoveryQuery,
+  useExecuteEasdRecoveryMutation,
   useEasdRunsQuery,
   useEasdSetupQuery,
   useGenerateEasdScopeAndProofMutation,

@@ -100,6 +100,12 @@ Evo Agent Specs routes are Coding-scoped:
   generation, stable artifact nodes, typed relationship edges, ordered bounded
   repository events, current action gaps, and degraded-read diagnostics. It is
   read-only and legacy Runs with minimal events still receive an artifact graph;
+- `GET /api/easd/runs/{id}/recovery` returns the safe current retry, observed
+  repository generation, reused identities, and preserved history. `POST` to
+  the same path requires action ID, bound Coding session, expected generation,
+  and idempotency key; stale generations return `409`. Redraft/Replan use their
+  existing transitions, while implementation/Review/Verify retries remain in
+  phase and append an ordered recovery event;
 - spec revision and `/plans` create/accept endpoints preserve separate immutable
   hash-bound contracts; Spec acceptance also publishes an immutable
   hash-identical common-catalogue revision, while a plan is valid only for its

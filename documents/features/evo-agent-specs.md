@@ -27,6 +27,13 @@ events. Users can filter by AC, inspect exact entity hashes/status/ownership,
 and see the current action blockers as trace gaps. Narrow panels present the
 activity ledger first; maximized panels add the relationship map and inspector.
 
+The **Recovery** workspace derives one safe retry from current persisted state.
+It previews phase transition, exact Spec/Plan/session identities, and preserved
+history before confirmation. Redraft/Replan reuse the existing revision-safe
+paths; active implementation, Review, and Verify retries remain in the same
+phase, append a recovery event, then reopen the matching EASD chat prompt.
+Stale repository generations fail closed. Converged Runs are never reopened.
+
 1. Open a Coding workspace/session and choose **Agent Specification-Driven
    Development** in the workbench.
 2. Initialize EASD for every repository in the workspace or Coding Project.
