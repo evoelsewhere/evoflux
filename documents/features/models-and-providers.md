@@ -11,6 +11,7 @@ separate facts and are intersected before the UI or runtime enables a control.
 | `anthropic` | Anthropic Messages | API key |
 | `googlegenai` | Google Gemini | API key |
 | `openai` | OpenAI Responses/Chat Completions | API key |
+| `qwencloud` | QwenCloud OpenAI-compatible Chat/Responses | API key + optional plan Base URL |
 | `openrouter` | OpenRouter | API key |
 | `zai` | Z.AI | API key |
 | `nvidia` | NVIDIA OpenAI-compatible API | API key |
@@ -29,7 +30,7 @@ separate facts and are intersected before the UI or runtime enables a control.
 | `vertexai` | Google Vertex AI | Google cloud credentials/project/location |
 
 Portable provider plugins may extend the visible catalogue through the provider
-plugin registry, but built-in factory IDs remain the fixed nineteen above.
+plugin registry, but built-in factory IDs remain the fixed twenty above.
 
 ## Model identity and selection
 
@@ -42,6 +43,21 @@ Settings can discover live models, test credentials, retain a visible-model
 subset and show provider usage where an adapter supports it. Credentials are
 stored in the config `.env` or the provider's OAuth/cloud store; API responses
 mask secrets.
+
+QwenCloud uses `DASHSCOPE_API_KEY` and defaults to the international
+pay-as-you-go OpenAI-compatible root
+`https://dashscope-intl.aliyuncs.com/compatible-mode/v1`. Pay-as-you-go,
+Token Plan and Coding Plan keys are not interchangeable: subscription keys
+must be paired with the complete Base URL shown for that plan through
+`DASHSCOPE_BASE_URL`. The adapter supports both Chat Completions and Responses,
+disables server-side Responses storage, and preserves Qwen `reasoning_content`
+across supported multi-turn tool flows. Media generation/realtime endpoints and
+QwenCloud-hosted built-in tools are outside this integration.
+
+QwenCloud documents that Token Plan Individual is for interactive programming
+and agent tools and may prohibit automated scripts, application backends and
+non-interactive batch use. Users must verify their plan terms before selecting
+that credential for EvoFlux schedules or other unattended runs.
 
 ## Capability resolution
 

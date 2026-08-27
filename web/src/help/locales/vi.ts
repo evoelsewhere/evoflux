@@ -1779,7 +1779,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'settings',
     title: 'Providers và models (BYOM)',
     summary:
-      'Kết nối Anthropic, OpenAI, Gemini, Bedrock, Ollama và hơn nữa — mười hai tích hợp sau một lớp streaming — rồi chọn model theo agent hoặc theo session. EvoFlux không khóa bạn vào một vendor model.',
+      'Kết nối Anthropic, OpenAI, QwenCloud, Gemini, Bedrock, Ollama và hơn nữa — hai mươi tích hợp dựng sẵn sau một lớp streaming — rồi chọn model theo agent hoặc theo session. EvoFlux không khóa bạn vào một vendor model.',
     keywords: [
       'provider',
       'model',
@@ -1789,6 +1789,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'byom',
       'Anthropic',
       'OpenAI',
+      'QwenCloud',
       'Gemini',
       'Bedrock',
       'DeepSeek',
@@ -1811,12 +1812,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Context budget bar dùng context_length của model đã chọn từ registry.',
       'Model nhanh cho Lead triage và model mạnh hơn cho Coding specialist khi quan tâm chi phí.',
       'Sau khi rotate key, test lại bằng Work ping nhỏ trước khi start Goal.',
-      'OAuth vẫn cần trạng thái connect thành công — OAuth dở dang để bạn không có model.'
+      'OAuth vẫn cần trạng thái connect thành công — OAuth dở dang để bạn không có model.',
+      'Key gói QwenCloud phải dùng đúng Base URL Token Plan hoặc Coding Plan mà QwenCloud cung cấp.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Providers là tích hợp BYOM (API key, OAuth hoặc daemon local) phơi model qua một lớp streaming. Họ hỗ trợ gồm Anthropic, OpenAI, Google Gemini, AWS Bedrock, Ollama, DeepSeek, xAI, Vertex AI, GitHub Copilot và hơn nữa. Credential nằm trong Settings, không trong chat.',
+        text: 'Providers là tích hợp BYOM (API key, OAuth hoặc daemon local) phơi model qua một lớp streaming. Họ hỗ trợ gồm Anthropic, OpenAI, QwenCloud, Google Gemini, AWS Bedrock, Ollama, DeepSeek, xAI, Vertex AI, GitHub Copilot và hơn nữa. Credential nằm trong Settings, không trong chat.',
       },
       {
         type: 'p',
@@ -1825,6 +1827,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'p',
         text: 'Mở Settings → Providers, thêm credential hoặc base URL, xác nhận provider hiện configured, rồi gán mặc định dưới Agents hoặc override theo session qua composer pills. Dùng Diagnostics nếu stream fail sau khi key trông đúng. Fuzzy search giúp khi provider phơi danh sách model dài.',
+      },
+      {
+        type: 'p',
+        text: 'QwenCloud dùng DASHSCOPE_API_KEY và mặc định trỏ tới endpoint OpenAI-compatible pay-as-you-go quốc tế. Key Token Plan và Coding Plan (sk-sp-…) không dùng lẫn với key pay-as-you-go: hãy chép toàn bộ Base URL tương ứng vào Settings. Điều khoản Token Plan Individual có thể hạn chế schedule và automation không có người giám sát, nên cần kiểm tra gói trước khi dùng cho các lượt chạy đó.',
       },
       {
         type: 'tips',

@@ -81,6 +81,7 @@ function providerKindLabel(kind: ProviderInfo['kind']): string {
 const DAEMON_BASE_URL: Record<string, { var: string; placeholder: string }> = {
   anthropic: { var: 'ANTHROPIC_BASE_URL', placeholder: 'https://api.anthropic.com' },
   openai: { var: 'OPENAI_BASE_URL', placeholder: 'https://api.openai.com/v1' },
+  qwencloud: { var: 'DASHSCOPE_BASE_URL', placeholder: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1' },
   router9: { var: 'ROUTER9_BASE_URL', placeholder: 'http://localhost:20128/v1' },
   cliproxy: { var: 'CLIPROXY_BASE_URL', placeholder: 'http://localhost:8317/v1' },
   ollama: { var: 'OLLAMA_BASE_URL', placeholder: 'http://localhost:11434/v1' },

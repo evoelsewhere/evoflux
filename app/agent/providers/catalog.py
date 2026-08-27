@@ -128,6 +128,41 @@ _CATALOG: list[ProviderEntry] = [
         "docs_url": "https://platform.openai.com/api-keys",
     },
     {
+        "id": "qwencloud",
+        "label": "QwenCloud",
+        "description": "Qwen3.8 and other QwenCloud models via OpenAI-compatible APIs.",
+        "kind": "api_key",
+        "env_var": "DASHSCOPE_API_KEY",
+        "models_dev_provider_id": "alibaba",
+        "credentials": [
+            {
+                "name": "DASHSCOPE_API_KEY",
+                "label": "QwenCloud API key",
+                "secret": True,
+                "required": True,
+                "placeholder": "sk-ws-... or sk-sp-...",
+            },
+            {
+                "name": "DASHSCOPE_BASE_URL",
+                "label": "Base URL",
+                "secret": False,
+                "required": False,
+                "placeholder": (
+                    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+                ),
+            },
+        ],
+        "fallback_models": [
+            "qwen3.8-max",
+            "qwen3.8-flash",
+            "qwen3.7-plus",
+        ],
+        "model_registry_aliases": {
+            "qwen3.8-max-preview": "qwencloud:qwen3.8-max",
+        },
+        "docs_url": "https://home.qwencloud.com/api-keys",
+    },
+    {
         "id": "openrouter",
         "label": "OpenRouter",
         "description": "Many models, free tiers available.",

@@ -950,7 +950,7 @@ async def delete_provider(provider_id: str) -> dict[str, bool]:
     """Remove all credentials for a provider.
 
     Handles different credential storage mechanisms:
-    - api_key: Removes the env var from .env
+    - api_key: Removes every declared credential field from .env
     - oauth: Deletes the token JSON file from cache
     - cloud_creds: Removes env vars from .env
     - local: No-op (local providers don't store credentials)
@@ -991,9 +991,13 @@ async def delete_provider(provider_id: str) -> dict[str, bool]:
     # Collect all env vars to clear
     creds_to_clear: dict[str, str] = {}
     if kind == "api_key":
-        env_var = entry.get("env_var") or ""
+        for field in entry.get("credentials") or []:
+            name = str(field.get("name", ""))
+            if name:
+                creds_to_clear[name] = ""
+        env_var = str(entry.get("env_var") or "")
         if env_var:
-            creds_to_clear[env_var] = ""
+            creds_to_clear.setdefault(env_var, "")
     elif kind == "cloud_creds":
         for name in entry.get("env_vars") or []:
             creds_to_clear[name] = ""

@@ -1799,7 +1799,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'settings',
     title: 'Providers とモデル（BYOM）',
     summary:
-      'Anthropic、OpenAI、Gemini、Bedrock、Ollama など — 1 つのストリーミング抽象の裏にある 12 連携 — を接続し、エージェントまたはセッションごとにモデルを選びます。EvoFlux は単一ベンダーモデルにロックしません。',
+      'Anthropic、OpenAI、QwenCloud、Gemini、Bedrock、Ollama など — 1 つのストリーミング抽象の裏にある 20 の組み込み連携 — を接続し、エージェントまたはセッションごとにモデルを選びます。EvoFlux は単一ベンダーモデルにロックしません。',
     keywords: [
       'provider',
       'model',
@@ -1809,6 +1809,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'byom',
       'Anthropic',
       'OpenAI',
+      'QwenCloud',
       'Gemini',
       'Bedrock',
       'DeepSeek',
@@ -1832,12 +1833,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'コンテキスト予算バーはレジストリの選択モデル context_length を使う。',
       'コストが重要なら Lead トリアージは速いモデル、Coding specialist は強いモデル。',
       'キーローテ後は Goal 開始前に小さな Work ping で再テスト。',
-      'OAuth プロバイダも成功した接続状態が必要 — 途中の OAuth はモデルなしのまま。'
+      'OAuth プロバイダも成功した接続状態が必要 — 途中の OAuth はモデルなしのまま。',
+      'QwenCloud のサブスクリプションキーには、QwenCloud が示す Token Plan または Coding Plan の対応 Base URL が必要。'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Providers は 1 つのストリーミング層経由でモデルを公開する BYOM 連携（API キー、OAuth、またはローカルデーモン）です。対応ファミリーには Anthropic、OpenAI、Google Gemini、AWS Bedrock、Ollama、DeepSeek、xAI、Vertex AI、GitHub Copilot など。資格情報はチャットではなく Settings に置きます。',
+        text: 'Providers は 1 つのストリーミング層経由でモデルを公開する BYOM 連携（API キー、OAuth、またはローカルデーモン）です。対応ファミリーには Anthropic、OpenAI、QwenCloud、Google Gemini、AWS Bedrock、Ollama、DeepSeek、xAI、Vertex AI、GitHub Copilot など。資格情報はチャットではなく Settings に置きます。',
       },
       {
         type: 'p',
@@ -1846,6 +1848,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'p',
         text: 'Settings → Providers を開き、資格情報または base URL を追加し、configured 表示を確認し、Agents で既定を割り当てるか composer pill でセッション上書き。キーが正しそうでもストリームが失敗するなら Diagnostics。長いモデル一覧にはファジー検索が役立ちます。',
+      },
+      {
+        type: 'p',
+        text: 'QwenCloud は DASHSCOPE_API_KEY を使い、既定では国際 pay-as-you-go の OpenAI 互換エンドポイントに接続します。Token Plan と Coding Plan のキー（sk-sp-…）は pay-as-you-go キーと交換できないため、Settings に対応する完全な Base URL を入力してください。Token Plan Individual の規約はスケジュールなど無人自動化を制限する場合があるため、利用前にプラン条件を確認してください。',
       },
       {
         type: 'tips',

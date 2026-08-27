@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     ANTHROPIC_BASE_URL: str = "https://api.anthropic.com"
     OPENAI_API_KEY: SecretStr | None = None
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    # QwenCloud / Alibaba Model Studio international OpenAI-compatible API.
+    # Subscription keys use plan-specific hosts, so the full Base URL remains
+    # configurable and must match the key shown by QwenCloud.
+    DASHSCOPE_API_KEY: SecretStr | None = None
+    DASHSCOPE_BASE_URL: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     OPENROUTER_API_KEY: SecretStr | None = None
     NVIDIA_API_KEY: SecretStr | None = None
     XAI_API_KEY: SecretStr | None = None

@@ -119,6 +119,20 @@ def test_models_dev_provider_aliases(
                     }
                 },
             },
+            "alibaba": {
+                "id": "alibaba",
+                "models": {
+                    "qwen-live": {
+                        "id": "qwen-live",
+                        "modalities": {
+                            "input": ["text", "image"],
+                            "output": ["text"],
+                        },
+                        "limit": {"context": 3000, "output": 300},
+                        "tool_call": True,
+                    }
+                },
+            },
         },
     )
 
@@ -128,6 +142,9 @@ def test_models_dev_provider_aliases(
     )
     assert get_capabilities("googlegenai:gemini-live").input.vision is True
     assert get_model_limits("googlegenai:gemini-live").context_length == 1000
+    assert get_capabilities("qwencloud:qwen-live").input.vision is True
+    assert get_model_limits("qwencloud:qwen-live").context_length == 3000
+    assert get_model_features("qwencloud:qwen-live").tool_call is True
 
 
 def test_provider_owned_model_registry_aliases(
