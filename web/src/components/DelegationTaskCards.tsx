@@ -16,11 +16,13 @@ export function DelegationTaskCards({
   result,
   toolState,
   startedAt,
+  delegatedBy,
 }: {
   args?: string
   result?: string
   toolState: ToolCallState
   startedAt?: number
+  delegatedBy?: string
 }) {
   const parsed = useMemo(() => parseDelegationCall(args, result), [args, result])
   const agentStreams = useTeamStore((state) => state.agentStreams)
@@ -43,6 +45,20 @@ export function DelegationTaskCards({
   }
 
   const targets = parsed.targets.map((target) => {
+    const delegation = activityLog.find((item) => (
+      item.kind === 'delegation'
+      && (
+        !target.taskId
+        || (Array.isArray(item.meta?.task_ids) && item.meta.task_ids.includes(target.taskId))
+      )
+      && (
+        !Array.isArray(item.meta?.to_agents)
+        || item.meta.to_agents.includes(target.agent)
+      )
+    ))
+    const resolvedDelegatedBy = typeof delegation?.meta?.from_agent === 'string'
+      ? delegation.meta.from_agent
+      : delegation?.agent ?? delegatedBy ?? null
     const stream = agentStreams[target.agent]
     const handoffMatch = delegationHandoffMatch(
       activityLog,
@@ -57,7 +73,7 @@ export function DelegationTaskCards({
       handoff,
       sessionWorking,
     })
-    return { handoff, handoffMatch, status, stream, target }
+    return { delegatedBy: resolvedDelegatedBy, handoff, handoffMatch, status, stream, target }
   })
   const activeCount = targets.filter(
     ({ status }) => status === 'queued' || status === 'running',
@@ -65,10 +81,11 @@ export function DelegationTaskCards({
 
   return (
     <div className="my-2 space-y-1.5">
-      {targets.map(({ handoff, handoffMatch, status, stream, target }) => (
+      {targets.map(({ delegatedBy, handoff, handoffMatch, status, stream, target }) => (
         <SubagentTaskCard
           key={target.taskId ?? target.agent}
           agent={target.agent}
+          delegatedBy={delegatedBy}
           title={parsed.title}
           status={status}
           activity={delegationActivityLabel(status, stream, handoff)}

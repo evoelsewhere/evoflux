@@ -59,7 +59,11 @@ import { useToastStore } from '@/stores/useToastStore'
 import { prependSession, prependWorkspaceSession } from '@/stores/cache-invalidation-bridge'
 import { useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
-import { useTeamAgentsQuery } from '@/queries/useAgentsQuery'
+import {
+  useTeamAgentsQuery,
+  useTeamLeadsQuery,
+  useUpdateTeamSessionLeadMutation,
+} from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
 import { AlertCircle, ArrowRight, FolderPlus, GitBranch, X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -687,8 +691,12 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const { data: teamAgentsData, isLoading: teamAgentsLoading } = useTeamAgentsQuery(
     agentWorkspace,
     hasCodingWorkspace,
-    'coding',
+    mode === 'coding' ? 'coding' : null,
+    sessionIdState,
   )
+  const leadOptionsQuery = useTeamLeadsQuery(mode, Boolean(sessionIdState))
+  const updateLeadMutation = useUpdateTeamSessionLeadMutation()
+  const [leadReloadToken, setLeadReloadToken] = useState(0)
   const leadAgent = teamAgentsData?.agents?.find((a) => a.is_lead)
   const leadCapabilities: AgentCapabilitiesType | undefined = leadAgent?.capabilities
   const selectedModel = sessionModel ?? ''
@@ -742,7 +750,52 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     hasCodingWorkspace,
     isCodingSessionLoading,
     mode,
+    reloadToken: leadReloadToken,
   })
+
+  const handleLeadChange = useCallback(async (nextLead: string) => {
+    if (!sessionIdState || nextLead === leadName || isTeamWorking) return
+    try {
+      await updateLeadMutation.mutateAsync({
+        sessionId: sessionIdState,
+        leadName: nextLead,
+      })
+      abortRef.current?.abort()
+      abortRef.current = null
+      beginResolvedSession(sessionIdState, {
+        mode,
+        workspace: agentWorkspace,
+        model: sessionModel,
+        thinkingLevel: sessionThinkingLevel,
+        fastMode: sessionFastMode,
+      })
+      setLeadReloadToken((value) => value + 1)
+      pushToast({
+        tone: 'success',
+        title: `Lead changed to ${nextLead}`,
+        description: 'This session now uses only that lead’s owned members.',
+      })
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: 'Lead could not be changed',
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }, [
+    abortRef,
+    agentWorkspace,
+    beginResolvedSession,
+    isTeamWorking,
+    leadName,
+    mode,
+    pushToast,
+    sessionFastMode,
+    sessionIdState,
+    sessionModel,
+    sessionThinkingLevel,
+    updateLeadMutation,
+  ])
 
   // A newly-created review session is routed first, restored by useTeamSse,
   // and only then receives its one-time context prompt. Waiting for the route
@@ -794,6 +847,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           workspace: mode === 'coding' ? workspace : null,
           model: sessionIdState ? sessionModel : null,
           thinkingLevel: sessionIdState ? sessionThinkingLevel : null,
+          agentName: leadName,
         }
         beginResolvedSession(null, sessionOptions)
         const session = await resolveTeamSession({
@@ -828,7 +882,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         })
       }
     })()
-  }, [beginResolvedSession, isEmptyIdleSession, mode, navigate, queryClient, sessionIdState, sessionModel, sessionThinkingLevel, workspace, abortRef])
+  }, [beginResolvedSession, isEmptyIdleSession, leadName, mode, navigate, queryClient, sessionIdState, sessionModel, sessionThinkingLevel, workspace, abortRef])
 
   const handleOpenCodeReviewChat = useCallback(async (
     repository: RepositoryCodeReviews,
@@ -847,6 +901,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         thinkingLevel: carryThinkingLevel,
         tags,
         tagMatch: 'contains',
+        agentName: leadName,
       })
       if (session.id === sessionIdState) {
         useTeamStore.setState({ sessionTags: session.tags ?? tags })
@@ -923,6 +978,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   }, [
     abortRef,
     beginResolvedSession,
+    leadName,
     navigate,
     pushToast,
     queryClient,
@@ -1954,6 +2010,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           isMobile={isMobile}
           sidebarOverlay={sidebarOverlay}
           activeAgent={activeAgent}
+          leadName={leadName}
+          leadOptions={leadOptionsQuery.data?.leads ?? []}
+          leadChanging={updateLeadMutation.isPending}
+          onLeadChange={(name) => { void handleLeadChange(name) }}
           viewMode={displayedViewMode}
           onViewModeChange={setViewMode}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}

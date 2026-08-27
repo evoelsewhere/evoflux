@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  ChevronDown,
   ChevronRight,
   Layers3,
   Plus,
@@ -9,7 +10,7 @@ import {
   Wrench,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 
 import type { AgentSummary } from '@/api/types'
 import {
@@ -133,6 +134,20 @@ export function AgentsListPage() {
       const next = new Set(previous)
       for (const agent of teamAgents) {
         if (teamChecked) next.delete(agent.name)
+        else next.add(agent.name)
+      }
+      return next
+    })
+  }
+
+  const toggleAgents = (names: string[]) => {
+    const editable = agents.filter((agent) => agent.editable && names.includes(agent.name))
+    if (editable.length === 0) return
+    const allChecked = editable.every((agent) => checked.has(agent.name))
+    setChecked((previous) => {
+      const next = new Set(previous)
+      for (const agent of editable) {
+        if (allChecked) next.delete(agent.name)
         else next.add(agent.name)
       }
       return next
@@ -307,10 +322,13 @@ export function AgentsListPage() {
                   <AgentTeamGroup
                     key={group.team}
                     team={group.team}
-                    agents={group.agents}
+                    agents={teams[group.team]}
+                    visibleAgents={group.agents}
+                    filtering={Boolean(normalizedQuery)}
                     checked={checked}
                     onToggleAgent={toggleChecked}
                     onToggleTeam={() => toggleTeam(group.team)}
+                    onToggleAgents={toggleAgents}
                     onOpen={(name) =>
                       navigate('/settings/agents/$name', { params: { name } })
                     }
@@ -398,23 +416,50 @@ function RosterStat({
 function AgentTeamGroup({
   team,
   agents,
+  visibleAgents,
+  filtering,
   checked,
   onToggleAgent,
   onToggleTeam,
+  onToggleAgents,
   onOpen,
 }: {
   team: AgentTeam
   agents: AgentSummary[]
+  visibleAgents: AgentSummary[]
+  filtering: boolean
   checked: Set<string>
   onToggleAgent: (name: string) => void
   onToggleTeam: () => void
+  onToggleAgents: (names: string[]) => void
   onOpen: (name: string) => void
 }) {
   const visual = AGENT_TEAM_VISUALS[team]
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const editableAgents = agents.filter((agent) => agent.editable)
   const allChecked =
     editableAgents.length > 0 && editableAgents.every((agent) => checked.has(agent.name))
   const someChecked = editableAgents.some((agent) => checked.has(agent.name))
+  const visibleNames = new Set(visibleAgents.map((agent) => agent.name))
+  const leads = agents.filter((agent) => agent.role === 'lead').sort(sortAgents)
+  const leadNames = new Set(leads.map(agentConfigName))
+  const defaultLead = leads.find((lead) => agentConfigName(lead) === 'evoflux') ?? leads[0]
+  const defaultLeadName = defaultLead ? agentConfigName(defaultLead) : null
+  const members = agents.filter((agent) => agent.role === 'member')
+  const groups = leads.map((lead) => {
+    const ownerName = agentConfigName(lead)
+    const owned = members.filter((member) => (member.lead ?? defaultLeadName) === ownerName)
+    const leadMatches = visibleNames.has(lead.name)
+    const visibleMembers = filtering && !leadMatches
+      ? owned.filter((member) => visibleNames.has(member.name))
+      : owned
+    return { lead, owned, visibleMembers, visible: leadMatches || visibleMembers.length > 0 }
+  }).filter((group) => group.visible)
+  const orphaned = members.filter((member) => {
+    const owner = member.lead ?? defaultLeadName
+    return owner === null || !leadNames.has(owner)
+  }).filter((member) => !filtering || visibleNames.has(member.name))
+
   return (
     <section aria-labelledby={`agent-team-${team}`}>
       <div className="flex items-center gap-3 bg-(--bg-key)/25 px-3 py-2.5 sm:px-4">
@@ -432,19 +477,93 @@ function AgentTeamGroup({
         </div>
         <span className="font-mono text-[10px] tabular-nums text-(--color-text-subtle)">{agents.length}</span>
       </div>
-      <ul className="divide-y divide-(--color-border-subtle)">
-        {agents.map((agent) => (
-          <AgentRow
-            key={agent.name}
-            agent={agent}
-            selected={agent.editable && checked.has(agent.name)}
-            onToggle={() => onToggleAgent(agent.name)}
-            onOpen={() => onOpen(agent.name)}
-          />
-        ))}
-      </ul>
+      <div className="divide-y divide-(--color-border-subtle)">
+        {groups.map(({ lead, owned, visibleMembers }) => {
+          const ownerName = agentConfigName(lead)
+          const isCollapsed = collapsed.has(lead.name)
+          const groupNames = [lead.name, ...owned.map((member) => member.name)]
+          const groupEditable = agents.filter((agent) => groupNames.includes(agent.name) && agent.editable)
+          const groupChecked = groupEditable.length > 0 && groupEditable.every((agent) => checked.has(agent.name))
+          const groupSomeChecked = groupEditable.some((agent) => checked.has(agent.name))
+          return (
+            <section key={lead.name} aria-label={`${ownerName} team`}>
+              <AgentRow
+                agent={lead}
+                selected={lead.editable && checked.has(lead.name)}
+                onToggle={() => onToggleAgent(lead.name)}
+                onOpen={() => onOpen(lead.name)}
+                ownership={lead.name === defaultLead?.name ? 'Default lead' : undefined}
+                descriptionSuffix={`${owned.length} ${owned.length === 1 ? 'member' : 'members'}`}
+                after={(
+                  <button
+                    type="button"
+                    onClick={() => setCollapsed((previous) => {
+                      const next = new Set(previous)
+                      if (next.has(lead.name)) next.delete(lead.name)
+                      else next.add(lead.name)
+                      return next
+                    })}
+                    className="mr-2 flex size-8 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                    aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${ownerName} team`}
+                    aria-expanded={!isCollapsed}
+                  >
+                    <ChevronDown size={14} className={cn('transition-transform', isCollapsed && '-rotate-90')} />
+                  </button>
+                )}
+              />
+              {!isCollapsed && (
+                <div className="relative ml-7 border-l border-(--color-border-strong) bg-(--bg-key)/10 sm:ml-11">
+                  <div className="flex min-h-9 items-center gap-2 border-b border-(--color-border-subtle) px-3 text-[10px] text-(--color-text-muted)">
+                    <Checkbox
+                      checked={groupChecked}
+                      indeterminate={!groupChecked && groupSomeChecked}
+                      onCheckedChange={() => onToggleAgents(groupNames)}
+                      disabled={groupEditable.length === 0}
+                      aria-label={`Select ${ownerName} team`}
+                    />
+                    <span className="font-medium">Members of {ownerName}</span>
+                    <span className="ml-auto font-mono tabular-nums">{owned.length}</span>
+                  </div>
+                  {visibleMembers.length > 0 ? visibleMembers.map((member) => (
+                    <AgentRow
+                      key={member.name}
+                      agent={member}
+                      selected={member.editable && checked.has(member.name)}
+                      onToggle={() => onToggleAgent(member.name)}
+                      onOpen={() => onOpen(member.name)}
+                      nested
+                      ownership={`Member of ${ownerName}`}
+                    />
+                  )) : (
+                    <p className="px-4 py-3 text-xs text-(--color-text-subtle)">No members assigned to this lead.</p>
+                  )}
+                </div>
+              )}
+            </section>
+          )
+        })}
+        {orphaned.length > 0 && (
+          <section aria-label="Unassigned members">
+            <div className="bg-(--color-warning)/8 px-4 py-2 text-[11px] font-medium text-(--color-warning)">Unassigned members</div>
+            {orphaned.map((member) => (
+              <AgentRow
+                key={member.name}
+                agent={member}
+                selected={member.editable && checked.has(member.name)}
+                onToggle={() => onToggleAgent(member.name)}
+                onOpen={() => onOpen(member.name)}
+                ownership="Choose an owning lead"
+              />
+            ))}
+          </section>
+        )}
+      </div>
     </section>
   )
+}
+
+function agentConfigName(agent: AgentSummary): string {
+  return agent.name.split('/').at(-1) ?? agent.name
 }
 
 function AgentRow({
@@ -452,16 +571,24 @@ function AgentRow({
   selected,
   onToggle,
   onOpen,
+  nested = false,
+  ownership,
+  descriptionSuffix,
+  after,
 }: {
   agent: AgentSummary
   selected: boolean
   onToggle: () => void
   onOpen: () => void
+  nested?: boolean
+  ownership?: string
+  descriptionSuffix?: string
+  after?: ReactNode
 }) {
   return (
-    <li className={cn('group flex min-w-0 items-stretch transition-colors hover:bg-(--bg-key)/35', selected && 'bg-(--color-accent-soft)/45')}>
+    <div className={cn('group flex min-w-0 items-stretch transition-colors hover:bg-(--bg-key)/35', nested && 'not-last:border-b not-last:border-(--color-border-subtle)', selected && 'bg-(--color-accent-soft)/45')}>
       {agent.editable ? (
-        <label className="flex min-h-16 shrink-0 cursor-pointer items-center pl-3 sm:pl-4">
+        <label className={cn('flex shrink-0 cursor-pointer items-center', nested ? 'min-h-14 pl-3' : 'min-h-16 pl-3 sm:pl-4')}>
           <Checkbox checked={selected} onCheckedChange={onToggle} aria-label={`Select ${agent.name}`} />
         </label>
       ) : (
@@ -470,13 +597,14 @@ function AgentRow({
       <button
         type="button"
         onClick={onOpen}
-        className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/35 sm:px-4"
+        className={cn('flex min-w-0 flex-1 items-center gap-3 px-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-(--focus-ring)/35 sm:px-4', nested ? 'py-2.5' : 'py-3')}
       >
         <AgentGlyph name={agent.name} role={agent.role} />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-semibold text-(--color-text)">{agentDisplayName(agent.name)}</span>
             <AgentRoleBadge role={agent.role} />
+            {ownership && <span className="hidden truncate rounded-full bg-(--bg-key) px-2 py-0.5 text-[10px] text-(--color-text-muted) ring-1 ring-(--color-border) md:inline-flex">{ownership}</span>}
             {agent.provider && <ManagedResourceProviderBadge provider={agent.provider} />}
             {!agent.valid && (
               <span className="inline-flex items-center gap-1 text-[10px] text-(--color-error)" title={agent.error ?? 'Invalid configuration'}>
@@ -486,6 +614,7 @@ function AgentRow({
           </div>
           <p className="mt-0.5 line-clamp-1 text-xs leading-relaxed text-(--color-text-muted)">
             {agent.description || 'No description yet.'}
+            {descriptionSuffix ? ` · ${descriptionSuffix}` : ''}
           </p>
           <div className="mt-1.5 flex items-center gap-3 text-[10px] text-(--color-text-subtle) sm:hidden">
             <span>{agent.tools.length} tools</span>
@@ -501,7 +630,8 @@ function AgentRow({
         </div>
         <ChevronRight size={15} className="shrink-0 text-(--color-text-subtle) transition-transform group-hover:translate-x-0.5 group-hover:text-(--color-text-muted)" aria-hidden="true" />
       </button>
-    </li>
+      {after}
+    </div>
   )
 }
 

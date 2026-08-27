@@ -1,6 +1,10 @@
 export { useHealthQuery } from './useHealthQuery'
 export { useDiagnosticsQuery } from './useDiagnosticsQuery'
-export { useTeamAgentsQuery } from './useAgentsQuery'
+export {
+  useTeamAgentsQuery,
+  useTeamLeadsQuery,
+  useUpdateTeamSessionLeadMutation,
+} from './useAgentsQuery'
 export { useTeamStatusQuery } from './useTeamStatusQuery'
 export {
   useTeamSessionsQuery,

@@ -2,12 +2,13 @@ export const queryKeys = {
   health: () => ['health'] as const,
   diagnostics: () => ['diagnostics'] as const,
   agents: () => ['agents'] as const,
-  teamAgents: (workspace?: string | null, mode?: string | null) =>
+  teamAgents: (workspace?: string | null, mode?: string | null, sessionId?: string | null) =>
     workspace
-      ? (['agents', 'team', workspace, mode ?? 'coding'] as const)
-      : (['agents', 'team'] as const),
+      ? (['agents', 'team', workspace, mode ?? 'coding', sessionId ?? null] as const)
+      : (['agents', 'team', sessionId ?? null] as const),
   team: {
     status: () => ['team', 'status'] as const,
+    leads: (mode: string) => ['team', 'leads', mode] as const,
     sessions: {
       all: () => ['team', 'sessions'] as const,
       // No-arg form is the invalidation prefix covering every mode variant.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, AsyncGenerator, Literal, cast
 from uuid import UUID
@@ -38,6 +39,10 @@ from app.api.schemas.sessions import (
     SessionResponse,
     TeamSessionResolveRequest,
     TeamSessionResolveResponse,
+    TeamSessionLeadUpdateRequest,
+    TeamLeadListResponse,
+    TeamLeadMemberResponse,
+    TeamLeadResponse,
     TeamSessionUpdateRequest,
     TeamWorkspaceVisibilityRequest,
 )
@@ -782,13 +787,53 @@ async def team_stream(session_id: str, request: Request):
     return EventSourceResponse(_gen())
 
 
+@router.get("/leads", response_model=TeamLeadListResponse)
+async def list_team_leads(
+    mode: str = Query("work", description="Lead roster mode: 'work' or 'coding'."),
+) -> TeamLeadListResponse:
+    try:
+        normalized_mode = normalize_mode(mode)
+        if normalized_mode not in {"work", "coding"}:
+            raise ValueError("mode must be 'work' or 'coding'.")
+        default_lead, rosters = await asyncio.to_thread(
+            team_manager.configured_lead_rosters, normalized_mode
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return TeamLeadListResponse(
+        mode=cast(Literal["work", "coding"], normalized_mode),
+        default_lead=default_lead,
+        leads=[
+            TeamLeadResponse(
+                name=lead.name,
+                description=lead.description,
+                model=lead.model,
+                is_default=lead.name == default_lead,
+                members=[
+                    TeamLeadMemberResponse(
+                        name=member.name,
+                        description=member.description,
+                        model=member.model,
+                    )
+                    for member, _member_path in members
+                ],
+            )
+            for lead, _lead_path, members in rosters
+        ],
+    )
+
+
 @router.get("/agents")
 async def list_team_agents(
+    db: ReadDbSession,
     workspace: str | None = Query(None, description="Coding workspace directory."),
     mode: str = Query(
         "coding",
         description="Which roster the workspace team uses: 'coding'. "
         "Ignored without a workspace (the default work team has one roster).",
+    ),
+    session_id: UUID | None = Query(
+        None, description="Open top-level session whose persisted lead owns the roster."
     ),
 ) -> dict:
     """Return info on the lead, all live member instances, and spawnable blueprints.
@@ -815,20 +860,49 @@ async def list_team_agents(
           ]
         }
     """
+    selected_lead: str | None = None
+    runtime_session_id = str(session_id) if session_id is not None else None
+    if session_id is not None:
+        session = await db.get(ChatSession, session_id)
+        if session is None or session.parent_session_id is not None:
+            raise HTTPException(status_code=404, detail="Session not found.")
+        persisted_mode = normalize_mode(session.mode)
+        if persisted_mode not in {"work", "coding"}:
+            raise HTTPException(status_code=409, detail="Session has unsupported mode.")
+        mode = persisted_mode
+        workspace = session.workspace if mode == "coding" else None
+        try:
+            selected_lead = await asyncio.to_thread(
+                team_manager.resolve_configured_lead,
+                mode,
+                session.agent_name,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
     if workspace:
         mode = normalize_mode(mode)
         if mode != "coding":
             raise HTTPException(status_code=422, detail="mode must be 'coding'.")
         try:
             team_obj = await team_manager.get_or_start_coding_team(
-                workspace, f"__agents_{mode}__", mode=mode
+                workspace,
+                runtime_session_id or f"__agents_{mode}__",
+                mode=mode,
+                lead_name=selected_lead,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     else:
         # Resolved lazily instead of via TeamDep so the coding branch above
         # never pays for (or waits on) a default-team boot it won't use.
-        team_obj = _require_team(await team_manager.get_or_start_team())
+        team_obj = _require_team(
+            await team_manager.get_or_start_team_for_session(
+                runtime_session_id, lead_name=selected_lead
+            )
+            if runtime_session_id
+            else await team_manager.get_or_start_team()
+        )
     # Rediscover blueprint files from disk before serializing so newly
     # created members (Settings → Agents) appear without a server restart.
     team_manager.refresh_blueprints(team_obj)
@@ -844,6 +918,7 @@ async def list_team_agents(
         "blueprints": blueprints,
         "mode": team_obj.mode,
         "workspace": team_obj.workspace,
+        "lead_name": team_obj.lead.name,
     }
 
 
@@ -973,6 +1048,21 @@ async def resolve_team_session(
     body.mode = normalize_mode(body.mode)
     if body.mode not in {"work", "coding"}:
         raise HTTPException(status_code=422, detail="mode must be 'work' or 'coding'.")
+    try:
+        default_lead, _rosters = await asyncio.to_thread(
+            team_manager.configured_lead_rosters, body.mode
+        )
+        requested_lead = (
+            await asyncio.to_thread(
+                team_manager.resolve_configured_lead,
+                body.mode,
+                body.agent_name,
+            )
+            if body.agent_name
+            else None
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     model = body.model.strip() if body.model else None
     thinking_level = body.thinking_level.strip() if body.thinking_level else None
     if model and not await is_registered_model_id(model):
@@ -1093,11 +1183,14 @@ async def resolve_team_session(
                 folder_id=folder_id,
                 tags=session_tags,
                 tag_match=body.tag_match,
+                agent_name=requested_lead,
+                include_unassigned_agent=requested_lead == default_lead,
             )
         created = session is None
         if session is None:
             session = ChatSession(
                 mode=body.mode,
+                agent_name=requested_lead or default_lead,
                 workspace=workspace,
                 project_id=project_id,
                 folder_id=folder_id,
@@ -1105,6 +1198,9 @@ async def resolve_team_session(
                 thinking_level=thinking_level,
                 tags=session_tags or None,
             )
+            db.add(session)
+        elif session.agent_name is None:
+            session.agent_name = default_lead
             db.add(session)
         if body.mode == "coding" and workspace:
             managed_source = find_managed_worktree_source(Path(workspace))
@@ -1135,6 +1231,7 @@ async def resolve_team_session(
         mode=session.mode,
         session_id=str(session.id),
         workspace=session.workspace,
+        lead_name=session.agent_name,
     )
     return TeamSessionResolveResponse(**data, created=created)
 
@@ -1317,6 +1414,52 @@ async def update_team_session(
     return SessionResponse.model_validate(session).model_copy(
         update={"running": str(session.id) in stream_store.running_session_ids()}
     )
+
+
+@router.patch("/sessions/{session_id}/lead", response_model=SessionResponse)
+async def update_team_session_lead(
+    session_id: UUID,
+    body: TeamSessionLeadUpdateRequest,
+    db: DbSession,
+) -> SessionResponse:
+    """Switch one idle top-level session to another same-mode lead roster."""
+
+    session = await db.get(ChatSession, session_id)
+    if session is None or session.parent_session_id is not None:
+        raise HTTPException(status_code=404, detail="Session not found.")
+    live_team = team_manager.find_team_for_session(str(session_id))
+    if str(session_id) in stream_store.running_session_ids() or (
+        live_team is not None
+        and any(member.state == "working" for member in live_team.all_members)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Finish or stop the active team turn before changing lead.",
+        )
+    mode = normalize_mode(session.mode)
+    try:
+        selected = await asyncio.to_thread(
+            team_manager.resolve_configured_lead,
+            mode,
+            body.lead_name.strip(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    previous = session.agent_name
+    if previous != selected:
+        session.agent_name = selected
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        await team_manager.stop_sessions({str(session_id)})
+        logger.info(
+            "team_session_lead_changed session_id={} mode={} old_lead={} new_lead={}",
+            session_id,
+            mode,
+            previous,
+            selected,
+        )
+    return SessionResponse.model_validate(session).model_copy(update={"running": False})
 
 
 @router.post(

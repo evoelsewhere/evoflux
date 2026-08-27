@@ -1617,6 +1617,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                         agentNames={agentNames}
                         workspace={agentWorkspace}
                         mode={agentMode}
+                        sessionId={sessionId}
                       />
                     )}
                     {permissionMode && onPermissionModeChange && (

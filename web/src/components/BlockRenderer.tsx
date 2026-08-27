@@ -409,6 +409,7 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
             durationMs={block.durationMs}
             startedAt={block.startedAt ?? block.timestamp?.getTime()}
             attachments={toolExtra?.attachments}
+            agentName={typeof block.extra?._source_agent === 'string' ? block.extra._source_agent : undefined}
           />
           {block.toolDone && Boolean(mcpApp) && latestMCPAppBlockIds?.has(block.id) ? (
             <div className="mt-2">

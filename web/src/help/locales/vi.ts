@@ -280,6 +280,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Monitor cho overview hoạt động cả đội khi nhiều worker live.',
       'Context budget bar trên workbench dùng context_length và summary_trigger_tokens của model — /compact sớm nếu thanh leo.',
       'Cấu hình model, skill, tool, permission từng agent trong Settings → Agents.',
+      'Dùng Lead selector trên topbar để chọn Work hoặc Coding lead cho session đang idle. Mỗi option chỉ liệt kê member thuộc lead đó; không thể switch khi team đang chạy.',
+      'Settings → Agents group member dưới từng lead team có thể collapse. Delegation card ghi “lead delegated → member#N”; lead vẫn chỉ coordination và final synthesis.',
       'Session pills trên composer set model, thinking level, fast mode chỉ cho chat hiện tại.',
       'Việc đơn giản để Lead làm; chỉ fan-out khi parallelism rõ ràng rút wall time.',
       'Tool chỉ Lead (ask_user, plan mode helper, một số worktree helper) không bao giờ cấp cho specialist — đừng chờ worker approve plan.'
@@ -287,7 +289,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Mỗi session có một Lead agent sở hữu transcript hướng tới bạn. Việc phức tạp được tách thành subtask với goal và ràng buộc; specialist bật theo nhu cầu, trao kết quả qua mailbox dùng chung, Lead đánh giá evidence trước khi trả lời bạn.',
+        text: 'Mỗi session persist một Lead sở hữu transcript user thấy. Mỗi mode có thể có nhiều lead và mỗi member thuộc đúng một lead qua Settings → Agents. Việc phức tạp được chia thành subtask có goal và constraint; chỉ specialist của lead đang chọn được bật, trao đổi kết quả qua mailbox và trả evidence trước khi Lead trả lời.',
       },
       {
         type: 'p',

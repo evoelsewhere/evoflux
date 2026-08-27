@@ -64,6 +64,7 @@ from app.agent.config import (
     _FRONTMATTER_RE,
     member_model_is_configured,
     parse_agent_md,
+    resolve_agent_roster,
 )
 
 if TYPE_CHECKING:
@@ -576,6 +577,7 @@ def load_team_from_dir(
     db_factory: DbFactory | None = None,
     mode: str = "work",
     workspace: str | None = None,
+    lead_name: str | None = None,
 ) -> "AgentTeam | None":
     """Load an AgentTeam from a directory of per-agent ``.md`` files.
 
@@ -624,26 +626,14 @@ def load_team_from_dir(
             + "\n".join(parse_errors)
         )
 
-    # Validate: exactly one lead
-    leads = [(c, p) for (c, p) in agent_configs if c.role == "lead"]
-    if not leads:
-        raise ValueError(
-            f"No agent with 'role: lead' found in '{agents_dir}'. "
-            "Exactly one agent must have 'role: lead'."
-        )
-    if len(leads) > 1:
-        names = [c.name for (c, _) in leads]
-        raise ValueError(
-            f"Multiple agents with 'role: lead' found in '{agents_dir}': {names}. "
-            "Exactly one agent must have 'role: lead'."
-        )
-
-    lead_cfg, lead_path = leads[0]
+    (lead_cfg, lead_path), owned_members, _default_lead = resolve_agent_roster(
+        agent_configs,
+        lead_name=lead_name,
+    )
     member_entries = [
         (c, p)
-        for (c, p) in agent_configs
-        if c.role == "member"
-        and member_model_is_configured(c.model)
+        for (c, p) in owned_members
+        if member_model_is_configured(c.model)
         and not _is_retired_builtin_member(mode, c.name)
     ]
 

@@ -65,6 +65,10 @@ iteration count as task correctness.
 Coding identity is scoped to the authorized repository/project/session. Idle
 teams are opportunistically evicted; specialists are blueprints rather than
 always-running processes.
+Mode directories may contain multiple leads. `ChatSession.agent_name` selects
+one lead for the session, and loader/refresh paths project only members owned by
+that lead. Legacy members without an owner resolve to the deterministic default
+lead. An idle lead change persists before the old cached team is evicted.
 
 `app/agent/mode/team/` provides:
 

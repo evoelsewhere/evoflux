@@ -21,6 +21,7 @@ class SessionCreate(BaseModel):
 
 class TeamSessionResolveRequest(BaseModel):
     mode: str = "work"
+    agent_name: str | None = Field(default=None, min_length=1, max_length=100)
     workspace: str | None = None
     project_id: UUID | None = None
     # Sidebar folder the resolved/created session is filed under. Also scopes
@@ -63,6 +64,30 @@ class TeamSessionResolveRequest(BaseModel):
 
 class TeamSessionUpdateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
+
+
+class TeamSessionLeadUpdateRequest(BaseModel):
+    lead_name: str = Field(min_length=1, max_length=100)
+
+
+class TeamLeadMemberResponse(BaseModel):
+    name: str
+    description: str | None = None
+    model: str | None = None
+
+
+class TeamLeadResponse(BaseModel):
+    name: str
+    description: str | None = None
+    model: str | None = None
+    is_default: bool = False
+    members: list[TeamLeadMemberResponse] = Field(default_factory=list)
+
+
+class TeamLeadListResponse(BaseModel):
+    mode: Literal["work", "coding"]
+    default_lead: str
+    leads: list[TeamLeadResponse]
 
 
 class SessionFolderCreateRequest(BaseModel):

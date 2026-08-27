@@ -7,6 +7,8 @@ import {
   FileDiff,
   GitPullRequest,
   Menu,
+  Crown,
+  Users,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -28,12 +30,17 @@ import {
 } from '@/components/ui/layout-icons'
 import type { ViewMode } from '@/components/TeamChatView/types'
 import type { CodeReviewSessionContext } from '@/lib/code-review-session'
+import type { TeamLeadOption } from '@/api/types'
 import { useRegistryQuery, useWebBridgeSettingsQuery } from '@/queries'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { WebBridgeStatusPopover } from '@/components/shell/WebBridgeStatusDialog'
 
 interface WorkbenchBarProps {
   activeAgent: string | null
+  leadName: string | null
+  leadOptions: TeamLeadOption[]
+  leadChanging: boolean
+  onLeadChange: (leadName: string) => void
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
   onOpenMobileSidebar: () => void
@@ -146,6 +153,47 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
       )}
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            className="group flex h-7 w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-card)/55 px-0 text-xs font-medium text-(--color-text) outline-none transition-colors hover:bg-(--bg-key) data-[popup-open]:bg-(--bg-key) disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:max-w-56 sm:justify-start sm:px-2"
+            aria-label="Select lead agent"
+            disabled={isTeamWorking || props.leadChanging || props.leadOptions.length === 0}
+            title={isTeamWorking ? 'Finish or stop the active turn before changing lead' : 'Select lead agent and owned team'}
+            data-no-drag
+          >
+            <Crown size={13} className="shrink-0 text-(--color-accent)" />
+            <span className="hidden truncate sm:inline">{props.leadName ?? 'Choose lead'}</span>
+            <ChevronDown size={11} className="hidden shrink-0 text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180 sm:block" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[min(18rem,calc(100vw-1rem))]">
+            <div className="px-2 py-1.5">
+              <p className="text-xs font-medium text-(--color-text)">{props.mode === 'coding' ? 'Coding' : 'Work'} leads</p>
+              <p className="mt-0.5 text-[10px] text-(--color-text-muted)">Each lead uses only the members shown below.</p>
+            </div>
+            {props.leadOptions.map((lead) => (
+              <DropdownMenuItem
+                key={lead.name}
+                disabled={isTeamWorking || props.leadChanging || lead.name === props.leadName}
+                onClick={() => props.onLeadChange(lead.name)}
+                className="items-start py-2"
+              >
+                <Crown size={14} className="mt-0.5 shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <span className="truncate">{lead.name}</span>
+                    {lead.is_default && <span className="rounded bg-(--bg-key) px-1 text-[9px] text-(--color-text-muted)">default</span>}
+                  </span>
+                  <span className="mt-0.5 flex items-start gap-1 whitespace-normal break-words text-[10px] leading-4 text-(--color-text-muted)">
+                    <Users size={10} />
+                    {lead.members.length === 0 ? 'No members' : lead.members.map((member) => member.name).join(', ')}
+                  </span>
+                </span>
+                {lead.name === props.leadName && <Check size={13} className="mt-0.5 text-(--color-accent)" />}
+              </DropdownMenuItem>
+            ))}
+            {props.leadOptions.length === 0 && <p className="px-2 py-2 text-xs text-(--color-text-muted)">No lead agents configured for this mode.</p>}
+          </DropdownMenuContent>
+        </DropdownMenu>
         {props.reviewContext && props.onOpenReviewContext && (
           <motion.button
             type="button"

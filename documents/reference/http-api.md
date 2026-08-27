@@ -52,6 +52,8 @@ The `/api/team` router includes:
 
 - accepted chat/command ingress and per-session SSE;
 - session CRUD, history, metadata, duplicate, queue, goal and todos;
+- mode-scoped `GET /api/team/leads`, session-aware `GET /api/team/agents`, and
+  idle-only `PATCH /api/team/sessions/{session_id}/lead` selection;
 - Work folders and shared-folder context;
 - workspace files/uploads/media/previews and file-watch SSE;
 - Coding projects, workspace authorization/tree/files and worktrees;
