@@ -219,6 +219,14 @@ chat scope/idleness before changing state; agent prose never advances the UI.
 Navigation handoff survives route changes, and a running chat receives a
 reviewable prompt rather than a duplicate queued phase start.
 
+Run detail projects an additive `action_rail` from the same persisted Run,
+Spec/Plan, mission, evidence, deviation, and verification-command state used by
+the lifecycle services. Each action has a stable ID, `available|blocked` state,
+and structured human-readable blockers. The client uses this projection to
+disable Review, Verify, or Converge before mutation, but the mutation endpoint
+still revalidates every gate to close the stale-render race. Spec approval, Plan
+approval, and Converge remain explicit human confirmations in the UI.
+
 User-controlled retry is limited to mutable review boundaries:
 `draft → authoring` and `plan_review → planning`; retry while already authoring
 or planning is idempotent. The prior draft remains durable until a successful

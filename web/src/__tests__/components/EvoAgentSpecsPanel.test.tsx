@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { EasdRunDetail } from '@/api/types'
@@ -569,7 +569,7 @@ describe('EvoAgentSpecsPanel', () => {
     expect(prompt).toContain('do not implement')
   })
 
-  it('shows the persisted agent draft for edit and explicit human approval', () => {
+  it('shows the persisted agent draft and confirms human approval', async () => {
     useDraftDetail()
     const mutateAsync = vi.fn().mockResolvedValue({ status: 'accepted' })
     mocks.action.mockReturnValue({ error: null, isPending: false, mutateAsync })
@@ -581,7 +581,13 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByText('Verified convergence')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Edit specification' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Approve specification' }))
-    expect(mutateAsync).toHaveBeenCalledOnce()
+    expect(screen.getByRole('heading', { name: 'Approve specification?' })).toBeInTheDocument()
+    const approvalDialog = screen.getByRole('dialog')
+    expect(within(approvalDialog).getByText(/v1/)).toBeInTheDocument()
+    expect(within(approvalDialog).getByText(/1 acceptance criteria/)).toBeInTheDocument()
+    expect(mutateAsync).not.toHaveBeenCalled()
+    fireEvent.click(within(approvalDialog).getByRole('button', { name: 'Approve specification' }))
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledOnce())
   })
 
   it('redrafts a persisted specification through an explicit retry attempt', async () => {
@@ -673,7 +679,7 @@ describe('EvoAgentSpecsPanel', () => {
     expect(prompt).toContain('Plan EASD run')
   })
 
-  it('renders the persisted plan and requires explicit plan approval', () => {
+  it('renders the persisted plan and confirms explicit plan approval', async () => {
     const mutateAsync = vi.fn().mockResolvedValue({ status: 'accepted' })
     mocks.action.mockReturnValue({ error: null, isPending: false, mutateAsync })
     mocks.detail.mockReturnValue({
@@ -695,7 +701,13 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByText('pytest -q tests/service.py')).toBeInTheDocument()
     expect(screen.getByText(/Preserve the public contract/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Approve plan' }))
-    expect(mutateAsync).toHaveBeenCalledOnce()
+    expect(screen.getByRole('heading', { name: 'Approve plan?' })).toBeInTheDocument()
+    const approvalDialog = screen.getByRole('dialog')
+    expect(within(approvalDialog).getByText('2')).toBeInTheDocument()
+    expect(within(approvalDialog).getByText('Independent review required')).toBeInTheDocument()
+    expect(mutateAsync).not.toHaveBeenCalled()
+    fireEvent.click(within(approvalDialog).getByRole('button', { name: 'Approve plan' }))
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledOnce())
   })
 
   it('replans a persisted draft through an explicit retry attempt', async () => {
@@ -781,6 +793,7 @@ describe('EvoAgentSpecsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
 
     expect(screen.queryByRole('button', { name: 'Run plan in chat' })).not.toBeInTheDocument()
+    expect(screen.getByText('Plan skipped')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Run implementation in chat' }))
 
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith('session-1'))
@@ -829,6 +842,65 @@ describe('EvoAgentSpecsPanel', () => {
       phase: 'verification',
       prompt: expect.stringMatching(/^\$easd-verify/),
     })))
+  })
+
+  it('shows server-derived blockers before Review can be started', () => {
+    const onRunInChat = vi.fn()
+    mocks.detail.mockReturnValue({
+      data: {
+        ...detail,
+        run: { ...run, status: 'active' },
+        missions: [{ ...detail.missions[0], status: 'running' }],
+        action_rail: {
+          phase: 'active',
+          primary_action: 'start_review',
+          actions: [{
+            id: 'start_review',
+            label: 'Run review',
+            state: 'blocked',
+            blockers: [{
+              code: 'mission_not_terminal',
+              message: 'Mission mission-1 is still running.',
+              mission_id: 'mission-1',
+              status: 'running',
+            }],
+          }],
+        },
+      } satisfies EasdRunDetail,
+      isLoading: false,
+    })
+
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" onRunInChat={onRunInChat} />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+
+    expect(screen.getByRole('list', { name: 'EASD lifecycle' })).toBeInTheDocument()
+    expect(screen.getByText('Mission mission-1 is still running.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run review in chat' })).toBeDisabled()
+  })
+
+  it('confirms Converge after the server marks the action available', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({ report: {} })
+    mocks.action.mockReturnValue({ error: null, isPending: false, mutateAsync })
+    mocks.detail.mockReturnValue({
+      data: {
+        ...detail,
+        run: { ...run, status: 'verifying' },
+        action_rail: {
+          phase: 'verifying',
+          primary_action: 'converge',
+          actions: [{ id: 'converge', label: 'Converge', state: 'available', blockers: [] }],
+        },
+      } satisfies EasdRunDetail,
+      isLoading: false,
+    })
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Converge' }))
+    expect(screen.getByRole('heading', { name: 'Converge this Run?' })).toBeInTheDocument()
+    expect(mutateAsync).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Converge Run' }))
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledOnce())
   })
 
   it('offers existing or new Coding chat selection for an unbound accepted run', () => {

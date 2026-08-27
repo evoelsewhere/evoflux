@@ -13,6 +13,13 @@ EASD separates two responsibilities:
 
 ## Product flow
 
+The Run header includes a server-derived guided action rail for Intent → Spec →
+Plan → Implement → Review → Verify → Done. It makes direct flow's skipped Plan
+explicit, emphasizes the next action, and shows mission/evidence/deviation or
+command blockers before a mutation is attempted. Approve specification,
+Approve plan, and Converge each require a confirmation summarizing the exact
+contract or evidence state.
+
 1. Open a Coding workspace/session and choose **Agent Specification-Driven
    Development** in the workbench.
 2. Initialize EASD for every repository in the workspace or Coding Project.
@@ -276,8 +283,8 @@ counts, mission counts, evidence/deviation IDs, and convergence timestamp.
 - EASD detail refreshes through TanStack Query polling while active; dedicated
   EASD SSE events are not yet emitted.
 - Deviation resolution and spec/plan revision authoring remain API-backed; the
-  detail view now exposes the complete approved phase flow and plan mission
-  contract but does not provide a visual DAG editor.
+  detail view exposes the guided phase flow, readiness blockers, and complete
+  approved plan mission contract but does not provide a visual DAG editor.
 - One GPT-5.6 benchmark run is recorded; adaptive role/model selection and
   learning recommendations wait for multiple comparable runs and a control.
 

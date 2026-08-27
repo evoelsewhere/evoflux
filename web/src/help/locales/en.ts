@@ -1491,6 +1491,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'After successful Spec or Plan submission, the chat tool result shows Review specification or Review plan and opens the exact Run in the EASD workbench. Retry drafting/planning repeats an interrupted attempt; Redraft/Replan preserves the prior draft until a replacement is persisted.',
       'Proof commands are one non-shell argv-style command per line. Use canonical commands such as `python -m pytest tests/test_simple.py`; shell chains, redirection, pipelines, and `python -c` snippets are rejected.',
       'The panel changes phase only after a durable repository write. Agent prose cannot unlock specification approval, required plan approval, implementation, Review, Verify, or Converge.',
+      'The Run header action rail shows Intent → Spec → Plan → Implement → Review → Verify → Done. It marks direct Plan as skipped, names the next action, and explains server-derived blockers before you click; Spec approval, Plan approval, and Converge require confirmation.',
       'Review outcome, Scope, risk, AC evidence policy and commands; edit by saving a newer draft revision, then explicitly Approve specification. The agent cannot approve it.',
       'The Spec recommends direct or planned flow. Direct skips Plan only for low-risk single-boundary work; planned persists a typed mission graph and only user Approve plan unlocks implementation.',
       'Use Board for workflow state, Table for comparison, or List for compact navigation. Search spans title, status, risk, and repository.',

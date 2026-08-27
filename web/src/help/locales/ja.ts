@@ -1467,6 +1467,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Spec または Plan の submit が成功すると、chat tool result に Review specification または Review plan が表示され、EASD workbench で該当 Run を開きます。Retry drafting/planning は中断した attempt を再実行し、Redraft/Replan は replacement が persist されるまで以前の draft を保持します。',
       'Proof command は shell を介さない argv-style command を1行ずつ使用します。`python -m pytest tests/test_simple.py` のような canonical command を使い、shell chain、redirection、pipeline、`python -c` snippet は使用しません。',
       'Panel は durable repository write の後だけ phase を変更します。Agent prose では Spec/required Plan approval、implementation、Review、Verify、Converge を解除できません。',
+      'Run header の action rail は Intent → Spec → Plan → Implement → Review → Verify → Done を表示します。Direct flow では Plan を skipped と明示し、next action と server-derived blocker を操作前に示します。Spec approval、Plan approval、Converge には確認が必要です。',
       'Outcome、Scope、risk、各 AC evidence policy、commands を review し、必要なら新しい draft revision を保存してからユーザーが Approve specification します。Agent は approve できません。',
       'Spec は direct または planned flow を推奨します。Direct は low-risk single-boundary だけ Plan を skip し、planned は typed mission graph を永続化して user の Approve plan 後に implementation を解除します。',
       'Board は進行状態、Table は比較、List はコンパクトな移動に使います。Title、status、risk、repository を検索できます。',

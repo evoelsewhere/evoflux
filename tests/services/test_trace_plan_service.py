@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.models.chat import ChatSession
+from app.models.team import DelegationTask
 from app.services import trace_service
 from app.services.trace_contracts import (
     TracePlan,
@@ -186,6 +187,13 @@ async def test_direct_flow_skips_plan_but_keeps_review_verify_and_converge(
         )
         assert run.status == "accepted"
         assert run.active_plan_revision_id is None
+        accepted_detail = await trace_service.run_detail(db, run.id)
+        assert accepted_detail["action_rail"]["primary_action"] == (
+            "start_implementation"
+        )
+        assert [
+            action["id"] for action in accepted_detail["action_rail"]["actions"]
+        ] == ["start_implementation"]
         with pytest.raises(trace_service.TraceConflict, match="skips Plan"):
             await trace_service.start_plan_authoring_in_session(
                 db, run_id=run.id, session_id=session.id
@@ -424,6 +432,9 @@ async def test_review_and_verify_are_distinct_user_controlled_phases(
             expected_hash=plan_revision.content_hash,
         )
         await _start(db, run)
+        active_detail = await trace_service.run_detail(db, run.id)
+        assert active_detail["action_rail"]["primary_action"] == "start_review"
+        assert active_detail["action_rail"]["actions"][0]["state"] == "available"
         await trace_service.create_evidence(
             db,
             run_id=run.id,
@@ -443,6 +454,11 @@ async def test_review_and_verify_are_distinct_user_controlled_phases(
             db, run_id=run.id, session_id=session.id
         )
         assert run.status == "reviewing"
+        reviewing_detail = await trace_service.run_detail(db, run.id)
+        verify_action = reviewing_detail["action_rail"]["actions"][0]
+        assert verify_action["id"] == "start_verification"
+        assert verify_action["state"] == "blocked"
+        assert verify_action["blockers"][0]["code"] == "review_evidence_required"
         with pytest.raises(trace_service.TraceConflict, match="review evidence"):
             await trace_service.start_verification_in_session(
                 db, run_id=run.id, session_id=session.id
@@ -467,6 +483,8 @@ async def test_review_and_verify_are_distinct_user_controlled_phases(
         )
         assert rows[0].kind == "review"
         assert rows[0].payload["independent"] is False
+        reviewed_detail = await trace_service.run_detail(db, run.id)
+        assert reviewed_detail["action_rail"]["actions"][0]["state"] == "available"
         await trace_service.start_verification_in_session(
             db, run_id=run.id, session_id=session.id
         )
@@ -476,3 +494,75 @@ async def test_review_and_verify_are_distinct_user_controlled_phases(
         )
         assert report["plan_hash"] == plan_revision.content_hash
         assert run.status == "converged"
+
+
+@pytest.mark.asyncio
+async def test_action_rail_lists_nonterminal_missions_before_review(tmp_path, setup_db):
+    from app.core.db import async_session_factory
+
+    async with async_session_factory() as db:
+        session = ChatSession(agent_name="lead", mode="coding", workspace=str(tmp_path))
+        db.add(session)
+        await db.flush()
+        specification = _spec(tmp_path.name)
+        run = await trace_service.create_run(
+            db,
+            workspace=str(tmp_path),
+            title=specification.title,
+            risk_tier=specification.risk_tier,
+            specification=specification,
+            session_id=session.id,
+        )
+        spec_draft = (await trace_service.run_detail(db, run.id))["revisions"][0]
+        await trace_service.accept_revision(
+            db,
+            run_id=run.id,
+            revision_id=spec_draft["id"],
+            expected_hash=spec_draft["content_hash"],
+        )
+        await trace_service.start_plan_authoring_in_session(
+            db, run_id=run.id, session_id=session.id
+        )
+        plan_revision = await trace_service.submit_authored_plan(
+            db,
+            run_id=run.id,
+            session_id=session.id,
+            plan=_plan(specification, tmp_path.name),
+            authoring={"mode": "agent_chat"},
+        )
+        await trace_service.accept_plan_revision(
+            db,
+            run_id=run.id,
+            revision_id=plan_revision.id,
+            expected_hash=plan_revision.content_hash,
+        )
+        await _start(db, run)
+        mission = DelegationTask(
+            lead_session_id=session.id,
+            trace_run_id=run.id,
+            delegator="lead",
+            recipient="builder#1",
+            status="running",
+            spec={"goal": "Implement AC-1", "acceptance_criteria": ["AC-1"]},
+        )
+        db.add(mission)
+        await db.flush()
+
+        detail = await trace_service.run_detail(db, run.id)
+        action = detail["action_rail"]["actions"][0]
+        assert action["id"] == "start_review"
+        assert action["state"] == "blocked"
+        assert action["blockers"] == [
+            {
+                "code": "mission_not_terminal",
+                "message": f"Mission {mission.id} is still running.",
+                "mission_id": str(mission.id),
+                "status": "running",
+            }
+        ]
+
+        mission.status = "completed"
+        db.add(mission)
+        await db.flush()
+        detail = await trace_service.run_detail(db, run.id)
+        assert detail["action_rail"]["actions"][0]["state"] == "available"

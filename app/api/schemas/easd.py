@@ -206,6 +206,23 @@ class EasdDeviationResolveRequest(BaseModel):
     resolved_spec_hash: str | None = Field(default=None, min_length=64, max_length=64)
 
 
+EasdRunStatus = Literal[
+    "intent",
+    "authoring",
+    "draft",
+    "accepted",
+    "planning",
+    "plan_review",
+    "planned",
+    "active",
+    "reviewing",
+    "verifying",
+    "converged",
+    "failed",
+    "cancelled",
+]
+
+
 class EasdRunOut(BaseModel):
     id: UUID
     project_id: UUID | None
@@ -213,21 +230,7 @@ class EasdRunOut(BaseModel):
     session_id: UUID | None
     title: str
     intent: dict | None
-    status: Literal[
-        "intent",
-        "authoring",
-        "draft",
-        "accepted",
-        "planning",
-        "plan_review",
-        "planned",
-        "active",
-        "reviewing",
-        "verifying",
-        "converged",
-        "failed",
-        "cancelled",
-    ]
+    status: EasdRunStatus
     risk_tier: Literal["trivial", "standard", "cross_layer", "critical"]
     active_spec_revision_id: UUID | None
     active_plan_revision_id: UUID | None
@@ -327,6 +330,43 @@ class EasdCriterionStateOut(BaseModel):
     mission_ids: list[UUID]
 
 
+class EasdActionBlockerOut(BaseModel):
+    code: str
+    message: str
+    criterion_id: str | None = None
+    mission_id: str | None = None
+    deviation_id: str | None = None
+    status: str | None = None
+    commands: list[str] | None = None
+
+
+EasdActionId = Literal[
+    "draft_specification",
+    "retry_specification",
+    "approve_specification",
+    "start_planning",
+    "retry_planning",
+    "approve_plan",
+    "start_implementation",
+    "start_review",
+    "start_verification",
+    "converge",
+]
+
+
+class EasdRunActionOut(BaseModel):
+    id: EasdActionId
+    label: str
+    state: Literal["available", "blocked"]
+    blockers: list[EasdActionBlockerOut]
+
+
+class EasdActionRailOut(BaseModel):
+    phase: EasdRunStatus
+    primary_action: EasdActionId | None
+    actions: list[EasdRunActionOut]
+
+
 class EasdRunListResponse(BaseModel):
     runs: list[EasdRunOut]
 
@@ -342,6 +382,7 @@ class EasdRunDetailResponse(BaseModel):
     evidence: list[EasdEvidenceOut]
     deviations: list[EasdDeviationOut]
     convergence: dict | None
+    action_rail: EasdActionRailOut
 
 
 class EasdConvergenceResponse(BaseModel):

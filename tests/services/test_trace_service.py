@@ -909,6 +909,21 @@ async def test_convergence_requires_every_planned_verification_command(
             db, run_id=run.id, session_id=lead.id
         )
 
+        detail = await trace_service.run_detail(db, run.id)
+        converge_action = detail["action_rail"]["actions"][0]
+        assert converge_action["id"] == "converge"
+        assert converge_action["state"] == "blocked"
+        assert converge_action["blockers"] == [
+            {
+                "code": "planned_verification_missing",
+                "message": (
+                    "Accepted verification commands still need passing machine "
+                    "evidence."
+                ),
+                "commands": ["pytest -q tests/services/test_trace_service.py"],
+            }
+        ]
+
         with pytest.raises(trace_service.TraceConvergenceError) as exc_info:
             await trace_service.converge_run(db, run_id=run.id, git_revision=None)
 
