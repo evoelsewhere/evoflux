@@ -59,6 +59,7 @@ from app.agent.schemas.chat import (
 from .schemas import XiaomiChatRequest, XiaomiMessage, XiaomiThinking
 
 _NO_THINKING = frozenset({"none", "off"})
+_THINKING_LEVELS = frozenset({"low", "medium", "high"})
 
 
 class _XiaomiCompletionsHandler(CompletionsHandler):
@@ -221,14 +222,18 @@ class _XiaomiCompletionsHandler(CompletionsHandler):
         return body
 
     def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
-        """Map ``thinking_level`` to MiMo's ``thinking`` toggle.
+        """Map ``thinking_level`` to MiMo's ``reasoning_effort`` parameter.
 
-        MiMo does not accept OpenAI's ``reasoning_effort`` field. Reasoning
-        is on by default for thinking-capable models; the only override is
-        to disable it via ``thinking: {"type": "disabled"}``.
+        MiMo supports ``reasoning_effort`` with values: none, low, medium, high.
+        When thinking_level is in _NO_THINKING, disable thinking entirely.
+        Otherwise, pass reasoning_effort to control the reasoning intensity.
         """
-        if merged.get("thinking_level") in _NO_THINKING:
+        thinking_level = merged.get("thinking_level")
+        if thinking_level in _NO_THINKING:
             body["thinking"] = XiaomiThinking(type="disabled").model_dump()
+        elif thinking_level in _THINKING_LEVELS:
+            # Pass reasoning_effort for low/medium/high levels
+            body["reasoning_effort"] = thinking_level
 
 
 class XiaomiProvider(ChatCompletionsOnlyProvider):
