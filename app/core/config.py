@@ -8,6 +8,17 @@ from pydantic.types import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _safe_home() -> Path | None:
+    """Return ``Path.home()`` or ``None`` when the home directory cannot be resolved."""
+    try:
+        return Path.home()
+    except RuntimeError:
+        return None
+
+
+_HOME_DIR = _safe_home()
+
+
 def _default_dirs(app_env: str) -> dict[str, Path]:
     """Return the default XDG-aligned roots for the given environment.
 
@@ -48,7 +59,7 @@ def _default_dirs(app_env: str) -> dict[str, Path]:
         .evoflux/dev/state/
         .evoflux/dev/cache/
     """
-    home = Path.home()
+    home = _HOME_DIR or Path(".")
     if app_env == "production":
         data = home / ".local" / "share" / "evoflux"
         return {
@@ -223,7 +234,7 @@ class Settings(BaseSettings):
         # always wins over the project default — and either can be absent.
         env_file=[
             ".env",
-            str(Path.home() / ".config" / "evoflux" / ".env"),
+            *([str(_HOME_DIR / ".config" / "evoflux" / ".env")] if _HOME_DIR else []),
         ],
         env_file_encoding="utf-8",
         extra="ignore",
