@@ -135,17 +135,16 @@ class TestXiaomiProviderFactory:
 
 
 # ============================================================================
-# thinking_level -> MiMo's `thinking` toggle (never reasoning_effort)
+# thinking_level -> MiMo's `reasoning_effort` parameter
 # ============================================================================
 
 
 class TestXiaomiThinking:
-    """MiMo does not accept OpenAI's `reasoning_effort` field.
+    """MiMo supports `reasoning_effort` with values: none, low, medium, high.
 
-    The base `CompletionsHandler.customize_thinking` sends `reasoning_effort`
-    whenever `thinking_level` is set — MiMo's handler must never send that
-    field, and should only send `thinking: {type: disabled}` when thinking
-    is explicitly turned off. MiMo reasons by default otherwise.
+    When thinking_level is 'none' or 'off', thinking is disabled via the
+    thinking toggle. For low/medium/high, reasoning_effort is passed to
+    control the reasoning intensity.
     """
 
     def _build_body(self, thinking_level: str | None = None) -> dict:
@@ -167,9 +166,19 @@ class TestXiaomiThinking:
             merged=p._merged_kwargs(),
         )
 
-    def test_reasoning_effort_never_sent_when_thinking_level_high(self):
+    def test_reasoning_effort_sent_when_thinking_level_high(self):
         body = self._build_body("high")
-        assert "reasoning_effort" not in body
+        assert body.get("reasoning_effort") == "high"
+        assert "thinking" not in body
+
+    def test_reasoning_effort_sent_when_thinking_level_medium(self):
+        body = self._build_body("medium")
+        assert body.get("reasoning_effort") == "medium"
+        assert "thinking" not in body
+
+    def test_reasoning_effort_sent_when_thinking_level_low(self):
+        body = self._build_body("low")
+        assert body.get("reasoning_effort") == "low"
         assert "thinking" not in body
 
     def test_reasoning_effort_never_sent_when_thinking_level_absent(self):
