@@ -32,7 +32,11 @@ It previews phase transition, exact Spec/Plan/session identities, and preserved
 history before confirmation. Redraft/Replan reuse the existing revision-safe
 paths; active implementation, Review, and Verify retries remain in the same
 phase, append a recovery event, then reopen the matching EASD chat prompt.
-Stale repository generations fail closed. Converged Runs are never reopened.
+For pre-implementation Runs, **Continue in this Coding session** explicitly
+rebinds ownership to the current compatible Coding session, preserves the
+append-only history, and records a `run_rebounded` event. Implementation,
+Review, Verify, and converged Runs cannot be rebound. Stale repository
+generations fail closed. Converged Runs are never reopened.
 
 An open Run maintains a scoped SSE connection. The stream registers presence,
 replays repository events after the client's last sequence, and then delivers

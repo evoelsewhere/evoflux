@@ -345,7 +345,6 @@ async def test_minimal_intent_authors_reviewable_spec_before_acceptance(
         assert replacement.version == 2
         assert revision.status == "superseded"
         assert replacement.status == "draft"
-
         accepted = await trace_service.accept_revision(
             db,
             run_id=run.id,
@@ -354,6 +353,48 @@ async def test_minimal_intent_authors_reviewable_spec_before_acceptance(
         )
         assert accepted.status == "accepted"
         assert run.status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_recovery_rebinds_preimplementation_run_and_records_event(tmp_path, setup_db):
+    from app.core.db import async_session_factory
+
+    async with async_session_factory() as db:
+        original = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        current = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        db.add(original)
+        db.add(current)
+        await db.flush()
+        run = await trace_service.create_intent_run(
+            db,
+            workspace=str(tmp_path),
+            title="Rebindable EASD run",
+            problem="Continue authoring after the original session ended.",
+            outcome="",
+            session_id=original.id,
+        )
+        await trace_service.start_spec_authoring_in_session(
+            db, run_id=run.id, session_id=original.id
+        )
+
+        preview = await trace_service.recovery_preview(db, run.id)
+        action = next(item for item in preview["actions"] if item["id"] == "rebind_to_current_session")
+        rebound, recovery = await trace_service.recover_run_in_session(
+            db,
+            run_id=run.id,
+            action_id=action["id"],
+            session_id=current.id,
+            expected_generation=preview["store_generation"],
+        )
+
+        assert rebound.session_id == current.id
+        assert recovery["session_id"] == str(current.id)
+        assert recovery["id"] == "rebind_to_current_session"
+        assert rebound.status == "authoring"
 
 
 @pytest.mark.asyncio

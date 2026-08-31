@@ -1366,11 +1366,13 @@ function RunsOverview({
 function RunDetail({
   runId,
   setup,
+  sessionId,
   onBack,
   onRunInChat,
 }: {
   runId: string
   setup: EasdSetupResponse
+  sessionId?: string | null
   onBack: () => void
   onRunInChat?: (request: EasdRunChatRequest) => void
 }) {
@@ -1626,15 +1628,20 @@ function RunDetail({
   }
 
   const executeRecovery = async (action: EasdRecoveryAction): Promise<boolean> => {
-    if (!detail?.run.session_id || !onRunInChat || !recoveryQuery.data) return false
+    if (!detail) return false
+    const currentDetail = detail as EasdRunDetail
+    const targetSessionId = action.id === 'rebind_to_current_session'
+      ? sessionId
+      : currentDetail.run.session_id
+    if (!targetSessionId || !onRunInChat || !recoveryQuery.data) return false
     try {
       const result = await recoveryMutation.mutateAsync({
         action_id: action.id,
-        session_id: detail.run.session_id,
+        session_id: targetSessionId,
         expected_generation: recoveryQuery.data.store_generation,
         idempotency_key: crypto.randomUUID(),
       })
-      const recoveredDetail = { ...detail, run: result.run }
+      const recoveredDetail: EasdRunDetail = { ...currentDetail, run: result.run }
       const prompt = action.prompt_phase === 'authoring'
         ? specificationAuthoringPrompt(recoveredDetail)
         : action.prompt_phase === 'planning'
@@ -1645,9 +1652,9 @@ function RunDetail({
               ? reviewPrompt(recoveredDetail)
               : verificationPrompt(recoveredDetail)
       onRunInChat({
-        sessionId: detail.run.session_id,
-        workspace: detail.run.workspace,
-        projectId: detail.run.project_id,
+        sessionId: targetSessionId,
+        workspace: currentDetail.run.workspace,
+        projectId: currentDetail.run.project_id,
         prompt,
         autoSend: true,
         phase: action.prompt_phase,
@@ -2063,7 +2070,7 @@ export function EvoAgentSpecsPanel({ workspace, projectId, sessionId, active = t
     }
   }
 
-  if (selectedRunId && setup) return <RunDetail runId={selectedRunId} setup={setup} onBack={() => setSelectedRunId(null)} onRunInChat={onRunInChat} />
+  if (selectedRunId && setup) return <RunDetail runId={selectedRunId} setup={setup} sessionId={sessionId} onBack={() => setSelectedRunId(null)} onRunInChat={onRunInChat} />
   if (creating && setup) {
     return (
       <CreateIntentForm
