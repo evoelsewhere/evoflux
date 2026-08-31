@@ -1104,6 +1104,39 @@ describe('EvoAgentSpecsPanel', () => {
     expect(rebindMutate).toHaveBeenCalledWith('session-1')
   })
 
+  it('offers to adopt a run whose session differs from the open one, before any action fails', () => {
+    mocks.action.mockReturnValue({ error: null, isPending: false, mutateAsync: vi.fn() })
+    const rebindMutate = vi.fn()
+    mocks.rebindAction.mockReturnValue({
+      error: null,
+      isPending: false,
+      mutate: rebindMutate,
+      mutateAsync: vi.fn(),
+    })
+    mocks.detail.mockReturnValue({
+      data: {
+        ...detail,
+        run: { ...run, session_id: 'session-other' },
+      } satisfies EasdRunDetail,
+      isLoading: false,
+    })
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+
+    const header = screen.getByRole('banner')
+    expect(within(header).getByText(/This run belongs to another Coding session/)).toBeInTheDocument()
+    fireEvent.click(within(header).getByRole('button', { name: 'Adopt run' }))
+    expect(rebindMutate).toHaveBeenCalledWith('session-1')
+  })
+
+  it('keeps the adopt affordance hidden while the run already belongs to the open session', () => {
+    mocks.action.mockReturnValue({ error: null, isPending: false, mutateAsync: vi.fn() })
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+
+    expect(screen.queryByRole('button', { name: 'Adopt run' })).not.toBeInTheDocument()
+  })
+
   it('confirms Converge after the server marks the action available', async () => {
     const mutateAsync = vi.fn().mockResolvedValue({ report: {} })
     mocks.action.mockReturnValue({ error: null, isPending: false, mutateAsync })
