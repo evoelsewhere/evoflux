@@ -1487,6 +1487,13 @@ function RunDetail({
     startReviewMutation.error,
     startVerificationMutation.error,
   ].find((error): error is EasdSessionMismatchApiError => error instanceof EasdSessionMismatchApiError)
+  // Every phase action hands off to the run's own session, so a mismatch is
+  // usually visible in the data long before any request fails. Offer the
+  // adoption path from the run state itself, not only from a rejected call.
+  const sessionMismatch = Boolean(
+    sessionMismatchError
+    || (sessionId && detail?.run.session_id && detail.run.session_id !== sessionId),
+  )
   const combinedActionError = [
     acceptMutation.error,
     acceptPlanMutation.error,
@@ -1869,7 +1876,7 @@ function RunDetail({
             {errorText(combinedActionError)}
           </p>
         )}
-        {sessionMismatchError && (
+        {sessionMismatch && (
           <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-t border-(--color-warning)/35 bg-(--color-warning)/8 px-3 py-2 @xl/easd:px-4">
             <p className="text-[10px] text-(--color-text)">This run belongs to another Coding session. Adopt it into this session to continue?</p>
             <Button
