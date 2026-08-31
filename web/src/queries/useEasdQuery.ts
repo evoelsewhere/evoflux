@@ -20,6 +20,7 @@ import {
   initializeEasdSetup,
   listEasdRuns,
   publishEasdRun,
+  rebindEasdRun,
   retryEasdPlanningInChat,
   retryEasdSpecAuthoringInChat,
   startEasdRunInChat,
@@ -259,6 +260,17 @@ export function useRetryEasdSpecAuthoringMutation(runId: string) {
   return useMutation({
     mutationFn: (sessionId: string) => retryEasdSpecAuthoringInChat(runId, sessionId),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.easd.runs() }),
+  })
+}
+
+export function useRebindEasdRunMutation(runId: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (sessionId: string) => rebindEasdRun(runId, sessionId),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: queryKeys.easd.runs() })
+      client.invalidateQueries({ queryKey: queryKeys.easd.detail(runId) })
+    },
   })
 }
 

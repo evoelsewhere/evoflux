@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { EasdSessionMismatchApiError } from '@/api/client'
 import type { EasdRunDetail, EasdRunTrace } from '@/api/types'
 import { EvoAgentSpecsPanel } from '@/components/EvoAgentSpecsPanel'
 import { useUIStore } from '@/stores/useUIStore'
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   migration: vi.fn(),
   migrationAction: vi.fn(),
   action: vi.fn(),
+  rebindAction: vi.fn(),
   generate: vi.fn(),
   projectSessions: vi.fn(),
   workspaceSessions: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock('@/queries', () => ({
   useCreateEasdRunMutation: () => mocks.action(),
   useCreateEasdRevisionMutation: () => mocks.action(),
   useAcceptEasdRevisionMutation: () => mocks.action(),
+  useRebindEasdRunMutation: (runId: string) => mocks.rebindAction(runId),
   useStartEasdRunInChatMutation: () => mocks.action(),
   useStartEasdPlanningMutation: () => mocks.action(),
   useRetryEasdPlanningMutation: () => mocks.action(),
@@ -363,6 +366,7 @@ beforeEach(() => {
   mocks.migration.mockReset()
   mocks.migrationAction.mockReset()
   mocks.action.mockReset()
+  mocks.rebindAction.mockReset()
   mocks.generate.mockReset()
   mocks.projectSessions.mockReset()
   mocks.workspaceSessions.mockReset()
@@ -394,6 +398,12 @@ beforeEach(() => {
   mocks.action.mockReturnValue({
     error: null,
     isPending: false,
+    mutateAsync: vi.fn(),
+  })
+  mocks.rebindAction.mockReturnValue({
+    error: null,
+    isPending: false,
+    mutate: vi.fn(),
     mutateAsync: vi.fn(),
   })
   mocks.generate.mockReturnValue({
@@ -1061,6 +1071,37 @@ describe('EvoAgentSpecsPanel', () => {
     expect(screen.getByRole('list', { name: 'EASD lifecycle' })).toBeInTheDocument()
     expect(screen.getByText('Mission mission-1 is still running.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Run review in chat' })).toBeDisabled()
+  })
+
+  it('offers to adopt a run into the current session after a phase-start session mismatch', () => {
+    const mismatchError = new EasdSessionMismatchApiError('run-1', 'session-other')
+    mocks.action.mockReturnValue({
+      error: mismatchError,
+      isPending: false,
+      mutateAsync: vi.fn(),
+    })
+    const rebindMutate = vi.fn()
+    mocks.rebindAction.mockReturnValue({
+      error: null,
+      isPending: false,
+      mutate: rebindMutate,
+      mutateAsync: vi.fn(),
+    })
+    render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" sessionId="session-1" />)
+    fireEvent.click(screen.getByRole('button', { name: /EASD feature/i }))
+
+    // Scope to the Run header: the mismatch error is shared (via the test's
+    // generic action mock) with the unrelated evidence/deviation forms below,
+    // which render raw error text of their own — the assertion here is about
+    // the header's combined phase-start error line specifically.
+    const header = screen.getByRole('banner')
+    expect(within(header).queryByText(mismatchError.message)).not.toBeInTheDocument()
+    expect(within(header).getByText(/This run belongs to another Coding session/)).toBeInTheDocument()
+    const adoptButton = within(header).getByRole('button', { name: 'Adopt run' })
+    expect(mocks.rebindAction).toHaveBeenCalledWith('run-1')
+
+    fireEvent.click(adoptButton)
+    expect(rebindMutate).toHaveBeenCalledWith('session-1')
   })
 
   it('confirms Converge after the server marks the action available', async () => {

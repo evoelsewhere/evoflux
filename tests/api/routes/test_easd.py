@@ -1174,3 +1174,81 @@ def test_easd_generation_uses_authorized_project_context_without_creating_run(
     sent = provider.chat.await_args.args[0][1].content
     assert "api:routes.py" in sent
     assert "web:view.tsx" in sent
+
+
+def _second_session(client, workspace: str) -> dict:
+    """Resolve a distinct Coding session in the same workspace as the default one."""
+    return client.post(
+        "/api/team/sessions/resolve",
+        json={
+            "mode": "coding",
+            "workspace": workspace,
+            "create": True,
+            "tags": ["second-session"],
+        },
+    ).json()
+
+
+def test_easd_rebind_moves_run_to_current_session(client, tmp_path):
+    _initialize(client, str(tmp_path))
+    session_a = client.post(
+        "/api/team/sessions/resolve",
+        json={"mode": "coding", "workspace": str(tmp_path), "create": True},
+    ).json()
+    session_b = _second_session(client, str(tmp_path))
+    assert session_b["id"] != session_a["id"]
+
+    created = client.post("/api/easd/runs", json=_payload(str(tmp_path))).json()
+    run_id = created["run"]["id"]
+    draft = created["revisions"][0]
+    client.post(
+        f"/api/easd/runs/{run_id}/revisions/{draft['id']}/accept",
+        json={"expected_hash": draft["content_hash"]},
+    )
+    _approve_plan(client, client.get(f"/api/easd/runs/{run_id}").json())
+    active = _start_run(client, str(tmp_path), run_id, session_a["id"])
+    assert active.status_code == 200, active.text
+
+    rebound = client.post(
+        f"/api/easd/runs/{run_id}/rebind",
+        json={"session_id": session_b["id"]},
+    )
+    assert rebound.status_code == 200, rebound.text
+    assert rebound.json()["session_id"] == session_b["id"]
+    assert rebound.json()["status"] == "active"
+
+    detail = client.get(f"/api/easd/runs/{run_id}").json()["run"]
+    assert detail["session_id"] == session_b["id"]
+
+
+def test_easd_phase_start_with_mismatched_session_returns_structured_409(
+    client, tmp_path
+):
+    _initialize(client, str(tmp_path))
+    session_a = client.post(
+        "/api/team/sessions/resolve",
+        json={"mode": "coding", "workspace": str(tmp_path), "create": True},
+    ).json()
+    session_b = _second_session(client, str(tmp_path))
+    assert session_b["id"] != session_a["id"]
+
+    created = client.post("/api/easd/runs", json=_payload(str(tmp_path))).json()
+    run_id = created["run"]["id"]
+    draft = created["revisions"][0]
+    client.post(
+        f"/api/easd/runs/{run_id}/revisions/{draft['id']}/accept",
+        json={"expected_hash": draft["content_hash"]},
+    )
+    _approve_plan(client, client.get(f"/api/easd/runs/{run_id}").json())
+    active = _start_run(client, str(tmp_path), run_id, session_a["id"])
+    assert active.status_code == 200, active.text
+
+    mismatched = client.post(
+        f"/api/easd/runs/{run_id}/review/start",
+        json={"session_id": session_b["id"]},
+    )
+    assert mismatched.status_code == 409, mismatched.text
+    detail = mismatched.json()["detail"]
+    assert detail["code"] == "easd_session_mismatch"
+    assert detail["run_id"] == run_id
+    assert detail["current_session_id"] == session_a["id"]
