@@ -74,6 +74,7 @@ from app.services.trace_service import (
     TraceConflict,
     TraceConvergenceError,
     TraceNotFound,
+    TraceSessionMismatch,
     TraceValidationError,
     accept_revision,
     accept_plan_revision,
@@ -87,6 +88,7 @@ from app.services.trace_service import (
     create_plan_revision,
     get_run,
     list_runs,
+    rebind_run_session,
     retry_plan_authoring_in_session,
     retry_spec_authoring_in_session,
     read_run_trace_events,
@@ -128,6 +130,15 @@ def _raise_easd(exc: Exception) -> None:
         raise HTTPException(
             status_code=409,
             detail={"code": "easd_not_converged", "reasons": exc.reasons},
+        ) from exc
+    if isinstance(exc, TraceSessionMismatch):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "easd_session_mismatch",
+                "run_id": str(exc.run_id),
+                "current_session_id": str(exc.current_session_id),
+            },
         ) from exc
     if isinstance(exc, TraceConflict):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -915,6 +926,25 @@ async def start_easd_spec_authoring(
     _require_idle_chat(body.session_id)
     try:
         run = await start_spec_authoring_in_session(
+            db,
+            run_id=run_id,
+            session_id=body.session_id,
+        )
+        return EasdRunOut.model_validate(serialize_run(run))
+    except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+
+
+@router.post("/runs/{run_id}/rebind", response_model=EasdRunOut)
+async def rebind_easd_run(
+    run_id: UUID,
+    body: EasdRunStartRequest,
+    db: WriteDbSession,
+) -> EasdRunOut:
+    _require_idle_chat(body.session_id)
+    try:
+        run = await rebind_run_session(
             db,
             run_id=run_id,
             session_id=body.session_id,
