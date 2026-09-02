@@ -465,6 +465,18 @@ def _provider_is_configured(entry: "ProviderEntry") -> bool:
     if kind == "local":
         return True
     if kind == "oauth":
+        if entry["id"] == "copilot":
+            # Accept env-token fallback when OAuth cache is missing.
+            if any(
+                os.environ.get(k)
+                for k in (
+                    "COPILOT_GITHUB_TOKEN",
+                    "GH_TOKEN",
+                    "GITHUB_TOKEN",
+                    "GITHUB_COPILOT_TOKEN",
+                )
+            ):
+                return True
         cache_dir = Path(settings.EVOFLUX_CACHE_DIR or "")
         token_files = {
             "codex": cache_dir / "codex_oauth.json",
