@@ -73,11 +73,57 @@ def test_anthropic_payload_converts_system_tools_and_thinking() -> None:
         provider._merged_kwargs(),
     )
 
-    assert payload["system"] == "be concise"
+    assert payload["system"] == [
+        {
+            "type": "text",
+            "text": "be concise",
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
     assert payload["tools"][0]["name"] == "lookup"
     assert payload["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert payload["output_config"] == {"effort": "low"}
-    assert payload["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in payload
+
+
+def test_anthropic_payload_marks_cache_breakpoint_on_last_tool() -> None:
+    provider = AnthropicProvider(api_key="sk-ant-test", model="claude-sonnet-4-6")
+
+    payload = provider._payload(
+        [HumanMessage(content="hi")],
+        [
+            {
+                "type": "function",
+                "function": {"name": "read", "parameters": {"type": "object"}},
+            },
+            {
+                "type": "function",
+                "function": {"name": "write", "parameters": {"type": "object"}},
+            },
+        ],
+        provider._merged_kwargs(),
+    )
+
+    assert "cache_control" not in payload["tools"][0]
+    assert payload["tools"][1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_anthropic_payload_marks_cache_breakpoint_on_last_message() -> None:
+    provider = AnthropicProvider(api_key="sk-ant-test", model="claude-sonnet-4-6")
+
+    payload = provider._payload(
+        [
+            HumanMessage(content="first"),
+            AssistantMessage(content="ack", tool_calls=None),
+            ToolMessage(tool_call_id="toolu_1", content="result"),
+        ],
+        None,
+        provider._merged_kwargs(),
+    )
+
+    assert "cache_control" not in payload["messages"][0]["content"]
+    last = payload["messages"][-1]["content"]
+    assert last[-1]["cache_control"] == {"type": "ephemeral"}
 
 
 def test_anthropic_payload_allows_explicit_cache_opt_out() -> None:
@@ -88,10 +134,20 @@ def test_anthropic_payload_allows_explicit_cache_opt_out() -> None:
     )
 
     payload = provider._payload(
-        [HumanMessage(content="hi")], None, provider._merged_kwargs()
+        [SystemMessage(content="be concise"), HumanMessage(content="hi")],
+        [
+            {
+                "type": "function",
+                "function": {"name": "read", "parameters": {"type": "object"}},
+            }
+        ],
+        provider._merged_kwargs(),
     )
 
     assert "cache_control" not in payload
+    assert payload["system"] == "be concise"
+    assert "cache_control" not in payload["tools"][0]
+    assert payload["messages"][-1]["content"] == "hi"
 
 
 def test_anthropic_usage_normalizes_read_write_and_total_input() -> None:
