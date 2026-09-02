@@ -404,7 +404,8 @@ class CompletionsHandler:
                                 index=choice.index or 0,
                                 delta=ChatCompletionDelta(
                                     content=delta.content,
-                                    reasoning_content=delta.reasoning_content,
+                                    reasoning_content=delta.reasoning_content
+                                    or delta.reasoning_text,
                                     tool_calls=delta_tool_calls or None,
                                 ),
                                 finish_reason=choice.finish_reason,

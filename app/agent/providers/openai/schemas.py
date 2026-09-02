@@ -201,6 +201,8 @@ class OpenAIStreamDelta(BaseModel):
     content: str | None = None
     # Non-standard: present on some compatible providers for reasoning traces.
     reasoning_content: str | None = None
+    # Copilot Chat Completions returns reasoning_text
+    reasoning_text: str | None = None
     tool_calls: list[OpenAIToolCallDelta] | None = None
     refusal: str | None = None
 

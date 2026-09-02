@@ -43,8 +43,25 @@ _DEFAULT_HEADERS: dict[str, str] = {
     "Content-Type": "application/json",
     "User-Agent": "EvoFlux/1.0.0",
     "Openai-Intent": "conversation-edits",
-    "x-initiator": "user",
 }
+
+
+def _is_image_block(block: dict[str, Any]) -> bool:
+    if block.get("type") == "image_url":
+        return True
+    if block.get("type") == "input_image":
+        return True
+    if block.get("type") == "image" and "source" in block:
+        return True
+    return False
+
+
+def _has_image_in_messages(messages: list[dict[str, Any]]) -> bool:
+    for msg in messages:
+        for block in msg.get("content", []):
+            if isinstance(block, dict) and _is_image_block(block):
+                return True
+    return False
 
 
 def _endpoint_for_model(model: str) -> str:
@@ -89,6 +106,15 @@ class _CopilotCompletionsHandler(CompletionsHandler):
         if thinking_level and thinking_level in supported:
             body["reasoning_effort"] = thinking_level
 
+    def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
+        """Dynamic wire headers: ``x-initiator`` and vision support."""
+        headers = {**self.headers}
+        has_tools = bool(merged.get("tools") or merged.get("tool_choice"))
+        headers["x-initiator"] = "agent" if has_tools else "user"
+        if _has_image_in_messages(merged.get("messages", [])):
+            headers["Copilot-Vision-Request"] = "true"
+        return headers
+
     def _usage_from_openai(self, u: Any) -> Usage:
         usage = super()._usage_from_openai(u)
         # Copilot quirk: reasoning_tokens at the top level of usage.
@@ -127,6 +153,15 @@ class _CopilotResponsesHandler(ResponsesHandler):
         if merged.get("top_p") is not None:
             body["top_p"] = merged["top_p"]
         return body
+
+    def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
+        """Dynamic wire headers: ``x-initiator`` and vision support."""
+        headers = {**self.headers}
+        has_tools = bool(merged.get("tools") or merged.get("tool_choice"))
+        headers["x-initiator"] = "agent" if has_tools else "user"
+        if _has_image_in_messages(merged.get("messages", [])):
+            headers["Copilot-Vision-Request"] = "true"
+        return headers
 
     def _extract_call_id_and_name(self, event: dict[str, Any]) -> tuple[str, str]:
         call_id = event.get("item_id") or event.get("call_id", "")
