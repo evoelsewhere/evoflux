@@ -4326,7 +4326,6 @@ def serialize_run(row: TraceRun) -> dict[str, Any]:
         "converged_at": row.converged_at,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
-        "preferred_model": row.preferred_model,
         "compact_before_run": row.compact_before_run,
         "auto_pilot": row.auto_pilot,
         "repository_document_hash": _REPOSITORY_RUN_HASHES.get(row.id),

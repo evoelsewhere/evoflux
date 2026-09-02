@@ -69,7 +69,6 @@ const run = {
   converged_at: null,
   created_at: '2026-08-23T00:00:00Z',
   updated_at: '2026-08-23T00:00:00Z',
-  preferred_model: null,
   compact_before_run: false,
   auto_pilot: false,
 } as const
