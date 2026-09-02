@@ -679,19 +679,17 @@ html[data-native-sidebar-glass="windows"] [data-settings-sidebar] {
   backdrop-filter: none;
 }
 
+/* No borders on sidebar cards — seamless glass surface. */
 [data-desktop-sidebar-glass="true"] [data-sidebar-card] {
   border: 0;
 }
 
-/* Coding composes four stacked cards. A single quiet hairline between them
- * avoids the heavy double borders produced by two adjacent card outlines. */
 [data-desktop-sidebar-glass="true"] [data-sidebar-card]:not(:last-child) {
-  border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 38%, transparent);
+  border-bottom: 0;
 }
 
-/* Keep the sidebar/content boundary visible without turning it into a rail. */
 [data-desktop-sidebar-glass="true"] {
-  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--color-border-subtle) 32%, transparent);
+  box-shadow: none;
 }
 
 html[data-native-sidebar-glass] [data-settings-sidebar] {
