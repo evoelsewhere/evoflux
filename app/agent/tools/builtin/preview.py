@@ -171,6 +171,7 @@ class LaunchConfiguration:
     env: tuple[tuple[str, str], ...] = ()
     reuse_existing: bool = True
     startup_timeout_seconds: float = _PORT_WAIT_SECONDS
+    depends_on: str | None = None
 
     @property
     def command_argv(self) -> list[str]:
@@ -188,6 +189,7 @@ class LaunchConfiguration:
                 "env": self.env,
                 "reuseExisting": self.reuse_existing,
                 "startupTimeoutSeconds": self.startup_timeout_seconds,
+                "dependsOn": self.depends_on,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -291,6 +293,14 @@ def _validate_configuration(raw: Any, source: str, index: int) -> LaunchConfigur
             f"between {int(_MIN_STARTUP_TIMEOUT_SECONDS)} and {int(_MAX_STARTUP_TIMEOUT_SECONDS)}."
         )
 
+    depends_on = raw.get("dependsOn")
+    if depends_on is not None:
+        if not isinstance(depends_on, str) or not depends_on.strip():
+            raise ValueError(
+                f"Configuration '{name}' in {source} must use a non-empty string 'dependsOn'."
+            )
+        depends_on = depends_on.strip()
+
     return LaunchConfiguration(
         name=normalized_name,
         runtime_executable=executable.strip(),
@@ -300,6 +310,7 @@ def _validate_configuration(raw: Any, source: str, index: int) -> LaunchConfigur
         env=tuple(sorted(env)),
         reuse_existing=reuse_existing,
         startup_timeout_seconds=timeout,
+        depends_on=depends_on,
     )
 
 
@@ -330,8 +341,37 @@ def _load_configurations(
         names = [item.name for item in validated]
         if len(names) != len(set(names)):
             raise ValueError(f"{path} contains duplicate configuration names.")
+
+        # Validate dependsOn references and detect cycles.
+        name_set = set(names)
+        for cfg in validated:
+            if cfg.depends_on is not None and cfg.depends_on not in name_set:
+                raise ValueError(
+                    f"Configuration '{cfg.name}' in {path} has dependsOn="
+                    f"'{cfg.depends_on}' but no configuration with that name exists."
+                )
+
+        # Detect cycles using DFS.
+        _validate_no_cycles(validated, str(path))
+
         return validated, str(path)
     return [], None
+
+
+def _validate_no_cycles(configs: list[LaunchConfiguration], source: str) -> None:
+    """Detect circular dependsOn references."""
+    by_name = {cfg.name: cfg for cfg in configs}
+
+    def _visit(name: str, path: set[str]) -> None:
+        if name in path:
+            cycle = " -> ".join(sorted(path)) + f" -> {name}"
+            raise ValueError(f"Circular dependsOn detected in {source}: {cycle}")
+        cfg = by_name.get(name)
+        if cfg is not None and cfg.depends_on is not None:
+            _visit(cfg.depends_on, path | {name})
+
+    for cfg in configs:
+        _visit(cfg.name, set())
 
 
 def _find_configuration(
@@ -409,6 +449,26 @@ async def _wait_for_port(server: PreviewServer, timeout: float) -> str | None:
 
 async def _start(name: str | None, workspace: Path) -> str:
     cfg, _source = _find_configuration(workspace, name)
+
+    # Resolve dependsOn: ensure the dependency is running before starting.
+    if cfg.depends_on is not None:
+        dep_server = _servers.get((str(workspace), cfg.depends_on))
+        if dep_server is None:
+            # Dependency not started yet — start it first (recursive).
+            dep_result = await _start(cfg.depends_on, workspace)
+            if "ready on" not in dep_result and "reusing" not in dep_result:
+                return (
+                    f"Failed to start dependency '{cfg.depends_on}' "
+                    f"required by '{cfg.name}':\n{dep_result}"
+                )
+            # Verify the dependency port is actually open.
+            dep_cfg, _ = _find_configuration(workspace, cfg.depends_on)
+            if not await _port_open(dep_cfg.port):
+                return (
+                    f"Dependency '{cfg.depends_on}' started but did not "
+                    f"open port {dep_cfg.port} in time."
+                )
+
     key = (str(workspace), cfg.name)
     async with _locked_server(key):
         existing = _servers.get(key)
@@ -696,9 +756,12 @@ async def _status(workspace: Path) -> str:
                 config_note = " — configuration removed"
             elif current.fingerprint != server.config_fingerprint:
                 config_note = " — configuration changed; call start to restart"
+            depends_note = ""
+            if current is not None and current.depends_on is not None:
+                depends_note = f" — depends on: {current.depends_on}"
             lines.append(
                 f"{server.name}: {state} — http://localhost:{server.port} "
-                f"({origin}){config_note}"
+                f"({origin}){config_note}{depends_note}"
             )
     if config_error:
         lines.append(f"Launch config error: {config_error}")
@@ -791,6 +854,21 @@ async def _preview(
            "runtimeArgs": ["run", "dev"], "port": 5173,
            "reuseExisting": true, "startupTimeoutSeconds": 60}]}
 
+    For projects requiring multiple servers (e.g., backend + frontend),
+    use ``dependsOn`` to express startup order::
+
+        {"version": "0.0.2", "configurations": [
+          {"name": "backend", "runtimeExecutable": "uvicorn",
+           "runtimeArgs": ["app.main:app", "--port", "8000"],
+           "port": 8000},
+          {"name": "frontend", "runtimeExecutable": "npm",
+           "runtimeArgs": ["run", "dev"], "port": 5173,
+           "dependsOn": "backend"}]}
+
+    When ``dependsOn`` is set, starting the dependent configuration
+    automatically starts its dependency first and waits for its port
+    to be ready. Circular dependencies are rejected at load time.
+
     ``start`` reuses a server that is already listening on the configured
     port; otherwise it spawns the command, captures its output, and waits
     for the port to accept connections. Then use ``browser_use`` to
@@ -824,5 +902,8 @@ preview_tool = Tool(
         "vite",
         "port",
         "frontend",
+        "backend",
+        "dependsOn",
+        "multi-server",
     ),
 )
