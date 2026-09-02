@@ -229,10 +229,10 @@ export function SidebarCard({
   )
 }
 
-/** In-card section separator (the work pattern: a hairline inset by mx-3). */
+/** In-card section separator — now transparent for seamless glass surface. */
 export function SidebarShellDivider({ className }: { className?: string }) {
   return (
-    <div className={cn('shrink-0 h-px bg-(--color-border)', className ?? 'mx-3')} />
+    <div className={cn('shrink-0 h-px', className ?? 'mx-3')} />
   )
 }
 
@@ -288,7 +288,7 @@ export function SidebarSearchTrigger({
       type="button"
       onClick={onClick}
       className={cn(
-        'focus-ring-control group flex w-full items-center border border-transparent bg-(--bg-key)/40 text-left text-(--color-text-muted) shadow-[inset_0_0_0_1px_var(--color-border)] transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-(--bg-key)/70 hover:text-(--color-text-2) hover:shadow-[inset_0_0_0_1px_var(--color-border-strong)]',
+        'focus-ring-control group flex w-full items-center border border-transparent bg-(--bg-key)/40 text-left text-(--color-text-muted) transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-(--bg-key)/70 hover:text-(--color-text-2)',
         compact
           ? 'h-8 gap-1.5 rounded-lg px-2 text-[11px]'
           : 'h-9 gap-2 rounded-xl px-2.5 text-xs',
