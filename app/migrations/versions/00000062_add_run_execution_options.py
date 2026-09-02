@@ -1,4 +1,4 @@
-"""Add run execution options: preferred_model, compact_before_run, auto_pilot.
+"""Add run execution options: compact_before_run, auto_pilot.
 
 Revision ID: 00000062
 Revises: 00000061
@@ -16,10 +16,6 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "trace_runs",
-        sa.Column("preferred_model", sa.String(255), nullable=True),
-    )
     op.add_column(
         "trace_runs",
         sa.Column(
@@ -43,4 +39,3 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_column("trace_runs", "auto_pilot")
     op.drop_column("trace_runs", "compact_before_run")
-    op.drop_column("trace_runs", "preferred_model")
