@@ -86,6 +86,43 @@ def test_anthropic_payload_converts_system_tools_and_thinking() -> None:
     assert "cache_control" not in payload
 
 
+def test_anthropic_payload_splits_system_at_cache_boundary() -> None:
+    provider = AnthropicProvider(api_key="sk-ant-test", model="claude-sonnet-4-6")
+
+    payload = provider._payload(
+        [SystemMessage(content="stable head||volatile tail"), HumanMessage(content="hi")],
+        None,
+        {**provider._merged_kwargs(), "cache_boundary": len("stable head||")},
+    )
+
+    assert payload["system"] == [
+        {
+            "type": "text",
+            "text": "stable head||",
+            "cache_control": {"type": "ephemeral"},
+        },
+        {"type": "text", "text": "volatile tail"},
+    ]
+
+
+def test_anthropic_payload_ignores_out_of_range_cache_boundary() -> None:
+    provider = AnthropicProvider(api_key="sk-ant-test", model="claude-sonnet-4-6")
+
+    payload = provider._payload(
+        [SystemMessage(content="be concise")],
+        None,
+        {**provider._merged_kwargs(), "cache_boundary": 999},
+    )
+
+    assert payload["system"] == [
+        {
+            "type": "text",
+            "text": "be concise",
+            "cache_control": {"type": "ephemeral"},
+        }
+    ]
+
+
 def test_anthropic_payload_marks_cache_breakpoint_on_last_tool() -> None:
     provider = AnthropicProvider(api_key="sk-ant-test", model="claude-sonnet-4-6")
 

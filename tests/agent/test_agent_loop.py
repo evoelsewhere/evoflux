@@ -925,6 +925,45 @@ async def test_stream_and_assemble_merges_consecutive_user_messages(
     assert user_msgs[0].content == "first\n\nsecond"
 
 
+async def test_stream_and_assemble_strips_cache_boundary_marker(monkeypatch):
+    """CacheBoundaryHook's marker never reaches the provider, and its position
+    is forwarded as the ``cache_boundary`` kwarg."""
+    from app.agent.hooks.cache_boundary import CacheBoundaryHook
+    from app.agent.schemas.chat import SystemMessage
+
+    captured_kwargs: dict = {}
+
+    async def _gen():
+        yield _text_chunk("ok", finish="stop")
+        yield _usage_chunk()
+
+    def _capture(**kwargs):
+        captured_kwargs.update(kwargs)
+        return _gen()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _capture
+
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        system_prompt="stable head",
+        hooks=[CacheBoundaryHook()],
+    )
+
+    await agent.run(
+        [HumanMessage(content="hi")],
+        config=RunConfig(session_id="s_boundary", run_id="r_boundary"),
+    )
+
+    system_messages = [
+        m for m in captured_kwargs["messages"] if isinstance(m, SystemMessage)
+    ]
+    assert len(system_messages) == 1
+    assert system_messages[0].content == "stable head"
+    assert captured_kwargs["cache_boundary"] == len("stable head")
+
+
 async def test_stream_and_assemble_masks_at_provider_boundary(monkeypatch):
     """Local input stays intact while provider.stream receives the masked copy."""
     secret = "boundary-only-secret-value"
