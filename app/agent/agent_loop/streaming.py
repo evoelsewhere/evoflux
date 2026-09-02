@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from app.agent.agent_loop.retry import StreamRestart, stream_with_retry
+from app.agent.hooks.cache_boundary import CACHE_VOLATILE_MARKER
 from app.agent.lifecycle import SLEEP_LIFECYCLE, SleepSentinelStreamFilter
 from app.agent.outbound_redaction import (
     OutboundContext,
@@ -216,6 +217,20 @@ async def stream_and_assemble(
             ",".join(redaction_report.categories),
         )
 
+    # CacheBoundaryHook (if registered) stamps the end of the stable prefix
+    # with a marker. Strip it before anything else — logs, summarization, the
+    # wire payload — ever sees it, and hand its position to caching-aware
+    # providers so they can cache the stable head even though the tail
+    # (memory context, skill catalog) changes almost every turn.
+    cache_boundary: int | None = None
+    marker_index = protected_prompt.find(CACHE_VOLATILE_MARKER)
+    if marker_index != -1:
+        cache_boundary = marker_index
+        protected_prompt = (
+            protected_prompt[:marker_index]
+            + protected_prompt[marker_index + len(CACHE_VOLATILE_MARKER) :]
+        )
+
     provider_messages: list[ChatMessage] = _merge_consecutive_user_messages(
         [SystemMessage(content=protected_prompt), *protected_messages]
     )
@@ -233,6 +248,7 @@ async def stream_and_assemble(
         cache_affinity_key=affinity_key,
         messages=provider_messages,
         tools=tool_defs or None,
+        cache_boundary=cache_boundary,
     )
     async for chunk in _interruptible_stream(upstream, interrupt_event):
         # Preemptive interrupt: break out of streaming early.  The wrapper

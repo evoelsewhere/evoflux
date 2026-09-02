@@ -23,6 +23,12 @@ if TYPE_CHECKING:
 
 
 MAX_AGENTS_MD_BYTES = 128 * 1024
+# Aggregate cap across every nested AGENTS.md discovered during a session.
+# Root instructions are exempt (there are only ever a handful of roots) —
+# this bounds the set the agent accumulates by touching new directories,
+# which otherwise grows for the rest of the session and is re-injected into
+# the system prompt on every single model call.
+MAX_TOTAL_NESTED_INSTRUCTION_BYTES = 32 * 1024
 _MUTATING_TOOLS = frozenset(
     {"edit", "write", "patch", "rm", "shell", "python", "process"}
 )
@@ -128,19 +134,26 @@ class WorkspaceInstructionsHook(BaseAgentHook):
     ) -> str:
         targets = self._tool_targets(tool_call)
         new_files: list[Path] = []
-        loaded = set(state.metadata.get("_loaded_workspace_instruction_files") or [])
+        loaded = list(state.metadata.get("_loaded_workspace_instruction_files") or [])
+        loaded_set = set(loaded)
         for target in targets:
             for instruction_file in self._instruction_chain(target):
                 key = str(instruction_file)
-                if instruction_file.parent in self._active_roots() or key in loaded:
+                if instruction_file.parent in self._active_roots() or key in loaded_set:
                     continue
-                loaded.add(key)
+                loaded_set.add(key)
+                loaded.append(key)
                 new_files.append(instruction_file)
 
         if new_files:
-            state.metadata["_loaded_workspace_instruction_files"] = sorted(loaded)
+            # Always surface newly-applicable rules once, in this tool result,
+            # regardless of budget — only what gets carried forward into every
+            # future system prompt is capped.
             block = _render_sections(
                 self._read_instruction_file(path) for path in new_files
+            )
+            state.metadata["_loaded_workspace_instruction_files"] = (
+                self._evict_to_budget(loaded)
             )
             if tool_call.function.name in _MUTATING_TOOLS:
                 return (
@@ -151,6 +164,31 @@ class WorkspaceInstructionsHook(BaseAgentHook):
             result = await handler(ctx, state, tool_call)
             return f"{result}\n\n[New nested workspace instructions]\n{block}"
         return await handler(ctx, state, tool_call)
+
+    def _evict_to_budget(self, loaded: list[str]) -> list[str]:
+        """Drop the oldest nested instruction files first until the total
+        accumulated content fits :data:`MAX_TOTAL_NESTED_INSTRUCTION_BYTES`.
+
+        Without this, every nested ``AGENTS.md`` the agent has ever touched
+        stays injected into the system prompt for the rest of the session —
+        growing without bound as it explores more of the repository.
+        """
+        sizes = [
+            (path, len(self._read_instruction_file(Path(path))[1].encode("utf-8")))
+            for path in loaded
+        ]
+        total = sum(size for _path, size in sizes)
+        start = 0
+        while total > MAX_TOTAL_NESTED_INSTRUCTION_BYTES and start < len(sizes):
+            total -= sizes[start][1]
+            start += 1
+        if start:
+            logger.warning(
+                "workspace_instructions_budget_evicted evicted={} remaining={}",
+                start,
+                len(loaded) - start,
+            )
+        return loaded[start:]
 
     def _active_roots(self) -> list[Path]:
         roots = list(self._roots)
