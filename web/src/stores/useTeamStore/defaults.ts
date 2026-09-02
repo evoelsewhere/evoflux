@@ -13,6 +13,7 @@ export const createDefaultAgentStream = (): AgentStream => ({
   currentText: '',
   currentThinking: '',
   status: 'idle',
+  phase: null,
   usage: {
     promptTokens: 0,
     completionTokens: 0,

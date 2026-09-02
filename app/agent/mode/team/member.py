@@ -32,6 +32,7 @@ from app.uuid7 import uuid7
 from app.agent.execution_policy import resolve_execution_policy
 from app.agent.checkpointer import SQLiteCheckpointer
 from app.agent.drift import detect_drift, stamp_agent_files
+from app.agent.hooks.cache_boundary import CacheBoundaryHook
 from app.agent.hooks.code_navigation_telemetry import CodeNavigationTelemetryHook
 from app.agent.hooks.continuation import ContinuationHook
 from app.agent.hooks.folder_context import FolderContextHook
@@ -1331,8 +1332,9 @@ class TeamMemberBase(abc.ABC):
             HookStage.BASE_CONTEXT, "wiki-context", default_wiki_injection_hook
         )
         pipeline.add(HookStage.BASE_CONTEXT, "team-protocol", team_prompt_hook)
-        # Query-dependent context belongs after the static role/team prefix so
-        # providers can reuse a much longer automatic prompt-cache prefix.
+        # Query-dependent context is registered later, at PROMPT_FINALIZATION,
+        # alongside the skill-catalog finalizer — see the cache-boundary hook
+        # registration below for why.
         memory_context_hook = (
             MemoryContextHook(
                 db_factory=self.db_factory,
@@ -1341,7 +1343,6 @@ class TeamMemberBase(abc.ABC):
             if self.db_factory
             else default_memory_context_hook
         )
-        pipeline.add(HookStage.BASE_CONTEXT, "memory-context", memory_context_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "team-inbox", team_inbox_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "stream-publisher", publisher_hook)
         pipeline.add(HookStage.BASE_CONTEXT, "telemetry", otel_hook)
@@ -1484,6 +1485,20 @@ class TeamMemberBase(abc.ABC):
         # Assemble query-dependent prompt sections after all context producers.
         # Summarization then receives the exact same finalized system prompt as
         # the main provider call instead of snapshotting an incomplete prefix.
+        # cache-boundary must run first: it stamps everything built so far
+        # (role prompt, team protocol, goal/folder/EASD context, workspace
+        # instructions) as the stable prefix before memory-context and the
+        # skill catalog append content that changes on essentially every turn.
+        pipeline.add(
+            HookStage.PROMPT_FINALIZATION,
+            "cache-boundary",
+            CacheBoundaryHook(),
+        )
+        pipeline.add(
+            HookStage.PROMPT_FINALIZATION,
+            "memory-context",
+            memory_context_hook,
+        )
         pipeline.add(
             HookStage.PROMPT_FINALIZATION,
             "skill-catalog-finalizer",
@@ -1659,6 +1674,15 @@ class TeamMemberBase(abc.ABC):
         # Scope agent role for plugin applies_to filtering ("lead"/"member").
         role_token = set_role(self._role_label)
         usage_token = begin_turn_usage(lead_session_id, self.name)
+
+        # Signal that the LLM call is about to start — this breaks the long
+        # "Preparing" gap into distinct ingress vs model-calling phases.
+        await self._team._emit(
+            agent=self.name,
+            event="agent_status",
+            status="working",
+            extra={"phase": "model_calling"},
+        )
 
         try:
             await self.agent.run(

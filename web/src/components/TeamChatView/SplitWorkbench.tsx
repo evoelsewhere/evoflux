@@ -86,7 +86,9 @@ function latestActivity(stream: AgentStream): string {
   const blocks = stream.currentBlocks.length > 0 ? stream.currentBlocks : stream.blocks
   const last = blocks.at(-1)
   if (!last) {
-    if (stream.status === 'working') return 'Preparing a response…'
+    if (stream.status === 'working') {
+      return stream.phase === 'model_calling' ? 'Thinking…' : 'Preparing…'
+    }
     if (stream.status === 'offline') return 'Offline'
     return 'No activity yet'
   }

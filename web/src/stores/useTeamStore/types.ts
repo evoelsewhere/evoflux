@@ -44,6 +44,7 @@ export interface AgentStream {
   currentText: string
   currentThinking: string
   status: 'idle' | 'working' | 'offline' | 'error'
+  phase: 'ingress' | 'model_calling' | null
   usage: AgentUsage
   _completionBase: number
   _completionEstimated?: number
