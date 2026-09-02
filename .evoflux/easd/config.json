@@ -4,8 +4,8 @@
   "methodology_name": "Evo Agent Specification-Driven Development",
   "product": "Evo Agent Specs",
   "publish_converged_runs": "manual",
-  "rules_file": ".evoflux/easd/RULES.md",
-  "runtime_directory": ".evoflux/easd/.local/runs",
+  "rules_file": ".evoflux\\easd\\RULES.md",
+  "runtime_directory": ".evoflux\\easd\\.local\\runs",
   "runtime_storage": "local",
   "skills": [
     "easd-specify",
@@ -14,6 +14,6 @@
     "easd-review",
     "easd-verify"
   ],
-  "skills_directory": ".evoflux/skills",
-  "templates_directory": ".evoflux/easd/.local/templates"
+  "skills_directory": ".evoflux\\skills",
+  "templates_directory": ".evoflux\\easd\\.local\\templates"
 }

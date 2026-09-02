@@ -72,3 +72,33 @@ Do not modify product files while acting as the independent reviewer, approve or
 rewrite the specification, manufacture evidence, or declare convergence. Review
 output is a claim for the lead/user to record through the EASD evidence boundary;
 the final `easd-verify` phase and convergence service remain separate gates.
+
+## Code graph navigation
+
+Use `code_context` for independent source verification of implementation claims,
+references checking, and transitive impact assessment. Start with
+`action="search"` to locate the exact symbol under review, then trace
+relationships to verify claims and discover unstated impact:
+
+| Intent | `code_context` action |
+|--------|-----------------------|
+| Locate the symbol under review | `action="search"` |
+| Verify the declared definition | `action="definition"` |
+| Check inbound callers for unstated risk | `action="callers"` |
+| Verify outbound callees match claims | `action="callees"` |
+| Verify all structural references | `action="references"` |
+| Assess transitive impact of changes | `action="impact"` |
+| Inspect immediate bidirectional boundary | `action="neighborhood"` |
+
+Use `action="search"` once to reveal a declared identifier, then call the
+necessary graph action for exact-symbol traversal. After a promotable search
+result, skip another `action="search"`, `grep`, or `read` to re-derive
+the same location.
+
+Keep `refresh=true` for the first indexed query and after edits. Use
+`refresh=false` only for an immediate follow-up that intentionally reuses the
+same index version.
+
+Read [references/code-context-contract.md](references/code-context-contract.md)
+for the full indexed code-context contract, search/traversal limits, and safety
+discipline.

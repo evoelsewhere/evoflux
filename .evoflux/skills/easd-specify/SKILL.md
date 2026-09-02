@@ -97,3 +97,32 @@ Never approve or activate the specification, begin implementation, or call
 convergence. If the tool is unavailable or rejects the draft, report the exact
 gap instead of bypassing the EASD lifecycle through files, shell, or direct API
 calls.
+
+## Code graph navigation
+
+Use `code_context` to ground specifications in precise code evidence. When
+authoring or revising a spec, start with `action="search"` to reveal declared
+identifiers, then use exact-symbol graph actions to trace relationships:
+
+| Intent | `code_context` action |
+|--------|-----------------------|
+| Find a declaration or symbol | `action="search"` |
+| Exact symbol definition | `action="definition"` |
+| Inbound invocation sites | `action="callers"` |
+| Outbound calls made by a symbol | `action="callees"` |
+| Structural references (non-call) | `action="references"` |
+| Transitive inbound risk | `action="impact"` |
+| Immediate bidirectional boundary | `action="neighborhood"` |
+
+Use `action="search"` once to reveal a declared identifier, then call the
+necessary graph action for exact-symbol traversal. After a promotable search
+result, skip another `action="search"`, `grep`, or `read` to re-derive
+the same location.
+
+Keep `refresh=true` for the first indexed query and after edits. Use
+`refresh=false` only for an immediate follow-up that intentionally reuses the
+same index version.
+
+Read [references/code-context-contract.md](references/code-context-contract.md)
+for the full indexed code-context contract, search/traversal limits, and safety
+discipline.

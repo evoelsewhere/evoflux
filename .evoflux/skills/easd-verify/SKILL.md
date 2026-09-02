@@ -74,3 +74,33 @@ Report the exact spec hash and integrated revision, then summarize:
 Recommend convergence only when persisted evidence appears to satisfy every
 gate. Do not approve a specification, fabricate evidence, or declare the run
 converged from the Skill itself.
+
+## Code graph navigation
+
+Use `code_context` for evidence gate validation, cross-checking AC coverage
+against actual code symbols, and verifying documentation reconciliation. Start
+with `action="search"` to locate the exact symbol referenced by evidence, then
+trace relationships to confirm coverage and discover gaps:
+
+| Intent | `code_context` action |
+|--------|-----------------------|
+| Locate the symbol cited in evidence | `action="search"` |
+| Verify the declared definition exists | `action="definition"` |
+| Check inbound callers for coverage gaps | `action="callers"` |
+| Verify outbound callees are covered | `action="callees"` |
+| Cross-check all structural references | `action="references"` |
+| Assess transitive impact of unverified paths | `action="impact"` |
+| Inspect immediate bidirectional boundary | `action="neighborhood"` |
+
+Use `action="search"` once to reveal a declared identifier, then call the
+necessary graph action for exact-symbol traversal. After a promotable search
+result, skip another `action="search"`, `grep`, or `read` to re-derive
+the same location.
+
+Keep `refresh=true` for the first indexed query and after edits. Use
+`refresh=false` only for an immediate follow-up that intentionally reuses the
+same index version.
+
+Read [references/code-context-contract.md](references/code-context-contract.md)
+for the full indexed code-context contract, search/traversal limits, and safety
+discipline.
