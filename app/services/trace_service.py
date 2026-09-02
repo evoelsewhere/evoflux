@@ -1481,6 +1481,13 @@ async def rebind_run_to_session(
     if session is None or session.mode != "coding" or not session.workspace:
         raise TraceValidationError("Target must be a Coding session")
 
+    if (
+        session.workspace
+        and run.workspace
+        and Path(session.workspace).resolve() != Path(run.workspace).resolve()
+    ):
+        raise TraceValidationError("Session belongs to a different workspace")
+
     if run.session_id == session.id:
         return run  # Already bound to this session.
 

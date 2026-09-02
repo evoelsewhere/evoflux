@@ -1386,6 +1386,14 @@ function RunDetail({
   const [compactBeforeRun, setCompactBeforeRun] = useState(detail?.run.compact_before_run ?? false)
   const [autoPilot, setAutoPilot] = useState(detail?.run.auto_pilot ?? false)
   const [savingOptions, setSavingOptions] = useState(false)
+
+  // Sync options state when run changes
+  useEffect(() => {
+    if (detail) {
+      setCompactBeforeRun(detail.run.compact_before_run)
+      setAutoPilot(detail.run.auto_pilot)
+    }
+  }, [detail?.run.id])
   const [confirmingAction, setConfirmingAction] = useState<EasdConfirmableAction | null>(null)
   const [showPublication, setShowPublication] = useState(false)
   const draft = detail
