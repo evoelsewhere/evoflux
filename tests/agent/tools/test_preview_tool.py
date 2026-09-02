@@ -444,3 +444,180 @@ async def test_missing_executable_reports_cleanly(workspace):
 async def test_status_empty(workspace):
     out = await pv.preview_tool.arun(action="status")
     assert "No preview servers" in out
+
+
+# ── dependsOn tests ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_depends_on_starts_dependency_first(workspace):
+    """Starting a config with dependsOn auto-starts the dependency."""
+    port_backend = _free_port()
+    port_frontend = _free_port()
+    _write_config(
+        workspace,
+        [
+            _server_config("backend", port_backend),
+            {
+                **_server_config("frontend", port_frontend),
+                "dependsOn": "backend",
+            },
+        ],
+    )
+    out = await pv.preview_tool.arun(action="start", name="frontend")
+    assert "ready on" in out
+    # Both servers should be running.
+    assert len(pv._servers) == 2
+    assert any(s.name == "backend" for _, s in pv._servers.items())
+    assert any(s.name == "frontend" for _, s in pv._servers.items())
+
+
+@pytest.mark.asyncio
+async def test_depends_on_reuses_already_running_dependency(workspace):
+    """If the dependency is already running, dependsOn reuses it."""
+    port_backend = _free_port()
+    port_frontend = _free_port()
+    _write_config(
+        workspace,
+        [
+            _server_config("backend", port_backend),
+            {
+                **_server_config("frontend", port_frontend),
+                "dependsOn": "backend",
+            },
+        ],
+    )
+    # Start backend first.
+    out_backend = await pv.preview_tool.arun(action="start", name="backend")
+    assert "ready on" in out_backend
+
+    # Start frontend — should reuse the already-running backend.
+    out_frontend = await pv.preview_tool.arun(action="start", name="frontend")
+    assert "ready on" in out_frontend
+    assert len(pv._servers) == 2
+
+
+@pytest.mark.asyncio
+async def test_depends_on_invalid_reference_rejected(workspace):
+    """dependsOn referencing a non-existent config is rejected at load time."""
+    port_frontend = _free_port()
+    _write_config(
+        workspace,
+        [
+            {
+                **_server_config("frontend", port_frontend),
+                "dependsOn": "nonexistent",
+            },
+        ],
+    )
+    with pytest.raises(Exception, match="no configuration with that name exists"):
+        await pv.preview_tool.arun(action="start", name="frontend")
+
+
+@pytest.mark.asyncio
+async def test_depends_on_circular_rejected(workspace):
+    """Circular dependsOn references are rejected at load time."""
+    _write_config(
+        workspace,
+        [
+            {"name": "a", "runtimeExecutable": "x", "port": 1, "dependsOn": "b"},
+            {"name": "b", "runtimeExecutable": "x", "port": 2, "dependsOn": "a"},
+        ],
+    )
+    with pytest.raises(Exception, match="Circular dependsOn"):
+        await pv.preview_tool.arun(action="start", name="a")
+
+
+@pytest.mark.asyncio
+async def test_depends_on_empty_string_rejected(workspace):
+    """dependsOn with empty string is rejected."""
+    _write_config(
+        workspace,
+        [
+            {
+                "name": "web",
+                "runtimeExecutable": "x",
+                "port": 1,
+                "dependsOn": "",
+            },
+        ],
+    )
+    with pytest.raises(Exception, match="non-empty string 'dependsOn'"):
+        await pv.preview_tool.arun(action="start", name="web")
+
+
+@pytest.mark.asyncio
+async def test_depends_on_chain_workspace(workspace):
+    """Chained dependsOn (c -> b -> a) works correctly."""
+    port_a = _free_port()
+    port_b = _free_port()
+    port_c = _free_port()
+    _write_config(
+        workspace,
+        [
+            _server_config("a", port_a),
+            {**_server_config("b", port_b), "dependsOn": "a"},
+            {**_server_config("c", port_c), "dependsOn": "b"},
+        ],
+    )
+    # Starting c should auto-start a and b first.
+    out = await pv.preview_tool.arun(action="start", name="c")
+    assert "ready on" in out
+    assert len(pv._servers) == 3
+
+
+@pytest.mark.asyncio
+async def test_depends_on_shared_dependency(workspace):
+    """Two configs depending on the same dependency shares one server."""
+    port_backend = _free_port()
+    port_web = _free_port()
+    port_api = _free_port()
+    _write_config(
+        workspace,
+        [
+            _server_config("backend", port_backend),
+            {**_server_config("web", port_web), "dependsOn": "backend"},
+            {**_server_config("api", port_api), "dependsOn": "backend"},
+        ],
+    )
+    # Start web — should start backend first.
+    await pv.preview_tool.arun(action="start", name="web")
+    # Start api — should reuse the already-running backend.
+    await pv.preview_tool.arun(action="start", name="api")
+    # All three running, but backend only once.
+    assert len(pv._servers) == 3
+    backend_count = sum(1 for _, s in pv._servers.items() if s.name == "backend")
+    assert backend_count == 1
+
+
+@pytest.mark.asyncio
+async def test_depends_on_shown_in_status(workspace):
+    """Status output includes dependsOn information."""
+    port_backend = _free_port()
+    port_frontend = _free_port()
+    _write_config(
+        workspace,
+        [
+            _server_config("backend", port_backend),
+            {
+                **_server_config("frontend", port_frontend),
+                "dependsOn": "backend",
+            },
+        ],
+    )
+    await pv.preview_tool.arun(action="start", name="frontend")
+    out = await pv.preview_tool.arun(action="status")
+    assert "depends on: backend" in out
+
+
+@pytest.mark.asyncio
+async def test_depends_on_self_reference_rejected(workspace):
+    """A config depending on itself is rejected."""
+    _write_config(
+        workspace,
+        [
+            {"name": "web", "runtimeExecutable": "x", "port": 1, "dependsOn": "web"},
+        ],
+    )
+    with pytest.raises(Exception, match="Circular dependsOn"):
+        await pv.preview_tool.arun(action="start", name="web")
