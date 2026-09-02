@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
-from app.agent.mode.team.easd_review import make_easd_review_tool
+from app.agent.easd.context import EasdContext
+from app.agent.easd.review import make_easd_review_tool
 from app.models.chat import ChatSession
 from app.models.team import DelegationTask
 from app.services import trace_service
@@ -114,12 +113,9 @@ async def test_member_review_tool_records_runtime_independent_evidence(
         db.add(review_task)
         await db.commit()
 
-    team = SimpleNamespace(
-        _db_factory=async_session_factory,
-        lead=SimpleNamespace(db_factory=async_session_factory),
-    )
+    easd_ctx = EasdContext(db_factory=async_session_factory, session_id=str(session.id))
     tool = make_easd_review_tool(
-        team,
+        easd_ctx,
         agent_name="reviewer#1",
         role="member",
     )
@@ -140,7 +136,7 @@ async def test_member_review_tool_records_runtime_independent_evidence(
         delegation_task_id=str(review_task.id),
     )
 
-    assert "independent=true" in result
+    assert "evidence items submitted" in result
     async with async_session_factory() as db:
         detail = await trace_service.run_detail(db, run.id)
     review = next(item for item in detail["evidence"] if item["kind"] == "review")
@@ -251,12 +247,9 @@ async def test_review_tool_rejects_an_implementation_mission_identity(
         db.add(forged)
         await db.commit()
 
-    team = SimpleNamespace(
-        _db_factory=async_session_factory,
-        lead=SimpleNamespace(db_factory=async_session_factory),
-    )
+    easd_ctx = EasdContext(db_factory=async_session_factory, session_id=str(session.id))
     result = await make_easd_review_tool(
-        team, agent_name="reviewer#1", role="member"
+        easd_ctx, agent_name="reviewer#1", role="member"
     ).arun(
         run_id=str(run.id),
         spec_hash=spec_revision.content_hash,

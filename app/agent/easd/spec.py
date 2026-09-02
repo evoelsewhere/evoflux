@@ -1,4 +1,9 @@
-"""Lead-only EASD specification submission tool for authoring chats."""
+"""Standalone EASD specification submission tool.
+
+Decoupled from team orchestration — uses EasdContext instead of
+direct AgentTeam reference. Works in both single-agent and
+multi-agent modes. Lead-only: only the primary agent can author specs.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
+from app.agent.easd.context import EasdContext
 from app.agent.tools.registry import InjectedArg, Tool
 from app.core.db import resolve_db_factory
 from app.services.trace_contracts import TraceSpecification
@@ -18,7 +24,7 @@ from app.services.trace_service import (
 )
 
 
-def make_easd_spec_tool(team, *, agent_name: str) -> Tool:
+def make_easd_spec_tool(ctx: EasdContext, *, agent_name: str) -> Tool:
     async def easd_submit_specification(
         run_id: Annotated[
             str,
@@ -28,8 +34,8 @@ def make_easd_spec_tool(team, *, agent_name: str) -> Tool:
             TraceSpecification,
             Field(
                 description=(
-                    "Complete provider-neutral specification drafted from the "
-                    "persisted Intent and authorized repository evidence."
+                    "Complete provider-neutral specification payload to persist "
+                    "and attach to the current EASD run."
                 )
             ),
         ],
@@ -51,27 +57,21 @@ def make_easd_spec_tool(team, *, agent_name: str) -> Tool:
         ],
         _state: Annotated[Any, InjectedArg()] = None,
     ) -> str:
-        """Submit a complete EASD specification draft for user review.
+        """Persist one complete specification draft for explicit user approval."""
 
-        Use only during a specification-authoring chat. Inspect authorized
-        instructions, docs, source and tests first; ask the user when a product
-        decision remains ambiguous. This tool persists a draft but never
-        approves it and never authorizes implementation.
-        """
-
-        db_factory = resolve_db_factory(team._db_factory or team.lead.db_factory)
+        db_factory = resolve_db_factory(ctx.db_factory)
         try:
             async with db_factory() as db:
                 try:
                     revision = await submit_authored_specification(
                         db,
                         run_id=run_id,
-                        session_id=team.lead.session_id,
+                        session_id=ctx.session_id,
                         specification=specification,
                         authoring={
                             "mode": "agent_chat",
                             "agent": agent_name,
-                            "session_id": team.lead.session_id,
+                            "session_id": ctx.session_id,
                             "summary": summary.strip(),
                             "confidence": confidence,
                             "submitted_at": datetime.now(UTC).isoformat(),
@@ -88,7 +88,7 @@ def make_easd_spec_tool(team, *, agent_name: str) -> Tool:
         return (
             "Specification draft persisted for user review. "
             f"revision={revision.id} hash={revision.content_hash}. "
-            "Do not implement or approve it; stop and ask the user to review."
+            "Do not approve it; stop and ask the user to review the draft."
         )
 
     return Tool(
