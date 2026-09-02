@@ -1309,6 +1309,46 @@ class TestBuiltinSkills:
         assert "`code_context` is the single indexed-code tool" in contract
         assert "Cross-repository edges are resolved dynamically" in contract
 
+        # --- EASD skill coverage ---
+        easd_skills_dir = Path(".evoflux/skills")
+        expected_easd_owners = [
+            "easd-specify",
+            "easd-plan",
+            "easd-implement",
+            "easd-review",
+            "easd-verify",
+        ]
+        easd_roots = [easd_skills_dir / owner for owner in expected_easd_owners]
+        easd_owners = sorted(
+            [
+                skill_file.parent.name
+                for skill_file in easd_skills_dir.glob("easd-*/SKILL.md")
+                if "code_context" in skill_file.read_text(encoding="utf-8")
+            ]
+        )
+
+        assert easd_owners == sorted(expected_easd_owners)
+        for root in easd_roots:
+            normalized = " ".join(
+                (root / "SKILL.md").read_text(encoding="utf-8").split()
+            )
+            assert "`code_context`" in normalized
+            assert "skip" in normalized.casefold()
+            assert "Keep `refresh=true` for the first indexed query" in normalized
+            assert "`refresh=false` only for an immediate follow-up" in normalized
+
+        easd_contracts = {
+            (root / "references" / "code-context-contract.md").read_text(
+                encoding="utf-8"
+            )
+            for root in easd_roots
+        }
+        assert len(easd_contracts) == 1
+        easd_contract = easd_contracts.pop()
+        assert "## Choose the action from the evidence you have" in easd_contract
+        assert "`code_context` is the single indexed-code tool" in easd_contract
+        assert "Cross-repository edges are resolved dynamically" in easd_contract
+
     def test_coding_investigation_locks_graph_first_trajectory(self):
         root = _builtin_skills_dir() / "coding-investigation"
         skill = (root / "SKILL.md").read_text(encoding="utf-8")
@@ -1438,6 +1478,44 @@ class TestBuiltinSkills:
         skill_dir = str((_builtin_skills_dir() / "mcp-installer").resolve())
         assert skill_dir in body
         assert "mcp_apply.py" in body
+
+
+class TestEasdSkills:
+    """Tests for EASD skill structure, frontmatter, and scope."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        _discover_skills_cached.cache_clear()
+        yield
+        _discover_skills_cached.cache_clear()
+
+    def _easd_skills_dir(self) -> Path:
+        return Path(".evoflux/skills")
+
+    def test_easd_skill_files_have_correct_frontmatter(self):
+        easd_dir = self._easd_skills_dir()
+        for skill_dir in sorted(easd_dir.glob("easd-*")):
+            skill_file = skill_dir / "SKILL.md"
+            if not skill_file.exists():
+                continue
+            text = skill_file.read_text(encoding="utf-8")
+            meta, _ = _parse_frontmatter(text)
+            assert set(meta) == {"name", "description"}, skill_file
+            assert meta["name"] == skill_dir.name, skill_file
+            assert isinstance(meta["description"], str) and meta["description"], (
+                skill_file
+            )
+
+    def test_easd_skill_scope_files(self):
+        easd_dir = self._easd_skills_dir()
+        for skill_dir in sorted(easd_dir.glob("easd-*")):
+            scope_file = skill_dir / ".evoflux.json"
+            assert scope_file.exists(), f"Missing .evoflux.json in {skill_dir}"
+            scope = json.loads(scope_file.read_text(encoding="utf-8"))
+            assert "modes" in scope, f"Missing 'modes' in {scope_file}"
+            assert scope["modes"] == ["coding"], (
+                f"Unexpected modes in {scope_file}: {scope['modes']}"
+            )
 
 
 # ---------------------------------------------------------------------------
