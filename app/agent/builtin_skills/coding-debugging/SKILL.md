@@ -19,9 +19,13 @@ test expectation or environment mismatch.
 ## Reproduce and narrow
 
 1. Reproduce with the smallest deterministic command or interaction that still
-   fails. If reproduction is blocked, identify the missing state or evidence.
+   fails. If reproduction is blocked, name the missing dimension—timing
+   window, environment drift, prior state, or genuine randomness—and target
+   evidence for that dimension specifically before retrying blindly.
 2. Compare one dimension at a time: input, configuration, version, process,
-   timing, identity, or dependency.
+   timing, identity, or dependency. When the regressing revision itself is
+   unknown, localize it by bisection (`git bisect run` against the smallest
+   failing check) instead of manual comparison across many revisions.
 3. Trace backward from the first bad observation through state transitions and
    exact symbol relationships. Use literal discovery for errors, configuration,
    generated values, and registration keys.

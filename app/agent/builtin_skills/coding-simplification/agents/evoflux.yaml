@@ -1,0 +1,11 @@
+interface:
+  display_name: "Simplify Code"
+  short_description: "Refactor for clarity without changing behavior"
+  default_prompt: "Use $coding-simplification to refactor this for clarity while preserving behavior exactly."
+policy:
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_context
+      description: "Unified indexed search, structural grep, exact-symbol graph navigation, and dynamic cross-repository resolution"

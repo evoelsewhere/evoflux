@@ -1,0 +1,11 @@
+interface:
+  display_name: "Design API Contract"
+  short_description: "Shape a durable API, event, or idempotent write contract"
+  default_prompt: "Use $coding-api-design to design this API/interface contract and its consumer impact."
+policy:
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_context
+      description: "Unified indexed search, structural grep, exact-symbol graph navigation, and dynamic cross-repository resolution"

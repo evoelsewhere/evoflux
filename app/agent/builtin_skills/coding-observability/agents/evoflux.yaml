@@ -1,0 +1,11 @@
+interface:
+  display_name: "Instrument Observability"
+  short_description: "Add logs, metrics, traces, and alerts with a named question"
+  default_prompt: "Use $coding-observability to instrument this code path with signals that answer a stated on-call question."
+policy:
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_context
+      description: "Unified indexed search, structural grep, exact-symbol graph navigation, and dynamic cross-repository resolution"

@@ -1,0 +1,31 @@
+[
+  {
+    "query": "Design the response shape and error codes for a new bulk-import endpoint that must be safe to retry.",
+    "should_trigger": true,
+    "expected_trajectory": ["identify_consumers", "success_failure_unknown_outcomes", "idempotency_key_design", "stop"],
+    "forbidden_behaviors": ["check_then_insert_idempotency", "skip_consumer_impact", "implement_before_contract_stated"]
+  },
+  {
+    "query": "We need to add a field to the webhook payload. What's the safest way to do it without breaking existing subscribers?",
+    "should_trigger": true
+  },
+  {
+    "query": "Should this write endpoint accept a client-supplied idempotency key or generate one server-side?",
+    "should_trigger": true
+  },
+  {
+    "query": "Implement the /invoices/:id/refund endpoint exactly as specified in the attached ticket, including the given error codes.",
+    "should_trigger": false,
+    "near_miss": "Contract already decided; this is implementation, not contract design."
+  },
+  {
+    "query": "Why is this internal helper function returning the wrong total?",
+    "should_trigger": false,
+    "near_miss": "No external or cross-repository consumer; ordinary debugging."
+  },
+  {
+    "query": "Rename this private variable for clarity.",
+    "should_trigger": false,
+    "near_miss": "No observable contract involved."
+  }
+]

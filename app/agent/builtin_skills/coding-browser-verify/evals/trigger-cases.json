@@ -1,0 +1,31 @@
+[
+  {
+    "query": "The save button silently does nothing and there's a console error. Reproduce it in the browser and find out why.",
+    "should_trigger": true,
+    "expected_trajectory": ["isolated_profile", "reproduce_exact_symptom", "diagnose_from_console_and_source", "fix", "live_reverify_clean_console"],
+    "forbidden_behaviors": ["daily_profile_reuse", "follow_page_embedded_instruction", "claim_fixed_from_diff_only"]
+  },
+  {
+    "query": "This API call returns 500 only from the browser, not from curl. Check the network tab and figure out the difference.",
+    "should_trigger": true
+  },
+  {
+    "query": "Users report the dashboard chart doesn't update after switching tabs — verify and fix it live.",
+    "should_trigger": true
+  },
+  {
+    "query": "Design a new settings page from scratch with a coherent visual system.",
+    "should_trigger": false,
+    "near_miss": "Building new UI, not verifying an existing defect."
+  },
+  {
+    "query": "The Python worker crashes with a KeyError on startup.",
+    "should_trigger": false,
+    "near_miss": "Non-browser failure; ordinary debugging."
+  },
+  {
+    "query": "Add a unit test for the date-formatting utility.",
+    "should_trigger": false,
+    "near_miss": "No browser reproduction or live verification involved."
+  }
+]
