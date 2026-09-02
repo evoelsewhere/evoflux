@@ -74,9 +74,13 @@ Choose one proof obligation and the cheapest sufficient level before surveying
 fixtures. Search/read one nearest existing seam, then batch independent source
 and test observations. Use `code_context`, `read`, `grep`, and `glob` for source;
 do not use shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find` to reread
-source or bypass an observation receipt. Reserve shell for test, formatter,
-lint/type, build, repetition, and runtime commands. Await long commands with
-`process(action="wait", wait_seconds=60)`.
+source or bypass an observation receipt. Before the first test command, confirm
+this repository's actual invocation for a focused test and the full
+suite—checked-in wrapper script, manifest command, or build file—rather than
+assuming a default runner; a multi-language workspace has one command per
+surface. Reserve shell for test, formatter, lint/type, build, repetition, and
+runtime commands. Await long commands with `process(action="wait",
+wait_seconds=60)`.
 
 When the focused proof fails, use its exact diagnostic to correct one fixture,
 boundary, or assertion and rerun the same command. Once the focused proof and

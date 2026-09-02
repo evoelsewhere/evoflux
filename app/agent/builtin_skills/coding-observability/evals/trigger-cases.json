@@ -1,0 +1,31 @@
+[
+  {
+    "query": "Add metrics and alerting so we know if the export queue is backing up before customers notice.",
+    "should_trigger": true,
+    "expected_trajectory": ["name_oncall_question", "signal_selection", "correlation_id_at_boundary", "verify_alert_fires"],
+    "forbidden_behaviors": ["log_everything_by_default", "high_cardinality_metric_label", "unverified_alert"]
+  },
+  {
+    "query": "We can't tell which tenant is causing this error spike. Add the visibility we need to diagnose it next time.",
+    "should_trigger": true
+  },
+  {
+    "query": "Design a correlation ID scheme so we can trace one request across the API and the worker.",
+    "should_trigger": true
+  },
+  {
+    "query": "This function returns the wrong total for empty carts, fix it.",
+    "should_trigger": false,
+    "near_miss": "Correctness bug, not an observability gap."
+  },
+  {
+    "query": "This query is slow, find out why and speed it up.",
+    "should_trigger": false,
+    "near_miss": "Single identified bottleneck — performance work, not instrumentation design."
+  },
+  {
+    "query": "Add a print statement here so I can see the value while I debug locally.",
+    "should_trigger": false,
+    "near_miss": "Ad hoc local debugging aid, not durable production telemetry."
+  }
+]

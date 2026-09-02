@@ -27,6 +27,13 @@ transfer, render, lock, serialization step, or external wait that owns the
 material cost. A hot function is not necessarily the optimization boundary;
 confirm how often it runs and whether its work is avoidable.
 
+An index or added capacity is a guess until the query planner (e.g. `EXPLAIN
+ANALYZE`) confirms it changes the plan; a low-selectivity, leading-wildcard, or
+function-wrapped predicate often will not benefit from one. When every
+endpoint slows together under load, suspect connection-pool or resource-pool
+exhaustion before widening any single query—a bigger pool can relocate the
+queue rather than remove it.
+
 If profiling exposes only a query label, trace name, route, allocation text, or
 source fragment, call `code_context` with `action="search"` once to locate the owning declaration. Skip
 search when the profiler already reports an exact declared symbol.

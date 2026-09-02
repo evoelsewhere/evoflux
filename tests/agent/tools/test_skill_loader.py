@@ -1124,13 +1124,18 @@ class TestBuiltinSkills:
         assert set(discover_skills()) == {
             "algorithmic-art",
             "canvas-design",
+            "coding-api-design",
+            "coding-browser-verify",
             "coding-debugging",
+            "coding-git-workflow",
             "coding-implementation",
             "coding-investigation",
             "coding-migration",
+            "coding-observability",
             "coding-performance",
             "coding-review",
             "coding-security",
+            "coding-simplification",
             "coding-testing",
             "frontend-design",
             "mcp-installer",
@@ -1270,13 +1275,17 @@ class TestBuiltinSkills:
 
     def test_native_code_context_contract_is_embedded_in_coding_workflows(self):
         expected_owners = [
+            "coding-api-design",
+            "coding-browser-verify",
             "coding-debugging",
             "coding-implementation",
             "coding-investigation",
             "coding-migration",
+            "coding-observability",
             "coding-performance",
             "coding-review",
             "coding-security",
+            "coding-simplification",
             "coding-testing",
             "review-pull-requests",
         ]

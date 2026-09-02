@@ -71,6 +71,11 @@ Add negative tests for bypasses and adjacent tenants/resources. Verify secure
 failure behavior, auditability, and any required key rotation, data cleanup,
 configuration change, or deployment sequence.
 
+For dependency-execution risk, identify the actual lockfile/installation
+boundary first, block install scripts before their first run, and avoid
+blanket auto-remediation (e.g. force-installing a major version bump) that
+trades a known vulnerability for unreviewed breakage.
+
 ## Execution discipline and threat stop
 
 Select one reachable attacker-to-operation boundary before enumerating checks.

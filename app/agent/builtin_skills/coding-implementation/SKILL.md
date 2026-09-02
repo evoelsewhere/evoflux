@@ -61,6 +61,11 @@ enforce the contract. Update types, fixtures, generated artifacts, telemetry,
 or documentation only when the observable contract requires them. Switch to a
 migration workflow if old and new behavior must coexist across releases.
 
+When the change relies on a specific framework or library API whose behavior
+at the installed version is uncertain, verify against that dependency's
+installed version rather than assumed or memorized behavior before writing
+the call.
+
 ## Phase 3 — Run the decisive check
 
 Run formatter/diagnostics and the smallest test that exercises the changed
@@ -109,5 +114,6 @@ for adjacent improvements.
 ## Deliverable
 
 Lead with the observable result. Summarize the contract, key files changed,
-checks actually run, and any remaining verification gap. Do not narrate every
-edit or claim success from inspection alone.
+checks actually run, and any remaining verification gap. Name any adjacent
+issue noticed but intentionally left untouched; do not fix it silently and do
+not omit it. Do not narrate every edit or claim success from inspection alone.

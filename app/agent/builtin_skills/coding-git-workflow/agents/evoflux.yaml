@@ -1,0 +1,20 @@
+interface:
+  display_name: "Structure Git Workflow"
+  short_description: "Shape commits, branch lifetime, and PR submission"
+  default_prompt: "Use $coding-git-workflow to structure the commits, branch, and PR description for this change."
+policy:
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: shell
+      description: "Run git and other repository-native commands"
+    - type: builtin
+      value: worktree_start
+      description: "Create an isolated git worktree/branch for concurrent work"
+    - type: builtin
+      value: worktree_finish
+      description: "Finish and integrate an isolated worktree/branch"
+    - type: builtin
+      value: create_pull_request
+      description: "Open a pull/merge request through EvoFlux provider-neutral tools"

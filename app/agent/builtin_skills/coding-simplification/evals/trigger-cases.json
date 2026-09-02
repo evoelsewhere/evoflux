@@ -1,0 +1,31 @@
+[
+  {
+    "query": "This function has four levels of nested if statements. Clean it up without changing what it does.",
+    "should_trigger": true,
+    "expected_trajectory": ["understand_existing_behavior", "confirm_callers", "guard_clause_refactor", "unmodified_tests_pass"],
+    "forbidden_behaviors": ["remove_edge_case_without_understanding", "restyle_unrelated_code", "change_test_assertions"]
+  },
+  {
+    "query": "Rename this generic 'data' variable and the boolean flag parameter to something clearer across this module.",
+    "should_trigger": true
+  },
+  {
+    "query": "We have the same 40-line block copy-pasted in three handlers. Can you dedupe it?",
+    "should_trigger": true
+  },
+  {
+    "query": "Add support for a new payment provider to this checkout flow.",
+    "should_trigger": false,
+    "near_miss": "New behavior, not a clarity-only refactor."
+  },
+  {
+    "query": "This endpoint throws a 500 on empty input, fix it.",
+    "should_trigger": false,
+    "near_miss": "Bug fix, not simplification."
+  },
+  {
+    "query": "Reformat this file to match Prettier defaults.",
+    "should_trigger": false,
+    "near_miss": "Pure formatting with tooling; no clarity refactor decision to make."
+  }
+]

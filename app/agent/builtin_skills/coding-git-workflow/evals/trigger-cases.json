@@ -1,0 +1,30 @@
+[
+  {
+    "query": "I've made five separate logical fixes in one long session. Help me split this into clean commits before I open a PR.",
+    "should_trigger": true,
+    "expected_trajectory": ["atomic_commit_granularity", "short_lived_branch", "pr_description_with_not_touched", "stop"],
+    "forbidden_behaviors": ["single_giant_commit", "force_push_without_authorization", "placeholder_pr_for_unfinished_work"]
+  },
+  {
+    "query": "Should this go on a long-lived feature branch or land behind a flag on trunk?",
+    "should_trigger": true
+  },
+  {
+    "query": "Write the PR description for this change, including what I intentionally didn't touch.",
+    "should_trigger": true
+  },
+  {
+    "query": "What does bumping the version from 2.3.1 to 2.4.0 promise to API consumers here?",
+    "should_trigger": true
+  },
+  {
+    "query": "Implement the retry logic for the upload endpoint.",
+    "should_trigger": false,
+    "near_miss": "The code change itself, not commit/branch/PR structuring."
+  },
+  {
+    "query": "Review the open pull request #482 and tell me if it's ready to merge.",
+    "should_trigger": false,
+    "near_miss": "Reviewing someone else's PR, not structuring one's own submission."
+  }
+]

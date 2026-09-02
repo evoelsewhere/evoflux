@@ -40,7 +40,10 @@ Use repository-native components, tokens, routing, state, and dependencies.
 Implement real content and all relevant loading, empty, error, disabled, hover,
 focus, and success states. Keep control labels action-oriented and consistent
 through the flow. Avoid decorative grids, gradients, cards, numbering, and
-animation unless they serve the hierarchy or interaction.
+animation unless they serve the hierarchy or interaction. Treat a
+purple-to-indigo gradient hero, uniform rounded-2xl cards everywhere, a
+generic stock-hero layout, and stand-in lorem-ipsum copy as signals of an
+unreviewed default, not a finished design.
 
 Preserve semantic HTML, keyboard navigation, visible focus, contrast, target
 sizes, responsive reflow, and reduced motion. Check CSS specificity and avoid

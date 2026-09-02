@@ -1,0 +1,14 @@
+interface:
+  display_name: "Verify in Browser"
+  short_description: "Reproduce and verify a browser-observable defect live"
+  default_prompt: "Use $coding-browser-verify to reproduce this in the browser, diagnose the source, and verify the fix live."
+policy:
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: browser_use
+      description: "Live, isolated browser automation and inspection (DOM, console, network)"
+    - type: builtin
+      value: code_context
+      description: "Unified indexed search, structural grep, exact-symbol graph navigation, and dynamic cross-repository resolution"
