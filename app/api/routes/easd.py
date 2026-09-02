@@ -39,6 +39,8 @@ from app.api.schemas.easd import (
     EasdRevisionAcceptRequest,
     EasdRevisionCreateRequest,
     EasdRunCreateRequest,
+    EasdRunOptionsUpdateRequest,
+    EasdRunOptionsUpdateResponse,
     EasdRunStartRequest,
     EasdRunDetailResponse,
     EasdRunListResponse,
@@ -1226,6 +1228,47 @@ async def rebind_easd_run(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except TraceValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.patch(
+    "/runs/{run_id}/options",
+    response_model=EasdRunOptionsUpdateResponse,
+)
+async def update_easd_run_options(
+    run_id: UUID,
+    body: EasdRunOptionsUpdateRequest,
+    db_factory: DbSessionFactory,
+) -> EasdRunOptionsUpdateResponse:
+    """Update execution options for an EASD run (model, compact, auto_pilot)."""
+    from app.services.trace_service import get_run as _get_run
+
+    try:
+        async with db_factory() as db:
+            try:
+                run = await _get_run(db, run_id)
+                if body.preferred_model is not None:
+                    run.preferred_model = body.preferred_model
+                if body.compact_before_run is not None:
+                    run.compact_before_run = body.compact_before_run
+                if body.auto_pilot is not None:
+                    run.auto_pilot = body.auto_pilot
+                from datetime import UTC, datetime
+
+                run.updated_at = datetime.now(UTC)
+                db.add(run)
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+        return EasdRunOptionsUpdateResponse(
+            run_id=run_id,
+            preferred_model=run.preferred_model,
+            compact_before_run=run.compact_before_run,
+            auto_pilot=run.auto_pilot,
+        )
+    except TraceNotFound as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
 
 
 __all__ = ["router"]

@@ -100,6 +100,24 @@ class TraceRun(SQLModel, table=True):
         default_factory=_utcnow,
         sa_column=Column(TZDateTime(), nullable=False, onupdate=_utcnow),
     )
+    # --- Run execution options ---
+    # Preferred model override for the next agent run step. When set, the agent
+    # runtime uses this model instead of the workspace default.
+    preferred_model: str | None = Field(
+        default=None,
+        sa_column=Column(sa.String(255), nullable=True),
+    )
+    # When True, compact (summarize) the session context before each run step.
+    compact_before_run: bool = Field(
+        default=False,
+        sa_column=Column(sa.Boolean, nullable=False, server_default=sa.text("0")),
+    )
+    # When True, automatically advance through run steps without waiting for
+    # human approval between spec -> plan -> implement -> review -> verify.
+    auto_pilot: bool = Field(
+        default=False,
+        sa_column=Column(sa.Boolean, nullable=False, server_default=sa.text("0")),
+    )
 
 
 class TraceSpecRevision(SQLModel, table=True):

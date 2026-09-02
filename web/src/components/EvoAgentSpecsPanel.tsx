@@ -21,7 +21,7 @@ import {
   Wrench,
 } from 'lucide-react'
 
-import { EasdConvergenceApiError, resolveTeamSession } from '@/api/client'
+import { EasdConvergenceApiError, resolveTeamSession, updateEasdRunOptions } from '@/api/client'
 import type {
   EasdAppendableEvidenceKind,
   EasdActionId,
@@ -1383,6 +1383,10 @@ function RunDetail({
   const [chatActionError, setChatActionError] = useState<string | null>(null)
   const [editingDraft, setEditingDraft] = useState(false)
   const [workspaceView, setWorkspaceView] = useState<RunWorkspaceView>('overview')
+  const [preferredModel, setPreferredModel] = useState(detail?.run.preferred_model ?? '')
+  const [compactBeforeRun, setCompactBeforeRun] = useState(detail?.run.compact_before_run ?? false)
+  const [autoPilot, setAutoPilot] = useState(detail?.run.auto_pilot ?? false)
+  const [savingOptions, setSavingOptions] = useState(false)
   const [confirmingAction, setConfirmingAction] = useState<EasdConfirmableAction | null>(null)
   const [showPublication, setShowPublication] = useState(false)
   const draft = detail
@@ -1622,6 +1626,20 @@ function RunDetail({
       setChatActionError(errorText(error) ?? 'Could not create a Coding chat.')
     } finally {
       setCreatingChat(false)
+    }
+  }
+
+  const handleSaveOptions = async () => {
+    if (!detail) return
+    setSavingOptions(true)
+    try {
+      await updateEasdRunOptions(detail.run.id, {
+        preferred_model: preferredModel || null,
+        compact_before_run: compactBeforeRun,
+        auto_pilot: autoPilot,
+      })
+    } finally {
+      setSavingOptions(false)
     }
   }
 
@@ -1865,6 +1883,48 @@ function RunDetail({
               onExecute={executeRecovery}
             />
           ) : <>
+          {/* Run Options Card */}
+          <section className="rounded-2xl border border-(--color-border) bg-(--bg-card) p-4">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">Run Options</h3>
+            <div className="mt-3 grid gap-3 @3xl/easd:grid-cols-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-medium text-(--color-text-2)">Model override</span>
+                <input
+                  type="text"
+                  value={preferredModel}
+                  onChange={(e) => setPreferredModel(e.target.value)}
+                  placeholder="workspace default"
+                  className="h-8 rounded-lg border border-(--color-border) bg-(--bg-page) px-2.5 text-xs text-(--color-text) outline-none focus:border-(--color-accent)"
+                />
+                <span className="text-[9px] text-(--color-text-subtle)">e.g. openai:gpt-4o, anthropic:claude-sonnet-4-20250514</span>
+              </label>
+              <label className="flex items-start gap-2 rounded-lg border border-(--color-border) bg-(--bg-page) p-2.5">
+                <input
+                  type="checkbox"
+                  checked={compactBeforeRun}
+                  onChange={(e) => setCompactBeforeRun(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span className="text-xs text-(--color-text-2)">Compact session before each run step</span>
+              </label>
+              <label className="flex items-start gap-2 rounded-lg border border-(--color-border) bg-(--bg-page) p-2.5">
+                <input
+                  type="checkbox"
+                  checked={autoPilot}
+                  onChange={(e) => setAutoPilot(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span className="text-xs text-(--color-text-2)">Auto-advance (skip human approval between steps)</span>
+              </label>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <Button type="button" size="sm" variant="outline" disabled={savingOptions} onClick={() => void handleSaveOptions()}>
+                {savingOptions && <Loader2 className="animate-spin" />}
+                Save options
+              </Button>
+            </div>
+          </section>
+
           {(detail.run.status === 'intent' || detail.run.status === 'authoring') && (
             <section className="rounded-2xl border border-(--color-border) bg-(--bg-card) p-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-accent)">01 · Intent</p>
