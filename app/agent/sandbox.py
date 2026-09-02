@@ -361,18 +361,17 @@ class SandboxConfig:
 
     # ── Command validation (best-effort) ─────────────────────────────────
 
-    def check_command(self, command: str) -> tuple[Path, str] | None:
+    def check_command(
+        self, command: str, *, enforce: bool = True
+    ) -> tuple[Path, str] | None:
         """Best-effort scan of *command* for arguments inside denied paths,
         plus (if ``read_only_paths`` is set) shell redirection targets
         (``>``/``>>``) landing inside one of them.
 
-        The redirect check is deliberately narrow — it catches the most
-        common accidental/naive write pattern with no false positives
-        (a redirect is unambiguously a write), not every way a shell
-        command could modify a read-only file (``sed -i``, a script's own
-        file-write flags, etc. are not caught). OS-level permissions on the
-        base-source repo remain the last line of defence, same caveat the
-        denied-root scan below already carries.
+        When *enforce* is ``True`` (default), the first violation is returned
+        immediately as ``(path, reason)`` so callers can block execution.
+        When *enforce* is ``False``, violations are only logged as warnings
+        and the method returns ``None``, allowing execution to proceed.
         """
         try:
             tokens = _tokenize_command(command)
@@ -397,30 +396,51 @@ class SandboxConfig:
                 continue
             denied = self._is_denied(resolved)
             if denied is not None:
+                if enforce:
+                    logger.warning(
+                        "sandbox_command_denied token={} resolved={} denied={}",
+                        tok,
+                        resolved,
+                        denied,
+                    )
+                    return resolved, str(denied)
                 logger.warning(
-                    "sandbox_command_denied token={} resolved={} denied={}",
+                    "sandbox_command_denied_would_block token={} resolved={} denied={}",
                     tok,
                     resolved,
                     denied,
                 )
-                return resolved, str(denied)
             if not self._is_allowed(resolved):
+                if enforce:
+                    logger.warning(
+                        "sandbox_command_outside_allowlist token={} resolved={}",
+                        tok,
+                        resolved,
+                    )
+                    return resolved, "outside allowed sandbox roots"
                 logger.warning(
-                    "sandbox_command_outside_allowlist token={} resolved={}",
+                    "sandbox_command_outside_would_block token={} resolved={}",
                     tok,
                     resolved,
                 )
-                return resolved, "outside allowed sandbox roots"
             if self.read_only_paths and index > 0 and tokens[index - 1] in (">", ">>"):
                 read_only_root = self._is_read_only(resolved)
                 if read_only_root is not None:
+                    if enforce:
+                        logger.warning(
+                            "sandbox_command_write_denied_read_only token={} resolved={} read_only_root={}",
+                            tok,
+                            resolved,
+                            read_only_root,
+                        )
+                        return resolved, str(read_only_root)
                     logger.warning(
-                        "sandbox_command_write_denied_read_only token={} resolved={} read_only_root={}",
+                        "sandbox_command_write_would_block_read_only "
+                        "token={} resolved={} read_only_root={}",
                         tok,
                         resolved,
                         read_only_root,
                     )
-                    return resolved, str(read_only_root)
         return None
 
     # ── Display helpers ──────────────────────────────────────────────────
