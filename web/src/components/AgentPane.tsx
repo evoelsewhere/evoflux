@@ -488,7 +488,10 @@ export function AgentPane({
               (stream.currentBlocks.length > 0 && stream.currentBlocks.every((b) => b.type === 'user'))
             ))) && (
             <div className="flex items-center gap-2 px-3 pt-3" role="status" aria-label={`${name} is preparing a response`}>
-              <ActivityStatus className="text-xs" />
+              <ActivityStatus
+                className="text-xs"
+                label={stream.phase === 'model_calling' ? 'Thinking' : 'Preparing'}
+              />
             </div>
           )}
 

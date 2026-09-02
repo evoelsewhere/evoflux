@@ -588,25 +588,33 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       case 'agent_status': {
         const agent = d.agent as string
         const status = d.status as string
+        const meta = (d.metadata ?? {}) as Record<string, unknown>
+        const phase = (meta.phase as string) ?? null
         set((draft) => {
           ensureAgent(draft, agent)
           if (status === 'working') {
             resetTurnUsage(draft.agentStreams[agent])
             draft.agentStreams[agent].status = 'working'
             draft.agentStreams[agent]._completionEstimated = 0
+            if (phase === 'ingress' || phase === 'model_calling') {
+              draft.agentStreams[agent].phase = phase as 'ingress' | 'model_calling'
+            }
             draft.isTeamWorking = true
             if (draft.liveAgentNames && !draft.liveAgentNames.includes(agent)) draft.liveAgentNames.push(agent)
             draft.cacheInvalidations.push({ kind: 'team_sessions' })
             pushActivity(draft, { kind: 'spawn', agent, label: `${agent} started working` })
           } else if (status === 'idle') {
             draft.agentStreams[agent].status = 'idle'
+            draft.agentStreams[agent].phase = null
             if (draft.liveAgentNames && !draft.liveAgentNames.includes(agent)) draft.liveAgentNames.push(agent)
           } else if (status === 'offline') {
             draft.agentStreams[agent].status = 'offline'
+            draft.agentStreams[agent].phase = null
             if (draft.liveAgentNames) draft.liveAgentNames = draft.liveAgentNames.filter((name) => name !== agent)
             pushActivity(draft, { kind: 'dismiss', agent, label: `${agent} went offline` })
           } else if (status === 'error') {
             draft.agentStreams[agent].status = 'error'
+            draft.agentStreams[agent].phase = null
             draft.agentStreams[agent].lastError =
               (d.metadata as Record<string, unknown>)?.message as string ?? null
             if (draft.liveAgentNames && !draft.liveAgentNames.includes(agent)) draft.liveAgentNames.push(agent)

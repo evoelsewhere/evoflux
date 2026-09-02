@@ -637,7 +637,7 @@ async def dispatch_user_message(
                 AgentStatusEvent(
                     agent=team.lead.name,
                     status="working",
-                    metadata={"phase": "preparing", "ingress": True},
+                    metadata={"phase": "ingress"},
                 )
             ),
         )
