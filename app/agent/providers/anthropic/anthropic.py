@@ -160,6 +160,30 @@ def _mark_cache_control(
     return {**block, "cache_control": cache_control}
 
 
+def _system_blocks(
+    system: str,
+    cache_control: dict[str, Any] | None,
+    cache_boundary: int | None,
+) -> str | list[dict[str, Any]]:
+    """Split *system* at ``cache_boundary`` into a cached head + plain tail.
+
+    ``cache_boundary`` (set via ``agent_loop/streaming.py`` from
+    ``CacheBoundaryHook``) marks where per-turn-volatile content — memory
+    context, the ranked skill catalog — starts. Caching only the head means
+    that content changing every turn no longer invalidates the cache for the
+    much larger, actually-stable rest of the system prompt.
+    """
+    if not cache_control:
+        return system
+    if not isinstance(cache_boundary, int) or not (0 < cache_boundary < len(system)):
+        return [{"type": "text", "text": system, "cache_control": cache_control}]
+    head, tail = system[:cache_boundary], system[cache_boundary:]
+    return [
+        {"type": "text", "text": head, "cache_control": cache_control},
+        {"type": "text", "text": tail},
+    ]
+
+
 def _mark_last_message_cache_control(
     message: dict[str, Any], cache_control: dict[str, Any]
 ) -> None:
@@ -321,12 +345,9 @@ class AnthropicProvider(LLMProviderBase):
             "max_tokens": int(kwargs.pop("max_tokens", 4096) or 4096),
         }
         cache_control = kwargs.pop("cache_control", {"type": "ephemeral"})
+        cache_boundary = kwargs.pop("cache_boundary", None)
         if system:
-            payload["system"] = (
-                [{"type": "text", "text": system, "cache_control": cache_control}]
-                if cache_control
-                else system
-            )
+            payload["system"] = _system_blocks(system, cache_control, cache_boundary)
         anthropic_tools = _anthropic_tools(tools)
         if anthropic_tools:
             if cache_control:

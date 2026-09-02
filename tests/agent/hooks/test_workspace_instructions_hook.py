@@ -7,6 +7,7 @@ import pytest
 
 from app.agent.hooks.workspace_instructions import (
     MAX_AGENTS_MD_BYTES,
+    MAX_TOTAL_NESTED_INSTRUCTION_BYTES,
     WorkspaceInstructionsHook,
 )
 
@@ -137,6 +138,45 @@ async def test_nested_override_preflights_mutation_once(tmp_path):
     second = await hook.wrap_tool_call(None, state, tool_call, handler)
     assert second == "edited"
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_nested_instructions_evict_oldest_beyond_aggregate_budget(tmp_path):
+    """Accumulated nested AGENTS.md content must not grow without bound."""
+    (tmp_path / "AGENTS.md").write_text("root rule", encoding="utf-8")
+    per_file = MAX_TOTAL_NESTED_INSTRUCTION_BYTES // 2 + 100  # >half the budget each
+    dirs = []
+    for name in ("first", "second", "third"):
+        nested = tmp_path / name
+        nested.mkdir()
+        (nested / "AGENTS.md").write_text("x" * per_file, encoding="utf-8")
+        dirs.append(nested)
+
+    hook = WorkspaceInstructionsHook(str(tmp_path))
+    state = SimpleNamespace(metadata={})
+
+    async def handler(_ctx, _state, _tool_call):
+        return "done"
+
+    for nested in dirs:
+        tool_call = SimpleNamespace(
+            function=SimpleNamespace(
+                name="read",
+                arguments=json.dumps({"path": str(nested / "module.py")}),
+            )
+        )
+        result = await hook.wrap_tool_call(None, state, tool_call, handler)
+        # Every newly-applicable rule is still surfaced once, regardless of budget.
+        assert "New nested workspace instructions" in result
+
+        loaded = state.metadata["_loaded_workspace_instruction_files"]
+        # Each file alone is over half the budget, so at most one fits at a time.
+        assert len(loaded) <= 1
+
+    # The oldest ("first") must have been evicted once the budget was exceeded.
+    final_loaded = state.metadata["_loaded_workspace_instruction_files"]
+    assert str(dirs[0] / "AGENTS.md") not in final_loaded
+    assert str(dirs[-1] / "AGENTS.md") in final_loaded
 
 
 @pytest.mark.asyncio

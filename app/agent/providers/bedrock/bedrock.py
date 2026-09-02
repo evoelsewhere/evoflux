@@ -412,6 +412,9 @@ class BedrockProvider(LLMProviderBase):
             # support them and must never reach Bedrock model fields.
             "cache_affinity_key",
             "prompt_cache_key",
+            # Anthropic-specific system-prompt cache-split hint — Bedrock
+            # already caches via the trailing cachePoint block below.
+            "cache_boundary",
         }
         additional = {k: v for k, v in merged.items() if k not in known}
 
