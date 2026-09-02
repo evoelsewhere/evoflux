@@ -1053,7 +1053,6 @@ export interface EasdRun {
   converged_at: string | null
   created_at: string
   updated_at: string
-  preferred_model: string | null
   compact_before_run: boolean
   auto_pilot: boolean
   repository_document_hash?: string | null

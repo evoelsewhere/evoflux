@@ -1246,8 +1246,6 @@ async def update_easd_run_options(
         async with db_factory() as db:
             try:
                 run = await _get_run(db, run_id)
-                if body.preferred_model is not None:
-                    run.preferred_model = body.preferred_model
                 if body.compact_before_run is not None:
                     run.compact_before_run = body.compact_before_run
                 if body.auto_pilot is not None:
@@ -1262,7 +1260,6 @@ async def update_easd_run_options(
                 raise
         return EasdRunOptionsUpdateResponse(
             run_id=run_id,
-            preferred_model=run.preferred_model,
             compact_before_run=run.compact_before_run,
             auto_pilot=run.auto_pilot,
         )
