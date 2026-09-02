@@ -1,5 +1,5 @@
 from app.agent.providers.openrouter import _OpenRouterCompletionsHandler
-from app.agent.schemas.chat import HumanMessage
+from app.agent.schemas.chat import HumanMessage, SystemMessage
 
 
 def _handler() -> _OpenRouterCompletionsHandler:
@@ -33,13 +33,29 @@ def test_openrouter_forwards_session_affinity() -> None:
     assert body["session_id"] == "opaque-session"
 
 
-def test_openrouter_anthropic_enables_automatic_cache() -> None:
+def test_openrouter_anthropic_marks_cache_breakpoints_on_content_blocks() -> None:
     handler = _OpenRouterCompletionsHandler(
         "anthropic/claude-sonnet-4.6",
         "https://openrouter.ai/api/v1",
         {"Authorization": "Bearer test"},
     )
 
-    body = handler.build_request([HumanMessage(content="hi")], None, True, {})
+    body = handler.build_request(
+        [SystemMessage(content="be concise"), HumanMessage(content="hi")],
+        None,
+        True,
+        {},
+    )
 
-    assert body["cache_control"] == {"type": "ephemeral"}
+    assert "cache_control" not in body
+    system_content = body["messages"][0]["content"]
+    assert system_content[-1]["cache_control"] == {"type": "ephemeral"}
+    last_content = body["messages"][-1]["content"]
+    assert last_content[-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_openrouter_non_anthropic_model_has_no_cache_control() -> None:
+    body = _handler().build_request([HumanMessage(content="hi")], None, True, {})
+
+    assert "cache_control" not in body
+    assert body["messages"][-1]["content"] == "hi"

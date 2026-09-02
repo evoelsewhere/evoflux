@@ -154,6 +154,31 @@ def _anthropic_tools(tools: list[dict] | None) -> list[dict[str, Any]] | None:
     return converted or None
 
 
+def _mark_cache_control(
+    block: dict[str, Any], cache_control: dict[str, Any]
+) -> dict[str, Any]:
+    return {**block, "cache_control": cache_control}
+
+
+def _mark_last_message_cache_control(
+    message: dict[str, Any], cache_control: dict[str, Any]
+) -> None:
+    """Add a cache breakpoint to the last content block of *message*, in place.
+
+    Anthropic only recognizes ``cache_control`` on individual content blocks,
+    never as a top-level request field. Marking the newest message caches
+    everything up to and including it, so the next turn in the same
+    conversation reuses the growing prefix instead of paying for it again.
+    """
+    content = message.get("content")
+    if isinstance(content, list) and content:
+        content[-1] = _mark_cache_control(content[-1], cache_control)
+    elif isinstance(content, str) and content:
+        message["content"] = [
+            {"type": "text", "text": content, "cache_control": cache_control}
+        ]
+
+
 def _supports_legacy_sampling(model: str) -> bool:
     return not any(marker in model for marker in ("-4-5", "-4-6", "-4-7"))
 
@@ -295,14 +320,22 @@ class AnthropicProvider(LLMProviderBase):
             "messages": anthropic_messages,
             "max_tokens": int(kwargs.pop("max_tokens", 4096) or 4096),
         }
+        cache_control = kwargs.pop("cache_control", {"type": "ephemeral"})
         if system:
-            payload["system"] = system
+            payload["system"] = (
+                [{"type": "text", "text": system, "cache_control": cache_control}]
+                if cache_control
+                else system
+            )
         anthropic_tools = _anthropic_tools(tools)
         if anthropic_tools:
+            if cache_control:
+                anthropic_tools[-1] = _mark_cache_control(
+                    anthropic_tools[-1], cache_control
+                )
             payload["tools"] = anthropic_tools
-        cache_control = kwargs.pop("cache_control", {"type": "ephemeral"})
-        if cache_control:
-            payload["cache_control"] = cache_control
+        if cache_control and anthropic_messages:
+            _mark_last_message_cache_control(anthropic_messages[-1], cache_control)
         thinking = _apply_thinking(self.model, kwargs, payload)
         _add_sampling(self.model, kwargs, payload, thinking=thinking)
         return payload
