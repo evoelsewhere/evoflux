@@ -71,3 +71,33 @@ If implementation discovery conflicts with accepted intent, crosses assigned
 scope, or requires another owner, stop that slice and report a deviation. Do not
 edit the accepted specification, broaden permissions, or claim convergence to
 make the implementation appear complete.
+
+## Code graph navigation
+
+Use `code_context` to validate caller/callee contracts before and after edits,
+and to verify symbol-level impact of changes. Start with `action="search"` to
+locate the exact symbol being modified, then trace relationships to confirm
+bounded impact:
+
+| Intent | `code_context` action |
+|--------|-----------------------|
+| Locate the symbol being edited | `action="search"` |
+| Exact definition of the edited symbol | `action="definition"` |
+| Inbound callers that may break | `action="callers"` |
+| Outbound callees that must remain valid | `action="callees"` |
+| All structural references to verify scope | `action="references"` |
+| Transitive impact of the change | `action="impact"` |
+| Immediate bidirectional boundary | `action="neighborhood"` |
+
+Use `action="search"` once to reveal a declared identifier, then call the
+necessary graph action for exact-symbol traversal. After a promotable search
+result, skip another `action="search"`, `grep`, or `read` to re-derive
+the same location.
+
+Keep `refresh=true` for the first indexed query and after edits. Use
+`refresh=false` only for an immediate follow-up that intentionally reuses the
+same index version.
+
+Read [references/code-context-contract.md](references/code-context-contract.md)
+for the full indexed code-context contract, search/traversal limits, and safety
+discipline.
