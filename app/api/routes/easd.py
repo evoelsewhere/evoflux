@@ -27,6 +27,8 @@ from app.api.schemas.easd import (
     EasdPlanRevisionOut,
     EasdPublicationRequest,
     EasdPublicationResponse,
+    EasdRebindRequest,
+    EasdRebindResponse,
     EasdRepositorySetupOut,
     EasdRuntimeMigrationPreviewResponse,
     EasdRuntimeMigrationRequest,
@@ -1177,6 +1179,52 @@ async def publish_easd_run(
     except EasdStoreConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except EasdStoreError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post(
+    "/runs/{run_id}/rebind",
+    response_model=EasdRebindResponse,
+)
+async def rebind_easd_run(
+    run_id: UUID,
+    body: EasdRebindRequest,
+    db_factory: DbSessionFactory,
+) -> EasdRebindResponse:
+    """Rebind an EASD run to a different Coding session.
+
+    By default only allows rebinding when the old session is inactive (closed/ended).
+    Pass ``force=True`` to rebind even when the old session is still active.
+    """
+    from app.services.trace_service import rebind_run_to_session
+
+    try:
+        async with db_factory() as db:
+            try:
+                old_run = await get_run(db, run_id)
+                old_session_id = old_run.session_id
+                await rebind_run_to_session(
+                    db,
+                    run_id=run_id,
+                    session_id=body.session_id,
+                    force=body.force,
+                )
+                await db.commit()
+            except BaseException:
+                await db.rollback()
+                raise
+        return EasdRebindResponse(
+            run_id=run_id,
+            old_session_id=old_session_id,
+            new_session_id=body.session_id,
+            status="rebounded",
+        )
+    except TraceNotFound as exc:
+        _raise_easd(exc)
+        raise AssertionError("unreachable")
+    except TraceConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except TraceValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

@@ -1440,7 +1440,75 @@ async def _session_for_run(
             raise TraceValidationError("Coding session belongs to another EASD project")
     elif Path(session.workspace).resolve() != Path(run.workspace).resolve():
         raise TraceValidationError("Coding session belongs to another EASD workspace")
+
+    # Auto-rebind when the old session has been deleted from the database.
+    # We do NOT auto-rebind based on staleness — that requires human judgment.
+    if run.session_id is not None and run.session_id != session.id:
+        old_session = await db.get(ChatSession, run.session_id)
+        if old_session is None:
+            logger.info(
+                "easd_run_auto_rebind run_id={} old_session_deleted new_session={}",
+                run.id,
+                session.id,
+            )
+            run.session_id = session.id
+            run.updated_at = _utcnow()
+            db.add(run)
+
     return session
+
+
+async def rebind_run_to_session(
+    db: AsyncSession,
+    *,
+    run_id: str | UUID,
+    session_id: str | UUID,
+    force: bool = False,
+) -> TraceRun:
+    """Manually rebind an EASD run to a different Coding session.
+
+    By default only allows rebinding when the old session is inactive.
+    Pass ``force=True`` to rebind even when the old session is still active
+    (requires the run to be in a non-terminal state).
+    """
+    run = await get_run(db, run_id)
+    if run.status in {"converged", "archived", "failed", "cancelled"}:
+        raise TraceConflict(
+            f"Cannot rebind a terminal EASD run in status '{run.status}'"
+        )
+
+    session = await db.get(ChatSession, _uuid(session_id, label="session_id"))
+    if session is None or session.mode != "coding" or not session.workspace:
+        raise TraceValidationError("Target must be a Coding session")
+
+    if run.session_id == session.id:
+        return run  # Already bound to this session.
+
+    old_session_id = run.session_id
+    if not force and old_session_id is not None:
+        old_session = await db.get(ChatSession, old_session_id)
+        if old_session is not None:
+            raise TraceConflict(
+                "Old session still exists. Use force=True to rebind anyway."
+            )
+
+    run.session_id = session.id
+    run.updated_at = _utcnow()
+    db.add(run)
+    _queue_run_state(
+        db,
+        run,
+        from_status=run.status,
+        event="run_rebounded",
+        actor="human",
+    )
+    logger.info(
+        "easd_run_rebound run_id={} old_session={} new_session={}",
+        run.id,
+        old_session_id,
+        session.id,
+    )
+    return run
 
 
 async def start_plan_authoring_in_session(

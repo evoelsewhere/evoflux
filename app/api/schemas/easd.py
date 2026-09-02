@@ -618,4 +618,18 @@ class EasdRuntimeMigrationResponse(EasdRuntimeMigrationPreviewResponse):
     removed_generated_file_count: int
 
 
+class EasdRebindRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: UUID
+    force: bool = False
+
+
+class EasdRebindResponse(BaseModel):
+    run_id: UUID
+    old_session_id: UUID | None
+    new_session_id: UUID
+    status: str
+
+
 __all__ = [name for name in globals() if name.startswith("Easd")]
