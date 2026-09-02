@@ -564,7 +564,7 @@ async def _start_locked(
     if not executable_exists:
         return f"Executable not found: {argv[0]!r} (command: {command})"
 
-    hit = sandbox.check_command(command)
+    hit = sandbox.check_command(command, enforce=False)
     if hit is not None:
         resolved, denied = hit
         raise PermissionError(
