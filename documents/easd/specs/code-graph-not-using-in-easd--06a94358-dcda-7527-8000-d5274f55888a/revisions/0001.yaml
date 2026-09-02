@@ -1,0 +1,266 @@
+id: 06a943b6-48cd-7e56-8000-2c41e7382f93
+run_id: 06a94358-dcda-7527-8000-d5274f55888a
+version: 1
+status: accepted
+spec:
+  title: Code Graph not using in EASD
+  problem: EASD skills (easd-specify, easd-plan, easd-implement, easd-review, easd-verify) run in Coding-only
+    mode where the code_context tool is already injected as a deferred tool, yet the skill instructional
+    files never reference it. This forces EASD agents to rely on basic read/grep/glob for source discovery,
+    callers, callees, references, impact, and neighborhood traversal — missing the richer code graph navigation
+    that the 9 Coding skills already leverage. The result is less accurate cross-repository code analysis
+    during EASD specify/plan/implement/review/verify phases.
+  outcome: All 5 EASD skill SKILL.md files gain explicit code_context usage guidance and the shared references/code-context-contract.md
+    bundle, matching the pattern established by the 9 Coding skills. EASD agents can leverage code graph
+    navigation (search, definition, callers, callees, references, impact, neighborhood) during specification
+    grounding, planning, implementation, independent review, and verification — producing higher-fidelity
+    source evidence and reducing the need for rereading raw files. The validation test is updated to reflect
+    the expanded skill scope.
+  goals:
+  - Each EASD skill SKILL.md references code_context with phase-appropriate usage guidance
+  - Each EASD skill bundles references/code-context-contract.md matching the Coding skills pattern
+  - The validation test test_native_code_context_contract_is_embedded_in_coding_workflows expands to cover
+    EASD skills
+  - easd-specify uses code_context for repository discovery, ambiguity scanning, and source grounding
+  - easd-plan uses code_context for impact target identification, affected-path mapping, and cross-layer
+    dependency tracing
+  - easd-implement uses code_context for caller/callee validation before and after edits, and for verifying
+    symbol-level impact of changes
+  - easd-review uses code_context for independent source verification of implementation claims, references
+    checking, and transitive impact assessment
+  - easd-verify uses code_context for evidence gate validation, cross-checking AC coverage against actual
+    code symbols, and verifying documentation reconciliation
+  non_goals:
+  - Changing the code_context tool runtime, API, or schema
+  - Modifying the deferred-tool catalog or tool injection mechanism
+  - Altering EASD lifecycle state transitions, run states, or convergence rules
+  - Adding new backend services or database changes
+  - Changing the skill resolution or scope enforcement logic
+  - Altering the Coding skills existing code_context patterns
+  - Modifying the EASD knowledge-base index, specs, or features content
+  source_refs:
+  - evoflux:.evoflux/easd/config.json
+  - evoflux:.evoflux/easd/RULES.md
+  - evoflux:.evoflux/easd/.local/runs/code-graph-not-using-in-easd--06a94358-dcda-7527-8000-d5274f55888a/intent.yaml
+  - evoflux:.evoflux/skills/easd-implement/SKILL.md
+  - evoflux:.evoflux/skills/easd-plan/SKILL.md
+  - evoflux:.evoflux/skills/easd-review/SKILL.md
+  - evoflux:.evoflux/skills/easd-verify/SKILL.md
+  - evoflux:.evoflux/skills/easd-specify/SKILL.md
+  - evoflux:app/agent/builtin_skills/coding-implementation/SKILL.md
+  - evoflux:app/agent/builtin_skills/coding-investigation/SKILL.md
+  - evoflux:app/agent/builtin_skills/coding-investigation/references/code-context-contract.md
+  - evoflux:app/agent/builtin_skills/coding-implementation/references/code-context-contract.md
+  - evoflux:tests/agent/tools/test_skill_loader.py:1271
+  - evoflux:documents/analysis/builtin-skill-context-audit-2026-08-06.md
+  - evoflux:documents/architecture/coding-agent-code-context.md
+  impact_targets:
+  - repository: evoflux
+    path: .evoflux/skills/easd-implement/SKILL.md
+    module: null
+    reason: Add code_context usage guidance section to easd-implement skill instructions
+  - repository: evoflux
+    path: .evoflux/skills/easd-plan/SKILL.md
+    module: null
+    reason: Add code_context usage guidance section to easd-plan skill instructions
+  - repository: evoflux
+    path: .evoflux/skills/easd-review/SKILL.md
+    module: null
+    reason: Add code_context usage guidance section to easd-review skill instructions
+  - repository: evoflux
+    path: .evoflux/skills/easd-verify/SKILL.md
+    module: null
+    reason: Add code_context usage guidance section to easd-verify skill instructions
+  - repository: evoflux
+    path: .evoflux/skills/easd-specify/SKILL.md
+    module: null
+    reason: Add code_context usage guidance section to easd-specify skill instructions
+  - repository: evoflux
+    path: .evoflux/skills/easd-implement/references/code-context-contract.md
+    module: null
+    reason: Bundle the shared code-context contract reference into easd-implement
+  - repository: evoflux
+    path: .evoflux/skills/easd-plan/references/code-context-contract.md
+    module: null
+    reason: Bundle the shared code-context contract reference into easd-plan
+  - repository: evoflux
+    path: .evoflux/skills/easd-review/references/code-context-contract.md
+    module: null
+    reason: Bundle the shared code-context contract reference into easd-review
+  - repository: evoflux
+    path: .evoflux/skills/easd-verify/references/code-context-contract.md
+    module: null
+    reason: Bundle the shared code-context contract reference into easd-verify
+  - repository: evoflux
+    path: .evoflux/skills/easd-specify/references/code-context-contract.md
+    module: null
+    reason: Bundle the shared code-context contract reference into easd-specify
+  - repository: evoflux
+    path: tests/agent/tools/test_skill_loader.py
+    module: test_native_code_context_contract_is_embedded_in_coding_workflows
+    reason: Expand the validation test to include EASD skills in the set of skills that must embed the
+      code_context contract
+  constraints:
+  - kind: architecture
+    statement: EASD skill files are project skills under .evoflux/skills/ (not built-in skills under app/agent/builtin_skills/).
+      They are progressively loaded by the SkillLoader from the project skills directory. Changes must
+      respect the existing frontmatter schema (name, description only) and the .evoflux.json scope file.
+    source_refs:
+    - evoflux:documents/analysis/builtin-skill-context-audit-2026-08-06.md
+  - kind: architecture
+    statement: code_context is already injected as a deferred tool in Coding mode via the DeferredToolCatalog.
+      No runtime tool injection changes are needed — only the skill instructional content references the
+      tool.
+    source_refs:
+    - evoflux:documents/features/catalogue.md
+    - evoflux:app/agent/AGENTS.md
+  - kind: compatibility
+    statement: Each coding-context reference must be bounded per the Shared coding-context-contract (Read,
+      Write). Cite source, use targeted reads, and never bulk-scan. EASD skills must use code_context
+      with the same discipline as Coding skills.
+    source_refs:
+    - evoflux:app/agent/builtin_skills/coding-investigation/references/code-context-contract.md
+  - kind: product
+    statement: The existing code_context usage pattern in Coding skills (explicit SKILL.md guidance +
+      bundled references/code-context-contract.md) is the canonical template. EASD skills must follow
+      the same structure but with phase-specific guidance tailored to each skill's workflow.
+    source_refs:
+    - evoflux:app/agent/builtin_skills/coding-implementation/SKILL.md
+    - evoflux:app/agent/builtin_skills/coding-investigation/SKILL.md
+  verification_commands:
+  - uv run pytest tests/agent/tools/test_skill_loader.py -k test_native_code_context_contract_is_embedded_in_coding_workflows
+  - uv run pytest tests/agent/tools/test_skill_loader.py -k test_easd_skill_files_have_correct_frontmatter
+  - uv run pytest tests/agent/tools/test_skill_loader.py -k test_easd_skill_scope_files
+  - uv run ruff check app/ tests/
+  - uv run ruff format --check app/ tests/
+  risk_tier: standard
+  delivery_flow:
+    mode: planned
+    rationale: Although the change is low-risk (instructional content only, no runtime/API/schema changes),
+      it spans 10 new files, 5 existing SKILL.md edits, and 1 test file update across a consistent pattern.
+      A plan phase is warranted to (1) define the exact code_context guidance text per EASD skill phase,
+      ensuring each skill's guidance is tailored and not copy-pasted verbatim, (2) confirm the shared
+      code-context-contract.md content is identical across all 10 skill bundles, and (3) verify the test
+      expansion covers the new expected set without breaking existing assertions.
+    confidence: 0.88
+    required_by: []
+  criteria:
+  - id: AC-1
+    statement: Each of the 5 EASD skill SKILL.md files (easd-specify, easd-plan, easd-implement, easd-review,
+      easd-verify) contains a code_context usage guidance section that references the tool by name and
+      describes phase-appropriate navigation actions.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      - review
+      machine_required: true
+      minimum_passes: 1
+  - id: AC-2
+    statement: Each of the 5 EASD skill directories under .evoflux/skills/easd-*/ contains a references/code-context-contract.md
+      file with identical content to the canonical contract in app/agent/builtin_skills/coding-investigation/references/code-context-contract.md.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      machine_required: true
+      minimum_passes: 1
+  - id: AC-3
+    statement: The test test_native_code_context_contract_is_embedded_in_coding_workflows in tests/agent/tools/test_skill_loader.py
+      is updated to include all 5 EASD skills in the expected set, asserting each contains code_context
+      references and the bundled contract.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      machine_required: true
+      minimum_passes: 1
+  - id: AC-4
+    statement: easd-specify SKILL.md guidance covers using code_context(action=search) for repository
+      discovery and ambiguity scanning, and code_context(action=definition|callers|references|impact)
+      for grounding source evidence during specification authoring.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      - review
+      machine_required: false
+      minimum_passes: 1
+  - id: AC-5
+    statement: easd-plan SKILL.md guidance covers using code_context for impact target identification
+      (action=impact|references), affected-path mapping, and cross-layer dependency tracing during plan
+      compilation.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      - review
+      machine_required: false
+      minimum_passes: 1
+  - id: AC-6
+    statement: easd-implement SKILL.md guidance covers using code_context for caller/callee validation
+      before and after edits, and for verifying symbol-level impact of changes during bounded implementation.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      - review
+      machine_required: false
+      minimum_passes: 1
+  - id: AC-7
+    statement: easd-review SKILL.md guidance covers using code_context for independent source verification
+      of implementation claims, references checking, and transitive impact assessment during review.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      - review
+      machine_required: false
+      minimum_passes: 1
+  - id: AC-8
+    statement: easd-verify SKILL.md guidance covers using code_context for evidence gate validation, cross-checking
+      AC coverage against actual code symbols, and verifying documentation reconciliation.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      - review
+      machine_required: false
+      minimum_passes: 1
+  - id: AC-9
+    statement: No EASD skill SKILL.md or reference file modifies the code_context tool runtime, API, schema,
+      deferred-tool catalog, or tool injection mechanism.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      machine_required: true
+      minimum_passes: 1
+  - id: AC-10
+    statement: All existing EASD skill tests (frontmatter, scope, content) continue to pass without regression.
+    required: true
+    evidence_policy:
+      allowed_kinds:
+      - machine
+      machine_required: true
+      minimum_passes: 1
+authoring:
+  mode: agent_chat
+  agent: evoflux
+  session_id: 06a94361-1bd0-719b-8000-569c50cdc431
+  summary: 'Grounded from .evoflux/easd/config.json (run status: authoring), all 5 EASD skill SKILL.md
+    files under .evoflux/skills/easd-*/SKILL.md, the 9 Coding skills under app/agent/builtin_skills/coding-*/SKILL.md
+    that already embed code_context guidance, the shared references/code-context-contract.md, the runtime
+    deferred-tool catalog (code_context tiers=(''coding'',)), the test at tests/agent/tools/test_skill_loader.py:1271
+    that currently asserts only Coding skills embed the contract, and documents/analysis/builtin-skill-context-audit-2026-08-06.md.
+    EASD skills already run in Coding-only mode (scope: coding), so code_context is available at runtime
+    but the SKILL.md files never instruct agents to use it. The scope expands from 9 Coding-only skill
+    files to 14 (adding 5 EASD skills). No backend runtime changes are needed — the tool is already injected;
+    only skill instructional content, bundled references, and the validation test change. Risk is low
+    because no API, schema, persistence, or security boundary moves.'
+  confidence: 0.88
+  submitted_at: '2026-08-30T14:17:08.475085+00:00'
+content_hash: 24f9d52ceac78ddf84b93aebbd0ea5900f100f4ec76a248f1b80ffc0ff1a3b7a
+created_at: 2026-08-30 14:17:08.550267+00:00
+accepted_at: 2026-08-30 14:25:45.736343+00:00
+document_hash: a2a16e9105c1728f2b341a3d41332b8bd14e6d29fb35e5c0e48ff55a7b5100f2
