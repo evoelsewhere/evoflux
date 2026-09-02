@@ -8,7 +8,6 @@ export function useProcessesQuery(enabled = true) {
     queryFn: getProcesses,
     enabled,
     refetchInterval: enabled ? 2_000 : false,
-    refetchIntervalInBackground: false,
   })
 }
 
