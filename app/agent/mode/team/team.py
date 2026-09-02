@@ -47,9 +47,12 @@ from app.agent.mode.team.reject import make_team_reject_tool
 from app.agent.mode.team.shared_state import make_team_state_tool
 from app.agent.mode.team.tools import make_team_message_tool
 from app.agent.mode.team.worktree import make_team_worktree_tool
-from app.agent.mode.team.easd_spec import make_easd_spec_tool
-from app.agent.mode.team.easd_plan import make_easd_plan_tool
-from app.agent.mode.team.easd_review import make_easd_review_tool
+from app.agent.easd import (
+    EasdContext,
+    make_easd_plan_tool,
+    make_easd_review_tool,
+    make_easd_spec_tool,
+)
 from app.agent.multimodal import build_parts_from_metas
 from app.agent.schemas.chat import AssistantMessage, HumanMessage, ToolMessage
 from app.agent.schemas.events import DoneEvent
@@ -3080,12 +3083,17 @@ class AgentTeam:
             make_team_state_tool(agent_name),
         ]
         if self.mode == "coding":
-            tools.append(make_easd_review_tool(self, agent_name=agent_name, role=role))
+            easd_ctx = EasdContext(
+                db_factory=self._db_factory, session_id=self.lead.session_id
+            )
+            tools.append(
+                make_easd_review_tool(easd_ctx, agent_name=agent_name, role=role)
+            )
 
         if agent_name == self.lead.name:
             if self.mode == "coding":
-                tools.append(make_easd_spec_tool(self, agent_name=agent_name))
-                tools.append(make_easd_plan_tool(self, agent_name=agent_name))
+                tools.append(make_easd_spec_tool(easd_ctx, agent_name=agent_name))
+                tools.append(make_easd_plan_tool(easd_ctx, agent_name=agent_name))
             tools.append(make_team_manage_tool(self))
             tools.append(
                 make_team_delegate_tool(self.mailbox, agent_name=agent_name, team=self)

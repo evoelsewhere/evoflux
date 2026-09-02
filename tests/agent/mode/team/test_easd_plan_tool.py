@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agent.mode.team.easd_plan import make_easd_plan_tool
+from app.agent.easd.context import EasdContext
+from app.agent.easd.plan import make_easd_plan_tool
 from app.models.chat import ChatSession
 from app.services import trace_service
 from app.services.trace_contracts import TracePlan, TraceSpecification
@@ -95,14 +96,8 @@ async def test_lead_plan_tool_persists_review_draft_without_approving(
         )
         await db.commit()
 
-    team = SimpleNamespace(
-        _db_factory=async_session_factory,
-        lead=SimpleNamespace(
-            session_id=str(session.id),
-            db_factory=async_session_factory,
-        ),
-    )
-    tool = make_easd_plan_tool(team, agent_name="lead")
+    easd_ctx = EasdContext(db_factory=async_session_factory, session_id=str(session.id))
+    tool = make_easd_plan_tool(easd_ctx, agent_name="lead")
     state = SimpleNamespace(metadata={})
 
     result = await tool.arun(

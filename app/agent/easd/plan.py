@@ -1,4 +1,9 @@
-"""Lead-only EASD plan submission tool for planning chats."""
+"""Standalone EASD plan submission tool.
+
+Decoupled from team orchestration — uses a protocol-based context
+instead of direct AgentTeam reference. Works in both single-agent
+and multi-agent modes.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
+from app.agent.easd.context import EasdContext
 from app.agent.tools.registry import InjectedArg, Tool
 from app.core.db import resolve_db_factory
 from app.services.trace_contracts import TracePlan
@@ -18,7 +24,7 @@ from app.services.trace_service import (
 )
 
 
-def make_easd_plan_tool(team, *, agent_name: str) -> Tool:
+def make_easd_plan_tool(ctx: EasdContext, *, agent_name: str) -> Tool:
     async def easd_submit_plan(
         run_id: Annotated[
             str,
@@ -49,19 +55,19 @@ def make_easd_plan_tool(team, *, agent_name: str) -> Tool:
     ) -> str:
         """Submit one complete plan draft for explicit user approval."""
 
-        db_factory = resolve_db_factory(team._db_factory or team.lead.db_factory)
+        db_factory = resolve_db_factory(ctx.db_factory)
         try:
             async with db_factory() as db:
                 try:
                     revision = await submit_authored_plan(
                         db,
                         run_id=run_id,
-                        session_id=team.lead.session_id,
+                        session_id=ctx.session_id,
                         plan=plan,
                         authoring={
                             "mode": "agent_chat",
                             "agent": agent_name,
-                            "session_id": team.lead.session_id,
+                            "session_id": ctx.session_id,
                             "summary": summary.strip(),
                             "confidence": confidence,
                             "submitted_at": datetime.now(UTC).isoformat(),
