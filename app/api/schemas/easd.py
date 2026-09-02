@@ -632,4 +632,19 @@ class EasdRebindResponse(BaseModel):
     status: str
 
 
+class EasdRunOptionsUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preferred_model: str | None = None
+    compact_before_run: bool | None = None
+    auto_pilot: bool | None = None
+
+
+class EasdRunOptionsUpdateResponse(BaseModel):
+    run_id: UUID
+    preferred_model: str | None
+    compact_before_run: bool
+    auto_pilot: bool
+
+
 __all__ = [name for name in globals() if name.startswith("Easd")]

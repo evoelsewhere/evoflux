@@ -383,3 +383,21 @@ export async function convergeEasdRun(runId: string): Promise<{ report: Record<s
   })
   return easdResponse(response, 'convergeEasdRun')
 }
+
+export interface EasdRunOptions {
+  preferred_model?: string | null
+  compact_before_run?: boolean
+  auto_pilot?: boolean
+}
+
+export async function updateEasdRunOptions(
+  runId: string,
+  options: EasdRunOptions,
+): Promise<{ run_id: string; preferred_model: string | null; compact_before_run: boolean; auto_pilot: boolean }> {
+  const response = await fetch(`${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/options`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options),
+  })
+  return easdResponse(response, 'updateEasdRunOptions')
+}
