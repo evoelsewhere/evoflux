@@ -88,7 +88,7 @@ from app.services.trace_service import (
     create_plan_revision,
     get_run,
     list_runs,
-    rebind_run_session,
+    rebind_run_to_session,
     retry_plan_authoring_in_session,
     retry_spec_authoring_in_session,
     read_run_trace_events,
@@ -926,25 +926,6 @@ async def start_easd_spec_authoring(
     _require_idle_chat(body.session_id)
     try:
         run = await start_spec_authoring_in_session(
-            db,
-            run_id=run_id,
-            session_id=body.session_id,
-        )
-        return EasdRunOut.model_validate(serialize_run(run))
-    except (TraceNotFound, TraceConflict, TraceValidationError) as exc:
-        _raise_easd(exc)
-        raise AssertionError("unreachable")
-
-
-@router.post("/runs/{run_id}/rebind", response_model=EasdRunOut)
-async def rebind_easd_run(
-    run_id: UUID,
-    body: EasdRunStartRequest,
-    db: WriteDbSession,
-) -> EasdRunOut:
-    _require_idle_chat(body.session_id)
-    try:
-        run = await rebind_run_session(
             db,
             run_id=run_id,
             session_id=body.session_id,

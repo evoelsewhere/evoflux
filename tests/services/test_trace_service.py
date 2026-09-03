@@ -1174,14 +1174,14 @@ async def test_rebind_moves_orphaned_run_to_new_session(tmp_path, setup_db):
         )
         assert started.session_id == session_a.id
 
-        rebound = await trace_service.rebind_run_session(
+        rebound = await trace_service.rebind_run_to_session(
             db, run_id=run.id, session_id=session_b.id
         )
         assert rebound.id == run.id
         assert rebound.session_id == session_b.id
         assert rebound.status == "authoring"
 
-        idempotent = await trace_service.rebind_run_session(
+        idempotent = await trace_service.rebind_run_to_session(
             db, run_id=run.id, session_id=session_b.id
         )
         assert idempotent.session_id == session_b.id
@@ -1202,7 +1202,7 @@ async def test_rebind_rejects_a_converged_run(tmp_path, setup_db):
         assert run.status == "converged"
 
         with pytest.raises(trace_service.TraceConflict, match="converged"):
-            await trace_service.rebind_run_session(
+            await trace_service.rebind_run_to_session(
                 db, run_id=run.id, session_id=other.id
             )
 
@@ -1249,7 +1249,7 @@ async def test_rebind_rejects_a_session_already_owned_by_another_run(
         )
 
         with pytest.raises(trace_service.TraceConflict, match="already owns"):
-            await trace_service.rebind_run_session(
+            await trace_service.rebind_run_to_session(
                 db, run_id=stranded.id, session_id=session_b.id
             )
 
@@ -1326,7 +1326,7 @@ async def test_rebind_recovers_a_run_abandoned_in_a_previous_session(
                 db, run_id=run.id, session_id=session_b.id
             )
 
-        await trace_service.rebind_run_session(
+        await trace_service.rebind_run_to_session(
             db, run_id=run.id, session_id=session_b.id
         )
 
