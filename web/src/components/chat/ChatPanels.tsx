@@ -26,6 +26,8 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
 
 interface ChatTrailingPanelsProps {
   onQuoteComment: (quote: string, comment: string) => void
+  /** Revise: focus the chat composer so the user can type feedback. */
+  onPlanRevise: () => void
   showActivity: boolean
   onCloseActivity: () => void
   workspace?: string | null
@@ -36,6 +38,7 @@ interface ChatTrailingPanelsProps {
 // Side panels rendered after <main> inside AppShell's body row.
 export function ChatTrailingPanels({
   onQuoteComment,
+  onPlanRevise,
   showActivity,
   onCloseActivity,
   workspace,
@@ -44,7 +47,7 @@ export function ChatTrailingPanels({
 }: ChatTrailingPanelsProps) {
   return (
     <>
-      <PlanReviewPanel onQuoteComment={onQuoteComment} />
+      <PlanReviewPanel onQuoteComment={onQuoteComment} onRevise={onPlanRevise} />
       <ChangesReviewPanel
         workspace={workspace}
         mode={mode}
