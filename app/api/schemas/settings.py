@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -133,6 +133,10 @@ class ProviderModelsResponse(BaseModel):
     # listing endpoint, or live discovery failed). Only providers with
     # ``fallback_models`` set in the catalog ever return this.
     source: Literal["provider", "fallback"]
+    # Per-model cost metadata (input/output/cache read/write $/1M tokens)
+    # derived from the shared model catalog. Empty when the catalog has no
+    # pricing for the listed models.
+    model_costs: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProviderUsageWindow(BaseModel):

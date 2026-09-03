@@ -35,6 +35,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   queryKeys,
   useDeleteProviderMutation,
@@ -390,6 +391,11 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const models = useMemo<string[]>(
     () => autoModelsQ.data?.models ?? [],
     [autoModelsQ.data?.models],
+  )
+
+  const modelCosts = useMemo(
+    () => autoModelsQ.data?.model_costs,
+    [autoModelsQ.data?.model_costs],
   )
 
   const handleListModels = async () => {
@@ -814,6 +820,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
               providerId={provider.id}
               models={models}
               visibleModels={provider.visible_models}
+              modelCosts={modelCosts}
               search={modelSearch}
               onSearchChange={setModelSearch}
               expanded={modelsExpanded}
@@ -832,6 +839,60 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   )
 }
 
+// ─── Pricing helpers ──────────────────────────────────────────────────────────
+
+import type { ModelCost } from '@/api/client/settings'
+
+function formatTokenPrice(pricePerMtok: number | null | undefined): string {
+  if (pricePerMtok == null) return ''
+  if (pricePerMtok === 0) return 'Free'
+  if (pricePerMtok < 0.01) return `$${pricePerMtok.toFixed(4)}`
+  return `$${pricePerMtok.toFixed(2)}`
+}
+
+function PricingBadge({ cost }: { cost: ModelCost }) {
+  const input = cost.input_per_mtok
+  const output = cost.output_per_mtok
+  const isFree = input === 0 && output === 0
+  const hasPricing = input != null || output != null
+  if (!hasPricing) return null
+
+  const cacheRead = cost.cache_read_per_mtok
+  const cacheWrite = cost.cache_write_per_mtok
+  const hasCache = cacheRead != null || cacheWrite != null
+  const cacheLabel = hasCache
+    ? [
+        cacheRead != null && cacheRead > 0 ? `Read: $${cacheRead.toFixed(4)}/1M` : null,
+        cacheWrite != null && cacheWrite > 0 ? `Write: $${cacheWrite.toFixed(4)}/1M` : null,
+      ].filter(Boolean).join(' · ')
+    : null
+
+  const badge = isFree ? (
+    <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+      Free
+    </span>
+  ) : (
+    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-400">
+      {formatTokenPrice(input)} in · {formatTokenPrice(output)} out
+    </span>
+  )
+
+  if (!cacheLabel) return badge
+
+  return (
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger>
+          <span className="cursor-help">{badge}</span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs text-xs">
+          {cacheLabel}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 // ─── Models panel ────────────────────────────────────────────────────────────
 
 type IndexedModel = {
@@ -843,6 +904,7 @@ function ModelsPanel({
   providerId,
   models,
   visibleModels,
+  modelCosts,
   search,
   onSearchChange,
   expanded,
@@ -853,6 +915,7 @@ function ModelsPanel({
   providerId: string
   models: string[]
   visibleModels: string[]
+  modelCosts?: Record<string, ModelCost>
   search: string
   onSearchChange: (v: string) => void
   expanded: boolean
@@ -968,6 +1031,7 @@ function ModelsPanel({
                   savingVisibleModels={savingVisibleModels}
                   onToggleVisible={() => toggleVisibleModel(modelId)}
                   onCopy={handleCopy}
+                  modelCost={modelCosts?.[modelId]}
                 />
               ))
             )}
@@ -986,12 +1050,14 @@ function ModelRow({
   savingVisibleModels,
   onToggleVisible,
   onCopy,
+  modelCost,
 }: {
   qualifiedId: string
   selected: boolean
   savingVisibleModels: boolean
   onToggleVisible: () => void
   onCopy: (qualifiedId: string) => Promise<void>
+  modelCost?: ModelCost
 }) {
   const isMobile = useIsMobile()
   const { isTauri, os } = usePlatform()
@@ -1044,6 +1110,7 @@ function ModelRow({
       <span className="min-w-0 flex-1 truncate font-mono text-xs text-(--color-text)">
         {qualifiedId}
       </span>
+      {modelCost && <PricingBadge cost={modelCost} />}
       <button
         type="button"
         onClick={onToggleVisible}

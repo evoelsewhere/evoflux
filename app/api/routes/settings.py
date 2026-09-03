@@ -9,7 +9,7 @@ import asyncio
 import os
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
@@ -746,10 +746,23 @@ async def list_provider_models(
     if not entry.get("auto_connect", True):
         _cache_provider_models(entry, discovered)
     if discovered:
+        from app.agent.providers.model_metadata import get_model_cost as _get_cost
+
+        # Build per-model cost map so the UI can display pricing
+        # information (input/output/cache rates per 1M tokens) next to
+        # each model checkbox without additional round-trips.
+        model_costs: dict[str, dict[str, Any]] = {}
+        for mid in discovered:
+            cost = _get_cost(mid)
+            if cost.input_per_mtok is None and cost.output_per_mtok is None:
+                continue
+            model_costs[mid] = cost.model_dump(exclude_defaults=True)
+
         return ProviderModelsResponse(
             provider=provider_id,
             models=discovered,
             source="provider",
+            model_costs=model_costs,
         )
     return ProviderModelsResponse(provider=provider_id, models=[], source="provider")
 
