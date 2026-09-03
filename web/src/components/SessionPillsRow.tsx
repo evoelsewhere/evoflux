@@ -6,6 +6,7 @@ import { useRegistryQuery } from '@/queries'
 import { cn } from '@/lib/utils'
 import {
   buildThinkingOptions,
+  normalizeModelId,
   reconcileThinkingLevel,
   shortModelName,
   fastModePriceHint,
@@ -124,7 +125,12 @@ function AdvancedComposerControl({
 }) {
   const registry = useRegistryQuery()
   const [open, setOpen] = useState(false)
-  const effectiveModel = sessionModel ?? defaultModel ?? ''
+  // A session/default model of PROVIDER_MODEL_PLACEHOLDER means "no
+  // per-agent override — inherit the provider default", not a real model
+  // id. Normalize it away here so the button label, aria-label, provider
+  // icon, and raw-id caption below all fall back to the same "no model"
+  // treatment automatically instead of rendering the internal token.
+  const effectiveModel = normalizeModelId(sessionModel) ?? normalizeModelId(defaultModel) ?? ''
   const model = registry.data?.models.find((entry) => entry.id === effectiveModel)
   const thinkingOptions = buildThinkingOptions(model?.thinking_levels ?? [])
   const currentThinkingLevel = sessionThinkingLevel

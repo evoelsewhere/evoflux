@@ -17,8 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { MultiSelect, type MultiSelectOption } from '@/components/settings/MultiSelect'
-
-const PROVIDER_MODEL_PLACEHOLDER = '__PROVIDER_MODEL__'
+import { PROVIDER_MODEL_PLACEHOLDER } from '@/lib/model-settings'
 
 interface ManagedAgentRuntimeModelProps {
   name: string

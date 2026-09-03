@@ -33,12 +33,18 @@ import { findSkillDirectives } from './InputBar.skills'
 import { resolveApiUrl } from '@/api/client'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
 import { parseEasdChatMessage } from '@/utils/easd-chat-message'
+import { PROVIDER_MODEL_PLACEHOLDER } from '@/lib/model-settings'
 
 const USER_COLLAPSE_LINES = 10
 const USER_COLLAPSE_CHARS = 700
 
+// A user message's recorded model can be PROVIDER_MODEL_PLACEHOLDER: it's
+// written from the lead agent's raw config at send/queue time, before any
+// per-turn model resolution happens (see app/services/shell_service.py and
+// interactive_message_service.py). Treat it the same as "no model" so the
+// raw token never reaches the tooltip/caption below.
 function shortModelName(modelId: string | null | undefined): string | null {
-  if (!modelId) return null
+  if (!modelId || modelId === PROVIDER_MODEL_PLACEHOLDER) return null
   return modelId.split(':').at(-1)?.split('/').at(-1) || modelId
 }
 
