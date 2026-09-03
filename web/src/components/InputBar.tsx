@@ -254,6 +254,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     { start: number; end: number; query: string } | null
   >(null)
   const [shellMode, setShellMode] = useState(false)
+  // IME composition tracking: during active CJK/accented input the native
+  // textarea is ``text-transparent`` (owned by the overlay mirror), which
+  // can hide IME candidate windows.  When composing we temporarily reveal
+  // the textarea text and suppress the overlay so the OS candidate UI
+  // renders in the correct position.
+  const [isComposing, setIsComposing] = useState(false)
   // The active @-mention window (positions in ``value``) — null when no
   // mention is being edited at the caret. Recomputed on every keystroke
   // and on caret-only moves (arrow keys, clicks) via ``syncMention``.
@@ -1198,6 +1204,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         textareaRef={textareaRef}
         fileRefs={fileRefs}
         skillNames={composerSkillNames}
+        hidden={isComposing}
       />
       <textarea
         ref={setTextareaRef}
@@ -1213,6 +1220,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         onSelect={syncMention}
         onClick={syncMention}
         onPaste={handlePaste}
+        onCompositionStart={() => setIsComposing(true)}
+        onCompositionEnd={() => setIsComposing(false)}
         onFocus={(e) => {
           onFocus?.()
           if (!shellMode && findActiveMention(value, e.currentTarget.selectionStart ?? value.length)) onFileRefsNeeded?.()
@@ -1253,7 +1262,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         // positions, so it ends up under the wrong overlay word and drifts
         // further with every scroll. The wrapper around the overlay handles
         // overflow via the overlay's ``overflow-hidden`` + scroll sync.
-        className="block w-full resize-none scrollbar-none bg-transparent p-0 align-middle text-sm leading-relaxed break-words text-transparent caret-(--color-text) placeholder-(--color-text-subtle) selection:bg-(--color-accent)/30 selection:text-(--color-text) focus:outline-none disabled:opacity-50"
+        // during active IME composition so the OS candidate UI renders
+        // correctly; the overlay mirror is hidden for the same duration.
+        className={`block w-full resize-none scrollbar-none bg-transparent p-0 align-middle text-sm leading-relaxed break-words caret-(--color-text) placeholder-(--color-text-subtle) selection:bg-(--color-accent)/30 selection:text-(--color-text) focus:outline-none disabled:opacity-50 ${isComposing ? 'text-(--color-text)' : 'text-transparent'}`}
         // Cap matches the ``resize()`` ceiling above so the JS-driven height
         // and the CSS limit stay in lockstep.
         style={{ maxHeight: '120px' }}
