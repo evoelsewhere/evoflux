@@ -355,10 +355,18 @@ export type ProviderSaveRequest = {
   extra?: Record<string, string>
 }
 
+export type ModelCost = {
+  input_per_mtok?: number | null
+  output_per_mtok?: number | null
+  cache_read_per_mtok?: number | null
+  cache_write_per_mtok?: number | null
+}
+
 export type ProviderModelsResponse = {
   provider: string
   models: string[]
   source: 'provider' | 'fallback'
+  model_costs?: Record<string, ModelCost>
 }
 
 export type ProviderUsageWindow = {
