@@ -425,7 +425,16 @@ export const useTeamStore = create<TeamStore>()(
 
     isEmptyIdleSession: () => {
       const state = get()
-      if (!state.sessionId || state.isTeamWorking) return false
+      // While `loadSession()` is still fetching history (`isSessionLoading`),
+      // `agentStreams` hasn't been populated yet — we don't know if this
+      // session is empty, so don't claim it is. Treating "unknown" as "not
+      // empty" is the safe default: callers use this to decide whether a
+      // new-session request can reuse the current session instead of
+      // creating one; wrongly saying "empty" silently swallows the request
+      // (see BUG-001). `consumeResolvedSessionReady` also calls this, but
+      // only right after `beginResolvedSession` synchronously resets
+      // `isSessionLoading` to false, so this addition doesn't affect it.
+      if (!state.sessionId || state.isTeamWorking || state.isSessionLoading) return false
       return state.agentNames.every((name) => !hasVisibleBlocks(state.agentStreams[name]))
     },
 
