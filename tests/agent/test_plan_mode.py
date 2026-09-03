@@ -7,13 +7,18 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.agent.agent_loop import Agent
 from app.agent.plan import (
     PlanModeService,
     get_service_for_session,
     reset_plan_mode_service,
     set_plan_mode_service,
 )
+from app.agent.schemas.agent import RunConfig
+from app.agent.schemas.chat import HumanMessage, ToolMessage
 from app.agent.tools.builtin.plan import _exit_plan_mode
+from app.agent.tools.registry import Tool
+from tests.agent.test_agent_run import MockProvider, make_text_chunk, make_tool_chunk
 
 
 @pytest.fixture
@@ -189,3 +194,76 @@ async def test_tool_rejected_message_includes_optional_feedback(
     assert "Plan rejected" in msg
     assert "wrong direction entirely" in msg
     assert state.metadata["_plan_mode"] is False
+
+
+# ── End-to-end interception through Agent.run() (BUG-007) ─────────────────
+
+
+async def test_plan_mode_intercepts_destructive_tool_end_to_end(
+    service: PlanModeService,
+):
+    """With `_plan_mode` active in state.metadata, a real Agent.run() turn
+    must record a destructive tool call instead of executing it — the tool
+    body must never run and the model must see the `[PLAN]` sentinel, not
+    real execution output.
+
+    This is the exact scenario from BUG-007: plan mode silently executed
+    edits/shell commands for real because `run_metadata["_plan_mode"]` was
+    mutated after `RunConfig` had already copied the dict, so the tool
+    executor's `s.metadata.get("_plan_mode")` check was always False.
+    """
+    side_effects: list[tuple[str, str]] = []
+
+    def write(path: str, content: str) -> str:
+        """Write a file — must never actually run while plan mode is active."""
+        side_effects.append((path, content))
+        return f"REAL WRITE: wrote {len(content)} bytes to {path}"
+
+    provider = MockProvider(
+        [
+            [make_tool_chunk("write", "call_1", '{"path": "a.txt", "content": "hi"}')],
+            [make_text_chunk("Recorded the plan step.")],
+        ]
+    )
+    agent = Agent(name="bot", llm_provider=provider, tools=[Tool(write, name="write")])
+    service.enter()
+    config = RunConfig(session_id="plan-sess", metadata={"_plan_mode": True})
+
+    msgs = await agent.run([HumanMessage(content="write a.txt")], config=config)
+
+    tool_msgs = [m for m in msgs if isinstance(m, ToolMessage)]
+    assert len(tool_msgs) == 1
+    content = tool_msgs[0].content
+    assert content is not None
+    assert content.startswith("[PLAN] Step 1 recorded: write")
+    assert "REAL WRITE" not in content
+    assert side_effects == []  # the tool body was never actually invoked
+    assert service.step_count == 1
+
+
+async def test_plan_mode_inactive_executes_tool_for_real(service: PlanModeService):
+    """Control case: without `_plan_mode` set, the same tool call executes
+    normally — proving the interception in the test above is specific to
+    plan mode, not an artifact of the test setup."""
+    side_effects: list[tuple[str, str]] = []
+
+    def write(path: str, content: str) -> str:
+        """Write a file."""
+        side_effects.append((path, content))
+        return f"REAL WRITE: wrote {len(content)} bytes to {path}"
+
+    provider = MockProvider(
+        [
+            [make_tool_chunk("write", "call_1", '{"path": "a.txt", "content": "hi"}')],
+            [make_text_chunk("Done.")],
+        ]
+    )
+    agent = Agent(name="bot", llm_provider=provider, tools=[Tool(write, name="write")])
+    config = RunConfig(session_id="plan-sess")
+
+    msgs = await agent.run([HumanMessage(content="write a.txt")], config=config)
+
+    tool_msgs = [m for m in msgs if isinstance(m, ToolMessage)]
+    assert len(tool_msgs) == 1
+    assert "REAL WRITE" in (tool_msgs[0].content or "")
+    assert side_effects == [("a.txt", "hi")]
