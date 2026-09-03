@@ -370,3 +370,88 @@ def test_sandbox_file_config_field_description() -> None:
     """SandboxFileConfig.denied_patterns has the expected description."""
     field_info = SandboxFileConfig.model_fields["denied_patterns"]
     assert "DEFAULT_DENIED_PATTERNS" in field_info.description
+
+
+# ============================================================================
+# BUG-004 follow-up: migrate pre-existing configs off the legacy 2-pattern
+# default onto the widened DEFAULT_DENIED_PATTERNS.
+# ============================================================================
+
+
+def test_load_config_migrates_legacy_default_denylist(tmp_path: Path) -> None:
+    """A sandbox.yaml still seeded with the old 2-pattern default is upgraded
+    in-memory and re-persisted to disk on load."""
+    target = tmp_path / "sandbox.yaml"
+    target.write_text("denied_patterns:\n  - '**/.env'\n  - '**/.env.*'\n")
+
+    cfg = load_config(target)
+
+    assert cfg.denied_patterns == list(DEFAULT_DENIED_PATTERNS)
+    # Persisted back to disk, not just upgraded in-memory.
+    reloaded = load_config(target)
+    assert reloaded.denied_patterns == list(DEFAULT_DENIED_PATTERNS)
+
+
+def test_load_config_migrates_legacy_default_denylist_regardless_of_order(
+    tmp_path: Path,
+) -> None:
+    """The match is order-independent (a set comparison), so a reversed
+    legacy list is still recognized as unmodified and migrated."""
+    target = tmp_path / "sandbox.yaml"
+    target.write_text("denied_patterns:\n  - '**/.env.*'\n  - '**/.env'\n")
+
+    cfg = load_config(target)
+
+    assert cfg.denied_patterns == list(DEFAULT_DENIED_PATTERNS)
+
+
+def test_load_config_does_not_migrate_subset_of_legacy_default(
+    tmp_path: Path,
+) -> None:
+    """A deliberately narrowed list (e.g. just '**/.env') is a real user
+    customization and must be left untouched."""
+    target = tmp_path / "sandbox.yaml"
+    target.write_text("denied_patterns:\n  - '**/.env'\n")
+
+    cfg = load_config(target)
+
+    assert cfg.denied_patterns == ["**/.env"]
+    raw_after = target.read_text(encoding="utf-8")
+    assert "**/.env'\n" in raw_after or "- **/.env\n" in raw_after
+    # File was not rewritten with the widened list.
+    assert "secrets.*" not in raw_after
+
+
+def test_load_config_does_not_migrate_superset_of_legacy_default(
+    tmp_path: Path,
+) -> None:
+    """A user-augmented list (legacy default plus an extra pattern) is a
+    deliberate choice and must be left untouched, not silently replaced."""
+    target = tmp_path / "sandbox.yaml"
+    target.write_text(
+        "denied_patterns:\n  - '**/.env'\n  - '**/.env.*'\n  - '**/my-custom-secret.*'\n"
+    )
+
+    cfg = load_config(target)
+
+    assert cfg.denied_patterns == [
+        "**/.env",
+        "**/.env.*",
+        "**/my-custom-secret.*",
+    ]
+    raw_after = target.read_text(encoding="utf-8")
+    assert "my-custom-secret" in raw_after
+    assert "credentials.*" not in raw_after
+
+
+def test_load_config_already_migrated_is_left_alone(tmp_path: Path) -> None:
+    """A config already carrying the current widened default is a no-op on
+    load — it neither matches the legacy set nor needs rewriting."""
+    target = tmp_path / "sandbox.yaml"
+    save_config(SandboxFileConfig(), target)
+    original_mtime = target.stat().st_mtime_ns
+
+    cfg = load_config(target)
+
+    assert cfg.denied_patterns == list(DEFAULT_DENIED_PATTERNS)
+    assert target.stat().st_mtime_ns == original_mtime

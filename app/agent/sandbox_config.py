@@ -59,6 +59,15 @@ DEFAULT_DENIED_PATTERNS: tuple[str, ...] = (
     "**/.ssh/*",
 )
 
+#: The narrow two-pattern list ``DEFAULT_DENIED_PATTERNS`` used to be
+#: (BUG-004). ``load_config`` upgrades a persisted ``sandbox.yaml`` in place
+#: when its ``denied_patterns`` is *exactly* this set — i.e. it was seeded
+#: by the old default and never deliberately edited — so pre-existing
+#: installs pick up the widened denylist without clobbering a real user
+#: customization (a superset, subset, or otherwise-different list is left
+#: untouched).
+_LEGACY_DEFAULT_DENIED_PATTERNS: frozenset[str] = frozenset({"**/.env", "**/.env.*"})
+
 
 class SandboxFileConfig(BaseModel):
     """Top-level shape of ``sandbox.yaml``."""
@@ -217,6 +226,14 @@ def load_config(path: Path | None = None) -> SandboxFileConfig:
     Settings UI (or whenever the user hand-edits the file).  Empty/blank
     patterns are dropped silently.
 
+    A persisted ``denied_patterns`` that still exactly matches the old,
+    narrow default (``_LEGACY_DEFAULT_DENIED_PATTERNS``) is a one-time
+    migration case: it means the file was seeded before BUG-004 widened
+    the default and was never deliberately customized, so it is upgraded
+    to the current ``DEFAULT_DENIED_PATTERNS`` and re-persisted here. Any
+    other value — including a superset or subset of the legacy default —
+    is assumed to be a deliberate choice and is left untouched.
+
     Raises ``ValueError`` if the file exists but is malformed.
     """
     resolved = path or config_path()
@@ -233,6 +250,17 @@ def load_config(path: Path | None = None) -> SandboxFileConfig:
 
     cfg = SandboxFileConfig.model_validate(raw)
     cfg.denied_patterns = [p for p in cfg.denied_patterns if p.strip()]
+
+    if set(cfg.denied_patterns) == _LEGACY_DEFAULT_DENIED_PATTERNS:
+        logger.info(
+            "sandbox_config_denylist_migrated path={} from={} to={}",
+            resolved,
+            cfg.denied_patterns,
+            list(DEFAULT_DENIED_PATTERNS),
+        )
+        cfg.denied_patterns = list(DEFAULT_DENIED_PATTERNS)
+        save_config(cfg, resolved)
+
     return cfg
 
 
