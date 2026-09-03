@@ -462,7 +462,11 @@ class ResponsesHandler:
                     tool_names[call_id] = inline_name
 
                 idx = tool_call_map[call_id]
-                emit_name = inline_name if first_delta and inline_name else None
+                # Always inject id/name so parallel tool streams are
+                # disambiguated — only the first delta needs the prefix,
+                # but the receiver must see the call_id on every chunk.
+                emit_id = call_id or None
+                emit_name = inline_name or tool_names.get(call_id) if first_delta else tool_names.get(call_id)
 
                 yield ChatCompletionChunk(
                     id=response_id,
@@ -475,7 +479,7 @@ class ResponsesHandler:
                                 tool_calls=[
                                     ToolCallDelta(
                                         index=idx,
-                                        id=call_id or None,
+                                        id=emit_id,
                                         function=FunctionCallDelta(
                                             name=emit_name or None,
                                             arguments=args_delta,
@@ -515,7 +519,7 @@ class ResponsesHandler:
                                         index=idx,
                                         id=call_id,
                                         function=FunctionCallDelta(
-                                            name=fn_name,
+                                            name=fn_name or tool_names.get(call_id),
                                             arguments=fn_args,
                                         ),
                                     )
