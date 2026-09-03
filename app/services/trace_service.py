@@ -4102,6 +4102,31 @@ async def recovery_preview(db: AsyncSession, run_id: str | UUID) -> dict[str, An
                 preserves=common_preserves,
             )
         )
+    if run["session_id"] and status in {
+        "authoring",
+        "draft",
+        "accepted",
+        "planning",
+        "plan_review",
+    }:
+        actions.append(
+            _recovery_action(
+                "rebind_to_current_session",
+                "Continue in this Coding session",
+                "Move this pre-implementation Run to the current Coding session without deleting its history.",
+                from_status=status,
+                to_status=status,
+                prompt_phase=(
+                    "authoring"
+                    if status in {"authoring", "draft"}
+                    else "planning"
+                    if status in {"accepted", "planning", "plan_review"}
+                    else "implementation"
+                ),
+                reuses=reuses,
+                preserves=common_preserves,
+            )
+        )
     unavailable_reason = None
     if not actions:
         unavailable_reason = (
@@ -4139,10 +4164,60 @@ async def recover_run_in_session(
         )
     run = await get_run(db, run_id)
     session = await _session_for_run(db, run, session_id)
-    if run.session_id != session.id:
-        raise TraceConflict("EASD recovery belongs to another Coding session")
     from_status = run.status
-    if action_id == "redraft_specification":
+    if action_id == "rebind_to_current_session":
+        if run.status not in {"authoring", "draft", "accepted", "planning", "plan_review"}:
+            raise TraceConflict(f"Cannot rebind EASD run while it is {run.status}")
+        if run.session_id == session.id:
+            raise TraceConflict("EASD run is already linked to this Coding session")
+        existing = (
+            await db.exec(
+                select(TraceRun).where(
+                    TraceRun.session_id == session.id,
+                    col(TraceRun.status).in_(SESSION_OWNING_RUN_STATUSES),
+                    TraceRun.id != run.id,
+                )
+            )
+        ).first()
+        if existing is not None:
+            raise TraceConflict("Another EASD run already owns this Coding session")
+        old_session_id = run.session_id
+        run.session_id = session.id
+        run.updated_at = _utcnow()
+        db.add(run)
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            raise TraceConflict("Another EASD run acquired this Coding session") from exc
+        detail = await run_detail(db, run.id)
+        _queue_run_state(
+            db,
+            run,
+            from_status=from_status,
+            event="run_rebounded",
+            actor="human",
+            delivery_flow=(
+                detail["active_spec"]["spec"].get("delivery_flow")
+                if detail["active_spec"]
+                else None
+            ),
+            event_data={
+                "recovery_action": action_id,
+                "old_session_id": str(old_session_id),
+                "new_session_id": str(session.id),
+            },
+        )
+        logger.info(
+            "trace_run_rebounded run_id={} old_session={} new_session={}",
+            run.id,
+            old_session_id,
+            session.id,
+        )
+    elif run.session_id != session.id:
+        raise TraceConflict("EASD recovery belongs to another Coding session")
+    if action_id == "rebind_to_current_session":
+        pass
+    elif action_id == "redraft_specification":
         run = await retry_spec_authoring_in_session(
             db,
             run_id=run.id,

@@ -439,6 +439,7 @@ class EasdRunTraceResponse(BaseModel):
 
 
 EasdRecoveryActionId = Literal[
+    "rebind_to_current_session",
     "retry_specification",
     "redraft_specification",
     "retry_planning",

@@ -1263,6 +1263,7 @@ export interface EasdRunTrace {
 }
 
 export type EasdRecoveryActionId =
+  | 'rebind_to_current_session'
   | 'retry_specification'
   | 'redraft_specification'
   | 'retry_planning'
