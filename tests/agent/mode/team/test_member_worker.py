@@ -398,6 +398,63 @@ class TestOnDemandActivation:
         assert "browser_use" not in excluded
         assert "browser_use" in deferred
 
+    async def test_plan_mode_wires_plan_metadata_into_run_config(self):
+        """BUG-007 regression.
+
+        ``run_metadata["_plan_mode"]`` used to be set *after*
+        ``RunConfig(metadata=run_metadata)`` was already constructed.
+        Pydantic validates ``metadata`` into a fresh dict, so the mutation
+        never reached ``config.metadata`` and the tool executor never saw
+        ``_plan_mode`` — destructive tools executed for real in plan mode.
+        """
+        db_factory = _make_mock_db_factory()
+        lead = TeamLead(
+            Agent(name="lead", llm_provider=MockTeamProvider()),
+            db_factory=db_factory,
+        )
+        team = AgentTeam(lead=lead, db_factory=db_factory, permission_mode="plan")
+        lead.register(team)
+        captured: dict[str, object] = {}
+
+        async def fake_run(*_args, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        lead.agent.run = fake_run  # type: ignore[method-assign]
+
+        await lead._handle_messages(force_compaction=True)
+
+        config = captured["config"]
+        assert config.metadata.get("_plan_mode") is True
+        assert {"enter_plan_mode", "exit_plan_mode"} <= set(
+            config.metadata.get("activated_deferred_tools") or ()
+        )
+
+    async def test_non_plan_permission_mode_does_not_set_plan_metadata(self):
+        """Sanity check: only plan mode threads `_plan_mode` through metadata —
+        other modes (accept-edits/bypass/auto/ask) are unaffected by this bug
+        because PermissionService reads permission_mode directly at
+        construction, not through a post-hoc run_metadata mutation."""
+        db_factory = _make_mock_db_factory()
+        lead = TeamLead(
+            Agent(name="lead", llm_provider=MockTeamProvider()),
+            db_factory=db_factory,
+        )
+        team = AgentTeam(lead=lead, db_factory=db_factory, permission_mode="bypass")
+        lead.register(team)
+        captured: dict[str, object] = {}
+
+        async def fake_run(*_args, **kwargs):
+            captured.update(kwargs)
+            return []
+
+        lead.agent.run = fake_run  # type: ignore[method-assign]
+
+        await lead._handle_messages(force_compaction=True)
+
+        config = captured["config"]
+        assert "_plan_mode" not in config.metadata
+
     @pytest.mark.parametrize(
         "session_tags",
         [frozenset(), frozenset({WEBBRIDGE_SESSION_TAG})],
