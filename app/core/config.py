@@ -221,6 +221,12 @@ class Settings(BaseSettings):
     # Logging — defaults to INFO in production, DEBUG in development
     LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
 
+    # Web fetch safety — when true, web_fetch allows targets that resolve
+    # to private/reserved IPs (RFC 1918, loopback, link-local).  Off by
+    # default to prevent DNS-rebinding attacks that trick the agent into
+    # reading from internal services.
+    WEB_FETCH_ALLOW_PRIVATE_NETWORK: bool = False
+
     DATABASE_URL: SecretStr = SecretStr("")
 
     # Wiki directory — shared wiki store (USER.md, topics/, notes/).
