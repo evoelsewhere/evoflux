@@ -402,6 +402,90 @@ describe('useTeamStore turn usage', () => {
   })
 })
 
+describe('useTeamStore isEmptyIdleSession (BUG-001 regression)', () => {
+  it('does not report a session as empty while its history is still loading', async () => {
+    let resolveHistory!: (value: unknown) => void
+    apiMocks.teamHistory.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveHistory = resolve
+      }),
+    )
+
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
+    const loading = useTeamStore.getState().loadSession('session-1', null, null)
+
+    // Mid-flight: history hasn't landed yet, so `agentStreams` still looks
+    // empty. Before the fix this made `isEmptyIdleSession()` wrongly return
+    // true, which caused "New Chat" to silently no-op (BUG-001).
+    expect(useTeamStore.getState().isSessionLoading).toBe(true)
+    expect(useTeamStore.getState().isTeamWorking).toBe(false)
+    expect(useTeamStore.getState().agentStreams.lead?.blocks ?? []).toHaveLength(0)
+    expect(useTeamStore.getState().isEmptyIdleSession()).toBe(false)
+
+    resolveHistory({
+      lead: {
+        id: 'session-1',
+        agent_name: 'lead',
+        permission_mode: 'auto',
+        messages: [
+          {
+            id: 'msg-1',
+            session_id: 'session-1',
+            role: 'user',
+            content: 'hi',
+            created_at: '2026-08-10T02:00:00Z',
+          },
+        ],
+        running: false,
+      },
+      members: [],
+      goal: null,
+      has_more: false,
+      next_cursor: null,
+    })
+    await loading
+
+    // Once history has actually loaded, a session with real messages is
+    // correctly reported as not empty.
+    expect(useTeamStore.getState().isSessionLoading).toBe(false)
+    expect(useTeamStore.getState().agentStreams.lead.blocks).toHaveLength(1)
+    expect(useTeamStore.getState().isEmptyIdleSession()).toBe(false)
+  })
+
+  it('still reports a genuinely empty, fully-loaded session as empty', async () => {
+    apiMocks.teamHistory.mockResolvedValue({
+      lead: { id: 'session-1', agent_name: 'lead', messages: [], running: false },
+      members: [],
+      goal: null,
+      has_more: false,
+      next_cursor: null,
+    })
+
+    useTeamStore.getState().beginResolvedSession('session-1', { mode: 'work' })
+    await useTeamStore.getState().loadSession('session-1', null, null)
+
+    expect(useTeamStore.getState().isSessionLoading).toBe(false)
+    expect(useTeamStore.getState().isEmptyIdleSession()).toBe(true)
+  })
+
+  it('lets consumeResolvedSessionReady recognize a freshly-created empty session synchronously', () => {
+    // The `skipInitialRestore` path (a session just created by "New Chat")
+    // never sets `isSessionLoading = true` — `beginResolvedSession` resets it
+    // to false synchronously — so the new isSessionLoading check in
+    // `isEmptyIdleSession()` must not block this path.
+    useTeamStore.getState().beginResolvedSession('session-new', {
+      mode: 'work',
+      skipInitialRestore: true,
+    })
+
+    expect(useTeamStore.getState().isSessionLoading).toBe(false)
+    expect(
+      useTeamStore.getState().consumeResolvedSessionReady('session-new', null),
+    ).toBe(true)
+    expect(apiMocks.teamHistory).not.toHaveBeenCalled()
+  })
+})
+
 describe('useTeamStore optimistic turn status', () => {
   it('shows the lead as working during ingress and rolls back on send failure', async () => {
     let rejectSend!: (error: Error) => void
