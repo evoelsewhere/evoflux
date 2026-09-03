@@ -16,7 +16,7 @@
  * this module owns only the chrome (collapse, copy, motion).
  */
 
-import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronRight,
@@ -60,6 +60,45 @@ const DocumentPreview = lazy(() =>
     default: module.WorkspaceDocumentPreview,
   })),
 )
+
+// ── Shared live clock ─────────────────────────────────────────────────────────
+// A single 1 s interval drives *all* ToolCall elapsed timers so React can
+// batch every subscriber update into one render.  The clock auto-starts on
+// first subscription, pauses when the document is hidden, and tears down
+// when no subscribers remain.
+let _clockInterval: ReturnType<typeof setInterval> | null = null
+const _clockListeners = new Set<(now: number) => void>()
+
+function subscribeClock(listener: (now: number) => void) {
+  _clockListeners.add(listener)
+  if (_clockInterval === null && typeof window !== 'undefined') {
+    const tick = () => {
+      if (typeof document === 'undefined' || !document.hidden) {
+        const t = Date.now()
+        _clockListeners.forEach((fn) => fn(t))
+      }
+    }
+    _clockInterval = setInterval(tick, 1000)
+    document.addEventListener('visibilitychange', tick)
+  }
+  return () => {
+    _clockListeners.delete(listener)
+    if (_clockListeners.size === 0 && _clockInterval !== null) {
+      clearInterval(_clockInterval)
+      _clockInterval = null
+    }
+  }
+}
+
+/** Subscribe to a 1-second clock that pauses in background tabs. */
+function useLiveClock(enabled: boolean): number {
+  const [now, setNow] = useState(Date.now)
+  useLayoutEffect(() => {
+    if (!enabled) return undefined
+    return subscribeClock(setNow)
+  }, [enabled, setNow])
+  return now
+}
 
 interface AttachmentDocumentPreview {
   file: WorkspaceFileInfo
@@ -304,11 +343,14 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   const [copiedArgs, setCopiedArgs] = useState(false)
   const [copiedResult, setCopiedResult] = useState(false)
   const liveOutputRef = useRef<HTMLPreElement>(null)
-  const [now, setNow] = useState(() => Date.now())
 
-  // Determine status: start (name only) → running (args) → success/failed (result)
+  // Shared 1 s clock — one interval drives all ToolCall timers, and the
+  // subscription tears down automatically when the tool is done.
   const isPending = args === undefined || args === null
   const isRunning = !isPending && !done
+  const now = useLiveClock(isRunning)
+
+  // Determine status: start (name only) → running (args) → success/failed (result)
   const state: ToolCallState = isPending
     ? 'start'
     : isRunning
@@ -348,12 +390,6 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   const isShellTerminal = isShell && Boolean(formattedArgs)
   const shellResult = isShell ? formatShellResult(shownResult) : null
   const shellOutput = shellResult?.body ?? shownLiveOutput
-
-  useEffect(() => {
-    if (done || !startedAt) return
-    const id = window.setInterval(() => setNow(Date.now()), 100)
-    return () => window.clearInterval(id)
-  }, [done, startedAt])
 
   useEffect(() => {
     const el = liveOutputRef.current
