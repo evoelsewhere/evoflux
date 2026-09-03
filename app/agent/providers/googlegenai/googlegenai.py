@@ -220,6 +220,10 @@ class GeminiProviderBase(LLMProviderBase):
             else:
                 merged_contents.append(content)
 
+        # Strip orphaned trailing tool messages + bridge role gaps after
+        # compaction / session restart to prevent 400 invalid turn ordering.
+        merged_contents = self._strip_or_bridge_gemini_history(merged_contents)
+
         return merged_contents, system_instruction
 
     # Me fields that Gemini's function declaration schema does not support.
@@ -238,6 +242,103 @@ class GeminiProviderBase(LLMProviderBase):
             "contentMediaType",
         }
     )
+
+    # --- Gemini turn normalization helpers -----------------------------------------
+
+    def _bridge_role_gap(
+        self,
+        contents: list[Content], bridge_text: str = "Understood."
+    ) -> list[Content]:
+        if not contents:
+            return contents
+        result = [contents[0]]
+        for content in contents[1:]:
+            if content.role == result[-1].role:
+                bridge_text = bridge_text
+                if content.role == "model":
+                    result.append(Content(role="user", parts=[Part(text=bridge_text)]))
+                else:
+                    result.append(Content(role="model", parts=[Part(text=bridge_text)]))
+            result.append(content)
+        return result
+
+    def _strip_or_bridge_gemini_history(
+        self,
+        contents: list[Content],
+    ) -> list[Content]:
+        def _join_text(c: Content) -> str:
+            parts = getattr(c, "parts", None) or []
+            return " ".join(
+                getattr(p, "text", "") for p in parts if getattr(p, "text", None)
+            )
+        def _is_tool_response(c: Content) -> bool:
+            parts = getattr(c, "parts", None) or []
+            return all(
+                getattr(p, "function_response", None) is not None for p in parts
+            ) and bool(parts)
+
+        result = list(contents)
+        if not result:
+            return contents
+        while len(result) > 1 and _is_tool_response(result[-1]):
+            result.pop()
+        if result and result[0].role == "model" and (
+            result[0].thought  # type: ignore[attr-defined]
+            or _join_text(result[0]).startswith("technical plan:")
+            or not _join_text(result[0]).strip()
+        ):
+            result.pop(0)
+        if len(result) > 1 and result[-1].role == result[-2].role:
+            result = self._bridge_role_gap(result)  # type: ignore[attr-defined]
+        return result
+
+    def _normalize_gemini_turns(
+        self,
+        contents: list[Content],
+        *,
+        bridge_text: str = "Understood.",
+    ) -> list[Content]:
+        def _join_text(c: Content) -> str:
+            parts = getattr(c, "parts", None) or []
+            return " ".join(
+                getattr(p, "text", "") for p in parts if getattr(p, "text", None)
+            )
+        def _is_tool_response(c: Content) -> bool:
+            parts = getattr(c, "parts", None) or []
+            return all(
+                getattr(p, "function_response", None) is not None for p in parts
+            ) and bool(parts)
+
+        result = list(contents)
+        while len(result) > 1 and result[0].role == "model":
+            model_text = _join_text(result[0])
+            is_valid_tech = (
+                result[0].thought  # type: ignore[attr-defined]
+                or model_text.startswith("technical plan:")
+                or not model_text.strip()
+            )
+            if is_valid_tech and _is_tool_response(result[0]):
+                result.pop(0)
+            elif not model_text.strip():
+                result.pop(0)
+            else:
+                break
+        while len(result) > 1 and _is_tool_response(result[-1]):
+            result.pop()
+        if not result:
+            return contents
+        while len(result) > 1 and result[0].role == result[-1].role:
+            if result[0].role == "user":
+                result.insert(0, Content(role="model", parts=[Part(text=bridge_text)]))
+            else:
+                result.insert(0, Content(role="user", parts=[Part(text=bridge_text)]))
+        while len(result) > 1 and result[0].role == result[1].role:
+            result = result[1:]
+        if len(result) > 1:
+            result = self._bridge_role_gap(result, bridge_text)  # type: ignore[attr-defined]
+        if len(result) > 1 and result[0].role == result[-1].role:
+            result.insert(0, Content(role="user", parts=[Part(text=bridge_text)]))
+        return result
 
     def _sanitize_schema(self, schema: Any) -> Any:
         """Recursively strip JSON Schema keys unsupported by the Gemini API."""
