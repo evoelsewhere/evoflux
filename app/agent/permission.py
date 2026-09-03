@@ -103,8 +103,11 @@ class PermissionRejectedError(PermissionError):
     def __init__(self, request_id: str) -> None:
         self.request_id = request_id
         super().__init__(
-            f"The user rejected permission request {request_id}. "
-            "Do not retry the same call; ask the user how to proceed."
+            f"The user explicitly declined permission request {request_id} for "
+            "this action. Do not retry the same or a functionally equivalent "
+            "action — the user's decision was deliberate, not a glitch. Either "
+            "take a materially different approach, or ask the user (e.g. via "
+            "the ask_user tool) what they would like instead."
         )
 
 

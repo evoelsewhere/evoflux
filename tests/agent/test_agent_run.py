@@ -28,6 +28,11 @@ from app.agent.errors import (
 )
 from app.agent.hooks import BaseAgentHook
 from app.agent.hooks.stream_publisher import StreamPublisherHook
+from app.agent.permission import (
+    PermissionService,
+    reset_permission_service,
+    set_permission_service,
+)
 from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.model_metadata import ModelCost
 from app.agent.tools.registry import InjectedArg, Tool
@@ -1194,22 +1199,20 @@ async def test_agent_run_tool_returns_dict():
 
 
 async def test_agent_run_gather_exception_continues():
-    """asyncio.gather exceptions (BaseException items) are skipped gracefully (lines 309-312)."""
-    import asyncio
+    """An exception raised outside the tool executor becomes an error ToolMessage.
 
-    # Patch asyncio.gather to return a mix of exception and valid result
-    original_gather = asyncio.gather
+    A hook's ``wrap_tool_call`` can raise before ever calling the inner
+    executor (permission rejection is the real-world case — see
+    ``test_agent_run_permission_reject_surfaces_directive_tool_message``).
+    That exception surfaces as a raw ``BaseException`` in the tool-dispatch
+    results and must still produce a model-visible ``ToolMessage`` instead of
+    silently vanishing from the transcript, which would leave a dangling
+    tool_call with no result.
+    """
 
-    call_count = 0
-
-    async def patched_gather(*coros, return_exceptions=False):
-        # Let the first call (tool execution) return an exception item
-        nonlocal call_count
-        call_count += 1
-        # Run actual coroutines but inject exception as first item
-        results = await original_gather(*coros, return_exceptions=True)
-        # Replace first result with a RuntimeError to simulate gather failure
-        return [RuntimeError("simulated gather failure")] + list(results[1:])
+    class _RaisingHook(BaseAgentHook):
+        async def wrap_tool_call(self, ctx, state, tool_call, handler):
+            raise RuntimeError("simulated gather failure")
 
     def noop(x: int) -> str:
         """Does nothing."""
@@ -1238,18 +1241,95 @@ async def test_agent_run_gather_exception_continues():
         ],
     )
     provider = MockProvider([[chunk], [make_text_chunk("done")]])
-    agent = Agent(name="bot", llm_provider=provider, tools=[Tool(noop)])
+    agent = Agent(
+        name="bot", llm_provider=provider, hooks=[_RaisingHook()], tools=[Tool(noop)]
+    )
 
-    import unittest.mock as mock
+    msgs = await agent.run([HumanMessage(content="run")])
 
-    with mock.patch(
-        "app.agent.agent_loop.tool_dispatch.asyncio.gather", side_effect=patched_gather
-    ):
-        msgs = await agent.run([HumanMessage(content="run")])
-
-    # Should still complete even when some gather results are exceptions
+    # Should still complete even when a tool call raises outside the executor
     last = last_assistant(msgs)
     assert last is not None
+
+    tool_msgs = [m for m in msgs if isinstance(m, ToolMessage)]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0].content == "Error: simulated gather failure"
+
+
+async def test_agent_run_permission_reject_surfaces_directive_tool_message():
+    """A rejected permission request reaches the model as a directive ToolMessage.
+
+    BUG-006: rejecting a tool call must not leave the model with no signal at
+    all (a dangling tool_call and no tool_result silently drop the exception —
+    see the previous test) nor with a vague error — the message needs to tell
+    the model explicitly to stop retrying the same action.
+    """
+    chunk = ChatCompletionChunk(
+        id="c1",
+        created=1_000_000,
+        model="mock-model",
+        choices=[
+            ChatCompletionChunkChoice(
+                index=0,
+                delta=ChatCompletionDelta(
+                    tool_calls=[
+                        ToolCallDelta(
+                            index=0,
+                            id="call_1",
+                            function=FunctionCallDelta(
+                                name="write_file",
+                                arguments='{"path": "hello.txt"}',
+                            ),
+                        )
+                    ]
+                ),
+                finish_reason="tool_calls",
+            )
+        ],
+    )
+
+    def write_file(path: str) -> str:
+        """Write a file."""
+        return f"wrote {path}"
+
+    provider = MockProvider([[chunk], [make_text_chunk("ok")]])
+    publisher = StreamPublisherHook(session_id="session-1", agent_name="bot")
+    agent = Agent(
+        name="bot",
+        llm_provider=provider,
+        hooks=[publisher],
+        tools=[Tool(write_file)],
+    )
+
+    service = PermissionService(session_id="session-1", mode="ask")
+    token = set_permission_service(service)
+
+    async def reject_when_asked() -> None:
+        for _ in range(200):
+            await asyncio.sleep(0.01)
+            pending = service.list_pending()
+            if pending:
+                service.reply(pending[0].id, "reject")
+                return
+        raise AssertionError("permission request never appeared")
+
+    try:
+        with patch(
+            "app.services.memory_stream_store.push_event", new_callable=AsyncMock
+        ):
+            msgs, _ = await asyncio.gather(
+                agent.run([HumanMessage(content="write it")]), reject_when_asked()
+            )
+    finally:
+        reset_permission_service(token, "session-1")
+
+    tool_msgs = [m for m in msgs if isinstance(m, ToolMessage)]
+    assert len(tool_msgs) == 1
+    content = tool_msgs[0].content
+    assert content is not None
+    assert "explicitly declined" in content
+    assert "Do not retry the same or a functionally equivalent action" in content
+    assert "ask_user" in content
 
 
 # ---------------------------------------------------------------------------
