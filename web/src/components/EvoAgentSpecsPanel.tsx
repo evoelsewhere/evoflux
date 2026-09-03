@@ -21,7 +21,7 @@ import {
   Wrench,
 } from 'lucide-react'
 
-import { EasdConvergenceApiError, resolveTeamSession, updateEasdRunOptions } from '@/api/client'
+import { EasdConvergenceApiError, EasdSessionMismatchApiError, resolveTeamSession, updateEasdRunOptions } from '@/api/client'
 import type {
   EasdAppendableEvidenceKind,
   EasdActionId,
@@ -64,6 +64,7 @@ import {
   useGenerateEasdScopeAndProofMutation,
   useInitializeEasdSetupMutation,
   usePublishEasdRunMutation,
+  useRebindEasdRunMutation,
   useRetryEasdPlanningMutation,
   useRetryEasdSpecAuthoringMutation,
   useStartEasdRunInChatMutation,
@@ -227,6 +228,15 @@ function deliveryFlowForProof(proof: NonNullable<EasdGenerateResponse['proof']>)
 
 function errorText(error: unknown): string | null {
   return error instanceof Error ? error.message : null
+}
+
+// Convergence and session-mismatch errors each render their own dedicated
+// inline UI elsewhere, so they must not also surface in the generic
+// combined-action error line.
+function isDisplayableActionError(error: unknown): error is Error {
+  return error instanceof Error
+    && !(error instanceof EasdConvergenceApiError)
+    && !(error instanceof EasdSessionMismatchApiError)
 }
 
 function repositoryLabel(repository: EasdRepositorySetup): string {
@@ -1366,11 +1376,13 @@ function RunsOverview({
 function RunDetail({
   runId,
   setup,
+  sessionId,
   onBack,
   onRunInChat,
 }: {
   runId: string
   setup: EasdSetupResponse
+  sessionId?: string | null
   onBack: () => void
   onRunInChat?: (request: EasdRunChatRequest) => void
 }) {
@@ -1424,6 +1436,7 @@ function RunDetail({
   const startReviewMutation = useStartEasdReviewMutation(runId)
   const startVerificationMutation = useStartEasdVerificationMutation(runId)
   const convergeMutation = useConvergeEasdRunMutation(runId)
+  const rebindMutation = useRebindEasdRunMutation(runId)
   const evidenceMutation = useAddEasdEvidenceMutation(runId)
   const deviationMutation = useAddEasdDeviationMutation(runId)
   const traceQuery = useEasdRunTraceQuery(runId, workspaceView === 'trace')
@@ -1465,6 +1478,34 @@ function RunDetail({
   const convergenceReasons = convergeMutation.error instanceof EasdConvergenceApiError
     ? convergeMutation.error.reasons
     : []
+  const sessionMismatchError = [
+    startAuthoringMutation.error,
+    retryAuthoringMutation.error,
+    startPlanningMutation.error,
+    retryPlanningMutation.error,
+    startInChatMutation.error,
+    startReviewMutation.error,
+    startVerificationMutation.error,
+  ].find((error): error is EasdSessionMismatchApiError => error instanceof EasdSessionMismatchApiError)
+  // Every phase action hands off to the run's own session, so a mismatch is
+  // usually visible in the data long before any request fails. Offer the
+  // adoption path from the run state itself, not only from a rejected call.
+  const sessionMismatch = Boolean(
+    sessionMismatchError
+    || (sessionId && detail?.run.session_id && detail.run.session_id !== sessionId),
+  )
+  const combinedActionError = [
+    acceptMutation.error,
+    acceptPlanMutation.error,
+    startAuthoringMutation.error,
+    retryAuthoringMutation.error,
+    startPlanningMutation.error,
+    retryPlanningMutation.error,
+    startInChatMutation.error,
+    startReviewMutation.error,
+    startVerificationMutation.error,
+    convergeMutation.error,
+  ].find(isDisplayableActionError) ?? null
   const statusCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const item of detail?.criteria ?? []) counts[item.status] = (counts[item.status] ?? 0) + 1
@@ -1830,9 +1871,29 @@ function RunDetail({
             )}
           </>}
         />
-        {(acceptMutation.error || acceptPlanMutation.error || startAuthoringMutation.error || retryAuthoringMutation.error || startPlanningMutation.error || retryPlanningMutation.error || startInChatMutation.error || startReviewMutation.error || startVerificationMutation.error || (convergeMutation.error && !(convergeMutation.error instanceof EasdConvergenceApiError))) && (
+        {combinedActionError && (
           <p role="alert" className="border-t border-(--color-border) px-3 py-2 text-[10px] text-(--color-error) @xl/easd:px-4">
-            {errorText(acceptMutation.error) ?? errorText(acceptPlanMutation.error) ?? errorText(startAuthoringMutation.error) ?? errorText(retryAuthoringMutation.error) ?? errorText(startPlanningMutation.error) ?? errorText(retryPlanningMutation.error) ?? errorText(startInChatMutation.error) ?? errorText(startReviewMutation.error) ?? errorText(startVerificationMutation.error) ?? errorText(convergeMutation.error)}
+            {errorText(combinedActionError)}
+          </p>
+        )}
+        {sessionMismatch && (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-2 border-t border-(--color-warning)/35 bg-(--color-warning)/8 px-3 py-2 @xl/easd:px-4">
+            <p className="text-[10px] text-(--color-text)">This run belongs to another Coding session. Adopt it into this session to continue?</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!sessionId || rebindMutation.isPending}
+              onClick={() => sessionId && rebindMutation.mutate(sessionId)}
+            >
+              {rebindMutation.isPending && <Loader2 className="animate-spin" />}
+              Adopt run
+            </Button>
+          </div>
+        )}
+        {rebindMutation.error && (
+          <p role="alert" className="border-t border-(--color-border) px-3 py-2 text-[10px] text-(--color-error) @xl/easd:px-4">
+            {errorText(rebindMutation.error)}
           </p>
         )}
       </header>
@@ -2118,7 +2179,7 @@ export function EvoAgentSpecsPanel({ workspace, projectId, sessionId, active = t
     }
   }
 
-  if (selectedRunId && setup) return <RunDetail runId={selectedRunId} setup={setup} onBack={() => setSelectedRunId(null)} onRunInChat={onRunInChat} />
+  if (selectedRunId && setup) return <RunDetail runId={selectedRunId} setup={setup} sessionId={sessionId} onBack={() => setSelectedRunId(null)} onRunInChat={onRunInChat} />
   if (creating && setup) {
     return (
       <CreateIntentForm

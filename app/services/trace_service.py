@@ -107,6 +107,13 @@ class TraceConvergenceError(TraceConflict):
         super().__init__("EASD convergence gates are not satisfied")
 
 
+class TraceSessionMismatch(TraceConflict):
+    def __init__(self, *, run_id: UUID, current_session_id: UUID) -> None:
+        self.run_id = run_id
+        self.current_session_id = current_session_id
+        super().__init__("EASD run belongs to another Coding session")
+
+
 @dataclass(frozen=True, slots=True)
 class _TraceContext:
     run: TraceRun
@@ -918,9 +925,7 @@ async def submit_authored_specification(
     """Persist an agent-authored draft and move the run to human review."""
 
     run = await get_run(db, run_id)
-    session = await _session_for_run(db, run, session_id)
-    if run.session_id != session.id:
-        raise TraceConflict("EASD authoring run belongs to another Coding session")
+    await _session_for_run(db, run, session_id)
     if run.status not in {"authoring", "draft"}:
         raise TraceConflict(
             f"Cannot submit a specification while EASD run is {run.status}"
@@ -1303,9 +1308,7 @@ async def submit_authored_plan(
     authoring: dict[str, Any],
 ) -> TracePlanRevision:
     run = await get_run(db, run_id)
-    session = await _session_for_run(db, run, session_id)
-    if run.session_id != session.id:
-        raise TraceConflict("EASD planning run belongs to another Coding session")
+    await _session_for_run(db, run, session_id)
     if run.status not in {"planning", "plan_review"}:
         raise TraceConflict(f"Cannot submit a plan while EASD run is {run.status}")
     if run.status == "plan_review":
@@ -1429,7 +1432,7 @@ async def accept_plan_revision(
     return revision
 
 
-async def _session_for_run(
+async def _resolve_target_session(
     db: AsyncSession, run: TraceRun, session_id: str | UUID
 ) -> ChatSession:
     session = await db.get(ChatSession, _uuid(session_id, label="session_id"))
@@ -1455,6 +1458,15 @@ async def _session_for_run(
             run.updated_at = _utcnow()
             db.add(run)
 
+    return session
+
+
+async def _session_for_run(
+    db: AsyncSession, run: TraceRun, session_id: str | UUID
+) -> ChatSession:
+    session = await _resolve_target_session(db, run, session_id)
+    if run.session_id is not None and run.session_id != session.id:
+        raise TraceSessionMismatch(run_id=run.id, current_session_id=run.session_id)
     return session
 
 
@@ -1535,9 +1547,7 @@ async def start_plan_authoring_in_session(
         )
     session = await _session_for_run(db, run, session_id)
     if run.status == "planning":
-        if run.session_id == session.id:
-            return run
-        raise TraceConflict("EASD planning run belongs to another Coding session")
+        return run
     if run.status != "accepted":
         raise TraceConflict(f"Cannot plan while EASD run is {run.status}")
     if run.session_id is not None and run.session_id != session.id:
@@ -1589,8 +1599,6 @@ async def retry_plan_authoring_in_session(
     if context.specification.delivery_flow.mode != "planned":
         raise TraceConflict("This accepted EASD specification uses direct flow")
     session = await _session_for_run(db, run, session_id)
-    if run.session_id != session.id:
-        raise TraceConflict("EASD planning run belongs to another Coding session")
     if run.status == "planning":
         return run
     if run.status != "plan_review":
@@ -1633,9 +1641,7 @@ async def start_run_in_session(
         start_status = "planned"
     session = await _session_for_run(db, run, session_id)
     if run.status in {"active", "reviewing", "verifying"}:
-        if run.session_id == session.id:
-            return run
-        raise TraceConflict("Active EASD run belongs to another Coding session")
+        return run
     if run.status != start_status:
         raise TraceConflict(f"Cannot start a {run.status} EASD run in chat")
     if run.session_id is not None and run.session_id != session.id:
@@ -1690,9 +1696,7 @@ async def start_spec_authoring_in_session(
     from_status = run.status
     session = await _session_for_run(db, run, session_id)
     if run.status == "authoring":
-        if run.session_id == session.id:
-            return run
-        raise TraceConflict("EASD authoring run belongs to another Coding session")
+        return run
     if run.status != "intent":
         raise TraceConflict(
             f"Cannot draft a specification while EASD run is {run.status}"
@@ -1746,8 +1750,6 @@ async def retry_spec_authoring_in_session(
 
     run = await get_run(db, run_id)
     session = await _session_for_run(db, run, session_id)
-    if run.session_id != session.id:
-        raise TraceConflict("EASD specification run belongs to another Coding session")
     if run.status == "authoring":
         return run
     if run.status != "draft":
@@ -1807,9 +1809,7 @@ async def start_review_in_session(
     if spec_context.specification.delivery_flow.mode == "planned":
         await active_plan_context(db, run_id)
     from_status = run.status
-    session = await _session_for_run(db, run, session_id)
-    if run.session_id != session.id:
-        raise TraceConflict("EASD active run belongs to another Coding session")
+    await _session_for_run(db, run, session_id)
     if run.status == "reviewing":
         return run
     if run.status != "active":
@@ -1854,9 +1854,7 @@ async def start_verification_in_session(
         else None
     )
     from_status = run.status
-    session = await _session_for_run(db, run, session_id)
-    if run.session_id != session.id:
-        raise TraceConflict("EASD review run belongs to another Coding session")
+    await _session_for_run(db, run, session_id)
     if run.status == "verifying":
         return run
     if run.status != "reviewing":
@@ -4139,8 +4137,6 @@ async def recover_run_in_session(
         )
     run = await get_run(db, run_id)
     session = await _session_for_run(db, run, session_id)
-    if run.session_id != session.id:
-        raise TraceConflict("EASD recovery belongs to another Coding session")
     from_status = run.status
     if action_id == "redraft_specification":
         run = await retry_spec_authoring_in_session(

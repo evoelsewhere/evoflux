@@ -1074,3 +1074,264 @@ async def test_evidence_rejects_foreign_mission(tmp_path, setup_db):
 def test_invalid_uuid_is_domain_validation_error():
     with pytest.raises(trace_service.TraceValidationError, match="Invalid EASD run"):
         trace_service._uuid(str(uuid4()) + "x", label="EASD run ID")
+
+
+async def _converged_run(db, tmp_path, lead):
+    spec = _spec()
+    run = await trace_service.create_run(
+        db,
+        workspace=str(tmp_path),
+        title=spec.title,
+        risk_tier="standard",
+        specification=spec,
+        session_id=lead.id,
+    )
+    draft = (await trace_service.run_detail(db, run.id))["revisions"][0]
+    revision = await trace_service.accept_revision(
+        db,
+        run_id=run.id,
+        revision_id=draft["id"],
+        expected_hash=draft["content_hash"],
+    )
+    await _approve_plan(db, run, spec)
+    await _start(db, run)
+    mission = DelegationTask(
+        lead_session_id=lead.id,
+        trace_run_id=run.id,
+        delegator="lead",
+        recipient="builder#1",
+        status="completed",
+        spec={
+            "goal": "Implement AC-1",
+            "acceptance_criteria": ["AC-1"],
+            "trace_spec_hash": revision.content_hash,
+        },
+        result={"summary": "implemented"},
+    )
+    db.add(mission)
+    await db.flush()
+    await trace_service.create_evidence(
+        db,
+        run_id=run.id,
+        spec_hash=revision.content_hash,
+        criterion_ids=["AC-1"],
+        producer="builder#1",
+        kind="machine",
+        result="passed",
+        summary="pytest passed",
+        delegation_task_id=mission.id,
+        revision="abc123",
+        artifact_hash="f" * 64,
+        payload={
+            "exit_code": 0,
+            "command": ["pytest", "-q"],
+            "spec_command": "pytest -q tests/services/test_trace_service.py",
+        },
+        source_key="completion-contract-1",
+    )
+    await trace_service.create_evidence(
+        db,
+        run_id=run.id,
+        spec_hash=revision.content_hash,
+        criterion_ids=["AC-1"],
+        producer="lead",
+        kind="review",
+        result="passed",
+        summary="Integrated review passed.",
+    )
+    await trace_service.start_review_in_session(db, run_id=run.id, session_id=lead.id)
+    await trace_service.start_verification_in_session(
+        db, run_id=run.id, session_id=lead.id
+    )
+    await trace_service.converge_run(db, run_id=run.id, git_revision="abc123")
+    return await trace_service.get_run(db, run.id)
+
+
+@pytest.mark.asyncio
+async def test_rebind_moves_orphaned_run_to_new_session(tmp_path, setup_db):
+    from app.core.db import async_session_factory
+
+    async with async_session_factory() as db:
+        session_a = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        session_b = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        db.add(session_a)
+        db.add(session_b)
+        await db.flush()
+
+        run = await trace_service.create_intent_run(
+            db,
+            workspace=str(tmp_path),
+            title="Rebind target",
+            problem="The original Coding session is gone.",
+            session_id=session_a.id,
+        )
+        started = await trace_service.start_spec_authoring_in_session(
+            db, run_id=run.id, session_id=session_a.id
+        )
+        assert started.session_id == session_a.id
+
+        rebound = await trace_service.rebind_run_to_session(
+            db, run_id=run.id, session_id=session_b.id
+        )
+        assert rebound.id == run.id
+        assert rebound.session_id == session_b.id
+        assert rebound.status == "authoring"
+
+        idempotent = await trace_service.rebind_run_to_session(
+            db, run_id=run.id, session_id=session_b.id
+        )
+        assert idempotent.session_id == session_b.id
+
+
+@pytest.mark.asyncio
+async def test_rebind_rejects_a_converged_run(tmp_path, setup_db):
+    from app.core.db import async_session_factory
+
+    async with async_session_factory() as db:
+        lead = ChatSession(agent_name="lead", mode="coding", workspace=str(tmp_path))
+        other = ChatSession(agent_name="lead", mode="coding", workspace=str(tmp_path))
+        db.add(lead)
+        db.add(other)
+        await db.flush()
+
+        run = await _converged_run(db, tmp_path, lead)
+        assert run.status == "converged"
+
+        with pytest.raises(trace_service.TraceConflict, match="converged"):
+            await trace_service.rebind_run_to_session(
+                db, run_id=run.id, session_id=other.id
+            )
+
+
+@pytest.mark.asyncio
+async def test_rebind_rejects_a_session_already_owned_by_another_run(
+    tmp_path, setup_db
+):
+    """`uq_trace_runs_active_session` is a partial unique index, so rebinding
+    onto an occupied session must fail as a conflict rather than an IntegrityError."""
+    from app.core.db import async_session_factory
+
+    async with async_session_factory() as db:
+        session_a = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        session_b = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        db.add(session_a)
+        db.add(session_b)
+        await db.flush()
+
+        stranded = await trace_service.create_intent_run(
+            db,
+            workspace=str(tmp_path),
+            title="Stranded run",
+            problem="Started in session A, user moved on.",
+            session_id=session_a.id,
+        )
+        await trace_service.start_spec_authoring_in_session(
+            db, run_id=stranded.id, session_id=session_a.id
+        )
+
+        occupant = await trace_service.create_intent_run(
+            db,
+            workspace=str(tmp_path),
+            title="Occupant run",
+            problem="Already owns session B.",
+            session_id=session_b.id,
+        )
+        await trace_service.start_spec_authoring_in_session(
+            db, run_id=occupant.id, session_id=session_b.id
+        )
+
+        with pytest.raises(trace_service.TraceConflict, match="already owns"):
+            await trace_service.rebind_run_to_session(
+                db, run_id=stranded.id, session_id=session_b.id
+            )
+
+
+@pytest.mark.asyncio
+async def test_phase_start_with_mismatched_session_raises_session_mismatch(
+    tmp_path, setup_db
+):
+    from app.core.db import async_session_factory
+
+    async with async_session_factory() as db:
+        session_a = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        session_b = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        db.add(session_a)
+        db.add(session_b)
+        await db.flush()
+
+        run = await trace_service.create_intent_run(
+            db,
+            workspace=str(tmp_path),
+            title="Session mismatch target",
+            problem="A different Coding session is now in play.",
+            session_id=session_a.id,
+        )
+        await trace_service.start_spec_authoring_in_session(
+            db, run_id=run.id, session_id=session_a.id
+        )
+
+        with pytest.raises(trace_service.TraceSessionMismatch) as excinfo:
+            await trace_service.start_spec_authoring_in_session(
+                db, run_id=run.id, session_id=session_b.id
+            )
+        assert excinfo.value.run_id == run.id
+        assert excinfo.value.current_session_id == session_a.id
+
+
+@pytest.mark.asyncio
+async def test_rebind_recovers_a_run_abandoned_in_a_previous_session(
+    tmp_path, setup_db
+):
+    """Regression test for the reported bug: an EASD run started in one Coding
+    session could never be continued once the user switched sessions, with no
+    recovery short of a manual database edit."""
+    from app.core.db import async_session_factory
+
+    async with async_session_factory() as db:
+        session_a = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        session_b = ChatSession(
+            agent_name="lead", mode="coding", workspace=str(tmp_path)
+        )
+        db.add(session_a)
+        db.add(session_b)
+        await db.flush()
+
+        run = await trace_service.create_intent_run(
+            db,
+            workspace=str(tmp_path),
+            title="Abandoned session run",
+            problem="Session A closed mid-authoring.",
+            session_id=session_a.id,
+        )
+        await trace_service.start_spec_authoring_in_session(
+            db, run_id=run.id, session_id=session_a.id
+        )
+
+        with pytest.raises(trace_service.TraceSessionMismatch):
+            await trace_service.start_spec_authoring_in_session(
+                db, run_id=run.id, session_id=session_b.id
+            )
+
+        await trace_service.rebind_run_to_session(
+            db, run_id=run.id, session_id=session_b.id
+        )
+
+        resumed = await trace_service.start_spec_authoring_in_session(
+            db, run_id=run.id, session_id=session_b.id
+        )
+        assert resumed.session_id == session_b.id
+        assert resumed.status == "authoring"

@@ -37,6 +37,18 @@ export class EasdConvergenceApiError extends Error {
   }
 }
 
+export class EasdSessionMismatchApiError extends Error {
+  readonly runId: string
+  readonly currentSessionId: string
+
+  constructor(runId: string, currentSessionId: string) {
+    super('This EASD run belongs to another Coding session.')
+    this.name = 'EasdSessionMismatchApiError'
+    this.runId = runId
+    this.currentSessionId = currentSessionId
+  }
+}
+
 async function easdResponse<T>(response: Response, label: string): Promise<T> {
   if (response.ok) return response.json()
   if (response.status === 409) {
@@ -48,8 +60,12 @@ async function easdResponse<T>(response: Response, label: string): Promise<T> {
       ) {
         throw new EasdConvergenceApiError(body.detail.reasons)
       }
+      if (body?.detail?.code === 'easd_session_mismatch') {
+        throw new EasdSessionMismatchApiError(body.detail.run_id, body.detail.current_session_id)
+      }
     } catch (error) {
       if (error instanceof EasdConvergenceApiError) throw error
+      if (error instanceof EasdSessionMismatchApiError) throw error
     }
   }
   return parseDetailOrThrow(response, label)
@@ -281,6 +297,21 @@ export async function startEasdSpecAuthoringInChat(
     },
   )
   return easdResponse(response, 'startEasdSpecAuthoringInChat')
+}
+
+export async function rebindEasdRun(
+  runId: string,
+  sessionId: string,
+): Promise<EasdRun> {
+  const response = await fetch(
+    `${apiBaseUrl()}/easd/runs/${encodeURIComponent(runId)}/rebind`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId }),
+    },
+  )
+  return easdResponse(response, 'rebindEasdRun')
 }
 
 async function retryEasdPhaseInChat(

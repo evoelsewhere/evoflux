@@ -74,6 +74,7 @@ from app.services.trace_service import (
     TraceConflict,
     TraceConvergenceError,
     TraceNotFound,
+    TraceSessionMismatch,
     TraceValidationError,
     accept_revision,
     accept_plan_revision,
@@ -87,6 +88,7 @@ from app.services.trace_service import (
     create_plan_revision,
     get_run,
     list_runs,
+    rebind_run_to_session,
     retry_plan_authoring_in_session,
     retry_spec_authoring_in_session,
     read_run_trace_events,
@@ -128,6 +130,15 @@ def _raise_easd(exc: Exception) -> None:
         raise HTTPException(
             status_code=409,
             detail={"code": "easd_not_converged", "reasons": exc.reasons},
+        ) from exc
+    if isinstance(exc, TraceSessionMismatch):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "easd_session_mismatch",
+                "run_id": str(exc.run_id),
+                "current_session_id": str(exc.current_session_id),
+            },
         ) from exc
     if isinstance(exc, TraceConflict):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
