@@ -13,6 +13,7 @@ import { formatTime, lastTurnText } from '@/utils/format'
 import { AssistantTurnContent } from './AssistantTurnContent'
 import { easdToolReviewTarget } from './easd/easdToolReviewTarget'
 import type { ContentBlock } from '@/api/types'
+import { PROVIDER_MODEL_PLACEHOLDER } from '@/lib/model-settings'
 
 export interface AssistantTurnFooterProps {
   /** Blocks belonging to a single assistant turn (no user blocks inside). */
@@ -33,8 +34,12 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${seconds}s`
 }
 
+// Not currently reachable with the raw placeholder (an assistant block only
+// exists once a turn actually resolved and ran a model — see
+// app/agent/agent_loop/core.py), but guarded defensively to match the
+// per-message case in BlockRenderer.tsx in case that invariant ever changes.
 function shortModelName(modelId: string | null | undefined): string | null {
-  if (!modelId) return null
+  if (!modelId || modelId === PROVIDER_MODEL_PLACEHOLDER) return null
   return modelId.split(':').at(-1)?.split('/').at(-1) || modelId
 }
 

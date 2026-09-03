@@ -5,6 +5,8 @@ import {
   fastModePriceHint,
   formatModelPrice,
   formatTokenCount,
+  normalizeModelId,
+  PROVIDER_MODEL_PLACEHOLDER,
   reconcileThinkingLevel,
   supportsFastMode,
 } from '@/lib/model-settings'
@@ -37,6 +39,34 @@ describe('shared model settings', () => {
     for (const level of ['minimal', 'xhigh', 'max', 'ultra', 'provider-future']) {
       expect(thinkingLevelSchema.safeParse(level).success).toBe(true)
     }
+  })
+
+  // BUG-002: the composer's model picker showed the raw internal
+  // "__PROVIDER_MODEL__" sentinel (leaked verbatim by GET /api/team/leads
+  // for a lead with no per-agent model override) instead of falling back
+  // to "Default"/"Model" the same way it does for a genuinely unset model.
+  it('normalizeModelId treats the provider-model placeholder as no model configured', () => {
+    expect(normalizeModelId(PROVIDER_MODEL_PLACEHOLDER)).toBeNull()
+    expect(normalizeModelId(null)).toBeNull()
+    expect(normalizeModelId(undefined)).toBeNull()
+    expect(normalizeModelId('')).toBeNull()
+    expect(normalizeModelId('anthropic:claude-sonnet-5')).toBe('anthropic:claude-sonnet-5')
+  })
+
+  it('SessionPillsRow-style effectiveModel resolution falls back to the default when both session and default model are the placeholder', () => {
+    // Mirrors AdvancedComposerControl's effectiveModel computation in
+    // SessionPillsRow.tsx: a session model wins over the default, but a
+    // placeholder in either position is treated as absent so the composer
+    // renders its "Model"/"Default" fallback copy instead of the raw token.
+    const resolve = (sessionModel: string | null, defaultModel: string | null) =>
+      normalizeModelId(sessionModel) ?? normalizeModelId(defaultModel) ?? ''
+
+    expect(resolve(null, PROVIDER_MODEL_PLACEHOLDER)).toBe('')
+    expect(resolve(PROVIDER_MODEL_PLACEHOLDER, PROVIDER_MODEL_PLACEHOLDER)).toBe('')
+    expect(resolve(null, 'xiaomi:mimo-v2.5')).toBe('xiaomi:mimo-v2.5')
+    expect(resolve('anthropic:claude-sonnet-5', PROVIDER_MODEL_PLACEHOLDER)).toBe(
+      'anthropic:claude-sonnet-5',
+    )
   })
 })
 
