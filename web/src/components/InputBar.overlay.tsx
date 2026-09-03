@@ -39,6 +39,8 @@ interface MentionOverlayProps {
   fileRefs: readonly FileRef[]
   /** Valid skill names in composer notation (flat or ``parent:sub``). */
   skillNames?: ReadonlySet<string>
+  /** When true, hide the overlay so the native IME candidate UI is unobstructed. */
+  hidden?: boolean
 }
 
 export function MentionOverlay({
@@ -47,6 +49,7 @@ export function MentionOverlay({
   textareaRef,
   fileRefs,
   skillNames,
+  hidden = false,
 }: MentionOverlayProps) {
   const mirrorRef = useRef<HTMLDivElement>(null)
   const mentionRanges = findCommittedMentions(value, activeRange, fileRefs)
@@ -158,7 +161,8 @@ export function MentionOverlay({
       // ``text-(--color-text)`` paints the non-mention text in the
       // normal foreground; the per-span color override above paints
       // mention tokens in blue (files) or orange (folders).
-      className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-(--color-text)"
+      // Hidden during IME composition so the OS candidate window is unobstructed.
+      className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words text-sm leading-relaxed text-(--color-text) ${hidden ? 'invisible' : ''}`}
       style={{ maxHeight: '120px' }}
     >
       {segments}
