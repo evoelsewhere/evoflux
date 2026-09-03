@@ -135,7 +135,7 @@ def test_rust_classification_contract(
 
 
 def test_rust_call_targets_keep_static_paths_and_fields() -> None:
-    source = b'''fn run() {
+    source = b"""fn run() {
  direct();
  crate::module::func();
  super::helper();
@@ -145,13 +145,11 @@ def test_rust_call_targets_keep_static_paths_and_fields() -> None:
  get().nested();
  println!("x");
 }
-'''
+"""
 
     result = RustParser().parse(file_path="calls.rs", source=source)
     calls = [
-        (edge.dst_name, edge.line)
-        for edge in result.edges
-        if edge.kind == EDGE_CALLS
+        (edge.dst_name, edge.line) for edge in result.edges if edge.kind == EDGE_CALLS
     ]
 
     assert calls == [
@@ -172,12 +170,12 @@ def test_rust_call_targets_keep_static_paths_and_fields() -> None:
 
 
 def test_rust_impl_relations_cover_simple_generic_and_scoped_traits() -> None:
-    source = b'''struct User;
+    source = b"""struct User;
 impl Trait for User {}
 impl Trait<Item> for User {}
 impl crate::traits::Other for User {}
 impl User {}
-'''
+"""
 
     result = RustParser().parse(file_path="impls.rs", source=source)
     implementations = [
@@ -194,11 +192,11 @@ impl User {}
 
 
 def test_rust_import_metadata_is_exact() -> None:
-    source = b'''use std::io::Result;
+    source = b"""use std::io::Result;
 use crate::models::{User, Post as Article, nested::Thing};
 use crate::service as svc;
 use local;
-'''
+"""
 
     result = RustParser().parse(file_path="imports.rs", source=source)
     imports = [
@@ -223,7 +221,7 @@ use local;
 
 
 def test_rust_attributes_and_line_block_docs_preserve_order() -> None:
-    source = b'''// documentation boundary
+    source = b"""// documentation boundary
 /// User docs.
 #[derive(Debug)]
 #[serde::model]
@@ -244,7 +242,7 @@ struct Plain;
  *Detail
  */
 struct Multi;
-'''
+"""
 
     result = RustParser().parse(file_path="docs.rs", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
@@ -274,7 +272,7 @@ struct Multi;
 
 
 def test_rust_type_refs_cover_alias_constants_fields_variants_and_functions() -> None:
-    source = b'''type Alias = Target;
+    source = b"""type Alias = Target;
 const VALUE: Config = make();
 static GLOBAL: Registry = Registry::new();
 struct User { field: FieldType }
@@ -284,7 +282,7 @@ trait Store {
   type Value: Into<Target>;
   fn load(&self, input: Request) -> Result<Response, Self::Error>;
 }
-'''
+"""
 
     result = RustParser().parse(file_path="types.rs", source=source)
     node_names = {node.local_id: node.qualified_name for node in result.nodes}
@@ -332,19 +330,31 @@ def test_rust_value_name_handles_incomplete_scoped_and_field_nodes() -> None:
     owner = _FakeNode("identifier", 0, 5)
     name = _FakeNode("identifier", 6, 12)
 
-    assert _rust_value_name(
-        cast(Node, _FakeNode("scoped_identifier", fields={"name": name})),
-        source,
-    ) is None
-    assert _rust_value_name(
-        cast(Node, _FakeNode("scoped_identifier", fields={"path": owner})),
-        source,
-    ) is None
-    assert _rust_value_name(
-        cast(Node, _FakeNode("field_expression", fields={"field": name})),
-        source,
-    ) is None
-    assert _rust_value_name(
-        cast(Node, _FakeNode("field_expression", fields={"value": owner})),
-        source,
-    ) is None
+    assert (
+        _rust_value_name(
+            cast(Node, _FakeNode("scoped_identifier", fields={"name": name})),
+            source,
+        )
+        is None
+    )
+    assert (
+        _rust_value_name(
+            cast(Node, _FakeNode("scoped_identifier", fields={"path": owner})),
+            source,
+        )
+        is None
+    )
+    assert (
+        _rust_value_name(
+            cast(Node, _FakeNode("field_expression", fields={"field": name})),
+            source,
+        )
+        is None
+    )
+    assert (
+        _rust_value_name(
+            cast(Node, _FakeNode("field_expression", fields={"value": owner})),
+            source,
+        )
+        is None
+    )

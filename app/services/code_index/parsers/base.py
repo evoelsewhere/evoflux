@@ -458,14 +458,12 @@ def _is_reference_identifier(node: Node) -> bool:
 
     for ancestor in ancestors:
         if (
-            (
-                "type" in ancestor.type
-                and ancestor.type != "typed_default_parameter"
-            )
+            ("type" in ancestor.type and ancestor.type != "typed_default_parameter")
             or "annotation" in ancestor.type
             or "heritage" in ancestor.type
             or ancestor.type == "attribute_item"
-            or ancestor.type in {"package_clause", "package_declaration", "package_header"}
+            or ancestor.type
+            in {"package_clause", "package_declaration", "package_header"}
             or ancestor.type in {"base_list", "field_declaration"}
         ):
             return False

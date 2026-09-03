@@ -33,7 +33,7 @@ def _named_edges(result, kind: str):
 
 
 def test_r_symbols_dsl_calls_imports_docs_and_ownership_are_exact() -> None:
-    source = b'''#'First line
+    source = b"""#'First line
 #'Second line
 documented <- 1
 library(dplyr)
@@ -80,11 +80,13 @@ outer <- function() {
 configure(handler = function() wrong())
 wrapper(list())
 factory()$run()
-'''
+"""
     result = RParser().parse(file_path="model.R", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "model.R"): 1,
             (NODE_VARIABLE, "documented"): 1,
@@ -167,10 +169,10 @@ factory()$run()
 
 
 def test_r_unassigned_reference_class_group_generic_and_replace_method() -> None:
-    source = b'''setRefClass("Session", fields = list(id = "character"))
+    source = b"""setRefClass("Session", fields = list(id = "character"))
 setGroupGeneric("Ops")
 setReplaceMethod("name", "Session", function(x, value) storage$write(value))
-'''
+"""
     result = RParser().parse(file_path="dsl.R", source=source)
 
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
@@ -199,7 +201,9 @@ def test_r_language_hooks_reject_unrelated_nodes() -> None:
     assert _source_ref_name("plain") == "plain"
 
     assignment_source = b"fake <- builder(contains = FakeParent)"
-    assignment = parser._get_parser().parse(assignment_source).root_node.named_children[0]
+    assignment = (
+        parser._get_parser().parse(assignment_source).root_node.named_children[0]
+    )
     assert _class_declaration_call(assignment, assignment_source) is None
 
     call_source = b'setMethod("lonely")'

@@ -262,8 +262,7 @@ def test_signature_keeps_exact_limit_and_truncates_only_overflow() -> None:
     exact_name = "f" * 233
     overflow_name = "g" * 234
     source = (
-        f"def {exact_name}():\n    pass\n"
-        f"def {overflow_name}():\n    pass\n"
+        f"def {exact_name}():\n    pass\ndef {overflow_name}():\n    pass\n"
     ).encode()
 
     result = PythonParser().parse(file_path="signatures.py", source=source)
@@ -285,18 +284,14 @@ def test_signature_removes_trailing_space_before_ellipsis() -> None:
 
 
 def test_definition_prefix_override_wins_over_root_context() -> None:
-    result = _OverridePrefixParser().parse(
-        file_path="prefix.py", source=b"target\n"
-    )
+    result = _OverridePrefixParser().parse(file_path="prefix.py", source=b"target\n")
 
     assert result.nodes[1].local_id == "override.target#1"
     assert result.nodes[1].qualified_name == "override.target"
 
 
 def test_root_context_is_a_real_boolean() -> None:
-    result = _StrictContextParser().parse(
-        file_path="context.py", source=b"target\n"
-    )
+    result = _StrictContextParser().parse(file_path="context.py", source=b"target\n")
 
     assert [node.name for node in result.nodes] == ["context.py", "target"]
 
@@ -374,9 +369,7 @@ def test_depth_guard_includes_boundary_and_stops_beyond_it(
 def test_node_limit_is_a_hard_cap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(base_parser, "_MAX_NODES_PER_FILE", 2)
 
-    result = _IdentifierParser().parse(
-        file_path="limit.py", source=b"first\nsecond\n"
-    )
+    result = _IdentifierParser().parse(file_path="limit.py", source=b"first\nsecond\n")
     synthetic = _SyntheticParser().parse(file_path="limit.py", source=b"marker\n")
 
     assert [node.name for node in result.nodes] == ["limit.py", "first"]
@@ -414,7 +407,9 @@ def test_reference_identifier_rejects_syntax_owners_at_any_depth() -> None:
         assert not _is_reference(identifier)
 
 
-def test_reference_identifier_distinguishes_assignment_reads_and_direct_callees() -> None:
+def test_reference_identifier_distinguishes_assignment_reads_and_direct_callees() -> (
+    None
+):
     left = _under("assignment", "expression_statement", "module")
     assignment = left.parent
     assert assignment is not None
@@ -456,11 +451,10 @@ def test_python_attribute_reads_remain_runtime_references() -> None:
         source=b"def read():\n    return config.value\n",
     )
 
-    assert [
-        edge.dst_name
-        for edge in result.edges
-        if edge.kind == EDGE_REFERENCES
-    ] == ["config", "value"]
+    assert [edge.dst_name for edge in result.edges if edge.kind == EDGE_REFERENCES] == [
+        "config",
+        "value",
+    ]
 
 
 def test_contains_includes_exact_span_boundaries() -> None:
@@ -469,9 +463,5 @@ def test_contains_includes_exact_span_boundaries() -> None:
     assert _contains_fake(_FakeNode("member", start_byte=4, end_byte=10), inner)
     assert _contains_fake(_FakeNode("member", start_byte=0, end_byte=20), inner)
     assert not _contains_fake(None, inner)
-    assert not _contains_fake(
-        _FakeNode("member", start_byte=5, end_byte=20), inner
-    )
-    assert not _contains_fake(
-        _FakeNode("member", start_byte=0, end_byte=9), inner
-    )
+    assert not _contains_fake(_FakeNode("member", start_byte=5, end_byte=20), inner)
+    assert not _contains_fake(_FakeNode("member", start_byte=0, end_byte=9), inner)

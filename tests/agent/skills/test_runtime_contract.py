@@ -74,10 +74,8 @@ async def test_plugin_skill_activation_grants_its_runtime_mcp_tools(tmp_path):
     granted = ("mcp_plugin_123_jira_issues_search", "mcp_plugin_123_jira_issue_get")
     state = AgentState(messages=[], tool_names=["skill"])
     state.metadata["activated_deferred_tools"] = set()
-    state.metadata["_grant_plugin_mcp_tools"] = (
-        lambda installation_id: granted
-        if installation_id == "installation-123"
-        else ()
+    state.metadata["_grant_plugin_mcp_tools"] = lambda installation_id: (
+        granted if installation_id == "installation-123" else ()
     )
 
     content = await activate_skill_with_runtime(state, record)

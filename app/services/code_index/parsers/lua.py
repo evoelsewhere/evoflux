@@ -389,10 +389,7 @@ def _collect_luau_type_ids(
             if not child.is_named:
                 continue
             next_child = node.children[index + 1]
-            if (
-                child.type == "identifier"
-                and next_child.type == ":"
-            ):
+            if child.type == "identifier" and next_child.type == ":":
                 continue
             _collect_luau_type_ids(child, source, out, excluded=excluded)
         return

@@ -11,9 +11,7 @@ from app.services.code_index.parsers.rust import RustParser
 
 def _symbols(result) -> set[tuple[str, str]]:
     return {
-        (node.kind, node.qualified_name)
-        for node in result.nodes
-        if node.kind != "file"
+        (node.kind, node.qualified_name) for node in result.nodes if node.kind != "file"
     }
 
 
@@ -94,16 +92,11 @@ export function Card({ title, onSave }: Props) {
 
 def test_same_line_union_members_keep_unique_stable_local_ids() -> None:
     source = (
-        b"type Row = { type: 'header' } | { type: 'command' }"
-        b" | { type: 'separator' };"
+        b"type Row = { type: 'header' } | { type: 'command' } | { type: 'separator' };"
     )
 
     result = TypeScriptParser().parse(file_path="rows.ts", source=source)
-    row_types = [
-        node
-        for node in result.nodes
-        if node.qualified_name == "Row.type"
-    ]
+    row_types = [node for node in result.nodes if node.qualified_name == "Row.type"]
 
     assert [node.local_id for node in row_types] == [
         "Row.type#1",

@@ -287,11 +287,7 @@ _SCALA_BUILTIN_TYPES = frozenset(
 def _scala_annotation_name(node: Node, source: bytes) -> str | None:
     """Extract annotation name from a Scala annotation node."""
     name = next(
-        (
-            child
-            for child in node.named_children
-            if child.type == "type_identifier"
-        ),
+        (child for child in node.named_children if child.type == "type_identifier"),
         None,
     )
     return node_text(name, source) if name is not None else None

@@ -323,9 +323,7 @@ def _php_promoted_property_prefix(node: Node, source: bytes) -> str | None:
         ancestor = ancestor.parent
     if namespace_name is None:
         namespaces = [
-            child
-            for child in root.children
-            if child.type == "namespace_definition"
+            child for child in root.children if child.type == "namespace_definition"
         ]
         if len(namespaces) == 1:
             name = namespaces[0].child_by_field_name("name")

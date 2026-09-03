@@ -125,7 +125,9 @@ class CFamilyParser(TreeSitterParser):
                 kind = (
                     NODE_ENUM
                     if type_node is not None and type_node.type == "enum_specifier"
-                    else NODE_STRUCT if is_aggregate else NODE_CLASS
+                    else NODE_STRUCT
+                    if is_aggregate
+                    else NODE_CLASS
                 )
                 return Definition(kind=kind, name=name, is_class=is_aggregate)
         return None

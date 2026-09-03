@@ -210,12 +210,13 @@ class KotlinParser(TreeSitterParser):
                     _collect_kt_type_ids(type_node, source, out)
         elif node.type == "type_alias":
             for child in node.children:
-                if child.type in _KT_TYPE_NODE_TYPES and child.type != "type_identifier":
+                if (
+                    child.type in _KT_TYPE_NODE_TYPES
+                    and child.type != "type_identifier"
+                ):
                     _collect_kt_type_ids(child, source, out)
         type_parameters = _kt_enclosing_type_parameters(node, source)
-        return [
-            name for name in dict.fromkeys(out) if name not in type_parameters
-        ]
+        return [name for name in dict.fromkeys(out) if name not in type_parameters]
 
     def _class_name(self, node: Node, source: bytes) -> str | None:
         for child in node.children:
@@ -265,7 +266,11 @@ def _kt_expression_path(node: Node, source: bytes) -> str | None:
         return None
     receiver = node.named_children[0] if node.named_children else None
     suffix = next(
-        (child for child in reversed(node.children) if child.type == "navigation_suffix"),
+        (
+            child
+            for child in reversed(node.children)
+            if child.type == "navigation_suffix"
+        ),
         None,
     )
     receiver_path = (
@@ -273,11 +278,7 @@ def _kt_expression_path(node: Node, source: bytes) -> str | None:
     )
     name = (
         next(
-            (
-                child
-                for child in suffix.children
-                if child.type == "simple_identifier"
-            ),
+            (child for child in suffix.children if child.type == "simple_identifier"),
             None,
         )
         if suffix is not None
@@ -361,9 +362,7 @@ def _kt_annotation_name(node: Node, source: bytes) -> str | None:
     )
     if user_type is None:
         return None
-    names = [
-        child for child in user_type.children if child.type == "type_identifier"
-    ]
+    names = [child for child in user_type.children if child.type == "type_identifier"]
     return node_text(names[-1], source) if names else None
 
 

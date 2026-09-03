@@ -36,9 +36,7 @@ def upgrade() -> None:
         sa.Column("docstring", sa.Text(), nullable=True),
         sa.Column("created_at", TZDateTime(), nullable=False),
         sa.Column("updated_at", TZDateTime(), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["node_id"], ["code_nodes.id"], ondelete="SET NULL"
-        ),
+        sa.ForeignKeyConstraint(["node_id"], ["code_nodes.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(
             ["workspace_id"], ["coding_workspaces.id"], ondelete="CASCADE"
         ),
@@ -68,13 +66,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_code_index_chunk_workspace_node", table_name="code_index_chunks"
-    )
-    op.drop_index(
-        "ix_code_index_chunk_workspace_file", table_name="code_index_chunks"
-    )
-    op.drop_index(
-        "ix_code_index_chunks_workspace_id", table_name="code_index_chunks"
-    )
+    op.drop_index("ix_code_index_chunk_workspace_node", table_name="code_index_chunks")
+    op.drop_index("ix_code_index_chunk_workspace_file", table_name="code_index_chunks")
+    op.drop_index("ix_code_index_chunks_workspace_id", table_name="code_index_chunks")
     op.drop_table("code_index_chunks")

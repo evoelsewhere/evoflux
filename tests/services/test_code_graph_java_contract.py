@@ -59,17 +59,72 @@ def _nodes_of_type(parser: JavaParser, source: bytes, node_type: str) -> list[No
 @pytest.mark.parametrize(
     ("source", "node_type", "inside_class", "expected"),
     [
-        (b"class Service {}", "class_declaration", False, Definition(NODE_CLASS, "Service", True)),
-        (b"interface Service {}", "interface_declaration", False, Definition(NODE_INTERFACE, "Service", True)),
-        (b"enum State { IDLE }", "enum_declaration", False, Definition(NODE_ENUM, "State", True)),
-        (b"record User(String name) {}", "record_declaration", False, Definition(NODE_CLASS, "User", True)),
-        (b"@interface Marker {}", "annotation_type_declaration", False, Definition(NODE_INTERFACE, "Marker", True)),
-        (b"class Service { Result run() { return null; } }", "method_declaration", True, Definition(NODE_METHOD, "run")),
-        (b"class Service { Service() {} }", "constructor_declaration", True, Definition(NODE_METHOD, "Service")),
-        (b"class Service { Config field; }", "variable_declarator", True, Definition(NODE_FIELD, "field")),
-        (b"record User(Config config) {}", "formal_parameter", True, Definition(NODE_FIELD, "config")),
-        (b"enum State { IDLE }", "enum_constant", True, Definition(NODE_PROPERTY, "IDLE")),
-        (b"@interface Marker { Custom value(); }", "annotation_type_element_declaration", True, Definition(NODE_METHOD, "value")),
+        (
+            b"class Service {}",
+            "class_declaration",
+            False,
+            Definition(NODE_CLASS, "Service", True),
+        ),
+        (
+            b"interface Service {}",
+            "interface_declaration",
+            False,
+            Definition(NODE_INTERFACE, "Service", True),
+        ),
+        (
+            b"enum State { IDLE }",
+            "enum_declaration",
+            False,
+            Definition(NODE_ENUM, "State", True),
+        ),
+        (
+            b"record User(String name) {}",
+            "record_declaration",
+            False,
+            Definition(NODE_CLASS, "User", True),
+        ),
+        (
+            b"@interface Marker {}",
+            "annotation_type_declaration",
+            False,
+            Definition(NODE_INTERFACE, "Marker", True),
+        ),
+        (
+            b"class Service { Result run() { return null; } }",
+            "method_declaration",
+            True,
+            Definition(NODE_METHOD, "run"),
+        ),
+        (
+            b"class Service { Service() {} }",
+            "constructor_declaration",
+            True,
+            Definition(NODE_METHOD, "Service"),
+        ),
+        (
+            b"class Service { Config field; }",
+            "variable_declarator",
+            True,
+            Definition(NODE_FIELD, "field"),
+        ),
+        (
+            b"record User(Config config) {}",
+            "formal_parameter",
+            True,
+            Definition(NODE_FIELD, "config"),
+        ),
+        (
+            b"enum State { IDLE }",
+            "enum_constant",
+            True,
+            Definition(NODE_PROPERTY, "IDLE"),
+        ),
+        (
+            b"@interface Marker { Custom value(); }",
+            "annotation_type_element_declaration",
+            True,
+            Definition(NODE_METHOD, "value"),
+        ),
     ],
 )
 def test_java_classification_contract(
@@ -81,7 +136,7 @@ def test_java_classification_contract(
 
 
 def test_java_fields_records_enums_annotations_and_ownership_are_exact() -> None:
-    source = b'''package com.example;
+    source = b"""package com.example;
 /** User docs */
 public record User(String name, Config config) implements Identified {}
 class Service extends Base implements First, pkg.Second {
@@ -92,7 +147,7 @@ class Service extends Base implements First, pkg.Second {
 }
 enum State { IDLE, RUNNING }
 @interface Marker { Custom value(); }
-'''
+"""
     result = JavaParser().parse(file_path="Demo.java", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
@@ -113,7 +168,9 @@ enum State { IDLE, RUNNING }
     }
     assert nodes["com.example.User"].docstring == "User docs"
     assert nodes["com.example.Service.repository"].docstring == "field docs"
-    assert not any(edge.kind == EDGE_REFERENCES and edge.dst_name == "com" for edge in result.edges)
+    assert not any(
+        edge.kind == EDGE_REFERENCES and edge.dst_name == "com" for edge in result.edges
+    )
 
     ordinary = JavaParser().parse(
         file_path="Ordinary.java",
@@ -124,14 +181,14 @@ enum State { IDLE, RUNNING }
 
 
 def test_java_heritage_decorators_di_and_generic_type_refs_are_exact() -> None:
-    source = b'''package com.example;
+    source = b"""package com.example;
 record User(Config config) implements Identified {}
 class Service extends Base implements First, pkg.Second {
  @Inject private final Repository<User> repository;
  public Result<User> load(Request req, Map<Key, Value> mapping) { return null; }
 }
 interface API extends Parent, pkg.Other {}
-'''
+"""
     result = JavaParser().parse(file_path="Types.java", source=source)
     names = {node.local_id: node.qualified_name for node in result.nodes}
     assert [
@@ -152,13 +209,30 @@ interface API extends Parent, pkg.Other {}
             refs.setdefault(names[edge.src_local_id], []).append(edge.dst_name)
     assert refs["com.example.User.config"] == ["Config"]
     assert refs["com.example.Service.repository"] == ["Repository", "User"]
-    assert refs["com.example.Service.load"] == ["Result", "User", "Request", "Map", "Key", "Value"]
-    assert any(e.kind == EDGE_DECORATED_BY and names[e.src_local_id] == "com.example.Service.repository" and e.dst_name == "Inject" for e in result.edges)
-    assert any(e.kind == EDGE_USES and names[e.src_local_id] == "com.example.Service" and e.dst_name == "Repository" for e in result.edges)
+    assert refs["com.example.Service.load"] == [
+        "Result",
+        "User",
+        "Request",
+        "Map",
+        "Key",
+        "Value",
+    ]
+    assert any(
+        e.kind == EDGE_DECORATED_BY
+        and names[e.src_local_id] == "com.example.Service.repository"
+        and e.dst_name == "Inject"
+        for e in result.edges
+    )
+    assert any(
+        e.kind == EDGE_USES
+        and names[e.src_local_id] == "com.example.Service"
+        and e.dst_name == "Repository"
+        for e in result.edges
+    )
 
 
 def test_java_calls_and_object_creation_keep_qualification() -> None:
-    source = b'''class Service {
+    source = b"""class Service {
  void run(Request req) {
    direct();
    client.api.call(req);
@@ -167,22 +241,27 @@ def test_java_calls_and_object_creation_keep_qualification() -> None:
    new pkg.Widget();
  }
 }
-'''
+"""
     result = JavaParser().parse(file_path="Calls.java", source=source)
     assert [e.dst_name for e in result.edges if e.kind == EDGE_CALLS] == [
-        "direct", "client.api.call", "this.local", "this.parent", "Widget"
+        "direct",
+        "client.api.call",
+        "this.local",
+        "this.parent",
+        "Widget",
     ]
 
 
 def test_java_import_metadata_is_exact() -> None:
-    source = b'''import com.example.User;
+    source = b"""import com.example.User;
 import static com.example.Helper.doThing;
 import com.example.models.*;
-'''
+"""
     result = JavaParser().parse(file_path="Imports.java", source=source)
     assert [
         (e.dst_name, e.module_path, e.local_name)
-        for e in result.edges if e.kind == EDGE_IMPORTS
+        for e in result.edges
+        if e.kind == EDGE_IMPORTS
     ] == [
         ("User", "com.example.User", "User"),
         ("doThing", "com.example.Helper.doThing", "doThing"),
@@ -197,13 +276,16 @@ import com.example.models.*;
     ]
 
 
-@pytest.mark.parametrize(("raw", "expected"), [
-    ("/**Docs*/", "Docs"),
-    ("/**\n * First\n *Second\n */", "First\nSecond"),
-    ("/*ordinary*/", "ordinary"),
-    ("/**/", ""),
-    ("/**broken", "/**broken"),
-])
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("/**Docs*/", "Docs"),
+        ("/**\n * First\n *Second\n */", "First\nSecond"),
+        ("/*ordinary*/", "ordinary"),
+        ("/**/", ""),
+        ("/**broken", "/**broken"),
+    ],
+)
 def test_javadoc_normalization(raw: str, expected: str) -> None:
     assert _strip_javadoc(raw) == expected
 
@@ -221,7 +303,7 @@ def test_java_helpers_reject_incomplete_types_and_roots() -> None:
 
 
 def test_java_di_and_type_hooks_cover_positive_negative_and_scoped_cases() -> None:
-    source = b'''class Service {
+    source = b"""class Service {
  @Inject Repo injected = make();
  final Config required;
  final Config initialized = make();
@@ -233,10 +315,12 @@ def test_java_di_and_type_hooks_cover_positive_negative_and_scoped_cases() -> No
  Service(Config config) {}
 }
 @interface Marker { Custom value(); }
-'''
+"""
     parser = JavaParser()
     fields = _nodes_of_type(parser, source, "field_declaration")
-    uses = {node_text(node, source): parser.uses_target(node, source) for node in fields}
+    uses = {
+        node_text(node, source): parser.uses_target(node, source) for node in fields
+    }
     assert uses == {
         "@Inject Repo injected = make();": "Repo",
         "final Config required;": "Config",

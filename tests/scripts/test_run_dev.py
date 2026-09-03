@@ -24,10 +24,7 @@ def test_build_services_propagates_api_port_to_web_and_desktop() -> None:
     assert services[0].command[-1] == "--no-access-log"
     assert services[0].command[services[0].command.index("--port") + 1] == "8123"
     assert services[1].env["VITE_API_PROXY_TARGET"] == "http://127.0.0.1:8123"
-    assert (
-        services[2].env["EVOFLUX_DESKTOP_DEV_BACKEND_URL"]
-        == "http://127.0.0.1:8123"
-    )
+    assert services[2].env["EVOFLUX_DESKTOP_DEV_BACKEND_URL"] == "http://127.0.0.1:8123"
 
 
 def test_supervisor_stops_siblings_when_a_service_fails(tmp_path: Path) -> None:
@@ -50,7 +47,11 @@ def test_supervisor_stops_siblings_when_a_service_fails(tmp_path: Path) -> None:
     )
     failing = run_dev.Service(
         name="fail",
-        command=[sys.executable, "-c", "import time; time.sleep(0.2); raise SystemExit(7)"],
+        command=[
+            sys.executable,
+            "-c",
+            "import time; time.sleep(0.2); raise SystemExit(7)",
+        ],
         cwd=tmp_path,
         env={},
     )

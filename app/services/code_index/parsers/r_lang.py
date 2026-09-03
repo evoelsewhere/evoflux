@@ -294,7 +294,10 @@ def _inside_declaration_arguments(node: Node, source: bytes) -> bool:
     while ancestor is not None:
         if ancestor.type == "function_definition":
             return False
-        if ancestor.type == "call" and _r_call_leaf(ancestor, source) in _DECLARATION_CALLS:
+        if (
+            ancestor.type == "call"
+            and _r_call_leaf(ancestor, source) in _DECLARATION_CALLS
+        ):
             return True
         ancestor = ancestor.parent
     return False
@@ -323,9 +326,7 @@ def _class_declaration_call(node: Node, source: bytes) -> Node | None:
     return None
 
 
-def _named_argument_value(
-    call: Node, argument_name: str, source: bytes
-) -> Node | None:
+def _named_argument_value(call: Node, argument_name: str, source: bytes) -> Node | None:
     arguments = call.child_by_field_name("arguments")
     if arguments is None:
         return None
@@ -345,8 +346,7 @@ def _positional_call_arg_text(call: Node, index: int, source: bytes) -> str | No
     positional = [
         argument
         for argument in arguments.named_children
-        if argument.type == "argument"
-        and argument.child_by_field_name("name") is None
+        if argument.type == "argument" and argument.child_by_field_name("name") is None
     ]
     if index >= len(positional):
         return None

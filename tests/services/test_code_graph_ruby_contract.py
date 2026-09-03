@@ -67,7 +67,7 @@ def _named_edges(result, kind: str):
 
 
 def test_ruby_symbols_types_calls_mixins_docs_and_modifiers_are_exact() -> None:
-    source = b'''require "active_support/deep/core_ext"
+    source = b"""require "active_support/deep/core_ext"
 # User docs
 class Admin::User < Core::Record
   include Trackable
@@ -91,11 +91,13 @@ module Utils
   def helper; puts "x"; end
 end
 VALUE = Config.new
-'''
+"""
     result = RubyParser().parse(file_path="user.rb", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "user.rb"): 1,
             (NODE_CLASS, "Admin.User"): 1,
@@ -114,9 +116,7 @@ VALUE = Config.new
     )
     assert nodes["Admin.User"].docstring == "User docs"
     assert _named_edges(result, EDGE_IMPORTS) == [("user.rb", "core_ext")]
-    assert _named_edges(result, EDGE_INHERITS) == [
-        ("Admin.User", "Core.Record")
-    ]
+    assert _named_edges(result, EDGE_INHERITS) == [("Admin.User", "Core.Record")]
     assert _named_edges(result, EDGE_REFERENCES) == [
         ("Admin.User", "Trackable"),
         ("Admin.User", "Factory"),
@@ -143,7 +143,7 @@ VALUE = Config.new
 
 
 def test_ruby_top_level_methods_constants_and_namespaces_are_exact() -> None:
-    source = b'''TOP = 1
+    source = b"""TOP = 1
 Outer::Inner::SCOPED = 3
 def execute; service.run; end
 module Outer
@@ -152,7 +152,7 @@ module Outer
   end
 end
 module Admin::Tools; end
-'''
+"""
     result = RubyParser().parse(file_path="main.rb", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
@@ -188,10 +188,10 @@ def test_ruby_constant_and_expression_helpers_are_exact() -> None:
 
 
 def test_ruby_multiline_docs_keep_source_order_and_boundaries() -> None:
-    source = b'''#X first X
+    source = b"""#X first X
 #X second X
 class Documented; end
-'''
+"""
     result = RubyParser().parse(file_path="docs.rb", source=source)
     node = next(node for node in result.nodes if node.name == "Documented")
     assert node.docstring == "X first X\nX second X"
@@ -217,12 +217,13 @@ def test_ruby_malformed_macros_and_dynamic_requires_fail_closed() -> None:
     parser = RubyParser()
     malformed_call = _FakeNode("call")
     unknown = _FakeNode("unknown")
-    assert parser.synthetic_definitions(
-        cast(Node, malformed_call), b"", inside_class=True
-    ) == []
-    assert parser.synthetic_definitions(
-        cast(Node, unknown), b"", inside_class=False
-    ) == []
+    assert (
+        parser.synthetic_definitions(cast(Node, malformed_call), b"", inside_class=True)
+        == []
+    )
+    assert (
+        parser.synthetic_definitions(cast(Node, unknown), b"", inside_class=False) == []
+    )
 
     result = parser.parse(
         file_path="dynamic.rb",
@@ -240,11 +241,11 @@ def test_ruby_dynamic_require_does_not_hide_later_static_require() -> None:
 
 
 def test_ruby_non_sig_call_does_not_create_type_references() -> None:
-    source = b'''class Plain
+    source = b"""class Plain
   configure(Repo)
   def run; end
 end
-'''
+"""
     parser = RubyParser()
     method = _nodes_of_type(parser, source, "method")[0]
     assert parser.type_refs(method, source) == []

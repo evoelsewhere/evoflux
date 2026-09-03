@@ -43,7 +43,7 @@ def _local_edges(result, kind: str):
 
 
 def test_pascal_symbols_types_calls_imports_docs_and_coalescing_are_exact() -> None:
-    source = b'''///Billing module
+    source = b"""///Billing module
 unit Billing.Service;
 interface
 uses System.SysUtils, App.Types in 'src/Types.pas';
@@ -87,11 +87,13 @@ begin
   FRepo.Save();
 end;
 end.
-'''
+"""
     result = PascalParser().parse(file_path="Billing.Service.pas", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "Billing.Service.pas"): 1,
             (NODE_MODULE, "Billing.Service"): 1,
@@ -120,9 +122,7 @@ end.
     assert nodes["Billing.Service.TService.FRepo"].docstring == (
         "Repository dependency"
     )
-    assert nodes["Billing.Service.TService.Run"].docstring == (
-        "Run docs\nSecond line"
-    )
+    assert nodes["Billing.Service.TService.Run"].docstring == ("Run docs\nSecond line")
     implementation_line = (
         source[: source.index(b"function TService.Run")].count(b"\n") + 1
     )
@@ -175,7 +175,7 @@ end.
 
 
 def test_pascal_program_nested_functions_and_array_types_are_exact() -> None:
-    source = b'''program Demo;
+    source = b"""program Demo;
 uses Foo.Bar;
 var Items: array of TItem;
 type TWorker = class
@@ -196,7 +196,7 @@ end;
 begin
   Outer(nil);
 end.
-'''
+"""
     result = PascalParser().parse(file_path="Demo.dpr", source=source)
 
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
@@ -222,7 +222,7 @@ end.
 
 
 def test_pascal_overloads_coalesce_by_case_insensitive_signature() -> None:
-    source = b'''unit Overloads;
+    source = b"""unit Overloads;
 interface
 type TRun = class
   procedure Run;
@@ -243,7 +243,7 @@ begin
   StringHandler();
 end;
 end.
-'''
+"""
     result = PascalParser().parse(file_path="Overloads.pas", source=source)
     runs = [node for node in result.nodes if node.qualified_name == "Overloads.Run"]
     class_runs = [
@@ -266,14 +266,14 @@ end.
 def test_pascal_library_root_is_a_module() -> None:
     result = PascalParser().parse(
         file_path="Toolkit.lpr",
-        source=b'''library Toolkit;
+        source=b"""library Toolkit;
 type TTool = class
   procedure Run;
 end;
 procedure TTool.Run;
 begin end;
 begin end.
-''',
+""",
     )
 
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {

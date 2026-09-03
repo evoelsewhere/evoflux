@@ -18,7 +18,9 @@ depends_on = None
 def upgrade() -> None:
     with op.batch_alter_table("scheduled_task", schema=None) as batch_op:
         batch_op.add_column(sa.Column("project_id", sa.Uuid(), nullable=True))
-        batch_op.create_index("ix_scheduled_task_project_id", ["project_id"], unique=False)
+        batch_op.create_index(
+            "ix_scheduled_task_project_id", ["project_id"], unique=False
+        )
         batch_op.create_foreign_key(
             "fk_scheduled_task_project_id",
             "coding_projects",
