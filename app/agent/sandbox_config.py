@@ -2,9 +2,10 @@
 
 User-configurable extension to the sandbox denylist: a list of glob
 patterns that, when matched against a resolved absolute path, cause the
-sandbox to reject access.  Patterns ship seeded with ``**/.env`` and
-``**/.env.*`` on first run so secret files are protected by default;
-users can edit/remove them via the Settings UI.
+sandbox to reject access.  Patterns ship seeded with common secret-file
+naming conventions (see ``DEFAULT_DENIED_PATTERNS``) on first run so
+secret files are protected by default; users can edit/remove them via
+the Settings UI.
 
 File shape (YAML)::
 
@@ -37,10 +38,25 @@ from app.core.config import settings
 _CONFIG_FILENAME = "sandbox.yaml"
 
 #: Patterns seeded into a freshly-created ``sandbox.yaml``.  Chosen to
-#: cover the most common "sensitive file" case without being noisy.
+#: cover the most common "sensitive file" naming conventions without being
+#: noisy. A filename denylist can never be exhaustive (BUG-004) — this list
+#: widens the obvious gaps (dotenv variants beyond exact ``.env``, common
+#: secret/credential filenames, SSH private keys) rather than attempting
+#: full coverage.
 DEFAULT_DENIED_PATTERNS: tuple[str, ...] = (
     "**/.env",
     "**/.env.*",
+    "**/.env*",
+    "**/env.*",
+    "**/secrets.*",
+    "**/credentials.*",
+    "**/.aws/credentials",
+    "**/*.pem",
+    "**/*_rsa",
+    "**/*_dsa",
+    "**/*_ecdsa",
+    "**/*_ed25519",
+    "**/.ssh/*",
 )
 
 

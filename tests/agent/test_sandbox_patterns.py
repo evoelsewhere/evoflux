@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from app.agent.sandbox import SandboxConfig
+from app.agent.sandbox_config import DEFAULT_DENIED_PATTERNS
 
 
 def _make(tmp_path: Path, patterns: list[str]) -> SandboxConfig:
@@ -72,4 +73,72 @@ def test_empty_patterns_means_no_extra_denials(tmp_path: Path) -> None:
     target.parent.mkdir()
     target.touch()
     sandbox = _make(tmp_path, [])
+    assert sandbox.validate_path(str(target)) == target.resolve()
+
+
+# ============================================================================
+# BUG-004: default denylist widened beyond the exact ".env" family.
+#
+# The pre-fix default (["**/.env", "**/.env.*"]) let an agent trivially
+# bypass the secret-file guard by renaming to an equivalent filename
+# (e.g. "env.local", "secrets.json") — see
+# report_bugs/bugs/BUG-004-sandbox-env-denylist-bypass.md. These cases are
+# the exact examples verified as bypassing the old default in that report.
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "env.local",
+        "secrets.json",
+        "credentials.yaml",
+        ".aws/credentials",
+        "id_rsa",
+    ],
+)
+def test_default_patterns_block_previously_bypassable_secret_files(
+    tmp_path: Path, relative_path: str
+) -> None:
+    """Filenames confirmed bypassing the old narrow default must now be denied."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    target = workspace / relative_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.touch()
+
+    sandbox = _make(tmp_path, list(DEFAULT_DENIED_PATTERNS))
+    with pytest.raises(PermissionError, match="denied sandbox root"):
+        sandbox.validate_path(str(target))
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        ".env",
+        ".env.production",
+    ],
+)
+def test_default_patterns_still_block_original_env_family(
+    tmp_path: Path, relative_path: str
+) -> None:
+    """Widening the denylist must not regress the pre-existing .env coverage."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    target = workspace / relative_path
+    target.touch()
+
+    sandbox = _make(tmp_path, list(DEFAULT_DENIED_PATTERNS))
+    with pytest.raises(PermissionError, match="denied sandbox root"):
+        sandbox.validate_path(str(target))
+
+
+def test_default_patterns_allow_unrelated_files(tmp_path: Path) -> None:
+    """The widened default must not deny ordinary, unrelated files."""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    target = workspace / "main.py"
+    target.touch()
+
+    sandbox = _make(tmp_path, list(DEFAULT_DENIED_PATTERNS))
     assert sandbox.validate_path(str(target)) == target.resolve()
