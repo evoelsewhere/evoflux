@@ -101,12 +101,6 @@ class TraceRun(SQLModel, table=True):
         sa_column=Column(TZDateTime(), nullable=False, onupdate=_utcnow),
     )
     # --- Run execution options ---
-    # Preferred model override for the next agent run step. When set, the agent
-    # runtime uses this model instead of the workspace default.
-    preferred_model: str | None = Field(
-        default=None,
-        sa_column=Column(sa.String(255), nullable=True),
-    )
     # When True, compact (summarize) the session context before each run step.
     compact_before_run: bool = Field(
         default=False,
