@@ -159,7 +159,21 @@ def test_sandbox_file_config_default_seeding() -> None:
     """SandboxFileConfig() with no args yields DEFAULT_DENIED_PATTERNS, not []."""
     cfg = SandboxFileConfig()
     assert cfg.denied_patterns == list(DEFAULT_DENIED_PATTERNS)
-    assert cfg.denied_patterns == ["**/.env", "**/.env.*"]
+    assert cfg.denied_patterns == [
+        "**/.env",
+        "**/.env.*",
+        "**/.env*",
+        "**/env.*",
+        "**/secrets.*",
+        "**/credentials.*",
+        "**/.aws/credentials",
+        "**/*.pem",
+        "**/*_rsa",
+        "**/*_dsa",
+        "**/*_ecdsa",
+        "**/*_ed25519",
+        "**/.ssh/*",
+    ]
 
 
 def test_sandbox_file_config_default_factory_independence() -> None:
