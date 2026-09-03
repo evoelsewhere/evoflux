@@ -25,7 +25,7 @@ from loguru import logger
 
 from app.agent.agent_loop.streaming import stream_and_assemble
 from app.agent.agent_loop.tool_dispatch import gather_or_cancel, run_serially
-from app.agent.agent_loop.tool_executor import make_tool_executor
+from app.agent.agent_loop.tool_executor import make_tool_executor, sanitize_error
 from app.agent.lifecycle import normalize_sleep_message
 from app.agent.usage import usage_to_dict
 from app.agent.checkpointer import Checkpointer
@@ -1056,12 +1056,15 @@ class Agent(Generic[TContext]):
                     break
 
             # Model-visible ToolMessages must stay in the exact call order,
-            # including calls rejected by batch contracts.
-            results = [
-                result_by_call_id[tool_call.id]
-                for tool_call in tc_list
-                if tool_call.id in result_by_call_id
+            # including calls rejected by batch contracts.  ``ordered_calls``
+            # is kept alongside ``results`` so a raised exception (e.g. a
+            # permission rejection, which never reaches ``make_tool_executor``
+            # and so never gets its own try/except) can still be turned into
+            # a ToolMessage instead of silently vanishing from the transcript.
+            ordered_calls = [
+                tool_call for tool_call in tc_list if tool_call.id in result_by_call_id
             ]
+            results = [result_by_call_id[tool_call.id] for tool_call in ordered_calls]
 
             # Retrieve any multimodal parts stashed by ToolResult-returning tools
             multimodal_parts: dict[str, list[ContentBlock]] = state.metadata.pop(
@@ -1078,11 +1081,18 @@ class Agent(Generic[TContext]):
             cancelled = interrupt_event is not None and interrupt_event.is_set()
             tool_durations = state.metadata.pop("_tool_duration_ms", {})
             tool_result_chars = 0
-            for item in results:
+            for call, item in zip(ordered_calls, results, strict=True):
                 if isinstance(item, BaseException):
-                    logger.error("tool_gather_error error={}", item)
-                    continue
-                tc, result = item
+                    logger.error(
+                        "tool_gather_error agent={} tool={} tool_call_id={} error={}",
+                        self.name,
+                        call.function.name,
+                        call.id,
+                        item,
+                    )
+                    tc, result = call, f"Error: {sanitize_error(str(item))}"
+                else:
+                    tc, result = item
                 tool_msg = ToolMessage(
                     content=result, tool_call_id=tc.id, name=tc.function.name
                 )
