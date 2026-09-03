@@ -283,13 +283,13 @@ class GeminiProviderBase(LLMProviderBase):
         while len(result) > 1 and _is_tool_response(result[-1]):
             result.pop()
         if result and result[0].role == "model" and (
-            result[0].thought  # type: ignore[attr-defined]
+            getattr(result[0], "thought", False)
             or _join_text(result[0]).startswith("technical plan:")
             or not _join_text(result[0]).strip()
         ):
             result.pop(0)
         if len(result) > 1 and result[-1].role == result[-2].role:
-            result = self._bridge_role_gap(result)  # type: ignore[attr-defined]
+            result = self._bridge_role_gap(result)
         return result
 
     def _normalize_gemini_turns(
@@ -313,7 +313,7 @@ class GeminiProviderBase(LLMProviderBase):
         while len(result) > 1 and result[0].role == "model":
             model_text = _join_text(result[0])
             is_valid_tech = (
-                result[0].thought  # type: ignore[attr-defined]
+                getattr(result[0], "thought", False)
                 or model_text.startswith("technical plan:")
                 or not model_text.strip()
             )
@@ -335,7 +335,7 @@ class GeminiProviderBase(LLMProviderBase):
         while len(result) > 1 and result[0].role == result[1].role:
             result = result[1:]
         if len(result) > 1:
-            result = self._bridge_role_gap(result, bridge_text)  # type: ignore[attr-defined]
+            result = self._bridge_role_gap(result, bridge_text)
         if len(result) > 1 and result[0].role == result[-1].role:
             result.insert(0, Content(role="user", parts=[Part(text=bridge_text)]))
         return result

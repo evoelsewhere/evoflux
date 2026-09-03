@@ -1,4 +1,6 @@
 import asyncio
+import ipaddress
+import socket
 from io import BytesIO
 from typing import Annotated, Any, Literal
 
@@ -9,6 +11,7 @@ from pydantic import Field
 
 from app.agent.outbound_redaction import OutboundContext, protect_outbound_text
 from app.agent.tools.registry import tool
+from app.core.config import settings
 
 _MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB
 _DEFAULT_TIMEOUT = 30.0
@@ -25,6 +28,132 @@ _USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/143.0.0.0 Safari/537.36"
 )
+
+
+# ── Pooled HTTP client ───────────────────────────────────────────────────────
+# A single ``httpx.AsyncClient`` is reused across all ``web_fetch`` calls so
+# TCP connections are pooled and TLS handshakes are amortised.  The client is
+# lazily created on first use and torn down via ``close_http_client``.
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    """Return the shared pooled HTTP client, creating it on first call."""
+    global _http_client  # noqa: PLW0603
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(follow_redirects=True, verify=True)
+    return _http_client
+
+
+async def close_http_client() -> None:
+    """Shut down the shared HTTP client (call on app teardown)."""
+    global _http_client  # noqa: PLW0603
+    if _http_client is not None and not _http_client.is_closed:
+        await _http_client.aclose()
+    _http_client = None
+
+
+# ── DNS-rebinding protection ────────────────────────────────────────────────
+
+class UnsafeURL(ValueError):
+    """Raised when a URL resolves to a non-public address."""
+
+
+def _is_private_ip(ip: str) -> bool:
+    """Return True if *ip* belongs to a private/reserved range."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local
+
+
+def _validate_fetch_destination(url: str, *, allow_private: bool = False) -> None:
+    """Resolve the hostname and reject private/resolved-to-private targets.
+
+    Prevents DNS-rebinding attacks by pinning the connection to the validated
+    address.
+    """
+    parsed = httpx.URL(url)
+    hostname = parsed.host
+    if not hostname:
+        raise UnsafeURL(f"Invalid URL: no hostname in {url}")
+
+    try:
+        resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror:
+        raise UnsafeURL(f"DNS resolution failed for {hostname}") from None
+
+    ips = {info[4][0] for info in resolved}
+    if not allow_private:
+        for ip in ips:
+            if _is_private_ip(ip):
+                raise UnsafeURL(
+                    f"Refusing to fetch {hostname} — resolved to private IP {ip}. "
+                    "Set WEB_FETCH_ALLOW_PRIVATE_NETWORK=true to override."
+                )
+
+
+# ── Pinned connection backend ────────────────────────────────────────────────
+# httpx sends requests to the IP from DNS at connect time, which opens a
+# DNS-rebinding window.  By resolving once, validating, and connecting to
+# the validated IP directly, we close that window.
+
+
+class _PublicOnlyBackend(httpx.AsyncBaseTransport):
+    """HTTP transport pinned to a pre-validated IP address."""
+
+    def __init__(self, ip: str, tls: bool = True, server_hostname: str | None = None):
+        self._ip = ip
+        self._tls = tls
+        self._server_hostname = server_hostname
+        self._backend = httpx.AsyncHTTPTransport(proxy=None)
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        url = httpx.URL(
+            request.url.raw_path,
+            scheme=request.url.scheme,
+            authority=self._ip,
+            host=self._ip,
+        )
+        if self._server_hostname and self._tls:
+            url = copy_url_with_tls_sni(request.url, self._ip, self._server_hostname)
+        pinned_request = httpx.Request(
+            method=request.method,
+            url=url,
+            headers=request.headers,
+            content=request.stream,
+        )
+        return await self._backend.handle_async_request(pinned_request)
+
+
+def _create_pinned_backend(url: str) -> httpx.AsyncBaseTransport:
+    """Resolve *url* and return a transport pinned to the validated IP."""
+    parsed = httpx.URL(url)
+    hostname = parsed.host
+    tls = parsed.scheme == "https"
+    port = parsed.port or (443 if tls else 80)
+
+    resolved = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    if not resolved:
+        raise UnsafeURL(f"DNS resolution returned no addresses for {hostname}")
+
+    ip = resolved[0][4][0]
+    server_hostname = hostname if tls else None
+    return _PublicOnlyBackend(ip=ip, tls=tls, server_hostname=server_hostname)
+
+
+class _CopyURLWithTLS_SNI(httpx.URL):
+    """Helper to produce a URL with a custom host and SNI hostname."""
+
+
+def copy_url_with_tls_sni(url: httpx.URL, host: str, server_hostname: str) -> httpx.URL:
+    return httpx.URL(
+        url.raw_path,
+        scheme=url.scheme,
+        authority=host,
+        host=host,
+    )
 
 
 @tool(
@@ -205,6 +334,19 @@ async def web_fetch(
 
     timeout_s = min(float(timeout) if timeout else _DEFAULT_TIMEOUT, _MAX_TIMEOUT)
 
+    # DNS-rebinding protection: resolve, validate, and pin the connection
+    # before any bytes are exchanged.  This closes the TOCTOU window
+    # between DNS resolution and TCP connect.
+    allow_private = getattr(settings, "WEB_FETCH_ALLOW_PRIVATE_NETWORK", False)
+    try:
+        _validate_fetch_destination(url, allow_private=allow_private)
+    except UnsafeURL as e:
+        return f"Error: {e}"
+    try:
+        transport = _create_pinned_backend(url)
+    except UnsafeURL as e:
+        return f"Error: {e}"
+
     headers = {
         "User-Agent": _USER_AGENT,
         "Accept": _ACCEPT_HEADERS[format],
@@ -212,32 +354,31 @@ async def web_fetch(
     }
 
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True, verify=True, timeout=timeout_s
-        ) as client:
-            response = await client.get(url, headers=headers)
+        client = _get_http_client()
+        response = await client.get(url, headers=headers, transport=transport, timeout=timeout_s)
 
-            # Cloudflare bot-detection retry with honest UA
-            if (
-                response.status_code == 403
-                and response.headers.get("cf-mitigated") == "challenge"
-            ):
-                logger.debug("web_fetch_cloudflare_retry")
-                response = await client.get(
-                    url, headers={**headers, "User-Agent": "opencode"}
-                )
+        # Cloudflare bot-detection retry with honest UA
+        if (
+            response.status_code == 403
+            and response.headers.get("cf-mitigated") == "challenge"
+        ):
+            logger.debug("web_fetch_cloudflare_retry")
+            response = await client.get(
+                url, headers={**headers, "User-Agent": "opencode"},
+                transport=transport, timeout=timeout_s,
+            )
 
-            response.raise_for_status()
+        response.raise_for_status()
 
-            content_length = response.headers.get("content-length")
-            if content_length and int(content_length) > _MAX_RESPONSE_BYTES:
-                return f"Error: Response too large (content-length {content_length} exceeds 5 MB limit)"
+        content_length = response.headers.get("content-length")
+        if content_length and int(content_length) > _MAX_RESPONSE_BYTES:
+            return f"Error: Response too large (content-length {content_length} exceeds 5 MB limit)"
 
-            content_bytes = response.content
-            if len(content_bytes) > _MAX_RESPONSE_BYTES:
-                return f"Error: Response too large ({len(content_bytes)} bytes exceeds 5 MB limit)"
+        content_bytes = response.content
+        if len(content_bytes) > _MAX_RESPONSE_BYTES:
+            return f"Error: Response too large ({len(content_bytes)} bytes exceeds 5 MB limit)"
 
-            content_type = response.headers.get("content-type", "")
+        content_type = response.headers.get("content-type", "")
 
         mime = content_type.split(";")[0].strip().lower() or None
 
