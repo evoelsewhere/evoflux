@@ -13,6 +13,8 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 #[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -214,12 +216,17 @@ fn install_browser_manifests(_root: &Path, bytes: &[u8]) -> Result<()> {
 fn install_browser_manifests(root: &Path, bytes: &[u8]) -> Result<()> {
     let manifest_path = root.join(format!("{HOST_NAME}.json"));
     write_manifest(&manifest_path, bytes)?;
+    // reg.exe is a console subsystem binary; spawned from this GUI-subsystem
+    // app with no creation flags, Windows gives it its own visible console
+    // window that flashes on screen for each of the two vendors below.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     for vendor in ["Google\\Chrome", "Microsoft\\Edge"] {
         let key = format!("HKCU\\Software\\{vendor}\\NativeMessagingHosts\\{HOST_NAME}");
         let status = Command::new("reg.exe")
             .args(["ADD", &key, "/ve", "/t", "REG_SZ", "/d"])
             .arg(&manifest_path)
             .arg("/f")
+            .creation_flags(CREATE_NO_WINDOW)
             .status()
             .with_context(|| format!("register native messaging host in {key}"))?;
         if !status.success() {
