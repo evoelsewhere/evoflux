@@ -72,7 +72,6 @@ import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import { useWorkspaceFileWatcher } from '@/hooks/useWorkspaceFileWatcher'
 import { Button } from '@/components/ui/button'
 import type { AgentStream } from '@/stores/useTeamStore'
-import { PlanActionBar } from '../PlanReviewPanel'
 import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
 import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBrowserPresence'
@@ -1824,6 +1823,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     <>
       <ChatTrailingPanels
         onQuoteComment={handlePlanQuoteComment}
+        onPlanRevise={() => inputRef.current?.focus()}
         showActivity={showActivity}
         onCloseActivity={() => setShowActivity(false)}
         workspace={workspace}
@@ -2231,7 +2231,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
         <PermissionApprovalModal />
         <AskUserQuestionModal />
-        <PlanActionBar onRevise={() => inputRef.current?.focus()} />
         {(mode !== 'coding' || workspace) && (
           <FloatingInputBar
             ref={inputRef}

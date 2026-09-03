@@ -5,8 +5,24 @@
  * rendered in a resizable panel beside the chat. Selecting text in the
  * plan pops an inline comment box; submitting it quotes the selection
  * into the chat composer so the user can accumulate revision notes and
- * send them as one revise reply. `PlanActionBar` (mounted above the
- * composer) carries the Accept / Revise / Reject actions.
+ * send them as one revise reply.
+ *
+ * The Accept / Revise / Reject action bar lives in this panel's own
+ * `shrink-0` footer (below a `min-h-0 flex-1 overflow-y-auto` content
+ * region), the same header/content/footer shape `ChangesReviewPanel` and
+ * `ChangeSetReviewPanel` use. It used to be a separate floating strip
+ * mounted above the chat composer (`PlanActionBar`) — but `SidePanel`'s
+ * `mobileOverlay` mode renders this panel as a full-width fixed sheet
+ * (`fixed inset-x-0 bottom-0 …`, see shell/SidePanel.tsx) once the window
+ * is too narrow to dock it beside the chat column (common well above
+ * literal phone widths — e.g. a ~1000px-wide desktop window with the
+ * sidebar open). That sheet sits in its own stacking context above the
+ * main chat column, so a control rendered *outside* it — like the old
+ * floating action bar above the composer — ends up visually and
+ * pointer-event-wise underneath it: unreachable, with no way to accept,
+ * reject, or even see the plan actions (see BUG-008). Keeping the action
+ * bar inside this panel's own DOM subtree means it rides along with
+ * whichever layout mode the panel is in and can never be covered by it.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -168,16 +184,51 @@ function SelectionCommentPopover({
 
 export function PlanReviewPanel({
   onQuoteComment,
+  onRevise,
 }: {
   /** Quote the selected plan text + comment into the chat composer. */
   onQuoteComment: (quote: string, comment: string) => void
+  /** Revise: focus the chat composer so the user can type feedback. */
+  onRevise: () => void
 }) {
   const planApproval = useTeamStore((s) => s.planApproval)
+  const sessionId = useTeamStore((s) => s.sessionId)
   const isMobile = useIsMobile()
   const preset = useMotionPreset()
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [selection, setSelection] = useState<SelectionState | null>(null)
   const [stepsOpen, setStepsOpen] = useState(false)
+  const [replying, setReplying] = useState(false)
+  const [replyError, setReplyError] = useState<string | null>(null)
+
+  const handleReply = useCallback(
+    async (decision: 'approved' | 'rejected') => {
+      if (!planApproval || !sessionId) return
+      setReplying(true)
+      setReplyError(null)
+      try {
+        await replyPlanApproval(sessionId, planApproval.requestId, decision)
+        useTeamStore.setState({ planApproval: null })
+        if (decision === 'approved') {
+          useToastStore.getState().push({
+            tone: 'success',
+            title: 'Plan approved — execute recorded steps in order',
+          })
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to send reply. Please try again.'
+        // Already resolved (other tab / interrupt) — dismiss like permission/ask-user gates.
+        if (/not found|already resolved/i.test(message)) {
+          useTeamStore.setState({ planApproval: null })
+          return
+        }
+        setReplyError(message)
+      } finally {
+        setReplying(false)
+      }
+    },
+    [planApproval, sessionId],
+  )
 
   const captureSelection = useCallback(() => {
     const sel = window.getSelection()
@@ -214,9 +265,9 @@ export function PlanReviewPanel({
   // Reset transient UI whenever a new (or no) plan request is active.
   useEffect(() => {
     // The request id is an external lifecycle boundary for this transient UI.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelection(null)
     setStepsOpen(false)
+    setReplyError(null)
   }, [planApproval?.requestId])
 
   return (
@@ -329,85 +380,16 @@ export function PlanReviewPanel({
               )}
             </div>
 
-          <AnimatePresence>
-            {selection && (
-              <SelectionCommentPopover
-                key="plan-selection-popover"
-                selection={selection}
-                onSubmit={submitComment}
-                onDismiss={dismissPopover}
-              />
-            )}
-          </AnimatePresence>
-        </SidePanel>
-      )}
-    </AnimatePresence>
-  )
-}
-
-/**
- * Floating action strip above the composer while a plan is pending:
- * Accept & execute / Revise (focus the composer) / Reject. Typing a
- * message and sending it while the plan is pending is intercepted by
- * TeamChatView and delivered as a `revise` reply with that feedback.
- */
-export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
-  const planApproval = useTeamStore((s) => s.planApproval)
-  const sessionId = useTeamStore((s) => s.sessionId)
-  const preset = useMotionPreset()
-  const [replying, setReplying] = useState(false)
-  const [replyError, setReplyError] = useState<string | null>(null)
-
-  const handleReply = async (decision: 'approved' | 'rejected') => {
-    if (!planApproval || !sessionId) return
-    setReplying(true)
-    setReplyError(null)
-    try {
-      await replyPlanApproval(sessionId, planApproval.requestId, decision)
-      useTeamStore.setState({ planApproval: null })
-      if (decision === 'approved') {
-        useToastStore.getState().push({
-          tone: 'success',
-          title: 'Plan approved — execute recorded steps in order',
-        })
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to send reply. Please try again.'
-      // Already resolved (other tab / interrupt) — dismiss like permission/ask-user gates.
-      if (/not found|already resolved/i.test(message)) {
-        useTeamStore.setState({ planApproval: null })
-        return
-      }
-      setReplyError(message)
-    } finally {
-      setReplying(false)
-    }
-  }
-
-  return (
-    <AnimatePresence>
-      {planApproval && (
-        <motion.div
-          key={planApproval.requestId}
-          initial={{ opacity: 0, y: 6 * preset.distance }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 6 * preset.distance }}
-          transition={preset.spring}
-          className="mx-auto w-full max-w-3xl px-4 pb-2"
-        >
-          <div className="overflow-hidden rounded-xl border border-(--color-primary)/35 bg-(--bg-page) shadow-sm">
-            <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
-              <div className="flex min-w-0 flex-1 items-center gap-2">
-                <ClipboardList size={14} className="shrink-0 text-(--color-primary)" aria-hidden="true" />
-                <span className="text-xs font-semibold text-(--color-text)">Plan ready for review</span>
-                <span className="hidden text-xs text-(--color-text-muted) sm:inline">
-                  — type a message to request changes
-                </span>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
+            <footer className="shrink-0 border-t border-(--color-border) px-3 py-2.5">
+              <p className="text-xs text-(--color-text-muted)">
+                <span className="font-semibold text-(--color-text)">Plan ready for review</span>
+                {' '}— type a message to request changes
+              </p>
+              <div className="mt-2 flex items-center gap-1.5">
                 <button
+                  type="button"
                   disabled={replying}
-                  onClick={() => handleReply('rejected')}
+                  onClick={() => { void handleReply('rejected') }}
                   className={cn(
                     'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
                     'text-red-600 hover:bg-red-500/10 dark:text-red-400',
@@ -418,6 +400,7 @@ export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
                   Reject
                 </button>
                 <button
+                  type="button"
                   disabled={replying}
                   onClick={onRevise}
                   className={cn(
@@ -430,10 +413,11 @@ export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
                   Revise
                 </button>
                 <button
+                  type="button"
                   disabled={replying}
-                  onClick={() => handleReply('approved')}
+                  onClick={() => { void handleReply('approved') }}
                   className={cn(
-                    'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                    'ml-auto flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
                     'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
                     replying && 'pointer-events-none opacity-50',
                   )}
@@ -442,14 +426,22 @@ export function PlanActionBar({ onRevise }: { onRevise: () => void }) {
                   {replying ? 'Sending…' : 'Accept & execute'}
                 </button>
               </div>
-            </div>
-            {replyError && (
-              <p className="border-t border-(--color-border) px-4 py-2 text-xs text-red-600 dark:text-red-400">
-                {replyError}
-              </p>
+              {replyError && (
+                <p className="mt-2 text-xs text-red-600 dark:text-red-400">{replyError}</p>
+              )}
+            </footer>
+
+          <AnimatePresence>
+            {selection && (
+              <SelectionCommentPopover
+                key="plan-selection-popover"
+                selection={selection}
+                onSubmit={submitComment}
+                onDismiss={dismissPopover}
+              />
             )}
-          </div>
-        </motion.div>
+          </AnimatePresence>
+        </SidePanel>
       )}
     </AnimatePresence>
   )
