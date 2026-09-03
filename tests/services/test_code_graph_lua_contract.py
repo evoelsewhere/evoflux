@@ -28,7 +28,7 @@ def _named_edges(result, kind: str):
 
 
 def test_lua_symbols_calls_imports_docs_and_ownership_are_exact() -> None:
-    source = b'''local socket = require("socket.http")
+    source = b"""local socket = require("socket.http")
 --- Deep docs
 --- second line
 function M.Sub:deep(input)
@@ -42,11 +42,13 @@ local first = function() local hidden = 1; nested() end
 second = function() end
 M.Sub.value = 1
 local global = Config.new()
-'''
+"""
     result = LuaParser().parse(file_path="main.lua", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "main.lua"): 1,
             (NODE_VARIABLE, "socket"): 1,
@@ -80,7 +82,7 @@ local global = Config.new()
 
 
 def test_luau_types_calls_imports_generics_and_docs_are_exact() -> None:
-    source = b'''--- Result docs
+    source = b"""--- Result docs
 export type Result<T> = { value: T, config: Config }
 export type Handler = (Input) -> Output
 --- Map docs
@@ -95,11 +97,13 @@ end
 local value: Map<Key, Value>? = make()
 local repo: Repo = require(script.Parent.Repo)
 local callback = function(input: CallbackInput): CallbackOutput return input end
-'''
+"""
     result = LuauParser().parse(file_path="main.luau", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "main.luau"): 1,
             (NODE_CLASS, "Result"): 1,
@@ -141,14 +145,14 @@ local callback = function(input: CallbackInput): CallbackOutput return input end
 
 @pytest.mark.parametrize("parser", [LuaParser(), LuauParser()])
 def test_lua_dynamic_receiver_and_non_doc_comments_are_conservative(parser) -> None:
-    source = b'''-- ordinary lead-in
+    source = b"""-- ordinary lead-in
 ---Compact docs
 function plain() factory():run() end
 -- ordinary comment
 function undocumented() end
 local a, b = 1
 local c = 1, 2
-'''
+"""
     result = parser.parse(file_path=f"main{parser.extensions[0]}", source=source)
     plain = next(node for node in result.nodes if node.qualified_name == "plain")
 

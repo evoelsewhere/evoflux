@@ -193,9 +193,7 @@ class PythonParser(TreeSitterParser):
             _collect_type_identifiers(ret, source, out)
         return list(dict.fromkeys(out))
 
-    def _class_level_assignment(
-        self, node: Node, source: bytes
-    ) -> Definition | None:
+    def _class_level_assignment(self, node: Node, source: bytes) -> Definition | None:
         parent = node.parent
         if parent is None or parent.type != "block":
             return None

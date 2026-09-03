@@ -210,9 +210,7 @@ class TestLoaderLeadOnly:
 
 
 class TestSpawn:
-    async def test_confirm_blocks_spawn_and_persists_selected_runtime(
-        self, tmp_path
-    ):
+    async def test_confirm_blocks_spawn_and_persists_selected_runtime(self, tmp_path):
         team = _build_dynamic_team(tmp_path, {"executor": None})
         service = AskUserService(
             session_id=team.lead.session_id,
@@ -236,11 +234,7 @@ class TestSpawn:
 
             assert service.reply(
                 request.id,
-                [
-                    json.dumps(
-                        {"model": "mock:selected", "thinking_level": "high"}
-                    )
-                ],
+                [json.dumps({"model": "mock:selected", "thinking_level": "high"})],
             )
             member = await spawn_task
 
@@ -801,9 +795,7 @@ class TestRosterManageTool:
                 ),
             )
 
-            payload = json.loads(
-                await make_team_manage_tool(team)(action="status")
-            )
+            payload = json.loads(await make_team_manage_tool(team)(action="status"))
             status = payload["members"][0]
             assert status["name"] == "executor#1"
             assert status["state"] == "working"

@@ -46,7 +46,7 @@ def _local_edges(result, kind: str):
 
 
 def test_svelte_component_scripts_template_and_external_import_are_exact() -> None:
-    source = b'''<script LANG = ts>
+    source = b"""<script LANG = ts>
 import Widget from './Widget.svelte';
 export let user: User;
 function handleClick() { service.run(); }
@@ -56,10 +56,12 @@ function handleClick() { service.run(); }
 <svelte:component this={Current} />
 <p>{user}</p>
 <button on:click={handleClick}>Go</button>
-'''
+"""
     result = SvelteParser().parse(file_path=r"components\App.svelte", source=source)
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", r"components\App.svelte"): 1,
             (NODE_MODULE, "App"): 1,
@@ -119,13 +121,13 @@ function handleClick() { service.run(); }
         ("App", "user"),
         ("App", "handleClick"),
     ]
-    assert _named_edges(result, EDGE_CALLS) == [
-        ("App.handleClick", "service.run")
-    ]
+    assert _named_edges(result, EDGE_CALLS) == [("App.handleClick", "service.run")]
 
 
-def test_vue_component_setup_template_components_bindings_and_events_are_exact() -> None:
-    source = b'''<script setup LANG=TypeScript>
+def test_vue_component_setup_template_components_bindings_and_events_are_exact() -> (
+    None
+):
+    source = b"""<script setup LANG=TypeScript>
 import UserCard from './UserCard.vue';
 const user: User = loadUser();
 const handle = () => submit();
@@ -138,10 +140,12 @@ const handle = () => submit();
   <p>{{ XtitleX }}</p>
   <button @click="handle" />
 </template>
-'''
+"""
     result = VueParser().parse(file_path="Dashboard.vue", source=source)
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "Dashboard.vue"): 1,
             (NODE_MODULE, "Dashboard"): 1,
@@ -168,8 +172,10 @@ const handle = () => submit();
     ]
 
 
-def test_astro_frontmatter_client_script_template_and_external_script_are_exact() -> None:
-    source = b'''---
+def test_astro_frontmatter_client_script_template_and_external_script_are_exact() -> (
+    None
+):
+    source = b"""---
 import Layout from './Layout.astro';
 const title: Title = loadTitle();
 function handle() { submit(); }
@@ -179,10 +185,12 @@ function handle() { submit(); }
 <p>{XtitleX}</p>
 <script>function clientOnly() { browser.start(); }</script>
 <script src="./island.js#client"></script>
-'''
+"""
     result = AstroParser().parse(file_path="Page.astro", source=source)
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "Page.astro"): 1,
             (NODE_MODULE, "Page"): 1,
@@ -211,8 +219,10 @@ function handle() { submit(); }
     ]
 
 
-def test_liquid_component_variables_static_dependencies_and_references_are_exact() -> None:
-    source = b'''{% assign title = product.title %}
+def test_liquid_component_variables_static_dependencies_and_references_are_exact() -> (
+    None
+):
+    source = b"""{% assign title = product.title %}
 {% capture body %}Hi{% endcapture %}
 {% for item in items %}{{ item }}{% endfor %}
 {% increment counter %}
@@ -220,10 +230,12 @@ def test_liquid_component_variables_static_dependencies_and_references_are_exact
 {% render 'cards/product', card: product %}
 {% include helper_template %}
 {{ title }}
-'''
+"""
     result = LiquidParser().parse(file_path="card.liquid", source=source)
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "card.liquid"): 1,
             (NODE_MODULE, "card"): 1,
@@ -263,6 +275,8 @@ def test_component_script_language_dispatch_is_exact() -> None:
 
     assert isinstance(selected(b'<script lang="tsx"></script>'), TsxParser)
     assert isinstance(selected(b'<script lang="ts"></script>'), TypeScriptParser)
-    assert isinstance(selected(b'<script lang="typescript"></script>'), TypeScriptParser)
+    assert isinstance(
+        selected(b'<script lang="typescript"></script>'), TypeScriptParser
+    )
     assert isinstance(selected(b"<script></script>"), JavaScriptParser)
     assert isinstance(selected(b"<script lang></script>"), JavaScriptParser)

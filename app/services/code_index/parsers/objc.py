@@ -81,9 +81,7 @@ class ObjCParser(TreeSitterParser):
         elif ntype == "function_definition":
             declarator = node.child_by_field_name("declarator")
             name = (
-                _declarator_name(declarator, source)
-                if declarator is not None
-                else None
+                _declarator_name(declarator, source) if declarator is not None else None
             )
             if name:
                 return Definition(kind=NODE_FUNCTION, name=name)
@@ -102,9 +100,7 @@ class ObjCParser(TreeSitterParser):
         getter, setter = _property_accessors(node, name, source)
         definitions = [Definition(kind=NODE_METHOD, name=getter)]
         if setter is not None:
-            definitions.append(
-                Definition(kind=NODE_METHOD, name=setter)
-            )
+            definitions.append(Definition(kind=NODE_METHOD, name=setter))
         return definitions
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:

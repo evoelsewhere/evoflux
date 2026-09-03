@@ -74,7 +74,7 @@ def _named_edges(result, kind: str):
 
 
 def test_swift_symbols_types_calls_heritage_docs_and_attributes_are_exact() -> None:
-    source = b'''import Foundation
+    source = b"""import Foundation
 ///X Service docs X
 ///X second line X
 @vendor.Service
@@ -98,11 +98,13 @@ enum State { case ready, done; var label: String { "x" } }
 actor Worker: Runnable { func work() {} }
 typealias Handler<T> = (T, Input) -> Output
 let global: Config = Config()
-'''
+"""
     result = SwiftParser().parse(file_path="Service.swift", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "Service.swift"): 1,
             (NODE_CLASS, "Service"): 1,
@@ -174,9 +176,9 @@ let global: Config = Config()
 
 
 def test_swift_top_level_symbols_and_generic_type_filtering_are_exact() -> None:
-    source = b'''let config: Config = load()
+    source = b"""let config: Config = load()
 func execute<T, R>(input: Input<T>) -> Result<R> { service.run() }
-'''
+"""
     parser = SwiftParser()
     result = parser.parse(file_path="Script.swift", source=source)
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
@@ -196,12 +198,12 @@ func execute<T, R>(input: Input<T>) -> Result<R> { service.run() }
 
 
 def test_swift_expression_type_and_comment_helpers_are_exact() -> None:
-    source = b'''/**
+    source = b"""/**
  * X docs X
  * second line
  */
 func run(input: Vendor.Input) -> Vendor.Result { client.api.run() }
-'''
+"""
     parser = SwiftParser()
     function = _nodes_of_type(parser, source, "function_declaration")[0]
     navigation = _nodes_of_type(parser, source, "navigation_expression")[0]
@@ -217,10 +219,10 @@ func run(input: Vendor.Input) -> Vendor.Result { client.api.run() }
 
 
 def test_swift_first_line_doc_and_deep_scoped_import_are_exact() -> None:
-    source = b'''///X first X
+    source = b"""///X first X
 func first() {}
 import struct UIKit.Components.View
-'''
+"""
     parser = SwiftParser()
     function = _nodes_of_type(parser, source, "function_declaration")[0]
     result = parser.parse(file_path="First.swift", source=source)
@@ -259,9 +261,7 @@ def test_swift_malformed_hook_inputs_fail_closed() -> None:
 
     assert parser.import_refs(cast(Node, import_node), b"") == []
     assert parser.classify(cast(Node, function), b"", inside_class=False) is None
-    assert parser.classify(
-        cast(Node, property_node), b"", inside_class=True
-    ) is None
+    assert parser.classify(cast(Node, property_node), b"", inside_class=True) is None
     assert parser.type_refs(cast(Node, property_node), b"") == []
     assert _swift_expression_path(cast(Node, navigation), b"foo") == "foo"
     assert _swift_declaration_kind(cast(Node, unknown)) == "class"

@@ -112,7 +112,7 @@ def test_python_classification_contract(
 
 
 def test_local_and_dunder_assignments_do_not_become_graph_symbols() -> None:
-    source = b'''__all__ = ["VALUE"]
+    source = b"""__all__ = ["VALUE"]
 __private = 1
 public__ = 2
 def outer():
@@ -123,13 +123,11 @@ class Service:
     __private = 1
     public__ = 2
     left, right = (1, 2)
-'''
+"""
 
     result = PythonParser().parse(file_path="negative.py", source=source)
 
-    assert {
-        node.qualified_name for node in result.nodes if node.kind != "file"
-    } == {
+    assert {node.qualified_name for node in result.nodes if node.kind != "file"} == {
         "__private",
         "public__",
         "outer",
@@ -140,20 +138,18 @@ class Service:
 
 
 def test_python_call_targets_keep_nested_attribute_qualification() -> None:
-    source = b'''class Child(Base):
+    source = b"""class Child(Base):
  def run(self):
     super().base()
     direct()
     package.service.method()
     get_factory().nested()
     worker.submit(callback)
-'''
+"""
 
     result = PythonParser().parse(file_path="calls.py", source=source)
     calls = [
-        (edge.dst_name, edge.line)
-        for edge in result.edges
-        if edge.kind == EDGE_CALLS
+        (edge.dst_name, edge.line) for edge in result.edges if edge.kind == EDGE_CALLS
     ]
 
     assert calls == [
@@ -167,9 +163,9 @@ def test_python_call_targets_keep_nested_attribute_qualification() -> None:
 
 
 def test_python_dispatch_references_keep_callbacks_and_keyword_values() -> None:
-    source = b'''def schedule():
+    source = b"""def schedule():
     worker.submit(callback, package.handlers.on_event, 42, lambda: None, named=other.callback)
-'''
+"""
 
     parser = PythonParser()
     call = next(
@@ -190,9 +186,11 @@ def test_python_heritage_supports_identifiers_attributes_and_generics() -> None:
 
     result = PythonParser().parse(file_path="heritage.py", source=source)
 
-    assert [
-        edge.dst_name for edge in result.edges if edge.kind == EDGE_INHERITS
-    ] == ["Base", "Mixin", "Generic"]
+    assert [edge.dst_name for edge in result.edges if edge.kind == EDGE_INHERITS] == [
+        "Base",
+        "Mixin",
+        "Generic",
+    ]
 
 
 def test_python_docs_and_decorators_use_language_semantics() -> None:
@@ -234,12 +232,12 @@ class Commented:
 
 
 def test_python_import_metadata_is_exact() -> None:
-    source = b'''import os
+    source = b"""import os
 import package.module
 import deep.package.service as svc
 from app.models import User, Order as Purchase
 from ..shared.types import Config
-'''
+"""
 
     result = PythonParser().parse(file_path="imports.py", source=source)
     imports = [
@@ -259,12 +257,12 @@ from ..shared.types import Config
 
 
 def test_python_type_refs_cover_functions_module_variables_and_class_fields() -> None:
-    source = b'''VALUE: Config = external
+    source = b"""VALUE: Config = external
 class Service:
     field: FieldType
     def run(self, value: Input, model: package.Model = default) -> Result[Output]:
         return value
-'''
+"""
 
     result = PythonParser().parse(file_path="types.py", source=source)
     node_names = {node.local_id: node.qualified_name for node in result.nodes}
@@ -292,11 +290,9 @@ def test_lambda_binding_is_not_a_reference_but_its_body_read_is() -> None:
         source=b"def make():\n    return lambda item: item\n",
     )
 
-    assert [
-        edge.dst_name
-        for edge in result.edges
-        if edge.kind == EDGE_REFERENCES
-    ] == ["item"]
+    assert [edge.dst_name for edge in result.edges if edge.kind == EDGE_REFERENCES] == [
+        "item"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -310,9 +306,7 @@ def test_lambda_binding_is_not_a_reference_but_its_body_read_is() -> None:
         ('"unterminated', None),
     ],
 )
-def test_python_doc_literal_normalization(
-    literal: str, expected: str | None
-) -> None:
+def test_python_doc_literal_normalization(literal: str, expected: str | None) -> None:
     assert _strip_py_string(literal) == expected
 
 
@@ -337,14 +331,20 @@ def test_qualified_value_name_handles_nested_and_incomplete_attributes() -> None
     assert _qualified_value_name(cast(Node, outer), source) == (
         "package.service.callback"
     )
-    assert _qualified_value_name(
-        cast(Node, _FakeNode("attribute", fields={"attribute": callback})),
-        source,
-    ) is None
-    assert _qualified_value_name(
-        cast(Node, _FakeNode("attribute", fields={"object": package})),
-        source,
-    ) is None
+    assert (
+        _qualified_value_name(
+            cast(Node, _FakeNode("attribute", fields={"attribute": callback})),
+            source,
+        )
+        is None
+    )
+    assert (
+        _qualified_value_name(
+            cast(Node, _FakeNode("attribute", fields={"object": package})),
+            source,
+        )
+        is None
+    )
 
 
 def test_assignment_helpers_reject_incomplete_or_wrong_owners() -> None:

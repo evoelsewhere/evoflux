@@ -61,9 +61,7 @@ class DartParser(TreeSitterParser):
         elif ntype == "enum_declaration":
             name = node.child_by_field_name("name")
             if name is not None:
-                return Definition(
-                    kind=NODE_ENUM, name=node_text(name, source)
-                )
+                return Definition(kind=NODE_ENUM, name=node_text(name, source))
         elif ntype == "mixin_declaration":
             name = _dart_decl_name(node)
             if name is not None:
@@ -80,27 +78,19 @@ class DartParser(TreeSitterParser):
             name = node.child_by_field_name("name")
             if name is not None:
                 kind = NODE_METHOD if inside_class else NODE_FUNCTION
-                return Definition(
-                    kind=kind, name=node_text(name, source)
-                )
+                return Definition(kind=kind, name=node_text(name, source))
         elif ntype == "getter_signature":
             name = node.child_by_field_name("name")
             if name is not None:
-                return Definition(
-                    kind=NODE_METHOD, name=node_text(name, source)
-                )
+                return Definition(kind=NODE_METHOD, name=node_text(name, source))
         elif ntype == "setter_signature":
             name = node.child_by_field_name("name")
             if name is not None:
-                return Definition(
-                    kind=NODE_METHOD, name=node_text(name, source)
-                )
+                return Definition(kind=NODE_METHOD, name=node_text(name, source))
         elif ntype == "constructor_signature":
             name = node.child_by_field_name("name")
             if name is not None:
-                return Definition(
-                    kind=NODE_METHOD, name=node_text(name, source)
-                )
+                return Definition(kind=NODE_METHOD, name=node_text(name, source))
         elif ntype == "initialized_identifier":
             name = _dart_decl_name(node)
             if name is not None:
@@ -201,11 +191,11 @@ class DartParser(TreeSitterParser):
         for child in node.children:
             if child.type == "superclass":
                 direct_types = [
-                    sub
-                    for sub in child.children
-                    if sub.type == "type_identifier"
+                    sub for sub in child.children if sub.type == "type_identifier"
                 ]
-                name = _dart_type_name(direct_types[0], source) if direct_types else None
+                name = (
+                    _dart_type_name(direct_types[0], source) if direct_types else None
+                )
                 if name:
                     out.append(SuperType(name=name, edge_kind=EDGE_INHERITS))
                 for mixins in child.children:
@@ -215,9 +205,7 @@ class DartParser(TreeSitterParser):
                         mixin_name = _dart_type_name(sub, source)
                         if mixin_name:
                             out.append(
-                                SuperType(
-                                    name=mixin_name, edge_kind=EDGE_IMPLEMENTS
-                                )
+                                SuperType(name=mixin_name, edge_kind=EDGE_IMPLEMENTS)
                             )
             elif child.type == "interfaces":
                 for sub in child.children:
@@ -278,9 +266,7 @@ class DartParser(TreeSitterParser):
                 }:
                     _collect_dart_type_ids(child, source, out)
         type_parameters = _dart_enclosing_type_parameters(node, source)
-        return [
-            name for name in dict.fromkeys(out) if name not in type_parameters
-        ]
+        return [name for name in dict.fromkeys(out) if name not in type_parameters]
 
     def docstring(self, node: Node, source: bytes) -> str | None:
         owner = _dart_definition_owner(node)

@@ -70,7 +70,7 @@ def _named_edges(result, kind: str):
 
 
 def test_dart_symbols_types_calls_heritage_docs_and_attributes_are_exact() -> None:
-    source = b'''import 'package:app/repo.dart' as repo;
+    source = b"""import 'package:app/repo.dart' as repo;
 ///X Service docs X
 ///X second line X
 @Service()
@@ -94,11 +94,13 @@ enum State { ready, done }
 class User { final String name; final Config config; User(this.name, this.config); }
 typedef Handler = Output Function(Input);
 final Config global = Config();
-'''
+"""
     result = DartParser().parse(file_path="Service.dart", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "Service.dart"): 1,
             (NODE_CLASS, "Service"): 1,
@@ -166,9 +168,9 @@ final Config global = Config();
 
 
 def test_dart_top_level_function_and_generic_type_filtering_are_exact() -> None:
-    source = b'''Result<R> execute<T, R>(Input<T> input) { return service.run(); }
+    source = b"""Result<R> execute<T, R>(Input<T> input) { return service.run(); }
 final Config config = load();
-'''
+"""
     parser = DartParser()
     result = parser.parse(file_path="script.dart", source=source)
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {

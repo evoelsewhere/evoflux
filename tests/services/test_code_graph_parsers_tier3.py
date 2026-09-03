@@ -622,9 +622,7 @@ end.
     }
     assert "TObject" in _edge_names(result.edges, EDGE_INHERITS)
     assert "IRunner" in _edge_names(result.edges, EDGE_IMPLEMENTS)
-    assert {"Helper", "Utils.Work"}.issubset(
-        _edge_names(result.edges, EDGE_CALLS)
-    )
+    assert {"Helper", "Utils.Work"}.issubset(_edge_names(result.edges, EDGE_CALLS))
     assert {"TInput", "TResult"}.issubset(_edge_names(result.edges, EDGE_REFERENCES))
 
 

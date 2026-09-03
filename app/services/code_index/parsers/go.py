@@ -316,9 +316,7 @@ def _preceding_comment(node: Node, source: bytes) -> str | None:
         if line.startswith("//"):
             cleaned.append(line[2:].strip())
         elif line.startswith("/*"):
-            cleaned.append(
-                line[2:-2].strip() if line.endswith("*/") else line.strip()
-            )
+            cleaned.append(line[2:-2].strip() if line.endswith("*/") else line.strip())
         else:
             cleaned.append(line.strip())
     return "\n".join(cleaned) if cleaned else None

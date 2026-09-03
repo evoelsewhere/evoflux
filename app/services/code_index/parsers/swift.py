@@ -108,9 +108,7 @@ class SwiftParser(TreeSitterParser):
         # A scoped import ("import struct Foundation.Date") names one specific
         # symbol from the module — the last dotted segment is the locally-used
         # name, mirroring java.py's handling of nested imports.
-        return [
-            ImportRef(name=dotted.rpartition(".")[2] or dotted, module_path=dotted)
-        ]
+        return [ImportRef(name=dotted.rpartition(".")[2] or dotted, module_path=dotted)]
 
     def call_target(self, node: Node, source: bytes) -> str | None:
         if node.type != "call_expression":
@@ -243,11 +241,7 @@ def _swift_expression_path(node: Node, source: bytes) -> str | None:
     target_path = _swift_expression_path(target, source) if target is not None else None
     name = (
         next(
-            (
-                child
-                for child in suffix.children
-                if child.type == "simple_identifier"
-            ),
+            (child for child in suffix.children if child.type == "simple_identifier"),
             None,
         )
         if suffix is not None
@@ -319,11 +313,7 @@ _SWIFT_BUILTIN_TYPES = frozenset(
 
 def _swift_attr_name(attr_node: Node, source: bytes) -> str | None:
     """Extract attribute name from a Swift attribute node."""
-    names = [
-        node
-        for node in _swift_walk(attr_node)
-        if node.type == "type_identifier"
-    ]
+    names = [node for node in _swift_walk(attr_node) if node.type == "type_identifier"]
     return node_text(names[-1], source) if names else None
 
 

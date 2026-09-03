@@ -67,21 +67,96 @@ def _nodes_of_type(parser: CSharpParser, source: bytes, node_type: str) -> list[
 @pytest.mark.parametrize(
     ("source", "node_type", "inside_class", "expected"),
     [
-        (b"namespace Demo {}", "namespace_declaration", False, Definition(NODE_NAMESPACE, "Demo")),
-        (b"namespace Demo;", "file_scoped_namespace_declaration", False, Definition(NODE_NAMESPACE, "Demo", prefix="")),
-        (b"class Service {}", "class_declaration", False, Definition(NODE_CLASS, "Service", True)),
-        (b"interface IService {}", "interface_declaration", False, Definition(NODE_INTERFACE, "IService", True)),
-        (b"struct Value {}", "struct_declaration", False, Definition(NODE_STRUCT, "Value", True)),
-        (b"enum State { Idle }", "enum_declaration", False, Definition(NODE_ENUM, "State", True)),
-        (b"record User(string Name);", "record_declaration", False, Definition(NODE_CLASS, "User", True)),
-        (b"class Service { void Run() {} }", "method_declaration", True, Definition(NODE_METHOD, "Run")),
-        (b"class Service { Service() {} }", "constructor_declaration", True, Definition(NODE_METHOD, "Service")),
-        (b"class Service { Config Item { get; } }", "property_declaration", True, Definition(NODE_PROPERTY, "Item")),
-        (b"class Service { void Run() { void Local() {} } }", "local_function_statement", False, Definition(NODE_FUNCTION, "Local")),
-        (b"delegate Result Handler(Input value);", "delegate_declaration", False, Definition(NODE_FUNCTION, "Handler")),
-        (b"class Service { Config field; }", "variable_declarator", True, Definition(NODE_FIELD, "field")),
-        (b"record User(Config Config);", "parameter", True, Definition(NODE_FIELD, "Config")),
-        (b"enum State { Idle }", "enum_member_declaration", True, Definition(NODE_PROPERTY, "Idle")),
+        (
+            b"namespace Demo {}",
+            "namespace_declaration",
+            False,
+            Definition(NODE_NAMESPACE, "Demo"),
+        ),
+        (
+            b"namespace Demo;",
+            "file_scoped_namespace_declaration",
+            False,
+            Definition(NODE_NAMESPACE, "Demo", prefix=""),
+        ),
+        (
+            b"class Service {}",
+            "class_declaration",
+            False,
+            Definition(NODE_CLASS, "Service", True),
+        ),
+        (
+            b"interface IService {}",
+            "interface_declaration",
+            False,
+            Definition(NODE_INTERFACE, "IService", True),
+        ),
+        (
+            b"struct Value {}",
+            "struct_declaration",
+            False,
+            Definition(NODE_STRUCT, "Value", True),
+        ),
+        (
+            b"enum State { Idle }",
+            "enum_declaration",
+            False,
+            Definition(NODE_ENUM, "State", True),
+        ),
+        (
+            b"record User(string Name);",
+            "record_declaration",
+            False,
+            Definition(NODE_CLASS, "User", True),
+        ),
+        (
+            b"class Service { void Run() {} }",
+            "method_declaration",
+            True,
+            Definition(NODE_METHOD, "Run"),
+        ),
+        (
+            b"class Service { Service() {} }",
+            "constructor_declaration",
+            True,
+            Definition(NODE_METHOD, "Service"),
+        ),
+        (
+            b"class Service { Config Item { get; } }",
+            "property_declaration",
+            True,
+            Definition(NODE_PROPERTY, "Item"),
+        ),
+        (
+            b"class Service { void Run() { void Local() {} } }",
+            "local_function_statement",
+            False,
+            Definition(NODE_FUNCTION, "Local"),
+        ),
+        (
+            b"delegate Result Handler(Input value);",
+            "delegate_declaration",
+            False,
+            Definition(NODE_FUNCTION, "Handler"),
+        ),
+        (
+            b"class Service { Config field; }",
+            "variable_declarator",
+            True,
+            Definition(NODE_FIELD, "field"),
+        ),
+        (
+            b"record User(Config Config);",
+            "parameter",
+            True,
+            Definition(NODE_FIELD, "Config"),
+        ),
+        (
+            b"enum State { Idle }",
+            "enum_member_declaration",
+            True,
+            Definition(NODE_PROPERTY, "Idle"),
+        ),
     ],
 )
 def test_csharp_classification_contract(
@@ -93,7 +168,7 @@ def test_csharp_classification_contract(
 
 
 def test_csharp_records_fields_properties_enums_and_ownership_are_exact() -> None:
-    source = b'''namespace Demo;
+    source = b"""namespace Demo;
 /// <summary>User docs</summary>
 public record User(string Name, Config Config) : IIdentified;
 class Service : Base, IDisposable {
@@ -104,7 +179,7 @@ class Service : Base, IDisposable {
  public Response Load(Request req, Config cfg) => client.Api.Call(req);
 }
 enum State { Idle, Running }
-'''
+"""
     result = CSharpParser().parse(file_path="Demo.cs", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
@@ -128,7 +203,7 @@ enum State { Idle, Running }
 
 
 def test_csharp_heritage_di_attributes_and_recursive_type_refs_are_exact() -> None:
-    source = b'''namespace Demo;
+    source = b"""namespace Demo;
 record User(Config Config) : IIdentified;
 class Service : Base, IDisposable {
  [Inject] private readonly IRepository<User> _repo;
@@ -136,12 +211,13 @@ class Service : Base, IDisposable {
  public Response Load(Request req, Map<Key, Value> mapping) => default;
 }
 interface IService : IParent, IOther {}
-'''
+"""
     result = CSharpParser().parse(file_path="Types.cs", source=source)
     names = {node.local_id: node.qualified_name for node in result.nodes}
     assert [
         (names[e.src_local_id], e.kind, e.dst_name)
-        for e in result.edges if e.kind in {EDGE_INHERITS, EDGE_IMPLEMENTS}
+        for e in result.edges
+        if e.kind in {EDGE_INHERITS, EDGE_IMPLEMENTS}
     ] == [
         ("Demo.User", EDGE_IMPLEMENTS, "IIdentified"),
         ("Demo.Service", EDGE_INHERITS, "Base"),
@@ -157,17 +233,28 @@ interface IService : IParent, IOther {}
     assert refs["Demo.Service._repo"] == ["IRepository", "User"]
     assert refs["Demo.Service.Item"] == ["Result", "User"]
     assert refs["Demo.Service.Load"] == ["Response", "Request", "Map", "Key", "Value"]
-    assert any(e.kind == EDGE_DECORATED_BY and names[e.src_local_id] == "Demo.Service._repo" and e.dst_name == "Inject" for e in result.edges)
-    assert any(e.kind == EDGE_USES and names[e.src_local_id] == "Demo.Service" and e.dst_name == "IRepository" for e in result.edges)
-    service_id = next(local_id for local_id, name in names.items() if name == "Demo.Service")
-    assert not any(
-        e.kind == EDGE_REFERENCES and e.src_local_id == service_id
+    assert any(
+        e.kind == EDGE_DECORATED_BY
+        and names[e.src_local_id] == "Demo.Service._repo"
+        and e.dst_name == "Inject"
         for e in result.edges
+    )
+    assert any(
+        e.kind == EDGE_USES
+        and names[e.src_local_id] == "Demo.Service"
+        and e.dst_name == "IRepository"
+        for e in result.edges
+    )
+    service_id = next(
+        local_id for local_id, name in names.items() if name == "Demo.Service"
+    )
+    assert not any(
+        e.kind == EDGE_REFERENCES and e.src_local_id == service_id for e in result.edges
     )
 
 
 def test_csharp_calls_and_object_creation_keep_qualification() -> None:
-    source = b'''class Service {
+    source = b"""class Service {
  void Run(Request req) {
    Direct();
    client.Api.Call(req);
@@ -176,24 +263,29 @@ def test_csharp_calls_and_object_creation_keep_qualification() -> None:
    new Demo.Widget();
  }
 }
-'''
+"""
     result = CSharpParser().parse(file_path="Calls.cs", source=source)
     assert [e.dst_name for e in result.edges if e.kind == EDGE_CALLS] == [
-        "Direct", "client.Api.Call", "this.Local", "this.Parent", "Widget"
+        "Direct",
+        "client.Api.Call",
+        "this.Local",
+        "this.Parent",
+        "Widget",
     ]
 
 
 def test_csharp_using_metadata_is_exact() -> None:
-    source = b'''using Simple;
+    source = b"""using Simple;
 using Demo.Deep.Service;
 global using System.Text;
 using Alias = Demo.Deep.Service;
 using static System.Math;
-'''
+"""
     result = CSharpParser().parse(file_path="Usings.cs", source=source)
     assert [
         (e.dst_name, e.module_path, e.local_name)
-        for e in result.edges if e.kind == EDGE_IMPORTS
+        for e in result.edges
+        if e.kind == EDGE_IMPORTS
     ] == [
         ("Simple", "Simple", "Simple"),
         ("Service", "Demo.Deep.Service", "Service"),
@@ -213,13 +305,13 @@ def test_csharp_language_hooks_handle_missing_structural_children() -> None:
 
 
 def test_csharp_multiline_docs_stay_attached_to_the_exact_declaration() -> None:
-    source = b'''/// <summary>Class docs</summary>
+    source = b"""/// <summary>Class docs</summary>
 class Service {
  /// <summary>First line</summary>
  /// <remarks>Second line</remarks>
  void Run() {}
 }
-'''
+"""
     result = CSharpParser().parse(file_path="Docs.cs", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
     assert nodes["Service"].docstring == "Class docs"
@@ -246,12 +338,12 @@ def test_csharp_decorators_scan_past_non_attribute_children() -> None:
 
 
 def test_csharp_type_hooks_resolve_parameters_returns_and_qualified_generics() -> None:
-    source = b'''class Service {
+    source = b"""class Service {
  Demo.Result<Demo.Item> Load(Map<Key, Value> input) => default;
  Demo.Result<Demo.Item> Item { get; }
  void Reset(int count) {}
 }
-'''
+"""
     parser = CSharpParser()
     method, reset = _nodes_of_type(parser, source, "method_declaration")
     property_node = _nodes_of_type(parser, source, "property_declaration")[0]
@@ -275,17 +367,19 @@ def test_csharp_type_hooks_resolve_parameters_returns_and_qualified_generics() -
 
 
 def test_csharp_di_positive_negative_and_builtin_cases() -> None:
-    source = b'''class Service {
+    source = b"""class Service {
  [Inject] Repo injected = new();
  readonly Config required;
  readonly Config initialized = new();
  string optional;
  [Inject] string builtin;
 }
-'''
+"""
     parser = CSharpParser()
     fields = _nodes_of_type(parser, source, "field_declaration")
-    assert {node_text(node, source): parser.uses_target(node, source) for node in fields} == {
+    assert {
+        node_text(node, source): parser.uses_target(node, source) for node in fields
+    } == {
         "[Inject] Repo injected = new();": "Repo",
         "readonly Config required;": "Config",
         "readonly Config initialized = new();": None,
@@ -294,19 +388,29 @@ def test_csharp_di_positive_negative_and_builtin_cases() -> None:
     }
 
 
-@pytest.mark.parametrize(("name", "expected"), [
-    ("IService", True), ("IO", True), ("Item", False), ("I", False), ("service", False),
-])
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("IService", True),
+        ("IO", True),
+        ("Item", False),
+        ("I", False),
+        ("service", False),
+    ],
+)
 def test_interface_name_heuristic(name: str, expected: bool) -> None:
     assert _looks_like_interface(name) is expected
 
 
-@pytest.mark.parametrize(("raw", "expected"), [
-    ("<summary>Docs</summary>", "Docs"),
-    ("<summary>First <see cref=\"T\"/> second</summary>", "First  second"),
-    ("plain", "plain"),
-    ("<broken", "<broken"),
-])
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("<summary>Docs</summary>", "Docs"),
+        ('<summary>First <see cref="T"/> second</summary>', "First  second"),
+        ("plain", "plain"),
+        ("<broken", "<broken"),
+    ],
+)
 def test_xml_doc_tag_stripping(raw: str, expected: str) -> None:
     assert _strip_xml_tags(raw) == expected
 

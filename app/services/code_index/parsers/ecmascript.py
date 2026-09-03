@@ -222,9 +222,7 @@ class EcmaScriptParser(TreeSitterParser):
                 for ident in child.children:
                     name = self._type_name(ident, source)
                     if name:
-                        out.append(
-                            SuperType(name=name, edge_kind=EDGE_INHERITS)
-                        )
+                        out.append(SuperType(name=name, edge_kind=EDGE_INHERITS))
         return out
 
     def _heritage(self, heritage: Node, source: bytes) -> list[SuperType]:
