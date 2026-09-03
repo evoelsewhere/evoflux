@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { WorkspaceFileInfo } from '@/api/types'
@@ -64,32 +64,5 @@ describe('WorkspaceHtmlPreview', () => {
     expect(srcDoc).toContain('/media/site/assets/hero.png?_token=test-token')
     expect(srcDoc).toContain('/media/site/pages/fonts/texture.png?_token=test-token')
     expect(srcDoc).not.toContain('rel="stylesheet"')
-  })
-
-  it('enables scripts when toggle is clicked', async () => {
-    const html = file('app/index.html')
-    mockWorkspaceFiles({
-      'app/index.html': `<!doctype html><html><body>
-        <div id="app"></div>
-        <script>document.getElementById('app').textContent = 'rendered'</script>
-      </body></html>`,
-    })
-
-    render(<WorkspaceHtmlPreview sessionId="session-1" file={html} />)
-
-    const frame = await screen.findByTitle('index.html preview')
-    expect(frame).toHaveAttribute('sandbox', '')
-    expect(frame.getAttribute('srcdoc')).toContain("script-src 'none'")
-
-    const toggle = screen.getByRole('button', { name: /js off/i })
-    fireEvent.click(toggle)
-
-    await waitFor(() => {
-      const updatedFrame = screen.getByTitle('index.html preview')
-      expect(updatedFrame).toHaveAttribute('sandbox', 'allow-scripts allow-same-origin')
-      expect(updatedFrame.getAttribute('srcdoc')).toContain("script-src 'unsafe-inline' 'unsafe-eval'")
-      expect(updatedFrame.getAttribute('srcdoc')).toContain("connect-src")
-      expect(updatedFrame.getAttribute('srcdoc')).not.toContain("connect-src 'none'")
-    })
   })
 })

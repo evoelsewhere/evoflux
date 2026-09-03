@@ -861,126 +861,6 @@ function codingMarkdownMediaUrl(workspace: string, markdownPath: string, src: st
   return codingWorkspaceFileUrl(workspace, resolvedParts.join('/'))
 }
 
-function dirname(path: string): string {
-  const index = path.lastIndexOf('/')
-  return index < 0 ? '' : path.slice(0, index)
-}
-
-function resolveRelativePath(baseFilePath: string, reference: string): string | null {
-  const trimmed = reference.trim()
-  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//') || /^[a-z][a-z\d+.-]*:/i.test(trimmed)) {
-    return null
-  }
-  let pathname = trimmed
-  try { pathname = decodeURIComponent(trimmed) } catch { /* keep as-is */ }
-  const queryIndex = pathname.indexOf('?')
-  const hashIndex = pathname.indexOf('#')
-  const suffixIndex = [queryIndex, hashIndex].filter((i) => i >= 0).sort((a, b) => a - b)[0]
-  const cleanPath = suffixIndex === undefined ? pathname : pathname.slice(0, suffixIndex)
-  const suffix = suffixIndex === undefined ? '' : pathname.slice(suffixIndex)
-  const parts = cleanPath.startsWith('/') ? [] : dirname(baseFilePath).split('/').filter(Boolean)
-  for (const part of cleanPath.split('/')) {
-    if (!part || part === '.') continue
-    if (part === '..') { if (parts.length === 0) return null; parts.pop(); continue }
-    parts.push(part)
-  }
-  if (parts.length === 0) return null
-  return parts.join('/') + suffix
-}
-
-function resolveCodingRef(workspace: string, baseFilePath: string, reference: string): string | null {
-  const resolved = resolveRelativePath(baseFilePath, reference)
-  if (!resolved) return null
-  const pathOnly = resolved.split('?')[0].split('#')[0]
-  return codingWorkspaceFileUrl(workspace, pathOnly)
-}
-
-function rewriteCssUrlsForCoding(css: string, workspace: string, baseFilePath: string): string {
-  const rewrite = (ref: string) => resolveCodingRef(workspace, baseFilePath, ref) ?? ref
-  return css
-    .replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (_m, _q, ref) => `url("${rewrite(ref)}")`)
-    .replace(/@import\s+(['"])([^'"]+)\1/gi, (_m, q, ref) => `@import ${q}${rewrite(ref)}${q}`)
-}
-
-async function prepareHtmlForCoding(workspace: string, file: WorkspaceFileInfo, source: string): Promise<string> {
-  const doc = new DOMParser().parseFromString(source, 'text/html')
-
-  // Inline external stylesheets
-  const links = Array.from(doc.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"][href]'))
-  await Promise.all(links.map(async (link) => {
-    const href = link.getAttribute('href') ?? ''
-    const resolved = resolveRelativePath(file.path, href)
-    if (!resolved) return
-    try {
-      const res = await fetch(codingWorkspaceFileUrl(workspace, resolved))
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const css = await res.text()
-      const style = doc.createElement('style')
-      style.textContent = rewriteCssUrlsForCoding(css, workspace, resolved)
-      style.dataset.workspacePreviewResolved = 'true'
-      link.replaceWith(style)
-    } catch {
-      const rewritten = resolveCodingRef(workspace, file.path, href)
-      if (rewritten) link.setAttribute('href', rewritten)
-    }
-  }))
-
-  // Inline external scripts
-  const scripts = Array.from(doc.querySelectorAll<HTMLScriptElement>('script[src]'))
-  await Promise.all(scripts.map(async (script) => {
-    const src = script.getAttribute('src') ?? ''
-    const resolved = resolveRelativePath(file.path, src)
-    if (!resolved) return
-    try {
-      const res = await fetch(codingWorkspaceFileUrl(workspace, resolved))
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const js = await res.text()
-      const inline = doc.createElement('script')
-      inline.textContent = js
-      for (const attr of script.attributes) {
-        if (attr.name !== 'src') inline.setAttribute(attr.name, attr.value)
-      }
-      script.replaceWith(inline)
-    } catch {
-      const rewritten = resolveCodingRef(workspace, file.path, src)
-      if (rewritten) script.setAttribute('src', rewritten)
-    }
-  }))
-
-  // Rewrite remaining src/href/poster/data attributes
-  doc.querySelectorAll<HTMLElement>('[src], [href], [poster], [data]').forEach((el) => {
-    for (const attr of ['src', 'href', 'poster', 'data']) {
-      const val = el.getAttribute(attr)
-      if (!val) continue
-      const rewritten = resolveCodingRef(workspace, file.path, val)
-      if (rewritten) el.setAttribute(attr, rewritten)
-    }
-  })
-
-  // Rewrite srcset
-  doc.querySelectorAll<HTMLElement>('[srcset]').forEach((el) => {
-    const val = el.getAttribute('srcset')
-    if (!val) return
-    el.setAttribute('srcset', val.split(',').map((c) => {
-      const m = /^(\s*)(\S+)(.*)$/.exec(c)
-      if (!m) return c
-      const r = resolveCodingRef(workspace, file.path, m[2])
-      return r ? `${m[1]}${r}${m[3]}` : c
-    }).join(','))
-  })
-
-  // Rewrite CSS url() in inline styles
-  doc.querySelectorAll<HTMLStyleElement>('style:not([data-workspace-preview-resolved])').forEach((s) => {
-    s.textContent = rewriteCssUrlsForCoding(s.textContent ?? '', workspace, file.path)
-  })
-  doc.querySelectorAll<HTMLElement>('[style]').forEach((el) => {
-    const val = el.getAttribute('style')
-    if (val) el.setAttribute('style', rewriteCssUrlsForCoding(val, workspace, file.path))
-  })
-
-  return `<!doctype html>${doc.documentElement.outerHTML}`
-}
-
 /* -------------------------------------------------------------------------
  * RichPreview component for HTML and Markdown rendering
  * ------------------------------------------------------------------------- */
@@ -1000,20 +880,14 @@ function RichPreview({ workspace, file, isHtml }: { workspace: string; file: Wor
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.text()
       })
-      .then(async (text) => {
-        if (cancelled) return
-        if (isHtml) {
-          const prepared = await prepareHtmlForCoding(workspace, file, text)
-          if (!cancelled) { setContent(prepared); setLoading(false) }
-        } else {
-          if (!cancelled) { setContent(text); setLoading(false) }
-        }
+      .then((text) => {
+        if (!cancelled) { setContent(text); setLoading(false) }
       })
       .catch((e) => {
         if (!cancelled) { setError(e instanceof Error ? e.message : String(e)); setLoading(false) }
       })
     return () => { cancelled = true }
-  }, [workspace, file, isHtml])
+  }, [workspace, file.path])
 
   if (loading) return <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
   if (error) return <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load: {error}</div>
