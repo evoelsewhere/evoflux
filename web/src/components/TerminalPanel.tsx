@@ -18,6 +18,7 @@ import {
 } from 'react'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { Send, Sparkles } from 'lucide-react'
 import { apiBaseUrl, apiWsBaseUrl } from '@/api/base-url'
@@ -111,6 +112,7 @@ const TerminalInstance = forwardRef<
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
+  const webglRef = useRef<WebglAddon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   const refit = useCallback(() => {
@@ -173,6 +175,27 @@ const TerminalInstance = forwardRef<
       /* container not laid out yet */
     }
 
+    // --- WebGL renderer lifecycle --------------------------------------------------
+    // Prefer the GPU-accelerated WebGL renderer for lower CPU usage and smoother
+    // scrolling, especially when multiple terminal tabs are open.  Falls back
+    // silently to the default canvas renderer when WebGL is unavailable or the
+    // context is lost (e.g. driver update, GPU reset, tab backgrounding).
+    const enableWebgl = () => {
+      if (webglRef.current) return
+      try {
+        const webgl = new WebglAddon()
+        webgl.onContextLoss(() => {
+          webglRef.current?.dispose()
+          webglRef.current = null
+        })
+        term.loadAddon(webgl)
+        webglRef.current = webgl
+      } catch {
+        webglRef.current = null
+      }
+    }
+    enableWebgl()
+
     const dataDisposable = term.onData((data) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'input', data }))
@@ -232,6 +255,8 @@ const TerminalInstance = forwardRef<
       themeObserver.disconnect()
       dataDisposable.dispose()
       wsRef.current?.close()
+      webglRef.current?.dispose()
+      webglRef.current = null
       term.dispose()
       termRef.current = null
       fitRef.current = null
