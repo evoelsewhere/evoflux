@@ -146,7 +146,13 @@ def test_thinking_from_model_maps_toggle_to_none_only() -> None:
     }
 
 
-def test_thinking_from_model_prefers_effort_over_other_options() -> None:
+def test_thinking_from_model_composes_every_option() -> None:
+    """The options list composes; each entry contributes its own fact.
+
+    Named efforts give the ladder, the toggle adds the off switch, and the
+    budget contributes its bounds. Reading only the first recognised entry
+    (as this used to) threw away the other two.
+    """
     model = {
         "reasoning_options": [
             {"type": "toggle"},
@@ -156,18 +162,37 @@ def test_thinking_from_model_prefers_effort_over_other_options() -> None:
     }
 
     assert _thinking_from_model(model) == {
-        "levels": ["low", "high"],
+        "levels": ["none", "low", "high"],
         "control": "effort",
         "source": "models_dev",
+        "budget": {"min": 1024},
     }
 
 
-def test_thinking_from_model_skips_budget_tokens_only() -> None:
-    """budget-only models stay on curated data: level→budget translation is
-    provider-specific (only the anthropic handler implements it)."""
+def test_thinking_from_model_samples_a_budget_only_control() -> None:
+    """A continuous knob is offered as named levels, with its bounds kept.
+
+    Budget-only models used to be skipped entirely, which left every one of
+    them — Claude Sonnet 4.5, Gemini 2.5 — on curated per-family tables.
+    """
     model = {"reasoning_options": [{"type": "budget_tokens", "min": 1024}]}
 
-    assert _thinking_from_model(model) is None
+    assert _thinking_from_model(model) == {
+        "levels": ["low", "medium", "high"],
+        "control": "budget",
+        "source": "models_dev",
+        "budget": {"min": 1024},
+    }
+
+
+def test_thinking_from_model_reads_a_zero_floor_as_an_off_switch() -> None:
+    """Gemini expresses "thinking off" by accepting a budget of zero."""
+    model = {"reasoning_options": [{"type": "budget_tokens", "min": 0, "max": 24576}]}
+
+    entry = _thinking_from_model(model)
+    assert entry is not None
+    assert entry["levels"] == ["none", "low", "medium", "high"]
+    assert entry["budget"] == {"min": 0, "max": 24576}
 
 
 def test_thinking_from_model_empty_list_is_authoritative_none() -> None:
@@ -188,12 +213,15 @@ def test_thinking_from_model_missing_or_null_preserves_curated() -> None:
 def test_thinking_from_model_tolerates_malformed_options() -> None:
     assert _thinking_from_model({"reasoning_options": "effort"}) is None
     assert _thinking_from_model({"reasoning_options": [{"type": "effort"}]}) is None
-    assert (
-        _thinking_from_model(
-            {"reasoning_options": [{"type": "effort", "values": ["low", 5]}]}
-        )
-        is None
-    )
+    # A single bad element drops out rather than discarding the model's whole
+    # reasoning contract — the surviving ladder is still the right one.
+    assert _thinking_from_model(
+        {"reasoning_options": [{"type": "effort", "values": ["low", 5]}]}
+    ) == {
+        "levels": ["low"],
+        "control": "effort",
+        "source": "models_dev",
+    }
     assert _thinking_from_model({"reasoning_options": [None, {"type": "toggle"}]}) == {
         "levels": ["none"],
         "control": "toggle",

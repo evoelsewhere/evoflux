@@ -53,12 +53,38 @@ def _resolve(overrides: Mapping[str, str] | None, name: str, default: str = "") 
     return setting_val or default
 
 
+def _adapter_speaks_model_protocol(provider_id: str, model_id: str) -> bool:
+    """Whether this provider's adapter speaks the protocol *model_id* needs.
+
+    Most catalog rows use their provider's protocol, but a few do not:
+    Claude on Vertex is Anthropic Messages rather than Gemini, and Bedrock's
+    Mantle surface is OpenAI-shaped. models.dev flags those with ``npm`` on
+    the model.
+
+    A provider usually has one adapter, so such a model is one this client
+    cannot serve — and offering it is worse than hiding it: the request goes
+    out in the wrong shape and fails at the provider, which reads as a
+    broken model rather than an unsupported one. Providers whose factory
+    routes to a second adapter say so with ``extra_transports``, which is
+    what keeps Claude-on-Foundry listed.
+    """
+    from app.agent.providers.registry import resolve_provider
+    from app.agent.providers.thinking import model_transport
+
+    config = resolve_provider(provider_id)
+    if config is None:
+        return True
+    return config.speaks(model_transport(provider_id, model_id))
+
+
 def is_agent_model_id(provider_id: str, model_id: str) -> bool:
     """Return whether registry metadata permits text/tool agent use."""
     qualified = f"{provider_id}:{model_id}"
     capabilities = get_capabilities(qualified)
     features = get_model_features(qualified)
-    return capabilities.output.text and features.tool_call is not False
+    if not capabilities.output.text or features.tool_call is False:
+        return False
+    return _adapter_speaks_model_protocol(provider_id, model_id)
 
 
 def filter_agent_model_ids(provider_id: str, model_ids: list[str]) -> list[str]:
@@ -760,7 +786,7 @@ async def discover_provider_model_entries(
                     else:
                         models = list(plugin.fallback_models)
                 else:
-                    models = []
+                    models = await _catalog_provider_models(provider_id, overrides)
         raw_entries = entries if provider_id == "codex" else models
         normalized_entries: list[DiscoveredModel] = []
         for model in raw_entries:
@@ -792,6 +818,38 @@ async def discover_provider_model_entries(
             "provider_models_unavailable provider={} error={}", provider_id, exc
         )
         return []
+
+
+async def _catalog_provider_models(
+    provider_id: str, overrides: Mapping[str, str] | None
+) -> list[str]:
+    """List models for a provider EvoFlux knows only from models.dev.
+
+    Every such provider is an OpenAI-compatible endpoint plus a bearer
+    token — that is the filter ``catalog_providers()`` applies — so one
+    ``GET /models`` against the catalog's endpoint is the whole of
+    discovery. Without this the long tail could be configured in settings
+    and would then list nothing, which is worse than not listing it at all.
+    """
+    from app.agent.providers.registry import (
+        resolve_api_key,
+        resolve_base_url,
+        resolve_provider,
+    )
+
+    config = resolve_provider(provider_id)
+    if config is None:
+        return []
+    values = dict(overrides or {})
+    base_url = resolve_base_url(
+        config, explicit=values.get(config.base_url_env_var or "")
+    )
+    api_key = resolve_api_key(config, explicit=values.get(config.env_var))
+    if not base_url or not api_key:
+        return []
+    return await _openai_compatible_models(
+        provider_id=provider_id, base_url=base_url, api_key=api_key
+    )
 
 
 async def discover_provider_models(
