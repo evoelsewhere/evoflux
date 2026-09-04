@@ -36,7 +36,7 @@ import { DiffView } from './DiffView'
 import { ReadView } from './ReadView'
 import { getDiffStats } from './diffUtils'
 import { panelTransition, useMotionPreset } from '@/lib/motion'
-import { useUIStore } from '@/stores/useUIStore'
+import { sessionHasWorkbenchTool, useUIStore } from '@/stores/useUIStore'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { DelegationTaskCards } from '@/components/DelegationTaskCards'
 import { ImageAttachment } from '@/components/ImageAttachment'
@@ -681,9 +681,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
 
 function SeeBrowserButton() {
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
-  const browserOpen = useUIStore((s) =>
-    s.workbenchTabs.some((tab) => tab.tool === 'browser'),
-  )
+  const browserOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'browser'))
   const browserActive = useTeamStore((s) => s.browserSession?.active ?? false)
 
   return (

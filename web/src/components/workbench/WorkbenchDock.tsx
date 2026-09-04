@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { useShallow } from 'zustand/react/shallow'
 import { Maximize2, Menu, Minimize2, Plus, X } from 'lucide-react'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -18,6 +19,7 @@ import {
 import {
   type WorkbenchTab,
   type WorkbenchTool,
+  sessionWorkbenchTabs,
   useUIStore,
 } from '@/stores/useUIStore'
 import {
@@ -48,7 +50,7 @@ export function WorkbenchDock({
   onOpenSidebar,
 }: WorkbenchDockProps) {
   const open = useUIStore((state) => state.workbenchOpen)
-  const tabs = useUIStore((state) => state.workbenchTabs)
+  const tabs = useUIStore(useShallow(sessionWorkbenchTabs))
   const activeTabId = useUIStore((state) => state.activeWorkbenchTabId)
   const activeTool = useUIStore((state) => state.activeWorkbenchTool)
   const maximized = useUIStore((state) => state.workbenchMaximized)
@@ -354,7 +356,12 @@ interface WorkbenchSurfaceProps {
 }
 
 export function WorkbenchSurface({ tool, children }: WorkbenchSurfaceProps) {
-  const tabs = useUIStore((state) => state.workbenchTabs)
+  // Deliberately *not* scoped to the current session. A tab belonging to
+  // another session must stay mounted and hidden, or its live state — a
+  // browser page, a terminal's scrollback — is destroyed the moment you
+  // look at another chat. Only the tab bar filters; `activeWorkbenchTabId`
+  // is per-session, so a foreign tab is inactive and therefore hidden.
+  const tabs = useUIStore(useShallow((state) => state.workbenchTabs))
   const activeTabId = useUIStore((state) => state.activeWorkbenchTabId)
   const toolTabs = tabs.filter((tab) => tab.tool === tool)
   const motionPreset = useMotionPreset()

@@ -57,7 +57,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { prependSession, prependWorkspaceSession } from '@/stores/cache-invalidation-bridge'
-import { useUIStore } from '@/stores/useUIStore'
+import { sessionHasWorkbenchTool, useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import {
   useTeamAgentsQuery,
@@ -446,7 +446,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const leadName       = useTeamStore((s) => s.leadName)
   const isConnected    = useTeamStore((s) => s.isConnected)
   const isSessionLoading = useTeamStore((s) => s.isSessionLoading)
-  const workbenchTabs = useUIStore((s) => s.workbenchTabs)
   const activeWorkbenchTool = useUIStore((s) => s.activeWorkbenchTool)
   const workbenchOpen = useUIStore((s) => s.workbenchOpen)
   const workbenchMaximized = useUIStore((s) => s.workbenchMaximized)
@@ -463,23 +462,21 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const easdChatRequest = useUIStore((s) => s.easdChatRequest)
   const requestEasdChat = useUIStore((s) => s.requestEasdChat)
   const clearEasdChatRequest = useUIStore((s) => s.clearEasdChatRequest)
-  const wikiOpen = workbenchTabs.some((tab) => tab.tool === 'wiki')
-  const browserOpen = workbenchTabs.some((tab) => tab.tool === 'browser')
-  const sideChatOpen = workbenchTabs.some((tab) => tab.tool === 'side-chat')
+  const wikiOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'wiki'))
+  const sideChatOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'side-chat'))
+  const hasFilesTab = useUIStore((s) => sessionHasWorkbenchTool(s, 'files'))
+  const setWorkbenchSession = useUIStore((s) => s.setWorkbenchSession)
   const toggleWiki = useUIStore((s) => s.toggleWiki)
   const toggleScheduler = useUIStore((s) => s.toggleScheduler)
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
   const openGitChanges = useUIStore((s) => s.openGitChanges)
-  const previousWorkbenchSessionRef = useRef(sessionIdState)
-
   useEffect(() => {
-    const hasFilesTab = workbenchTabs.some((tab) => tab.tool === 'files')
     if (!shouldClearFilesEditor(codingFileViewerHost, workbenchOpen, hasFilesTab)) return
     setCodingFileViewer(null)
     setCodingFileViewerHost(null)
     setCodingFileViewerMode('file')
-  }, [codingFileViewerHost, workbenchOpen, workbenchTabs])
+  }, [codingFileViewerHost, hasFilesTab, workbenchOpen])
 
   useEffect(() => {
     if (
@@ -501,19 +498,18 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     clearWorkspaceFileRequest(workspaceFileRequest.id)
   }, [clearWorkspaceFileRequest, mode, sessionIdState, workspace, workspaceFileRequest])
 
+  // Switching sessions used to *close* the terminal, browser and side chat,
+  // because tabs were one global list and leaving them open showed the
+  // previous session's work — a terminal tab even reconnected under the new
+  // session id with the old tab's terminal id, spawning a second shell.
+  // Tabs now carry their session, so the workbench just looks at another
+  // one and the first session's tabs stay alive underneath.
   useEffect(() => {
-    if (previousWorkbenchSessionRef.current !== sessionIdState) {
-      closeWorkbenchTool('terminal')
-      closeWorkbenchTool('browser')
-      closeWorkbenchTool('side-chat')
-      previousWorkbenchSessionRef.current = sessionIdState
-    }
-    if (!sessionIdState) {
-      closeWorkbenchTool('terminal')
-      closeWorkbenchTool('browser')
-      closeWorkbenchTool('side-chat')
-      if (mode !== 'coding') closeWorkbenchTool('files')
-    }
+    setWorkbenchSession(sessionIdState ?? null)
+  }, [sessionIdState, setWorkbenchSession])
+
+  useEffect(() => {
+    if (!sessionIdState && mode !== 'coding') closeWorkbenchTool('files')
     if (mode !== 'coding') {
       closeWorkbenchTool('graph')
       closeWorkbenchTool('source-control')
@@ -527,6 +523,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       closeWorkbenchTool('problems')
     }
   }, [closeWorkbenchTool, mode, sessionIdState, workspace])
+
 
   // Terminal processes intentionally survive WebSocket disconnects. Restore
   // them as top-level Workbench tabs instead of rebuilding a nested tab bar.
@@ -1691,7 +1688,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         <WorkbenchSurface tool="terminal">
           {(tab, active) => (
             <TerminalPanel
-              sessionId={sessionIdState}
+              sessionId={tab.sessionId ?? sessionIdState}
               terminalId={tab.id}
               active={active}
               workspace={mode === 'coding' ? workspace : null}
@@ -1707,10 +1704,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         <WorkbenchSurface tool="browser">
           {(tab, active) => (
             <BrowserViewer
-              sessionId={sessionIdState}
+              sessionId={tab.sessionId ?? sessionIdState}
               tabId={tab.id}
               initialUrl={tab.initialUrl}
-              open={browserOpen}
+              open
               visible={active}
               embedded
               onNewTab={(url) => createWorkbenchTab('browser', {
