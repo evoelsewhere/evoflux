@@ -1710,6 +1710,28 @@ def _browser_panel_tool_display_arguments(
     return {"actions": safe_actions} if safe_actions else None
 
 
+def _resolve_turn_usage(extra: dict[str, Any]) -> dict[str, Any] | None:
+    """The turn's spend, from whichever usage record has it.
+
+    ``turn_usage`` totals the whole activation; ``usage`` is the last model
+    call alone. The footer summarises a turn, so the total wins — but turns
+    persisted before the tracker priced itself carry a total with no cost.
+    Their per-call record does have one, and for a single-call turn that
+    price *is* the turn's price. For a multi-call turn it is only the last
+    call, so it is left out rather than shown as the turn's total.
+    """
+    total = extra.get("turn_usage")
+    last_call = extra.get("usage")
+    if not isinstance(total, dict):
+        return last_call if isinstance(last_call, dict) else None
+    if total.get("cost") or not isinstance(last_call, dict):
+        return total
+    cost = last_call.get("cost")
+    if cost and total.get("calls", 1) == 1:
+        return {**total, "cost": cost}
+    return total
+
+
 def _browser_panel_blocks(
     row: Any,
     *,
@@ -1742,6 +1764,9 @@ def _browser_panel_blocks(
             text_block["model"] = extra["model"]
         if isinstance(extra.get("duration_ms"), int | float):
             text_block["response_duration_ms"] = max(0, round(extra["duration_ms"]))
+        turn_usage = _resolve_turn_usage(extra)
+        if turn_usage is not None:
+            text_block["turn_usage"] = turn_usage
         blocks.append(text_block)
 
     for index, tool_call in enumerate(row.tool_calls or []):

@@ -7,12 +7,13 @@
  * view. Each view passes its own `renderBlock` so the per-view block visuals
  * (e.g. compact vs roomy `UserBubble`) stay independent.
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { Copy, Check, Play } from 'lucide-react'
-import { formatTime, lastTurnText } from '@/utils/format'
+import { lastTurnText } from '@/utils/format'
+import { cn } from '@/lib/utils'
 import { AssistantTurnContent } from './AssistantTurnContent'
 import { easdToolReviewTarget } from './easd/easdToolReviewTarget'
-import type { ContentBlock } from '@/api/types'
+import type { ContentBlock, TurnCost, TurnUsage } from '@/api/types'
 
 export interface AssistantTurnFooterProps {
   /** Blocks belonging to a single assistant turn (no user blocks inside). */
@@ -38,14 +39,79 @@ function shortModelName(modelId: string | null | undefined): string | null {
   return modelId.split(':').at(-1)?.split('/').at(-1) || modelId
 }
 
+/**
+ * Token counts, at one decimal through the range turns actually land in.
+ *
+ * Most turns are between a few thousand and a couple of hundred thousand
+ * tokens, and rounding those to whole thousands makes neighbouring turns
+ * look identical. Past 100k the decimal stops earning its width.
+ */
+function formatTokens(count: number): string {
+  if (count < 1000) return String(count)
+  if (count < 1_000_000) {
+    const thousands = count / 1000
+    return `${thousands < 100 ? thousands.toFixed(1) : Math.round(thousands)}k`
+  }
+  return `${(count / 1_000_000).toFixed(1)}M`
+}
+
+/**
+ * A turn's cost, at a precision that stays honest.
+ *
+ * Sub-cent turns are the common case, so rounding to two decimals would
+ * print `$0.00` for most of them and make the number look broken. Anything
+ * below a tenth of a cent is not worth four decimals either — it reads as
+ * free, and saying so is clearer than `$0.0004`.
+ */
+function formatCost(usd: number): string {
+  if (usd <= 0) return '$0'
+  if (usd < 0.001) return '<$0.001'
+  if (usd < 1) return `$${usd.toFixed(3)}`
+  if (usd < 100) return `$${usd.toFixed(2)}`
+  return `$${Math.round(usd)}`
+}
+
+function usageTooltip(usage: TurnUsage): string {
+  const newline = String.fromCharCode(10)
+  const lines = [`Input ${usage.input.toLocaleString()}`]
+  if (usage.cache) lines.push(`  of which cached ${usage.cache.toLocaleString()}`)
+  if (usage.cache_write) {
+    lines.push(`  cache written ${usage.cache_write.toLocaleString()}`)
+  }
+  lines.push(`Output ${usage.output.toLocaleString()}`)
+  if (usage.thoughts) lines.push(`  of which thinking ${usage.thoughts.toLocaleString()}`)
+  if (usage.calls && usage.calls > 1) lines.push(`${usage.calls} model calls`)
+  return lines.join(newline)
+}
+
+const COST_COMPONENT_LABELS: [keyof TurnCost, string][] = [
+  ['input_usd', 'Input'],
+  ['cache_read_usd', 'Cache read'],
+  ['cache_write_usd', 'Cache write'],
+  ['reasoning_usd', 'Thinking'],
+  ['output_usd', 'Output'],
+]
+
+function costTooltip(cost: TurnCost): string {
+  const newline = String.fromCharCode(10)
+  const lines = COST_COMPONENT_LABELS.flatMap(([key, label]) => {
+    const value = cost[key]
+    return typeof value === 'number' && value > 0
+      ? [`${label} ${formatCost(value)}`]
+      : []
+  })
+  lines.push(`Estimated from models.dev rates`)
+  return lines.join(newline)
+}
+
 export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }: AssistantTurnFooterProps) {
   const [copied, setCopied] = useState(false)
   const footerData = useMemo(() => {
     // Me lastTurnText walks back to the previous user block; pass the turn directly
     const textContent = lastTurnText(turnBlocks)
-    const lastBlock = turnBlocks[turnBlocks.length - 1]
     let responseDurationMs: number | undefined
     let modelId: string | undefined
+    let turnUsage: TurnUsage | undefined
     let hasTool = false
     let hasEasdReviewAction = false
     for (let i = turnBlocks.length - 1; i >= 0; i--) {
@@ -54,26 +120,37 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
         ? block.responseDurationMs
         : undefined
       modelId ??= typeof block.extra?.model === 'string' ? block.extra.model : undefined
+      turnUsage ??= block.turnUsage
       hasTool ||= block.type === 'tool'
       hasEasdReviewAction ||= block.type === 'tool' && Boolean(
         easdToolReviewTarget(block.toolName, block.toolArgs, block.toolResult),
       )
-      if (responseDurationMs !== undefined && modelId !== undefined && hasTool && hasEasdReviewAction) break
+      if (
+        responseDurationMs !== undefined
+        && modelId !== undefined
+        && turnUsage !== undefined
+        && hasTool
+        && hasEasdReviewAction
+      ) break
     }
     return {
       textContent,
-      timestamp: lastBlock?.timestamp,
       responseDurationMs,
       modelId,
       modelName: shortModelName(modelId),
+      turnUsage,
       hasTool,
       hasEasdReviewAction,
     }
   }, [turnBlocks])
-  const { textContent, timestamp, responseDurationMs, modelId, modelName, hasTool, hasEasdReviewAction } = footerData
+  const {
+    textContent, responseDurationMs, modelId, modelName, turnUsage,
+    hasTool, hasEasdReviewAction,
+  } = footerData
   const canContinue = Boolean(onContinue && (textContent || hasTool) && !hasEasdReviewAction)
+  const totalTokens = turnUsage ? turnUsage.input + turnUsage.output : 0
+  const cost = turnUsage?.cost
 
-  if (!textContent && !timestamp && !canContinue && responseDurationMs === undefined && !modelName) return null
 
   const handleCopy = async () => {
     try {
@@ -83,11 +160,44 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
     } catch { /* ignore */ }
   }
 
-  const wrapperClass = size === 'roomy' ? 'mt-1 flex items-center gap-1.5' : 'mt-0.5 flex items-center gap-1'
   const iconSize = size === 'roomy' ? 11 : 10
+  // One run of facts, middot-separated, in a single monospaced size. Five
+  // values sat side by side with only whitespace between them read as one
+  // ambiguous string — the separators are what make `8.6s 137k` two facts
+  // instead of a number nobody can parse.
+  const meta: { key: string; label: string; title?: string }[] = []
+  if (modelName) meta.push({ key: 'model', label: modelName, title: modelId })
+  if (responseDurationMs !== undefined) {
+    meta.push({
+      key: 'duration',
+      label: formatDuration(responseDurationMs),
+      title: 'Response duration',
+    })
+  }
+  if (turnUsage && totalTokens > 0) {
+    meta.push({
+      key: 'tokens',
+      label: `${formatTokens(totalTokens)} tokens`,
+      title: usageTooltip(turnUsage),
+    })
+  }
+  if (cost && cost.estimated_usd > 0) {
+    meta.push({
+      key: 'cost',
+      label: formatCost(cost.estimated_usd),
+      title: costTooltip(cost),
+    })
+  }
+
+  if (!textContent && !canContinue && meta.length === 0) return null
 
   return (
-    <div className={wrapperClass}>
+    <div
+      className={cn(
+        'flex min-w-0 flex-wrap items-center',
+        size === 'roomy' ? 'mt-1 gap-x-1.5 gap-y-0.5' : 'mt-0.5 gap-x-1 gap-y-0.5',
+      )}
+    >
       {textContent && (
         <button
           onClick={handleCopy}
@@ -110,17 +220,24 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
           <Play size={iconSize} />
         </button>
       )}
-      {modelName && (
-        <span className="font-mono text-(--color-text-subtle) text-xs" title={modelId ?? undefined}>
-          {modelName}
-        </span>
-      )}
-      {timestamp && <span className="text-(--color-text-subtle) text-xs">{formatTime(timestamp)}</span>}
-      {responseDurationMs !== undefined && (
-        <span className="font-mono text-(--color-text-subtle) text-xs" title="Response duration">
-          {formatDuration(responseDurationMs)}
-        </span>
-      )}
+      {meta.map((item, index) => (
+        <Fragment key={item.key}>
+          {index > 0 && (
+            <span
+              aria-hidden="true"
+              className="select-none text-(--color-text-subtle) text-xs"
+            >
+              ·
+            </span>
+          )}
+          <span
+            className="truncate font-mono text-(--color-text-subtle) text-xs"
+            title={item.title}
+          >
+            {item.label}
+          </span>
+        </Fragment>
+      ))}
     </div>
   )
 }
