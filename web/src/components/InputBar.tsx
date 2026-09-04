@@ -250,6 +250,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const [localHistory, setLocalHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [submitting, setSubmitting] = useState(false)
+  // The guard has to flip synchronously. ``submitting`` is React state read
+  // from this callback's closure, so several clicks landing in one tick all
+  // saw ``false`` and all submitted — five fast clicks on Send posted the
+  // message five times. Clearing the draft did not help either: ``value`` is
+  // captured in the same closure, so every queued call still had the text.
+  const submittingRef = useRef(false)
   const [snippetRange, setSnippetRange] = useState<
     { start: number; end: number; query: string } | null
   >(null)
@@ -487,7 +493,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const submit = useCallback(async () => {
     const trimmed = value.trim()
     const context = quoteContext?.trim() ?? ''
-    if ((!trimmed && !context && files.length === 0) || disabled || submitting || slashFilter !== null) return
+    if (
+      (!trimmed && !context && files.length === 0)
+      || disabled
+      || submittingRef.current
+      || slashFilter !== null
+    ) return
+    submittingRef.current = true
     const quotedContext = context
       ? context
           .split('\n')
@@ -539,6 +551,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       restoreDraft()
       return
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
     if (trimmed) {
@@ -555,7 +568,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     files,
     shellMode,
     slashFilter,
-    submitting,
     resize,
     sessionId,
   ])
