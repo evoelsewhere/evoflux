@@ -74,6 +74,7 @@ export function SideChatTranscript({
     contentRef,
     scrollRef,
     scrollToBottom,
+    sentinelRef,
     showScrollButton: showScrollBtn,
   } = usePinnedTranscript({
     isEmpty,
@@ -157,6 +158,13 @@ export function SideChatTranscript({
             )}
           </div>
         )}
+        {/* Outside the isEmpty branch on purpose: the observer that reads
+            this must keep its registration when the transcript empties. */}
+        <div
+          ref={sentinelRef}
+          aria-hidden="true"
+          className="h-px w-full shrink-0 [overflow-anchor:none]"
+        />
       </div>
 
       {showScrollBtn && !isEmpty && (

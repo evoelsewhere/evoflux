@@ -59,6 +59,7 @@ export function ActivityTimeline({
     contentRef,
     scrollRef,
     scrollToBottom,
+    sentinelRef,
     showScrollButton: showLatest,
   } = usePinnedTranscript({
     isEmpty: blocks.length === 0,
@@ -143,6 +144,13 @@ export function ActivityTimeline({
                 )
               })}
             </div>
+            {/* Visibility of this is how the viewport knows it is at the
+                bottom, so nothing measures the scroller to find out. */}
+            <div
+              ref={sentinelRef}
+              aria-hidden="true"
+              className="h-px w-full shrink-0 [overflow-anchor:none]"
+            />
 
           {showLatest && isActive && (
             <button

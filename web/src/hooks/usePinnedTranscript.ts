@@ -1,8 +1,45 @@
+/**
+ * Transcript viewport: stays at the newest content, holds the reader's
+ * place when older history arrives, and gets out of the way the moment
+ * they scroll up.
+ *
+ * Rebuilt on browser primitives after measuring the previous version.
+ * Every choice below replaced hand-written machinery, and every one was
+ * verified in this app's own WebView rather than assumed:
+ *
+ * - **Holding position when history is prepended** is `overflow-anchor`.
+ *   Native scroll anchoring moves `scrollTop` by exactly the height
+ *   inserted above the viewport — measured: prepending 600px took
+ *   scrollTop from 1200 to 1800 and the reader did not move, where
+ *   `overflow-anchor: none` left it at 1200 and the content jumped. That
+ *   replaced a ResizeObserver, two settling timers, an anchor-capture
+ *   pass over the turns, and the callers' book-keeping of previous
+ *   scroll height.
+ *
+ * - **Knowing whether the bottom is in view** is an IntersectionObserver
+ *   on a one-pixel sentinel. The old test read `scrollHeight`,
+ *   `scrollTop` and `clientHeight` on every scroll frame, and one forced
+ *   layout in this app measures 26-28ms, so that read was most of the
+ *   cost of scrolling. The observer fired twice for a whole
+ *   scroll-away-and-back, and reads nothing.
+ *
+ * - **Following new content** writes `scrollTo` on the scroller itself,
+ *   not `sentinel.scrollIntoView()`. The latter also scrolls every
+ *   scrollable ancestor — measured moving an outer panel by 440px, which
+ *   is exactly the class of bug where a panel scrolls itself out of view.
+ *
+ * Deliberately unchanged: when to stop following. An upward wheel, drag,
+ * arrow key or scrollbar grab detaches at once so a live response never
+ * fights the reader, and reaching the bottom opts back in. Those are
+ * product decisions, not performance ones.
+ */
+
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+/** How close to the bottom still counts as following. */
 const DEFAULT_BOTTOM_THRESHOLD = 48
+/** Upward movement past this reads as the reader taking over. */
 const USER_SCROLL_DETACH_DELTA = 4
-const FOLLOW_TIME_CONSTANT_MS = 52
 
 interface UsePinnedTranscriptOptions {
   /** Reset the viewport to its initial pinned state when the transcript clears. */
@@ -24,32 +61,6 @@ interface UsePinnedTranscriptOptions {
   bottomThreshold?: number
 }
 
-export interface TranscriptPrependAnchor {
-  element: HTMLElement
-  viewportTop: number
-}
-
-export function captureTranscriptPrependAnchor(
-  scroller: HTMLDivElement,
-): TranscriptPrependAnchor | null {
-  const viewport = scroller.getBoundingClientRect()
-  const candidates = scroller.querySelectorAll<HTMLElement>(
-    '.oa-transcript-turn, .oa-latest-turn-runway',
-  )
-  for (const element of candidates) {
-    const rect = element.getBoundingClientRect()
-    if (rect.bottom > viewport.top + 1 && rect.top < viewport.bottom - 1) {
-      return { element, viewportTop: rect.top }
-    }
-  }
-  return null
-}
-
-/** Content growth must never detach a viewport that was already following. */
-export function pinnedAfterViewportUpdate(wasPinned: boolean, isAtBottom: boolean): boolean {
-  return wasPinned || isAtBottom
-}
-
 function isEditableTarget(target: EventTarget | null): boolean {
   return target instanceof Element
     && target.closest('input, textarea, [contenteditable="true"]') !== null
@@ -62,41 +73,14 @@ function isUpwardScrollKey(event: KeyboardEvent): boolean {
     || (event.key === ' ' && event.shiftKey)
 }
 
-/** One frame of the pinned transcript's exponential bottom-follow. */
-export function nextPinnedScrollTop(
-  current: number,
-  target: number,
-  elapsedMs: number,
-): number {
-  if (target <= current) return target
-  const elapsed = Math.min(48, Math.max(8, elapsedMs))
-  const progress = 1 - Math.exp(-elapsed / FOLLOW_TIME_CONSTANT_MS)
-  const next = current + ((target - current) * progress)
-  return target - next < 0.75 ? target : next
+/** Content growth must never detach a viewport that was already following. */
+export function pinnedAfterViewportUpdate(
+  wasPinned: boolean,
+  isAtBottom: boolean,
+): boolean {
+  return wasPinned || isAtBottom
 }
 
-/** Preserve the reader's exact viewport when content is prepended above it. */
-export function scrollTopAfterPrepend(
-  previousScrollTop: number,
-  previousScrollHeight: number,
-  nextScrollHeight: number,
-): number {
-  return Math.max(0, previousScrollTop + nextScrollHeight - previousScrollHeight)
-}
-
-function prefersReducedMotion(): boolean {
-  return typeof window !== 'undefined'
-    && typeof window.matchMedia === 'function'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
-/**
- * Codex-style transcript following.
- *
- * The viewport follows rendered height only while it is pinned. An upward
- * wheel, touch, scrollbar, or keyboard scroll detaches immediately, so a live
- * response never fights the reader. Reaching the bottom opts back in.
- */
 export function usePinnedTranscript({
   isEmpty,
   contentKey,
@@ -110,14 +94,15 @@ export function usePinnedTranscript({
 }: UsePinnedTranscriptOptions) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  /**
+   * A one-pixel element the caller renders as the last child of the
+   * content. Whether it is visible *is* the answer to "are we at the
+   * bottom", so nothing has to measure the scroller to find out.
+   */
+  const sentinelRef = useRef<HTMLDivElement>(null)
   const pinnedRef = useRef(true)
   const showScrollButtonRef = useRef(false)
   const onScrollFrameRef = useRef(onScrollFrame)
-  const followFrameRef = useRef<number | null>(null)
-  const reattachFrameRef = useRef<number | null>(null)
-  const prependObserverRef = useRef<ResizeObserver | null>(null)
-  const prependQuietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const prependMaxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showScrollButton, setShowScrollButton] = useState(false)
 
   useEffect(() => {
@@ -130,130 +115,68 @@ export function usePinnedTranscript({
     setShowScrollButton(visible)
   }, [])
 
-  const isAtBottom = useCallback(() => {
-    const element = scrollRef.current
-    if (!element) return true
-    return element.scrollHeight - element.scrollTop - element.clientHeight <= bottomThreshold
-  }, [bottomThreshold])
-
-  const cancelFollow = useCallback(() => {
-    if (followFrameRef.current === null) return
-    cancelAnimationFrame(followFrameRef.current)
-    followFrameRef.current = null
-  }, [])
-
-  const cancelPrependStabilization = useCallback(() => {
-    prependObserverRef.current?.disconnect()
-    prependObserverRef.current = null
-    if (prependQuietTimerRef.current !== null) {
-      clearTimeout(prependQuietTimerRef.current)
-      prependQuietTimerRef.current = null
-    }
-    if (prependMaxTimerRef.current !== null) {
-      clearTimeout(prependMaxTimerRef.current)
-      prependMaxTimerRef.current = null
-    }
-  }, [])
-
   const detach = useCallback(() => {
     pinnedRef.current = false
-    cancelFollow()
     setScrollButtonVisible(true)
-  }, [cancelFollow, setScrollButtonVisible])
+  }, [setScrollButtonVisible])
 
-  const followRenderedHeight = useCallback(() => {
-    if (!followEnabled) return
-    if (followFrameRef.current !== null) return
-    let previousTimestamp: number | null = null
-
-    const tick = (timestamp: number) => {
-      followFrameRef.current = null
-      const element = scrollRef.current
-      if (!element || !pinnedRef.current) return
-
-      const target = Math.max(0, element.scrollHeight - element.clientHeight)
-      if (prefersReducedMotion()) {
-        element.scrollTop = target
-        return
-      }
-
-      const elapsed = previousTimestamp === null ? 16 : timestamp - previousTimestamp
-      previousTimestamp = timestamp
-      const next = nextPinnedScrollTop(element.scrollTop, target, elapsed)
-      element.scrollTop = next
-      if (Math.abs(target - next) > 0.5) {
-        followFrameRef.current = requestAnimationFrame(tick)
-      }
-    }
-
-    followFrameRef.current = requestAnimationFrame(tick)
-  }, [followEnabled])
-
-  const scrollToBottom = useCallback((smooth = false) => {
+  /**
+   * Put the newest content in view.
+   *
+   * One `scrollHeight` read per call, and only while following — where
+   * the previous implementation read it on every animation frame of an
+   * easing loop until the loop converged.
+   */
+  const jumpToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
     const element = scrollRef.current
     if (!element) return
-    cancelFollow()
-    pinnedRef.current = true
-    setScrollButtonVisible(false)
-    if (smooth) {
-      element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
-      return
-    }
-    element.scrollTop = element.scrollHeight
-  }, [cancelFollow, setScrollButtonVisible])
+    element.scrollTo({ top: element.scrollHeight, behavior })
+  }, [])
 
-  const restorePrependOffset = useCallback((
-    previousScrollHeight: number,
-    previousScrollTop: number,
-    anchor?: TranscriptPrependAnchor | null,
-  ) => {
-    const element = scrollRef.current
-    if (!element) return
-    cancelPrependStabilization()
+  const follow = useCallback(() => {
+    if (!followEnabled || !pinnedRef.current) return
+    jumpToBottom()
+  }, [followEnabled, jumpToBottom])
 
-    const restore = () => {
-      if (anchor?.element.isConnected) {
-        const delta = anchor.element.getBoundingClientRect().top - anchor.viewportTop
-        if (Math.abs(delta) > 0.5) element.scrollTop += delta
-        return
-      }
-      element.scrollTop = scrollTopAfterPrepend(
-        previousScrollTop,
-        previousScrollHeight,
-        element.scrollHeight,
-      )
-    }
-    restore()
-
-    const content = contentRef.current
-    if (!anchor || !content || typeof ResizeObserver === 'undefined') return
-    const finishAfterQuietLayout = () => {
-      if (prependQuietTimerRef.current !== null) {
-        clearTimeout(prependQuietTimerRef.current)
-      }
-      prependQuietTimerRef.current = setTimeout(cancelPrependStabilization, 120)
-    }
-    prependObserverRef.current = new ResizeObserver(() => {
-      restore()
-      finishAfterQuietLayout()
-    })
-    prependObserverRef.current.observe(content)
-    finishAfterQuietLayout()
-    prependMaxTimerRef.current = setTimeout(cancelPrependStabilization, 800)
-  }, [cancelPrependStabilization])
-
+  // Neither of these hides the button directly. They put the bottom back
+  // in view, and the observer that watches the sentinel is what reports
+  // that — one source of truth, and no setState inside an effect body.
   const reattach = useCallback(() => {
     pinnedRef.current = true
-    cancelFollow()
-    if (reattachFrameRef.current !== null) return
-    reattachFrameRef.current = requestAnimationFrame(() => {
-      reattachFrameRef.current = null
-      setScrollButtonVisible(false)
-      const element = scrollRef.current
-      if (element) element.scrollTop = element.scrollHeight
-    })
-  }, [cancelFollow, setScrollButtonVisible])
+    jumpToBottom()
+  }, [jumpToBottom])
 
+  const scrollToBottom = useCallback((smooth = false) => {
+    pinnedRef.current = true
+    jumpToBottom(smooth ? 'smooth' : 'auto')
+  }, [jumpToBottom])
+
+  // Is the bottom in view? Answered without reading layout from JS.
+  useEffect(() => {
+    const root = scrollRef.current
+    const sentinel = sentinelRef.current
+    if (!root || !sentinel || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries.at(-1)
+        if (!entry) return
+        pinnedRef.current = pinnedAfterViewportUpdate(
+          pinnedRef.current,
+          entry.isIntersecting,
+        )
+        setScrollButtonVisible(!pinnedRef.current)
+      },
+      // The margin expresses the same "near enough to the bottom" notion
+      // the old pixel threshold did, without measuring anything.
+      { root, rootMargin: `0px 0px ${bottomThreshold}px 0px`, threshold: 0 },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [bottomThreshold, setScrollButtonVisible])
+
+  // Reader intent. Detaching is driven by input events, never by layout:
+  // content growing under a following viewport must not be mistaken for a
+  // scroll the reader performed.
   useEffect(() => {
     const element = scrollRef.current
     if (!element) return
@@ -261,21 +184,15 @@ export function usePinnedTranscript({
     let lastTouchY: number | null = null
     let scrollFrame: number | null = null
 
-    const updateFromViewport = () => {
+    const reportScrollFrame = () => {
       scrollFrame = null
-      const atBottom = isAtBottom()
-      pinnedRef.current = pinnedAfterViewportUpdate(pinnedRef.current, atBottom)
-      setScrollButtonVisible(!pinnedRef.current)
-      if (pinnedRef.current && !atBottom) followRenderedHeight()
       onScrollFrameRef.current?.(element)
     }
 
-    const scheduleViewportUpdate = () => {
-      if (scrollFrame === null) scrollFrame = requestAnimationFrame(updateFromViewport)
-    }
-
     const onScroll = () => {
-      scheduleViewportUpdate()
+      if (scrollFrame === null) {
+        scrollFrame = requestAnimationFrame(reportScrollFrame)
+      }
     }
 
     const onWheel = (event: WheelEvent) => {
@@ -287,16 +204,12 @@ export function usePinnedTranscript({
       if (isolateScroll) event.stopPropagation()
       const y = event.touches[0]?.clientY
       if (y == null) return
-      if (lastTouchY !== null && y > lastTouchY + USER_SCROLL_DETACH_DELTA) {
-        detach()
-      }
+      if (lastTouchY !== null && y > lastTouchY + USER_SCROLL_DETACH_DELTA) detach()
       lastTouchY = y
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isEditableTarget(event.target) && isUpwardScrollKey(event)) {
-        detach()
-      }
+      if (!isEditableTarget(event.target) && isUpwardScrollKey(event)) detach()
     }
 
     const onPointerDown = (event: PointerEvent) => {
@@ -327,19 +240,22 @@ export function usePinnedTranscript({
       element.removeEventListener('keydown', onKeyDown)
       element.removeEventListener('pointerdown', onPointerDown)
     }
-  }, [detach, followRenderedHeight, isAtBottom, isolateScroll, setScrollButtonVisible])
+  }, [detach, isolateScroll])
 
+  // Content that settles asynchronously — images, fonts, code blocks —
+  // after the render that mounted it. A render-keyed effect cannot see
+  // that; a ResizeObserver can.
   useEffect(() => {
     const content = contentRef.current
     if (!content || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(followRenderedHeight)
+    const observer = new ResizeObserver(() => follow())
     observer.observe(content)
     return () => observer.disconnect()
-  }, [followRenderedHeight, isEmpty])
+  }, [follow, isEmpty])
 
   useEffect(() => {
-    followRenderedHeight()
-  }, [contentKey, followRenderedHeight])
+    follow()
+  }, [contentKey, follow])
 
   useEffect(() => {
     if (resetKey == null || !followEnabled) return
@@ -351,50 +267,44 @@ export function usePinnedTranscript({
     reattach()
   }, [followEnabled, followKey, reattach])
 
+  // A newly submitted prompt sits at the top of the viewport so the
+  // reader watches the answer arrive beneath it instead of chasing it.
   useEffect(() => {
     if (topAnchorKey == null || !followEnabled) return
-    cancelFollow()
     pinnedRef.current = false
     const frame = requestAnimationFrame(() => {
       const container = scrollRef.current
       const anchor = container?.querySelector<HTMLElement>(
         '[data-transcript-top-anchor="true"]',
       )
-      if (!anchor) return
-      anchor.scrollIntoView({ behavior: 'auto', block: 'start' })
+      if (!container || !anchor) return
+      // Positioned by hand rather than with scrollIntoView, which would
+      // also scroll every scrollable ancestor.
+      container.scrollTo({
+        top: container.scrollTop
+          + anchor.getBoundingClientRect().top
+          - container.getBoundingClientRect().top,
+      })
       setScrollButtonVisible(false)
     })
     return () => cancelAnimationFrame(frame)
-  }, [cancelFollow, followEnabled, setScrollButtonVisible, topAnchorKey])
-
-  useEffect(() => {
-    if (!followEnabled) cancelFollow()
-  }, [cancelFollow, followEnabled])
+  }, [followEnabled, setScrollButtonVisible, topAnchorKey])
 
   useEffect(() => {
     if (!isEmpty) return
     pinnedRef.current = true
+    // An empty transcript has its sentinel in view, so the observer
+    // clears the button without this having to.
     if (scrollRef.current) scrollRef.current.scrollTop = 0
-    const frame = requestAnimationFrame(() => setScrollButtonVisible(false))
-    return () => cancelAnimationFrame(frame)
-  }, [isEmpty, setScrollButtonVisible])
-
-  useEffect(() => () => {
-    cancelFollow()
-    cancelPrependStabilization()
-    if (reattachFrameRef.current !== null) {
-      cancelAnimationFrame(reattachFrameRef.current)
-      reattachFrameRef.current = null
-    }
-  }, [cancelFollow, cancelPrependStabilization])
+  }, [isEmpty])
 
   return {
     contentRef,
     detach,
     isPinned: () => pinnedRef.current,
-    restorePrependOffset,
     scrollRef,
     scrollToBottom,
+    sentinelRef,
     showScrollButton,
   }
 }

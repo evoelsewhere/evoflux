@@ -24,8 +24,6 @@ import { useRegistryQuery } from '@/queries'
 import { TierBadge } from './TierBadge'
 import { resolveMemberTier } from '@/utils/tier'
 import {
-  captureTranscriptPrependAnchor,
-  type TranscriptPrependAnchor,
   usePinnedTranscript,
 } from '@/hooks/usePinnedTranscript'
 import type { AgentStream } from '@/stores/useTeamStore'
@@ -149,10 +147,6 @@ export function AgentPane({
 }: AgentPaneProps) {
   const [paneCollapsed, setPaneCollapsed] = useState(false)
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
-  const prevScrollHeightRef = useRef<number | null>(null)
-  const prevScrollTopRef = useRef<number | null>(null)
-  const prependAnchorRef = useRef<TranscriptPrependAnchor | null>(null)
-  const pendingRestoreRef = useRef(false)
   const historyLoadStartBlockCountRef = useRef<number | null>(null)
   const topLoadArmedRef = useRef(true)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
@@ -200,10 +194,6 @@ export function AgentPane({
 
   const loadOlderMessages = useCallback((element: HTMLDivElement | null) => {
     if (element) {
-      prevScrollHeightRef.current = element.scrollHeight
-      prevScrollTopRef.current = element.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
-      pendingRestoreRef.current = true
       historyLoadStartBlockCountRef.current = stream.blocks.length
     }
     void useTeamStore.getState().loadOlderMessages()
@@ -218,10 +208,6 @@ export function AgentPane({
 
     topLoadArmedRef.current = false
     if (hiddenTurnCount > 0) {
-      prevScrollHeightRef.current = element.scrollHeight
-      prevScrollTopRef.current = element.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
-      pendingRestoreRef.current = true
       setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
       return
     }
@@ -236,7 +222,7 @@ export function AgentPane({
 
   const {
     contentRef,
-    restorePrependOffset,
+    sentinelRef,
     scrollRef,
     scrollToBottom,
     showScrollButton: showScrollBtn,
@@ -252,15 +238,8 @@ export function AgentPane({
   })
 
   const showEarlierTurns = useCallback(() => {
-    const el = scrollRef.current
-    if (el) {
-      prevScrollHeightRef.current = el.scrollHeight
-      prevScrollTopRef.current = el.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(el)
-      pendingRestoreRef.current = true
-    }
     setRenderedTurnCount((count) => Math.min(turnItems.length, count + TURN_RENDER_STEP))
-  }, [scrollRef, turnItems.length])
+  }, [turnItems.length])
 
   const loadOlderFromControl = useCallback(() => {
     loadOlderMessages(scrollRef.current)
@@ -269,10 +248,6 @@ export function AgentPane({
   useLayoutEffect(() => {
     topLoadArmedRef.current = true
     historyLoadStartBlockCountRef.current = null
-    pendingRestoreRef.current = false
-    prevScrollHeightRef.current = null
-    prevScrollTopRef.current = null
-    prependAnchorRef.current = null
   }, [sessionId])
 
   // History paging is global to the team. If another split pane starts the
@@ -282,40 +257,16 @@ export function AgentPane({
     if (loadingOlder && historyLoadStartBlockCountRef.current === null) {
       const element = scrollRef.current
       if (!element) return
-      prevScrollHeightRef.current = element.scrollHeight
-      prevScrollTopRef.current = element.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
-      pendingRestoreRef.current = true
       historyLoadStartBlockCountRef.current = stream.blocks.length
     }
   }, [loadingOlder, scrollRef, stream.blocks.length])
 
-  useLayoutEffect(() => {
-    if (
-      !pendingRestoreRef.current
-      || prevScrollHeightRef.current === null
-      || prevScrollTopRef.current === null
-    ) return
-    pendingRestoreRef.current = false
-    restorePrependOffset(
-      prevScrollHeightRef.current,
-      prevScrollTopRef.current,
-      prependAnchorRef.current,
-    )
-    prevScrollHeightRef.current = null
-    prevScrollTopRef.current = null
-    prependAnchorRef.current = null
-  }, [renderedTurnCount, restorePrependOffset, stream.blocks.length])
 
   useEffect(() => {
     const startCount = historyLoadStartBlockCountRef.current
     if (loadingOlder || startCount === null) return
     historyLoadStartBlockCountRef.current = null
     if (stream.blocks.length !== startCount) return
-    pendingRestoreRef.current = false
-    prevScrollHeightRef.current = null
-    prevScrollTopRef.current = null
-    prependAnchorRef.current = null
   }, [loadingOlder, stream.blocks.length])
 
   const paneClass = isError
@@ -417,7 +368,9 @@ export function AgentPane({
 
       {/* Body */}
       <div className={collapsible && paneCollapsed ? 'hidden' : 'relative flex min-h-0 flex-1 flex-col'}>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none]" style={{ minHeight: 0 }}>
+      {/* `overflow-anchor:auto` is what holds the reader's position when
+          older turns mount above the viewport. */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain [overflow-anchor:auto]" style={{ minHeight: 0 }}>
         {isEmpty && !isWorking && (isError || isOffline) && (
             <div className="flex h-full select-none flex-col items-center justify-center py-8">
               <p className="text-xs text-(--color-text-subtle)">{isError ? stream.lastError || 'Error' : 'Offline'}</p>
@@ -501,6 +454,14 @@ export function AgentPane({
              <p className="text-xs text-(--color-error)">{stream.lastError}</p>
            </div>
           )}
+        {/* Visibility of this is how the viewport knows it is at the
+            bottom. Excluded from scroll anchoring: as the last child the
+            browser would prefer it as the anchor and hold the view there. */}
+        <div
+          ref={sentinelRef}
+          aria-hidden="true"
+          className="h-px w-full shrink-0 [overflow-anchor:none]"
+        />
       </div>
       {showScrollBtn && (
         <button
