@@ -6,6 +6,8 @@ import asyncio
 import hashlib
 import importlib.util
 import json
+import os
+import re
 import shutil
 import sys
 import uuid
@@ -20,6 +22,11 @@ from app.agent.sandbox import get_sandbox
 from app.agent.tools.builtin.shell import _scrubbed_env
 from app.services.trace_contracts import parse_verification_command
 from app.services.turn_changes import _parse_patch_ops
+
+#: Terminal control sequences. Probe detail is persisted into the YAML
+#: evidence ledger and read by people, so colouring is stripped instead of
+#: being stored as escape codes.
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-Z\\-_]")
 
 
 @dataclass(frozen=True)
@@ -293,7 +300,7 @@ async def _run_required_checks(
             for path in python_files
             if "tests" in path.parts and path.name.startswith("test_")
         ]
-        pytest = _pytest_command_prefix()
+        pytest = _pytest_command_prefix(repository)
         if changed_tests and pytest:
             commands.append(
                 (
@@ -412,15 +419,67 @@ def _changed_files_by_repository(
     return grouped
 
 
+_VENV_DIRECTORIES = (".venv", "venv", ".virtualenv")
+_VENV_BIN_DIRECTORIES = ("Scripts", "bin")
+_PYTHON_PROGRAMS = frozenset({"python", "python3", "py"})
+
+
+def project_interpreter(workspace: Path) -> Path | None:
+    """Return the workspace's own Python interpreter when it has one.
+
+    A verification command written as ``python -m pytest`` means "the
+    interpreter this project runs on", not "the interpreter serving EvoFlux".
+    Resolving it to ``sys.executable`` silently verifies a foreign environment:
+    it can miss the project's test dependencies entirely, or import a
+    same-named package from the server's environment. Prefer a project-local
+    virtualenv so verification generalizes to any repository.
+    """
+
+    for directory in _VENV_DIRECTORIES:
+        for binary in _VENV_BIN_DIRECTORIES:
+            for name in ("python.exe", "python3.exe", "python", "python3"):
+                candidate = workspace / directory / binary / name
+                try:
+                    if candidate.is_file():
+                        return candidate.resolve()
+                except OSError:
+                    continue
+    return None
+
+
+def _project_bin_executable(program: str, workspace: Path) -> str | None:
+    """Resolve a program from the workspace's own tool directories."""
+
+    roots = [workspace / "node_modules" / ".bin"]
+    for directory in _VENV_DIRECTORIES:
+        for binary in _VENV_BIN_DIRECTORIES:
+            roots.append(workspace / directory / binary)
+    suffixes = ("", ".exe", ".cmd", ".bat") if os.name == "nt" else ("",)
+    for root in roots:
+        for suffix in suffixes:
+            candidate = root / f"{program}{suffix}"
+            try:
+                if candidate.is_file():
+                    return str(candidate.resolve())
+            except OSError:
+                continue
+    return None
+
+
 def _resolve_verification_argv(command: str, workspace: Path) -> list[str]:
     parts = parse_verification_command(command)
     program = parts[0]
-    if program in {"python", "python3"}:
-        parts[0] = sys.executable
-    elif program in {"./gradlew", "./mvnw"}:
+    if program in _PYTHON_PROGRAMS:
+        interpreter = project_interpreter(workspace)
+        parts[0] = str(interpreter) if interpreter else sys.executable
+    elif program in {"./gradlew", "./mvnw", "./gradlew.bat", "./mvnw.cmd"}:
         parts[0] = str((workspace / program[2:]).resolve())
     else:
-        parts[0] = shutil.which(program) or program
+        parts[0] = (
+            _project_bin_executable(program, workspace)
+            or shutil.which(program)
+            or program
+        )
     return parts
 
 
@@ -644,13 +703,82 @@ def _outside_impact_targets(
     return outside
 
 
-def _pytest_command_prefix() -> list[str]:
-    """Prefer ``python -m pytest`` so the verified workspace stays importable."""
+def _pytest_command_prefix(workspace: Path | None = None) -> list[str]:
+    """Prefer ``<project interpreter> -m pytest`` so the workspace stays importable.
 
+    Resolves the repository's own virtualenv first: a project's tests need that
+    project's test dependencies, which the server environment may not have (and
+    whose versions may differ). Falls back to the server interpreter, then to a
+    ``pytest`` on PATH.
+    """
+
+    if workspace is not None:
+        interpreter = project_interpreter(workspace)
+        if interpreter is not None:
+            return [str(interpreter), "-m", "pytest"]
+        local = _project_bin_executable("pytest", workspace)
+        if local:
+            return [local]
     if importlib.util.find_spec("pytest") is not None:
         return [sys.executable, "-m", "pytest"]
     executable = shutil.which("pytest")
     return [executable] if executable else []
+
+
+async def probe_verification_commands(
+    workspace: Path,
+    commands: list[str],
+    *,
+    timeout: float = 120.0,
+) -> list[tuple[str, int, str]]:
+    """Execute proposed verification commands and report real exit codes.
+
+    Specification authoring is deliberately read-only, so the authoring agent
+    cannot run anything itself: asking it to prove a command works would either
+    deadlock the phase or reduce the proof to a self-report. The runtime runs
+    them instead, which also keeps machine measurement on the runtime side
+    where the methodology requires it.
+
+    Commands are already restricted to a non-shell argv allowlist by
+    ``parse_verification_command``; an unparseable command is reported rather
+    than executed. Returns one ``(command, exit_code, detail)`` per input.
+    """
+
+    def readable(output: str) -> str:
+        # Probe detail is persisted into the YAML evidence ledger and read by
+        # humans, so strip terminal colouring rather than storing escape codes.
+        return _ANSI_ESCAPE.sub("", output).strip()[-1500:]
+
+    results: list[tuple[str, int, str]] = []
+    for command in commands:
+        try:
+            argv = _resolve_verification_argv(command, workspace)
+        except ValueError as exc:
+            results.append((command, 126, f"not an approved command: {exc}"))
+            continue
+        try:
+            sandbox = get_sandbox()
+            proc = await asyncio.create_subprocess_exec(
+                argv[0],
+                *argv[1:],
+                cwd=str(workspace),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
+            )
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            except TimeoutError:
+                proc.kill()
+                await proc.wait()
+                results.append((command, 124, f"timed out after {timeout:.0f}s"))
+                continue
+            detail = readable(stdout.decode("utf-8", errors="replace"))
+            results.append((command, proc.returncode or 0, detail))
+        except OSError as exc:
+            results.append((command, 127, str(exc)))
+    return results
 
 
 async def _run_command(
