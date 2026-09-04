@@ -469,7 +469,10 @@ def can_disable(
     thinking = _catalog_thinking(provider_id, model)
     if _catalog_is_silent(thinking):
         resolved = dialect or dialect_for(provider_id, model)
-        return bool(_disable_fields(resolved, model))
+        contract = _model_contract(
+            provider_id, model, dialect=resolved, max_output=None
+        )
+        return bool(_disable_fields(resolved, contract))
     if "none" in thinking.levels:
         return True
     # A model that reasons by default and has any effort control also has an
