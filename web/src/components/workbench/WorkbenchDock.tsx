@@ -20,6 +20,7 @@ import {
   type WorkbenchTab,
   type WorkbenchTool,
   sessionWorkbenchTabs,
+  shouldMountWorkbenchTab,
   useUIStore,
 } from '@/stores/useUIStore'
 import {
@@ -356,14 +357,15 @@ interface WorkbenchSurfaceProps {
 }
 
 export function WorkbenchSurface({ tool, children }: WorkbenchSurfaceProps) {
-  // Deliberately *not* scoped to the current session. A tab belonging to
-  // another session must stay mounted and hidden, or its live state — a
-  // browser page, a terminal's scrollback — is destroyed the moment you
-  // look at another chat. Only the tab bar filters; `activeWorkbenchTabId`
-  // is per-session, so a foreign tab is inactive and therefore hidden.
+  // Wider than the tab bar on purpose, but not unbounded. A browser tab
+  // from another session stays mounted because its page cannot be
+  // restored; everything else unmounts, since keeping it meant five
+  // visited sessions held five live terminals at once.
   const tabs = useUIStore(useShallow((state) => state.workbenchTabs))
+  const sessionId = useUIStore((state) => state.workbenchSessionId)
   const activeTabId = useUIStore((state) => state.activeWorkbenchTabId)
-  const toolTabs = tabs.filter((tab) => tab.tool === tool)
+  const toolTabs = tabs.filter((tab) =>
+    tab.tool === tool && shouldMountWorkbenchTab(tab, sessionId))
   const motionPreset = useMotionPreset()
   return toolTabs.map((tab) => {
     const active = activeTabId === tab.id

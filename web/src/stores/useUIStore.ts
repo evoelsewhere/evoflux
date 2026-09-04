@@ -76,6 +76,30 @@ const SESSION_SCOPED_TOOLS: ReadonlySet<WorkbenchTool> = new Set([
 // 'wiki', 'scheduler' and 'plugins' mean the same thing in every session,
 // so their tabs stay put across a switch.
 
+/**
+ * Tools whose tab must stay mounted while another session is on screen.
+ *
+ * Only the browser qualifies. Its page lives in a native WebView with no
+ * way to restore it, so unmounting loses whatever the user or the agent
+ * had loaded. A terminal does not need this: the PTY lives on the server
+ * and the socket replays its scrollback on reconnect, which is exactly
+ * what `terminal_ws` does. Keeping every session's tab mounted meant
+ * visiting five sessions left five xterm instances and five live sockets
+ * alive at once, none of them ever released.
+ */
+const TOOLS_MOUNTED_ACROSS_SESSIONS: ReadonlySet<WorkbenchTool> = new Set([
+  'browser',
+])
+
+/** Whether this tab should render while *sessionId* is the current session. */
+export function shouldMountWorkbenchTab(
+  tab: WorkbenchTab,
+  sessionId: string | null,
+): boolean {
+  return tabInSession(tab, sessionId)
+    || TOOLS_MOUNTED_ACROSS_SESSIONS.has(tab.tool)
+}
+
 export type PullRequestsScope = 'all' | 'session'
 export type GitWorkspaceView = 'changes' | 'reviews'
 
