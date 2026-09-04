@@ -564,13 +564,9 @@ async def _start_locked(
     if not executable_exists:
         return f"Executable not found: {argv[0]!r} (command: {command})"
 
-    hit = sandbox.check_command(command, enforce=False)
-    if hit is not None:
-        resolved, denied = hit
-        raise PermissionError(
-            f"Sandbox blocked 'preview start': command touches "
-            f"'{resolved}' (denied by '{denied}')."
-        )
+    # Commands are never blocked on path grounds — see `audit_command`. Out
+    # of scope paths are recorded and execution proceeds.
+    sandbox.audit_command(command, tool="preview start")
 
     env = _scrubbed_env(inherit=sandbox.inherit_shell_environment)
     env.update(dict(cfg.env))

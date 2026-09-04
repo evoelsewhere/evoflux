@@ -297,3 +297,56 @@ def test_sandbox_has_no_validate_command(tmp_path):
         "validate_command was removed from SandboxConfig. "
         "Use app.agent.permission.PermissionService instead."
     )
+
+
+# ---------------------------------------------------------------------------
+# Command auditing — reports, never blocks
+# ---------------------------------------------------------------------------
+# Command execution is deliberately unrestricted: `audit_command` records a
+# violation and lets the command run. These tests pin that contract so the
+# suite reflects what the shell and preview tools actually do, rather than an
+# enforcing mode no caller uses.
+
+
+def test_check_command_reports_denied_root(tmp_path):
+    """The scanner still detects a denied operand — it just doesn't gate."""
+    denied = tmp_path / "secrets"
+    (denied / "nested").mkdir(parents=True)
+    sandbox = _make_sandbox(tmp_path, denied=[denied])
+
+    hit = sandbox.check_command(f'cat "{denied / "id_rsa"}"')
+
+    assert hit is not None
+    resolved, reason = hit
+    assert resolved == (denied / "id_rsa").resolve()
+    assert str(denied) in reason
+
+
+def test_audit_command_never_blocks_denied_root(tmp_path):
+    """A denied operand is logged and permitted, not raised."""
+    denied = tmp_path / "secrets"
+    denied.mkdir(parents=True)
+    sandbox = _make_sandbox(tmp_path, denied=[denied])
+
+    assert sandbox.audit_command(f'cat "{denied / "id_rsa"}"', tool="shell") is None
+
+
+def test_audit_command_never_blocks_outside_workspace(tmp_path):
+    """A path outside every allowed root is permitted too."""
+    outside = tmp_path / "elsewhere"
+    outside.mkdir(parents=True)
+    sandbox = _make_sandbox(tmp_path)
+
+    assert sandbox.audit_command(f'cat "{outside / "notes.txt"}"', tool="shell") is None
+
+
+def test_audit_command_allows_home_dotfile_writes(tmp_path):
+    """The motivating case: appending to ~/.ssh/known_hosts must run."""
+    sandbox = _make_sandbox(tmp_path)
+
+    result = sandbox.audit_command(
+        "ssh-keyscan github.com >> ~/.ssh/known_hosts", tool="shell"
+    )
+
+    assert result is None
+
