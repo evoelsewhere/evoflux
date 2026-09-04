@@ -77,6 +77,7 @@ import {
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Combobox } from '@/components/ui/combobox'
 import { SelectControl } from '@/components/ui/select'
 import { SegmentedControl } from '@/components/ui/segmented-control'
@@ -119,7 +120,9 @@ export interface EasdRunChatRequest {
 type RunsView = 'board' | 'table' | 'list'
 type RunWorkspaceView = 'overview' | 'trace' | 'recovery'
 
-const EASD_DISPLAY_NAME = 'Agent Specification-Driven Development'
+// Matches `product` in .evoflux/easd/config.json. The methodology is EASD;
+// the product surface is Evo Agent Specs. One name per thing.
+const EASD_DISPLAY_NAME = 'Evo Agent Specs'
 
 const RUN_VIEW_OPTIONS = [
   { value: 'board', label: 'Board' },
@@ -297,16 +300,53 @@ function reviewPrompt(detail: EasdRunDetail): string {
   return `$easd-review\n\nReview EASD run “${detail.run.title}” against accepted spec hash ${detail.active_spec?.content_hash ?? 'from context'} and ${flowContract}. Review is read-only for product files. ${independent} Inspect the integrated revision rather than handoff prose, cite repository paths/sources, report passed/failed/inconclusive for every assigned AC, and persist the exact reviewed revision. Do not fix findings, start Verify, or Converge; the user controls the next phase.`
 }
 
+// Verification commands are frozen into an immutable accepted Spec. A command
+// that cannot run makes every machine-required AC unsatisfiable, and repairing
+// it costs a whole new Spec revision — so it must be executed before it is
+// persisted, not after. Repository instructions routinely drift from the actual
+// environment (an AGENTS.md that says `python -m pytest` in a repo whose only
+// pytest lives in a virtualenv), so treat documented commands as a hypothesis.
+const VERIFICATION_COMMAND_CONTRACT = `Verification commands are one non-shell argv-style command per line; do not use interpreter -c snippets or &&, ||, ;, |, >, or <. Authoring is read-only, so do NOT try to run them yourself — the runtime executes every command you propose when you submit and records the real exit codes. It checks only that this repository CAN run them: a command that runs and reports failing tests is correct at this stage, because the implementation does not exist yet. Never weaken a command to make it pass now — a discovery-only or no-op command proves nothing about the accepted criteria and defeats the machine gate at convergence. Choose the command that will actually demonstrate the acceptance criteria once the work is done, and ground its entry point in repository evidence: prefer the toolchain the repository configures over one a stale AGENTS.md documents, and name the interpreter or runner you found (a project virtualenv, a lockfile-managed runner) in the grounding summary. If the runtime reports a command it could not execute at all, replace it with the entry point this repository really provides and submit again.`
+
+// Delivery-flow selection must be driven by properties of the CHANGE, never by
+// the permissions of the phase you are currently in. "Authoring forbids editing
+// product files" is true of every run and therefore cannot distinguish one
+// change from another; reasoning from it routes every run to `planned` and
+// silently defeats the lightest-safe-flow rule.
+const DELIVERY_FLOW_CONTRACT = `Recommend delivery_flow from the properties of this change only. The following are the ONLY conditions that force \`planned\`: more than one repository in scope; a change spanning more than one architectural layer; authentication, authorization or other security-sensitive behavior; a schema migration or persistence change; a publicly compatible API/CLI/config contract; concurrency or ordering behavior; a critical risk tier; or breadth large enough that concurrent writers would need disjoint path ownership. Walk that list explicitly and record each condition you matched in required_by, one entry per matched condition, each traceable to a cited source_ref. Do NOT cite lifecycle rules, phase permissions, runtime guards, tool restrictions, or the fact that implementation is not yet allowed — those hold for every run and are not flow drivers. If no condition matches, recommend \`direct\` and leave required_by empty. Calibrate confidence to the strength of your evidence; reserve 1.0 for a condition you can point at in the repository.`
+
+/** Pluralize a counted noun so a single item does not read "1 ACs". */
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`
+}
+
 function verificationPrompt(detail: EasdRunDetail): string {
   const flowContract = detail.active_plan
     ? `accepted plan hash ${detail.active_plan.content_hash}`
     : 'the accepted direct-flow Spec without a Plan artifact'
-  return `$easd-verify\n\nRun final verification for EASD run “${detail.run.title}” against accepted spec hash ${detail.active_spec?.content_hash ?? 'from context'} and ${flowContract}. Re-read repository state, the AC matrix, missions, machine/review evidence, deviations, approved commands, integration state, and docs. Execute approved verification work through an EASD-bound delegation so the runtime records a fresh, revision-bound CompletionContract even though Verify is read-only. Report ready for convergence, rework required, or manual verification required with exact gaps. Do not fabricate evidence or invoke Converge; the user triggers the server gate separately.`
+  const machineRequired = (detail.active_spec?.spec.criteria ?? [])
+    .filter((criterion) => criterion.required && criterion.evidence_policy?.machine_required)
+    .map((criterion) => criterion.id)
+  // Observed failure: a verifier ran the checks in its own turn, reported
+  // "all required ACs are satisfied with fresh machine evidence", and the
+  // ledger held zero machine records — only the Converge gate caught it.
+  // Machine evidence is created by the runtime when a delegated mission hands
+  // off, so a verifier that never delegates cannot produce any.
+  const machineContract = machineRequired.length > 0
+    ? ` ${machineRequired.join(', ')} set machine_required, and machine evidence is only created when a delegated mission hands off its CompletionContract — your own turn cannot produce it. Delegate the approved verification commands as an EASD-bound mission and wait for its handoff. Then re-read the AC matrix and report what it actually says: if any of those criteria is still in_progress, the answer is "rework required" or "manual verification required", never "ready for convergence". Never describe evidence you have not seen in the ledger.`
+    : ''
+  return `$easd-verify\n\nRun final verification for EASD run “${detail.run.title}” against accepted spec hash ${detail.active_spec?.content_hash ?? 'from context'} and ${flowContract}. Re-read repository state, the AC matrix, missions, machine/review evidence, deviations, approved commands, integration state, and docs.${machineContract} Report ready for convergence, rework required, or manual verification required with exact gaps. Do not fabricate evidence or invoke Converge; the user triggers the server gate separately.`
 }
 
 function specificationAuthoringPrompt(detail: EasdRunDetail): string {
   const intent = detail.run.intent
-  return `$easd-specify\n\nDraft the specification for EASD run ${detail.run.id}. This is specification authoring only: do not implement, edit product files, approve the specification, activate implementation, or converge the run. Persisted Intent — title: “${intent?.title ?? detail.run.title}”; problem: ${intent?.problem ?? 'not recorded'}; optional intended outcome: ${intent?.outcome || 'not supplied — propose an observable outcome from repository evidence'}. Read .evoflux/easd/config.json, RULES.md, the configured repository data store, every authorized project repository's AGENTS.md, current docs, relevant source, configuration and tests. Ask clarifying questions before choosing behavior when evidence is ambiguous. Produce a complete provider-neutral EASD specification with goals, non-goals, grounded source references, repository-qualified impact targets, constraints/security/compatibility boundaries, risk tier, observable ACs with evidence policy, safe verification commands, and a reasoned direct|planned delivery_flow recommendation. Verification commands are one non-shell argv-style command per line; do not use python -c snippets or &&, ||, ;, |, >, or <. Prefer canonical commands such as python -m pytest tests/test_feature.py. Direct is only for low-risk single-boundary work; cite every condition that forces Plan. When complete, call easd_submit_specification with this exact run ID, the full specification, grounding summary and confidence. Stop after repository persistence and tell the user the draft and driven flow are ready for review.`
+  return `$easd-specify\n\nDraft the specification for EASD run ${detail.run.id}. This is specification authoring only: do not implement, edit product files, approve the specification, activate implementation, or converge the run. Persisted Intent — title: “${intent?.title ?? detail.run.title}”; problem: ${intent?.problem ?? 'not recorded'}; optional intended outcome: ${intent?.outcome || 'not supplied — propose an observable outcome from repository evidence'}. Read .evoflux/easd/config.json, RULES.md, the configured repository data store, every authorized project repository's AGENTS.md, current docs, relevant source, configuration and tests. Ask clarifying questions before choosing behavior when evidence is ambiguous; batch every question you need into one elicitation instead of asking them one at a time. Produce a complete provider-neutral EASD specification with goals, non-goals, grounded source references, repository-qualified impact targets, constraints/security/compatibility boundaries, risk tier, observable ACs with evidence policy, safe verification commands, and a reasoned direct|planned delivery_flow recommendation.
+
+${VERIFICATION_COMMAND_CONTRACT}
+
+${DELIVERY_FLOW_CONTRACT}
+
+When complete, call easd_submit_specification with this exact run ID, the full specification, grounding summary and confidence. Stop after repository persistence and tell the user the draft and driven flow are ready for review.`
 }
 
 function loadRunsView(): RunsView {
@@ -1386,14 +1426,18 @@ function RunDetail({
   const [compactBeforeRun, setCompactBeforeRun] = useState(detail?.run.compact_before_run ?? false)
   const [autoPilot, setAutoPilot] = useState(detail?.run.auto_pilot ?? false)
   const [savingOptions, setSavingOptions] = useState(false)
+  const [optionsError, setOptionsError] = useState<string | null>(null)
+  const [optionsSavedAt, setOptionsSavedAt] = useState<number | null>(null)
 
-  // Sync options state when run changes
+  // Adopt server-stored options whenever they change, not only on run switch:
+  // keying this to the run id alone left the toggles showing pre-save values
+  // after a refetch replaced the cached run.
   useEffect(() => {
     if (detail) {
       setCompactBeforeRun(detail.run.compact_before_run)
       setAutoPilot(detail.run.auto_pilot)
     }
-  }, [detail?.run.id])
+  }, [detail?.run.id, detail?.run.compact_before_run, detail?.run.auto_pilot])
   const [confirmingAction, setConfirmingAction] = useState<EasdConfirmableAction | null>(null)
   const [showPublication, setShowPublication] = useState(false)
   const draft = detail
@@ -1639,11 +1683,20 @@ function RunDetail({
   const handleSaveOptions = async () => {
     if (!detail) return
     setSavingOptions(true)
+    setOptionsError(null)
     try {
-      await updateEasdRunOptions(detail.run.id, {
+      const saved = await updateEasdRunOptions(detail.run.id, {
         compact_before_run: compactBeforeRun,
         auto_pilot: autoPilot,
       })
+      // Adopt what the server stored, then refresh the cached run so a later
+      // remount does not read pre-save values back out of the query cache.
+      setCompactBeforeRun(saved.compact_before_run)
+      setAutoPilot(saved.auto_pilot)
+      await detailQuery.refetch()
+      setOptionsSavedAt(Date.now())
+    } catch (error) {
+      setOptionsError(errorText(error) ?? 'Could not save run options.')
     } finally {
       setSavingOptions(false)
     }
@@ -1819,12 +1872,14 @@ function RunDetail({
             {detail.run.status === 'reviewing' && (
               <span className="flex shrink-0 items-center gap-2">
                 {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('review', false)}><MessageSquareText /> Open review chat</Button>}
+                {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('review', true)}><RefreshCw /> Rerun review</Button>}
                 {detail.run.session_id && onRunInChat && <Button type="button" size="sm" disabled={startVerificationMutation.isPending || actionIsBlocked('start_verification')} onClick={() => void openRunChat('verification', true)}><ShieldCheck /> Run verify in chat</Button>}
               </span>
             )}
             {detail.run.status === 'verifying' && (
               <span className="flex shrink-0 items-center gap-2">
                 {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('verification', false)}><MessageSquareText /> Open verification chat</Button>}
+                {detail.run.session_id && onRunInChat && <Button type="button" variant="outline" size="sm" onClick={() => void openRunChat('verification', true)}><RefreshCw /> Rerun verification</Button>}
                 <Button type="button" size="sm" disabled={convergeMutation.isPending || actionIsBlocked('converge')} onClick={() => setConfirmingAction('converge')}><ShieldCheck /> Converge</Button>
               </span>
             )}
@@ -1893,26 +1948,41 @@ function RunDetail({
           <section className="rounded-2xl border border-(--color-border) bg-(--bg-card) p-4">
             <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-text-subtle)">Run Options</h3>
             <div className="mt-3 grid gap-3 @3xl/easd:grid-cols-2">
-              <label className="flex items-start gap-2 rounded-lg border border-(--color-border) bg-(--bg-page) p-2.5">
-                <input
-                  type="checkbox"
-                  checked={compactBeforeRun}
-                  onChange={(e) => setCompactBeforeRun(e.target.checked)}
-                  className="mt-0.5"
-                />
+              <label className="flex items-center justify-between gap-2 rounded-lg border border-(--color-border) bg-(--bg-page) p-2.5">
                 <span className="text-xs text-(--color-text-2)">Compact session before each run step</span>
-              </label>
-              <label className="flex items-start gap-2 rounded-lg border border-(--color-border) bg-(--bg-page) p-2.5">
-                <input
-                  type="checkbox"
-                  checked={autoPilot}
-                  onChange={(e) => setAutoPilot(e.target.checked)}
-                  className="mt-0.5"
+                <Switch
+                  checked={compactBeforeRun}
+                  onCheckedChange={(v) => setCompactBeforeRun(v === true)}
+                  className="shrink-0"
                 />
-                <span className="text-xs text-(--color-text-2)">Auto-advance (skip human approval between steps)</span>
+              </label>
+              {/* Nothing reads `auto_pilot` yet: the flag is persisted but no
+                  phase acts on it. Left visible and disabled rather than
+                  removed, because a control that claims to bypass the Spec,
+                  Plan and Converge gates while doing nothing is worse than an
+                  absent one — and those three gates belong to the user. */}
+              <label className="flex items-center justify-between gap-2 rounded-lg border border-(--color-border) bg-(--bg-page) p-2.5 opacity-60">
+                <span className="text-xs text-(--color-text-2)">
+                  Auto-advance between steps
+                  <span className="mt-0.5 block text-[10px] leading-4 text-(--color-text-subtle)">
+                    Not available. Approving a spec or plan and running Converge stay manual.
+                  </span>
+                </span>
+                <Switch
+                  checked={autoPilot}
+                  disabled
+                  aria-describedby="easd-auto-advance-note"
+                  onCheckedChange={(v) => setAutoPilot(v === true)}
+                  className="shrink-0"
+                />
               </label>
             </div>
-            <div className="mt-3 flex justify-end">
+            <div className="mt-3 flex items-center justify-end gap-3">
+              {optionsError ? (
+                <p className="text-[11px] leading-4 text-(--color-error)">{optionsError}</p>
+              ) : optionsSavedAt ? (
+                <p className="text-[11px] leading-4 text-(--color-text-muted)">Saved</p>
+              ) : null}
               <Button type="button" size="sm" variant="outline" disabled={savingOptions} onClick={() => void handleSaveOptions()}>
                 {savingOptions && <Loader2 className="animate-spin" />}
                 Save options
@@ -1947,7 +2017,7 @@ function RunDetail({
           {detail.active_spec && ['accepted', 'planning', 'plan_review', 'planned'].includes(detail.run.status) && (
             <section className="rounded-2xl border border-(--color-border) bg-(--bg-card) p-4">
               <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-(--color-success)">Approved specification · v{detail.active_spec.version}</p><h2 className="mt-1 text-sm font-semibold text-(--color-text)"><EasdTechnicalText text={detail.active_spec.spec.outcome} /></h2></div><p className="text-[9px] text-(--color-text-subtle)">Accepted revision</p></div>
-              <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-(--color-text-muted)"><span>{detail.active_spec.spec.criteria.length} ACs</span><span>·</span><span>{detail.active_spec.spec.impact_targets?.length ?? 0} impact targets</span><span>·</span><span>{detail.active_spec.spec.verification_commands?.length ?? 0} verification commands</span><span>·</span><span className="font-medium capitalize text-(--color-accent)">{deliveryMode} flow</span></div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-(--color-text-muted)"><span>{countLabel(detail.active_spec.spec.criteria.length, 'AC')}</span><span>·</span><span>{countLabel(detail.active_spec.spec.impact_targets?.length ?? 0, 'impact target')}</span><span>·</span><span>{countLabel(detail.active_spec.spec.verification_commands?.length ?? 0, 'verification command')}</span><span>·</span><span className="font-medium capitalize text-(--color-accent)">{deliveryMode} flow</span></div>
             </section>
           )}
 

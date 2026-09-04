@@ -102,8 +102,8 @@ export const WORKBENCH_TOOLS: Record<
     icon: CircleAlert,
   },
   easd: {
-    label: 'Agent Specification-Driven Development',
-    description: 'Run specs through accountable missions, evidence, and convergence',
+    label: 'Evo Agent Specs',
+    description: 'Run specs through accountable missions, evidence, and convergence (EASD)',
     icon: ListChecks,
   },
 }

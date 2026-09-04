@@ -22,6 +22,11 @@ export function useEasdRealtime(runId: string | null, enabled = true) {
     let retryTimer: ReturnType<typeof setTimeout> | null = null
     let controller: AbortController | null = null
     let reconnectAttempts = 0
+    // Only the newest connection may drive state. Replacing a stream aborts the
+    // previous one, and that abort fires its onError/onDone — which would
+    // otherwise schedule an extra reconnect on top of the one already in
+    // flight, so every retry spawned a spare and the run fell back to polling.
+    let epoch = 0
 
     const refresh = () => Promise.all([
       client.invalidateQueries({ queryKey: queryKeys.easd.detail(runId) }),
@@ -30,8 +35,8 @@ export function useEasdRealtime(runId: string | null, enabled = true) {
       client.invalidateQueries({ queryKey: queryKeys.easd.runs() }),
     ])
 
-    const scheduleReconnect = () => {
-      if (disposed || retryTimer) return
+    const scheduleReconnect = (generation: number) => {
+      if (disposed || generation !== epoch || retryTimer) return
       setStatus('reconnecting')
       const delay = Math.min(1_000 * (2 ** reconnectAttempts), 10_000)
       reconnectAttempts += 1
@@ -43,6 +48,7 @@ export function useEasdRealtime(runId: string | null, enabled = true) {
 
     const connect = () => {
       if (disposed) return
+      const generation = ++epoch
       controller?.abort()
       controller = new AbortController()
       setStatus(reconnectAttempts ? 'reconnecting' : 'connecting')
@@ -52,6 +58,7 @@ export function useEasdRealtime(runId: string | null, enabled = true) {
         clientId.current,
         {
           onEvent: (type, raw) => {
+            if (generation !== epoch) return
             if (type === 'easd_presence') {
               const presence = raw as EasdPresenceEvent
               setViewerCount(presence.count)
@@ -74,8 +81,8 @@ export function useEasdRealtime(runId: string | null, enabled = true) {
             reconnectAttempts = 0
             void refresh()
           },
-          onError: scheduleReconnect,
-          onDone: scheduleReconnect,
+          onError: () => scheduleReconnect(generation),
+          onDone: () => scheduleReconnect(generation),
         },
         controller.signal,
       )
@@ -84,10 +91,13 @@ export function useEasdRealtime(runId: string | null, enabled = true) {
     connect()
     return () => {
       disposed = true
+      epoch += 1
       controller?.abort()
       if (retryTimer) clearTimeout(retryTimer)
     }
-  }, [client, enabled, runId])
+    // `client` is a stable context value; excluding it keeps a provider
+    // re-render from tearing down and reopening a healthy stream.
+  }, [enabled, runId])
 
   return { status, viewerCount }
 }

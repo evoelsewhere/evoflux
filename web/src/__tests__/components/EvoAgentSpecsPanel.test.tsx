@@ -512,7 +512,7 @@ describe('EvoAgentSpecsPanel', () => {
 
     render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" />)
 
-    expect(screen.getByText('Set up Agent Specification-Driven Development')).toBeInTheDocument()
+    expect(screen.getByText('Set up Evo Agent Specs')).toBeInTheDocument()
     expect(screen.getByText('1/2 ready')).toBeInTheDocument()
     expect(screen.getByLabelText('EASD skill bundle')).toHaveTextContent(
       'easd-specifyeasd-planeasd-implementeasd-revieweasd-verify',
@@ -666,7 +666,7 @@ describe('EvoAgentSpecsPanel', () => {
     const { container } = render(<EvoAgentSpecsPanel workspace="/repo" projectId="project-1" />)
 
     expect(container.firstElementChild).toHaveClass('@container/easd')
-    expect(screen.getByRole('heading', { name: 'Agent Specification-Driven Development' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Evo Agent Specs' })).toBeInTheDocument()
   })
 
   it('opens the exact Run requested by a successful chat tool action', async () => {

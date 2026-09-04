@@ -1,7 +1,7 @@
 /** Evo Agent Specs (EASD) API client. */
 
 import { apiBaseUrl } from '../base-url'
-import { parseDetailOrThrow } from './_shared'
+import { ApiValidationError, parseDetailOrThrow } from './_shared'
 import { readSSE, type SSECallbacks } from '../sse'
 import type {
   EasdAppendableEvidenceKind,
@@ -40,17 +40,31 @@ export class EasdConvergenceApiError extends Error {
 async function easdResponse<T>(response: Response, label: string): Promise<T> {
   if (response.ok) return response.json()
   if (response.status === 409) {
+    let detail: unknown
     try {
-      const body = await response.clone().json()
-      if (
-        body?.detail?.code === 'easd_not_converged'
-        && Array.isArray(body.detail.reasons)
-      ) {
-        throw new EasdConvergenceApiError(body.detail.reasons)
-      }
-    } catch (error) {
-      if (error instanceof EasdConvergenceApiError) throw error
+      detail = (await response.clone().json())?.detail
+    } catch {
+      detail = undefined
     }
+    if (
+      typeof detail === 'object'
+      && detail !== null
+      && (detail as { code?: string }).code === 'easd_not_converged'
+      && Array.isArray((detail as { reasons?: unknown }).reasons)
+    ) {
+      throw new EasdConvergenceApiError(
+        (detail as { reasons: EasdConvergenceReason[] }).reasons,
+      )
+    }
+    // A structured detail never reached the shared parser, which only reads a
+    // string, so every other conflict surfaced as "…InChat failed: 409" — a
+    // status code with no way to act on it.
+    const message = typeof detail === 'string'
+      ? detail
+      : typeof (detail as { message?: string } | undefined)?.message === 'string'
+        ? (detail as { message: string }).message
+        : `${label} conflicts with the run's current state. The phase may already be running, or the linked chat is mid-turn — stop it, refresh the run, and try again.`
+    throw new ApiValidationError(409, message)
   }
   return parseDetailOrThrow(response, label)
 }
@@ -320,7 +334,8 @@ async function startEasdPhaseInChat(
       body: JSON.stringify({ session_id: sessionId }),
     },
   )
-  return easdResponse(response, `startEasd${phase}InChat`)
+  const name = phase.charAt(0).toUpperCase() + phase.slice(1)
+  return easdResponse(response, `Starting ${name}`)
 }
 
 export function startEasdPlanningInChat(runId: string, sessionId: string): Promise<EasdRun> {
