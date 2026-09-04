@@ -289,6 +289,20 @@ def _percent(part: int | float, total: int | float) -> float:
     return round(float(part) / float(total) * 100, 1)
 
 
+def _usd_per_mtok(cost_usd: float, total_tokens: int) -> float:
+    """Blended cost per million tokens of traffic.
+
+    The comparable number across models: two on the same headline price
+    diverge here entirely on how much of their input came from cache, which
+    is the efficiency lever a caller controls. Zero when there was no
+    traffic — an average over nothing is not zero cost, but reporting it as
+    absent would need a nullable column for no gain.
+    """
+    if total_tokens <= 0:
+        return 0.0
+    return round(cost_usd / (total_tokens / 1_000_000), 6)
+
+
 def _cache_percent(cached: int | float, total_input: int | float) -> float:
     """Return a bounded hit rate, including for historical malformed spans."""
     return _percent(min(max(cached, 0), max(total_input, 0)), total_input)
@@ -531,6 +545,11 @@ def _run_queries(
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_write.input_tokens'] AS BIGINT)), 0) AS cache_write_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) AS estimated_cost_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cost.input_usd'] AS DOUBLE)), 0.0) AS input_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cost.output_usd'] AS DOUBLE)), 0.0) AS output_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cost.cache_read_usd'] AS DOUBLE)), 0.0) AS cache_read_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cost.cache_write_usd'] AS DOUBLE)), 0.0) AS cache_write_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.reasoning_tokens'] AS BIGINT)), 0) AS reasoning_tokens,
             count_if(status = 'ERROR') AS errors,
             coalesce(avg(duration_ms), 0.0) AS avg_ms,
             coalesce(quantile_cont(duration_ms, 0.5), 0.0) AS p50_ms,
@@ -550,15 +569,43 @@ def _run_queries(
             "output_tokens": int(ot),
             "cached_tokens": int(ct),
             "cache_write_tokens": int(cwt),
+            "reasoning_tokens": int(rt),
             "cache_percent": _cache_percent(int(ct), int(it)),
             "estimated_cost_usd": round(float(cost), 8),
+            "input_usd": round(float(in_usd), 8),
+            "output_usd": round(float(out_usd), 8),
+            "cache_read_usd": round(float(cr_usd), 8),
+            "cache_write_usd": round(float(cw_usd), 8),
+            # Blended rate: what this model actually cost per million tokens
+            # of traffic, cache included. Two models on the same headline
+            # price diverge here entirely on how well their prefix cached,
+            # which is the efficiency signal a headline price cannot show.
+            "usd_per_mtok": _usd_per_mtok(float(cost), int(it) + int(ot)),
             "errors": int(errors),
             "error_rate": _percent(int(errors), int(c)),
             "avg_ms": round(float(avg_ms), 1),
             "p50_ms": round(float(p50), 1),
             "p95_ms": round(float(p95), 1),
         }
-        for provider, m, c, it, ot, ct, cwt, cost, errors, avg_ms, p50, p95 in model_rows
+        for (
+            provider,
+            m,
+            c,
+            it,
+            ot,
+            ct,
+            cwt,
+            cost,
+            in_usd,
+            out_usd,
+            cr_usd,
+            cw_usd,
+            rt,
+            errors,
+            avg_ms,
+            p50,
+            p95,
+        ) in model_rows
     ]
 
     cache_step_rows = con.execute(
