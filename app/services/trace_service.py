@@ -55,8 +55,10 @@ from app.services.easd_repository_store import (
     EasdStoreError,
     EasdStoredRun,
     registered_run_root,
+    run_directory_name,
     spec_catalog_directory,
 )
+from app.services.easd_setup_service import EASD_MANIFEST, EASD_RUNTIME_DIRECTORY
 from app.services.easd_projection_state import (
     RUN_GENERATIONS as _REPOSITORY_RUN_GENERATIONS,
     RUN_HASHES as _REPOSITORY_RUN_HASHES,
@@ -159,42 +161,80 @@ def _uuid(value: str | UUID, *, label: str) -> UUID:
         raise TraceValidationError(f"Invalid {label}: {value!r}") from exc
 
 
+_TEST_PATH_SEGMENTS = frozenset(
+    {"test", "tests", "spec", "specs", "__tests__", "testing"}
+)
+
+
+def _is_test_target(path: str) -> bool:
+    """Whether an impact target is the test surface of the code it covers.
+
+    A change that also updates its own tests is the baseline good case, not a
+    second architectural layer.
+    """
+
+    parts = PurePosixPath(path.replace("\\", "/")).parts
+    if not parts:
+        return False
+    if any(part.casefold() in _TEST_PATH_SEGMENTS for part in parts):
+        return True
+    name = parts[-1].casefold()
+    return name.startswith("test_") or name.endswith(
+        ("_test.py", ".test.ts", ".spec.ts")
+    )
+
+
 def _direct_flow_blockers(specification: TraceSpecification) -> list[str]:
-    """Return deterministic reasons a specification cannot safely skip Plan."""
+    """Return deterministic reasons a specification cannot safely skip Plan.
+
+    Each blocker is named with the vocabulary the specification uses in
+    ``delivery_flow.required_by`` so a rejected author can cite the real reason
+    instead of guessing at a documented-sounding one.
+    """
 
     if specification.delivery_flow.mode != "direct":
         return []
     blockers: list[str] = []
-    if specification.risk_tier in {"cross_layer", "critical"}:
-        blockers.append(f"risk:{specification.risk_tier}")
+    if specification.risk_tier == "cross_layer":
+        blockers.append("cross_layer")
+    if specification.risk_tier == "critical":
+        blockers.append("critical_risk")
     repositories = {target.repository for target in specification.impact_targets}
-    if len(repositories) != 1:
+    if len(repositories) > 1:
         blockers.append("multi_repository")
-    modules = {
-        target.module for target in specification.impact_targets if target.module
-    }
-    top_level_paths = {
-        PurePosixPath(target.path).parts[0]
+    # Ignore the test surface: counting `src/` plus `tests/` as two layers made
+    # `direct` unreachable for any change that keeps its tests up to date.
+    product_targets = [
+        target
         for target in specification.impact_targets
-        if PurePosixPath(target.path).parts
+        if not _is_test_target(target.path)
+    ]
+    modules = {target.module for target in product_targets if target.module}
+    top_level_paths = {
+        PurePosixPath(target.path.replace("\\", "/")).parts[0]
+        for target in product_targets
+        if PurePosixPath(target.path.replace("\\", "/")).parts
     }
     if len(modules) > 1 or len(top_level_paths) > 1:
-        blockers.append("multi_boundary")
-    plan_constraint_kinds = {"architecture", "compatibility", "security", "operational"}
-    constrained = sorted(
-        {constraint.kind for constraint in specification.constraints}
-        & plan_constraint_kinds
-    )
-    blockers.extend(f"constraint:{kind}" for kind in constrained)
-    return blockers
+        blockers.append("cross_layer")
+    # Recording a constraint documents care taken; it is not evidence that the
+    # change crosses that boundary. Blocking on architecture, compatibility or
+    # operational constraints penalized precise specifications and pushed
+    # authors to under-specify. Security stays: that work earns a Plan.
+    if any(constraint.kind == "security" for constraint in specification.constraints):
+        blockers.append("security")
+    return list(dict.fromkeys(blockers))
 
 
 def _validate_delivery_flow(specification: TraceSpecification) -> None:
     blockers = _direct_flow_blockers(specification)
     if blockers:
         raise TraceValidationError(
-            "EASD direct flow cannot skip Plan for this specification: "
+            "EASD direct flow cannot skip Plan for this specification. Matched "
+            "planned-flow conditions: "
             + ", ".join(blockers)
+            + ". Resubmit with mode=planned and required_by listing exactly "
+            "these conditions."
         )
 
 
@@ -1678,6 +1718,24 @@ async def start_run_in_session(
     return run
 
 
+_PLACEHOLDER_SESSION_TITLES = frozenset({"", "untitled", "new chat"})
+
+
+def _name_session_after_run(session: ChatSession, run: TraceRun) -> None:
+    """Title a run's linked chat after the run, not after the injected prompt.
+
+    Sessions are otherwise titled from their first message, which for an EASD
+    phase is the machine-generated instruction — so the sidebar showed
+    "$easd-specify Draft the specification for EASD run 06a99a5e-…". A session
+    the user already named is left alone.
+    """
+
+    current = (session.title or "").strip()
+    if current.casefold() not in _PLACEHOLDER_SESSION_TITLES:
+        return
+    session.title = f"EASD · {run.title}"[:255]
+
+
 async def start_spec_authoring_in_session(
     db: AsyncSession,
     *,
@@ -1713,6 +1771,8 @@ async def start_spec_authoring_in_session(
     run.session_id = session.id
     run.status = "authoring"
     run.updated_at = _utcnow()
+    _name_session_after_run(session, run)
+    db.add(session)
     db.add(run)
     try:
         await db.flush()
@@ -1927,6 +1987,112 @@ async def active_run_for_session(
     ).first()
 
 
+_TOOLCHAIN_MARKERS: tuple[tuple[str, str], ...] = (
+    ("pyproject.toml", "python project (pyproject.toml)"),
+    ("setup.cfg", "python project (setup.cfg)"),
+    ("setup.py", "python project (setup.py)"),
+    ("requirements.txt", "python requirements.txt"),
+    ("pytest.ini", "pytest configured (pytest.ini)"),
+    ("tox.ini", "tox.ini"),
+    ("package.json", "node project (package.json)"),
+    ("bun.lock", "bun lockfile"),
+    ("pnpm-lock.yaml", "pnpm lockfile"),
+    ("Cargo.toml", "cargo project"),
+    ("go.mod", "go module"),
+    ("pom.xml", "maven project"),
+    ("build.gradle", "gradle project"),
+    ("Gemfile", "bundler project"),
+    ("Makefile", "make targets available"),
+)
+
+
+def _detected_toolchain(workspace: Path) -> list[str]:
+    """Name what the repository actually configures, so nobody has to guess.
+
+    An authoring agent with no toolchain signal glob-hunts for build manifests
+    one at a time; the runtime already knows the answer.
+    """
+
+    from app.agent.verification import project_interpreter
+
+    found = [
+        label for name, label in _TOOLCHAIN_MARKERS if (workspace / name).is_file()
+    ]
+    interpreter = project_interpreter(workspace)
+    if interpreter is not None:
+        found.insert(
+            0,
+            f"project interpreter: {interpreter} "
+            "(a `python …` verification command resolves to this)",
+        )
+    return found
+
+
+def build_easd_preimplementation_contract(run: TraceRun) -> str:
+    """Return the bounded context an authoring or planning turn needs.
+
+    `build_easd_runtime_contract` requires an accepted specification, so the
+    phases that run *before* one exists were given no contract at all. That is
+    exactly where an agent burns calls rediscovering things the runtime already
+    knows: the run's on-disk directory (named `<slug>--<run_id>`, not the bare
+    id), where the knowledge base lives, and which toolchain the repository
+    configures.
+    """
+
+    workspace = Path(run.workspace)
+    runtime_relative = (
+        EASD_RUNTIME_DIRECTORY / run_directory_name(run.title, run.id)
+    ).as_posix()
+    lines = [
+        "## EASD Pre-Implementation Context",
+        "",
+        f"Run: {run.id}",
+        f"Phase: {run.status}",
+        f"Run directory: {runtime_relative}",
+        (f"Risk tier: {run.risk_tier} (provisional — no accepted spec has set it yet)"),
+        "",
+        "This context is authoritative. Do not probe for these paths.",
+    ]
+
+    data_directory: str | None = None
+    try:
+        manifest = json.loads((workspace / EASD_MANIFEST).read_text(encoding="utf-8"))
+        if isinstance(manifest, dict):
+            candidate = manifest.get("data_directory")
+            if isinstance(candidate, str) and candidate.strip():
+                data_directory = candidate.strip()
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        data_directory = None
+
+    if data_directory:
+        lines.extend(
+            [
+                "",
+                f"Knowledge base: {data_directory}/ — accepted contracts in "
+                f"{data_directory}/specs/, shipped behavior in "
+                f"{data_directory}/features/, current boundaries in "
+                f"{data_directory}/architecture/, exact API/config/schema in "
+                f"{data_directory}/reference/.",
+                "Run state is operational and lives only under the run "
+                "directory above, as YAML. There are no JSON documents there.",
+            ]
+        )
+
+    toolchain = _detected_toolchain(workspace)
+    if toolchain:
+        lines.extend(["", "Detected toolchain:", *(f"- {item}" for item in toolchain)])
+    else:
+        lines.extend(
+            [
+                "",
+                "Detected toolchain: none of the usual manifests are present. "
+                "Ground any verification command in what the repository's own "
+                "instructions and tests actually show.",
+            ]
+        )
+    return "\n".join(lines)
+
+
 async def preimplementation_run_for_session(
     db: AsyncSession, session_id: str | UUID
 ) -> TraceRun | None:
@@ -2006,13 +2172,21 @@ async def build_easd_runtime_contract(
         ):
             plan_revision = candidate
             plan = TracePlan.model_validate(candidate.plan)
+    runtime_relative = (
+        EASD_RUNTIME_DIRECTORY / run_directory_name(run.title, run.id)
+    ).as_posix()
     lines = [
         "## EASD Development Contract",
         "",
         f"Run: {run.id}",
+        f"Run directory: {runtime_relative}",
         f"Phase: {run.status}",
         f"Accepted spec hash: {context.revision.content_hash}",
-        f"Risk tier: {run.risk_tier}",
+        (
+            f"Risk tier: {run.risk_tier}"
+            if run.active_spec_revision_id is not None
+            else f"Risk tier: {run.risk_tier} (provisional — no accepted spec set it)"
+        ),
         f"Agent: {agent_name} ({role})",
         "",
         f"Problem: {spec.problem}",
@@ -2587,6 +2761,114 @@ async def create_evidence(
         operation="evidence_add", status=result, risk_tier=context.run.risk_tier
     ).inc()
     return row
+
+
+def _accepted_command_results(
+    completion_contract: dict[str, Any],
+    accepted_commands: list[str],
+) -> list[tuple[str, int]]:
+    """Return (accepted command, exit code) pairs the contract actually ran."""
+
+    wanted = set(accepted_commands)
+    results: list[tuple[str, int]] = []
+    raw = completion_contract.get("evidence")
+    if not isinstance(raw, list):
+        return results
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        spec_command = item.get("spec_command")
+        if not isinstance(spec_command, str) or spec_command not in wanted:
+            continue
+        exit_code = item.get("exit_code")
+        results.append(
+            (spec_command, int(exit_code) if isinstance(exit_code, int) else 1)
+        )
+    return results
+
+
+async def admit_verification_machine_evidence(
+    db: AsyncSession,
+    *,
+    run_id: str | UUID,
+    completion_contract: dict[str, Any],
+    producer: str,
+) -> TraceEvidence | None:
+    """Persist a Verify-phase CompletionContract as machine evidence.
+
+    Machine evidence was reachable only through the delegated-mission handoff
+    path, so a run driven by a single agent — the shape `direct` flow is meant
+    for — could never satisfy a criterion whose policy sets
+    ``machine_required``. Verify already produces a revision-bound contract by
+    running the accepted verification commands; this admits that contract as
+    the machine record it already is.
+
+    The runtime is the producer, never the agent: nothing here reads a claim
+    from the model. A failing contract is recorded as failing rather than
+    dropped, because a retained failure is what stops a false Done.
+
+    Returns None when there is nothing admissible to record.
+    """
+
+    context = await active_context(db, run_id)
+    if context.run.status != "verifying":
+        return None
+    accepted_commands = list(context.specification.verification_commands)
+    if not accepted_commands:
+        return None
+    ran = _accepted_command_results(completion_contract, accepted_commands)
+    if not ran:
+        # The contract covered something else — an incidental lint or test run
+        # — and proves nothing about the accepted criteria.
+        return None
+
+    criterion_ids = [
+        criterion.id
+        for criterion in context.specification.criteria
+        if criterion.required and "machine" in criterion.evidence_policy.allowed_kinds
+    ]
+    if not criterion_ids:
+        return None
+
+    passed = bool(completion_contract.get("passed")) and all(
+        exit_code == 0 for _command, exit_code in ran
+    )
+    artifact_hash = completion_contract.get("artifact_hash")
+    revision: str | None = None
+    raw_evidence = completion_contract.get("evidence")
+    if isinstance(raw_evidence, list):
+        for item in raw_evidence:
+            if isinstance(item, dict) and isinstance(item.get("revision"), str):
+                revision = item["revision"]
+                break
+
+    detail = "; ".join(f"{command} -> exit {code}" for command, code in ran)
+    summary = (
+        f"Runtime verification at revision {revision or 'unknown'}: {detail}."
+        if passed
+        else f"Runtime verification failed at revision {revision or 'unknown'}: {detail}."
+    )
+
+    return await create_evidence(
+        db,
+        run_id=context.run.id,
+        spec_hash=context.revision.content_hash,
+        criterion_ids=criterion_ids,
+        producer=producer,
+        kind="machine",
+        result="passed" if passed else "failed",
+        summary=summary,
+        revision=revision,
+        artifact_hash=str(artifact_hash) if artifact_hash else None,
+        # `_passed_planned_commands` reads the contract from
+        # payload["verification"]["completion_contract"]; storing it any
+        # shallower leaves the accepted commands looking unverified and keeps
+        # Converge blocked even though the run passed them.
+        payload={"verification": {"completion_contract": completion_contract}},
+        # Bound to the exact verified artifact, so re-running Verify on an
+        # unchanged tree updates nothing and a new revision records afresh.
+        source_key=f"verify:{artifact_hash}" if artifact_hash else None,
+    )
 
 
 async def submit_review_evidence(
@@ -4335,6 +4617,10 @@ def serialize_run(row: TraceRun) -> dict[str, Any]:
         "updated_at": row.updated_at,
         "compact_before_run": row.compact_before_run,
         "auto_pilot": row.auto_pilot,
+        # Risk tier is a property of the accepted specification. Until one
+        # exists the stored value is only the creation-time default, so say so
+        # rather than letting it read as a decision somebody made.
+        "risk_tier_provisional": row.active_spec_revision_id is None,
         "repository_document_hash": _REPOSITORY_RUN_HASHES.get(row.id),
         "store_generation": _REPOSITORY_RUN_GENERATIONS.get(row.id),
     }

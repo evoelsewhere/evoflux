@@ -238,6 +238,14 @@ class EasdRunOut(BaseModel):
     converged_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    # Run options are persisted by PATCH /runs/{id}/options. They must be
+    # serialized here too: the panel initializes its toggles from this payload,
+    # so omitting them made every saved value read back as false.
+    compact_before_run: bool = False
+    auto_pilot: bool = False
+    # True while no accepted specification has set the tier, so the stored
+    # value is still only the creation-time default.
+    risk_tier_provisional: bool = False
     repository_document_hash: str | None = None
     store_generation: int | None = None
 

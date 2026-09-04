@@ -9,6 +9,8 @@ from loguru import logger
 from app.agent.hooks.base import BaseAgentHook
 from app.core.db import DbFactory, resolve_db_factory
 from app.services.trace_service import (
+    admit_verification_machine_evidence,
+    build_easd_preimplementation_contract,
     build_easd_runtime_contract,
     preimplementation_run_for_session,
 )
@@ -82,6 +84,11 @@ class EasdContextHook(BaseAgentHook):
             state.metadata["_easd_preimplementation_phase"] = (
                 preimplementation_run.status
             )
+            # Authoring and planning run before an accepted specification
+            # exists, so the accepted-contract block below cannot be built yet.
+            # Without any context these phases rediscover the run directory,
+            # the knowledge-base layout and the toolchain by probing.
+            self._block = build_easd_preimplementation_contract(preimplementation_run)
         if contract is None:
             return
         self._block = contract.prompt
@@ -94,6 +101,50 @@ class EasdContextHook(BaseAgentHook):
         )
         state.metadata["_easd_impact_targets"] = list(contract.impact_targets)
         state.metadata["_easd_repository_roots"] = list(contract.repository_roots)
+
+    async def after_agent(self, ctx: RunContext, state: AgentState, response) -> None:
+        """Admit the Verify phase's own CompletionContract as machine evidence.
+
+        Machine evidence was otherwise reachable only when a delegated mission
+        handed off, so a single-agent run could never satisfy a criterion whose
+        policy sets ``machine_required``. Verify already runs the accepted
+        verification commands and builds a revision-bound contract; recording
+        it closes the gate honestly, with the runtime as producer.
+        """
+
+        if state.metadata.get("_easd_phase") != "verifying":
+            return
+        run_id = state.metadata.get("_easd_run_id")
+        contract = state.metadata.get("completion_contract")
+        if not run_id or not isinstance(contract, dict):
+            return
+        try:
+            async with self._db_factory() as db:
+                evidence = await admit_verification_machine_evidence(
+                    db,
+                    run_id=str(run_id),
+                    completion_contract=contract,
+                    producer=f"runtime:{self._agent_name}",
+                )
+                if evidence is not None:
+                    await db.commit()
+                else:
+                    await db.rollback()
+        except Exception as exc:  # noqa: BLE001 - evidence must not break a turn
+            logger.warning(
+                "easd_machine_evidence_failed run_id={} agent={} error={}",
+                run_id,
+                self._agent_name,
+                exc,
+            )
+            return
+        if evidence is not None:
+            logger.info(
+                "easd_machine_evidence_admitted run_id={} result={} criteria={}",
+                run_id,
+                evidence.result,
+                len(evidence.criterion_ids),
+            )
 
     async def before_model(
         self,
