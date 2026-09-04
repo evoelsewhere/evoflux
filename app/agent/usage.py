@@ -137,11 +137,36 @@ def _tiered_rates(
 def _estimate_cost(
     usage: Usage, model_id: str | None, service_tier: str | None = None
 ) -> dict[str, float] | None:
-    """Price one turn from the catalog's rates, in USD.
+    return estimate_cost(
+        model_id,
+        input_tokens=usage.prompt_tokens,
+        output_tokens=usage.completion_tokens,
+        cached_tokens=usage.cached_tokens or 0,
+        cache_write_tokens=usage.cache_write_tokens or 0,
+        thoughts_tokens=usage.thoughts_tokens or 0,
+        service_tier=service_tier,
+    )
+
+
+def estimate_cost(
+    model_id: str | None,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    cached_tokens: int = 0,
+    cache_write_tokens: int = 0,
+    thoughts_tokens: int = 0,
+    service_tier: str | None = None,
+) -> dict[str, float] | None:
+    """Price a token total from the catalog's rates, in USD.
 
     Every rate is per million tokens. Components are kept separate so a
     burn report can show where the money went — cache reads and writes are
     the two that a caller can actually act on.
+
+    Takes loose counts rather than a ``Usage`` so a turn aggregate can be
+    priced per model call and summed: rates differ per model, so a turn
+    that switched models cannot be priced from its totals alone.
     """
     provider_id = model_id.partition(":")[0].lower() if model_id else ""
     if provider_id in _NON_TOKEN_BILLED_PROVIDERS:
@@ -155,12 +180,9 @@ def _estimate_cost(
         if isinstance(candidate, Mapping):
             mode_cost = candidate
 
-    rates = _tiered_rates(prices, usage.prompt_tokens, mode_cost)
+    rates = _tiered_rates(prices, input_tokens, mode_cost)
 
     components: dict[str, float] = {}
-    cached_tokens = usage.cached_tokens or 0
-    cache_write_tokens = usage.cache_write_tokens or 0
-    input_tokens = usage.prompt_tokens
 
     if rates["cache_read"] is not None and cached_tokens > 0:
         components["cache_read_usd"] = cached_tokens * rates["cache_read"] / 1_000_000
@@ -177,11 +199,9 @@ def _estimate_cost(
     # Reasoning tokens are part of the completion unless the provider meters
     # them on their own line, in which case billing them at the output rate
     # too would double-count.
-    output_tokens = usage.completion_tokens
-    thoughts = usage.thoughts_tokens or 0
-    if rates["reasoning"] is not None and thoughts > 0:
-        components["reasoning_usd"] = thoughts * rates["reasoning"] / 1_000_000
-        output_tokens = max(output_tokens - thoughts, 0)
+    if rates["reasoning"] is not None and thoughts_tokens > 0:
+        components["reasoning_usd"] = thoughts_tokens * rates["reasoning"] / 1_000_000
+        output_tokens = max(output_tokens - thoughts_tokens, 0)
     if rates["output"] is not None and output_tokens > 0:
         components["output_usd"] = output_tokens * rates["output"] / 1_000_000
 

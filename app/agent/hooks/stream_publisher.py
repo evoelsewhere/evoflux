@@ -33,6 +33,32 @@ from app.agent.schemas.events import (
 from app.agent.turn_usage import record_turn_usage
 from app.services.stream_envelope import AnyStreamEvent, StreamEnvelope
 
+
+def _catalog_model_id(model: Any, state: "AgentState") -> str | None:
+    """The id the catalog prices, not the one the provider says.
+
+    A stream chunk reports the provider's own name for the model — Xiaomi
+    sends ``mimo-v2.5``, not ``xiaomi:mimo-v2.5``. Nothing in the catalog
+    matches that, so a turn priced from it comes back free, and the main
+    call is where nearly all of a turn's tokens are. Borrow the provider
+    from the model the agent is running, preferring a fallback's model over
+    the configured one when the provider substituted mid-run.
+    """
+    if not isinstance(model, str) or not model:
+        return None
+    configured = state.metadata.get("effective_model") or state.metadata.get(
+        "active_model"
+    )
+    provider = configured.partition(":")[0] if isinstance(configured, str) else ""
+    if not provider:
+        return model
+    from app.agent.providers.model_metadata import qualified_model_id
+
+    # A colon is not the signal that an id is already qualified: Bedrock
+    # model ids carry one of their own (``us.anthropic.claude-...-v1:0``).
+    return qualified_model_id(provider, model)
+
+
 if TYPE_CHECKING:
     from app.agent.schemas.chat import AssistantMessage, ChatCompletionChunk, ToolCall
     from app.agent.state import AgentState, ModelRequest, RunContext, ToolCallHandler
@@ -184,7 +210,7 @@ class StreamPublisherHook(BaseAgentHook):
             snapshot = await record_turn_usage(
                 u,
                 phase="main",
-                model_id=model if isinstance(model, str) else None,
+                model_id=_catalog_model_id(model, state),
             )
             # Standalone hook tests and third-party integrations may invoke
             # this hook without the team turn tracker. Preserve the historical
