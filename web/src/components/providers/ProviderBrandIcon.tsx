@@ -105,6 +105,18 @@ function catalogLogoUrl(providerId: string, color: string): string {
   return `/api/settings/providers/${encodeURIComponent(providerId)}/logo?${params}`
 }
 
+/**
+ * Whether this string could name a provider at all.
+ *
+ * Not every ID reaching this component is one: an agent with no model
+ * configured carries the literal placeholder `__PROVIDER_MODEL__`, which
+ * was fetched as a provider and answered 404 on every render. Provider IDs
+ * are lowercase words, so anything else skips straight to its initial.
+ */
+function couldBeProviderId(id: string): boolean {
+  return /^[a-z0-9][a-z0-9._-]{0,63}$/.test(id)
+}
+
 export function ProviderBrandIcon({
   providerId,
   size = 'md',
@@ -162,7 +174,7 @@ export function ProviderBrandIcon({
           height={glyphPx}
           style={{ color: brand.color }}
         />
-      ) : !logoFailed ? (
+      ) : !logoFailed && couldBeProviderId(id) ? (
         <img
           src={catalogLogoUrl(id, brand.color)}
           width={glyphPx}
