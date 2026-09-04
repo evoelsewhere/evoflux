@@ -41,7 +41,6 @@ CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
 # legitimately remain silent for well over ten seconds before their first SSE
 # event, especially at high/max effort.
 CODEX_STREAM_IDLE_TIMEOUT_SECONDS = 300.0
-_NO_SERVICE_TIER = {"", "auto", "default", "none", "off", "standard"}
 
 # Identify requests honestly as EvoFlux.
 _DEFAULT_HEADERS = {
@@ -58,6 +57,8 @@ class _CodexResponsesHandler(ResponsesHandler):
     system messages embedded inside ``input``.  This subclass extracts any
     leading SystemMessage into ``instructions`` before building the request.
     """
+
+    default_provider_id = "codex"
 
     def build_request(
         self,
@@ -84,14 +85,11 @@ class _CodexResponsesHandler(ResponsesHandler):
         body["instructions"] = "\n\n".join(system_parts)
         body["store"] = False
 
-        service_tier = str(merged.get("service_tier") or "").lower()
-        if service_tier not in _NO_SERVICE_TIER:
-            # Codex Fast mode is exposed as the request service tier.  The
-            # official Codex config stores ``service_tier = "fast"``; the
-            # backend maps that subscription setting to priority processing.
-            body["service_tier"] = (
-                "priority" if service_tier == "fast" else service_tier
-            )
+        # The service tier itself is applied by the shared Responses handler
+        # from the tier's registered wire patch — Codex's fast lane is one
+        # entry in ``PROVIDER_MODES`` rather than a translation here, so the
+        # composer, the request builder and the model catalog all read the
+        # same table.
         return body
 
     async def chat(
@@ -212,6 +210,8 @@ class CodexProvider(LLMProviderBase):
             ``service_tier="fast"`` — enable ChatGPT-subscription Codex Fast
             mode for supported models (GPT-5.5/GPT-5.4 at time of writing).
     """
+
+    default_provider_id = "codex"
 
     def __init__(
         self,

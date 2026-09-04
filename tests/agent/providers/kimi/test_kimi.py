@@ -306,8 +306,12 @@ async def test_kimi_discovery_normalizes_url_and_effective_capabilities(
     assert k3_limits.context_length == 262144
     assert k3_caps.input.vision is True
     assert k3_caps.input.video is False
-    assert k3_thinking.levels == ("low", "high", "max")
-    assert k3_thinking.default_level == "high"
+    # K3 publishes a toggle alongside its named efforts, so "none" is a real
+    # selection rather than the absence of one. The curated table this used
+    # to read from listed only the efforts and silently dropped the off
+    # switch; the catalog carries both.
+    assert k3_thinking.levels == ("none", "low", "high", "max")
+    assert k3_thinking.control == "effort"
 
 
 def test_k3_one_million_context_requires_explicit_opt_in(

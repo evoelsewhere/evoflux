@@ -43,6 +43,9 @@ _DEFAULT_HEADERS: dict[str, str] = {
     "Content-Type": "application/json",
     "User-Agent": "EvoFlux/1.0.0",
     "Openai-Intent": "conversation-edits",
+    # Overridden per request by ``_copilot_request_headers``; kept here so a
+    # code path that bypasses that hook still sends a valid value.
+    "x-initiator": "user",
 }
 
 
@@ -62,6 +65,26 @@ def _has_image_in_messages(messages: list[dict[str, Any]]) -> bool:
             if isinstance(block, dict) and _is_image_block(block):
                 return True
     return False
+
+
+def _copilot_request_headers(
+    base: dict[str, str], merged: dict[str, Any]
+) -> dict[str, str]:
+    """Add Copilot's per-request wire headers to *base*.
+
+    ``x-initiator`` tells the gateway whether a turn was driven by the user
+    or by the agent, which it uses for rate-limit classification — so it is
+    always sent, defaulting to ``user`` when no tools are in play.
+    ``Copilot-Vision-Request`` must accompany any request carrying an image.
+
+    Shared by both handlers so the two endpoints cannot drift apart.
+    """
+    headers = {**base}
+    has_tools = bool(merged.get("tools") or merged.get("tool_choice"))
+    headers["x-initiator"] = "agent" if has_tools else "user"
+    if _has_image_in_messages(merged.get("messages") or []):
+        headers["Copilot-Vision-Request"] = "true"
+    return headers
 
 
 def _endpoint_for_model(model: str) -> str:
@@ -98,22 +121,28 @@ class _CopilotCompletionsHandler(CompletionsHandler):
       ``completion_tokens_details``). Read both, top-level first.
     """
 
-    def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
-        thinking_level = merged.get("thinking_level")
-        from app.agent.providers.model_metadata import get_model_thinking_levels
+    default_provider_id = "copilot"
 
-        supported = get_model_thinking_levels(f"copilot:{self.model}")
-        if thinking_level and thinking_level in supported:
+    def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
+        """Gate ``reasoning_effort`` on what this Copilot model accepts.
+
+        Copilot exposes a different effort vocabulary per model and rejects
+        anything outside it, so the shared dialect table is not enough. The
+        allowlist comes from the same resolver every other caller uses —
+        reading the raw catalog here dropped valid levels whenever live
+        discovery had not run yet.
+        """
+        from app.agent.providers.thinking import accepts_thinking_level
+
+        thinking_level = merged.get("thinking_level")
+        if not thinking_level or thinking_level in {"none", "off"}:
+            return
+        if accepts_thinking_level(f"copilot:{self.model}", thinking_level):
             body["reasoning_effort"] = thinking_level
 
     def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
         """Dynamic wire headers: ``x-initiator`` and vision support."""
-        headers = {**self.headers}
-        has_tools = bool(merged.get("tools") or merged.get("tool_choice"))
-        headers["x-initiator"] = "agent" if has_tools else "user"
-        if _has_image_in_messages(merged.get("messages", [])):
-            headers["Copilot-Vision-Request"] = "true"
-        return headers
+        return _copilot_request_headers(self.headers, merged)
 
     def _usage_from_openai(self, u: Any) -> Usage:
         usage = super()._usage_from_openai(u)
@@ -140,6 +169,8 @@ class _CopilotResponsesHandler(ResponsesHandler):
       expects an inline ``name``.
     """
 
+    default_provider_id = "copilot"
+
     def build_request(
         self,
         messages: list[ChatMessage],
@@ -156,12 +187,7 @@ class _CopilotResponsesHandler(ResponsesHandler):
 
     def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
         """Dynamic wire headers: ``x-initiator`` and vision support."""
-        headers = {**self.headers}
-        has_tools = bool(merged.get("tools") or merged.get("tool_choice"))
-        headers["x-initiator"] = "agent" if has_tools else "user"
-        if _has_image_in_messages(merged.get("messages", [])):
-            headers["Copilot-Vision-Request"] = "true"
-        return headers
+        return _copilot_request_headers(self.headers, merged)
 
     def _extract_call_id_and_name(self, event: dict[str, Any]) -> tuple[str, str]:
         call_id = event.get("item_id") or event.get("call_id", "")
@@ -186,6 +212,8 @@ class CopilotProvider(OpenAIProvider):
             ``thinking_level`` (str) — forwarded only when the model profile
             advertises that exact effort.
     """
+
+    default_provider_id = "copilot"
 
     def __init__(
         self,

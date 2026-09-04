@@ -29,6 +29,11 @@ from app.agent.schemas.chat import (
     Usage,
 )
 
+from app.agent.providers.transform import (
+    reject_images_for_non_vision,
+    strip_empty_parts_anthropic,
+)
+
 ANTHROPIC_API_BASE = "https://api.anthropic.com"
 ANTHROPIC_API_VERSION = "2023-06-01"
 ANTHROPIC_MODELS = [
@@ -207,35 +212,39 @@ def _supports_legacy_sampling(model: str) -> bool:
     return not any(marker in model for marker in ("-4-5", "-4-6", "-4-7"))
 
 
-def _thinking_budget(level: str, max_tokens: int) -> int:
-    ratios = {"low": 0.25, "medium": 0.4, "high": 0.6, "xhigh": 0.75, "max": 0.8}
-    budget = int(max_tokens * ratios.get(level, 0.4))
-    return max(1024, min(budget, max_tokens - 1))
-
-
-def _supports_adaptive_thinking(model: str) -> bool:
-    return any(
-        marker in model for marker in ("opus-4-6", "opus-4-7", "opus-4-8", "sonnet-4-6")
-    )
-
-
 def _apply_thinking(
-    model: str, kwargs: dict[str, Any], payload: dict[str, Any]
+    model: str,
+    kwargs: dict[str, Any],
+    payload: dict[str, Any],
+    *,
+    provider_id: str = "anthropic",
 ) -> bool:
-    level = str(kwargs.pop("thinking_level", "") or "").lower()
-    if not level or level in {"none", "off"}:
+    """Translate ``thinking_level`` onto *payload*; return whether it is on.
+
+    The wire shape — adaptive descriptor for the newest Claude generations,
+    an explicit token budget for the rest — comes from the shared translator
+    in :mod:`app.agent.providers.thinking`, so a third-party endpoint
+    speaking Anthropic Messages (MiniMax, Kimi's Anthropic surface) gets the
+    same handling from its own catalog metadata.
+
+    The return value gates sampling: Anthropic rejects ``temperature`` and
+    ``top_p`` alongside extended thinking on the older models.
+    """
+    from app.agent.providers.thinking import thinking_request_fields
+
+    requested = kwargs.pop("thinking_level", None)
+    fields = thinking_request_fields(
+        provider_id,
+        model,
+        requested,
+        max_output=payload.get("max_tokens"),
+    )
+    if not fields:
         return False
-    if _supports_adaptive_thinking(model):
-        payload["thinking"] = {"type": "adaptive", "display": "summarized"}
-        payload["output_config"] = {"effort": level}
-        return True
-    max_tokens = int(payload["max_tokens"])
-    payload["thinking"] = {
-        "type": "enabled",
-        "budget_tokens": _thinking_budget(level, max_tokens),
-        "display": "summarized",
-    }
-    return True
+
+    payload.update(fields)
+    thinking = payload.get("thinking")
+    return isinstance(thinking, dict) and thinking.get("type") != "disabled"
 
 
 def _add_sampling(
@@ -299,6 +308,16 @@ def _stream_chunk(
 
 
 class AnthropicProvider(LLMProviderBase):
+    """Anthropic Messages API provider.
+
+    Also serves third-party endpoints that speak Anthropic Messages — the
+    registry points MiniMax at this handler with its own host and
+    credential — so *base_url* and the bound provider ID are both
+    parameters rather than constants.
+    """
+
+    default_provider_id = "anthropic"
+
     def __init__(
         self,
         *,
@@ -338,6 +357,10 @@ class AnthropicProvider(LLMProviderBase):
         tools: list[dict] | None,
         kwargs: dict[str, Any],
     ) -> dict[str, Any]:
+        # Strip empty content blocks that Anthropic rejects with 400.
+        messages = strip_empty_parts_anthropic(messages)
+        # Replace images for non-vision models.
+        messages = reject_images_for_non_vision(messages, self.model)
         system, anthropic_messages = _split_messages(messages)
         payload: dict[str, Any] = {
             "model": self.model,
@@ -357,9 +380,40 @@ class AnthropicProvider(LLMProviderBase):
             payload["tools"] = anthropic_tools
         if cache_control and anthropic_messages:
             _mark_last_message_cache_control(anthropic_messages[-1], cache_control)
-        thinking = _apply_thinking(self.model, kwargs, payload)
+        thinking = _apply_thinking(
+            self.model,
+            kwargs,
+            payload,
+            provider_id=self.provider_name or "anthropic",
+        )
         _add_sampling(self.model, kwargs, payload, thinking=thinking)
+        payload.update(self._service_tier(kwargs)[0])
         return payload
+
+    def _service_tier(
+        self, kwargs: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, str]]:
+        """Body and headers selecting an alternate service tier.
+
+        Anthropic's fast mode needs both: a ``speed`` field and a beta
+        header. Both come from the tier's catalog patch, so neither is
+        spelled out here.
+        """
+        from app.agent.providers.options import service_tier_fields
+
+        return service_tier_fields(
+            self.provider_name or "anthropic",
+            self.model,
+            kwargs.get("service_tier"),
+        )
+
+    def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
+        """Per-call headers. A tier's beta flag cannot live on the shared dict."""
+        from app.agent.providers.options import provider_request_headers
+
+        extra = provider_request_headers(self.provider_name or "anthropic")
+        extra.update(self._service_tier(merged)[1])
+        return {**self.headers, **extra} if extra else self.headers
 
     async def chat(
         self,
@@ -371,7 +425,7 @@ class AnthropicProvider(LLMProviderBase):
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(
                 f"{self.base_url}{self._messages_path}",
-                headers=self.headers,
+                headers=self._request_headers(merged),
                 json=self._payload(messages, tools, merged),
             )
             response.raise_for_status()
@@ -430,7 +484,7 @@ class AnthropicProvider(LLMProviderBase):
             async with client.stream(
                 "POST",
                 f"{self.base_url}{self._messages_path}",
-                headers=self.headers,
+                headers=self._request_headers(merged),
                 json=payload,
             ) as response:
                 response.raise_for_status()

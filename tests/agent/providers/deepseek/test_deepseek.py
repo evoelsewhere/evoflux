@@ -289,10 +289,16 @@ class TestDeepSeekThinking:
         assert body.get("thinking") == {"type": "enabled"}
         assert body.get("reasoning_effort") == "high"
 
-    def test_thinking_object_sent_when_thinking_level_medium(self):
+    def test_thinking_level_clamps_down_to_an_advertised_effort(self):
+        """DeepSeek documents low/high/max — not medium.
+
+        A request for an effort the model does not accept is clamped down to
+        the strongest one it does, rather than sent through to a 400 or
+        silently dropped back to the model default.
+        """
         body = self._build_body("medium")
         assert body.get("thinking") == {"type": "enabled"}
-        assert body.get("reasoning_effort") == "medium"
+        assert body.get("reasoning_effort") == "low"
 
     def test_thinking_object_sent_when_thinking_level_low(self):
         body = self._build_body("low")

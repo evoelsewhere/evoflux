@@ -89,6 +89,8 @@ def _unwrap_fci_envelope(data: dict[str, Any]) -> dict[str, Any]:
 class _FCICompletionsHandler(CompletionsHandler):
     """Translate FPT Chat Completions differences from native OpenAI."""
 
+    default_provider_id = "fci"
+
     # FPT's current Marketplace examples document ``max_tokens``.
     uses_max_completion_tokens = False
 
@@ -138,6 +140,8 @@ class _FCICompletionsHandler(CompletionsHandler):
 
 class _FCIResponsesHandler(ResponsesHandler):
     """Translate EvoFlux requests to FPT's supported Responses surface."""
+
+    default_provider_id = "fci"
 
     def convert_tools(self, tools: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         converted = super().convert_tools(tools)
@@ -214,6 +218,8 @@ class FCIProvider(OpenAIProvider):
         max_tokens: Hard cap on completion tokens.
         model_kwargs: Extra request body fields passed as-is.
     """
+
+    default_provider_id = "fci"
 
     def __init__(
         self,

@@ -135,7 +135,7 @@ class TestOllamaProviderFactory:
 
             MockOllama.assert_called_once()
             call_kwargs = MockOllama.call_args.kwargs
-            assert call_kwargs.get("api_key") is None
+            assert call_kwargs.get("api_key") == "ollama"
             assert call_kwargs.get("model") == "llama3.2"
             assert call_kwargs.get("base_url") == "http://localhost:11434/v1"
 

@@ -346,6 +346,8 @@ class BedrockProvider(LLMProviderBase):
             in the Converse API call.
     """
 
+    default_provider_id = "bedrock"
+
     def __init__(
         self,
         model: str,
@@ -417,6 +419,22 @@ class BedrockProvider(LLMProviderBase):
             "cache_boundary",
         }
         additional = {k: v for k, v in merged.items() if k not in known}
+
+        # Converse expresses reasoning through ``reasoningConfig`` inside
+        # additionalModelRequestFields: a token budget for Anthropic models,
+        # a named effort for Nova, and an adaptive descriptor for the newest
+        # Claude generations. The shared translator owns that split and
+        # clamps the level to what the model advertises.
+        from app.agent.providers.thinking import thinking_request_fields
+
+        additional.update(
+            thinking_request_fields(
+                self.provider_name or "bedrock",
+                self.model,
+                merged.get("thinking_level"),
+                max_output=merged.get("max_tokens"),
+            )
+        )
 
         req: dict[str, Any] = {
             "modelId": self.model,

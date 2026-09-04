@@ -107,6 +107,8 @@ class FoundryProvider(OpenAIProvider):
         model_kwargs: Extra request body fields passed as-is.
     """
 
+    default_provider_id = "foundry"
+
     def __init__(
         self,
         api_key: str | SecretStr,
@@ -143,6 +145,8 @@ class FoundryClaudeProvider(AnthropicProvider):
     handler with the Foundry base URL and adds the Azure ``api-key``
     header alongside the default ``x-api-key``.
     """
+
+    default_provider_id = "foundry"
 
     def __init__(
         self,

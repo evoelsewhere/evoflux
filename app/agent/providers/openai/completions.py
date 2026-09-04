@@ -41,6 +41,8 @@ from .schemas import (
 )
 from .sanitization import sanitize_openai_tool_pairs
 from .tool_content import flatten_tool_content_for_provider
+from app.agent.providers.registry import Transport
+from app.agent.providers.transform import apply_model_sampling_defaults
 
 if TYPE_CHECKING:
     pass
@@ -52,6 +54,10 @@ def _positive_token_count(value: object) -> int | None:
         if isinstance(value, int) and not isinstance(value, bool) and value > 0
         else None
     )
+
+
+#: Tier values that mean "serve this the normal way".
+_NO_SERVICE_TIER = frozenset({"", "auto", "default", "none", "off", "standard"})
 
 
 class CompletionsHandler:
@@ -71,11 +77,33 @@ class CompletionsHandler:
     # the single override point; callers don't toggle field names ad-hoc.
     uses_max_completion_tokens: bool = True
 
+    #: Registry ID this handler subclass serves, when it serves exactly one.
+    #:
+    #: A handler subclass exists precisely because its endpoint diverges, so
+    #: it knows its own identity. Declaring it here means a handler built
+    #: directly — in a test, or by a provider constructed outside the
+    #: factory — still resolves the right reasoning dialect. The factory
+    #: overwrites ``provider_id`` with the ID the user actually chose, which
+    #: is what one handler serving two registry entries needs.
+    default_provider_id: str | None = None
+
     def __init__(self, model: str, base_url: str, headers: dict[str, str]) -> None:
         self.model = model
         self.usage_model_id = model
         self.base_url = base_url
         self.headers = headers
+        # Bound by ``LLMProviderBase.bind_provider_name`` once the factory
+        # knows which registry entry produced this handler. Reasoning
+        # translation needs it: the same model ID means different wire
+        # fields behind OpenRouter than behind its first-party vendor.
+        self.provider_id: str | None = type(self).default_provider_id
+
+    @property
+    def qualified_model(self) -> str:
+        """``"provider:model"`` when the provider is known, else the model."""
+        if self.provider_id and ":" not in self.model:
+            return f"{self.provider_id}:{self.model}"
+        return self.model
 
     # ------------------------------------------------------------------
     # Message / tool conversion
@@ -239,30 +267,100 @@ class CompletionsHandler:
         if merged.get("prompt_cache_key") is not None:
             body["prompt_cache_key"] = merged["prompt_cache_key"]
         self.customize_thinking(merged, body)
+        body.update(self._service_tier_body(merged))
+        # Apply per-model sampling defaults (temperature/topP/topK).
+        apply_model_sampling_defaults(
+            body,
+            self.model,
+            explicitly_set={k for k in ("temperature", "top_p", "top_k") if k in body},
+        )
         return body
 
     def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
         """Apply provider-specific reasoning/thinking translation.
 
-        Default behaviour: map ``thinking_level`` to OpenAI's ``reasoning_effort``
-        top-level field for o-series and gpt-5 models.
+        Delegates to :func:`app.agent.providers.thinking.thinking_request_fields`,
+        which resolves the caller's ``thinking_level`` against what the
+        catalog says this model accepts and emits the wire fields for this
+        provider's dialect. That covers ``reasoning_effort``, OpenRouter's
+        ``reasoning`` object, DeepSeek's thinking toggle, GLM's
+        ``clear_thinking``, DashScope's ``enable_thinking`` and MiMo's token
+        budget without a subclass per provider.
 
-        Subclasses override this method to:
-
-        - Send a different field (e.g. ZAI's ``thinking: {type: disabled}``).
-        - Gate the mapping by model (e.g. Copilot only injects
-          ``reasoning_effort`` for whitelisted OpenAI models).
-        - Suppress reasoning entirely.
+        Subclasses still override when the endpoint needs something the
+        dialect table cannot express — a per-model allowlist, or a level
+        vocabulary of its own.
 
         Mutates ``body`` in place.
         """
-        thinking_level = merged.get("thinking_level")
-        if thinking_level and thinking_level not in ("none", "off"):
-            body["reasoning_effort"] = thinking_level
+        from app.agent.providers.thinking import thinking_request_fields
+
+        if not self.provider_id:
+            # No registry identity (a bare handler in a test, or a provider
+            # built outside the factory). Fall back to the OpenAI-shaped
+            # default rather than guessing a dialect.
+            level = merged.get("thinking_level")
+            if level and level not in ("none", "off"):
+                body["reasoning_effort"] = level
+            return
+
+        body.update(
+            thinking_request_fields(
+                self.provider_id,
+                self.model,
+                merged.get("thinking_level"),
+                transport=Transport.OPENAI_COMPLETIONS,
+            )
+        )
+
+    def _service_tier_body(self, merged: dict[str, Any]) -> dict[str, Any]:
+        """Body fields selecting an alternate service tier.
+
+        A tier the catalog (or the provider table) describes is applied from
+        its own patch. Anything else the caller names is forwarded verbatim
+        as ``service_tier``, because that is a real field on this endpoint —
+        OpenAI documents ``flex`` and ``priority`` alongside the tiers a
+        model advertises, and dropping an explicit one would silently ignore
+        the caller.
+        """
+        tier = merged.get("service_tier")
+        if not isinstance(tier, str) or not tier.strip():
+            return {}
+        if self.provider_id:
+            from app.agent.providers.options import service_tier_fields
+
+            body, _headers = service_tier_fields(self.provider_id, self.model, tier)
+            if body:
+                return body
+        normalized = tier.strip().lower()
+        if normalized in _NO_SERVICE_TIER:
+            return {}
+        return {"service_tier": normalized}
+
+    def _service_tier_headers(self, merged: dict[str, Any]) -> dict[str, str]:
+        """Headers selecting an alternate service tier, if one was asked for."""
+        if not self.provider_id:
+            return {}
+        from app.agent.providers.options import service_tier_fields
+
+        _body, headers = service_tier_fields(
+            self.provider_id, self.model, merged.get("service_tier")
+        )
+        return headers
 
     def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
         """Return per-call headers without mutating the shared handler state."""
-        return self.headers
+        extra = self._provider_headers()
+        extra.update(self._service_tier_headers(merged))
+        return {**self.headers, **extra} if extra else self.headers
+
+    def _provider_headers(self) -> dict[str, str]:
+        """Static headers this provider always needs — gateway attribution."""
+        if not self.provider_id:
+            return {}
+        from app.agent.providers.options import provider_request_headers
+
+        return provider_request_headers(self.provider_id)
 
     # ------------------------------------------------------------------
     # Response parsing — non-streaming
