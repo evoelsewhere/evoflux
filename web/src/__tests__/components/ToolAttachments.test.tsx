@@ -1,6 +1,11 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const { saveFile } = vi.hoisted(() => ({
+  saveFile: vi.fn(async (_url: string, _filename: string) => undefined),
+}))
+vi.mock('@/lib/workspace-file-save', () => ({ saveWorkspaceFileFromUrl: saveFile }))
+
 import { ToolAttachments } from '@/components/ToolCall'
 
 describe('ToolAttachments', () => {
@@ -12,6 +17,31 @@ describe('ToolAttachments', () => {
         '<!doctype html><html><body><article data-preview-item data-preview-label="Slide 1">Decision</article></body></html>',
       ),
     }))
+    saveFile.mockClear()
+  })
+
+  it('saves an attachment through the host, from the media URL alone', async () => {
+    // ``download_url`` is a server hint the backend does not send today; the
+    // action has to work off the plain media URL, and must not hand that
+    // token-bearing URL to another application.
+    render(
+      <ToolAttachments
+        attachments={[
+          {
+            filename: 'notes.csv',
+            original_name: 'notes.csv',
+            media_type: 'text/csv',
+            category: 'document',
+            url: '/api/team/session/media/notes.csv',
+          },
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download notes.csv' }))
+    await waitFor(() => expect(saveFile).toHaveBeenCalledTimes(1))
+    expect(saveFile.mock.calls[0][1]).toBe('notes.csv')
+    expect(saveFile.mock.calls[0][0]).toContain('/team/session/media/notes.csv')
   })
 
   it('opens generated presentations in the shared in-app document viewer', async () => {
