@@ -46,6 +46,14 @@ from .schemas import (
 
 API_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
+# Gemini 3 rejects a replayed functionCall part that has no thoughtSignature
+# (HTTP 400 "Function call is missing a thought_signature"). This happens for
+# any call captured before this field existed, from a non-Gemini model, or
+# from a Gemini response that simply didn't return one for that call. Google
+# documents this exact sentinel to skip validation when a real signature
+# genuinely isn't available: https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures
+_MISSING_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
+
 
 class GeminiProviderBase(LLMProviderBase):
     """
@@ -142,7 +150,8 @@ class GeminiProviderBase(LLMProviderBase):
                                     args=args,
                                     id=tc.id if not tc.id.startswith("call_") else None,
                                 ),
-                                thought_signature=tc.function.thought_signature,
+                                thought_signature=tc.function.thought_signature
+                                or _MISSING_THOUGHT_SIGNATURE,
                             )
                         )
                 elif msg.reasoning_content:
