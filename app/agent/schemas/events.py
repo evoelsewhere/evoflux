@@ -109,6 +109,9 @@ class UsageEvent(BaseModel):
     cache_write_tokens: int | None = None
     thoughts_tokens: int | None = None
     tool_use_tokens: int | None = None
+    #: USD by cost component, priced from the models.dev catalog. Present on
+    #: turn totals; ``None`` for providers billed by seat rather than token.
+    cost: dict[str, float] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

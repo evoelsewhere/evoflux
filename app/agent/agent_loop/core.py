@@ -467,6 +467,13 @@ class Agent(Generic[TContext]):
         # Keep pre-model stages aligned with per-run provider overrides.
         # The value is ephemeral and is never persisted or model-visible.
         state.metadata["_runtime_provider"] = active_provider
+        # The catalog-qualified model for this run (``xiaomi:mimo-v2.5``).
+        # Streams report the provider's own bare name for the model, which
+        # matches no catalog row, so anything pricing a call from the stream
+        # alone silently prices it at zero. ``effective_model`` only appears
+        # after a provider fallback, so it cannot serve as the baseline.
+        if active_model_id:
+            state.metadata["active_model"] = active_model_id
 
         # Surface caller-supplied per-run metadata to tools/hooks.  Used by
         # team leads to pass ``mode`` and ``workspace`` so the schedule tool
