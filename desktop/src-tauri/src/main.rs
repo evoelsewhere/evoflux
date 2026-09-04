@@ -2919,14 +2919,18 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                     }};
 
                     if (action === 'instrument') {{
-                        // instrument runs once per document, so this is where a
-                        // new page starts. Refs name elements in the document
-                        // that listed them; carrying them across a navigation
-                        // would let a stale ref silently resolve to whatever
-                        // occupies that slot next.
-                        globalThis.__evofluxAgentRefs = undefined;
-                        globalThis.__evofluxAgentElements = [];
                         if (!globalThis.__evofluxBrowserRuntime) {{
+                            // Reaching here means a document with no runtime —
+                            // a fresh page. Refs name elements in the document
+                            // that listed them, so they are dropped here rather
+                            // than letting a stale one resolve to whatever
+                            // occupies that slot next. It has to be inside this
+                            // guard: instrument is idempotent and is invoked
+                            // before *every* action, so clearing on each call
+                            // emptied the store between a snapshot and the
+                            // click that used it.
+                            globalThis.__evofluxAgentRefs = undefined;
+                            globalThis.__evofluxAgentElements = [];
                             const runtime = {{ documentId: `${{Date.now().toString(36)}}-${{Math.random().toString(36).slice(2)}}`, console: [], network: [], dialogs: [], popups: [], permissions: [], permissionResolvers: new Map(), nextDialogId: 1, nextPopupId: 1, nextPermissionId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
                             const keep = (items, value, max) => {{ items.push(value); if (items.length > max) items.splice(0, items.length - max); }};
                             const queuePopup = (value) => {{
