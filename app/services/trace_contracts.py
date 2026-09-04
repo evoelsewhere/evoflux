@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shlex
 from pathlib import PurePosixPath
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -118,6 +119,40 @@ def _default_evidence_kinds() -> list[TraceEvidenceKind]:
     return ["machine", "review", "manual"]
 
 
+PLANNED_FLOW_TRIGGERS: tuple[str, ...] = (
+    "multi_repository",
+    "cross_layer",
+    "security",
+    "migration",
+    "persistence",
+    "public_compatibility",
+    "concurrency",
+    "critical_risk",
+    "disjoint_ownership",
+)
+"""The only conditions that may force `planned`.
+
+Delivery flow must be decided by properties of the change. Reasoning from the
+permissions of the current phase — "authoring forbids editing product files",
+"the runtime guard blocks implementation" — holds for every run, so it cannot
+distinguish one change from another; accepting it routes every run to `planned`
+and silently defeats the lightest-safe-flow rule.
+"""
+
+_NON_DRIVER_RATIONALE_MARKERS: tuple[str, ...] = (
+    "during authoring",
+    "in this phase",
+    "lifecycle",
+    "runtime guard",
+    "runtime blocks",
+    "blocks implementation",
+    "not permitted in this phase",
+    "not yet allowed",
+    "phase permission",
+    "tool restriction",
+)
+
+
 class TraceDeliveryFlow(BaseModel):
     """User-reviewable execution path recommended during specification."""
 
@@ -144,6 +179,97 @@ class TraceDeliveryFlow(BaseModel):
     @classmethod
     def _clean_required_by(cls, value: list[str]) -> list[str]:
         return list(dict.fromkeys(item.strip() for item in value if item.strip()))
+
+
+def normalize_flow_trigger(value: str) -> str | None:
+    """Map one free-text `required_by` entry onto a known planned-flow trigger.
+
+    Returns None when the entry names no recognized condition. Kept tolerant on
+    wording so an agent may write "cross-layer change" or "Cross layer" and
+    still match, while "EASD lifecycle" or "repo runtime guard" does not.
+    """
+
+    key = re.sub(r"[^a-z0-9]+", "_", value.strip().casefold()).strip("_")
+    if not key:
+        return None
+    aliases = {
+        "multi_repo": "multi_repository",
+        "multiple_repositories": "multi_repository",
+        "cross_repository": "multi_repository",
+        "crosslayer": "cross_layer",
+        "multi_layer": "cross_layer",
+        "auth": "security",
+        "authentication": "security",
+        "authorization": "security",
+        "schema_migration": "migration",
+        "database_migration": "migration",
+        "data_migration": "migration",
+        "public_api": "public_compatibility",
+        "public_contract": "public_compatibility",
+        "backward_compatibility": "public_compatibility",
+        "ordering": "concurrency",
+        "critical": "critical_risk",
+        "shared_paths": "disjoint_ownership",
+        "path_ownership": "disjoint_ownership",
+        "breadth": "disjoint_ownership",
+    }
+    if key in PLANNED_FLOW_TRIGGERS:
+        return key
+    if key in aliases:
+        return aliases[key]
+    for trigger in PLANNED_FLOW_TRIGGERS:
+        if trigger in key:
+            return trigger
+    for alias, trigger in aliases.items():
+        if alias in key:
+            return trigger
+    return None
+
+
+def validate_delivery_flow_reasoning(flow: TraceDeliveryFlow) -> list[str]:
+    """Return blocking reasons why this flow recommendation is not admissible.
+
+    Enforced at the specification-submission boundary rather than on the model,
+    so already-persisted contracts keep loading and the provisional default
+    stays constructible. An empty list means the recommendation is admissible.
+    """
+
+    problems: list[str] = []
+    lowered = flow.rationale.casefold()
+    marker = next((m for m in _NON_DRIVER_RATIONALE_MARKERS if m in lowered), None)
+    if marker is not None:
+        problems.append(
+            "delivery_flow.rationale must describe this change, not the "
+            f"permissions of the current phase (found {marker!r}). Phase "
+            "restrictions hold for every run and cannot select a flow."
+        )
+    matched = [
+        item for item in flow.required_by if normalize_flow_trigger(item) is not None
+    ]
+    unmatched = [
+        item for item in flow.required_by if normalize_flow_trigger(item) is None
+    ]
+    if unmatched:
+        problems.append(
+            "delivery_flow.required_by entries name no recognized planned-flow "
+            "condition: "
+            + ", ".join(repr(item) for item in unmatched)
+            + ". Recognized conditions: "
+            + ", ".join(PLANNED_FLOW_TRIGGERS)
+            + "."
+        )
+    if flow.mode == "planned" and not matched:
+        problems.append(
+            "a planned delivery_flow must name at least one matched condition in "
+            "required_by (" + ", ".join(PLANNED_FLOW_TRIGGERS) + "). If none "
+            "applies, recommend direct."
+        )
+    if flow.mode == "direct" and matched:
+        problems.append(
+            "a direct delivery_flow must leave required_by empty; matched "
+            "conditions (" + ", ".join(matched) + ") force planned."
+        )
+    return problems
 
 
 class TraceEvidencePolicy(BaseModel):
@@ -233,6 +359,106 @@ class TraceConstraint(BaseModel):
                 raise ValueError("constraint source_refs must be repository-relative")
             cleaned.append(str(path))
         return list(dict.fromkeys(cleaned))
+
+
+class TraceVerificationProbe(BaseModel):
+    """One executed verification command and the exit code it produced.
+
+    A verification command is frozen into an immutable accepted Spec, so a
+    command that cannot run makes every machine-required acceptance criterion
+    unsatisfiable and costs a whole new revision to repair. Probes make the
+    author state, with provenance, that each command was actually executed
+    before it was persisted — turning an invisible assumption into an auditable
+    claim a reviewer can re-run.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    command: str = Field(min_length=1, max_length=2_000)
+    exit_code: int = Field(ge=-256, le=256)
+    detail: str = Field(default="", max_length=4_000)
+
+    @field_validator("command")
+    @classmethod
+    def _strip_command(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("probe command must not be blank")
+        return stripped
+
+    #: Exit codes that mean the command never ran: the program is missing, the
+    #: command is not on the approved allowlist, or it hung.
+    UNRUNNABLE_EXIT_CODES: ClassVar[frozenset[int]] = frozenset({124, 126, 127})
+
+    @property
+    def passed(self) -> bool:
+        return self.exit_code == 0
+
+    @property
+    def runnable(self) -> bool:
+        """Whether the repository can execute this command at all.
+
+        Authoring runs before implementation, so a test command is *expected*
+        to fail at that point — that is what specification-first means.
+        Requiring exit 0 pushes an author toward a command that passes today
+        rather than one that proves the accepted behavior tomorrow, so
+        admissibility checks runnability instead of success.
+        """
+
+        return self.exit_code not in self.UNRUNNABLE_EXIT_CODES
+
+
+def validate_verification_probes(
+    specification: "TraceSpecification",
+    probes: list[TraceVerificationProbe],
+) -> list[str]:
+    """Return blocking reasons why this specification's commands are unproven."""
+
+    problems: list[str] = []
+    by_command = {probe.command: probe for probe in probes}
+    machine_required = sorted(
+        criterion.id
+        for criterion in specification.criteria
+        if criterion.required and criterion.evidence_policy.machine_required
+    )
+    for command in specification.verification_commands:
+        probe = by_command.get(command)
+        if probe is None:
+            problems.append(
+                f"verification command {command!r} was never executed, so nothing "
+                "shows this repository can run it."
+            )
+            continue
+        if not probe.runnable and machine_required:
+            problems.append(
+                f"verification command {command!r} could not be executed "
+                f"(exit {probe.exit_code}: {probe.detail.strip()[:200] or 'no output'}), "
+                "but "
+                + ", ".join(machine_required)
+                + " require machine evidence. Resolve the entry point this "
+                "repository actually provides — a project virtualenv "
+                "interpreter, a lockfile-managed runner, or the configured "
+                "toolchain — and submit again. A command that runs and reports "
+                "failing tests is fine at this stage: the implementation does "
+                "not exist yet."
+            )
+    if machine_required and not specification.verification_commands:
+        problems.append(
+            ", ".join(machine_required)
+            + " require machine evidence, so the specification must persist at "
+            "least one executable verification command."
+        )
+    unknown = [
+        probe.command
+        for probe in probes
+        if probe.command not in set(specification.verification_commands)
+    ]
+    if unknown:
+        problems.append(
+            "probes report commands that the specification does not persist: "
+            + ", ".join(repr(item) for item in unknown)
+        )
+    return problems
 
 
 class TraceSpecification(BaseModel):
