@@ -131,6 +131,29 @@ import { ProjectSetupModal } from "@/components/ProjectSetupModal";
 import { cn } from "@/lib/utils";
 import { resolveCodingSidebarSelection } from "@/utils/coding-sidebar-selection";
 
+/**
+ * Remember which coding project was open, the way the last workspace already
+ * is. Storage throws in restricted webviews and in private windows, so both
+ * helpers must tolerate failure and simply forget.
+ */
+function readLastCodingProject(): string | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.coding.lastProject);
+    return stored && stored.trim() ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLastCodingProject(projectId: string | null): void {
+  try {
+    if (projectId) localStorage.setItem(STORAGE_KEYS.coding.lastProject, projectId);
+    else localStorage.removeItem(STORAGE_KEYS.coding.lastProject);
+  } catch {
+    // Remembering the last project is a convenience, never a requirement.
+  }
+}
+
 function worktreeNameSlug(value: string): string {
   return (
     value
@@ -358,7 +381,11 @@ export function CodingSidebar({
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     () => new Set(),
   );
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  // Seed from the last project this browser had open. Without it a reload
+  // resolves to options[0], silently dropping the user onto another project.
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    () => readLastCodingProject(),
+  );
   const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | null>(null);
   const [projectsSectionCollapsed, setProjectsSectionCollapsed] = useState(false);
   const [workspacesSectionCollapsed, setWorkspacesSectionCollapsed] = useState(false);
@@ -940,9 +967,14 @@ export function CodingSidebar({
   useEffect(() => {
     const options = projectIdsKey ? projectIdsKey.split("\0") : [];
     setSelectedProjectId((selected) =>
-      resolveCodingSidebarSelection(options, currentProjectId, selected),
+      resolveCodingSidebarSelection(
+        options,
+        currentProjectId,
+        selected ?? readLastCodingProject(),
+      ),
     );
   }, [currentProjectId, projectIdsKey]);
+
 
   useEffect(() => {
     const options = standaloneWorkspacesKey
@@ -1242,7 +1274,12 @@ export function CodingSidebar({
                       }))}
                       value={project.id}
                       onValueChange={(value) => {
-                        if (value) setSelectedProjectId(value);
+                        if (!value) return;
+                        setSelectedProjectId(value);
+                        // Only an explicit pick is remembered. Persisting every
+                        // resolved value also persisted the first-project
+                        // fallback, which then overwrote the real choice.
+                        writeLastCodingProject(value);
                       }}
                       ariaLabel="Select project"
                       searchPlaceholder="Search projects or repositories…"
@@ -1680,6 +1717,12 @@ export function CodingSidebar({
       <ProjectSetupModal
         open={showProjectModal}
         onOpenChange={setShowProjectModal}
+        // Select what was just created. Without this the sidebar stayed on the
+        // previous project and the new one looked like it had not been made.
+        onCreated={(projectId) => {
+          setSelectedProjectId(projectId);
+          writeLastCodingProject(projectId);
+        }}
       />
 
       {workspacePickerPortal && createPortal(<AnimatePresence>
