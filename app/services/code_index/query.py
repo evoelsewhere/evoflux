@@ -6,6 +6,7 @@ import asyncio
 import concurrent.futures
 import fnmatch
 import hashlib
+import heapq
 import posixpath
 import re
 import sqlite3
@@ -151,6 +152,92 @@ def _path_matches(file_path: str, patterns: list[str] | None) -> bool:
     )
 
 
+# One chunk as the scan reads it, before its content: rowid, file_path,
+# language, line_start, line_end, symbol_name, embedding.
+_ScannedChunk = tuple[int, str, str, int, int, str | None, bytes]
+
+
+def _shortlist_chunks(
+    rows: list[_ScannedChunk],
+    *,
+    query_embedding: bytes,
+    query_folded: str,
+    tokens: tuple[str, ...],
+    paths: list[str] | None,
+    keep: int,
+) -> list[tuple[float, _ScannedChunk]]:
+    """Rank scanned chunks on everything except their content.
+
+    What the full ranking takes from content is bounded: token coverage adds
+    at most 40 points and a whole-query substring 20, against a vector score
+    scaled to 100 and an exact-symbol match worth 80. A chunk can therefore
+    only be shortlisted wrongly if its content would have lifted it more
+    than 60 points past the cut, and `keep` is the same candidate pool the
+    lexical branch settles for.
+    """
+    scored: list[tuple[float, float, _ScannedChunk]] = []
+    for row in rows:
+        _rowid, file_path, _language, _start, _end, symbol_name, embedding = row
+        if not _path_matches(str(file_path), paths):
+            continue
+        symbol = str(symbol_name) if symbol_name is not None else None
+        haystack = f"{file_path} {symbol or ''}".casefold()
+        coverage = sum(token in haystack for token in tokens) / max(1, len(tokens))
+        vector_score = similarity(query_embedding, bytes(embedding))
+        rank = max(0.0, vector_score) * 100.0 + coverage * 40.0
+        if symbol and (
+            symbol.casefold() == query_folded
+            or symbol.casefold().endswith(f".{query_folded}")
+        ):
+            rank += 80.0
+        scored.append((rank, vector_score, row))
+    return [
+        (vector_score, row)
+        for _rank, vector_score, row in heapq.nlargest(
+            keep, scored, key=lambda entry: entry[0]
+        )
+    ]
+
+
+def _rows_with_content(
+    conn: sqlite3.Connection, shortlist: list[tuple[float, _ScannedChunk]]
+) -> list[tuple[object, ...]]:
+    """Read content for the shortlist alone, in the ranking loop's row shape."""
+    if not shortlist:
+        return []
+    placeholders = ", ".join("?" for _ in shortlist)
+    contents = dict(
+        conn.execute(
+            f"SELECT rowid, content FROM source_chunks WHERE rowid IN ({placeholders})",
+            tuple(row[0] for _score, row in shortlist),
+        ).fetchall()
+    )
+    return [
+        (
+            file_path,
+            language,
+            start,
+            end,
+            contents[rowid],
+            symbol_name,
+            embedding,
+            vector_score,
+        )
+        # A writer that dropped the chunk between the two reads leaves no
+        # content to show, and an empty snippet is worse than one fewer hit.
+        for vector_score, (
+            rowid,
+            file_path,
+            language,
+            start,
+            end,
+            symbol_name,
+            embedding,
+        ) in shortlist
+        if rowid in contents
+    ]
+
+
 async def search_index(
     indexes: list[tuple[str, RepositoryIndex]],
     *,
@@ -171,6 +258,10 @@ async def search_index(
             80, ((max(1, limit) + max(1, len(indexes)) - 1) // max(1, len(indexes))) * 8
         ),
     )
+    # Per query, not per repository: the shortlist needs both inside the
+    # connection block, and neither varies by index.
+    query_folded = query.casefold()
+    tokens = tuple(token.casefold() for token in _QUERY_TOKEN.findall(query))
 
     def search_one(
         label: str, index: RepositoryIndex
@@ -209,16 +300,49 @@ async def search_index(
                     and _path_matches(str(row[0]), paths)
                 ]
                 if eligible_lexical_rows:
-                    semantic_rows = [row[:7] for row in eligible_lexical_rows]
+                    semantic_rows = [(*row[:7], None) for row in eligible_lexical_rows]
                 else:
+                    # No lexical candidate does not mean no answer: the
+                    # words a reader uses ("authentication") need not appear
+                    # in the code that implements it, and the trigram
+                    # features tolerate a misspelled identifier. So the scan
+                    # stays, in two phases, because content is what makes it
+                    # hurt. Measured over a 20k-chunk, 246 MB stand-in for
+                    # the largest index here (73k chunks, 698 MB), one full
+                    # scan costs 848 ms: 82 ms to walk the rows, 126 ms more
+                    # to read the embeddings, 344 ms to score them, and
+                    # 296 ms to read and casefold content that all but a few
+                    # hundred rows are never ranked on. So phase one reads
+                    # every column but content and keeps the best
+                    # candidates; phase two reads content for those alone.
+                    # The language filter belongs in SQL for the same
+                    # reason: filtering in Python still paid to read the
+                    # rows it excluded.
+                    conditions: list[str] = []
+                    parameters: list[object] = []
+                    if wanted_languages:
+                        placeholders = ", ".join("?" for _ in wanted_languages)
+                        conditions.append(f"lower(language) IN ({placeholders})")
+                        parameters.extend(sorted(wanted_languages))
+                    where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
                     try:
-                        semantic_rows = conn.execute(
-                            """
-                            SELECT file_path, language, line_start, line_end,
-                                   content, symbol_name, embedding
-                            FROM source_chunks
-                            """
+                        scanned = conn.execute(
+                            "SELECT rowid, file_path, language, line_start, "
+                            "line_end, symbol_name, embedding FROM source_chunks"
+                            + where,
+                            tuple(parameters),
                         ).fetchall()
+                        semantic_rows = _rows_with_content(
+                            conn,
+                            _shortlist_chunks(
+                                scanned,
+                                query_embedding=query_embedding,
+                                query_folded=query_folded,
+                                tokens=tokens,
+                                paths=paths,
+                                keep=per_repository_candidates,
+                            ),
+                        )
                     except Exception as exc:
                         return [], [f"{label}: source index unavailable ({exc})"]
         except Exception as exc:
@@ -227,8 +351,6 @@ async def search_index(
             (str(path), int(start), int(end)): float(rank or 0.0)
             for path, _language, start, end, _content, _symbol, _embedding, rank in lexical_rows
         }
-        query_folded = query.casefold()
-        tokens = tuple(token.casefold() for token in _QUERY_TOKEN.findall(query))
         output: list[SearchHit] = []
         stale_lexical_target = False
         for (
@@ -239,6 +361,7 @@ async def search_index(
             content,
             symbol_name,
             embedding,
+            vector_score,
         ) in semantic_rows:
             if wanted_languages and str(language).casefold() not in wanted_languages:
                 continue
@@ -248,6 +371,9 @@ async def search_index(
             symbol = str(symbol_name) if symbol_name is not None else None
             haystack = f"{file_path} {symbol or ''} {text}".casefold()
             coverage = sum(token in haystack for token in tokens) / max(1, len(tokens))
+            # Shortlisted rows only, in the scan branch. A chunk that holds
+            # the query's own identifier scores high on the vector too, so a
+            # lexical index that has gone blind still surfaces here.
             if lexical_available and not lexical_rows and tokens:
                 indexed_tokens = {
                     token.casefold() for token in _QUERY_TOKEN.findall(haystack)
@@ -255,7 +381,8 @@ async def search_index(
                 stale_lexical_target = stale_lexical_target or any(
                     token in indexed_tokens for token in tokens
                 )
-            vector_score = similarity(query_embedding, bytes(embedding))
+            if vector_score is None:
+                vector_score = similarity(query_embedding, bytes(embedding))
             rank = lexical_ranks.get((str(file_path), int(start), int(end)))
             score = max(0.0, vector_score) * 100.0 + coverage * 40.0
             if rank is not None:
