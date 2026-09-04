@@ -187,7 +187,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
   // Touch: full opacity. Desktop: reveal on group hover / focus-within.
   return (
     <div
-      className={compact ? 'group mb-2 flex justify-end' : 'group mb-4 flex justify-end'}
+      className={compact ? 'group flex justify-end' : 'group flex justify-end'}
     >
       <div className={`flex max-w-full flex-col items-end gap-2 ${compact ? 'md:max-w-[90%]' : 'md:max-w-[78%]'}`}>
          {/* Attachments */}
