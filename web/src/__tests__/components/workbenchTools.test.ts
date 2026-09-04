@@ -36,8 +36,10 @@ describe('process manager workbench tool', () => {
 })
 
 describe('Evo Agent Specs workbench tool', () => {
-  it('uses the full methodology name in the UI', () => {
-    expect(WORKBENCH_TOOLS.easd.label).toBe('Agent Specification-Driven Development')
+  it('is labelled with the product name, not the methodology', () => {
+    // The rail is narrow and the tab sits next to Files and Terminal, so it
+    // carries the product name. The methodology is spelled out in the panel.
+    expect(WORKBENCH_TOOLS.easd.label).toBe('Evo Agent Specs')
   })
 
   it('is available only in a Coding workspace', () => {
