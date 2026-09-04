@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   buildThinkingOptions,
+  fastModePriceHint,
+  formatModelPrice,
+  formatTokenCount,
   reconcileThinkingLevel,
+  supportsFastMode,
 } from '@/lib/model-settings'
 import { thinkingLevelSchema } from '@/components/settings/schema'
 
@@ -33,5 +37,47 @@ describe('shared model settings', () => {
     for (const level of ['minimal', 'xhigh', 'max', 'ultra', 'provider-future']) {
       expect(thinkingLevelSchema.safeParse(level).success).toBe(true)
     }
+  })
+})
+
+describe('catalogue facts in the pickers', () => {
+  it('reads fast-mode availability from the model, not its provider prefix', () => {
+    // This used to test for a `codex:` prefix, which meant a fast-capable
+    // model from any other provider silently had no toggle.
+    expect(supportsFastMode({ modes: ['fast'] })).toBe(true)
+    expect(supportsFastMode({ modes: [] })).toBe(false)
+    expect(supportsFastMode({})).toBe(false)
+    expect(supportsFastMode(undefined)).toBe(false)
+  })
+
+  it('states what the fast lane costs, because it is not the same price', () => {
+    expect(fastModePriceHint({ mode_cost_multiplier: { fast: 2.5 } })).toBe('2.5×')
+    expect(fastModePriceHint({ mode_cost_multiplier: { fast: 2 } })).toBe('2×')
+  })
+
+  it('says nothing rather than implying parity when no rate is published', () => {
+    // "Unknown" and "same price" are different answers, and a Fast toggle is
+    // the wrong control to get that wrong on.
+    expect(fastModePriceHint({ mode_cost_multiplier: {} })).toBe('')
+    expect(fastModePriceHint({ mode_cost_multiplier: { fast: 1 } })).toBe('')
+    expect(fastModePriceHint(undefined)).toBe('')
+  })
+
+  it('formats a context window at a glance rather than exactly', () => {
+    expect(formatTokenCount(1_048_576)).toBe('1M')
+    expect(formatTokenCount(272_000)).toBe('272K')
+    expect(formatTokenCount(0)).toBe('')
+    expect(formatTokenCount(null)).toBe('')
+  })
+
+  it('prices a model per million tokens, and says free when it is', () => {
+    expect(formatModelPrice({ input: 3, output: 15 })).toBe('$3/$15')
+    expect(formatModelPrice({ input: 0, output: 0 })).toBe('free')
+  })
+
+  it('omits a price the catalogue does not quote', () => {
+    // A local or newly listed model has no rate; `$0/$0` would assert one.
+    expect(formatModelPrice({})).toBe('')
+    expect(formatModelPrice(undefined)).toBe('')
   })
 })
