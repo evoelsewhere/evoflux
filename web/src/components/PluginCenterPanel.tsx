@@ -743,7 +743,7 @@ export function PluginCenterPanel() {
             </DropdownMenu>
           </div>
         </div>
-        <p className="mt-1.5 text-sm text-(--color-text-muted)">
+        <p className="mt-1.5 max-w-2xl text-sm text-(--color-text-muted)">
           Create, import, and use portable plugins with Agent Skills and MCP server configurations.
         </p>
         <div className="hidden">
