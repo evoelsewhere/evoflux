@@ -30,9 +30,11 @@ shell into ``index.html`` (``window.__OAD_TOKEN__``) — see
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import os
+from urllib.parse import urlsplit
 
-from fastapi import Request
+from fastapi import Request, WebSocket
 from app.core.runtime_settings import load_runtime_settings
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -213,3 +215,55 @@ class DesktopTokenMiddleware(BaseHTTPMiddleware):
         # metrics, or downstream handlers (which can log full URLs).
         _strip_token_from_scope(request)
         return await call_next(request)
+
+
+def trusted_local_origin(value: str | None) -> bool:
+    """Whether an ``Origin`` header belongs to a caller we trust locally.
+
+    A missing ``Origin`` means a non-browser client — a CLI, a test, the
+    Tauri shell — which cannot be a drive-by. Browsers always send one on a
+    WebSocket handshake, and a page served from anywhere but loopback has no
+    business opening a socket into the desktop app.
+    """
+    if not value:
+        return True
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    try:
+        return ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        return parsed.hostname.casefold() == "localhost"
+
+
+async def websocket_authorized(ws: WebSocket) -> bool:
+    """Authenticate a WebSocket the way the middleware authenticates HTTP.
+
+    :class:`DesktopTokenMiddleware` derives from ``BaseHTTPMiddleware``,
+    which Starlette runs for ``http`` scopes only — every WebSocket route
+    passes it untouched. So each socket has to ask for itself, before
+    ``accept()``, and close with 4401 rather than running handler logic on
+    an unauthenticated connection.
+
+    With a token configured (the packaged desktop shell sets one per
+    launch) the ``?_token=`` query param must match. Without one — the
+    open-loopback CLI tier — the origin check is what stops any page the
+    user happens to be visiting from reaching 127.0.0.1: WebSocket
+    handshakes are not subject to CORS, so the browser will make the
+    connection and hand the page a live socket unless we refuse it here.
+    """
+    expected = expected_desktop_token()
+    if not expected:
+        if trusted_local_origin(ws.headers.get("origin")):
+            return True
+        logger.warning("ws_origin_rejected path={}", ws.url.path)
+        await ws.close(code=4401)
+        return False
+    if desktop_token_matches(ws.query_params.get(_QS_TOKEN_PARAM), expected):
+        return True
+    logger.warning("ws_token_rejected path={}", ws.url.path)
+    await ws.close(code=4401)
+    return False

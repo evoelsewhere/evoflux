@@ -67,9 +67,10 @@ from app.webbridge_tags import (
     WEBBRIDGE_SESSION_TAG,
 )
 from app.core.desktop_auth import (
-    _QS_TOKEN_PARAM,
     desktop_token_matches,
     expected_desktop_token,
+    trusted_local_origin as _trusted_local_origin,
+    websocket_authorized,
 )
 from app.core.paths import session_workspace_dir
 from app.models.chat import ChatSession, SessionMessage
@@ -153,22 +154,6 @@ def _pairing_revocation_event(pairing_id: str) -> asyncio.Event:
     return _pairing_revocation_events.setdefault(pairing_id, asyncio.Event())
 
 
-def _trusted_local_origin(value: str | None) -> bool:
-    """Accept non-browser local clients and explicit local web Origins."""
-    if not value:
-        return True
-    try:
-        parsed = urlsplit(value)
-    except ValueError:
-        return False
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return False
-    try:
-        return ipaddress.ip_address(parsed.hostname).is_loopback
-    except ValueError:
-        return parsed.hostname.casefold() == "localhost"
-
-
 def _webbridge_extension_origin(value: str | None) -> bool:
     """Accept only the stable ID baked into the bundled WebBridge extension."""
     if not value:
@@ -190,23 +175,12 @@ def _webbridge_extension_origin(value: str | None) -> bool:
 async def _agent_ws_authorized(ws: WebSocket) -> bool:
     """Enforce desktop/access-key auth on the external agent WebSocket.
 
-    Mirrors :class:`app.core.desktop_auth.DesktopTokenMiddleware` for WS
-    endpoints: open when no token is configured; otherwise the ``?_token=``
-    query param must match. On failure the socket is closed with code 4401
-    *before* accept so no handler logic runs.
+    This route was the only WebSocket in the app that authenticated. The
+    check now lives in :mod:`app.core.desktop_auth` beside the HTTP
+    middleware it mirrors, so the browser bridge and the terminal use the
+    same one rather than each route deciding for itself.
     """
-    expected = expected_desktop_token()
-    if not expected:
-        if _trusted_local_origin(ws.headers.get("origin")):
-            return True
-        logger.warning("webbridge_ws_origin_rejected path={}", ws.url.path)
-        await ws.close(code=4401)
-        return False
-    if desktop_token_matches(ws.query_params.get(_QS_TOKEN_PARAM), expected):
-        return True
-    logger.warning("webbridge_ws_rejected path={}", ws.url.path)
-    await ws.close(code=4401)
-    return False
+    return await websocket_authorized(ws)
 
 
 async def _consume_extension_ticket(ws: WebSocket) -> str | None:
