@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { listTeamSessions, deleteTeamSession, duplicateTeamSession, updateTeamSessionTitle } from '@/api/client'
 import type { SessionPageResponse, SessionResponse } from '@/api/types'
 import { queryKeys } from './keys'
+import { forgetSessionSnapshot } from '@/stores/useTeamStore'
 import { patchSessionInPageData } from './session-cache'
 
 const WORK_PAGE_SIZE = 40
@@ -66,7 +67,11 @@ export function useDeleteTeamSessionMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: deleteTeamSession,
-    onSuccess: () => {
+    onSuccess: (_data, sessionId) => {
+      // The store keeps recently visited sessions in memory so returning
+      // to one paints instantly. A deleted session must not be one of
+      // them, or reopening its id would show a transcript that is gone.
+      forgetSessionSnapshot(sessionId)
       queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
       // A deleted session may have been filed in a sidebar folder, whose
       // sessions live in their own cache entry.

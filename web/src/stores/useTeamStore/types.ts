@@ -122,6 +122,12 @@ export interface TeamStoreState {
   _leadRevertTime: number | null
   _workspace: string | null
   _loadingOlder: boolean
+  /**
+   * True when this session's view was painted from a snapshot rather than
+   * loaded. Consumers use it to know the transcript on screen is a cached
+   * one being reconciled, not a fresh load.
+   */
+  _restoredFromCache: boolean
   _resolvedSessionReadyId: string | null
   _unloading: boolean
   cacheInvalidations: CacheInvalidation[]
