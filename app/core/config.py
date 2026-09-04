@@ -191,6 +191,11 @@ class Settings(BaseSettings):
     # or hermetic deployments; bundled model_registry.json remains the fallback.
     EVOFLUX_MODEL_REGISTRY_REFRESH: bool = True
 
+    # How often the background task re-fetches models.dev. The merged registry
+    # is memoized per process, so without this a long-running server never sees
+    # a model released after its own boot. Clamped to at least one hour.
+    EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS: int = 24
+
     # Repository index rebuilds are CPU/GIL heavy. Production isolates them
     # in one worker process so API, SSE, and aiosqlite threads remain
     # responsive. ``thread`` is retained for deterministic fault-injection

@@ -1,0 +1,65 @@
+name: Bundled model registry
+
+# The runtime refreshes model metadata from models.dev on its own (see
+# app/agent/providers/registry_refresh.py). The bundled snapshot is what a
+# cold, offline install resolves models with before that first fetch, and
+# nothing regenerates it — so this job watches for it going stale.
+
+on:
+  schedule:
+    # Mondays, 06:17 UTC. Off the hour so this does not join the stampede of
+    # jobs every scheduler fires at :00.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-registry
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check snapshot against models.dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Compare bundled snapshot with models.dev
+        shell: bash
+        run: |
+          set +e
+          output="$(uv run python scripts/update_model_registry.py --check 2>&1)"
+          status=$?
+          set -e
+          echo "$output"
+          {
+            echo "### Bundled model registry"
+            echo
+            echo '```'
+            echo "$output"
+            echo '```'
+            if [ "$status" -ne 0 ]; then
+              echo
+              echo "Regenerate with:"
+              echo
+              echo '```bash'
+              echo "uv run python scripts/update_model_registry.py"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"

@@ -10,6 +10,10 @@ Provider-discovered runtime metadata is applied by ``model_metadata.py`` after
 these static sources. Public resolver APIs stay in ``capabilities.py`` and
 ``model_metadata.py``; this module owns static source loading, normalization,
 aliases, and merge order.
+
+The ``models.dev`` fetch above is lazy and memoized, so a long-running process
+only ever sees the catalog it read first. ``registry_refresh.py`` drives
+``refresh_models_dev_cache`` on an interval to keep it current.
 """
 
 from __future__ import annotations
@@ -263,6 +267,30 @@ def _read_json_file(path: Path) -> Any | None:
         return None
 
 
+def _read_text_file(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        logger.warning("failed to read model registry cache {} ({})", path, exc)
+        return None
+
+
+def _render_models_dev(data: Any) -> str:
+    return json.dumps(data, separators=(",", ":"))
+
+
+def _write_models_dev_cache(cache_path: Path, payload: str) -> None:
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(payload, encoding="utf-8")
+    except OSError as exc:
+        logger.warning(
+            "failed to write models.dev registry cache {} ({})", cache_path, exc
+        )
+
+
 def _fetch_models_dev() -> Any | None:
     try:
         response = httpx.get(MODELS_DEV_URL, timeout=5.0)
@@ -290,16 +318,47 @@ def _load_models_dev_data() -> Any | None:
     if fetched is None:
         return cached
 
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(
-            json.dumps(fetched, separators=(",", ":")), encoding="utf-8"
-        )
-    except OSError as exc:
-        logger.warning(
-            "failed to write models.dev registry cache {} ({})", cache_path, exc
-        )
+    _write_models_dev_cache(cache_path, _render_models_dev(fetched))
     return fetched
+
+
+def refresh_models_dev_cache() -> bool:
+    """Re-fetch models.dev past the TTL and report whether the catalog moved.
+
+    ``load_model_registry`` memoizes its merge for the life of the process, so
+    the TTL on the disk cache only ever expires between boots: a server left
+    running for a month keeps whatever metadata its first registry read saw.
+    This is the path that lets it notice a new model without a restart.
+
+    Derived caches are dropped only when the fetched payload differs from the
+    cached one — a no-op refresh must not make every reader rebuild the merged
+    registry. The cache file is rewritten either way, because its ``mtime`` is
+    the TTL clock and leaving it stale makes the next cold start fetch again
+    for nothing.
+
+    Blocking: runs one synchronous HTTP request. Call it from a worker thread.
+    """
+    if not settings.EVOFLUX_MODEL_REGISTRY_REFRESH:
+        return False
+
+    fetched = _fetch_models_dev()
+    if fetched is None:
+        return False
+
+    cache_path = _models_dev_cache_path()
+    payload = _render_models_dev(fetched)
+    changed = _read_text_file(cache_path) != payload
+    _write_models_dev_cache(cache_path, payload)
+    if not changed:
+        logger.debug("models_dev_cache_current path={}", cache_path)
+        return False
+
+    reset_catalog_caches()
+    logger.info(
+        "models_dev_cache_refreshed providers={}",
+        len(fetched) if isinstance(fetched, dict) else 0,
+    )
+    return True
 
 
 def _modalities_to_capabilities(model: dict[str, Any]) -> dict[str, Any]:
