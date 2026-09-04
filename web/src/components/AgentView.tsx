@@ -32,12 +32,11 @@ import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
 import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
-import { activityLabelForPhase } from '@/lib/activity-phase'
-import { ActivityStatus } from './motion/ActivityStatus'
 import { TextSelectionAction } from './TextSelectionAction'
 import { TurnChangesCard } from './TurnChangesCard'
 import { UserMessageNavigationRail } from './UserMessageNavigationRail'
-import { StreamingTurnHeader } from './StreamingTurnHeader'
+import { AnimatePresence } from 'framer-motion'
+import { TurnStatusLine } from './TurnStatusLine'
 import { TranscriptHistoryControl } from './TranscriptHistoryControl'
 import { shouldShowPendingActivity } from '@/utils/transcript-layout'
 import {
@@ -48,6 +47,9 @@ import {
   shouldPrimeOlderHistory,
 } from '@/utils/transcript-history'
 import type { ContentBlock, TurnChangesPending } from '@/api/types'
+
+/** Stable empty tail for the runway shown before the first block arrives. */
+const EMPTY_BLOCKS: ContentBlock[] = []
 
 function findUserMessageNavigationAnchor(
   container: HTMLDivElement,
@@ -144,14 +146,11 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
   turnChanges,
   turnIsStreaming,
 }: AssistantTranscriptTurnProps) {
-  const turnStartedAt = useMemo(
-    () => blocks.find((block) => block.startedAt)?.startedAt,
-    [blocks],
-  )
-
   return (
     <div className={hasRunway ? 'oa-latest-turn-runway' : 'oa-transcript-turn'}>
-      {turnIsStreaming && <StreamingTurnHeader startedAt={turnStartedAt} />}
+      <AnimatePresence initial={false}>
+        {turnIsStreaming && <TurnStatusLine blocks={blocks} />}
+      </AnimatePresence>
       <div className="space-y-2">
         <AssistantTurnContent
           blocks={blocks}
@@ -265,15 +264,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     () => new Set(latestMCPAppBlockIdsKey ? latestMCPAppBlockIdsKey.split('\0') : []),
     [latestMCPAppBlockIdsKey],
   )
-  // Which phase the working agent is in, so the runway can say whether
-  // EvoFlux is still assembling the turn or the provider already has it.
-  const activityPhase = useTeamStore((state) => {
-    const streams = state.agentStreams ?? {}
-    for (const stream of Object.values(streams)) {
-      if (stream.status === 'working' && stream.phase) return stream.phase
-    }
-    return null
-  })
   const showPendingActivity = shouldShowPendingActivity({
     currentBlocks,
     isContinuing,
@@ -479,10 +469,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
              */}
             {showPendingActivity && (
               <div className="oa-active-turn-runway">
-                <ActivityStatus
-                  label={activityLabelForPhase(activityPhase)}
-                  className="py-1 pl-0.5 text-xs"
-                />
+                <TurnStatusLine blocks={EMPTY_BLOCKS} className="mb-0 py-1 pl-0.5" />
               </div>
             )}
 

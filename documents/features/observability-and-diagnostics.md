@@ -12,6 +12,27 @@ permission requests, questions, goals, workflows, queues, compaction and final
 completion/error. The React team store projects these into transcript blocks,
 Activity/Monitor views and progress controls.
 
+### Live turn status
+
+A streaming turn carries one status line above it, and a finished turn carries
+one meta run in its footer. Both print the same three facts — elapsed time,
+turn tokens, estimated USD — through shared formatters, so the numbers do not
+reformat themselves when the turn ends.
+
+The status line also names what the agent is doing, derived from the turn's
+own blocks rather than from a phase flag: an open tool call names the tool and
+its target ("Editing main.rs"), a growing thinking or text block reads as
+reasoning or answering, and a finished tool with nothing streamed after it
+means the provider has the turn again ("Waiting for <model>"). The
+`agent_status` phase (`ingress` vs `model_calling`) is the fallback used only
+before the first block arrives, because it is emitted once per turn and cannot
+distinguish the model calls inside a tool loop.
+
+Turn tokens are authoritative only per completed model call, which the usage
+event publishes. Between those events the line extends the last measured total
+with a character-length estimate so the counter keeps moving through a long
+call; the next usage event assigns over the estimate.
+
 Session-specific JSONL logs provide a local evidence trail per agent. Sensitive
 values are sanitized before tool/provider errors are logged or streamed.
 

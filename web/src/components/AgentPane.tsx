@@ -27,8 +27,8 @@ import {
   usePinnedTranscript,
 } from '@/hooks/usePinnedTranscript'
 import type { AgentStream } from '@/stores/useTeamStore'
-import { activityLabelForPhase } from '@/lib/activity-phase'
-import { ActivityStatus } from './motion/ActivityStatus'
+import { AnimatePresence } from 'framer-motion'
+import { TurnStatusLine } from './TurnStatusLine'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { TurnChangesCard } from './TurnChangesCard'
 import { TranscriptHistoryControl } from './TranscriptHistoryControl'
@@ -103,10 +103,13 @@ interface CompactAssistantTranscriptTurnProps {
   sessionId?: string
   startIndex: number
   totalBlocks: number
+  /** Whose stream the live status line reports on. */
+  agentName: string
 }
 
 /** Historical assistant turns do not rerender when the window grows upward. */
 const CompactAssistantTranscriptTurn = memo(function CompactAssistantTranscriptTurn({
+  agentName,
   blocks,
   isTrailingTurn,
   isWorking,
@@ -117,6 +120,12 @@ const CompactAssistantTranscriptTurn = memo(function CompactAssistantTranscriptT
   totalBlocks,
 }: CompactAssistantTranscriptTurnProps) {
   return (
+    <>
+    <AnimatePresence initial={false}>
+      {isWorking && isTrailingTurn && (
+        <TurnStatusLine agentName={agentName} blocks={blocks} size="compact" />
+      )}
+    </AnimatePresence>
     <AssistantTurn
       blocks={blocks}
       startIndex={startIndex}
@@ -137,6 +146,7 @@ const CompactAssistantTranscriptTurn = memo(function CompactAssistantTranscriptT
         />
       )}
     />
+    </>
   )
 })
 
@@ -408,6 +418,7 @@ export function AgentPane({
                        className={isTrailingTurn ? 'oa-latest-turn-runway' : 'oa-transcript-turn'}
                      >
                        <CompactAssistantTranscriptTurn
+                         agentName={name}
                          blocks={item.blocks}
                          startIndex={item.startIndex}
                          isWorking={isWorking}
@@ -441,10 +452,12 @@ export function AgentPane({
               (isContinuing && stream.currentBlocks.length === 0) ||
               (stream.currentBlocks.length > 0 && stream.currentBlocks.every((b) => b.type === 'user'))
             ))) && (
-            <div className="flex items-center gap-2 px-3 pt-3" role="status" aria-label={`${name} is preparing a response`}>
-              <ActivityStatus
-                className="text-xs"
-                label={activityLabelForPhase(stream.phase)}
+            <div className="px-3 pt-3">
+              <TurnStatusLine
+                agentName={name}
+                blocks={stream.currentBlocks}
+                size="compact"
+                className="mb-0"
               />
             </div>
           )}
