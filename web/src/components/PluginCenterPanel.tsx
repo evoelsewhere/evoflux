@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { type ReactNode, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -57,6 +57,8 @@ import { cn } from '@/lib/utils'
 import { PluginWorkspaceEditor } from '@/components/PluginWorkspaceEditor'
 import { PluginCredentialsPanel } from '@/components/PluginCredentialsPanel'
 import { PluginTrustReviewDialog } from '@/components/PluginTrustReviewDialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useConfirm } from '@/hooks/use-confirm'
 import { ManagedResourceProviderBadge } from '@/components/settings/ManagedResourceProviderBadge'
 import { ManagedResourceUpdateBanner } from '@/components/settings/ManagedResourceUpdateBanner'
 import { CONDUCTOR_RESOURCE_STATE } from '@/lib/conductor-constants'
@@ -82,6 +84,43 @@ function errorDiagnostics(inspection: PluginInspection) {
     ...inspection.skills.flatMap((skill) => skill.diagnostics),
     ...inspection.mcp_servers.flatMap((server) => server.diagnostics),
   ].filter((item) => item.severity === 'error')
+}
+
+/**
+ * A labelled field in the create form.
+ *
+ * The form used to be seven bare inputs whose only label was a placeholder,
+ * which is the one piece of text that disappears the moment you type into
+ * it — so the moment a field had a value, nothing said what it was.
+ */
+function CreateField({
+  id,
+  label,
+  optional,
+  className,
+  children,
+}: {
+  id: string
+  label: string
+  optional?: boolean
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div className={cn('min-w-0', className)}>
+      <label
+        htmlFor={id}
+        className="mb-1 block text-xs font-medium text-(--color-text-2)"
+      >
+        {label}
+        {optional && ' '}
+        {optional && (
+          <span className="font-normal text-(--color-text-subtle)">optional</span>
+        )}
+      </label>
+      {children}
+    </div>
+  )
 }
 
 function conciseToolNames(server: PluginMcpRuntimeStatus): string {
@@ -445,6 +484,11 @@ export function PluginCenterPanel() {
   // now asked for by the action that needs it, at the moment it needs it.
   const [pathPrompt, setPathPrompt] = useState<'link' | 'validate' | null>(null)
   const [filter, setFilter] = useState('')
+  const {
+    request: confirmRequest,
+    confirm: confirmAction,
+    close: closeConfirm,
+  } = useConfirm()
   const [updateTarget, setUpdateTarget] = useState<PluginListItem | null>(null)
   const [trustReview, setTrustReview] = useState<
     (PluginOperationResponse & { managedResourceId?: string }) | null
@@ -837,29 +881,43 @@ export function PluginCenterPanel() {
               <h3 className="text-sm font-medium text-(--color-text)">Create development plugin</h3>
               <p className="text-xs text-(--color-text-subtle)">Scaffold the package, then continue in the built-in code editor.</p>
             </div>
-            <div className="grid gap-2 @lg/plugin-center:grid-cols-2">
-              <div className="flex min-w-0 gap-2">
-                <Input value={createParent} onChange={(event) => setCreateParent(event.target.value)} placeholder="Parent folder" aria-label="Plugin parent folder" />
-                {desktop && (
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => void choosePath({ directory: true }).then((path) => path && setCreateParent(path))}
-                    aria-label="Choose parent folder"
-                  >
-                    <FolderPlus />
-                  </Button>
-                )}
-              </div>
-              <Input value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="plugin-name" aria-label="Plugin name" />
-              <Input className="@lg/plugin-center:col-span-2" value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="Description" aria-label="Plugin description" />
-              <Input value={createVersion} onChange={(event) => setCreateVersion(event.target.value)} placeholder="Version (optional)" aria-label="Plugin version" />
-              <Input value={createAuthor} onChange={(event) => setCreateAuthor(event.target.value)} placeholder="Author (optional)" aria-label="Plugin author" />
-              <Input value={createLicense} onChange={(event) => setCreateLicense(event.target.value)} placeholder="License (optional)" aria-label="Plugin license" />
-              <Input value={createSkill} onChange={(event) => setCreateSkill(event.target.value)} placeholder="Starter Skill (defaults to plugin name)" aria-label="Starter Skill name" />
+            <div className="grid gap-3 @lg/plugin-center:grid-cols-2">
+              <CreateField id="plugin-create-parent" label="Parent folder">
+                <div className="flex min-w-0 gap-2">
+                  <Input id="plugin-create-parent" value={createParent} onChange={(event) => setCreateParent(event.target.value)} placeholder="/srv/evoflux/plugins" />
+                  {desktop && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => void choosePath({ directory: true }).then((path) => path && setCreateParent(path))}
+                      aria-label="Choose parent folder"
+                    >
+                      <FolderPlus />
+                    </Button>
+                  )}
+                </div>
+              </CreateField>
+              <CreateField id="plugin-create-name" label="Plugin name">
+                <Input id="plugin-create-name" value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="my-plugin" />
+              </CreateField>
+              <CreateField id="plugin-create-description" label="Description" className="@lg/plugin-center:col-span-2">
+                <Input id="plugin-create-description" value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="What the plugin does" />
+              </CreateField>
+              <CreateField id="plugin-create-version" label="Version" optional>
+                <Input id="plugin-create-version" value={createVersion} onChange={(event) => setCreateVersion(event.target.value)} placeholder="0.1.0" />
+              </CreateField>
+              <CreateField id="plugin-create-author" label="Author" optional>
+                <Input id="plugin-create-author" value={createAuthor} onChange={(event) => setCreateAuthor(event.target.value)} placeholder="Your name or team" />
+              </CreateField>
+              <CreateField id="plugin-create-license" label="License" optional>
+                <Input id="plugin-create-license" value={createLicense} onChange={(event) => setCreateLicense(event.target.value)} placeholder="MIT" />
+              </CreateField>
+              <CreateField id="plugin-create-skill" label="Starter Skill" optional>
+                <Input id="plugin-create-skill" value={createSkill} onChange={(event) => setCreateSkill(event.target.value)} placeholder="Defaults to the plugin name" />
+              </CreateField>
             </div>
             <p className="text-xs text-(--color-text-subtle)">
-              A blank Skill name uses the plugin name. Add MCP only when the package includes a verified portable runtime.
+              Add MCP only when the package includes a verified portable runtime.
             </p>
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
@@ -961,10 +1019,18 @@ export function PluginCenterPanel() {
                   const result = await packPlugin(item.installation.root)
                   pushToast({ tone: 'success', title: 'Plugin archive created', description: result.path })
                 })}
-                onDelete={() => {
-                  if (!window.confirm(`Uninstall ${item.installation.name}? Plugin data will be preserved.`)) return
-                  void run(`delete:${item.installation.id}`, () => uninstallPlugin(item.installation.id))
-                }}
+                onDelete={() => confirmAction({
+                  title: `Uninstall ${item.installation.name}?`,
+                  description: item.installation.source_type === 'linked'
+                    ? 'The development folder stays on disk; only the link and its runtime state are removed. Plugin data is preserved.'
+                    : 'The installed package is removed and its MCP servers stop. Plugin data is preserved, so reinstalling restores it.',
+                  confirmLabel: 'Uninstall',
+                  destructive: true,
+                  onConfirm: () => void run(
+                    `delete:${item.installation.id}`,
+                    () => uninstallPlugin(item.installation.id),
+                  ),
+                })}
                 onOpen={() => setActiveView({ kind: 'editor', root: item.installation.root, name: item.installation.name })}
                 onCredentials={() => setActiveView({ kind: 'credentials', plugin: item })}
                 onUpdate={() => item.provider ? refresh() : chooseUpdate(item)}
@@ -994,6 +1060,7 @@ export function PluginCenterPanel() {
         onCancel={() => setTrustReview(null)}
         onConfirm={() => void confirmTrust()}
       />
+      <ConfirmDialog request={confirmRequest} onClose={closeConfirm} />
     </section>
   )
 }
