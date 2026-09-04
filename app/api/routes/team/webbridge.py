@@ -55,6 +55,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 from sse_starlette.sse import EventSourceResponse
 
+from app.agent.providers.thinking import accepts_thinking_level
+from app.api.routes.team._helpers import _fast_tier
 from app.api.deps import DbSession, WriteDbSession
 from app.api.schemas.commands import CommandRenderRequest, CommandRenderResponse
 from app.api.schemas.snippets import SnippetRenderResponse
@@ -928,9 +930,12 @@ async def update_browser_session_model(
             raise HTTPException(
                 status_code=422, detail="Choose a model from the registry."
             )
-        if (
-            body.thinking_level is not None
-            and body.thinking_level not in selected.thinking_levels
+        # The registry row carries the *offered* levels, which is narrower
+        # than what the wire honours; validate against the wider set so a
+        # frontmatter or API client asking for a level the picker hides is
+        # not refused a request the provider would serve.
+        if body.thinking_level is not None and not accepts_thinking_level(
+            body.model, body.thinking_level
         ):
             raise HTTPException(
                 status_code=422,
@@ -2692,11 +2697,7 @@ async def _dispatch_browser_panel_shell(
             model_provided=session.model is not None,
             thinking_level=session.thinking_level,
             thinking_level_provided=session.thinking_level is not None,
-            service_tier=(
-                "fast"
-                if body.fast_mode and (session.model or "").startswith("codex:")
-                else None
-            ),
+            service_tier=_fast_tier(session.model, body.fast_mode),
         )
     except (NoTeamConfigured, ValueError) as exc:
         interaction.status = "rejected"
@@ -3046,11 +3047,7 @@ async def _dispatch_browser_panel_message(
             attachments=attachments,
             source_key=source_key,
             source_request_hash=request_hash,
-            service_tier=(
-                "fast"
-                if body.fast_mode and (session.model or "").startswith("codex:")
-                else None
-            ),
+            service_tier=_fast_tier(session.model, body.fast_mode),
         )
     except InteractiveMessageConflict as exc:
         raise HTTPException(
