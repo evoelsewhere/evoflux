@@ -66,8 +66,87 @@ describe('AssistantTurnFooter spend', () => {
       />,
     )
 
-    expect(screen.getByText('13.6k tokens')).toBeVisible()
+    // 9,000 of the 12,400 input tokens were cache reads, so the volume and
+    // the price only agree once the share is stated.
+    expect(screen.getByText('13.6k tokens · 73% cached')).toBeVisible()
     expect(screen.getByText('$0.031')).toBeVisible()
+  })
+
+  // The headline used to read as spend. `input` is summed over every model
+  // call in a turn, so a cached prompt is counted once per call: a measured
+  // three-call turn showed 58,798 input tokens of which 38,592 were cache
+  // reads, next to a cost of $0.003. Multiplying the two gave three times
+  // the truth.
+  it('says how much of the volume was cached', () => {
+    render(
+      <AssistantTurnFooter
+        turnBlocks={[textBlock({
+          input: 58_798,
+          output: 393,
+          cache: 38_592,
+          calls: 3,
+          cost: { estimated_usd: 0.00305 },
+        })]}
+      />,
+    )
+
+    expect(screen.getByText('59.2k tokens · 66% cached')).toBeVisible()
+  })
+
+  // Cache writes are part of `input` too, and they bill above the input
+  // rate rather than below it, so a write-heavy turn is the same trap
+  // pointing the other way: the price is higher than the volume implies.
+  it('names a write-heavy prompt as written, not cached', () => {
+    render(
+      <AssistantTurnFooter
+        turnBlocks={[textBlock({
+          input: 19_119,
+          output: 84,
+          cache: 0,
+          cache_write: 18_004,
+          calls: 1,
+          cost: { estimated_usd: 0.0271 },
+        })]}
+      />,
+    )
+
+    expect(screen.getByText('19.2k tokens · 94% written')).toBeVisible()
+  })
+
+  // The ordinary shape of a multi-call turn: the first call writes the
+  // prompt into the cache and the rest read it back.
+  it('states both shares when a turn wrote and then reused a prompt', () => {
+    render(
+      <AssistantTurnFooter
+        turnBlocks={[textBlock({
+          input: 58_798,
+          output: 393,
+          cache: 38_592,
+          cache_write: 13_100,
+          calls: 3,
+          cost: { estimated_usd: 0.0181 },
+        })]}
+      />,
+    )
+
+    expect(screen.getByText('59.2k tokens · 66% cached, 22% written')).toBeVisible()
+  })
+
+  it('stays quiet about cache when barely any was reused', () => {
+    render(
+      <AssistantTurnFooter
+        turnBlocks={[textBlock({
+          input: 19_119,
+          output: 84,
+          cache: 0,
+          calls: 1,
+          cost: { estimated_usd: 0.0027 },
+        })]}
+      />,
+    )
+
+    // A first, uncached call has nothing to explain away.
+    expect(screen.getByText('19.2k tokens')).toBeVisible()
   })
 
   // A turn that spends a twentieth of a cent is the common case. Two
@@ -115,9 +194,9 @@ describe('AssistantTurnFooter spend', () => {
       />,
     )
 
-    expect(screen.getByText('13.6k tokens').getAttribute('title')).toContain(
-      'of which cached 9,000',
-    )
+    expect(
+      screen.getByText('13.6k tokens · 73% cached').getAttribute('title'),
+    ).toContain('of which cached 9,000')
     expect(screen.getByText('$0.031').getAttribute('title')).toContain('Cache read')
     expect(screen.getByText('$0.031').getAttribute('title')).toContain('models.dev')
   })
