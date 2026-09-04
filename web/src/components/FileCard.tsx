@@ -1,5 +1,7 @@
 import { Download, FileText, FileType, File as FileIcon, X } from 'lucide-react'
+import { getPlatform } from '@/hooks/use-platform'
 import { openExternalUrl } from '@/lib/open-external'
+import { saveCopyLabel } from '@/lib/workspace-openers'
 
 interface FileCardProps {
   name?: string
@@ -10,10 +12,12 @@ interface FileCardProps {
   removable?: boolean
   /** If true, clicking opens the file in a new tab (for persisted files) */
   clickable?: boolean
-  /** Show a dedicated download action for generated workspace files. */
+  /**
+   * Save action for generated workspace files. Takes a handler rather than a
+   * URL: handing a workspace URL to the system browser would leak the desktop
+   * token to another process, so the caller saves through the host instead.
+   */
   onDownload?: () => void
-  /** Optional direct download URL for generated workspace artifacts. */
-  downloadUrl?: string
   /** Host-owned preview action; preferred over opening a raw URL externally. */
   onOpen?: () => void
 }
@@ -42,11 +46,11 @@ export function FileCard({
   removable,
   clickable,
   onDownload,
-  downloadUrl,
   onOpen,
 }: FileCardProps) {
   // Truncate long filenames to ~20 chars
   const displayName = name.length > 20 ? `${name.substring(0, 17)}…` : name
+  const saveActionLabel = saveCopyLabel(getPlatform().isTauri)
 
   const handleClick = () => {
     if (clickable && onOpen) {
@@ -64,7 +68,7 @@ export function FileCard({
         type="button"
         onClick={handleClick}
         disabled={!clickable}
-        className={`surface-raised flex items-center gap-2 border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text) transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast) ${onDownload || downloadUrl ? 'rounded-l-lg' : 'rounded-lg'} ${
+        className={`surface-raised flex items-center gap-2 border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs text-(--color-text) transition-[background-color,border-color,box-shadow,opacity] duration-(--motion-fast) ${onDownload ? 'rounded-l-lg' : 'rounded-lg'} ${
           clickable ? 'cursor-pointer hover:border-(--color-accent) hover:bg-(--bg-key)' : ''
         }`}
         title={name}
@@ -75,16 +79,13 @@ export function FileCard({
         <span className="flex-shrink-0 font-medium">{displayName}</span>
       </button>
 
-      {(onDownload || downloadUrl) && (
+      {onDownload && (
         <button
           type="button"
-          onClick={() => {
-            if (onDownload) onDownload()
-            else if (downloadUrl) void openExternalUrl(downloadUrl)
-          }}
+          onClick={onDownload}
           className="surface-raised flex items-center justify-center rounded-r-lg border border-l-0 border-(--color-border) bg-(--bg-card) px-2 text-(--color-text-muted) transition-colors duration-(--motion-fast) hover:border-(--color-accent) hover:bg-(--bg-key) hover:text-(--color-text)"
-          aria-label={`Download ${name}`}
-          title="Download"
+          aria-label={`${saveActionLabel} ${name}`}
+          title={saveActionLabel}
         >
           <Download size={14} />
         </button>

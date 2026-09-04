@@ -48,6 +48,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { resolveApiUrl } from '@/api/client'
+import { saveWorkspaceFileFromUrl } from '@/lib/workspace-file-save'
+import { useToastStore } from '@/stores/useToastStore'
+import { errorMessage } from '@/utils/errors'
 import type { MessageAttachment, WorkspaceFileInfo } from '@/api/types'
 import {
   isWorkspaceDocumentKind,
@@ -172,6 +175,20 @@ export function ToolAttachments({
 }) {
   const [documentPreview, setDocumentPreview] =
     useState<AttachmentDocumentPreview | null>(null)
+  const pushToast = useToastStore((state) => state.push)
+
+  const saveAttachment = async (url: string, filename: string) => {
+    try {
+      await saveWorkspaceFileFromUrl(url, filename)
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: `Could not save ${filename}`,
+        description: errorMessage(error),
+      })
+    }
+  }
+
   if (!attachments || attachments.length === 0) return null
   const visible = limit ? attachments.slice(0, limit) : attachments
   const remaining = attachments.length - visible.length
@@ -205,6 +222,10 @@ export function ToolAttachments({
             )
           }
           const inAppPreview = attachmentDocumentPreview(attachment)
+          const saveName = attachment.original_name || attachment.filename || 'file'
+          // ``download_url`` is an optional server hint; the plain media URL
+          // is what every workspace attachment actually carries.
+          const saveUrl = resolveApiUrl(attachment.download_url || attachment.url)
           return (
             <FileCard
               key={`${attachment.url ?? attachment.filename ?? index}`}
@@ -213,7 +234,7 @@ export function ToolAttachments({
               url={resolveApiUrl(attachment.preview_url || attachment.url)}
               clickable={Boolean(attachment.preview_url || attachment.url)}
               onOpen={inAppPreview ? () => setDocumentPreview(inAppPreview) : undefined}
-              downloadUrl={resolveApiUrl(attachment.download_url)}
+              onDownload={saveUrl ? () => void saveAttachment(saveUrl, saveName) : undefined}
             />
           )
         })}

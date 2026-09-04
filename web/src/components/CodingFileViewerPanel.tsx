@@ -800,8 +800,28 @@ function DrawioPreview({ workspace, file }: { workspace: string; file: Workspace
 }
 
 function BinaryPreview({ workspace, file }: { workspace: string; file: WorkspaceFileInfo }) {
-  const url = codingWorkspaceFileUrl(workspace, file.path)
   const pushToast = useToastStore((state) => state.push)
+  const isDesktop = isTauriAvailable()
+
+  // Goes through the same host handoff as the header's Open action. A plain
+  // `<a target="_blank">` to the file URL would hand a token-bearing
+  // workspace URL to whatever the WebView does with new tabs.
+  const openExternally = async () => {
+    try {
+      if (isDesktop) {
+        await tauriOpenWorkspaceFile(workspace, file.path)
+        return
+      }
+      await openExternalUrl(codingWorkspaceFileUrl(workspace, file.path))
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: `Could not open ${file.name}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   const saveCopy = async () => {
     try {
       await downloadCodingWorkspaceFile(workspace, file)
@@ -821,11 +841,11 @@ function BinaryPreview({ workspace, file }: { workspace: string; file: Workspace
         <p className="mt-0.5 text-xs text-(--color-text-subtle)">{file.mime} · {formatBytes(file.size)}</p>
       </div>
       <div className="flex items-center gap-2">
-        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-3 py-1.5 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key)">
-          <ExternalLink size={12} /> Open in new tab
-        </a>
+        <button type="button" onClick={() => void openExternally()} className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-3 py-1.5 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key)">
+          <ExternalLink size={12} /> {isDesktop ? 'Open in default app' : 'Open in new tab'}
+        </button>
         <button type="button" onClick={() => void saveCopy()} className="flex items-center gap-1.5 rounded-md border border-(--color-border) px-3 py-1.5 text-xs text-(--color-text-2) transition-colors hover:border-(--color-border-strong)">
-          <Download size={12} /> {saveCopyLabel(isTauriAvailable())}
+          <Download size={12} /> {saveCopyLabel(isDesktop)}
         </button>
       </div>
     </div>
