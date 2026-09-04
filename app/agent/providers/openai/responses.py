@@ -40,13 +40,22 @@ from app.agent.schemas.chat import (
     Usage,
 )
 from .sanitization import sanitize_openai_tool_pairs
+from app.agent.providers.registry import Transport
 
 if TYPE_CHECKING:
     pass
 
 
+#: Tier values that mean "serve this the normal way".
+_NO_SERVICE_TIER = frozenset({"", "auto", "default", "none", "off", "standard"})
+
+
 class ResponsesHandler:
     """Handles all interaction with /v1/responses."""
+
+    #: Registry ID this handler subclass serves; see the same attribute on
+    #: :class:`~app.agent.providers.openai.completions.CompletionsHandler`.
+    default_provider_id: str | None = None
 
     def __init__(
         self,
@@ -60,6 +69,16 @@ class ResponsesHandler:
         self.base_url = base_url
         self.headers = headers
         self.request_timeout = request_timeout
+        # Bound by ``LLMProviderBase.bind_provider_name``; see the same
+        # attribute on ``CompletionsHandler``.
+        self.provider_id: str | None = type(self).default_provider_id
+
+    @property
+    def qualified_model(self) -> str:
+        """``"provider:model"`` when the provider is known, else the model."""
+        if self.provider_id and ":" not in self.model:
+            return f"{self.provider_id}:{self.model}"
+        return self.model
 
     # ------------------------------------------------------------------
     # Message / tool conversion
@@ -177,19 +196,38 @@ class ResponsesHandler:
             body["max_output_tokens"] = merged["max_tokens"]
 
         self.customize_thinking(merged, body)
+        body.update(self._service_tier_body(merged))
         return body
 
     def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
         """Apply provider-specific reasoning translation for the Responses API.
 
-        Default behaviour: map ``thinking_level`` to ``reasoning: {effort, summary}``.
-        Subclasses override to gate by model or use a different shape.
+        Delegates to
+        :func:`app.agent.providers.thinking.thinking_request_fields`, which
+        clamps the requested effort to what the catalog says this model
+        accepts before emitting ``reasoning: {effort, summary}``. Sending an
+        effort the model does not advertise (``xhigh`` to a model that tops
+        out at ``high``) is a 400, so clamping is what makes the shared
+        vocabulary safe across model generations.
 
         Mutates ``body`` in place.
         """
-        thinking_level = merged.get("thinking_level")
-        if thinking_level and thinking_level not in ("none", "off"):
-            body["reasoning"] = {"effort": thinking_level, "summary": "auto"}
+        from app.agent.providers.thinking import thinking_request_fields
+
+        if not self.provider_id:
+            thinking_level = merged.get("thinking_level")
+            if thinking_level and thinking_level not in ("none", "off"):
+                body["reasoning"] = {"effort": thinking_level, "summary": "auto"}
+            return
+
+        body.update(
+            thinking_request_fields(
+                self.provider_id,
+                self.model,
+                merged.get("thinking_level"),
+                transport=Transport.OPENAI_RESPONSES,
+            )
+        )
 
     def _extract_call_id_and_name(self, event: dict[str, Any]) -> tuple[str, str]:
         """Pull the tool-call ID and (optional) function name from a streaming event.
@@ -278,6 +316,50 @@ class ResponsesHandler:
     # Public API
     # ------------------------------------------------------------------
 
+    def _service_tier_body(self, merged: dict[str, Any]) -> dict[str, Any]:
+        """Body fields selecting an alternate service tier.
+
+        A tier the catalog (or the provider table) describes is applied from
+        its own patch. Anything else the caller names is forwarded verbatim
+        as ``service_tier``, because that is a real field on this endpoint —
+        OpenAI documents ``flex`` and ``priority`` alongside the tiers a
+        model advertises, and dropping an explicit one would silently ignore
+        the caller.
+        """
+        tier = merged.get("service_tier")
+        if not isinstance(tier, str) or not tier.strip():
+            return {}
+        if self.provider_id:
+            from app.agent.providers.options import service_tier_fields
+
+            body, _headers = service_tier_fields(self.provider_id, self.model, tier)
+            if body:
+                return body
+        normalized = tier.strip().lower()
+        if normalized in _NO_SERVICE_TIER:
+            return {}
+        return {"service_tier": normalized}
+
+    def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
+        """Per-request wire headers. Subclasses override to add their own.
+
+        Mirrors ``CompletionsHandler._request_headers`` so a provider only has
+        to implement the hook once and get it honoured on both endpoints.
+        """
+        headers = dict(self.headers)
+        if self.provider_id:
+            from app.agent.providers.options import (
+                provider_request_headers,
+                service_tier_fields,
+            )
+
+            headers.update(provider_request_headers(self.provider_id))
+            _body, tier = service_tier_fields(
+                self.provider_id, self.model, merged.get("service_tier")
+            )
+            headers.update(tier)
+        return headers
+
     async def chat(
         self,
         messages: list[ChatMessage],
@@ -289,7 +371,10 @@ class ResponsesHandler:
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                url, headers=self.headers, json=body, timeout=self.request_timeout
+                url,
+                headers=self._request_headers(merged),
+                json=body,
+                timeout=self.request_timeout,
             )
             if response.status_code >= 400:
                 logger.error(
@@ -313,7 +398,7 @@ class ResponsesHandler:
             async with client.stream(
                 "POST",
                 url,
-                headers=self.headers,
+                headers=self._request_headers(merged),
                 json=body,
                 timeout=self.request_timeout,
             ) as response:
@@ -462,11 +547,15 @@ class ResponsesHandler:
                     tool_names[call_id] = inline_name
 
                 idx = tool_call_map[call_id]
-                # Always inject id/name so parallel tool streams are
-                # disambiguated — only the first delta needs the prefix,
-                # but the receiver must see the call_id on every chunk.
+                # `id` rides every chunk so parallel tool streams stay
+                # attributable. `name` rides only the opening chunk, per the
+                # OpenAI streaming convention: repeating it on later chunks
+                # feeds the accumulator's index-shift heuristics, which can
+                # then stamp this call's name onto the previous one.
                 emit_id = call_id or None
-                emit_name = inline_name or tool_names.get(call_id) if first_delta else tool_names.get(call_id)
+                emit_name = (
+                    (inline_name or tool_names.get(call_id)) if first_delta else None
+                )
 
                 yield ChatCompletionChunk(
                     id=response_id,

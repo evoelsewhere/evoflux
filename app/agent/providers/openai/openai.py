@@ -117,6 +117,13 @@ class OpenAIProvider(LLMProviderBase):
             model, self.base_url, headers
         )
         self._responses = self._make_responses_handler(model, self.base_url, headers)
+        # Seed the handlers' registry identity from the class default so a
+        # directly-constructed provider translates reasoning correctly. The
+        # factory overwrites it in ``bind_provider_name`` with the ID the
+        # user actually chose.
+        if self.provider_name:
+            self._completions.provider_id = self.provider_name
+            self._responses.provider_id = self.provider_name
 
         logger.debug(
             "openai_provider model={} endpoint={}",
@@ -179,6 +186,11 @@ class OpenAIProvider(LLMProviderBase):
         qualified = self.qualified_model_id()
         self._completions.usage_model_id = qualified
         self._responses.usage_model_id = qualified
+        # Handlers need the registry identity, not just a usage label: the
+        # reasoning dialect and the model's advertised effort levels are
+        # both looked up by ``provider:model``.
+        self._completions.provider_id = provider_name
+        self._responses.provider_id = provider_name
 
     # ------------------------------------------------------------------
     # Public interface

@@ -1,8 +1,27 @@
 """Provider factory — resolves a ``"provider:model"`` string to an
 :class:`LLMProviderBase` instance.
 
-One ``match`` over the prefix before ``:``. Adding a provider means one
-new ``case`` and one entry to :data:`SUPPORTED_PROVIDERS`.
+Resolution order
+----------------
+1. **Dedicated handler.** The ``match`` in :func:`build_provider` keeps a
+   branch only for providers whose auth or wire format needs code, not
+   data: Anthropic, Gemini, Vertex, Bedrock, Azure/Foundry, and the two
+   OAuth providers.
+2. **Registry-driven OpenAI-compatible transport.** Everything else that
+   :func:`app.agent.providers.registry.resolve_provider` knows about is a
+   base URL plus a bearer token. A dedicated subclass is used when one
+   exists (it carries a real wire quirk — DeepSeek's thinking toggle,
+   OpenRouter's reasoning object, MiMo's ``reasoning_content`` echo);
+   otherwise the generic Chat Completions provider is enough.
+3. **models.dev catalog.** A provider ID EvoFlux has no curated entry for
+   still resolves if the catalog knows its endpoint and credential name.
+   This is what makes the long tail of ~200 catalog providers reachable
+   without a code change, the way MiMo-Code's catalog does.
+4. **Installed plugin providers.**
+
+Adding an OpenAI-compatible provider is therefore one entry in
+:data:`app.agent.providers.registry.PROVIDER_REGISTRY` plus one row in
+:mod:`app.agent.providers.catalog` for the settings UI — no branch here.
 
 Usage::
 
@@ -26,60 +45,87 @@ from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.bedrock import BedrockProvider
 from app.agent.providers.codex import CodexProvider
 from app.agent.providers.copilot import CopilotProvider
-from app.agent.providers.deepseek import DeepSeekProvider
-from app.agent.providers.fci import FCIProvider
+from app.agent.providers.deepseek import DeepSeekProvider  # noqa: F401
+from app.agent.providers.fci import FCIProvider  # noqa: F401
 from app.agent.providers.foundry import FoundryClaudeProvider, FoundryProvider
 from app.agent.providers.googlegenai import GoogleGenAIProvider
-from app.agent.providers.kimi import KimiCodeProvider
-from app.agent.providers.ollama import OllamaProvider
+from app.agent.providers.kimi import KimiCodeProvider  # noqa: F401
+from app.agent.providers.ollama import OllamaProvider  # noqa: F401
 from app.agent.providers.openai import ChatCompletionsOnlyProvider, OpenAIProvider
-from app.agent.providers.openai.compatible import OPENAI_COMPATIBLE_PROVIDER_SPECS
-from app.agent.providers.openrouter import OpenRouterProvider
-from app.agent.providers.qwencloud import QwenCloudProvider
-from app.agent.providers.router9 import Router9Provider
+from app.agent.providers.openai.compatible import (
+    OPENAI_COMPATIBLE_PROVIDER_SPECS,  # noqa: F401 — re-exported for callers
+    is_openai_compatible,
+)
+from app.agent.providers.openrouter import OpenRouterProvider  # noqa: F401
+from app.agent.providers.registry import (
+    MIMO_FREE_API_ALIASES,
+    MIMO_FREE_API_SUCCESSOR,
+    PROVIDER_REGISTRY,
+    ProviderConfig,
+    Transport,
+    mimo_free_api_sunset,
+    resolve_base_url,
+    resolve_provider,
+)
+from app.agent.providers.qwencloud import QwenCloudProvider  # noqa: F401
+from app.agent.providers.router9 import Router9Provider  # noqa: F401
 from app.agent.providers.unconfigured import UnconfiguredProviderError
 from app.agent.providers.vertexai import VertexAIProvider
-from app.agent.providers.xai import XAIProvider
-from app.agent.providers.xiaomi import XiaomiProvider
-from app.agent.providers.zai import ZAIProvider
+from app.agent.providers.xai import XAIProvider  # noqa: F401
+from app.agent.providers.xiaomi import XiaomiProvider  # noqa: F401
+from app.agent.providers.zai import ZAIProvider  # noqa: F401
 
-# Sorted for stable error output. Keep in sync with the ``match`` below.
-SUPPORTED_PROVIDERS: tuple[str, ...] = (
-    "anthropic",
-    "bedrock",
-    "cliproxy",
-    "codex",
-    "copilot",
-    "deepseek",
-    "fci",
-    "foundry",
-    "googlegenai",
-    "kimi",
-    "nvidia",
-    "ollama",
-    "openai",
-    "openrouter",
-    "qwencloud",
-    "router9",
-    "vertexai",
-    "xai",
-    "xiaomi",
-    "zai",
-)
+#: Providers reachable without a plugin, sorted for stable error output.
+#:
+#: Derived from the registry rather than restated, so a new registry entry
+#: cannot go missing from the "supported providers" message or from the
+#: validation in :mod:`app.api.routes.team.reviews`.
+SUPPORTED_PROVIDERS: tuple[str, ...] = tuple(sorted(PROVIDER_REGISTRY))
 
 
-class ProviderFactory(Protocol):
-    """Callable that builds a provider from a 'provider:model' string.
+# ---------------------------------------------------------------------------
+# OpenAI-compatible providers with a dedicated subclass
+# ---------------------------------------------------------------------------
+#
+# Each entry below exists because that endpoint diverges from plain Chat
+# Completions in a way the generic handler cannot express — a different
+# reasoning field, a required message echo, a rejected sampling parameter.
+# Everything absent from this table gets ``ChatCompletionsOnlyProvider``,
+# which is the whole point: a new OpenAI-compatible provider is data.
 
-    ``build_provider`` matches this shape; the protocol exists so callers
-    (the agent loader, tests) can swap it for a stub.
+_PROVIDER_CLASS_NAMES: dict[str, str] = {
+    "deepseek": "DeepSeekProvider",
+    "openrouter": "OpenRouterProvider",
+    "xai": "XAIProvider",
+    "ollama": "OllamaProvider",
+    "router9": "Router9Provider",
+    "xiaomi": "XiaomiProvider",
+    "fci": "FCIProvider",
+    "kimi": "KimiCodeProvider",
+    "qwencloud": "QwenCloudProvider",
+    "zai": "ZAIProvider",
+    "zhipuai": "ZAIProvider",
+}
+
+
+def _resolve_compatible_class(name: str) -> type:
+    """Resolve the provider class for an OpenAI-compatible provider.
+
+    Uses the dispatch table for providers with dedicated classes, falls
+    back to ``ChatCompletionsOnlyProvider`` for generic ones.
+
+    Resolved via module globals so that test-time mocks of the class
+    attribute (e.g. ``patch("app.agent.providers.factory.Router9Provider")``)
+    take effect at instantiation time.
     """
+    cls_name = _PROVIDER_CLASS_NAMES.get(name)
+    if cls_name is not None:
+        import app.agent.providers.factory as _mod
 
-    def __call__(
-        self,
-        model_str: str | None,
-        model_kwargs: dict[str, object] | None = None,
-    ) -> LLMProviderBase: ...
+        resolved = getattr(_mod, cls_name, None)
+        if resolved is not None:
+            return resolved
+    return ChatCompletionsOnlyProvider
 
 
 def require_api_key(secret: SecretStr | None, env_var: str, label: str) -> str:
@@ -107,6 +153,79 @@ def _with_provider_name(
 ) -> LLMProviderBase:
     provider.bind_provider_name(provider_name)
     return provider
+
+
+class ProviderFactory(Protocol):
+    """Callable that builds a provider from a 'provider:model' string."""
+
+    def __call__(
+        self,
+        model_str: str | None,
+        model_kwargs: dict[str, object] | None = None,
+    ) -> LLMProviderBase: ...
+
+
+def _resolve_config_key_and_url(
+    name: str,
+    s: object,
+    config: ProviderConfig | None = None,
+) -> tuple[str | SecretStr, str]:
+    """Resolve the API key and base URL for an OpenAI-compatible provider.
+
+    The credential comes from the typed settings field first (which pydantic
+    has already populated from ``.env``), then the process environment. The
+    base URL is the other way round — the environment wins — because an
+    operator pointing a whole process at a proxy sets ``*_BASE_URL`` in the
+    environment and expects that to override whatever is on disk.
+
+    Args:
+        name: Provider ID.
+        s: The settings object.
+        config: Pre-resolved provider config; looked up when omitted.
+
+    Raises:
+        ValueError: when the provider needs a credential and none is set.
+    """
+    resolved = config if config is not None else resolve_provider(name)
+    if resolved is None:
+        raise ValueError(f"Unknown OpenAI-compatible provider: {name}")
+
+    configured_key = getattr(s, resolved.env_var, None) if resolved.env_var else None
+    api_key: str | SecretStr | None
+    if resolved.default_api_key:
+        # Endpoints that require the header but ignore its value (Ollama).
+        if not configured_key or (
+            isinstance(configured_key, str) and not configured_key.strip()
+        ):
+            api_key = os.getenv(resolved.env_var) or resolved.default_api_key
+        else:
+            api_key = configured_key
+    else:
+        api_key = require_api_key(configured_key, resolved.env_var, resolved.label)
+
+    typed_api_key = cast(str | SecretStr | None, api_key)
+
+    # ``resolve_base_url`` falls back to the endpoint models.dev publishes,
+    # so providers whose URL is catalog data rather than a curated constant
+    # still resolve here.
+    base_url = resolve_base_url(resolved)
+    if resolved.base_url_env_var:
+        # ``getattr`` carries a falsy default so a MagicMock settings double
+        # in tests does not leak an auto-attribute in as a URL.
+        env_val = os.getenv(resolved.base_url_env_var)
+        if env_val and env_val.strip():
+            base_url = env_val.strip()
+        else:
+            attr_val = getattr(s, resolved.base_url_env_var, "")
+            if isinstance(attr_val, str) and attr_val.strip():
+                base_url = attr_val.strip()
+
+    return typed_api_key, base_url
+
+
+# ---------------------------------------------------------------------------
+# Main factory
+# ---------------------------------------------------------------------------
 
 
 def build_provider(
@@ -141,12 +260,32 @@ def build_provider(
         )
 
     name, model = model_str.split(":", 1)
+    name = name.strip().lower()
+
+    # MiMo's anonymous free channel. It answered ``mimo:auto`` without any
+    # credential until 2026-07-26, and MiMo-Code still resolves the alias so
+    # it can say what happened instead of "unknown provider". Past the sunset
+    # the alias is a configuration error with a fix, not a route.
+    if f"{name}:{model}".lower() in MIMO_FREE_API_ALIASES:
+        if mimo_free_api_sunset():
+            raise UnconfiguredProviderError(
+                message=(
+                    "MiMo's free API channel ('mimo:auto') shut down on "
+                    "2026-07-26. Add a Xiaomi MiMo API key in Settings > "
+                    "Providers and use a 'xiaomi:<model>' model instead, or "
+                    "pick another provider."
+                )
+            )
+        name = MIMO_FREE_API_SUCCESSOR
+        model = "mimo-v2-flash"
+
     kwargs = model_kwargs or {}
     # Local import so tests can ``patch("app.core.config.settings", ...)`` and
     # so importing this module stays cheap (no env-var validation at import).
     from app.core.config import settings as s
 
     match name:
+        # ── OpenAI (dedicated Responses API support) ────────────────────
         case "openai":
             return _with_provider_name(
                 OpenAIProvider(
@@ -161,117 +300,8 @@ def build_provider(
                 ),
                 name,
             )
-        case _ if name in OPENAI_COMPATIBLE_PROVIDER_SPECS:
-            spec = OPENAI_COMPATIBLE_PROVIDER_SPECS[name]
-            configured_key = getattr(s, spec.env_var, None)
-            api_key = configured_key
-            if not spec.default_api_key:
-                api_key = require_api_key(configured_key, spec.env_var, spec.label)
-            typed_api_key = cast(str | SecretStr | None, api_key)
-            base_url = spec.base_url
-            if spec.base_url_env_var:
-                base_url = (
-                    os.getenv(spec.base_url_env_var)
-                    or getattr(s, spec.base_url_env_var, "")
-                    or spec.base_url
-                )
-            if name == "deepseek":
-                return _with_provider_name(
-                    DeepSeekProvider(
-                        api_key=cast(str, typed_api_key),
-                        model=model,
-                        model_kwargs=kwargs,
-                    ),
-                    name,
-                )
-            if name == "openrouter":
-                return _with_provider_name(
-                    OpenRouterProvider(
-                        api_key=cast(str | SecretStr, typed_api_key),
-                        model=model,
-                        base_url=base_url,
-                        model_kwargs=kwargs,
-                    ),
-                    name,
-                )
-            if name == "xai":
-                return _with_provider_name(
-                    XAIProvider(
-                        api_key=cast(str, typed_api_key),
-                        model=model,
-                        model_kwargs=kwargs,
-                    ),
-                    name,
-                )
-            if name == "ollama":
-                return _with_provider_name(
-                    OllamaProvider(
-                        api_key=typed_api_key,
-                        model=model,
-                        base_url=base_url,
-                        model_kwargs=kwargs,
-                    ),
-                    name,
-                )
-            if name == "router9":
-                return _with_provider_name(
-                    Router9Provider(
-                        api_key=cast(str | SecretStr, typed_api_key),
-                        model=model,
-                        base_url=base_url,
-                        model_kwargs=kwargs,
-                    ),
-                    name,
-                )
-            if name == "xiaomi":
-                return _with_provider_name(
-                    XiaomiProvider(
-                        api_key=cast(str | SecretStr, typed_api_key),
-                        model=model,
-                        base_url=base_url,
-                        model_kwargs=kwargs,
-                    ),
-                    name,
-                )
-            if name == "fci":
-                return _with_provider_name(
-                    FCIProvider(
-                        api_key=cast(str | SecretStr, typed_api_key),
-                        model=model,
-                        base_url=base_url,
-                        model_kwargs=kwargs,
-                    ),
-                    name,
-                )
-            if name == "kimi":
-                return _with_provider_name(
-                    KimiCodeProvider(
-                        api_key=cast(str | SecretStr, typed_api_key),
-                        model=model,
-                        base_url=base_url,
-                        model_kwargs=kwargs,
-                    ),
-                    name,
-                )
-            if name == "qwencloud":
-                return _with_provider_name(
-                    QwenCloudProvider(
-                        api_key=cast(str | SecretStr, typed_api_key),
-                        model=model,
-                        base_url=base_url,
-                        model_kwargs=kwargs,
-                    ),
-                    name,
-                )
-            return _with_provider_name(
-                ChatCompletionsOnlyProvider(
-                    api_key=cast(str | SecretStr, typed_api_key),
-                    model=model,
-                    base_url=base_url,
-                    model_kwargs=kwargs,
-                ),
-                name,
-            )
+
+        # ── Anthropic (dedicated Messages API) ──────────────────────────
         case "anthropic":
             return _with_provider_name(
                 AnthropicProvider(
@@ -286,6 +316,8 @@ def build_provider(
                 ),
                 name,
             )
+
+        # ── Google GenAI (dedicated Gemini API) ─────────────────────────
         case "googlegenai":
             return _with_provider_name(
                 GoogleGenAIProvider(
@@ -297,6 +329,8 @@ def build_provider(
                 ),
                 name,
             )
+
+        # ── Vertex AI (dedicated Google Cloud auth) ─────────────────────
         case "vertexai":
             return _with_provider_name(
                 VertexAIProvider(
@@ -310,25 +344,18 @@ def build_provider(
                 ),
                 name,
             )
+
+        # ── OAuth-only providers ────────────────────────────────────────
         case "copilot":
-            # copilot uses OAuth tokens — no API key.
             return _with_provider_name(
                 CopilotProvider(model=model, model_kwargs=kwargs), name
             )
         case "codex":
-            # codex uses OAuth tokens — no API key.
             return _with_provider_name(
                 CodexProvider(model=model, model_kwargs=kwargs), name
             )
-        case "zai":
-            return _with_provider_name(
-                ZAIProvider(
-                    api_key=require_api_key(s.ZAI_API_KEY, "ZAI_API_KEY", "ZAI"),
-                    model=model,
-                    model_kwargs=kwargs,
-                ),
-                name,
-            )
+
+        # ── Microsoft Foundry (dedicated Azure Enterprise auth) ─────────
         case "foundry":
             foundry_key = require_api_key(
                 s.FOUNDRY_API_KEY, "FOUNDRY_API_KEY", "Microsoft Foundry"
@@ -341,10 +368,6 @@ def build_provider(
                     "Microsoft Foundry resource name is required. "
                     "Set FOUNDRY_RESOURCE_NAME in your .env file."
                 )
-            # Claude deployments only answer the Anthropic Messages surface;
-            # everything else goes through the OpenAI-compatible v1 surface.
-            # ``anthropic_api`` in model_kwargs overrides the name heuristic
-            # for Claude deployments not named after the model.
             use_anthropic = bool(kwargs.get("anthropic_api", "claude" in model.lower()))
             foundry_cls = FoundryClaudeProvider if use_anthropic else FoundryProvider
             return _with_provider_name(
@@ -356,25 +379,19 @@ def build_provider(
                 ),
                 name,
             )
-        case "bedrock":
-            # Auth: explicit API key pair → named profile → boto3 default chain.
-            # Region: AWS_BEDROCK_REGION setting → AWS_DEFAULT_REGION env → us-east-1.
-            import os as _os
 
+        # ── Amazon Bedrock (dedicated AWS SDK auth) ────────────────────
+        case "bedrock":
+            profile_name = s.AWS_BEDROCK_PROFILE or os.getenv("AWS_BEDROCK_PROFILE")
             access_key: str | None = None
             secret_key: str | None = None
-            profile_name = s.AWS_BEDROCK_PROFILE or _os.getenv("AWS_BEDROCK_PROFILE")
             if profile_name is None:
-                # Try to pull explicit keys from standard AWS env vars or settings.
-                # boto3 reads these env vars natively too, but we support them through
-                # settings as well (e.g. set in .env for dev).
-                access_key = _os.getenv("AWS_ACCESS_KEY_ID") or None
-                secret_key = _os.getenv("AWS_SECRET_ACCESS_KEY") or None
+                access_key = os.getenv("AWS_ACCESS_KEY_ID") or None
+                secret_key = os.getenv("AWS_SECRET_ACCESS_KEY") or None
             return _with_provider_name(
                 BedrockProvider(
                     model=model,
-                    region_name=s.AWS_BEDROCK_REGION
-                    or _os.getenv("AWS_BEDROCK_REGION"),
+                    region_name=s.AWS_BEDROCK_REGION or os.getenv("AWS_BEDROCK_REGION"),
                     profile_name=profile_name,
                     aws_access_key_id=access_key,
                     aws_secret_access_key=secret_key,
@@ -382,30 +399,78 @@ def build_provider(
                 ),
                 name,
             )
+
+        # ── Everything else: registry, then catalog, then plugins ───────
         case _:
-            from app.agent.providers.plugin_registry import (
-                ProviderCredentialStore,
-                find_provider_plugin,
-            )
+            return _build_from_registry(name, model, kwargs, s)
 
-            plugin = find_provider_plugin(name)
-            if plugin is not None:
-                from app.agent.providers.plugin_api import ProviderBuildContext
 
-                return _with_provider_name(
-                    plugin.factory(
-                        ProviderBuildContext(
-                            provider_id=name,
-                            model=model,
-                            model_kwargs=kwargs,
-                            credentials=ProviderCredentialStore(name),
-                        )
-                    ),
-                    name,
+def _build_from_registry(
+    name: str,
+    model: str,
+    kwargs: dict[str, object],
+    s: object,
+) -> LLMProviderBase:
+    """Build a provider that needs no dedicated ``case`` branch.
+
+    Resolves the provider through the curated registry and then the
+    models.dev catalog, which is what makes a provider EvoFlux has never
+    been taught about reachable from its catalog entry alone. Falls through
+    to installed plugins, then reports the ID as unsupported.
+    """
+    config = resolve_provider(name)
+    if config is not None and is_openai_compatible(config):
+        typed_api_key, base_url = _resolve_config_key_and_url(name, s, config)
+        provider_cls = _resolve_compatible_class(name)
+        return _with_provider_name(
+            provider_cls(
+                api_key=typed_api_key,
+                model=model,
+                base_url=base_url,
+                model_kwargs=kwargs,
+            ),
+            name,
+        )
+
+    if config is not None and config.transport is Transport.ANTHROPIC:
+        # A third-party endpoint speaking Anthropic Messages — MiniMax and
+        # Kimi's Anthropic surface both land here. Same handler, different
+        # host and credential.
+        typed_api_key, base_url = _resolve_config_key_and_url(name, s, config)
+        return _with_provider_name(
+            AnthropicProvider(
+                api_key=typed_api_key,
+                model=model,
+                base_url=base_url,
+                model_kwargs=kwargs,
+            ),
+            name,
+        )
+
+    from app.agent.providers.plugin_registry import (
+        ProviderCredentialStore,
+        find_provider_plugin,
+    )
+
+    plugin = find_provider_plugin(name)
+    if plugin is not None:
+        from app.agent.providers.plugin_api import ProviderBuildContext
+
+        return _with_provider_name(
+            plugin.factory(
+                ProviderBuildContext(
+                    provider_id=name,
+                    model=model,
+                    model_kwargs=kwargs,
+                    credentials=ProviderCredentialStore(name),
                 )
-            raise UnconfiguredProviderError(
-                message=(
-                    f"Unsupported provider '{name}'. "
-                    f"Supported providers: {', '.join(SUPPORTED_PROVIDERS)}"
-                )
-            )
+            ),
+            name,
+        )
+
+    raise UnconfiguredProviderError(
+        message=(
+            f"Unsupported provider '{name}'. "
+            f"Supported providers: {', '.join(SUPPORTED_PROVIDERS)}"
+        )
+    )

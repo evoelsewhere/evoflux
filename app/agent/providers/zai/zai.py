@@ -30,24 +30,31 @@ ZAI_API_BASE = "https://api.z.ai/api/paas/v4"
 
 
 class _ZAICompletionsHandler(CompletionsHandler):
-    """Z.ai-specific reasoning translation.
+    """Z.ai request shaping.
 
-    Z.ai does not accept OpenAI's ``reasoning_effort`` field. Reasoning
-    is on by default for thinking-capable models; the only override is
-    to disable it via ``thinking: {"type": "disabled"}``.
+    Reasoning translation is inherited: Z.ai does not accept OpenAI's
+    ``reasoning_effort`` and instead takes a ``thinking`` object, which is
+    registered as the ``glm_thinking`` dialect in
+    :mod:`app.agent.providers.thinking`. Nothing else about the GLM request
+    diverges from Chat Completions, so this subclass exists only as the
+    binding point for that dialect and for the endpoint override below.
     """
 
-    def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
-        if merged.get("thinking_level") == "none":
-            body["thinking"] = {"type": "disabled"}
+    default_provider_id = "zai"
 
 
 class ZAIProvider(OpenAIProvider):
     """Z.ai provider (OpenAI-compatible Chat Completions).
 
+    The same handler serves Zhipu AI's mainland endpoint
+    (``open.bigmodel.cn``), which speaks the identical GLM contract at a
+    different host — hence *base_url* being a parameter rather than a
+    constant.
+
     Args:
         api_key: Z.ai API key.
         model: Model name (e.g. ``"glm-4.6"``).
+        base_url: Endpoint to call. Defaults to Z.ai's international host.
         temperature: Sampling temperature (0-2).
         top_p: Nucleus sampling probability mass cutoff.
         max_tokens: Hard cap on completion tokens.
@@ -56,10 +63,13 @@ class ZAIProvider(OpenAIProvider):
               other values are ignored (Z.ai uses model defaults).
     """
 
+    default_provider_id = "zai"
+
     def __init__(
         self,
         api_key: str | SecretStr,
         model: str,
+        base_url: str = ZAI_API_BASE,
         temperature: float | None = None,
         top_p: float | None = None,
         max_tokens: int | None = None,
@@ -68,7 +78,7 @@ class ZAIProvider(OpenAIProvider):
         super().__init__(
             api_key=api_key,
             model=model,
-            base_url=ZAI_API_BASE,
+            base_url=base_url or ZAI_API_BASE,
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,

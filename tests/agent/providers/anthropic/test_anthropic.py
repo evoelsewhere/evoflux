@@ -90,7 +90,10 @@ def test_anthropic_payload_splits_system_at_cache_boundary() -> None:
     provider = AnthropicProvider(api_key="sk-ant-test", model="claude-sonnet-4-6")
 
     payload = provider._payload(
-        [SystemMessage(content="stable head||volatile tail"), HumanMessage(content="hi")],
+        [
+            SystemMessage(content="stable head||volatile tail"),
+            HumanMessage(content="hi"),
+        ],
         None,
         {**provider._merged_kwargs(), "cache_boundary": len("stable head||")},
     )
