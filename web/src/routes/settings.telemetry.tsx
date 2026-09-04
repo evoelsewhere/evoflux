@@ -1,6 +1,11 @@
 /**
- * Telemetry settings page — compact summary + recent traces
- * without the full-page Telemetry chrome/sidebar.
+ * Telemetry, in Settings — the only place it lives.
+ *
+ * There used to be two: this page (overview + traces) and a standalone
+ * `/telemetry` route with its own sidebar that also had Models and Tools.
+ * The standalone one was reachable by URL but linked from nowhere, so half
+ * the monitoring views were effectively hidden. Both now render here, as
+ * tabs, and `/telemetry` redirects.
  */
 import { useMemo, useState } from 'react'
 import { ArrowLeft, BarChart3 } from 'lucide-react'
@@ -15,7 +20,9 @@ import {
   useTraceDetailQuery,
 } from '@/queries'
 import { formatShortId } from '@/utils/telemetryFormat'
+import { ModelsView } from '@/routes/telemetry/models/ModelsView'
 import { SummaryView } from '@/routes/telemetry/summary/SummaryView'
+import { ToolsView } from '@/routes/telemetry/tools/ToolsView'
 import { TracesSection } from '@/routes/telemetry/traces/TracesSection'
 import { SpanDetailPanel } from '@/routes/telemetry/waterfall/SpanDetailPanel'
 import { Waterfall } from '@/routes/telemetry/waterfall/Waterfall'
@@ -31,8 +38,18 @@ const RANGES: { value: WindowDays; label: string }[] = [
 
 const TRACE_PAGE_SIZE = 25
 
+type Tab = 'summary' | 'models' | 'tools' | 'traces'
+
+const TABS: { value: Tab; label: string }[] = [
+  { value: 'summary', label: 'Overview' },
+  { value: 'models', label: 'Models' },
+  { value: 'tools', label: 'Tools' },
+  { value: 'traces', label: 'Traces' },
+]
+
 export function TelemetrySettingsPage() {
   const [days, setDays] = useState<WindowDays>(7)
+  const [tab, setTab] = useState<Tab>('summary')
   const [selectedTraceId, setSelectedTraceId] = useState<string | null>(null)
 
   return (
@@ -63,16 +80,36 @@ export function TelemetrySettingsPage() {
           onBack={() => setSelectedTraceId(null)}
         />
       ) : (
-        <SummaryBody days={days} onSelectTrace={setSelectedTraceId} />
+        <>
+          {/* Tabs scroll on narrow screens rather than wrapping or
+            * shrinking their labels to nothing. */}
+          <div className="-mx-1 overflow-x-auto px-1 pb-0.5">
+            <SegmentedControl
+              options={TABS}
+              value={tab}
+              onChange={setTab}
+              layoutId="telemetry-tab"
+              ariaLabel="Telemetry view"
+              className="w-max min-w-full"
+            />
+          </div>
+          <TelemetryBody
+            tab={tab}
+            days={days}
+            onSelectTrace={setSelectedTraceId}
+          />
+        </>
       )}
     </SettingsPage>
   )
 }
 
-function SummaryBody({
+function TelemetryBody({
+  tab,
   days,
   onSelectTrace,
 }: {
+  tab: Tab
   days: WindowDays
   onSelectTrace: (traceId: string) => void
 }) {
@@ -95,20 +132,24 @@ function SummaryBody({
       onRetry={() => void summary.refetch()}
     >
       {summary.data ? (
-        <div className="flex flex-col gap-6">
-          <SummaryView data={summary.data} />
-          <TracesSection
-            query={traces}
-            traces={traceRows}
-            limit={TRACE_PAGE_SIZE}
-            total={traceTotal}
-            hasNext={traces.hasNextPage}
-            onLoadMore={() => {
-              if (!traces.hasNextPage || traces.isFetchingNextPage) return
-              void traces.fetchNextPage()
-            }}
-            onSelectTrace={onSelectTrace}
-          />
+        <div className="flex min-w-0 flex-col gap-6">
+          {tab === 'summary' && <SummaryView data={summary.data} />}
+          {tab === 'models' && <ModelsView data={summary.data} />}
+          {tab === 'tools' && <ToolsView data={summary.data} />}
+          {(tab === 'summary' || tab === 'traces') && (
+            <TracesSection
+              query={traces}
+              traces={traceRows}
+              limit={TRACE_PAGE_SIZE}
+              total={traceTotal}
+              hasNext={traces.hasNextPage}
+              onLoadMore={() => {
+                if (!traces.hasNextPage || traces.isFetchingNextPage) return
+                void traces.fetchNextPage()
+              }}
+              onSelectTrace={onSelectTrace}
+            />
+          )}
         </div>
       ) : null}
     </SettingsAsyncBoundary>
