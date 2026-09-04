@@ -293,11 +293,13 @@ async def lifespan(app: FastAPI):
     # explicit shutdown. The in-app browser is owned by Tauri.
     from app.agent.tools.builtin.process import stop_all_processes
     from app.agent.tools.builtin.preview import stop_all_servers
+    from app.agent.tools.builtin.web import close_http_client
     from app.agent.lsp_manager import close_language_servers
 
     await stop_all_processes()
     await stop_all_servers()
     await close_language_servers()
+    await close_http_client()
 
     # Extraction tasks own DB work and must finish (or record a retryable
     # failure) before the engines are disposed.
