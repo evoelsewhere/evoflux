@@ -29,11 +29,7 @@ import { appendLiveTurnItems, getVisibleTurnWindow, partitionTurns } from '@/uti
 import { latestDirectUserBlockId } from '@/utils/blocks'
 import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
-import {
-  captureTranscriptPrependAnchor,
-  type TranscriptPrependAnchor,
-  usePinnedTranscript,
-} from '@/hooks/usePinnedTranscript'
+import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
 import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { activityLabelForPhase } from '@/lib/activity-phase'
@@ -189,10 +185,6 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
 export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges }: AgentViewProps) {
   const [renderedTurnCount, setRenderedTurnCount] = useState(HISTORY_INITIAL_RENDERED_TURNS)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
-  const prevScrollHeightRef = useRef<number | null>(null)
-  const prevScrollTopRef = useRef<number | null>(null)
-  const prependAnchorRef = useRef<TranscriptPrependAnchor | null>(null)
-  const pendingRestoreRef = useRef(false)
   const historyLoadStartBlockCountRef = useRef<number | null>(null)
   const pendingUserNavigationRef = useRef<{
     messageId: string
@@ -289,14 +281,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     isWorking,
   })
 
+  // No before-state to capture: `overflow-anchor` on the scroller holds
+  // the reader's position when turns are inserted above them.
   const loadOlderMessages = useCallback((element: HTMLDivElement | null) => {
-    if (element) {
-      prevScrollHeightRef.current = element.scrollHeight
-      prevScrollTopRef.current = element.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
-      pendingRestoreRef.current = true
-      historyLoadStartBlockCountRef.current = blocks.length
-    }
+    if (element) historyLoadStartBlockCountRef.current = blocks.length
     void useTeamStore.getState().loadOlderMessages()
   }, [blocks.length])
 
@@ -310,10 +298,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
     topLoadArmedRef.current = false
     if (hiddenTurnCount > 0) {
-      prevScrollHeightRef.current = element.scrollHeight
-      prevScrollTopRef.current = element.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
-      pendingRestoreRef.current = true
       setRenderedTurnCount((count) => Math.min(turnItems.length, count + HISTORY_RENDER_STEP))
       return
     }
@@ -325,7 +309,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   const {
     contentRef,
     detach: detachFromBottom,
-    restorePrependOffset,
+    sentinelRef,
     scrollRef,
     scrollToBottom,
     showScrollButton: showScrollBtn,
@@ -370,15 +354,8 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   ])
 
   const showEarlierTurns = useCallback(() => {
-    const element = scrollRef.current
-    if (element) {
-      prevScrollHeightRef.current = element.scrollHeight
-      prevScrollTopRef.current = element.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
-      pendingRestoreRef.current = true
-    }
     setRenderedTurnCount((count) => Math.min(turnItems.length, count + HISTORY_RENDER_STEP))
-  }, [scrollRef, turnItems.length])
+  }, [turnItems.length])
 
   const loadOlderFromControl = useCallback(() => {
     loadOlderMessages(scrollRef.current)
@@ -388,10 +365,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     topLoadArmedRef.current = true
     primedHistorySessionRef.current = null
     historyLoadStartBlockCountRef.current = null
-    pendingRestoreRef.current = false
-    prevScrollHeightRef.current = null
-    prevScrollTopRef.current = null
-    prependAnchorRef.current = null
     pendingUserNavigationRef.current = null
   }, [sessionId])
 
@@ -419,36 +392,11 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     setRenderedTurnCount((count) => Math.max(count, requiredTurnCount))
   }, [detachFromBottom, scrollRef, turnItems.length, userMessageNavigationItems])
 
-  // Me restore scroll position after older messages are prepended.
-  // We track a "pending restore" flag separately from blocks.length so
-  // that SSE flushes (which also grow blocks) never accidentally trigger
-  // a scroll-position restore.
-  useLayoutEffect(() => {
-    if (
-      !pendingRestoreRef.current
-      || prevScrollHeightRef.current === null
-      || prevScrollTopRef.current === null
-    ) return
-    pendingRestoreRef.current = false
-    restorePrependOffset(
-      prevScrollHeightRef.current,
-      prevScrollTopRef.current,
-      prependAnchorRef.current,
-    )
-    prevScrollHeightRef.current = null
-    prevScrollTopRef.current = null
-    prependAnchorRef.current = null
-  }, [blocks.length, renderedTurnCount, restorePrependOffset])
-
   useEffect(() => {
     const startCount = historyLoadStartBlockCountRef.current
     if (loadingOlder || startCount === null) return
     historyLoadStartBlockCountRef.current = null
     if (blocks.length !== startCount) return
-    pendingRestoreRef.current = false
-    prevScrollHeightRef.current = null
-    prevScrollTopRef.current = null
-    prependAnchorRef.current = null
   }, [blocks.length, loadingOlder])
 
   useEffect(() => {
@@ -463,7 +411,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
   return (
     <div className="@container/agent-view relative flex min-h-0 flex-1 flex-col">
-    <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none]">
+    {/* `overflow-anchor:auto` is load-bearing: the browser keeps the
+        reader's position when older turns mount above the viewport, which
+        used to be done by hand from captured scroll offsets. */}
+    <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:auto]">
       <div
         ref={contentRef}
         className={cn(
@@ -544,6 +495,15 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
            )}
 
          </div>
+        {/* Whether this is visible is how the viewport knows it is at the
+            bottom, so nothing has to measure the scroller. Excluded from
+            scroll anchoring: as the last child it would otherwise be the
+            browser's preferred anchor and hold the view at the end. */}
+        <div
+          ref={sentinelRef}
+          aria-hidden="true"
+          className="h-px w-full shrink-0 [overflow-anchor:none]"
+        />
       </div>
     </div>
     <UserMessageNavigationRail
