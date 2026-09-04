@@ -57,6 +57,7 @@ export const STORAGE_KEYS = {
   coding: {
     workspaces: 'oa-coding-workspaces',
     lastWorkspace: 'oa-last-coding-workspace',
+    lastProject: 'oa-last-coding-project',
     lastFocus: 'oa-last-coding-focus',
     expanded: 'oa.codingSidebar.expanded',
   },
