@@ -1514,147 +1514,6 @@ fn browser_observability_init_script() -> &'static str {
     "#
 }
 
-fn browser_agent_cursor_runtime_script() -> &'static str {
-    r##"
-        (() => {
-            if (globalThis.__evofluxEnsureAgentCursor) return;
-            const HOST_ID = '__evoflux-agent-cursor';
-            const TIP_X = 4;
-            const TIP_Y = 2.7;
-            let pulseTimer = null;
-            const controller = {
-                host: null,
-                cursor: null,
-                cursorPulse: null,
-                enabled: false,
-                suspended: false,
-                lastX: null,
-                lastY: null,
-                mount() {
-                    if (this.host?.isConnected) return;
-                    this.host = document.getElementById(HOST_ID);
-                    if (this.host) {
-                        this.cursor = this.host.shadowRoot?.querySelector('.cursor') || null;
-                        this.cursorPulse = this.host.shadowRoot?.querySelector('.cursor-pulse') || null;
-                        return;
-                    }
-                    this.host = document.createElement('div');
-                    this.host.id = HOST_ID;
-                    this.host.setAttribute('aria-hidden', 'true');
-                    this.host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483647;contain:layout style;';
-                    const root = this.host.attachShadow({ mode: 'open' });
-                    root.innerHTML = `
-                        <style>
-                            :host { all: initial; }
-                            .layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
-                            .cursor {
-                                position: absolute; left: 0; top: 0; width: 24px; height: 27px;
-                                transform: translate3d(var(--cursor-x, 72vw), var(--cursor-y, 34vh), 0);
-                                transform-origin: 4px 2.7px; transition: transform 28ms linear;
-                                will-change: transform;
-                            }
-                            .cursor-aura {
-                                position: absolute; left: -7px; top: -7px; width: 25px; height: 25px;
-                                border-radius: 50%; opacity: .46;
-                                background: radial-gradient(circle, rgba(255,255,255,.34) 0 8%, rgba(119,92,255,.24) 32%, rgba(67,210,255,.11) 54%, transparent 74%);
-                                filter: blur(3px);
-                            }
-                            .cursor svg {
-                                position: relative; display: block; width: 100%; height: 100%; overflow: visible;
-                                filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)) drop-shadow(0 0 4px rgba(126,93,255,.58)) drop-shadow(0 0 8px rgba(67,210,255,.22));
-                            }
-                            .cursor-glow { fill: none; stroke: rgba(123,91,255,.68); stroke-width: 5.5; stroke-linejoin: round; stroke-linecap: round; opacity: .42; filter: blur(2px); }
-                            .cursor-outline { fill: none; stroke: rgba(255,255,255,.99); stroke-width: 3.8; stroke-linejoin: round; stroke-linecap: round; }
-                            .cursor-core { fill: url(#evoflux-cursor-fill); stroke: #030407; stroke-width: .9; stroke-linejoin: round; stroke-linecap: round; }
-                            .cursor-pulse {
-                                position: absolute; left: -5px; top: -5px; width: 17px; height: 17px;
-                                border: 2px solid rgba(126,102,255,.86); box-shadow: 0 0 8px rgba(70,211,255,.72); border-radius: 50%;
-                                opacity: 0; transform: scale(.25);
-                            }
-                            .cursor.pressed { transform: translate3d(var(--cursor-x), var(--cursor-y), 0) scale(.9); transition-duration: 55ms; }
-                            .cursor.pressed .cursor-aura { opacity: .7; filter: blur(1.5px); }
-                            .cursor.pulsing .cursor-pulse { animation: evoflux-click .42s ease-out; }
-                            @keyframes evoflux-click { 0% { opacity: 1; transform: scale(.25); } 100% { opacity: 0; transform: scale(2.2); } }
-                            @media (prefers-reduced-motion: reduce) { .cursor { transition-duration: 0ms; } }
-                        </style>
-                        <div class="layer">
-                            <div class="cursor">
-                                <span class="cursor-aura"></span>
-                                <span class="cursor-pulse"></span>
-                                <svg viewBox="0 0 24 27" aria-hidden="true">
-                                    <defs>
-                                        <linearGradient id="evoflux-cursor-fill" x1="5" y1="2" x2="15" y2="24" gradientUnits="userSpaceOnUse">
-                                            <stop offset="0" stop-color="#111319"/>
-                                            <stop offset=".58" stop-color="#050609"/>
-                                            <stop offset="1" stop-color="#010102"/>
-                                        </linearGradient>
-                                    </defs>
-                                    <path class="cursor-glow" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
-                                    <path class="cursor-outline" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
-                                    <path class="cursor-core" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
-                                </svg>
-                            </div>
-                        </div>`;
-                    this.cursor = root.querySelector('.cursor');
-                    this.cursorPulse = root.querySelector('.cursor-pulse');
-                    if (this.lastX == null || this.lastY == null) {
-                        this.lastX = Math.max(0, Math.min(innerWidth - 1, innerWidth * .72));
-                        this.lastY = Math.max(0, Math.min(innerHeight - 1, innerHeight * .34));
-                    }
-                    this.cursor.style.setProperty('--cursor-x', `${this.lastX - TIP_X}px`);
-                    this.cursor.style.setProperty('--cursor-y', `${this.lastY - TIP_Y}px`);
-                    (document.documentElement || document).appendChild(this.host);
-                    this.host.style.visibility = this.suspended ? 'hidden' : 'visible';
-                },
-                move(x, y, phase = 'move') {
-                    if (!this.cursor || !Number.isFinite(x) || !Number.isFinite(y)) return;
-                    this.lastX = Math.max(0, Math.min(innerWidth - 1, x));
-                    this.lastY = Math.max(0, Math.min(innerHeight - 1, y));
-                    this.cursor.style.setProperty('--cursor-x', `${this.lastX - TIP_X}px`);
-                    this.cursor.style.setProperty('--cursor-y', `${this.lastY - TIP_Y}px`);
-                    this.cursor.classList.toggle('pressed', phase === 'press' || phase === 'drag');
-                    if (phase !== 'release' && phase !== 'click') return;
-                    this.cursor.classList.remove('pressed');
-                    this.cursor.classList.remove('pulsing');
-                    void this.cursorPulse?.offsetWidth;
-                    this.cursor.classList.add('pulsing');
-                    clearTimeout(pulseTimer);
-                    pulseTimer = setTimeout(() => this.cursor?.classList.remove('pulsing'), 460);
-                },
-                moveToElement(element, phase = 'move') {
-                    const rect = element?.getBoundingClientRect?.();
-                    if (!rect) return;
-                    this.move(rect.left + rect.width / 2, rect.top + rect.height / 2, phase);
-                },
-                setEnabled(nextEnabled) {
-                    this.enabled = Boolean(nextEnabled);
-                    if (!this.enabled) {
-                        clearTimeout(pulseTimer);
-                        pulseTimer = null;
-                        this.host?.remove();
-                        this.host = null;
-                        this.cursor = null;
-                        this.cursorPulse = null;
-                        return;
-                    }
-                    this.mount();
-                },
-                setSuspended(nextSuspended) {
-                    this.suspended = Boolean(nextSuspended);
-                    if (!this.host) return;
-                    this.host.style.visibility = this.suspended ? 'hidden' : 'visible';
-                    void this.host.offsetHeight;
-                },
-            };
-            globalThis.__evofluxAgentCursor = controller;
-            globalThis.__evofluxEnsureAgentCursor = () => {
-                controller.setEnabled(true);
-                return controller;
-            };
-        })();
-    "##
-}
-
 #[tauri::command]
 async fn app_browser_webview_agent_action(
     app: AppHandle,
@@ -1666,25 +1525,7 @@ async fn app_browser_webview_agent_action(
         return Err("Agent browser actions require a browser WebView".into());
     }
     if action == "screenshot" {
-        let suspended = eval_browser_webview_action_once(
-            &app,
-            &label,
-            "cursor_control",
-            &serde_json::json!({ "suspended": true }),
-        )
-        .await
-        .is_ok();
-        let result = capture_browser_webview(&app, &label, &params).await;
-        if suspended {
-            let _ = eval_browser_webview_action_once(
-                &app,
-                &label,
-                "cursor_control",
-                &serde_json::json!({ "suspended": false }),
-            )
-            .await;
-        }
-        return result;
+        return capture_browser_webview(&app, &label, &params).await;
     }
     if action == "save_pdf" {
         let bytes = capture_browser_pdf(&app, &label).await?;
@@ -2741,7 +2582,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "exists",
         "probe",
         "status",
-        "cursor_control",
         "set_emulation",
         "reset_emulation",
     ];
@@ -2752,10 +2592,8 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         .map_err(|error| format!("Could not encode browser action: {error}"))?;
     let params_json = serde_json::to_string(params)
         .map_err(|error| format!("Could not encode browser parameters: {error}"))?;
-    let cursor_runtime = browser_agent_cursor_runtime_script();
     Ok(format!(
         r#"() => {{
-                    {cursor_runtime}
                     const action = {action_json};
                     const params = {params_json};
                     const visible = (element) => {{
@@ -3021,14 +2859,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             }};
                             globalThis.__evofluxBrowserRuntime = runtime;
                         }}
-                        globalThis.__evofluxEnsureAgentCursor();
                         return {{ ready: true }};
-                    }}
-
-                    if (action === 'cursor_control') {{
-                        const cursor = globalThis.__evofluxAgentCursor;
-                        if (cursor && typeof params.suspended === 'boolean') cursor.setSuspended(params.suspended);
-                        return {{ active: Boolean(cursor?.enabled), suspended: Boolean(cursor?.suspended) }};
                     }}
 
                     if (action === 'set_emulation') {{
@@ -3106,7 +2937,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             x = rect.left + rect.width / 2;
                             y = rect.top + rect.height / 2;
                         }}
-                        globalThis.__evofluxEnsureAgentCursor().move(x, y, action === 'hover' ? 'move' : 'release');
                         return {{ x, y, viewport_width: innerWidth, viewport_height: innerHeight, description: describe(element) }};
                     }}
 
@@ -3146,9 +2976,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const point = (element, rect) => ({{ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, description: describe(element) }});
                         const sourcePoint = point(source, sourceRect);
                         const targetPoint = point(target, targetRect);
-                        const cursor = globalThis.__evofluxEnsureAgentCursor();
-                        cursor.move(sourcePoint.x, sourcePoint.y, 'press');
-                        setTimeout(() => cursor.move(targetPoint.x, targetPoint.y, 'release'), 120);
                         return {{ source: sourcePoint, target: targetPoint, viewport_width: innerWidth, viewport_height: innerHeight }};
                     }}
 
@@ -3156,7 +2983,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const element = resolveElement();
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         element.scrollIntoView({{ block: 'center', inline: 'center' }});
-                        globalThis.__evofluxEnsureAgentCursor().moveToElement(element, 'release');
                         element.focus?.();
                         element.click();
                         return `Clicked ${{describe(element)}}`;
@@ -3166,7 +2992,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const element = resolveElement();
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         element.scrollIntoView({{ block: 'center', inline: 'center' }});
-                        globalThis.__evofluxEnsureAgentCursor().moveToElement(element, 'release');
                         element.focus?.();
                         element.dispatchEvent(new MouseEvent('dblclick', {{ bubbles: true, cancelable: true, view: window, detail: 2 }}));
                         return `Double-clicked ${{describe(element)}}`;
@@ -3176,7 +3001,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const element = resolveElement();
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         element.scrollIntoView({{ block: 'center', inline: 'center' }});
-                        globalThis.__evofluxEnsureAgentCursor().moveToElement(element);
                         for (const type of ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointermove', 'mousemove']) element.dispatchEvent(new MouseEvent(type, {{ bubbles: !type.endsWith('enter'), cancelable: true, view: window }}));
                         return `Hovered ${{describe(element)}}`;
                     }}
@@ -3316,14 +3140,11 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         if (!source || !target) throw new Error('Drag source or target not found');
                         source.scrollIntoView({{ block: 'center', inline: 'center' }});
                         target.scrollIntoView({{ block: 'center', inline: 'center' }});
-                        const cursor = globalThis.__evofluxEnsureAgentCursor();
-                        cursor.moveToElement(source, 'press');
                         const transfer = new DataTransfer();
                         for (const type of ['dragstart', 'drag', 'dragenter', 'dragover', 'drop', 'dragend']) {{
                             const recipient = ['dragstart', 'drag', 'dragend'].includes(type) ? source : target;
                             recipient.dispatchEvent(new DragEvent(type, {{ bubbles: true, cancelable: true, dataTransfer: transfer }}));
                         }}
-                        cursor.moveToElement(target, 'release');
                         return `Dragged ${{describe(source)}} to ${{describe(target)}}`;
                     }}
 
@@ -3344,7 +3165,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const button = params.button === 'middle' ? 1 : params.button === 'right' ? 2 : 0;
                         const buttons = button === 0 ? 1 : button === 1 ? 4 : 2;
                         const init = {{ bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button, buttons }};
-                        globalThis.__evofluxEnsureAgentCursor().move(x, y, 'release');
                         element.focus?.();
                         for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) element.dispatchEvent(new MouseEvent(type, init));
                         return `Clicked at ${{x}},${{y}} on ${{describe(element)}}`;
@@ -5856,7 +5676,6 @@ mod tests {
             "exists",
             "probe",
             "status",
-            "cursor_control",
             "set_emulation",
             "reset_emulation",
         ] {
@@ -5975,27 +5794,6 @@ mod tests {
         assert!(script.contains("target || '').toLowerCase() !== '_blank'"));
         assert!(script.contains("response: accepted ? 'accepted' : 'dismissed'"));
         assert!(script.contains("globalThis.__evofluxBrowserRuntime = runtime"));
-    }
-
-    #[test]
-    fn browser_agent_cursor_is_classic_glowing_and_tracks_pointer_actions() {
-        let cursor = browser_agent_cursor_runtime_script();
-        let click = browser_agent_action_script("click", &serde_json::json!({ "index": 2 }))
-            .expect("click action should compile");
-        let hover = browser_agent_action_script("hover", &serde_json::json!({ "index": 2 }))
-            .expect("hover action should compile");
-        let click_at =
-            browser_agent_action_script("click_at", &serde_json::json!({ "x": 24, "y": 36 }))
-                .expect("coordinate click should compile");
-
-        assert!(cursor.contains("width: 24px; height: 27px"));
-        assert!(cursor.contains("stroke-linejoin: round; stroke-linecap: round"));
-        assert!(cursor.contains("M4 2.7v18.5c0 2.6"));
-        assert!(cursor.contains("class=\"cursor-glow\""));
-        assert!(cursor.contains("drop-shadow(0 0 4px rgba(126,93,255,.58))"));
-        assert!(click.contains("moveToElement(element, 'release')"));
-        assert!(hover.contains("moveToElement(element)"));
-        assert!(click_at.contains("move(x, y, 'release')"));
     }
 
     #[test]
