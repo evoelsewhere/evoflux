@@ -349,4 +349,3 @@ def test_audit_command_allows_home_dotfile_writes(tmp_path):
     )
 
     assert result is None
-
