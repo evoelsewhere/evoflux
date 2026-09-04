@@ -1535,7 +1535,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
   const handleEasdRunInChat = useCallback((request: EasdRunChatRequest) => {
     requestEasdChat(request)
-    useUIStore.getState().closeWorkbench()
+    // Keep the Evo Agent Specs panel open: the layout already shows the chat
+    // beside it, and closing it hid the lifecycle rail at exactly the moment
+    // the phase started running.
     if (request.sessionId === sessionIdState) return
     const focusId = codingFocusId({
       project_id: request.projectId,
@@ -1558,7 +1560,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       || isSessionLoading
     ) return
     clearEasdChatRequest(easdChatRequest.id)
-    useUIStore.getState().closeWorkbench()
     if (!easdChatRequest.prompt) {
       pushToast({ tone: 'info', title: 'Opened the run’s linked chat' })
       return
