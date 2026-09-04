@@ -20,7 +20,7 @@ import {
   touchesWiki,
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
-import type { GoalResponse, TurnChangedFile, TurnUsageBreakdown } from '@/api/types'
+import type { GoalResponse, TurnChangedFile, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
 type Setter = (fn: (draft: TeamStore) => void) => void
@@ -83,6 +83,35 @@ function stampOpenTextBlocks(
   })
 }
 
+/**
+ * Put the turn's spend on the block the footer reads.
+ *
+ * Live, tokens and cost arrive as their own SSE event and land in the
+ * agent's usage; the footer only sees blocks. Stamping the last text block
+ * at turn end means the footer reads the same field live and after a
+ * reload, where the value comes back on the message instead.
+ */
+function stampTurnUsage(
+  blocks: TeamStore['agentStreams'][string]['currentBlocks'],
+  usage: TeamStore['agentStreams'][string]['usage'],
+) {
+  const input = usage.turnPromptTokens ?? 0
+  const output = usage.turnCompletionTokens ?? 0
+  if (input === 0 && output === 0) return blocks
+  const lastText = blocks.map((block) => block.type).lastIndexOf('text')
+  if (lastText === -1) return blocks
+  const turnUsage: TurnUsage = {
+    input,
+    output,
+    cache: usage.turnCachedTokens,
+    calls: usage.turnCalls,
+    cost: usage.turnCost,
+  }
+  return blocks.map((block, index) =>
+    index === lastText ? { ...block, turnUsage } : block,
+  )
+}
+
 function markTurnStarted(draft: TeamStore, agent: string, startedAt = Date.now()) {
   ensureAgent(draft, agent)
   const stream = draft.agentStreams[agent]
@@ -98,6 +127,7 @@ function resetTurnUsage(stream: TeamStore['agentStreams'][string]) {
   stream.usage.turnTotalTokens = 0
   stream.usage.turnCachedTokens = 0
   stream.usage.turnCalls = 0
+  stream.usage.turnCost = undefined
   stream.usage.turnPhases = {}
 }
 
@@ -396,6 +426,9 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             u.turnPhases = meta.phases && typeof meta.phases === 'object'
               ? meta.phases as Record<string, TurnUsageBreakdown>
               : undefined
+            u.turnCost = d.cost && typeof d.cost === 'object'
+              ? d.cost as TurnCost
+              : undefined
             return
           }
           u.promptTokens     = promptTokens
@@ -644,7 +677,10 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           Object.keys(draft.agentStreams).forEach((name) => {
             const stream = draft.agentStreams[name]
             if (stream.currentBlocks.length > 0) {
-              const stamped = stampOpenTextBlocks(stream.currentBlocks, completedAtMs, stream._turnStartedAt).map((b) => ({
+              const stamped = stampTurnUsage(
+                stampOpenTextBlocks(stream.currentBlocks, completedAtMs, stream._turnStartedAt),
+                stream.usage,
+              ).map((b) => ({
                 ...b,
                 timestamp: b.timestamp ?? completedAt,
               }))

@@ -1,4 +1,4 @@
-import type { AgentUsage, ChatMessage, ContentBlock, MessageResponse } from '@/api/types'
+import type { AgentUsage, ChatMessage, ContentBlock, MessageResponse, TurnUsage } from '@/api/types'
 
 // Me sort messages by timestamp asc, assistant before tool on ties
 
@@ -34,6 +34,29 @@ function sortMessages(msgs: MessageResponse[]): MessageResponse[] {
   })
 }
 
+/**
+ * The turn's spend, from whichever of the two usage records has it.
+ *
+ * `turn_usage` totals the whole activation; `usage` is the last model call
+ * alone. The footer summarises a turn, so the total wins — but turns
+ * persisted before the tracker priced itself carry a total with no cost.
+ * Their per-call record does have one, and for a single-call turn that
+ * price *is* the turn's price. For a multi-call turn it is only the last
+ * call, so it is left out rather than shown as the turn's total.
+ */
+function resolveTurnUsage(
+  total: unknown,
+  lastCall: unknown,
+): TurnUsage | undefined {
+  const asUsage = (value: unknown) =>
+    value && typeof value === 'object' ? value as TurnUsage : undefined
+  const turn = asUsage(total)
+  const call = asUsage(lastCall)
+  if (!turn) return call
+  if (turn.cost || !call?.cost) return turn
+  return (turn.calls ?? 1) === 1 ? { ...turn, cost: call.cost } : turn
+}
+
 // Me extract ContentBlock[] from one assistant MessageResponse
 function assistantBlocks(
   msg: MessageResponse,
@@ -46,10 +69,17 @@ function assistantBlocks(
     blocks.push({ id: `${msg.id}:thinking`, type: 'thinking', content: msg.reasoning_content, timestamp })
   }
 
-  const extra = msg.extra as { duration_ms?: number; model?: unknown; lifecycle?: unknown } | null
+  const extra = msg.extra as {
+    duration_ms?: number
+    model?: unknown
+    lifecycle?: unknown
+    turn_usage?: unknown
+    usage?: unknown
+  } | null
   const responseDurationMs = typeof extra?.duration_ms === 'number' ? extra.duration_ms : undefined
   const model = typeof extra?.model === 'string' ? extra.model : undefined
   const lifecycle = extra?.lifecycle === 'sleep' ? 'sleep' : undefined
+  const turnUsage = resolveTurnUsage(extra?.turn_usage, extra?.usage)
 
   // Me text before tools — LLM emits content first, then tool_calls
   if (msg.content || lifecycle) {
@@ -59,6 +89,7 @@ function assistantBlocks(
       content: msg.content || '',
       timestamp,
       responseDurationMs,
+      turnUsage,
       extra: model || lifecycle ? { ...(model ? { model } : {}), ...(lifecycle ? { lifecycle } : {}) } : undefined,
     })
   }

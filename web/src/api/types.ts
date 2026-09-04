@@ -1546,6 +1546,9 @@ export interface ContentBlock {
   durationMs?: number   // completed tool duration from SSE/session logs
   startedAt?: number    // client timestamp for realtime elapsed display
   responseDurationMs?: number // assistant response duration shown in turn footer
+  /** What the turn spent, shown in its footer. Stamped on the turn's last
+   *  text block, so the footer reads it the same way live and after a reload. */
+  turnUsage?: TurnUsage
   /** Widget-specific fields */
   widgetHtml?: string   // HTML content for widget blocks
   isStreaming?: boolean // whether widget is still streaming
@@ -1584,6 +1587,30 @@ export interface TurnUsageBreakdown {
   calls: number
 }
 
+/** USD by component, priced from the models.dev catalog. */
+export interface TurnCost {
+  estimated_usd: number
+  input_usd?: number
+  output_usd?: number
+  cache_read_usd?: number
+  cache_write_usd?: number
+  reasoning_usd?: number
+}
+
+/** What one assistant turn spent, as shown in its footer. */
+export interface TurnUsage {
+  input: number
+  output: number
+  cache?: number
+  cache_write?: number
+  thoughts?: number
+  tool_use?: number
+  calls?: number
+  models?: string[]
+  /** Absent for providers billed by seat rather than by token. */
+  cost?: TurnCost
+}
+
 export interface AgentUsage {
   promptTokens: number
   completionTokens: number
@@ -1595,6 +1622,7 @@ export interface AgentUsage {
   turnCachedTokens?: number
   turnCalls?: number
   turnPhases?: Record<string, TurnUsageBreakdown>
+  turnCost?: TurnCost
 }
 
 // ── Wiki ─────────────────────────────────────────────────────────────────────
