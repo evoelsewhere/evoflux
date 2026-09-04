@@ -361,17 +361,19 @@ class SandboxConfig:
 
     # ── Command validation (best-effort) ─────────────────────────────────
 
-    def check_command(
-        self, command: str, *, enforce: bool = True
-    ) -> tuple[Path, str] | None:
-        """Best-effort scan of *command* for arguments inside denied paths,
-        plus (if ``read_only_paths`` is set) shell redirection targets
-        (``>``/``>>``) landing inside one of them.
+    def check_command(self, command: str) -> tuple[Path, str] | None:
+        """Scan *command* for path operands outside the sandbox roots.
 
-        When *enforce* is ``True`` (default), the first violation is returned
-        immediately as ``(path, reason)`` so callers can block execution.
-        When *enforce* is ``False``, violations are only logged as warnings
-        and the method returns ``None``, allowing execution to proceed.
+        Returns the first violation as ``(resolved_path, reason)``, or
+        ``None`` when nothing is flagged. Detected are arguments inside
+        denied roots, arguments outside the allowed roots, and — when
+        ``read_only_paths`` is set — ``>``/``>>`` redirection targets landing
+        inside one of them.
+
+        This reports; it does not gate. Command execution deliberately runs
+        unrestricted (see :meth:`audit_command`), so the return value is for
+        logging, telemetry, and tests. Filesystem *tools* enforce their own
+        scope separately, and OS permissions remain the last line of defence.
         """
         try:
             tokens = _tokenize_command(command)
@@ -396,52 +398,40 @@ class SandboxConfig:
                 continue
             denied = self._is_denied(resolved)
             if denied is not None:
-                if enforce:
-                    logger.warning(
-                        "sandbox_command_denied token={} resolved={} denied={}",
-                        tok,
-                        resolved,
-                        denied,
-                    )
-                    return resolved, str(denied)
-                logger.warning(
-                    "sandbox_command_denied_would_block token={} resolved={} denied={}",
-                    tok,
-                    resolved,
-                    denied,
-                )
+                return resolved, str(denied)
             if not self._is_allowed(resolved):
-                if enforce:
-                    logger.warning(
-                        "sandbox_command_outside_allowlist token={} resolved={}",
-                        tok,
-                        resolved,
-                    )
-                    return resolved, "outside allowed sandbox roots"
-                logger.warning(
-                    "sandbox_command_outside_would_block token={} resolved={}",
-                    tok,
-                    resolved,
-                )
+                return resolved, "outside allowed sandbox roots"
             if self.read_only_paths and index > 0 and tokens[index - 1] in (">", ">>"):
                 read_only_root = self._is_read_only(resolved)
                 if read_only_root is not None:
-                    if enforce:
-                        logger.warning(
-                            "sandbox_command_write_denied_read_only token={} resolved={} read_only_root={}",
-                            tok,
-                            resolved,
-                            read_only_root,
-                        )
-                        return resolved, str(read_only_root)
-                    logger.warning(
-                        "sandbox_command_write_would_block_read_only "
-                        "token={} resolved={} read_only_root={}",
-                        tok,
-                        resolved,
-                        read_only_root,
-                    )
+                    return resolved, str(read_only_root)
         return None
+
+    def audit_command(self, command: str, *, tool: str) -> None:
+        """Log any sandbox violation in *command* without blocking it.
+
+        Command execution is unrestricted by product decision: an agent's
+        shell has to run ordinary developer commands that legitimately reach
+        outside the workspace — ``ssh-keyscan >> ~/.ssh/known_hosts``, reading
+        ``~/.gitconfig``, invoking a credential helper — and a path scanner
+        cannot tell those apart from misuse without breaking normal work.
+
+        What remains is observability: every command that touches a denied or
+        out-of-scope path is recorded, so the behaviour is reviewable after
+        the fact even though nothing is prevented. Callers must not treat a
+        return from this method as permission having been granted; it never
+        withholds it.
+        """
+        hit = self.check_command(command)
+        if hit is None:
+            return
+        resolved, reason = hit
+        logger.warning(
+            "sandbox_command_audit tool={} resolved={} reason={} (not blocked)",
+            tool,
+            resolved,
+            reason,
+        )
 
     # ── Display helpers ──────────────────────────────────────────────────
 

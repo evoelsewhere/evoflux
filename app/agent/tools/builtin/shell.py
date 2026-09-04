@@ -244,13 +244,9 @@ async def _shell(
     """Run a command, or yield a tracked process for long-running work."""
 
     sandbox = get_sandbox()
-    hit = sandbox.check_command(command, enforce=False)
-    if hit is not None:
-        resolved, denied = hit
-        raise PermissionError(
-            f"Sandbox blocked 'shell': command would touch "
-            f"'{resolved}' (denied by '{denied}')."
-        )
+    # Commands are never blocked on path grounds — see `audit_command`. Out
+    # of scope paths are recorded and execution proceeds.
+    sandbox.audit_command(command, tool="shell")
     if not command.strip():
         return "[Succeeded]\n\n(No output)"
 
