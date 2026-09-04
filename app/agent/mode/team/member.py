@@ -103,7 +103,11 @@ from app.agent.mode.team.mailbox import Message
 from app.core.db import DbFactory, resolve_db_factory
 from app.models.chat import ChatSession, SessionMessage
 from app.models.team import DelegationTask
-from app.agent.providers.model_metadata import get_effective_model_thinking
+from app.agent.providers.model_metadata import (
+    get_effective_model_thinking,
+    get_model_mode,
+)
+from app.agent.providers.thinking import honoured_levels_for
 from app.agent.providers.model_discovery import ensure_runtime_model_metadata
 from app.services.chat_service import get_messages_for_llm, save_message
 
@@ -1280,7 +1284,12 @@ class TeamMemberBase(abc.ABC):
             target_paths=claimed_paths,
             explicit_thinking_level=session_thinking_level,
             provider_default_thinking_level=thinking_profile.default_level,
-            supported_thinking_levels=thinking_profile.levels,
+            # What the request builder will honour, not the raw catalog list.
+            # The catalog says MiMo has a bare toggle; it takes a token
+            # budget, so clamping against the catalog turned a request for
+            # ``high`` into ``none`` — thinking switched off precisely when
+            # the most was asked for, and silently.
+            supported_thinking_levels=honoured_levels_for(effective_model),
         )
         from app.services.delegation_worktree_service import sandbox_binding
 
@@ -1296,7 +1305,10 @@ class TeamMemberBase(abc.ABC):
             model_kwargs: dict[str, object] = {}
             if execution_policy.thinking_level:
                 model_kwargs["thinking_level"] = execution_policy.thinking_level
-            if last_service_tier and effective_model.startswith("codex:"):
+            # Whether a model has this tier is catalog/registry data, not a
+            # provider prefix — see ``get_model_modes``. A tier that reaches
+            # a model without one would be forwarded as an unknown field.
+            if last_service_tier and get_model_mode(effective_model, last_service_tier):
                 model_kwargs["service_tier"] = last_service_tier
             runtime_provider = self._team._provider_factory(
                 effective_model,

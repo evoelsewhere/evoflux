@@ -67,6 +67,40 @@ _REGISTRY_MODEL_CACHE_TTL_S = 60.0
 _registry_model_cache: dict[str, tuple[float, list[str]]] = {}
 
 
+def _selectable_thinking_levels(model_id: str) -> list[str]:
+    """Levels a picker may offer for this model, weakest first.
+
+    Deliberately *not* the raw catalog list, and shared with the request
+    validators so the UI cannot offer a level the API then rejects. See
+    :func:`app.agent.providers.thinking.offered_levels_for`.
+    """
+    from app.agent.providers.thinking import offered_levels_for
+
+    return list(offered_levels_for(model_id))
+
+
+def _mode_cost_multipliers(
+    modes: dict[str, Any], base_cost: dict[str, Any]
+) -> dict[str, float]:
+    """How much each alternate tier costs relative to the standard rate.
+
+    Measured on the output price, which is the larger half of a coding
+    agent's bill and the rate every tier that publishes one quotes. A tier
+    with no price of its own is omitted rather than reported as 1.0 —
+    "unknown" and "same price" are different answers, and a Fast toggle
+    that silently implies parity would be the wrong one to get wrong.
+    """
+    base_output = base_cost.get("output")
+    if not isinstance(base_output, int | float) or base_output <= 0:
+        return {}
+    multipliers: dict[str, float] = {}
+    for name, spec in modes.items():
+        rate = (spec or {}).get("cost", {}).get("output")
+        if isinstance(rate, int | float) and rate > 0:
+            multipliers[name] = round(rate / base_output, 2)
+    return multipliers
+
+
 async def discover_provider_models(
     entry: ProviderEntry, *, overrides: dict[str, str]
 ) -> list[str]:
@@ -295,7 +329,7 @@ async def get_registry(
         get_effective_model_thinking,
         get_model_limits,
         get_model_metadata,
-        get_model_thinking_levels,
+        get_model_modes,
     )
     from app.api.routes.skills import _discover_runtime_skills, _workspace_paths
 
@@ -352,6 +386,13 @@ async def get_registry(
         metadata = get_model_metadata(model_id)
         effective_thinking = get_effective_model_thinking(model_id)
         limits = get_model_limits(model_id)
+        features = metadata.features
+        modes = get_model_modes(model_id)
+        cost = {
+            key: value
+            for key, value in metadata.cost.to_dict().items()
+            if value not in (None, [])
+        }
         models.append(
             ModelCatalogEntry(
                 id=model_id,
@@ -364,12 +405,42 @@ async def get_registry(
                 output_video=caps.output.video,
                 summary_trigger_tokens=prompt_token_threshold_for_model(model_id),
                 context_length=limits.context_length,
-                thinking_levels=list(get_model_thinking_levels(model_id)),
+                thinking_levels=_selectable_thinking_levels(model_id),
                 thinking_control=effective_thinking.control,
                 thinking_default_level=effective_thinking.default_level,
                 thinking_default_enabled=effective_thinking.default_enabled,
                 thinking_source=effective_thinking.source,
                 interfaces=list(metadata.interfaces),
+                display_name=features.name,
+                description=features.description,
+                family=features.family,
+                status=features.status,
+                release_date=features.release_date,
+                last_updated=features.last_updated,
+                knowledge=features.knowledge,
+                max_output_tokens=limits.max_completion_tokens,
+                tool_call=features.tool_call,
+                attachment=features.attachment,
+                temperature=features.temperature,
+                structured_output=features.structured_output,
+                open_weights=features.open_weights,
+                cost=cost,
+                free=(
+                    cost["input"] == 0 and cost["output"] == 0
+                    if "input" in cost and "output" in cost
+                    else None
+                ),
+                thinking_budget=(
+                    {
+                        "min": effective_thinking.budget_min,
+                        "max": effective_thinking.budget_max,
+                    }
+                    if effective_thinking.budget_min is not None
+                    or effective_thinking.budget_max is not None
+                    else {}
+                ),
+                modes=sorted(modes),
+                mode_cost_multiplier=_mode_cost_multipliers(modes, cost),
             )
         )
 
