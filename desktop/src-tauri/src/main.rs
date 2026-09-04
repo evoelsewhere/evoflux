@@ -2691,6 +2691,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
     const SUPPORTED: &[&str] = &[
         "instrument",
         "snapshot",
+        "find",
         "click",
         "dblclick",
         "hover",
@@ -2762,16 +2763,93 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const style = element.ownerDocument.defaultView.getComputedStyle(element);
                         return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
                     }};
-                    const resolveElement = () => {{
-                        if (Number.isInteger(params.index)) {{
-                            const indexed = globalThis.__evofluxAgentElements?.[params.index];
+                    const INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY', 'DETAILS']);
+                    const INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option', 'textbox', 'combobox', 'slider', 'spinbutton', 'treeitem', 'gridcell']);
+                    const interactive = (element) => (
+                        INTERACTIVE_TAGS.has(element.tagName)
+                        || INTERACTIVE_ROLES.has(element.getAttribute('role'))
+                        || element.isContentEditable
+                        || element.tabIndex >= 0
+                        || typeof element.onclick === 'function'
+                    );
+                    const refStore = () => (globalThis.__evofluxAgentRefs ||= {{ byRef: new Map(), byElement: new WeakMap(), labels: new Map(), next: 1 }});
+                    const refFor = (element) => {{
+                        const store = refStore();
+                        let ref = store.byElement.get(element);
+                        if (!ref) {{
+                            ref = `ref_${{store.next++}}`;
+                            store.byElement.set(element, ref);
+                        }}
+                        store.byRef.set(ref, element);
+                        return ref;
+                    }};
+                    const rememberRef = (element) => {{
+                        const ref = refFor(element);
+                        try {{ refStore().labels.set(ref, describe(element).slice(0, 80)); }} catch {{}}
+                        return ref;
+                    }};
+                    const refLabel = (ref) => {{
+                        const label = refStore().labels.get(String(ref));
+                        return label ? ` (${{label}})` : '';
+                    }};
+                    // A named target that cannot be resolved throws here rather
+                    // than returning null, so the agent is told which of the
+                    // three failure modes it hit — unknown ref, detached
+                    // element, no such selector — instead of one generic
+                    // "Element not found" for all of them. Null is reserved for
+                    // "no target was named", which callers read as "use the
+                    // focused element".
+                    // A drop target deserves the same vocabulary as a drag
+                    // source: a ref that survives the page moving, then the
+                    // legacy index, then a selector.
+                    const resolveTarget = () => {{
+                        if (typeof params.target_ref === 'string' && params.target_ref) {{
+                            const element = refStore().byRef.get(params.target_ref);
+                            if (!element) throw new Error(`Unknown drop target ${{params.target_ref}}. Run snapshot again to get current refs.`);
+                            if (!element.isConnected) throw new Error(`Drop target ${{params.target_ref}}${{refLabel(params.target_ref)}} is no longer in the page.`);
+                            return element;
+                        }}
+                        if (Number.isInteger(params.target_index)) {{
+                            const indexed = globalThis.__evofluxAgentElements?.[params.target_index];
                             if (indexed?.isConnected) return indexed;
-                            return deepElements().find((element) => element.getAttribute('data-evoflux-agent-index') === String(params.index)) || null;
+                            throw new Error(`No drop target at index ${{params.target_index}}. Prefer target_ref.`);
+                        }}
+                        const selector = String(params.target_selector || '');
+                        const matched = selector
+                            ? deepElements().find((element) => {{ try {{ return element.matches(selector); }} catch {{ return false; }} }})
+                            : null;
+                        if (!matched) throw new Error(`No drop target matches ${{JSON.stringify(selector)}}.`);
+                        return matched;
+                    }};
+                    const resolveElement = () => {{
+                        if (typeof params.ref === 'string' && params.ref) {{
+                            const store = refStore();
+                            const element = store.byRef.get(params.ref);
+                            if (!element) {{
+                                throw new Error(`Unknown element ${{params.ref}}. Refs come from snapshot, query and find, and are dropped when the page navigates — run snapshot again to get current ones.`);
+                            }}
+                            if (!element.isConnected) {{
+                                store.byRef.delete(params.ref);
+                                throw new Error(`${{params.ref}}${{refLabel(params.ref)}} is no longer in the page — the DOM changed since it was listed. Run snapshot again.`);
+                            }}
+                            return element;
+                        }}
+                        if (Number.isInteger(params.index)) {{
+                            const listed = globalThis.__evofluxAgentElements || [];
+                            const indexed = listed[params.index];
+                            if (indexed?.isConnected) return indexed;
+                            const stamped = deepElements().find((element) => element.getAttribute('data-evoflux-agent-index') === String(params.index));
+                            if (stamped) return stamped;
+                            throw new Error(`No element at index ${{params.index}}; the last snapshot listed ${{listed.length}}. Indexes are positional and are invalidated by the next snapshot or query — prefer a ref.`);
                         }}
                         if (typeof params.selector !== 'string') return null;
-                        return deepElements().find((element) => {{
+                        const matched = deepElements().find((element) => {{
                             try {{ return element.matches(params.selector); }} catch {{ return false; }}
-                        }}) || null;
+                        }});
+                        if (!matched) {{
+                            throw new Error(`No element matches selector ${{JSON.stringify(params.selector)}}. Run snapshot to see what is on the page, or find to search it by name.`);
+                        }}
+                        return matched;
                     }};
                     const deepElements = (root = document) => {{
                         const output = [];
@@ -2799,7 +2877,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const text = String(element.innerText || element.value || element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 180);
                         const state = [
                             element.disabled ? 'disabled' : '',
-                            'checked' in element ? `checked=${{Boolean(element.checked)}}` : '',
+                            ('checked' in element && /^(checkbox|radio)$/i.test(element.type || '')) ? `checked=${{Boolean(element.checked)}}` : '',
                             element.getAttribute('aria-expanded') != null ? `expanded=${{element.getAttribute('aria-expanded')}}` : '',
                         ].filter(Boolean).join(' ');
                         const box = element.getBoundingClientRect();
@@ -2824,7 +2902,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             ? labelledBy.split(/\s+/).map((id) => element.ownerDocument.getElementById(id)?.innerText || '').join(' ').trim()
                             : '';
                         const explicit = element.id ? element.ownerDocument.querySelector(`label[for="${{CSS.escape(element.id)}}"]`)?.innerText : '';
-                        return String(element.getAttribute('aria-label') || labelled || explicit || element.getAttribute('alt') || element.getAttribute('title') || element.getAttribute('placeholder') || element.innerText || element.value || '').trim().replace(/\s+/g, ' ').slice(0, 300);
+                        return String(element.getAttribute('aria-label') || labelled || explicit || element.getAttribute('alt') || element.getAttribute('title') || element.getAttribute('placeholder') || element.innerText || element.value || element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 300);
                     }};
                     const serializable = (value) => {{
                         if (value === undefined) return '(no return value)';
@@ -2841,6 +2919,13 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                     }};
 
                     if (action === 'instrument') {{
+                        // instrument runs once per document, so this is where a
+                        // new page starts. Refs name elements in the document
+                        // that listed them; carrying them across a navigation
+                        // would let a stale ref silently resolve to whatever
+                        // occupies that slot next.
+                        globalThis.__evofluxAgentRefs = undefined;
+                        globalThis.__evofluxAgentElements = [];
                         if (!globalThis.__evofluxBrowserRuntime) {{
                             const runtime = {{ documentId: `${{Date.now().toString(36)}}-${{Math.random().toString(36).slice(2)}}`, console: [], network: [], dialogs: [], popups: [], permissions: [], permissionResolvers: new Map(), nextDialogId: 1, nextPopupId: 1, nextPermissionId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
                             const keep = (items, value, max) => {{ items.push(value); if (items.length > max) items.splice(0, items.length - max); }};
@@ -2981,19 +3066,13 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'snapshot') {{
                         document.querySelectorAll('[data-evoflux-agent-index]').forEach((element) => element.removeAttribute('data-evoflux-agent-index'));
-                        const interactiveTags = new Set(['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY', 'DETAILS']);
-                        const interactiveRoles = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option', 'textbox', 'combobox', 'slider', 'spinbutton', 'treeitem', 'gridcell']);
-                        const elements = deepElements().filter((element) => visible(element) && (
-                            interactiveTags.has(element.tagName)
-                            || interactiveRoles.has(element.getAttribute('role'))
-                            || element.isContentEditable
-                            || element.tabIndex >= 0
-                            || typeof element.onclick === 'function'
-                        )).slice(0, 750);
+                        const elements = deepElements()
+                            .filter((element) => visible(element) && interactive(element))
+                            .slice(0, 750);
                         globalThis.__evofluxAgentElements = elements;
                         const lines = elements.map((element, index) => {{
                             try {{ element.setAttribute('data-evoflux-agent-index', String(index)); }} catch {{}}
-                            return `[${{index}}] ${{describe(element)}}`;
+                            return `[${{rememberRef(element)}}] ${{describe(element)}}`;
                         }});
                         const maxChars = Math.max(500, Math.min(100000, Number(params.max_chars) || 15000));
                         const textParts = [String(document.body?.innerText || '').trim()];
@@ -3001,7 +3080,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             try {{ if (frame.contentDocument?.body) textParts.push(String(frame.contentDocument.body.innerText || '').trim()); }} catch {{}}
                         }}
                         const pageText = textParts.filter(Boolean).join('\n\n[Same-origin frame]\n').slice(0, Math.floor(maxChars * 0.45));
-                        const output = `URL: ${{location.href}}\nTitle: ${{document.title}}\n\nPage text:\n${{pageText}}\n\nInteractive elements (use [index] with click/fill):\n${{lines.join('\n')}}`;
+                        const output = `URL: ${{location.href}}\nTitle: ${{document.title}}\n\nPage text:\n${{pageText}}\n\nInteractive elements (pass the ref to click/fill/hover):\n${{lines.join('\n')}}`;
                         return output.slice(0, maxChars);
                     }}
 
@@ -3054,9 +3133,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'native_drag_targets') {{
                         const source = resolveElement();
-                        const target = Number.isInteger(params.target_index)
-                            ? globalThis.__evofluxAgentElements?.[params.target_index]
-                            : deepElements().find((element) => {{ try {{ return element.matches(String(params.target_selector || '')); }} catch {{ return false; }} }});
+                        const target = resolveTarget();
                         if (!source || !target) throw new Error('Native drag source or target not found');
                         source.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
                         target.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
@@ -3231,9 +3308,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'drag') {{
                         const source = resolveElement();
-                        const target = Number.isInteger(params.target_index)
-                            ? globalThis.__evofluxAgentElements?.[params.target_index]
-                            : deepElements().find((element) => {{ try {{ return element.matches(String(params.target_selector || '')); }} catch {{ return false; }} }});
+                        const target = resolveTarget();
                         if (!source || !target) throw new Error('Drag source or target not found');
                         source.scrollIntoView({{ block: 'center', inline: 'center' }});
                         target.scrollIntoView({{ block: 'center', inline: 'center' }});
@@ -3292,9 +3367,34 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         return matches.length
                             ? matches.map((element, index) => {{
                                 try {{ element.setAttribute('data-evoflux-agent-index', String(index)); }} catch {{}}
-                                return `[${{index}}] ${{describe(element)}}`;
+                                return `[${{rememberRef(element)}}] ${{describe(element)}}`;
                             }}).join('\n')
                             : '(no matching elements)';
+                    }}
+
+                    // Search the page the way a person reads it — by what a
+                    // control says — rather than by CSS structure. A selector
+                    // needs the agent to already know the markup; this needs
+                    // only the visible label, which is what it can see in a
+                    // screenshot or a description.
+                    if (action === 'find') {{
+                        const needle = String(params.query || '').trim().toLowerCase();
+                        if (!needle) throw new Error('find requires a query');
+                        const limit = Math.max(1, Math.min(50, Number(params.limit) || 20));
+                        const includeHidden = params.include_hidden === true;
+                        const matches = [];
+                        for (const element of deepElements()) {{
+                            if (!includeHidden && !visible(element)) continue;
+                            if (!interactive(element) && element.childElementCount > 0) continue;
+                            let haystack = '';
+                            try {{ haystack = `${{element.tagName}} ${{element.getAttribute('role') || ''}} ${{accessibleName(element)}}`.toLowerCase(); }} catch {{ continue; }}
+                            if (!haystack.includes(needle)) continue;
+                            matches.push(element);
+                            if (matches.length >= limit) break;
+                        }}
+                        return matches.length
+                            ? matches.map((element) => `[${{rememberRef(element)}}] ${{describe(element)}}`).join(String.fromCharCode(10))
+                            : `No element matches ${{JSON.stringify(params.query)}}. Try a shorter fragment of the visible label, or snapshot to list what is on the page.`;
                     }}
 
                     if (action === 'inspect') {{
@@ -3347,7 +3447,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                                     const ref = refs.length;
                                     refs.push(element);
                                     const states = [
-                                        'checked' in element ? `checked=${{Boolean(element.checked)}}` : '',
+                                        ('checked' in element && /^(checkbox|radio)$/i.test(element.type || '')) ? `checked=${{Boolean(element.checked)}}` : '',
                                         'disabled' in element ? `disabled=${{Boolean(element.disabled)}}` : '',
                                         'selected' in element ? `selected=${{Boolean(element.selected)}}` : '',
                                         ...['expanded', 'pressed', 'required', 'invalid', 'current', 'busy', 'live']
