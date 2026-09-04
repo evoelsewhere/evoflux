@@ -21,6 +21,25 @@ invisible desktop browser session.
 Primary code: `app/services/direct_browser_bridge.py`, team browser routes,
 `BrowserViewer/` and Tauri desktop browser commands.
 
+### Dev-server launcher
+
+In Coding mode the browser's new-tab page lists the workspace's `launch.json`
+configurations instead of a blank page: each row shows its port and starts,
+opens or stops that dev server. Rows are joined with live port state, so a
+server already listening — started by the agent's `preview` tool, or outside
+EvoFlux entirely — shows as running and opens rather than starting a second
+copy. A server tracked under a name that is no longer configured still gets a
+row. Startup failures are shown with the captured log tail.
+
+The launcher and the `preview` tool share one registry and one config file, so
+neither side spawns a second server on a port the other owns. Its React content
+sits in the viewport the native WebView covers, and is only visible while that
+view is hidden — the same arrangement the browser settings view uses.
+
+Primary code: `app/api/routes/team/preview.py`,
+`app/agent/tools/builtin/preview.py` (`launch_targets`, `start_launch_target`),
+`BrowserViewer/BrowserLauncher.tsx`.
+
 ## WebBridge
 
 WebBridge connects EvoFlux to the user's real logged-in Chrome/Edge session

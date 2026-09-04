@@ -13,6 +13,8 @@ resource):
 - :mod:`app.api.routes.team.permissions` — GET /{sid}/permissions,
   POST /{sid}/permissions/{request_id}/reply
 - :mod:`app.api.routes.team.processes` — GET /processes, DELETE /processes/{id}
+- :mod:`app.api.routes.team.preview` — GET /preview/targets,
+  POST /preview/start, POST /preview/stop
 - :mod:`app.api.routes.team.questions` — POST /{sid}/questions/{request_id}/reply
 
 The combined :data:`router` is mounted under ``/api/team`` by
@@ -34,6 +36,7 @@ from app.api.routes.team import (
     git_ai,
     language_servers,
     permissions,
+    preview,
     problems,
     processes,
     projects,
@@ -55,6 +58,8 @@ router.include_router(browser.router)
 # Before chat so the literal /session-folders paths are matched ahead of
 # chat.py's parameterised /sessions/{session_id} routes.
 router.include_router(folders.router)
+# Literal /preview/* paths, ahead of chat.py's /sessions/{session_id} family.
+router.include_router(preview.router)
 router.include_router(chat.router)
 router.include_router(files.router)
 router.include_router(change_sets.router)

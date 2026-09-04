@@ -704,6 +704,138 @@ async def terminate_preview_server(workspace: str, name: str) -> bool:
     return True
 
 
+# ── App-facing API ────────────────────────────────────────────────────────────
+#
+# The browser pane's launcher lists and starts the same configurations the
+# agent's tool uses, through the same registry — so a server started from the
+# UI is the one the agent reuses, and neither side spawns a second copy on a
+# port the other owns.
+
+
+@dataclass(frozen=True, slots=True)
+class PreviewTarget:
+    """One launchable entry, joined with the live state of its port."""
+
+    name: str
+    port: int
+    url: str
+    command: str
+    cwd: str | None
+    depends_on: str | None
+    # False for a tracked server whose configuration was removed or renamed.
+    configured: bool
+    running: bool
+    # Listening, but not spawned by us — an external `npm run dev`, say.
+    reused: bool
+    pid: int | None
+
+
+async def _open_ports(ports: set[int]) -> set[int]:
+    """Probe every port concurrently; returns the subset accepting connections."""
+
+    ordered = sorted(ports)
+    if not ordered:
+        return set()
+    results = await asyncio.gather(*(_port_open(port) for port in ordered))
+    return {port for port, is_open in zip(ordered, results) if is_open}
+
+
+async def launch_targets(
+    workspace: Path,
+) -> tuple[list[PreviewTarget], str | None, str | None]:
+    """Return ``(targets, source, error)`` for *workspace*.
+
+    Configured entries come first, in file order. A server tracked under a
+    name that is no longer configured still gets a row so the UI never hides
+    a port that is actually serving. ``error`` carries a launch config that
+    failed to load — the caller shows it instead of an empty list.
+    """
+
+    configs: list[LaunchConfiguration] = []
+    source: str | None = None
+    error: str | None = None
+    try:
+        configs, source = _load_configurations(workspace)
+    except ValueError as exc:
+        error = str(exc)
+
+    tracked = {
+        key[1]: server for key, server in _servers.items() if key[0] == str(workspace)
+    }
+    open_ports = await _open_ports(
+        {cfg.port for cfg in configs} | {server.port for server in tracked.values()}
+    )
+
+    def _target(
+        name: str,
+        port: int,
+        command: str,
+        cwd: str | None,
+        depends_on: str | None,
+        configured: bool,
+    ) -> PreviewTarget:
+        server = tracked.get(name)
+        managed = (
+            server is not None
+            and server.port == port
+            and not server.reused
+            and server.running
+        )
+        return PreviewTarget(
+            name=name,
+            port=port,
+            url=f"http://localhost:{port}",
+            command=command,
+            cwd=cwd,
+            depends_on=depends_on,
+            configured=configured,
+            running=port in open_ports,
+            reused=port in open_ports and not managed,
+            pid=server.pid if managed and server is not None else None,
+        )
+
+    targets = [
+        _target(
+            cfg.name,
+            cfg.port,
+            shlex.join(cfg.command_argv),
+            cfg.cwd,
+            cfg.depends_on,
+            True,
+        )
+        for cfg in configs
+    ]
+    configured_names = {cfg.name for cfg in configs}
+    # Only while they are still serving: an unconfigured name cannot be
+    # started, so a dead one would offer a button that can only fail.
+    targets.extend(
+        _target(name, server.port, server.command, server.workdir, None, False)
+        for name, server in sorted(tracked.items())
+        if name not in configured_names and server.port in open_ports
+    )
+    return targets, source, error
+
+
+async def start_launch_target(name: str, workspace: Path) -> tuple[bool, str]:
+    """Start one configuration by name. Returns ``(ok, message)``.
+
+    ``_start`` reports failures as prose (with the log tail that explains
+    them), and drops the server from tracking — so a surviving entry whose
+    port answers is the honest success signal.
+    """
+
+    message = await _start(name, workspace)
+    server = _servers.get((str(workspace), name))
+    ok = server is not None and server.running and await _port_open(server.port)
+    return ok, message
+
+
+async def stop_launch_target(name: str, workspace: Path) -> str:
+    """Stop one tracked preview identity by name."""
+
+    return await _stop(name, workspace)
+
+
 async def _status(workspace: Path) -> str:
     keys = sorted(key for key in _servers if key[0] == str(workspace))
     if not keys:

@@ -49,6 +49,9 @@ export const queryKeys = {
       ['coding-workspace-status', workspace] as const,
     problems: (workspace: string, includeResolved = false) =>
       ['coding-workspace-problems', workspace, includeResolved] as const,
+    // Dev servers from launch.json, joined with live port state.
+    preview: (workspace: string) =>
+      ['coding-workspace-preview', workspace] as const,
   },
   // Code knowledge graph panel — keyed by the absolute workspace path, like
   // the coding sidebar. Status + search share the path so a reindex can
