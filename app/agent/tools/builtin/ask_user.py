@@ -9,9 +9,33 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agent.tools.registry import Tool
+
+
+def normalize_question_options(options: list[str]) -> list[str]:
+    """Drop blanks and duplicates while preserving the first spelling.
+
+    A duplicated choice reaches the user as two identical buttons for one
+    answer: selecting either lights both, and when a two-way question renders
+    the same label twice the second branch becomes unreachable except through
+    free text. Comparison ignores case and surrounding whitespace so
+    "In-memory only" and "in-memory only " collapse.
+    """
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for option in options:
+        label = option.strip()
+        if not label:
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(label)
+    return unique
 
 
 class BrowserHandoffSpec(BaseModel):
@@ -60,6 +84,22 @@ class QuestionSpec(BaseModel):
     kind: Literal["text", "agent_spawn"] = "text"
     agent_spawn: AgentSpawnSpec | None = None
 
+    @field_validator("options")
+    @classmethod
+    def _unique_options(cls, value: list[str]) -> list[str]:
+        return normalize_question_options(value)
+
+    @model_validator(mode="after")
+    def _strict_needs_distinct_choices(self) -> "QuestionSpec":
+        # A strict question routes on its choices, so collapsing to one leaves
+        # the branch with no reachable alternative.
+        if self.strict and len(self.options) < 2:
+            raise ValueError(
+                "a strict question needs at least two distinct options; "
+                "duplicates were removed"
+            )
+        return self
+
 
 class AskUserQuestionSpec(BaseModel):
     """Question fields exposed to the model-facing ``ask_user`` tool.
@@ -76,10 +116,18 @@ class AskUserQuestionSpec(BaseModel):
         default_factory=list,
         description=(
             "Optional 2-4 short suggested answers, shown as quick-pick "
-            "choices alongside a free-text field."
+            "choices alongside a free-text field. Every option must be a "
+            "distinct answer: a repeated choice renders as two identical "
+            "buttons for one answer, and a two-way question whose branches "
+            "read the same leaves the second unreachable."
         ),
     )
     browser_handoff: BrowserHandoffSpec | None = None
+
+    @field_validator("options")
+    @classmethod
+    def _unique_options(cls, value: list[str]) -> list[str]:
+        return normalize_question_options(value)
 
 
 async def _ask_user(questions: list[AskUserQuestionSpec]) -> str:
