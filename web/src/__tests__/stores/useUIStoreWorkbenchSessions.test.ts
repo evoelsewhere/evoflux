@@ -14,8 +14,10 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
   sessionHasWorkbenchTool,
   sessionWorkbenchTabs,
+  shouldMountWorkbenchTab,
   useUIStore,
 } from '@/stores/useUIStore'
+import type { WorkbenchTab, WorkbenchTool } from '@/stores/useUIStore'
 
 const store = () => useUIStore.getState()
 const visible = () => sessionWorkbenchTabs(useUIStore.getState())
@@ -141,5 +143,39 @@ describe('workbench tabs are scoped to their session', () => {
       store().setWorkbenchSession('session-a')
       expect(visible().map((tab) => tab.id)).toEqual(['a-1'])
     })
+  })
+})
+
+/**
+ * Which foreign tabs stay mounted.
+ *
+ * Keeping every session's tab mounted preserved their live state but
+ * released nothing: visiting five sessions with a terminal each left five
+ * xterm instances and five open sockets alive at once, measured in the
+ * browser. Only the browser tab genuinely cannot be rebuilt — its page
+ * lives in a native WebView with no replay — while a terminal's PTY
+ * outlives the socket and `terminal_ws` replays its scrollback on
+ * reconnect, which the browser test confirmed end to end.
+ */
+describe('mounting foreign tabs', () => {
+  const tab = (tool: WorkbenchTool, sessionId: string | null): WorkbenchTab =>
+    ({ id: `${tool}-${sessionId}`, tool, sessionId })
+
+  it('keeps a browser from another session mounted', () => {
+    expect(shouldMountWorkbenchTab(tab('browser', 'other'), 'current')).toBe(true)
+  })
+
+  it('lets another session terminal go', () => {
+    expect(shouldMountWorkbenchTab(tab('terminal', 'other'), 'current')).toBe(false)
+  })
+
+  it('mounts this session own tabs whatever the tool', () => {
+    for (const tool of ['terminal', 'browser', 'side-chat', 'files'] as const) {
+      expect(shouldMountWorkbenchTab(tab(tool, 'current'), 'current')).toBe(true)
+    }
+  })
+
+  it('mounts session-independent tabs', () => {
+    expect(shouldMountWorkbenchTab(tab('plugins', null), 'current')).toBe(true)
   })
 })
