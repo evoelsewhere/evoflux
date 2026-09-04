@@ -278,9 +278,9 @@ async def test_direct_flow_fails_closed_for_cross_layer_or_security_scope(
     ]
     unsafe = TraceSpecification.model_validate(raw)
     async with async_session_factory() as db:
-        with pytest.raises(
-            trace_service.TraceValidationError, match="constraint:security"
-        ):
+        # Blockers are named with the documented planned-flow vocabulary so a
+        # rejected author can cite the real condition in required_by.
+        with pytest.raises(trace_service.TraceValidationError, match="security"):
             await trace_service.create_run(
                 db,
                 workspace=str(tmp_path),
