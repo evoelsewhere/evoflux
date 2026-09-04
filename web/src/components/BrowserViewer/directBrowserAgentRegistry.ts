@@ -11,6 +11,15 @@ export interface DirectBrowserSurfaceRegistration {
   order: number
   isActive: () => boolean
   getTab: () => DirectBrowserSurfaceTab | null
+  /**
+   * Why this surface has no tab, in a form worth showing the agent.
+   *
+   * "Desktop browser is unavailable" was the answer to every one of the
+   * several distinct reasons a panel can have no WebView, and it names
+   * none of them — so the only way to find out was to go and look at the
+   * app.
+   */
+  unavailableReason: () => string
   execute: (action: string, params: Record<string, unknown>) => Promise<unknown>
   activate: () => void | Promise<void>
   close: () => void
@@ -126,7 +135,15 @@ export async function runDirectBrowserSessionCommand(
     target.close()
     return `Closed tab ${index}: ${tab?.url ?? ''}`
   }
-  if (!active) throw new Error('Desktop browser is unavailable')
+  if (!active) {
+    const reasons = [...new Set(surfaces.map((surface) => surface.unavailableReason()))]
+      .filter(Boolean)
+    throw new Error(
+      surfaces.length === 0
+        ? 'No browser panel is open in EvoFlux Desktop. Open one from the workbench, then retry.'
+        : `The browser panel has no page yet: ${reasons.join('; ')}`,
+    )
+  }
   if (action === 'status') {
     const status = await active.execute(action, params)
     return {
