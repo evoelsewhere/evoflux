@@ -71,7 +71,7 @@ def _named_edges(result, kind: str):
 
 
 def test_objc_symbols_types_calls_heritage_docs_and_coalescing_are_exact() -> None:
-    source = b'''#import <Foundation/Foundation.h>
+    source = b"""#import <Foundation/Foundation.h>
 /** Child docs */
 @protocol Child <Parent, Logging>
 - (Result *)run:(Input *)input config:(Config *)config;
@@ -87,11 +87,13 @@ def test_objc_symbols_types_calls_heritage_docs_and_coalescing_are_exact() -> No
 }
 @end
 Result *top(Input *input) { helper(); return nil; }
-'''
+"""
     result = ObjCParser().parse(file_path="Models.m", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "Models.m"): 1,
             (NODE_INTERFACE, "Child"): 1,
@@ -147,7 +149,7 @@ Result *top(Input *input) { helper(); return nil; }
 
 
 def test_objc_categories_and_distinct_classes_keep_exact_ownership() -> None:
-    source = b'''@interface NSString (Uppercase)
+    source = b"""@interface NSString (Uppercase)
 - (NSString *)uppercase;
 @end
 @implementation NSString (Uppercase)
@@ -155,7 +157,7 @@ def test_objc_categories_and_distinct_classes_keep_exact_ownership() -> None:
 @end
 @interface Other : NSObject @end
 @implementation Other @end
-'''
+"""
     result = ObjCParser().parse(file_path="Categories.m", source=source)
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
         ("file", "Categories.m"),
@@ -169,12 +171,12 @@ def test_objc_categories_and_distinct_classes_keep_exact_ownership() -> None:
 
 
 def test_objc_property_type_and_document_helpers_are_exact() -> None:
-    source = b'''@interface Item
+    source = b"""@interface Item
 @property (getter = isReady, setter = markReady:) Config *ready;
 @property (readonly) Repo *repo;
 @property Config *title;
 @end
-'''
+"""
     parser = ObjCParser()
     properties = _nodes_of_type(parser, source, "property_declaration")
     first_name = _property_name(properties[0], source)
@@ -200,9 +202,10 @@ def test_objc_property_type_and_document_helpers_are_exact() -> None:
     )
     assert out == ["Config"]
     assert _strip_objc_doc("/**X docs X*/") == "X docs X"
-    assert _strip_objc_doc(
-        "/**\n * Summary\n * @param value ignored\n * Detail\n */"
-    ) == "Summary\nDetail"
+    assert (
+        _strip_objc_doc("/**\n * Summary\n * @param value ignored\n * Detail\n */")
+        == "Summary\nDetail"
+    )
 
 
 def test_objc_declarator_and_non_matching_hooks_are_exact() -> None:
@@ -226,9 +229,9 @@ def test_objc_declarator_and_non_matching_hooks_are_exact() -> None:
 
 
 def test_objc_gnu_and_availability_attributes_are_exact() -> None:
-    source = b'''__attribute__((cold)) Result *top(void) { return nil; }
+    source = b"""__attribute__((cold)) Result *top(void) { return nil; }
 API_AVAILABLE(ios(13.0)) @interface Modern @end
-'''
+"""
     result = ObjCParser().parse(file_path="Attributes.m", source=source)
     assert _named_edges(result, EDGE_DECORATED_BY) == [
         ("top", "cold"),

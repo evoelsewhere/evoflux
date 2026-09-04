@@ -246,9 +246,7 @@ class JavaParser(TreeSitterParser):
     def type_refs(self, node: Node, source: bytes) -> list[str]:
         if node.type == "variable_declarator":
             owner = node.parent
-            type_node = (
-                owner.child_by_field_name("type") if owner is not None else None
-            )
+            type_node = owner.child_by_field_name("type") if owner is not None else None
             if type_node is None:
                 return []
             out: list[str] = []

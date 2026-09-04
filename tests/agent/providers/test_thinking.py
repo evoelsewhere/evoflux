@@ -249,6 +249,21 @@ class TestGoogleDialect:
             "thinkingConfig": {"thinkingLevel": "minimal"}
         }
 
+    def test_an_unknown_model_still_answers_can_disable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A live-listed Gemini the catalog has no row for must not crash.
+
+        The silent-catalog path in ``can_disable`` handed the raw model ID to
+        ``_disable_fields`` where a ``_ModelContract`` belongs; Google's off
+        switch reads the contract, so listing provider models 500'd with
+        ``AttributeError: 'str' object has no attribute 'is_effort_control'``.
+        """
+        _pin(monkeypatch, control=None, levels=())
+        assert th.can_disable("googlegenai", "gemini-future-preview") is True
+        levels = th.offered_levels_for("googlegenai:gemini-future-preview")
+        assert levels and levels[0] == "none"
+
 
 class TestBedrockDialect:
     def test_anthropic_models_with_efforts_go_adaptive(

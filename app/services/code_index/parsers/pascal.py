@@ -97,9 +97,7 @@ class PascalParser(TreeSitterParser):
                 return Definition(
                     kind=kind,
                     name=leaf if separator else name,
-                    prefix=(
-                        f"{unit + '.' if unit else ''}{owner}." if owner else None
-                    ),
+                    prefix=(f"{unit + '.' if unit else ''}{owner}." if owner else None),
                 )
         elif ntype == "declProc":
             if node.parent is not None and node.parent.type == "defProc":
@@ -107,11 +105,7 @@ class PascalParser(TreeSitterParser):
             name = self._proc_name(node, source)
             if name:
                 return Definition(
-                    kind=(
-                        NODE_METHOD
-                        if _inside_pascal_class(node)
-                        else NODE_FUNCTION
-                    ),
+                    kind=(NODE_METHOD if _inside_pascal_class(node) else NODE_FUNCTION),
                     name=name,
                 )
         return None
@@ -290,9 +284,7 @@ def _enclosing_unit_name(node: Node, source: bytes) -> str | None:
     while ancestor is not None:
         if ancestor.type in {"unit", "program", "library"}:
             module = next(
-                child
-                for child in ancestor.named_children
-                if child.type == "moduleName"
+                child for child in ancestor.named_children if child.type == "moduleName"
             )
             return node_text(module, source)
         ancestor = ancestor.parent

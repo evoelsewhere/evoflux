@@ -1629,6 +1629,24 @@ class TeamMemberBase(abc.ABC):
             run_metadata["stop_after_before_model"] = True
         if task_workspace.workspace:
             run_metadata["team_workspace"] = task_workspace.workspace
+
+        # Composer "Plan mode" unifies permission auto-allow with agent plan
+        # mode: lead starts recording destructive tools until exit_plan_mode.
+        # Pre-activate deferred plan tools so the model can exit without
+        # load_tool (otherwise recorded steps can vanish with no approval UI).
+        # This must land in run_metadata *before* RunConfig is constructed —
+        # RunConfig.metadata is validated into a new dict by Pydantic, so
+        # mutating run_metadata after the fact is silently dropped and the
+        # tool executor never sees `_plan_mode` (BUG-007).
+        plan_mode_active = (
+            self._team.permission_mode == "plan" and self._role_label == "lead"
+        )
+        if plan_mode_active:
+            run_metadata["_plan_mode"] = True
+            run_metadata["activated_deferred_tools"] = {
+                "enter_plan_mode",
+                "exit_plan_mode",
+            }
         config = RunConfig(session_id=self.session_id, metadata=run_metadata)
 
         # Coding mode uses the exact project workspace for every team member.
@@ -1663,17 +1681,11 @@ class TeamMemberBase(abc.ABC):
         )
         plan_token = set_plan_mode_service(plan_service)
 
-        # Composer "Plan mode" unifies permission auto-allow with agent plan
-        # mode: lead starts recording destructive tools until exit_plan_mode.
-        # Pre-activate deferred plan tools so the model can exit without
-        # load_tool (otherwise recorded steps can vanish with no approval UI).
-        if self._team.permission_mode == "plan" and self._role_label == "lead":
+        # run_metadata["_plan_mode"] / ["activated_deferred_tools"] were
+        # already set above (before RunConfig construction) — this only
+        # arms the service instance, which isn't available until here.
+        if plan_mode_active:
             plan_service.enter()
-            run_metadata["_plan_mode"] = True
-            run_metadata["activated_deferred_tools"] = {
-                "enter_plan_mode",
-                "exit_plan_mode",
-            }
 
         # Scope ask-user service — blocks the ask_user tool until the user
         # answers, publishing to the same lead stream as plan approvals.

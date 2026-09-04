@@ -71,7 +71,7 @@ def _named_edges(result, kind: str):
 
 
 def test_php_symbols_types_traits_calls_docs_and_attributes_are_exact() -> None:
-    source = rb'''<?php
+    source = rb"""<?php
 namespace App\Billing;
 use Vendor\Repo as R;
 /** Processor docs */
@@ -100,11 +100,13 @@ enum Status: string implements Label {
  case Done;
 }
 const GLOBAL = 1;
-'''
+"""
     result = PhpParser().parse(file_path="Service.php", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "Service.php"): 1,
             (NODE_NAMESPACE, "App.Billing"): 1,
@@ -127,9 +129,7 @@ const GLOBAL = 1;
     assert nodes["App.Billing.Processor.config"].docstring == "Field docs"
     assert nodes["App.Billing.Processor.other"].docstring == "Field docs"
     assert _named_edges(result, EDGE_IMPORTS) == [("Service.php", "Repo")]
-    assert _named_edges(result, EDGE_INHERITS) == [
-        ("App.Billing.Processor", "Base")
-    ]
+    assert _named_edges(result, EDGE_INHERITS) == [("App.Billing.Processor", "Base")]
     assert _named_edges(result, EDGE_IMPLEMENTS) == [
         ("App.Billing.Processor", "Contract"),
         ("App.Billing.Processor", "OtherContract"),
@@ -168,7 +168,7 @@ const GLOBAL = 1;
 
 
 def test_php_braced_namespaces_keep_symbols_in_their_exact_scope() -> None:
-    source = rb'''<?php
+    source = rb"""<?php
 namespace One {
  class First {
   public int $value;
@@ -176,7 +176,7 @@ namespace One {
  }
 }
 namespace Two\Deep { function work(): Result {} }
-'''
+"""
     result = PhpParser().parse(file_path="Scopes.php", source=source)
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
         ("file", "Scopes.php"),
@@ -188,19 +188,22 @@ namespace Two\Deep { function work(): Result {} }
         (NODE_NAMESPACE, "Two.Deep"),
         ("function", "Two.Deep.work"),
     }
-    assert PhpParser().root_prefix(
-        PhpParser()._get_parser().parse(source).root_node, source
-    ) == ""
+    assert (
+        PhpParser().root_prefix(
+            PhpParser()._get_parser().parse(source).root_node, source
+        )
+        == ""
+    )
     function = _nodes_of_type(PhpParser(), source, "function_definition")[0]
     assert PhpParser().type_refs(function, source) == ["Result"]
 
 
 def test_php_single_braced_namespace_never_becomes_a_root_prefix() -> None:
-    source = rb'''<?php
+    source = rb"""<?php
 namespace Solo {
  class Box { public function __construct(private Repo $repo) {} }
 }
-'''
+"""
     parser = PhpParser()
     root = parser._get_parser().parse(source).root_node
     assert parser.root_prefix(root, source) == ""
@@ -215,7 +218,7 @@ namespace Solo {
 
 
 def test_php_interfaces_traits_and_qualified_supertypes_are_exact() -> None:
-    source = rb'''<?php
+    source = rb"""<?php
 namespace Domain;
 interface Child extends BaseContract, Vendor\RemoteContract {
  public const FLAG = 1;
@@ -226,7 +229,7 @@ trait TracksChanges {
  public function touch(): void {}
 }
 class Model extends BaseModel implements Child {}
-'''
+"""
     result = PhpParser().parse(file_path="Types.php", source=source)
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
         ("file", "Types.php"),
@@ -252,13 +255,13 @@ class Model extends BaseModel implements Child {}
 
 
 def test_php_dnf_optional_and_builtin_type_hooks_are_exact() -> None:
-    source = rb'''<?php
+    source = rb"""<?php
 class Types {
  public ?Config $XconfigX;
  #[Vendor\Typed] public const Config ITEM = null;
  public function combine((Left&Right)|Other $value, INT $count): Vendor\Result|null {}
 }
-'''
+"""
     parser = PhpParser()
     field = _nodes_of_type(parser, source, "property_element")[0]
     method = _nodes_of_type(parser, source, "method_declaration")[0]
@@ -278,11 +281,11 @@ class Types {
 
 
 def test_php_expression_and_document_helpers_keep_boundaries() -> None:
-    source = rb'''<?php
+    source = rb"""<?php
 Vendor\helper();
 $this->client->run();
 self::$factory;
-'''
+"""
     parser = PhpParser()
     qualified = _nodes_of_type(parser, source, "qualified_name")[0]
     member = _nodes_of_type(parser, source, "member_call_expression")[0]
@@ -345,6 +348,7 @@ def test_php_expression_paths_fail_closed_when_receivers_are_missing() -> None:
 
     assert _php_expression_path(cast(Node, member), source) == "XnameX"
     assert _php_expression_path(cast(Node, scoped), source) == "XnameX"
-    assert _php_namespace_name(
-        cast(Node, namespace), b"\\XRootX\\Thing\\"
-    ) == "XRootX.Thing"
+    assert (
+        _php_namespace_name(cast(Node, namespace), b"\\XRootX\\Thing\\")
+        == "XRootX.Thing"
+    )

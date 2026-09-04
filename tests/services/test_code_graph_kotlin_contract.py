@@ -72,7 +72,7 @@ def _named_edges(result, kind: str):
 
 
 def test_kotlin_symbols_types_calls_heritage_docs_and_attributes_are_exact() -> None:
-    source = b'''package demo.core
+    source = b"""package demo.core
 import vendor.Repo as R
 /** Service docs */
 @vendor.Service()
@@ -95,11 +95,13 @@ val global: Config = Config()
 object Registry { val item: Item = Item() }
 class Delegating(val closeable: Closeable) : Closeable by closeable
 class Plain(input: Input)
-'''
+"""
     result = KotlinParser().parse(file_path="Service.kt", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "Service.kt"): 1,
             (NODE_CLASS, "demo.core.Service"): 1,
@@ -167,11 +169,11 @@ class Plain(input: Input)
 
 
 def test_kotlin_top_level_functions_and_properties_stay_outside_classes() -> None:
-    source = b'''/** file docs */
+    source = b"""/** file docs */
 package scripts
 val config: Config = load()
 fun execute(input: Input?): Result = service.run(input)
-'''
+"""
     result = KotlinParser().parse(file_path="build.kts", source=source)
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
         ("file", "build.kts"),
@@ -190,10 +192,10 @@ fun execute(input: Input?): Result = service.run(input)
 
 
 def test_kotlin_type_hooks_filter_builtins_and_enclosing_type_parameters() -> None:
-    source = b'''class Box<T>(val value: T, val repo: Repo<T>) {
+    source = b"""class Box<T>(val value: T, val repo: Repo<T>) {
  fun <R> map(input: Input<R>): Result<T> = TODO()
 }
-'''
+"""
     parser = KotlinParser()
     fields = _nodes_of_type(parser, source, "class_parameter")
     method = _nodes_of_type(parser, source, "function_declaration")[0]
@@ -203,14 +205,14 @@ def test_kotlin_type_hooks_filter_builtins_and_enclosing_type_parameters() -> No
 
 
 def test_kotlin_expression_type_and_comment_helpers_are_exact() -> None:
-    source = b'''/**
+    source = b"""/**
  * X docs X
  * second line
  */
 fun run(input: Vendor.Input): Vendor.Result = client.api.run()
 /*X regular X*/
 fun regular(): Result = helper()
-'''
+"""
     parser = KotlinParser()
     function = _nodes_of_type(parser, source, "function_declaration")[0]
     regular = _nodes_of_type(parser, source, "function_declaration")[1]
@@ -261,9 +263,9 @@ def test_kotlin_malformed_hook_inputs_fail_closed() -> None:
     annotation = _FakeNode("annotation")
 
     assert parser.root_prefix(cast(Node, fake_root), b"") == ""
-    assert parser.classify(
-        cast(Node, malformed_object), b"", inside_class=False
-    ) is None
+    assert (
+        parser.classify(cast(Node, malformed_object), b"", inside_class=False) is None
+    )
     assert parser.import_refs(cast(Node, import_header), b"") == []
     assert parser.import_refs(cast(Node, malformed_alias), b"foo")[0].local_name is None
     assert parser.type_refs(cast(Node, property_node), b"") == []

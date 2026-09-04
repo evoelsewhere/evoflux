@@ -17,6 +17,7 @@ import { useRegistryQuery } from '@/queries'
 import { ModelOptions } from '@/components/model-picker/ModelOptions'
 import {
   buildThinkingOptions,
+  normalizeModelId,
   reconcileThinkingLevel,
   shortModelName,
   thinkingColor,
@@ -210,7 +211,9 @@ const AskUserQuestionForm = forwardRef<
                     <span className="text-[11px] font-medium text-(--color-text-muted)">Model</span>
                     <span className="flex min-w-0 items-center gap-1.5">
                       <span className="truncate font-mono text-xs text-(--color-text)">
-                        {shortModelName(spawnSelection.model)}
+                        {normalizeModelId(spawnSelection.model)
+                          ? shortModelName(spawnSelection.model)
+                          : 'Default'}
                       </span>
                       <ChevronDown
                         size={13}

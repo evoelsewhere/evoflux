@@ -54,7 +54,7 @@ def _named_edges(result, kind: str):
 
 
 def test_c_symbols_ownership_types_calls_and_docs_are_exact() -> None:
-    source = b'''#include <stdio.h>
+    source = b"""#include <stdio.h>
 /** Point docs */
 typedef struct Point { int x, y; } Point;
 typedef struct { /** Value docs */ Config value; } Box;
@@ -80,11 +80,13 @@ Result process(struct Repo *repo, Config config) {
   helper();
   repo->save();
 }
-'''
+"""
     result = CParser().parse(file_path="sample.c", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "sample.c"): 1,
             (NODE_STRUCT, "Point"): 1,
@@ -144,7 +146,7 @@ Result process(struct Repo *repo, Config config) {
 
 
 def test_cpp_symbols_scoped_methods_templates_calls_and_heritage_are_exact() -> None:
-    source = b'''#include "service.hpp"
+    source = b"""#include "service.hpp"
 namespace demo::core {
 /// Service docs
 class Service : public Base, private ns::Mixin {
@@ -165,11 +167,13 @@ Result<Item> Service::run(const Request& request) {
   new Widget();
 }
 }
-'''
+"""
     result = CppParser().parse(file_path="sample.cpp", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "sample.cpp"): 1,
             (NODE_NAMESPACE, "demo.core"): 1,
@@ -212,17 +216,17 @@ Result<Item> Service::run(const Request& request) {
 
 
 def test_c_and_cpp_multiline_docs_and_attributes_are_exact() -> None:
-    c_source = b'''/// First line
+    c_source = b"""/// First line
 /// Second line
 __attribute__((cold, aligned(16))) Result work(Config input) { return helper(); }
-'''
-    cpp_source = b'''/**
+"""
+    cpp_source = b"""/**
  * Build docs
  * second line
  */
 [[deprecated, nodiscard]] Result build(Config input) { return Result{}; }
 __declspec(noinline) void win();
-'''
+"""
     c_result = CParser().parse(file_path="docs.c", source=c_source)
     cpp_result = CppParser().parse(file_path="docs.cpp", source=cpp_source)
     c_node = next(node for node in c_result.nodes if node.name == "work")
@@ -242,9 +246,9 @@ __declspec(noinline) void win();
 
 
 def test_c_family_include_delimiters_and_deep_paths_are_exact() -> None:
-    source = b'''#include <XvectorX>
+    source = b"""#include <XvectorX>
 #include "one/two/widget.h"
-'''
+"""
     result = CppParser().parse(file_path="includes.cpp", source=source)
     assert [
         (edge.dst_name, edge.module_path)
@@ -254,13 +258,13 @@ def test_c_family_include_delimiters_and_deep_paths_are_exact() -> None:
 
 
 def test_c_family_compact_and_regular_block_docs_preserve_boundary_text() -> None:
-    source = b'''/**XdocsX*/
+    source = b"""/**XdocsX*/
 void compact();
 /*YplainY*/
 void plain();
 ///XlineX
 void line();
-'''
+"""
     result = CParser().parse(file_path="compact.c", source=source)
     docs = {node.name: node.docstring for node in result.nodes}
     assert docs["compact"] == "XdocsX"
@@ -283,14 +287,14 @@ def test_c_family_non_matching_nodes_do_not_emit_language_hooks() -> None:
 
 
 def test_c_family_direct_type_hooks_cover_fields_prototypes_and_templates() -> None:
-    source = b'''namespace demo {
+    source = b"""namespace demo {
 class Service {
   ns::Result<Item> run(const Request& request);
   Config field;
   std::array<int, N> values;
 };
 }
-'''
+"""
     parser = CppParser()
     field = next(
         node
@@ -325,7 +329,7 @@ def test_c_inline_aggregate_type_refs_do_not_leak_member_types() -> None:
 
 
 def test_c_family_helper_boundaries_are_exact() -> None:
-    source = b'''Config global{};
+    source = b"""Config global{};
 int *pointer;
 std::vector<Item> items;
 struct Shape *shape;
@@ -333,7 +337,7 @@ union Payload *payload;
 enum State state;
 void run();
 void create() { make<Item>(); new ns::Widget(); }
-'''
+"""
     parser = CppParser()
     root = parser._get_parser().parse(source).root_node
     init = _nodes_of_type(parser, source, "init_declarator")[0]

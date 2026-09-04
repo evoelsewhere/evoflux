@@ -134,7 +134,7 @@ def test_go_classification_contract(
 
 
 def test_grouped_declarations_keep_every_symbol_and_correct_ownership() -> None:
-    source = b'''package demo
+    source = b"""package demo
 // Types docs
 type (
  User struct { ID int; Name string; Meta Metadata }
@@ -149,7 +149,7 @@ const (
  One int = 1
  Two = 2
 )
-'''
+"""
 
     result = GoParser().parse(file_path="group.go", source=source)
     symbols = {(node.kind, node.qualified_name) for node in result.nodes}
@@ -175,7 +175,7 @@ const (
 
 
 def test_go_calls_receivers_and_type_refs_keep_qualification() -> None:
-    source = b'''package demo
+    source = b"""package demo
 type User struct{}
 func (u *User) Save(input Request) Response {
   direct()
@@ -183,13 +183,11 @@ func (u *User) Save(input Request) Response {
   factory().nested()
   return Response{}
 }
-'''
+"""
 
     result = GoParser().parse(file_path="calls.go", source=source)
     method = next(node for node in result.nodes if node.name == "Save")
-    calls = [
-        edge.dst_name for edge in result.edges if edge.kind == EDGE_CALLS
-    ]
+    calls = [edge.dst_name for edge in result.edges if edge.kind == EDGE_CALLS]
     refs = [
         edge.dst_name
         for edge in result.edges
@@ -204,13 +202,11 @@ func (u *User) Save(input Request) Response {
         file_path="value.go",
         source=b"package demo\ntype User struct{}\nfunc (u User) Load() {}\n",
     )
-    assert any(
-        node.qualified_name == "demo.User.Load" for node in value_receiver.nodes
-    )
+    assert any(node.qualified_name == "demo.User.Load" for node in value_receiver.nodes)
 
 
 def test_go_interface_embedding_and_member_types_are_exact() -> None:
-    source = b'''package demo
+    source = b"""package demo
 type Store interface {
   BaseStore
   external.RemoteStore
@@ -220,7 +216,7 @@ type User struct { Meta Metadata }
 type Alias = Target
 var Current Config
 const Default Option = 1
-'''
+"""
 
     result = GoParser().parse(file_path="types.go", source=source)
     names = {node.local_id: node.qualified_name for node in result.nodes}
@@ -241,13 +237,13 @@ const Default Option = 1
 
 
 def test_go_import_metadata_supports_alias_blank_dot_and_raw_paths() -> None:
-    source = b'''package demo
+    source = b"""package demo
 import (
  alias "example.com/deep/pkg"
  _ "example.com/side"
  . `example.com/dot`
 )
-'''
+"""
 
     result = GoParser().parse(file_path="imports.go", source=source)
     imports = [
@@ -303,24 +299,30 @@ def test_go_value_name_handles_nested_and_incomplete_selectors() -> None:
     )
 
     assert _go_value_name(cast(Node, outer), source) == "service.client.call"
-    assert _go_value_name(
-        cast(Node, _FakeNode("selector_expression", fields={"field": call})),
-        source,
-    ) is None
-    assert _go_value_name(
-        cast(Node, _FakeNode("selector_expression", fields={"operand": service})),
-        source,
-    ) is None
+    assert (
+        _go_value_name(
+            cast(Node, _FakeNode("selector_expression", fields={"field": call})),
+            source,
+        )
+        is None
+    )
+    assert (
+        _go_value_name(
+            cast(Node, _FakeNode("selector_expression", fields={"operand": service})),
+            source,
+        )
+        is None
+    )
 
 
 def test_go_docs_keep_compact_and_multiple_comment_lines() -> None:
-    source = b'''package demo
+    source = b"""package demo
 //First
 //Second
 func Run() {}
 /*Block*/
 type User struct{}
-'''
+"""
 
     result = GoParser().parse(file_path="docs.go", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
@@ -338,9 +340,7 @@ def test_go_helpers_reject_incomplete_root_and_non_field_nodes() -> None:
     empty_clause = _FakeNode("package_clause")
     root_with_clause = _FakeNode("source_file", children=[empty_clause])
     assert parser.root_prefix(cast(Node, root_with_clause), b"") == ""
-    assert parser.classify(
-        cast(Node, unknown), b"Name", inside_class=True
-    ) is None
+    assert parser.classify(cast(Node, unknown), b"Name", inside_class=True) is None
     path = _FakeNode("interpreted_string_literal", 0, 5)
     invalid_name = _FakeNode("identifier", 0, 0)
     spec = _FakeNode(
@@ -351,7 +351,9 @@ def test_go_helpers_reject_incomplete_root_and_non_field_nodes() -> None:
         ImportRef(name="pkg", module_path="pkg")
     ]
     malformed_comment = _FakeNode("comment", 0, 8)
-    declaration = _FakeNode("function_declaration", prev_named_sibling=malformed_comment)
+    declaration = _FakeNode(
+        "function_declaration", prev_named_sibling=malformed_comment
+    )
     assert _preceding_comment(cast(Node, declaration), b"/*broken") == "/*broken"
 
 

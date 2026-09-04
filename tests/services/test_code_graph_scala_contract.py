@@ -72,7 +72,7 @@ def _named_edges(result, kind: str):
 
 
 def test_scala_symbols_types_calls_heritage_docs_and_annotations_are_exact() -> None:
-    source = b'''package demo.core
+    source = b"""package demo.core
 /** Service docs */
 @Service
 case class Service[T](repo: Repo[T], config: Config) extends Base[T] with Runner {
@@ -88,11 +88,13 @@ object Registry extends Runner { val item: Item = Item() }
 enum State { case Ready, Done }
 type Handler[T] = T => Output
 val global: Config = Config()
-'''
+"""
     result = ScalaParser().parse(file_path="Service.scala", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert Counter((node.kind, node.qualified_name) for node in result.nodes) == Counter(
+    assert Counter(
+        (node.kind, node.qualified_name) for node in result.nodes
+    ) == Counter(
         {
             ("file", "Service.scala"): 1,
             (NODE_NAMESPACE, "demo.core"): 1,
@@ -155,9 +157,9 @@ val global: Config = Config()
 
 
 def test_scala_top_level_function_and_generic_type_filtering_are_exact() -> None:
-    source = b'''val config: Config = load()
+    source = b"""val config: Config = load()
 def execute[T, R](input: Input[T]): Result[R] = service.run()
-'''
+"""
     parser = ScalaParser()
     result = parser.parse(file_path="script.sc", source=source)
     assert {(node.kind, node.qualified_name) for node in result.nodes} == {
@@ -177,13 +179,13 @@ def execute[T, R](input: Input[T]): Result[R] = service.run()
 
 
 def test_scala_expression_type_and_scaladoc_helpers_are_exact() -> None:
-    source = b'''/**
+    source = b"""/**
  * X docs X
  * @param input ignored
  * second line
  */
 def run(input: Vendor.Input): Vendor.Result = client.api.run()
-'''
+"""
     parser = ScalaParser()
     function = _nodes_of_type(parser, source, "function_definition")[0]
     field = _nodes_of_type(parser, source, "field_expression")[0]
@@ -199,18 +201,21 @@ def run(input: Vendor.Input): Vendor.Result = client.api.run()
     assert _scala_type_name(type_id, source) == "Input"
     assert _scala_type_name(root, source) is None
     assert out == ["Repo", "Item"]
-    assert _strip_scaladoc(
-        "/**\n * X docs X\n * @param input ignored\n * second line\n */"
-    ) == "X docs X\nsecond line"
+    assert (
+        _strip_scaladoc(
+            "/**\n * X docs X\n * @param input ignored\n * second line\n */"
+        )
+        == "X docs X\nsecond line"
+    )
     assert _strip_scaladoc("/**X compact X*/") == "X compact X"
     assert function is not None
 
 
 def test_scala_import_metadata_is_exact() -> None:
-    source = b'''import alpha.beta.gamma.Target
+    source = b"""import alpha.beta.gamma.Target
 import tools.syntax._
 import source.pkg.{Original => Alias}
-'''
+"""
     result = ScalaParser().parse(file_path="Imports.scala", source=source)
     assert [
         (edge.dst_name, edge.module_path, edge.local_name)

@@ -56,8 +56,8 @@ def test_lua_require_single_quotes():
 
 
 def test_lua_dotted_assignment_uses_leaf_binding():
-    source = b'''M.dependencies.json = require("vendor.dkjson")
-'''
+    source = b"""M.dependencies.json = require("vendor.dkjson")
+"""
     result = LuaParser().parse(file_path="main.lua", source=source)
 
     assert _import_names(result) == ["json"]

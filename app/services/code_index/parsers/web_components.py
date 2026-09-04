@@ -194,9 +194,7 @@ class AstroParser(_ScriptExtractParser):
         for node in _descendants(root):
             if node.type != "script_element":
                 continue
-            content = next(
-                child for child in node.children if child.type == "raw_text"
-            )
+            content = next(child for child in node.children if child.type == "raw_text")
             scripts.append((node, content))
         return scripts
 
@@ -218,10 +216,15 @@ class LiquidParser(TreeSitterParser):
     def reference_targets(self, node: Node, source: bytes) -> list[str]:
         if node.type == "access":
             return [node_text(node, source)]
-        if node.type == "string" and node.parent is not None and node.parent.type in {
-            "include_statement",
-            "render_statement",
-        }:
+        if (
+            node.type == "string"
+            and node.parent is not None
+            and node.parent.type
+            in {
+                "include_statement",
+                "render_statement",
+            }
+        ):
             raw = node_text(node, source)
             if not _quoted_template_literal(raw):
                 return [raw]
@@ -370,9 +373,7 @@ def _element_attribute(node: Node, name: str, source: bytes) -> str | None:
     return None
 
 
-def _external_script_imports(
-    root: Node, source: bytes
-) -> list[tuple[ImportRef, int]]:
+def _external_script_imports(root: Node, source: bytes) -> list[tuple[ImportRef, int]]:
     out: list[tuple[ImportRef, int]] = []
     for node in _descendants(root):
         if node.type != "script_element":
@@ -395,9 +396,7 @@ def _external_script_imports(
 _VUE_BUILTIN_TAGS = frozenset(
     {"Component", "KeepAlive", "Slot", "Suspense", "Teleport", "Transition"}
 )
-_STATIC_TEMPLATE_NAME = re.compile(
-    r"^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$"
-)
+_STATIC_TEMPLATE_NAME = re.compile(r"^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$")
 
 
 def _template_references(
@@ -457,12 +456,9 @@ def _template_attribute_reference(
     dialect: str,
 ) -> str | None:
     raw = node_text(attribute, source).strip()
-    is_vue_binding = dialect == "vue" and raw.startswith(
-        ("@", "v-on:", ":", "v-bind:")
-    )
+    is_vue_binding = dialect == "vue" and raw.startswith(("@", "v-on:", ":", "v-bind:"))
     is_braced_binding = any(
-        child.type == "attribute_js_expr"
-        for child in _descendants(attribute)
+        child.type == "attribute_js_expr" for child in _descendants(attribute)
     )
     if not is_vue_binding and not is_braced_binding:
         return None

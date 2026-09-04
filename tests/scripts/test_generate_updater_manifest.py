@@ -10,9 +10,15 @@ def _write_updater_pair(root, filename: str, signature: str) -> None:
     (root / f"{filename}.sig").write_text(signature, encoding="utf-8")
 
 
-def test_build_manifest_maps_native_targets_to_versioned_release_assets(tmp_path) -> None:
-    _write_updater_pair(tmp_path, "EvoFlux_0.0.7_aarch64.app.tar.gz", "mac-arm-signature\n")
-    _write_updater_pair(tmp_path, "EvoFlux_0.0.7_x64.app.tar.gz", "mac-intel-signature\n")
+def test_build_manifest_maps_native_targets_to_versioned_release_assets(
+    tmp_path,
+) -> None:
+    _write_updater_pair(
+        tmp_path, "EvoFlux_0.0.7_aarch64.app.tar.gz", "mac-arm-signature\n"
+    )
+    _write_updater_pair(
+        tmp_path, "EvoFlux_0.0.7_x64.app.tar.gz", "mac-intel-signature\n"
+    )
     _write_updater_pair(tmp_path, "EvoFlux_0.0.7_x64-setup.exe", "windows-signature\n")
 
     manifest = build_manifest(

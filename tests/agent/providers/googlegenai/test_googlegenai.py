@@ -365,6 +365,37 @@ def test_convert_assistant_with_thought_signature(google_provider):
     assert any(p.thought_signature == "sig123" for p in parts)
 
 
+def test_convert_assistant_tool_call_missing_thought_signature_gets_sentinel(
+    google_provider,
+):
+    """A replayed tool call with no thought_signature must not 400 on Gemini 3.
+
+    Gemini 3 rejects a functionCall part with no thoughtSignature — this
+    happens for any call captured before this field existed, from a
+    different provider/model, or a Gemini response that simply didn't
+    return one. Google documents "skip_thought_signature_validator" as the
+    sentinel to use when a real signature genuinely isn't available.
+    """
+    messages = [
+        AssistantMessage(
+            content=None,
+            tool_calls=[
+                ToolCall(
+                    id="gemini_id_2",
+                    function=ChatFunctionCall(
+                        name="web_search",
+                        arguments='{"q": "test"}',
+                        thought_signature=None,
+                    ),
+                )
+            ],
+        )
+    ]
+    contents, _ = google_provider._convert_messages_to_gemini(messages)
+    parts = contents[0].parts
+    assert any(p.thought_signature == "skip_thought_signature_validator" for p in parts)
+
+
 def test_convert_tool_message_invalid_json(google_provider):
     """ToolMessage with invalid JSON content falls back to dict wrapper."""
     messages = [

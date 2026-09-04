@@ -23,6 +23,27 @@ const THINKING_MARK: Record<string, string> = {
   ultra: 'Ult',
 }
 
+/**
+ * Internal sentinel stored in an agent's `.md` frontmatter meaning "no
+ * per-agent model override configured — inherit the provider default".
+ * The backend returns this literal string verbatim from every endpoint
+ * that surfaces a stored model id (this is correct/intentional backend
+ * behavior); it must never be rendered to the user as-is. Single source
+ * of truth — do not redefine this constant elsewhere.
+ */
+export const PROVIDER_MODEL_PLACEHOLDER = '__PROVIDER_MODEL__'
+
+/**
+ * Normalizes a stored model id for display: treats the
+ * `PROVIDER_MODEL_PLACEHOLDER` sentinel the same as "no model configured"
+ * so callers can fall back to their own "Default"/"Model"/etc. copy
+ * instead of ever rendering the raw internal token.
+ */
+export function normalizeModelId(id: string | null | undefined): string | null {
+  if (!id || id === PROVIDER_MODEL_PLACEHOLDER) return null
+  return id
+}
+
 export type ModelOption = Pick<
   ModelCatalogEntry,
   'id' | 'provider' | 'model' | 'vision'

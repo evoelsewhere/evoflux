@@ -80,10 +80,10 @@ end.
 
 
 def test_pascal_uppercase_uses_with_explicit_path():
-    source = b'''program Test;
+    source = b"""program Test;
 USES Vendor.Tools IN 'src/tools.pas';
 begin end.
-'''
+"""
     result = PascalParser().parse(file_path="test.pas", source=source)
     imports = [edge for edge in result.edges if edge.kind == EDGE_IMPORTS]
 

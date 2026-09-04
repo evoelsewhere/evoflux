@@ -58,15 +58,11 @@ class RubyParser(TreeSitterParser):
             name = node.child_by_field_name("name")
             if name is not None:
                 kind = NODE_METHOD if inside_class else NODE_FUNCTION
-                return Definition(
-                    kind=kind, name=node_text(name, source)
-                )
+                return Definition(kind=kind, name=node_text(name, source))
         elif ntype == "singleton_method":
             name = node.child_by_field_name("name")
             if name is not None:
-                return Definition(
-                    kind=NODE_METHOD, name=node_text(name, source)
-                )
+                return Definition(kind=NODE_METHOD, name=node_text(name, source))
         elif ntype == "assignment":
             left = node.child_by_field_name("left")
             name = _ruby_constant_path(left, source) if left is not None else None
@@ -142,13 +138,9 @@ class RubyParser(TreeSitterParser):
             if not name:
                 continue
             if macro != "attr_writer":
-                definitions.append(
-                    Definition(kind=NODE_METHOD, name=name)
-                )
+                definitions.append(Definition(kind=NODE_METHOD, name=name))
             if macro != "attr_reader":
-                definitions.append(
-                    Definition(kind=NODE_METHOD, name=f"{name}=")
-                )
+                definitions.append(Definition(kind=NODE_METHOD, name=f"{name}="))
         return definitions
 
     def import_refs(self, node: Node, source: bytes) -> list[ImportRef]:

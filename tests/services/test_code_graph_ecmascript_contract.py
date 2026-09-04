@@ -162,20 +162,18 @@ def test_typescript_classification_contract(
 
 
 def test_javascript_object_and_assignment_shapes_match_shared_contract() -> None:
-    source = b'''const object = {
+    source = b"""const object = {
   arrow: () => {},
   classic: function() {},
   shorthand() {},
 };
 Registry.handlers.run = () => {};
-'''
+"""
 
     result = JavaScriptParser().parse(file_path="contract.js", source=source)
 
     assert {
-        (node.kind, node.qualified_name)
-        for node in result.nodes
-        if node.kind != "file"
+        (node.kind, node.qualified_name) for node in result.nodes if node.kind != "file"
     } == {
         (NODE_VARIABLE, "object"),
         (NODE_METHOD, "object.arrow"),
@@ -204,12 +202,12 @@ def test_this_assignment_is_owned_by_the_enclosing_class() -> None:
 
 
 def test_non_function_shapes_do_not_become_methods_or_callbacks() -> None:
-    source = b'''const plain = factory(value);
+    source = b"""const plain = factory(value);
 const object = { pair: 1 };
 Thing.prototype.run = 1;
 const { destructured } = source;
 const { callback } = memo(() => value);
-'''
+"""
 
     result = TypeScriptParser().parse(file_path="negative.ts", source=source)
     symbols = {(node.kind, node.qualified_name) for node in result.nodes}
@@ -218,9 +216,10 @@ const { callback } = memo(() => value);
     assert (NODE_FUNCTION, "plain") not in symbols
     assert (NODE_METHOD, "object.pair") not in symbols
     assert (NODE_METHOD, "Thing.run") not in symbols
-    assert {
-        node.qualified_name for node in result.nodes if node.kind != "file"
-    } == {"plain", "object"}
+    assert {node.qualified_name for node in result.nodes if node.kind != "file"} == {
+        "plain",
+        "object",
+    }
 
     raw = b"Thing.run = () => {}"
     owner = _FakeNode("identifier", 0, 5)
@@ -238,13 +237,14 @@ const { callback } = memo(() => value);
         len(raw),
         fields={"left": left, "right": right},
     )
-    assert TypeScriptParser().classify(
-        cast(Node, assignment), raw, inside_class=False
-    ) is None
+    assert (
+        TypeScriptParser().classify(cast(Node, assignment), raw, inside_class=False)
+        is None
+    )
 
 
 def test_call_targets_keep_static_member_qualification() -> None:
-    source = b'''function run() {
+    source = b"""function run() {
   direct();
   object.deep.method();
   this.local();
@@ -252,7 +252,7 @@ def test_call_targets_keep_static_member_qualification() -> None:
   new Service();
   new NS.Widget();
 }
-'''
+"""
     parser = TypeScriptParser()
     calls = _nodes_of_type(parser, source, "call_expression")
     constructors = _nodes_of_type(parser, source, "new_expression")
@@ -276,17 +276,19 @@ def test_call_targets_keep_static_member_qualification() -> None:
 
 
 def test_callback_and_tsx_reference_targets_keep_qualified_names() -> None:
-    source = b'''function View() {
+    source = b"""function View() {
   register(callback, object.handler, () => inline());
   return <UI.Widget onClick={handleClick} onHover={handlers.hover} />;
 }
-'''
+"""
     parser = TsxParser()
     calls = _nodes_of_type(parser, source, "call_expression")
     attributes = _nodes_of_type(parser, source, "jsx_attribute")
     opening = _nodes_of_type(parser, source, "jsx_self_closing_element")[0]
 
-    register = next(node for node in calls if node_text(node, source).startswith("register"))
+    register = next(
+        node for node in calls if node_text(node, source).startswith("register")
+    )
     assert parser.reference_targets(register, source) == [
         "callback",
         "object.handler",
@@ -304,16 +306,17 @@ def test_callback_and_tsx_reference_targets_keep_qualified_names() -> None:
     opening = _nodes_of_type(parser, paired, "jsx_opening_element")[0]
     assert parser.reference_targets(opening, paired) == ["Widget"]
 
-    plain_attribute = b"function Plain() { return <Widget title=\"text\" />; }"
+    plain_attribute = b'function Plain() { return <Widget title="text" />; }'
     attribute = _nodes_of_type(parser, plain_attribute, "jsx_attribute")[0]
     assert parser.reference_targets(attribute, plain_attribute) == []
-    assert parser.reference_targets(
-        cast(Node, _FakeNode("jsx_opening_element")), b""
-    ) == []
+    assert (
+        parser.reference_targets(cast(Node, _FakeNode("jsx_opening_element")), b"")
+        == []
+    )
 
 
 def test_heritage_decorators_jsdoc_and_signature_are_exact() -> None:
-    source = b'''/** Service docs. */
+    source = b"""/** Service docs. */
 @framework.sealed()
 class Service extends ns.Base implements First, ns.Second {
   /** Run docs.
@@ -324,20 +327,22 @@ class Service extends ns.Base implements First, ns.Second {
   run(): void {}
 }
 interface API extends Parent, ns.Other {}
-'''
+"""
     parser = TypeScriptParser()
     result = parser.parse(file_path="heritage.ts", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
 
-    assert nodes["Service"].signature == "class Service extends ns.Base implements First, ns.Second {"
+    assert (
+        nodes["Service"].signature
+        == "class Service extends ns.Base implements First, ns.Second {"
+    )
     assert nodes["Service"].docstring == "Service docs."
     assert nodes["Service.run"].docstring == "Run docs.\nMore detail."
 
     relation_rows = [
         (edge.src_local_id, edge.kind, edge.dst_name, edge.line)
         for edge in result.edges
-        if edge.kind
-        in {EDGE_INHERITS, EDGE_IMPLEMENTS, EDGE_DECORATED_BY}
+        if edge.kind in {EDGE_INHERITS, EDGE_IMPLEMENTS, EDGE_DECORATED_BY}
     ]
     assert relation_rows == [
         ("Service#2", EDGE_INHERITS, "Base", 2),
@@ -350,13 +355,12 @@ interface API extends Parent, ns.Other {}
         ("API#11", EDGE_INHERITS, "Other", 11),
     ]
     assert not any(
-        edge.kind == EDGE_REFERENCES and edge.dst_name == "ns"
-        for edge in result.edges
+        edge.kind == EDGE_REFERENCES and edge.dst_name == "ns" for edge in result.edges
     )
 
 
 def test_bare_member_decorator_and_exported_compact_jsdoc() -> None:
-    source = b'''/* ordinary comment */
+    source = b"""/* ordinary comment */
 class Plain {}
 /**Docs*/
 export class Exported {}
@@ -367,7 +371,7 @@ class Bare {}
  *Last
  */
 class Spaced {}
-'''
+"""
 
     result = TypeScriptParser().parse(file_path="docs.ts", source=source)
     nodes = {node.qualified_name: node for node in result.nodes}
@@ -384,14 +388,14 @@ class Spaced {}
 
 
 def test_import_export_and_dynamic_import_metadata_are_exact() -> None:
-    source = b'''import Default from "./default.ts";
+    source = b"""import Default from "./default.ts";
 import { Foo, Bar as Baz } from "./named.ts";
 import * as NS from "./namespace.ts";
 import "./side-effect.ts";
 export { Foo, Bar as PublicBar } from "./reexport.ts";
 export * from "./star.ts";
 const lazy = import("./lazy.tsx");
-'''
+"""
 
     result = TypeScriptParser().parse(file_path="imports.ts", source=source)
     imports = [
@@ -446,19 +450,17 @@ def test_dynamic_import_rejects_calls_and_nonliteral_specifiers() -> None:
     calls = _nodes_of_type(parser, source, "call_expression")
 
     assert all(parser.import_refs(node, source) == [] for node in calls)
-    assert parser.import_refs(
-        cast(Node, _FakeNode("call_expression")), b""
-    ) == []
+    assert parser.import_refs(cast(Node, _FakeNode("call_expression")), b"") == []
 
 
 def test_type_alias_variable_and_callable_type_refs_are_exact() -> None:
-    source = b'''type Handler = (value: Input) => Promise<Output>;
+    source = b"""type Handler = (value: Input) => Promise<Output>;
 const service: Service = external;
 class Worker {
   field: FieldType;
   run(input: Request): Promise<Response> { return service.run(input); }
 }
-'''
+"""
     parser = TypeScriptParser()
     result = parser.parse(file_path="types.ts", source=source)
     node_names = {node.local_id: node.qualified_name for node in result.nodes}
@@ -496,14 +498,20 @@ def test_static_value_name_handles_incomplete_member_nodes() -> None:
     owner = _FakeNode("identifier", 0, 5)
     prop = _FakeNode("property_identifier", 6, 12)
 
-    assert _static_value_name(
-        cast(Node, _FakeNode("member_expression", fields={"property": prop})),
-        source,
-    ) is None
-    assert _static_value_name(
-        cast(Node, _FakeNode("member_expression", fields={"object": owner})),
-        source,
-    ) is None
+    assert (
+        _static_value_name(
+            cast(Node, _FakeNode("member_expression", fields={"property": prop})),
+            source,
+        )
+        is None
+    )
+    assert (
+        _static_value_name(
+            cast(Node, _FakeNode("member_expression", fields={"object": owner})),
+            source,
+        )
+        is None
+    )
 
 
 def test_heritage_without_a_keyword_does_not_emit_an_invalid_edge() -> None:
@@ -523,9 +531,7 @@ def test_heritage_without_a_keyword_does_not_emit_an_invalid_edge() -> None:
         (b'"quoted"', "quoted"),
     ],
 )
-def test_string_content_only_strips_matching_quotes(
-    raw: bytes, expected: str
-) -> None:
+def test_string_content_only_strips_matching_quotes(raw: bytes, expected: str) -> None:
     node = _FakeNode("string", 0, len(raw))
     assert _string_content(cast(Node, node), raw) == expected
 

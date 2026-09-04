@@ -365,10 +365,7 @@ def _preceding_doc_comments(node: Node, source: bytes) -> str | None:
         text = node_text(cur, source)
         if text.startswith("///") or text.startswith("//!"):
             lines.append(text[3:].strip())
-        elif (
-            (text.startswith("/**") or text.startswith("/*!"))
-            and text.endswith("*/")
-        ):
+        elif (text.startswith("/**") or text.startswith("/*!")) and text.endswith("*/"):
             body = text[3:-2]
             cleaned = []
             for line in body.splitlines():
