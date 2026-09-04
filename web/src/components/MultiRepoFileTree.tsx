@@ -8,13 +8,14 @@
  */
 
 import { useState } from 'react'
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { getCodingWorkspaceGitDiff, listCodingWorkspaceFiles } from '@/api/client'
 import { queryKeys } from '@/queries/keys'
 import { cn } from '@/lib/utils'
 import { TreeNodeView } from './CodingWorkspacePanel'
 import { buildTree, collectChangedFiles } from '@/utils/workspaceFileTree'
+import { codingExplorerMenuActions } from '@/lib/coding-explorer-actions'
 import type { CodingProject, WorkspaceFileInfo } from '@/api/types'
 import { FolderTypeIcon } from './FileTypeIcon'
 
@@ -42,6 +43,7 @@ export function MultiRepoFileTree({
   className,
 }: MultiRepoFileTreeProps) {
   const paths = project.workspaces.map((w) => w.path)
+  const queryClient = useQueryClient()
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set())
 
   const filesQueries = useQueries({
@@ -96,6 +98,16 @@ export function MultiRepoFileTree({
         const tree = buildTree(visibleFiles)
         const changedPaths = new Set(collectChangedFiles(diff.data).map((f) => f.path))
         const isCollapsed = normalizedQuery ? false : collapsedPaths.has(w.path)
+        // Each repo gets its own bundle: a file's actions must target the
+        // workspace it actually lives in, not the project's first repo.
+        const menuActions = codingExplorerMenuActions({
+          workspace: w.path,
+          queryClient,
+          onPreview: (entry) => {
+            const file = taggedFiles.find((item) => item.path === entry.path)
+            if (file) onFileSelect?.(file)
+          },
+        })
         const name = w.display_name || w.name || repoLabel(w.path)
 
         return (
@@ -150,6 +162,7 @@ export function MultiRepoFileTree({
                       selectedSourceWorkspace={selectedSourceWorkspace}
                       onFileSelect={onFileSelect}
                       onFileOpen={onFileOpen}
+                      menuActions={menuActions}
                       changedPaths={changedPaths}
                       forceOpen={Boolean(normalizedQuery)}
                     />

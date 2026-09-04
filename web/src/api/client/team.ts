@@ -658,11 +658,47 @@ export async function moveWorkspaceFile(sessionId: string, fromPath: string, toP
   return res.json()
 }
 
-export async function deleteWorkspaceFile(sessionId: string, filePath: string): Promise<WorkspaceFilesResponse> {
-  const encoded = filePath.split('/').map(encodeURIComponent).join('/')
-  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/${encoded}`, {
-    method: 'DELETE',
+/** Create an empty file or folder in the session workspace. */
+export async function createWorkspaceEntry(
+  sessionId: string,
+  path: string,
+  kind: 'file' | 'directory',
+): Promise<WorkspaceFilesResponse> {
+  const params = new URLSearchParams({ path, kind })
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/create?${params}`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'createWorkspaceEntry')
+  return res.json()
+}
+
+/** Duplicate a session-workspace file or folder. */
+export async function copyWorkspaceFile(
+  sessionId: string,
+  fromPath: string,
+  toPath: string,
+): Promise<WorkspaceFilesResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/copy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath }),
   })
+  if (!res.ok) await parseDetailOrThrow(res, 'copyWorkspaceFile')
+  return res.json()
+}
+
+export async function deleteWorkspaceFile(
+  sessionId: string,
+  filePath: string,
+  options?: { recursive?: boolean },
+): Promise<WorkspaceFilesResponse> {
+  const encoded = filePath.split('/').map(encodeURIComponent).join('/')
+  const query = options?.recursive ? '?recursive=true' : ''
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/${encoded}${query}`,
+    { method: 'DELETE' },
+  )
   if (!res.ok) await parseDetailOrThrow(res, 'deleteWorkspaceFile')
   return res.json()
 }
@@ -714,6 +750,59 @@ export async function writeCodingWorkspaceFile(workspace: string, path: string, 
     body: JSON.stringify({ content }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'writeCodingWorkspaceFile')
+}
+
+/** Create an empty file or folder in the coding workspace. */
+export async function createCodingWorkspaceEntry(
+  workspace: string,
+  path: string,
+  kind: 'file' | 'directory',
+): Promise<void> {
+  const params = new URLSearchParams({ workspace, path, kind })
+  const res = await fetch(apiUrl(`/team/workspace/files/create?${params}`), { method: 'POST' })
+  if (!res.ok) await parseDetailOrThrow(res, 'createCodingWorkspaceEntry')
+}
+
+/** Rename or move a coding-workspace file/folder. Paths are workspace-relative. */
+export async function moveCodingWorkspaceEntry(
+  workspace: string,
+  fromPath: string,
+  toPath: string,
+): Promise<void> {
+  const params = new URLSearchParams({ workspace })
+  const res = await fetch(apiUrl(`/team/workspace/files/move?${params}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'moveCodingWorkspaceEntry')
+}
+
+/** Duplicate a coding-workspace file/folder. */
+export async function copyCodingWorkspaceEntry(
+  workspace: string,
+  fromPath: string,
+  toPath: string,
+): Promise<void> {
+  const params = new URLSearchParams({ workspace })
+  const res = await fetch(apiUrl(`/team/workspace/files/copy?${params}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'copyCodingWorkspaceEntry')
+}
+
+/** Delete a coding-workspace file, or a folder when ``recursive`` is set. */
+export async function deleteCodingWorkspaceEntry(
+  workspace: string,
+  path: string,
+  options?: { recursive?: boolean },
+): Promise<void> {
+  const params = new URLSearchParams({ workspace, path })
+  if (options?.recursive) params.set('recursive', 'true')
+  const res = await fetch(apiUrl(`/team/workspace/files/entry?${params}`), { method: 'DELETE' })
+  if (!res.ok) await parseDetailOrThrow(res, 'deleteCodingWorkspaceEntry')
 }
 
 /** Ask the coding workspace LSP to diagnose the current (possibly unsaved) buffer. */

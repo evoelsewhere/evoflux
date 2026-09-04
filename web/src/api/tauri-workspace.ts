@@ -157,13 +157,19 @@ export async function tauriListWorkspaceOpeners(): Promise<WorkspaceOpener[]> {
 }
 
 /**
- * Open the workspace root with a specific app from the opener catalog.
+ * Open the workspace — or one entry inside it — with an app from the catalog.
  *
  * @param root - Absolute path to the workspace root directory.
  * @param openerId - An `id` returned by tauriListWorkspaceOpeners.
+ * @param path - Optional POSIX-relative path to open instead of the root
+ *   (the explorer's context menu passes the clicked file or folder).
  */
-export async function tauriOpenWorkspaceWith(root: string, openerId: string): Promise<void> {
-  return tauriInvoke<void>('open_workspace_with', { root, openerId })
+export async function tauriOpenWorkspaceWith(
+  root: string,
+  openerId: string,
+  path?: string | null,
+): Promise<void> {
+  return tauriInvoke<void>('open_workspace_with', { root, openerId, path: path ?? null })
 }
 
 /** A single directory entry from list_directory. */
@@ -233,18 +239,29 @@ export async function tauriStopFileWatcher(root: string): Promise<void> {
  * @returns Unlisten function to stop listening.
  */
 export function tauriOnFileChange(callback: (events: FileChangeEvent[]) => void): () => void {
-  // Dynamic import to avoid issues in non-Tauri environments
+  // Dynamic import to avoid issues in non-Tauri environments. The listener is
+  // registered asynchronously, so a caller that unsubscribes before the import
+  // settles has to be remembered — otherwise the subscription outlives the
+  // component and every remount leaves another live listener behind, turning
+  // one filesystem event into a burst of query invalidations.
+  let stopped = false
   let unlisten: (() => void) | null = null
 
-  import('@tauri-apps/api/event').then(({ listen }) => {
-    listen<FileChangeEvent[]>('file-change', (event) => {
-      callback(event.payload)
-    }).then((fn) => {
-      unlisten = fn
+  void import('@tauri-apps/api/event')
+    .then(({ listen }) => listen<FileChangeEvent[]>('file-change', (event) => {
+      if (!stopped) callback(event.payload)
+    }))
+    .then((fn) => {
+      if (stopped) fn()
+      else unlisten = fn
     })
-  })
+    .catch(() => {
+      // Not running under Tauri, or the event bridge is unavailable.
+    })
 
   return () => {
+    stopped = true
     unlisten?.()
+    unlisten = null
   }
 }

@@ -1,11 +1,9 @@
 import {
   AppWindow,
   ChevronDown,
-  Code2,
   FolderOpen,
   Loader2,
   RefreshCw,
-  SquareTerminal,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -14,6 +12,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { tauriOpenWorkspaceWith, type WorkspaceOpener } from '@/api/tauri-workspace'
+import { openerDescription } from '@/lib/workspace-openers'
+import { OpenerIcon } from './OpenerIcon'
 import { useWorkspaceOpenersQuery } from '@/queries/useWorkspaceOpenersQuery'
 import { useToastStore } from '@/stores/useToastStore'
 
@@ -21,46 +21,6 @@ interface OpenWithMenuProps {
   /** Absolute workspace root to open; null shows the workspace picker action. */
   workspace: string | null
   onChooseWorkspace?: () => void
-}
-
-function OpenerIcon({ opener }: { opener: WorkspaceOpener }) {
-  if (opener.icon_data_url) {
-    return (
-      <span className="flex size-6 shrink-0 items-center justify-center" aria-hidden="true">
-        <img
-          src={opener.icon_data_url}
-          alt=""
-          className="size-6 object-contain"
-          draggable={false}
-        />
-      </span>
-    )
-  }
-
-  const Fallback = opener.kind === 'editor'
-    ? Code2
-    : opener.kind === 'terminal'
-      ? SquareTerminal
-      : FolderOpen
-  return (
-    <span
-      className="flex size-6 shrink-0 items-center justify-center rounded-md border border-(--color-border) bg-(--bg-key) text-(--color-text-muted)"
-      aria-hidden="true"
-    >
-      <Fallback size={13} strokeWidth={1.8} />
-    </span>
-  )
-}
-
-function openerDescription(opener: WorkspaceOpener): string {
-  switch (opener.kind) {
-    case 'editor':
-      return 'Editor'
-    case 'terminal':
-      return 'Terminal'
-    case 'file_manager':
-      return 'File manager'
-  }
 }
 
 /**

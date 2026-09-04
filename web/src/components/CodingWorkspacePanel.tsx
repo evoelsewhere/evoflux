@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, ChevronRight, FileText, PanelRightClose, PanelRightOpen, RefreshCw, Search, X } from 'lucide-react'
 import { codingWorkspaceFileUrl, getCodingWorkspaceGitDiff, listCodingWorkspaceFiles } from '@/api/client'
@@ -12,12 +12,20 @@ import { SidePanel } from './shell/SidePanel'
 import { CodeGraphPanel } from './CodeGraphPanel'
 import { CodingFileViewerPanel } from './CodingFileViewerPanel'
 import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
+import {
+  FileExplorerContextMenu,
+  type FileExplorerEntry,
+  type FileExplorerMenuActions,
+} from './FileExplorerContextMenu'
 import { MultiRepoFileTree } from './MultiRepoFileTree'
 import { NativeFileTree } from './NativeFileTree'
 import { ProjectCodeGraphPanel } from './ProjectCodeGraphPanel'
 import type { WorkspaceFileInfo } from '@/api/types'
 import { isTauriAvailable, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
 import { openExternalUrl } from '@/lib/open-external'
+import { codingExplorerMenuActions } from '@/lib/coding-explorer-actions'
+import { useToastStore } from '@/stores/useToastStore'
+import { errorMessage } from '@/utils/errors'
 import {
   buildTree,
   collectChangedFiles,
@@ -69,6 +77,7 @@ export function TreeNodeView({
   selectedSourceWorkspace,
   onFileSelect,
   onFileOpen,
+  menuActions,
   changedPaths,
   forceOpen = false,
 }: {
@@ -78,6 +87,7 @@ export function TreeNodeView({
   selectedSourceWorkspace?: string | null
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
   onFileOpen?: (file: WorkspaceFileInfo) => void
+  menuActions?: FileExplorerMenuActions
   changedPaths: Set<string>
   forceOpen?: boolean
 }) {
@@ -86,14 +96,15 @@ export function TreeNodeView({
   const children = sortTreeNodeChildren(node)
 
   if (!isDir && node.file) {
-    const isSelected = node.file.path === selectedPath
-      && (!selectedSourceWorkspace || node.file.sourceWorkspace === selectedSourceWorkspace)
-    const isChanged = changedPaths.has(node.file.path)
-    return (
+    const file = node.file
+    const isSelected = file.path === selectedPath
+      && (!selectedSourceWorkspace || file.sourceWorkspace === selectedSourceWorkspace)
+    const isChanged = changedPaths.has(file.path)
+    const row = (
       <button
         type="button"
-        onClick={() => onFileSelect?.(isSelected ? null : node.file!)}
-        onDoubleClick={() => onFileOpen?.(node.file!)}
+        onClick={() => onFileSelect?.(isSelected ? null : file)}
+        onDoubleClick={() => onFileOpen?.(file)}
         className={cn(
           'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors',
           isSelected
@@ -103,25 +114,30 @@ export function TreeNodeView({
               : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
         )}
         style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT + TREE_DISCLOSURE_SLOT }}
-        title={node.file.path}
+        title={file.path}
       >
-        <FileTypeIcon name={node.file.name} mime={node.file.mime} size={16} />
+        <FileTypeIcon name={file.name} mime={file.mime} size={16} />
         <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
         {isChanged && (
           <span className="shrink-0 font-mono text-xs font-semibold text-(--accent-orange-text)">
             M
           </span>
         )}
-        <span className="shrink-0 text-xs text-(--color-text-subtle)">{formatBytes(node.file.size)}</span>
+        <span className="shrink-0 text-xs text-(--color-text-subtle)">{formatBytes(file.size)}</span>
       </button>
+    )
+    if (!menuActions) return row
+    const entry: FileExplorerEntry = { path: file.path, name: file.name, isDirectory: false }
+    return (
+      <FileExplorerContextMenu entry={entry} actions={menuActions}>
+        {row}
+      </FileExplorerContextMenu>
     )
   }
 
   const hasChangedDescendant = node.path ? pathHasChangedDescendant(node.path, changedPaths) : false
-
-  return (
-    <div>
-      {node.path && (
+  const folderRow = node.path
+    ? (
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
@@ -136,6 +152,22 @@ export function TreeNodeView({
           <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
           {hasChangedDescendant && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--accent-orange-text)" aria-label="Contains modified files" />}
         </button>
+      )
+    : null
+
+  return (
+    <div>
+      {folderRow && (
+        menuActions
+          ? (
+              <FileExplorerContextMenu
+                entry={{ path: node.path, name: node.name, isDirectory: true }}
+                actions={menuActions}
+              >
+                {folderRow}
+              </FileExplorerContextMenu>
+            )
+          : folderRow
       )}
       {(open || forceOpen || !node.path) && (
           <div>
@@ -148,6 +180,7 @@ export function TreeNodeView({
                 selectedSourceWorkspace={selectedSourceWorkspace}
                 onFileSelect={onFileSelect}
                 onFileOpen={onFileOpen}
+                menuActions={menuActions}
                 changedPaths={changedPaths}
                 forceOpen={forceOpen}
               />
@@ -193,6 +226,7 @@ export function CodingWorkspacePanel({
   embedded?: boolean
 }) {
   const queryClient = useQueryClient()
+  const pushToast = useToastStore((state) => state.push)
   const projectQuery = useProjectQuery(projectId)
   const project = projectQuery.data ?? null
   // Drive multi/single-repo mode off the *primed* projectId, not the async
@@ -223,6 +257,9 @@ export function CodingWorkspacePanel({
   )
   const [searchQuery, setSearchQuery] = useState('')
   const [mobilePane, setMobilePane] = useState<'tree' | 'preview'>('tree')
+  // Native listings live in NativeFileTree, not the query cache, so Refresh
+  // and context-menu mutations need an explicit signal to re-read from disk.
+  const [treeReloadKey, setTreeReloadKey] = useState(0)
   const treePaneRef = useRef<HTMLElement>(null)
   const splitBodyRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -284,10 +321,10 @@ export function CodingWorkspacePanel({
     try { localStorage.setItem(CODING_TREE_WIDTH_KEY, String(CODING_TREE_WIDTH_DEFAULT)) } catch { /* ignore */ }
   }
 
-  const handleFileSelect = (file: WorkspaceFileInfo | null) => {
+  const handleFileSelect = useCallback((file: WorkspaceFileInfo | null) => {
     onFileSelect?.(file)
     if (mobile && file) setMobilePane('preview')
-  }
+  }, [mobile, onFileSelect])
 
   const handleClosePreview = () => {
     onFileSelect?.(null)
@@ -302,12 +339,41 @@ export function CodingWorkspacePanel({
       } else {
         await openExternalUrl(codingWorkspaceFileUrl(sourceWorkspace, file.path))
       }
-    } catch {
-      // Preview remains available even when the OS/browser cannot open a file.
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: `Could not open ${file.name}`,
+        description: errorMessage(error),
+      })
     }
   }
 
+  const menuActions = useMemo<FileExplorerMenuActions>(() => codingExplorerMenuActions({
+    workspace,
+    queryClient,
+    onPreview: (entry) => {
+      const file = files.data?.files.find((item) => item.path === entry.path)
+      if (file) handleFileSelect(file)
+    },
+    onChanged: () => setTreeReloadKey((key) => key + 1),
+  }), [files.data?.files, handleFileSelect, queryClient, workspace])
+
+  // The native tree sees files the gitignore-filtered HTTP listing does not,
+  // so preview builds the file info from the row itself instead of looking it
+  // up in that listing.
+  const nativeMenuActions = useMemo<FileExplorerMenuActions>(() => ({
+    ...menuActions,
+    onPreview: (entry) => handleFileSelect({
+      path: entry.path,
+      name: entry.name,
+      size: entry.size ?? 0,
+      mtime: entry.mtime ?? 0,
+      mime: entry.mime ?? '',
+    }),
+  }), [handleFileSelect, menuActions])
+
   const refreshFiles = async () => {
+    setTreeReloadKey((key) => key + 1)
     if (isProjectMode && project) {
       await Promise.all(project.workspaces.flatMap((item) => [
         queryClient.invalidateQueries({ queryKey: queryKeys.coding.files(item.path) }),
@@ -571,16 +637,16 @@ export function CodingWorkspacePanel({
                       <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading project repositories…</p>
                     )
                   ) : (
-                    files.isLoading ? (
-                      <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading files…</p>
-                    ) : files.isError ? (
-                      <p className="px-2 py-4 text-xs text-(--color-error)">Failed to load files</p>
-                    ) : files.data?.files.length === 0 ? (
-                      <p className="px-2 py-4 text-xs text-(--color-text-subtle)">No files shown</p>
-                    ) : isTauriAvailable() && !searchQuery.trim() ? (
+                    // The native tree reads the filesystem directly, so it
+                    // must not be gated on the HTTP listing it replaces —
+                    // that made a failed or gitignore-emptied listing hide a
+                    // perfectly readable workspace.
+                    isTauriAvailable() && !searchQuery.trim() ? (
                       <NativeFileTree
                         workspaceRoot={workspace}
                         selectedPath={selectedFilePath}
+                        menuActions={nativeMenuActions}
+                        reloadKey={treeReloadKey}
                         onFileSelect={(entry) => {
                           if (!entry) {
                             handleFileSelect(null)
@@ -603,6 +669,10 @@ export function CodingWorkspacePanel({
                         })}
                         className="flex-1 overflow-auto"
                       />
+                    ) : files.isLoading ? (
+                      <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading files…</p>
+                    ) : files.isError ? (
+                      <p className="px-2 py-4 text-xs text-(--color-error)">Failed to load files</p>
                     ) : (
                       <div className="p-2">
                         {filteredSingleFiles.length === 0
@@ -616,6 +686,7 @@ export function CodingWorkspacePanel({
                                 key={node.path}
                                 node={node}
                                 depth={0}
+                                menuActions={menuActions}
                                 selectedPath={selectedFilePath}
                                 selectedSourceWorkspace={selectedFile?.sourceWorkspace}
                                 onFileSelect={handleFileSelect}

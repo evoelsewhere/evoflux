@@ -6,7 +6,7 @@
 //! deterministic, and never surfaces apps the user does not have.
 
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -396,13 +396,20 @@ pub async fn list_workspace_openers() -> Result<Vec<WorkspaceOpener>, String> {
     .map_err(|error| format!("Could not detect desktop applications: {error}"))
 }
 
-/// Launch an opener from the curated catalog with the workspace root.
+/// Launch an opener from the curated catalog with the workspace root, or with
+/// one entry inside it when `path` is given.
 ///
 /// `opener_id` must match a catalog entry — arbitrary binaries from the
 /// frontend are rejected, and arguments are passed separately (no shell
-/// string interpolation) to avoid injection via crafted paths.
+/// string interpolation) to avoid injection via crafted paths. `path` is a
+/// workspace-relative path (the explorer's context menu passes the clicked
+/// file or folder); it is validated to stay inside the root.
 #[tauri::command]
-pub fn open_workspace_with(root: String, opener_id: String) -> Result<(), String> {
+pub fn open_workspace_with(
+    root: String,
+    opener_id: String,
+    path: Option<String>,
+) -> Result<(), String> {
     let root_path = Path::new(&root);
     if !root_path.is_dir() {
         return Err("Workspace root does not exist".into());
@@ -410,7 +417,6 @@ pub fn open_workspace_with(root: String, opener_id: String) -> Result<(), String
     let resolved = root_path
         .canonicalize()
         .unwrap_or_else(|_| root_path.to_path_buf());
-    let root_str = resolved.to_string_lossy().into_owned();
 
     let entry = CATALOG
         .iter()
@@ -420,7 +426,59 @@ pub fn open_workspace_with(root: String, opener_id: String) -> Result<(), String
         return Err(format!("{} is not available on this machine", entry.name));
     }
 
-    launch(entry, &resolved, &root_str).map_err(|e| format!("Failed to open {}: {e}", entry.name))
+    let target = match path.as_deref().filter(|value| !value.is_empty()) {
+        Some(relative) => {
+            let candidate = Path::new(relative);
+            if candidate.is_absolute()
+                || candidate
+                    .components()
+                    .any(|component| matches!(component, Component::ParentDir))
+            {
+                return Err("Path must be relative to the workspace".into());
+            }
+            let joined = resolved
+                .join(candidate)
+                .canonicalize()
+                .map_err(|_| "Path not found".to_string())?;
+            if !joined.starts_with(&resolved) {
+                return Err("Path escapes workspace root".into());
+            }
+            joined
+        }
+        None => resolved,
+    };
+
+    // Terminals and file managers take a directory: pointing them at a file
+    // would either fail or (on Windows) hand the file to its default app.
+    let target = match entry.kind {
+        OpenerKind::Terminal | OpenerKind::FileManager if target.is_file() => {
+            target.parent().map(Path::to_path_buf).unwrap_or(target)
+        }
+        _ => target,
+    };
+
+    let target_str = launch_argument(&target);
+    launch(entry, &target, &target_str).map_err(|e| format!("Failed to open {}: {e}", entry.name))
+}
+
+/// Render a canonical path for use as a command-line argument.
+///
+/// `canonicalize` returns Windows extended-length paths (`\\?\C:\…`), which
+/// several launchers (Explorer, older editor CLIs) reject outright. Strip the
+/// prefix for the argument while keeping the canonical `PathBuf` for the
+/// filesystem checks above.
+fn launch_argument(path: &Path) -> String {
+    let rendered = path.to_string_lossy().into_owned();
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(stripped) = rendered.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{stripped}");
+        }
+        if let Some(stripped) = rendered.strip_prefix(r"\\?\") {
+            return stripped.to_string();
+        }
+    }
+    rendered
 }
 
 #[cfg(target_os = "macos")]
