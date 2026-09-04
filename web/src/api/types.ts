@@ -2113,6 +2113,38 @@ export interface ProcessListResponse {
   processes: ManagedProcess[]
 }
 
+// ── Preview (dev servers) ───────────────────────────────────────────────────
+
+export interface PreviewTarget {
+  name: string
+  port: number
+  url: string
+  command: string
+  cwd: string | null
+  depends_on: string | null
+  /** False for a tracked server whose launch.json entry was removed. */
+  configured: boolean
+  running: boolean
+  /** Listening, but not spawned by us — an external `npm run dev`, say. */
+  reused: boolean
+  pid: number | null
+}
+
+export interface PreviewTargetListResponse {
+  workspace: string
+  /** Absolute path of the launch config that was read, if any. */
+  source: string | null
+  suggested_source: string
+  error: string | null
+  targets: PreviewTarget[]
+}
+
+export interface PreviewActionResponse {
+  ok: boolean
+  message: string
+  url: string | null
+}
+
 // ── Scheduler ───────────────────────────────────────────────────────────────
 
 export type ScheduledTaskMode = 'work' | 'coding'

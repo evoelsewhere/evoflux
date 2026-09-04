@@ -34,6 +34,7 @@ import {
   subscribeBrowserPreferences,
   type BrowserPreferences,
 } from './browserPreferences'
+import { BrowserLauncher } from './BrowserLauncher'
 import { DirectBrowserSettingsView } from './DirectBrowserSettingsView'
 import {
   type BrowserPageDialog,
@@ -49,6 +50,8 @@ const ZOOM_LEVELS = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200]
 
 interface DirectBrowserShellProps {
   sessionId: string | null
+  /** Coding workspace whose launch.json backs the new-tab launcher. */
+  workspace?: string | null
   tabId?: string
   initialUrl?: string
   open: boolean
@@ -62,6 +65,7 @@ interface DirectBrowserShellProps {
 
 export function DirectBrowserShell({
   sessionId,
+  workspace = null,
   tabId = 'browser',
   initialUrl,
   open,
@@ -84,6 +88,10 @@ export function DirectBrowserShell({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [preferences, setPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
   const [width, setWidth] = useState(DEFAULT_WIDTH)
+  // Starts true: the first tab opens on the new-tab page anyway, and
+  // assuming that keeps the native view hidden from the first frame instead
+  // of flashing the static page before the launcher takes over.
+  const [onNewTabPage, setOnNewTabPage] = useState(true)
   const preset = useMotionPreset()
   const pushToast = useToastStore((state) => state.push)
 
@@ -100,12 +108,17 @@ export function DirectBrowserShell({
     })
   }, [pushToast])
 
+  // The launcher is React content in the viewport the native WebView covers,
+  // so it can only be seen while that view is hidden — the same trick the
+  // settings view uses.
+  const showLauncher = Boolean(workspace) && onNewTabPage && enabled && !settingsOpen
+
   const browser = useDirectBrowserTabs({
     sessionId: sessionId ?? 'detached',
     instanceId: tabId,
     viewportRef,
     enabled: Boolean(open && sessionId && enabled),
-    visible: Boolean(open && visible && !settingsOpen),
+    visible: Boolean(open && visible && !settingsOpen && !showLauncher),
     bridgeEnabled: visible,
     initialUrl,
     singleTab: true,
@@ -125,6 +138,19 @@ export function DirectBrowserShell({
 
   const currentUrl = browser.activeTab?.url ?? ''
   const hasPage = Boolean(browser.activeTab)
+
+  // Adjusted during render rather than in an effect: the launcher and the
+  // native view's visibility must flip in the same commit, or one frame
+  // shows both (or neither).
+  const nextOnNewTabPage = !browser.activeTab || isBrowserNewTab(currentUrl)
+  if (nextOnNewTabPage !== onNewTabPage) setOnNewTabPage(nextOnNewTabPage)
+
+  const openInPage = useCallback((url: string) => {
+    // No WebView to navigate (creation failed, say) — hand the URL to a fresh
+    // workbench tab rather than dropping the click.
+    if (browser.activeTab) void browser.navigate(url)
+    else onNewTab?.(url)
+  }, [browser, onNewTab])
 
   useEffect(() => {
     onTitleChangeRef.current = onTitleChange
@@ -400,6 +426,12 @@ export function DirectBrowserShell({
                 <div className="absolute inset-0 flex items-center justify-center bg-(--bg-page)">
                   <Loader2 size={26} className="animate-spin text-(--color-accent)" />
                 </div>
+              ) : showLauncher && workspace ? (
+                <BrowserLauncher
+                  workspace={workspace}
+                  paused={!visible}
+                  onOpen={openInPage}
+                />
               ) : null}
               {browser.pageDialog && !settingsOpen && (
                 <BrowserPageDialogPrompt

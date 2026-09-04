@@ -61,6 +61,7 @@ The `/api/team` router includes:
 - ChangeSets, editor actions/context, LSP/language-server and Problems;
 - code-index status/index/query/graph per Coding project;
 - terminal and direct-browser WebSockets;
+- managed processes and `preview` dev-server targets/start/stop;
 - Side Chat messages and stream.
 
 Use the OpenAPI document rather than copying request/response field definitions

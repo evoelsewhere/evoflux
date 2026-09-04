@@ -1706,6 +1706,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           {(tab, active) => (
             <BrowserViewer
               sessionId={tab.sessionId ?? sessionIdState}
+              workspace={mode === 'coding' ? workspace : null}
               tabId={tab.id}
               initialUrl={tab.initialUrl}
               open
