@@ -57,28 +57,30 @@ describe('PluginCenterPanel create flow', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Add plugin/i }))
     fireEvent.click(await screen.findByText('Create plugin'))
 
-    expect(screen.getByLabelText('Plugin parent folder')).toBeVisible()
+    expect(screen.getByLabelText('Parent folder')).toBeVisible()
     expect(screen.getByLabelText('Plugin name')).toBeVisible()
-    expect(screen.getByLabelText('Plugin description')).toBeVisible()
-    expect(screen.getByLabelText('Plugin version')).toBeVisible()
-    expect(screen.getByLabelText('Plugin author')).toBeVisible()
-    expect(screen.getByLabelText('Plugin license')).toBeVisible()
-    expect(screen.getByLabelText('Starter Skill name')).toBeVisible()
+    expect(screen.getByLabelText('Description')).toBeVisible()
+    expect(screen.getByLabelText('Version optional')).toBeVisible()
+    expect(screen.getByLabelText('Author optional')).toBeVisible()
+    expect(screen.getByLabelText('License optional')).toBeVisible()
+    expect(screen.getByLabelText('Starter Skill optional')).toBeVisible()
     expect(screen.queryByLabelText('Starter MCP server name')).not.toBeInTheDocument()
     expect(screen.getByText('Create development plugin').closest('section')).toHaveClass(
       '@container/plugin-center',
     )
-    expect(screen.getByLabelText('Plugin name').parentElement).toHaveClass(
-      '@lg/plugin-center:grid-cols-2',
-    )
+    // Each field now sits in its own labelled wrapper, so the responsive
+    // grid is the wrapper's parent rather than the input's.
+    expect(
+      screen.getByLabelText('Plugin name').closest('div')?.parentElement,
+    ).toHaveClass('@lg/plugin-center:grid-cols-2')
 
-    fireEvent.change(screen.getByLabelText('Plugin parent folder'), {
+    fireEvent.change(screen.getByLabelText('Parent folder'), {
       target: { value: ' /tmp/plugins/ ' },
     })
     fireEvent.change(screen.getByLabelText('Plugin name'), {
       target: { value: ' demo-plugin ' },
     })
-    fireEvent.change(screen.getByLabelText('Plugin description'), {
+    fireEvent.change(screen.getByLabelText('Description'), {
       target: { value: ' Demo description ' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Create & edit' }))
@@ -106,22 +108,22 @@ describe('PluginCenterPanel create flow', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /Add plugin/i }))
     fireEvent.click(await screen.findByText('Create plugin'))
-    fireEvent.change(screen.getByLabelText('Plugin parent folder'), {
+    fireEvent.change(screen.getByLabelText('Parent folder'), {
       target: { value: '/tmp/plugins' },
     })
     fireEvent.change(screen.getByLabelText('Plugin name'), {
       target: { value: 'demo-plugin' },
     })
-    fireEvent.change(screen.getByLabelText('Plugin version'), {
+    fireEvent.change(screen.getByLabelText('Version optional'), {
       target: { value: '0.1.0' },
     })
-    fireEvent.change(screen.getByLabelText('Plugin author'), {
+    fireEvent.change(screen.getByLabelText('Author optional'), {
       target: { value: 'Demo Team' },
     })
-    fireEvent.change(screen.getByLabelText('Plugin license'), {
+    fireEvent.change(screen.getByLabelText('License optional'), {
       target: { value: 'MIT' },
     })
-    fireEvent.change(screen.getByLabelText('Starter Skill name'), {
+    fireEvent.change(screen.getByLabelText('Starter Skill optional'), {
       target: { value: 'demo-workflow' },
     })
     fireEvent.click(screen.getByRole('button', { name: 'Create & edit' }))
