@@ -274,3 +274,8 @@ desktop/EvoFlux.key.pub
 
 # MiMo Code CLI local session/tooling dir
 .mimocode/
+
+# Reference clone read while porting the provider layer; not part of the app.
+MiMo-Code/
+# Local dev state.
+/.local/
