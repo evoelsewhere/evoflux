@@ -36,6 +36,7 @@ import {
 } from '@/hooks/usePinnedTranscript'
 import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { activityLabelForPhase } from '@/lib/activity-phase'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { TextSelectionAction } from './TextSelectionAction'
 import { TurnChangesCard } from './TurnChangesCard'
@@ -272,6 +273,15 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     () => new Set(latestMCPAppBlockIdsKey ? latestMCPAppBlockIdsKey.split('\0') : []),
     [latestMCPAppBlockIdsKey],
   )
+  // Which phase the working agent is in, so the runway can say whether
+  // EvoFlux is still assembling the turn or the provider already has it.
+  const activityPhase = useTeamStore((state) => {
+    const streams = state.agentStreams ?? {}
+    for (const stream of Object.values(streams)) {
+      if (stream.status === 'working' && stream.phase) return stream.phase
+    }
+    return null
+  })
   const showPendingActivity = shouldShowPendingActivity({
     currentBlocks,
     isContinuing,
@@ -518,7 +528,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
              */}
             {showPendingActivity && (
               <div className="oa-active-turn-runway">
-                <ActivityStatus className="py-1 pl-0.5 text-xs" />
+                <ActivityStatus
+                  label={activityLabelForPhase(activityPhase)}
+                  className="py-1 pl-0.5 text-xs"
+                />
               </div>
             )}
 

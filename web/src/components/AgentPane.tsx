@@ -29,6 +29,7 @@ import {
   usePinnedTranscript,
 } from '@/hooks/usePinnedTranscript'
 import type { AgentStream } from '@/stores/useTeamStore'
+import { activityLabelForPhase } from '@/lib/activity-phase'
 import { ActivityStatus } from './motion/ActivityStatus'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { TurnChangesCard } from './TurnChangesCard'
@@ -490,7 +491,7 @@ export function AgentPane({
             <div className="flex items-center gap-2 px-3 pt-3" role="status" aria-label={`${name} is preparing a response`}>
               <ActivityStatus
                 className="text-xs"
-                label={stream.phase === 'model_calling' ? 'Thinking' : 'Preparing'}
+                label={activityLabelForPhase(stream.phase)}
               />
             </div>
           )}
