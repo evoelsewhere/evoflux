@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   PackagePlus,
   RefreshCw,
+  Search,
   Server,
   Trash2,
 } from 'lucide-react'
@@ -75,12 +76,12 @@ async function choosePath(options: {
   return typeof selected === 'string' ? selected : null
 }
 
-function diagnosticsCount(inspection: PluginInspection): number {
+function errorDiagnostics(inspection: PluginInspection) {
   return [
     ...inspection.diagnostics,
     ...inspection.skills.flatMap((skill) => skill.diagnostics),
     ...inspection.mcp_servers.flatMap((server) => server.diagnostics),
-  ].filter((item) => item.severity === 'error').length
+  ].filter((item) => item.severity === 'error')
 }
 
 function conciseToolNames(server: PluginMcpRuntimeStatus): string {
@@ -115,8 +116,40 @@ function PluginCard({
   const displayName = installation.name
   const description = installation.description || 'Portable Agent Plugin'
   const [expanded, setExpanded] = useState(false)
-  const errors = diagnosticsCount(inspection)
-  const isValid = inspection.valid
+  // A plugin's health is three separate facts, and the card used to show
+  // only the first. `inspection.valid` means the *package* parses: it stays
+  // true when a skill has no frontmatter or mcp.json is malformed, because
+  // one broken component must not make the rest of the plugin unloadable.
+  // And it says nothing about whether the servers actually came up — a
+  // plugin whose only MCP server died with FileNotFoundError still
+  // validated. So the card stayed green and the badge still read "Enabled";
+  // you had to expand every plugin to find out anything was wrong.
+  const errors = errorDiagnostics(inspection)
+  const failedServers = installation.enabled
+    ? servers.filter((server) => server.enabled && server.state === 'error')
+    : []
+  const problems: { key: string; label: string; title: string }[] = []
+  if (failedServers.length > 0) {
+    problems.push({
+      key: 'mcp',
+      label: failedServers.length === 1
+        ? '1 MCP server failed'
+        : `${failedServers.length} MCP servers failed`,
+      title: failedServers
+        .map((server) => `${server.server_name}: ${server.error ?? 'failed to start'}`)
+        .join(String.fromCharCode(10)),
+    })
+  }
+  if (errors.length > 0) {
+    problems.push({
+      key: 'diagnostics',
+      label: errors.length === 1 ? '1 error' : `${errors.length} errors`,
+      title: errors
+        .map((item) => item.message)
+        .join(String.fromCharCode(10)),
+    })
+  }
+  const isValid = inspection.valid && problems.length === 0
   const skillCount = inspection.skills.filter((skill) => skill.valid).length
   const mcpCount = inspection.mcp_servers.filter((server) => server.valid).length
   const configuredCredentialCount = item.credentials.fields.filter(
@@ -192,11 +225,44 @@ function PluginCard({
           <span className="sr-only">
             {isValid
               ? 'Plugin is valid.'
-              : `Plugin is not valid${errors ? `: ${errors} component errors` : ''}.`}
+              : inspection.valid
+                ? `Plugin package is valid but needs attention: ${problems.map((problem) => problem.label).join(', ')}.`
+                : `Plugin is not valid${errors.length ? `: ${errors.length} component errors` : ''}.`}
           </span>
 
-          {item.credentials.supported && (
-            <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-(--color-text-muted)">
+          {/* Every state the card reports lives in this one wrapping row, so
+              the right-hand column stays a fixed-width disclosure control.
+              Competing for that column truncated the plugin's own name on a
+              narrow card, and dropped the enabled pill entirely below 24rem
+              — which is exactly where you can least afford to hide it. */}
+          <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-(--color-text-muted)">
+            <span
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium',
+                installation.enabled
+                  ? 'bg-(--color-success-subtle) text-(--color-success)'
+                  : 'bg-(--bg-key) text-(--color-text-muted)',
+              )}
+            >
+              <span
+                className={cn(
+                  'size-1.5 rounded-full',
+                  installation.enabled ? 'bg-(--color-success)' : 'bg-(--color-text-subtle)',
+                )}
+                aria-hidden="true"
+              />
+              {installation.enabled ? 'Enabled' : 'Disabled'}
+            </span>
+            {problems.map((problem) => (
+              <span
+                key={problem.key}
+                className="inline-flex items-center gap-1 rounded-full bg-(--color-error-subtle) px-2 py-0.5 font-medium text-(--color-error)"
+                title={problem.title}
+              >
+                <AlertTriangle size={12} aria-hidden="true" /> {problem.label}
+              </span>
+            ))}
+            {item.credentials.supported && (
               <span className={cn(
                 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium',
                 item.credentials.configured
@@ -205,27 +271,11 @@ function PluginCard({
               )}>
                 <KeyRound size={12} /> {credentialLabel}
               </span>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-2 self-center">
-          <span
-            className={cn(
-              'hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium @sm/plugin-card:inline-flex',
-              installation.enabled
-                ? 'border-(--color-success)/15 bg-(--color-success-subtle) text-(--color-success)'
-                : 'border-(--color-border) bg-(--bg-key) text-(--color-text-muted)',
-            )}
-          >
-            <span
-              className={cn(
-                'size-1.5 rounded-full',
-                installation.enabled ? 'bg-(--color-success)' : 'bg-(--color-text-subtle)',
-              )}
-            />
-            {installation.enabled ? 'Enabled' : 'Disabled'}
-          </span>
           <span className="flex size-8 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors group-hover:bg-(--bg-key) group-hover:text-(--color-text)">
             <ChevronDown
               size={17}
@@ -388,6 +438,13 @@ export function PluginCenterPanel() {
   >(null)
   const [showCreate, setShowCreate] = useState(false)
   const [hostPath, setHostPath] = useState('')
+  // The host path used to be a permanent field above the list, wanted by
+  // two of the four Add-plugin actions and by nobody else. Worse, those two
+  // menu items sat disabled until you typed into an input *below* the menu,
+  // so the reason they were greyed out was hidden behind the popover. It is
+  // now asked for by the action that needs it, at the moment it needs it.
+  const [pathPrompt, setPathPrompt] = useState<'link' | 'validate' | null>(null)
+  const [filter, setFilter] = useState('')
   const [updateTarget, setUpdateTarget] = useState<PluginListItem | null>(null)
   const [trustReview, setTrustReview] = useState<
     (PluginOperationResponse & { managedResourceId?: string }) | null
@@ -591,54 +648,105 @@ export function PluginCenterPanel() {
     )
   }
 
+  const plugins = query.data?.plugins ?? []
+  const runtimeServers = query.data?.mcp_servers ?? []
+  // One summary of the whole shelf, so the header answers "is anything
+  // broken?" without reading every card. Same two facts a card reports.
+  const failingCount = plugins.filter((item) => {
+    const failed = item.installation.enabled
+      && runtimeServers.some((server) =>
+        server.installation_id === item.installation.id
+        && server.enabled
+        && server.state === 'error')
+    return !item.inspection.valid || failed || errorDiagnostics(item.inspection).length > 0
+  }).length
+  const needle = filter.trim().toLowerCase()
+  const visiblePlugins = needle
+    ? plugins.filter((item) =>
+        `${item.installation.name} ${item.installation.description ?? ''}`
+          .toLowerCase()
+          .includes(needle))
+    : plugins
+  const showFilter = plugins.length >= 3
+  const closePanels = () => {
+    setPathPrompt(null)
+    setShowCreate(false)
+  }
+  const submitPathPrompt = async () => {
+    const mode = pathPrompt
+    if (!mode || !hostPath.trim()) return
+    setPathPrompt(null)
+    if (mode === 'link') await pickAndImport('link')
+    else await validateFolder()
+  }
+
   return (
     <section className="@container/plugin-center flex h-full min-h-0 flex-col bg-(--bg-page)">
       <header className="border-b border-(--color-border) px-5 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Box className="text-(--color-accent)" size={20} />
-              <h2 className="text-lg font-semibold text-(--color-text)">Plugin Center</h2>
-            </div>
-            <p className="mt-1 text-sm text-(--color-text-muted)">
-              Create, import, and use portable plugins with Agent Skills and MCP server configurations.
-            </p>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Box className="shrink-0 text-(--color-accent)" size={20} />
+            <h2 className="text-lg font-semibold text-(--color-text)">Plugin Center</h2>
+            {plugins.length > 0 && (
+              <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-xs font-medium tabular-nums text-(--color-text-muted)">
+                {plugins.length}
+              </span>
+            )}
+            {failingCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-(--color-error)/25 bg-(--color-error-subtle) px-2 py-0.5 text-xs font-medium text-(--color-error)">
+                <AlertTriangle size={11} aria-hidden="true" />
+                {failingCount} need{failingCount === 1 ? 's' : ''} attention
+              </span>
+            )}
           </div>
-          <Button variant="ghost" size="icon-sm" onClick={() => void refresh()} aria-label="Refresh plugins">
-            <RefreshCw className={cn(query.isFetching && 'animate-spin')} />
-          </Button>
+          {/* Refresh belongs beside the action it complements, not adrift in
+              the opposite corner of the description. */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button variant="ghost" size="icon-sm" onClick={() => void refresh()} aria-label="Refresh plugins">
+              <RefreshCw className={cn(query.isFetching && 'animate-spin')} />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={busy !== null}
+                className={buttonVariants({ size: 'sm' })}
+              >
+                <PackagePlus /> Add plugin
+                <ChevronDown className="transition-transform group-data-[popup-open]:rotate-180" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={() => { closePanels(); void pickAndImport('install') }}>
+                  <PackagePlus /> Import package
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    if (desktop) { closePanels(); void pickAndImport('link'); return }
+                    setShowCreate(false)
+                    setPathPrompt('link')
+                  }}
+                >
+                  <FolderInput /> Link development folder
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    if (desktop) { closePanels(); void validateFolder(); return }
+                    setShowCreate(false)
+                    setPathPrompt('validate')
+                  }}
+                >
+                  <CheckCircle2 /> Validate folder
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => { setPathPrompt(null); setShowCreate(true) }}>
+                  <FolderPlus /> Create plugin
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-        <div className="mt-4">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              disabled={busy !== null}
-              className={buttonVariants()}
-            >
-              <PackagePlus /> Add plugin
-              <ChevronDown className="transition-transform group-data-[popup-open]:rotate-180" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-52">
-              <DropdownMenuItem onClick={() => void pickAndImport('install')}>
-                <PackagePlus /> Import package
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!desktop && !hostPath.trim()}
-                onClick={() => void pickAndImport('link')}
-              >
-                <FolderInput /> Link development folder
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!desktop && !hostPath.trim()}
-                onClick={() => void validateFolder()}
-              >
-                <CheckCircle2 /> Validate folder
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setShowCreate(true)}>
-                <FolderPlus /> Create plugin
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <p className="mt-1.5 text-sm text-(--color-text-muted)">
+          Create, import, and use portable plugins with Agent Skills and MCP server configurations.
+        </p>
+        <div className="hidden">
           <input
             ref={uploadRef}
             hidden
@@ -683,17 +791,43 @@ export function PluginCenterPanel() {
           />
         </div>
 
-        {!desktop && (
-          <div className="mt-3">
-            <Input
-              value={hostPath}
-              onChange={(event) => setHostPath(event.target.value)}
-              placeholder="Plugin folder path on the EvoFlux host"
-              aria-label="Plugin folder path on the EvoFlux host"
-            />
-            <p className="mt-1 text-xs text-(--color-text-subtle)">
-              Link and Validate use a folder that is accessible to the local EvoFlux backend.
+        {pathPrompt && (
+          <div className="mt-3 rounded-lg border border-(--color-border) bg-(--bg-card) p-3">
+            <h3 className="text-sm font-medium text-(--color-text)">
+              {pathPrompt === 'link' ? 'Link a development folder' : 'Validate a folder'}
+            </h3>
+            <p className="mt-0.5 text-xs text-(--color-text-subtle)">
+              The folder is read by the EvoFlux backend, so the path has to resolve on the
+              machine the backend runs on — not on this one.
             </p>
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <Input
+                autoFocus
+                className="min-w-48 flex-1"
+                value={hostPath}
+                // The last path is kept, because linking and then validating
+                // the same folder is the common pair. Selecting it means
+                // typing still replaces rather than appends.
+                onFocus={(event) => event.currentTarget.select()}
+                onChange={(event) => setHostPath(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void submitPathPrompt()
+                  }
+                  if (event.key === 'Escape') setPathPrompt(null)
+                }}
+                placeholder="/srv/evoflux/plugins/my-plugin"
+                aria-label="Plugin folder path on the EvoFlux host"
+              />
+              <Button variant="ghost" onClick={() => setPathPrompt(null)}>Cancel</Button>
+              <Button
+                disabled={!hostPath.trim() || busy !== null}
+                onClick={() => void submitPathPrompt()}
+              >
+                {pathPrompt === 'link' ? 'Link folder' : 'Validate'}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -733,6 +867,23 @@ export function PluginCenterPanel() {
                 Create &amp; edit
               </Button>
             </div>
+          </div>
+        )}
+
+        {showFilter && (
+          <div className="relative mt-3">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-(--color-text-subtle)"
+              size={15}
+              aria-hidden="true"
+            />
+            <Input
+              className="pl-9"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value)}
+              placeholder={`Filter ${plugins.length} plugins`}
+              aria-label="Filter plugins"
+            />
           </div>
         )}
       </header>
@@ -781,13 +932,13 @@ export function PluginCenterPanel() {
           <div className="rounded-xl border border-(--color-error)/30 bg-(--color-error-subtle) p-4 text-sm text-(--color-error)">
             {query.error instanceof Error ? query.error.message : 'Could not load plugins.'}
           </div>
-        ) : query.data?.plugins.length ? (
+        ) : visiblePlugins.length ? (
           <div className="space-y-2">
-            {query.data.plugins.map((item) => (
+            {visiblePlugins.map((item) => (
               <PluginCard
                 key={item.installation.id}
                 item={item}
-                servers={(query.data?.mcp_servers ?? []).filter(
+                servers={runtimeServers.filter(
                   (server) => server.installation_id === item.installation.id,
                 )}
                 busy={busy !== null}
@@ -819,6 +970,14 @@ export function PluginCenterPanel() {
                 onUpdate={() => item.provider ? refresh() : chooseUpdate(item)}
               />
             ))}
+          </div>
+        ) : needle ? (
+          <div className="mx-auto max-w-md py-16 text-center">
+            <Search className="mx-auto text-(--color-text-subtle)" size={32} aria-hidden="true" />
+            <h3 className="mt-3 font-medium text-(--color-text)">No plugin matches “{filter.trim()}”</h3>
+            <Button variant="ghost" className="mt-2" onClick={() => setFilter('')}>
+              Clear filter
+            </Button>
           </div>
         ) : (
           <div className="mx-auto max-w-md py-16 text-center">
