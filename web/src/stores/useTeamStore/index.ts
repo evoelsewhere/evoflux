@@ -10,7 +10,7 @@ import { createSSEHandler } from './sse-reducer'
 import { useToastStore } from '@/stores/useToastStore'
 import { isTransientNetworkError } from '@/utils/errors'
 import { createStreamScheduler } from '@/api/stream-scheduler'
-import type { AgentStream, TeamStore } from './types'
+import type { AgentStream, TeamStore, TeamStoreState } from './types'
 import type { ContentBlock, MessageResponse, TeamHistoryResponse } from '@/api/types'
 
 function resetTurnUsage(stream: AgentStream) {
@@ -235,6 +235,91 @@ function hasVisibleBlocks(stream: AgentStream | undefined): boolean {
   return [...stream.blocks, ...stream.currentBlocks].some((block) => block.type !== 'compaction')
 }
 
+/**
+ * State that belongs to one session rather than to the app.
+ *
+ * The store keeps a single session's fields flat, which is what every
+ * selector reads. Switching therefore had to wipe them and refetch the
+ * whole transcript — 368 KB and ~280 ms for a long session, every time,
+ * with a loading skeleton in between. Putting the outgoing session's
+ * fields aside and restoring them on return means the chat paints
+ * instantly; the refetch still happens, but behind content instead of a
+ * blank screen.
+ */
+const SESSION_OWNED_KEYS = [
+  'agentStreams',
+  'activeAgent',
+  'leadName',
+  'agentNames',
+  'liveAgentNames',
+  'projectId',
+  'sessionTitle',
+  'sessionTags',
+  'sessionPermissionMode',
+  'sessionModel',
+  'sessionThinkingLevel',
+  'sessionFastMode',
+  'isTeamWorking',
+  'isContinuing',
+  'error',
+  'activeGoal',
+  'activeWorkflowExecution',
+  'setupRequired',
+  'browserSession',
+  'planApproval',
+  'turnChanges',
+  'turnChangesOpen',
+  'permissionRequest',
+  'askUserQuestion',
+  'hasMore',
+  'nextCursor',
+  'activityLog',
+  '_pendingMessages',
+  '_leadRevertTime',
+  '_workspace',
+] as const satisfies readonly (keyof TeamStoreState)[]
+
+type SessionSnapshot = Pick<TeamStoreState, (typeof SESSION_OWNED_KEYS)[number]>
+
+/**
+ * Recently visited sessions, newest last.
+ *
+ * Bounded because a snapshot holds a whole transcript; past this many the
+ * oldest is dropped and that session pays the original full-load cost
+ * once.
+ */
+const SESSION_SNAPSHOT_LIMIT = 6
+const sessionSnapshots = new Map<string, SessionSnapshot>()
+
+function stashSession(state: TeamStore): void {
+  const sessionId = state.sessionId
+  if (!sessionId) return
+  const snapshot = {} as Record<string, unknown>
+  for (const key of SESSION_OWNED_KEYS) snapshot[key] = state[key]
+  sessionSnapshots.delete(sessionId)
+  sessionSnapshots.set(sessionId, snapshot as SessionSnapshot)
+  while (sessionSnapshots.size > SESSION_SNAPSHOT_LIMIT) {
+    const oldest = sessionSnapshots.keys().next().value
+    if (oldest === undefined) break
+    sessionSnapshots.delete(oldest)
+  }
+}
+
+function restoreSession(state: TeamStore, sessionId: string): boolean {
+  const snapshot = sessionSnapshots.get(sessionId)
+  if (!snapshot) return false
+  Object.assign(state, snapshot)
+  // Mark it as most recently used.
+  sessionSnapshots.delete(sessionId)
+  sessionSnapshots.set(sessionId, snapshot)
+  return true
+}
+
+/** Forget a session's cached view — it no longer exists, or was reset. */
+export function forgetSessionSnapshot(sessionId: string): void {
+  sessionSnapshots.delete(sessionId)
+}
+
 function resetSessionState(
   state: TeamStore,
   options: {
@@ -280,6 +365,7 @@ function resetSessionState(
   state._workspace =
     options.mode === 'coding' ? (options.workspace ?? null) : null
   state._loadingOlder = false
+  state._restoredFromCache = false
   state._resolvedSessionReadyId = null
   state.agentNames = leadName ? [leadName] : []
   state.liveAgentNames = leadName ? [leadName] : null
@@ -395,6 +481,7 @@ export const useTeamStore = create<TeamStore>()(
     _leadRevertTime: null,
     _workspace: null,
     _loadingOlder: false,
+    _restoredFromCache: false,
     _resolvedSessionReadyId: null,
     _unloading: false,
     activityLog: [],
@@ -410,6 +497,10 @@ export const useTeamStore = create<TeamStore>()(
     beginResolvedSession: (sessionId, options) => {
       get()._abortController?.abort()
       abortSessionLoads()
+      // Snapshot outside `set`: values read from an immer draft are backed
+      // by proxies that are revoked once `produce` returns, so anything
+      // stashed from inside would throw the moment it was restored.
+      stashSession(get())
       set((state) => {
         resetSessionState(state, {
           sessionId,
@@ -419,6 +510,14 @@ export const useTeamStore = create<TeamStore>()(
           mode: options?.mode,
           workspace: options?.workspace,
         })
+        // Restoring is for paint only. `loadSession` still runs and is
+        // still authoritative: a turn can have finished while we were
+        // away, and the stream's replay covers only the current turn. The
+        // difference is that it reconciles behind visible content rather
+        // than behind a loading skeleton.
+        if (sessionId && restoreSession(state, sessionId)) {
+          state._restoredFromCache = true
+        }
         if (options?.skipInitialRestore) state._resolvedSessionReadyId = sessionId
       })
     },
