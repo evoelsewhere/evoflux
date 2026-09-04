@@ -2740,13 +2740,17 @@ class AgentTeam:
         if thinking_level is not None and not isinstance(thinking_level, str):
             raise ValueError("Agent spawn thinking_level must be a string or null.")
 
-        from app.agent.providers.model_metadata import get_model_thinking_levels
+        from app.agent.providers.thinking import (
+            accepts_thinking_level,
+            honoured_levels_for,
+        )
 
-        supported = get_model_thinking_levels(model)
-        if thinking_level and supported and thinking_level not in supported:
+        # Same answer the chat route and the model catalogue use, so a spawn
+        # cannot be rejected for a level the composer offered.
+        if thinking_level and not accepts_thinking_level(model, thinking_level):
             raise ValueError(
                 f"Model '{model}' does not support thinking level "
-                f"'{thinking_level}'. Supported: {list(supported)}."
+                f"'{thinking_level}'. Supported: {list(honoured_levels_for(model))}."
             )
         return SpawnRuntimeConfig(model.strip(), thinking_level or None)
 

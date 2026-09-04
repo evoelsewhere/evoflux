@@ -22,6 +22,7 @@ from app.api.deps import (
     WriteDbSession,
 )
 from app.api.routes.team._helpers import (
+    _fast_tier,
     _message_response,
     _read_upload_as_attachment,
     _require_team,
@@ -125,16 +126,23 @@ async def _validate_thinking_level_for_model(
         return
 
     from app.agent.providers.model_discovery import ensure_runtime_model_metadata
-    from app.agent.providers.model_metadata import get_model_thinking_levels
+    from app.agent.providers.thinking import (
+        accepts_thinking_level,
+        honoured_levels_for,
+    )
 
     if thinking_level or model_id.lower().startswith("fci:"):
         await ensure_runtime_model_metadata(model_id)
     if not thinking_level:
         return
-    supported = get_model_thinking_levels(model_id)
-    if thinking_level in supported:
+    # One source of truth: what the request builder will honour. Validating
+    # against the raw catalog list instead rejected levels the wire accepts
+    # and the picker offers — a model whose catalog row says "toggle" still
+    # takes a token budget, so ``high`` is a real request.
+    if accepts_thinking_level(model_id, thinking_level):
         return
 
+    supported = honoured_levels_for(model_id)
     detail = f"Model '{model_id}' does not support thinking level '{thinking_level}'."
     if supported:
         detail += f" Supported levels: {', '.join(supported)}."
@@ -451,11 +459,7 @@ async def team_chat(
     await _validate_thinking_level_for_model(
         effective_request_model, effective_thinking_level
     )
-    fast_mode_service_tier = (
-        "fast"
-        if body.fast_mode and (effective_request_model or "").startswith("codex:")
-        else None
-    )
+    fast_mode_service_tier = _fast_tier(effective_request_model, body.fast_mode)
 
     # ── Interrupt (mutually exclusive with message) ─────────────────────────
     if interrupt:

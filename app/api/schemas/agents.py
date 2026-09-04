@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from app.conductor.models import ManagedResourceProvider
@@ -139,6 +141,50 @@ class ModelCatalogEntry(BaseModel):
     thinking_default_enabled: bool | None = None
     thinking_source: str | None = None
     interfaces: list[str] = []
+
+    # ------------------------------------------------------------------
+    # Catalog facts
+    # ------------------------------------------------------------------
+    # Everything below is read from the model catalog rather than restated
+    # in EvoFlux, so a model's price, limits, lifecycle and capabilities in
+    # the picker follow the catalog the next time it refreshes. All of it is
+    # optional: a self-hosted or brand-new model the catalog has never seen
+    # still lists, just without the extra detail.
+
+    #: Catalog display name (``MiMo-V2.5-Pro``) and one-line blurb.
+    display_name: str | None = None
+    description: str | None = None
+    #: Model family (``claude-opus``, ``gemini-pro``), for grouping.
+    family: str | None = None
+    #: ``beta`` / ``deprecated``. The picker badges these.
+    status: str | None = None
+    release_date: str | None = None
+    last_updated: str | None = None
+    #: Training-data cutoff as the catalog states it (``"2024-12"``).
+    knowledge: str | None = None
+
+    max_output_tokens: int | None = None
+    tool_call: bool | None = None
+    attachment: bool | None = None
+    temperature: bool | None = None
+    structured_output: bool | None = None
+    open_weights: bool | None = None
+
+    #: USD per million tokens, plus any long-context tiers.
+    cost: dict[str, Any] = Field(default_factory=dict)
+    #: Whether this model costs nothing per token. True for genuinely free
+    #: tiers and for models included in a subscription plan the user already
+    #: pays for — either way the next token is free. ``None`` means the
+    #: catalog quotes no price at all, which is not the same as free.
+    free: bool | None = None
+    #: Bounds on an explicit thinking-token budget: ``{"min": …, "max": …}``.
+    thinking_budget: dict[str, int | None] = Field(default_factory=dict)
+    #: Alternate service tiers this model offers (``["fast"]``).
+    modes: list[str] = Field(default_factory=list)
+    #: What each tier costs relative to the standard rate, by output price.
+    #: A ``fast`` lane commonly bills at 2.5-5x, so a toggle that switches
+    #: one on has to be able to say so.
+    mode_cost_multiplier: dict[str, float] = Field(default_factory=dict)
 
 
 class RegistryResponse(BaseModel):

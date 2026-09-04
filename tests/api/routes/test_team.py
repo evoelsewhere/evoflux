@@ -414,7 +414,35 @@ class TestTeamChatRoute:
         kwargs = test_team.handle_user_message.call_args.kwargs
         assert kwargs["service_tier"] == "fast"
 
-    def test_team_chat_ignores_fast_mode_for_non_codex_model(
+    def test_team_chat_ignores_fast_mode_for_a_model_without_that_tier(
+        self, app_with_team, test_team
+    ):
+        """Fast mode is a per-model fact, not a per-provider one.
+
+        This used to assert "non-Codex means no fast mode". Fast lanes are
+        now read from the model catalogue, so ``gpt-5.5`` genuinely has one
+        and Claude Sonnet 4.5 genuinely does not — which is the distinction
+        worth holding.
+        """
+        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
+        client = TestClient(app_with_team)
+        with patch(
+            "app.api.routes.team.chat.is_registered_model_id",
+            AsyncMock(return_value=True),
+        ):
+            response = client.post(
+                "/api/team/chat",
+                data={
+                    "message": "Hello team",
+                    "model": "anthropic:claude-sonnet-4-5",
+                    "fast_mode": "true",
+                },
+            )
+        assert response.status_code == 202
+        kwargs = test_team.handle_user_message.call_args.kwargs
+        assert kwargs["service_tier"] is None
+
+    def test_team_chat_honours_fast_mode_when_the_model_has_that_tier(
         self, app_with_team, test_team
     ):
         test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
@@ -433,7 +461,7 @@ class TestTeamChatRoute:
             )
         assert response.status_code == 202
         kwargs = test_team.handle_user_message.call_args.kwargs
-        assert kwargs["service_tier"] is None
+        assert kwargs["service_tier"] == "fast"
 
     def test_team_chat_empty_model_settings_reset(self, app_with_team, test_team):
         test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
@@ -815,11 +843,18 @@ class TestTeamChatFormValidation:
         )
         set_runtime_model_metadata(
             "codex:gpt-5.6-luna",
-            {"thinking": {"levels": ["low", "medium", "high", "xhigh", "max"]}},
+            {"thinking": {"levels": ["low", "medium", "high"]}},
         )
         try:
+            # ``ultra`` is EvoFlux's alias for ``max``, so a model that
+            # advertises either spelling accepts it. Comparing raw strings
+            # used to drop the alias, which made the strongest level a model
+            # published one it appeared not to support.
             await _validate_thinking_level_for_model("codex:gpt-5.6-sol", "ultra")
+            await _validate_thinking_level_for_model("codex:gpt-5.6-sol", "max")
 
+            # Luna tops out at ``high``, so the strongest efforts and the
+            # explicit off switch are both genuinely unavailable.
             with pytest.raises(HTTPException, match="does not support"):
                 await _validate_thinking_level_for_model("codex:gpt-5.6-luna", "ultra")
             with pytest.raises(HTTPException, match="does not support"):

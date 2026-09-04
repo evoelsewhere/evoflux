@@ -344,3 +344,19 @@ async def collect_mention_attachments(
             sum(len(a.data) for a in out),
         )
     return out
+
+
+def _fast_tier(model_id: str | None, requested: bool) -> str | None:
+    """The ``fast`` service tier for *model_id*, when the user asked for it.
+
+    Returns the tier name to put on the request, or ``None`` when the user
+    did not ask or the model has no fast lane. Which models have one is
+    catalog data plus the tiers EvoFlux's own integrations implement, so
+    this never tests a provider prefix — a new fast-capable model becomes
+    one table entry, or none at all when the catalog already lists it.
+    """
+    if not requested:
+        return None
+    from app.agent.providers.model_metadata import get_model_mode
+
+    return "fast" if get_model_mode(model_id, "fast") else None
