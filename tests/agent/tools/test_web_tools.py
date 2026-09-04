@@ -4,7 +4,13 @@ import httpx
 import pytest
 import respx
 
-from app.agent.tools.builtin.web import image_search, web_fetch, web_search
+from app.agent.tools.builtin.web import (
+    _is_private_ip,
+    close_http_client,
+    image_search,
+    web_fetch,
+    web_search,
+)
 
 
 @pytest.mark.asyncio
@@ -345,3 +351,68 @@ async def test_web_fetch_timeout_capped_at_120():
 
         result = await web_fetch(url, timeout=9999)
         assert result == "hi"
+
+
+# ── SSRF / private-network policy ────────────────────────────────────────────
+# Regression cover for the DNS-rebinding hardening: the guard must block
+# private destinations, must re-check every redirect hop, and must not break
+# ordinary fetches (it previously passed an unsupported ``transport`` kwarg to
+# ``AsyncClient.get``, which failed every single call).
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_rejects_private_destination():
+    """A hostname resolving into a private range is refused by default."""
+    await close_http_client()
+    result = await web_fetch("http://127.0.0.1:1/")
+    assert result.startswith("Error:")
+    assert "private IP" in result
+    await close_http_client()
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_rejects_cloud_metadata_endpoint():
+    """The link-local metadata address is refused."""
+    await close_http_client()
+    result = await web_fetch("http://169.254.169.254/latest/meta-data")
+    assert "169.254.169.254" in result
+    assert "private IP" in result
+    await close_http_client()
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_allows_private_when_setting_enabled(monkeypatch):
+    """WEB_FETCH_ALLOW_PRIVATE_NETWORK opts out of the private-range guard."""
+    from app.core.config import settings
+
+    await close_http_client()
+    monkeypatch.setattr(settings, "WEB_FETCH_ALLOW_PRIVATE_NETWORK", True)
+    # Port 1 refuses the connection; reaching a connection error proves the
+    # policy let the destination through rather than short-circuiting it.
+    result = await web_fetch("http://127.0.0.1:1/")
+    assert "private IP" not in result
+    await close_http_client()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_web_fetch_redirect_hop_is_revalidated():
+    """A redirect into a private range is refused even when hop 1 is public."""
+    await close_http_client()
+    respx.get("https://example.com/open").mock(
+        return_value=httpx.Response(
+            302, headers={"location": "http://169.254.169.254/latest/meta-data"}
+        )
+    )
+
+    result = await web_fetch("https://example.com/open")
+    assert "private IP" in result
+    await close_http_client()
+
+
+def test_is_private_ip_fails_closed_on_garbage():
+    """An unparseable address is treated as unsafe, not waved through."""
+    assert _is_private_ip("not-an-ip") is True
+    assert _is_private_ip("10.0.0.1") is True
+    assert _is_private_ip("::ffff:127.0.0.1") is True
+    assert _is_private_ip("93.184.216.34") is False

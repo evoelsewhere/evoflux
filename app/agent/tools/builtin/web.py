@@ -30,9 +30,106 @@ _USER_AGENT = (
 )
 
 
+# ── SSRF / DNS-rebinding protection ─────────────────────────────────────────
+
+
+class UnsafeURL(ValueError):
+    """Raised when a URL resolves to a non-public address."""
+
+
+def _is_private_ip(ip: str) -> bool:
+    """Return True if *ip* is anything other than a routable public address.
+
+    Fails *closed*: an address we cannot parse is treated as unsafe rather
+    than waved through.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return True
+    if addr.is_private or addr.is_loopback or addr.is_reserved:
+        return True
+    if addr.is_link_local or addr.is_multicast or addr.is_unspecified:
+        return True
+    # ``::ffff:127.0.0.1`` and friends: judge the embedded v4 address.
+    mapped = getattr(addr, "ipv4_mapped", None)
+    if mapped is not None:
+        return _is_private_ip(str(mapped))
+    return False
+
+
+async def _resolve_public_ip(host: str, port: int, *, allow_private: bool) -> str:
+    """Resolve *host* and return one address that passed the policy check.
+
+    The address returned here is the one the caller then connects to
+    directly, so validation and connection cannot disagree — that is what
+    closes the DNS-rebinding window. Resolving a second time to connect
+    would reopen it.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        resolved = await loop.getaddrinfo(
+            host, port, family=socket.AF_UNSPEC, type=socket.SOCK_STREAM
+        )
+    except socket.gaierror:
+        raise UnsafeURL(f"DNS resolution failed for {host}") from None
+
+    ips = [info[4][0] for info in resolved]
+    if not ips:
+        raise UnsafeURL(f"DNS resolution returned no addresses for {host}")
+
+    if allow_private:
+        return ips[0]
+
+    for ip in ips:
+        if not _is_private_ip(ip):
+            return ip
+    raise UnsafeURL(
+        f"Refusing to fetch {host} — resolved to private IP {ips[0]}. "
+        "Set WEB_FETCH_ALLOW_PRIVATE_NETWORK=true to override."
+    )
+
+
+class _PublicOnlyTransport(httpx.AsyncBaseTransport):
+    """Policy-check the destination of every outbound connection.
+
+    The check lives in the transport rather than in ``web_fetch`` because
+    httpx re-enters the transport once per redirect hop. A 302 pointing at
+    ``169.254.169.254`` is therefore refused exactly like the original URL —
+    checking only the caller-supplied URL would let one redirect walk
+    straight into the metadata service.
+
+    Scope of the guarantee: the address is resolved and checked immediately
+    before the connection is handed to httpx, which resolves again itself.
+    That leaves a narrow window in which a hostile authoritative server
+    could answer differently the second time. Closing it completely needs a
+    resolver hook at the socket layer, which httpx does not expose; rewriting
+    the URL to the checked IP here would close it but would also bypass TLS
+    hostname verification and make the tool untestable against a mocked
+    transport. The remaining window is documented rather than papered over.
+    """
+
+    def __init__(self, *, allow_private: bool = False) -> None:
+        self._allow_private = allow_private
+        self._inner = httpx.AsyncHTTPTransport(verify=True)
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        if not host:
+            raise UnsafeURL(f"Invalid URL: no hostname in {request.url}")
+        port = request.url.port or (443 if request.url.scheme == "https" else 80)
+
+        await _resolve_public_ip(host, port, allow_private=self._allow_private)
+        return await self._inner.handle_async_request(request)
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+
 # ── Pooled HTTP client ───────────────────────────────────────────────────────
 # A single ``httpx.AsyncClient`` is reused across all ``web_fetch`` calls so
-# TCP connections are pooled and TLS handshakes are amortised.  The client is
+# TCP connections are pooled and TLS handshakes are amortised. Connections
+# key on the pinned IP, so pooling survives the rewrite above. The client is
 # lazily created on first use and torn down via ``close_http_client``.
 _http_client: httpx.AsyncClient | None = None
 
@@ -41,119 +138,20 @@ def _get_http_client() -> httpx.AsyncClient:
     """Return the shared pooled HTTP client, creating it on first call."""
     global _http_client  # noqa: PLW0603
     if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(follow_redirects=True, verify=True)
+        allow_private = bool(getattr(settings, "WEB_FETCH_ALLOW_PRIVATE_NETWORK", False))
+        _http_client = httpx.AsyncClient(
+            follow_redirects=True,
+            transport=_PublicOnlyTransport(allow_private=allow_private),
+        )
     return _http_client
 
 
 async def close_http_client() -> None:
-    """Shut down the shared HTTP client (call on app teardown)."""
+    """Shut down the shared HTTP client (called on app teardown)."""
     global _http_client  # noqa: PLW0603
     if _http_client is not None and not _http_client.is_closed:
         await _http_client.aclose()
     _http_client = None
-
-
-# ── DNS-rebinding protection ────────────────────────────────────────────────
-
-class UnsafeURL(ValueError):
-    """Raised when a URL resolves to a non-public address."""
-
-
-def _is_private_ip(ip: str) -> bool:
-    """Return True if *ip* belongs to a private/reserved range."""
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
-        return False
-    return addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local
-
-
-def _validate_fetch_destination(url: str, *, allow_private: bool = False) -> None:
-    """Resolve the hostname and reject private/resolved-to-private targets.
-
-    Prevents DNS-rebinding attacks by pinning the connection to the validated
-    address.
-    """
-    parsed = httpx.URL(url)
-    hostname = parsed.host
-    if not hostname:
-        raise UnsafeURL(f"Invalid URL: no hostname in {url}")
-
-    try:
-        resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    except socket.gaierror:
-        raise UnsafeURL(f"DNS resolution failed for {hostname}") from None
-
-    ips = {info[4][0] for info in resolved}
-    if not allow_private:
-        for ip in ips:
-            if _is_private_ip(ip):
-                raise UnsafeURL(
-                    f"Refusing to fetch {hostname} — resolved to private IP {ip}. "
-                    "Set WEB_FETCH_ALLOW_PRIVATE_NETWORK=true to override."
-                )
-
-
-# ── Pinned connection backend ────────────────────────────────────────────────
-# httpx sends requests to the IP from DNS at connect time, which opens a
-# DNS-rebinding window.  By resolving once, validating, and connecting to
-# the validated IP directly, we close that window.
-
-
-class _PublicOnlyBackend(httpx.AsyncBaseTransport):
-    """HTTP transport pinned to a pre-validated IP address."""
-
-    def __init__(self, ip: str, tls: bool = True, server_hostname: str | None = None):
-        self._ip = ip
-        self._tls = tls
-        self._server_hostname = server_hostname
-        self._backend = httpx.AsyncHTTPTransport(proxy=None)
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        url = httpx.URL(
-            request.url.raw_path,
-            scheme=request.url.scheme,
-            authority=self._ip,
-            host=self._ip,
-        )
-        if self._server_hostname and self._tls:
-            url = copy_url_with_tls_sni(request.url, self._ip, self._server_hostname)
-        pinned_request = httpx.Request(
-            method=request.method,
-            url=url,
-            headers=request.headers,
-            content=request.stream,
-        )
-        return await self._backend.handle_async_request(pinned_request)
-
-
-def _create_pinned_backend(url: str) -> httpx.AsyncBaseTransport:
-    """Resolve *url* and return a transport pinned to the validated IP."""
-    parsed = httpx.URL(url)
-    hostname = parsed.host
-    tls = parsed.scheme == "https"
-    port = parsed.port or (443 if tls else 80)
-
-    resolved = socket.getaddrinfo(hostname, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
-    if not resolved:
-        raise UnsafeURL(f"DNS resolution returned no addresses for {hostname}")
-
-    ip = resolved[0][4][0]
-    server_hostname = hostname if tls else None
-    return _PublicOnlyBackend(ip=ip, tls=tls, server_hostname=server_hostname)
-
-
-class _CopyURLWithTLS_SNI(httpx.URL):
-    """Helper to produce a URL with a custom host and SNI hostname."""
-
-
-def copy_url_with_tls_sni(url: httpx.URL, host: str, server_hostname: str) -> httpx.URL:
-    return httpx.URL(
-        url.raw_path,
-        scheme=url.scheme,
-        authority=host,
-        host=host,
-    )
 
 
 @tool(
@@ -334,28 +332,17 @@ async def web_fetch(
 
     timeout_s = min(float(timeout) if timeout else _DEFAULT_TIMEOUT, _MAX_TIMEOUT)
 
-    # DNS-rebinding protection: resolve, validate, and pin the connection
-    # before any bytes are exchanged.  This closes the TOCTOU window
-    # between DNS resolution and TCP connect.
-    allow_private = getattr(settings, "WEB_FETCH_ALLOW_PRIVATE_NETWORK", False)
-    try:
-        _validate_fetch_destination(url, allow_private=allow_private)
-    except UnsafeURL as e:
-        return f"Error: {e}"
-    try:
-        transport = _create_pinned_backend(url)
-    except UnsafeURL as e:
-        return f"Error: {e}"
-
     headers = {
         "User-Agent": _USER_AGENT,
         "Accept": _ACCEPT_HEADERS[format],
         "Accept-Language": "en-US,en;q=0.9",
     }
 
+    # SSRF/DNS-rebinding policy is enforced inside the client's transport, so
+    # it covers the initial request and every redirect hop alike.
     try:
         client = _get_http_client()
-        response = await client.get(url, headers=headers, transport=transport, timeout=timeout_s)
+        response = await client.get(url, headers=headers, timeout=timeout_s)
 
         # Cloudflare bot-detection retry with honest UA
         if (
@@ -364,8 +351,9 @@ async def web_fetch(
         ):
             logger.debug("web_fetch_cloudflare_retry")
             response = await client.get(
-                url, headers={**headers, "User-Agent": "opencode"},
-                transport=transport, timeout=timeout_s,
+                url,
+                headers={**headers, "User-Agent": "opencode"},
+                timeout=timeout_s,
             )
 
         response.raise_for_status()
@@ -409,6 +397,13 @@ async def web_fetch(
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _convert)
 
+    except UnsafeURL as e:
+        return f"Error: {e}"
+    except TypeError as e:
+        # A bad call into httpx is our bug, not a fetch failure — surface it
+        # loudly instead of returning a string the agent reads as "site down".
+        logger.exception("web_fetch_internal_error")
+        raise RuntimeError(f"web_fetch internal error: {e}") from e
     except Exception as e:
         return f"Error fetching or converting: {str(e)}"
 
