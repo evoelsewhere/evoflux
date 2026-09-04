@@ -380,6 +380,17 @@ export function WorkbenchSurface({ tool, children }: WorkbenchSurfaceProps) {
         )}
         style={{ zIndex: active ? 1 : 0 }}
         aria-hidden={!active}
+        // `overflow: hidden` stops a person scrolling this box; it does not
+        // stop the browser. Focusing a descendant — or a `scrollIntoView`
+        // from anywhere inside — scrolls every ancestor that can scroll,
+        // this one included, and then nothing can scroll it back: the
+        // panel's own header is left stranded above the top edge. Only the
+        // scroll container a panel declares for itself should move.
+        onScroll={(event) => {
+          const host = event.currentTarget
+          if (host.scrollTop !== 0) host.scrollTop = 0
+          if (host.scrollLeft !== 0) host.scrollLeft = 0
+        }}
       >
         {typeof children === 'function' ? children(tab, active) : children}
       </motion.section>
