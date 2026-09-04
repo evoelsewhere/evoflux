@@ -129,6 +129,7 @@ function resetTurnUsage(stream: TeamStore['agentStreams'][string]) {
   stream.usage.turnCalls = 0
   stream.usage.turnCost = undefined
   stream.usage.turnPhases = {}
+  stream._turnCompletionEstimated = 0
 }
 
 function appendStreamingText(
@@ -164,6 +165,18 @@ function appendStreamingText(
     const currentTurnTokens = Math.max(stream.usage.completionTokens - stream._completionBase, newEstimatedVal)
     stream.usage.completionTokens = stream._completionBase + currentTurnTokens
     stream.usage.totalTokens = stream.usage.promptTokens + stream.usage.completionTokens
+
+    // The authoritative turn total only lands when a model call *finishes*,
+    // so without this the live counter froze for the whole of a long call —
+    // the one stretch where a reader is actually watching it. The estimate
+    // only ever raises the count; the next `usage` event assigns over it.
+    stream._turnCompletionEstimated = (stream._turnCompletionEstimated ?? 0) + (text.length / 4)
+    stream.usage.turnCompletionTokens = Math.max(
+      stream.usage.turnCompletionTokens ?? 0,
+      Math.round(stream._turnCompletionEstimated),
+    )
+    stream.usage.turnTotalTokens =
+      (stream.usage.turnPromptTokens ?? 0) + stream.usage.turnCompletionTokens
   }
 }
 
@@ -429,6 +442,9 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             u.turnCost = d.cost && typeof d.cost === 'object'
               ? d.cost as TurnCost
               : undefined
+            // Snap the live estimate back onto the measured total, so the
+            // next call's deltas extend a real number rather than a drift.
+            stream._turnCompletionEstimated = completionTokens
             return
           }
           u.promptTokens     = promptTokens
@@ -689,6 +705,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             }
             stream._completionBase = stream.usage.completionTokens
             stream._completionEstimated = 0
+            stream._turnCompletionEstimated = 0
             stream._turnStartedAt = null
             if (stream.status !== 'error' && stream.status !== 'offline') {
               stream.status = 'idle'

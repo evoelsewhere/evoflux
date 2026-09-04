@@ -48,6 +48,9 @@ export interface AgentStream {
   usage: AgentUsage
   _completionBase: number
   _completionEstimated?: number
+  /** Turn-scoped output estimate, so the live counter moves between the
+   *  per-model-call totals the backend publishes. Reset with the turn. */
+  _turnCompletionEstimated?: number
   _turnStartedAt?: number | null
   model: string | null
   lastError: string | null

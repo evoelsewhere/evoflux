@@ -10,6 +10,12 @@
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { Copy, Check, Play } from 'lucide-react'
 import { lastTurnText } from '@/utils/format'
+import {
+  formatTurnCost,
+  formatTurnDuration,
+  formatTurnTokens,
+  shortModelName,
+} from '@/utils/turn-meta'
 import { cn } from '@/lib/utils'
 import { AssistantTurnContent } from './AssistantTurnContent'
 import { easdToolReviewTarget } from './easd/easdToolReviewTarget'
@@ -22,53 +28,6 @@ export interface AssistantTurnFooterProps {
   size?: 'compact' | 'roomy'
   /** Continue from this assistant turn. Only passed for the trailing lead turn. */
   onContinue?: () => void
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`
-
-  const totalSeconds = Math.round(ms / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}m ${seconds}s`
-}
-
-function shortModelName(modelId: string | null | undefined): string | null {
-  if (!modelId) return null
-  return modelId.split(':').at(-1)?.split('/').at(-1) || modelId
-}
-
-/**
- * Token counts, at one decimal through the range turns actually land in.
- *
- * Most turns are between a few thousand and a couple of hundred thousand
- * tokens, and rounding those to whole thousands makes neighbouring turns
- * look identical. Past 100k the decimal stops earning its width.
- */
-function formatTokens(count: number): string {
-  if (count < 1000) return String(count)
-  if (count < 1_000_000) {
-    const thousands = count / 1000
-    return `${thousands < 100 ? thousands.toFixed(1) : Math.round(thousands)}k`
-  }
-  return `${(count / 1_000_000).toFixed(1)}M`
-}
-
-/**
- * A turn's cost, at a precision that stays honest.
- *
- * Sub-cent turns are the common case, so rounding to two decimals would
- * print `$0.00` for most of them and make the number look broken. Anything
- * below a tenth of a cent is not worth four decimals either — it reads as
- * free, and saying so is clearer than `$0.0004`.
- */
-function formatCost(usd: number): string {
-  if (usd <= 0) return '$0'
-  if (usd < 0.001) return '<$0.001'
-  if (usd < 1) return `$${usd.toFixed(3)}`
-  if (usd < 100) return `$${usd.toFixed(2)}`
-  return `$${Math.round(usd)}`
 }
 
 function usageTooltip(usage: TurnUsage): string {
@@ -97,7 +56,7 @@ function costTooltip(cost: TurnCost): string {
   const lines = COST_COMPONENT_LABELS.flatMap(([key, label]) => {
     const value = cost[key]
     return typeof value === 'number' && value > 0
-      ? [`${label} ${formatCost(value)}`]
+      ? [`${label} ${formatTurnCost(value)}`]
       : []
   })
   lines.push(`Estimated from models.dev rates`)
@@ -193,7 +152,7 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
   if (responseDurationMs !== undefined) {
     meta.push({
       key: 'duration',
-      label: formatDuration(responseDurationMs),
+      label: formatTurnDuration(responseDurationMs),
       title: 'Response duration',
     })
   }
@@ -201,17 +160,17 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
     meta.push({
       key: 'tokens',
       label: inputShares.length
-        ? `${formatTokens(totalTokens)} tokens · ${inputShares
+        ? `${formatTurnTokens(totalTokens)} tokens · ${inputShares
             .map((share) => `${share.percent}% ${share.name}`)
             .join(', ')}`
-        : `${formatTokens(totalTokens)} tokens`,
+        : `${formatTurnTokens(totalTokens)} tokens`,
       title: usageTooltip(turnUsage),
     })
   }
   if (cost && cost.estimated_usd > 0) {
     meta.push({
       key: 'cost',
-      label: formatCost(cost.estimated_usd),
+      label: formatTurnCost(cost.estimated_usd),
       title: costTooltip(cost),
     })
   }
