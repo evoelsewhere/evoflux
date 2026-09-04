@@ -45,6 +45,7 @@ import {
   useSaveProviderMutation,
   useSaveProviderVisibleModelsMutation,
 } from '@/queries'
+import { formatTokenCount } from '@/lib/model-settings'
 import { openExternalUrl } from '@/lib/open-external'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
@@ -396,6 +397,10 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const modelCosts = useMemo(
     () => autoModelsQ.data?.model_costs,
     [autoModelsQ.data?.model_costs],
+  )
+  const modelDetails = useMemo(
+    () => autoModelsQ.data?.model_details,
+    [autoModelsQ.data?.model_details],
   )
 
   const handleListModels = async () => {
@@ -821,6 +826,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
               models={models}
               visibleModels={provider.visible_models}
               modelCosts={modelCosts}
+              modelDetails={modelDetails}
               search={modelSearch}
               onSearchChange={setModelSearch}
               expanded={modelsExpanded}
@@ -841,7 +847,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
 
 // ─── Pricing helpers ──────────────────────────────────────────────────────────
 
-import type { ModelCost } from '@/api/client/settings'
+import type { ModelCost, ProviderModelDetail } from '@/api/client/settings'
 
 function formatTokenPrice(pricePerMtok: number | null | undefined): string {
   if (pricePerMtok == null) return ''
@@ -851,14 +857,14 @@ function formatTokenPrice(pricePerMtok: number | null | undefined): string {
 }
 
 function PricingBadge({ cost }: { cost: ModelCost }) {
-  const input = cost.input_per_mtok
-  const output = cost.output_per_mtok
+  const input = cost.input
+  const output = cost.output
   const isFree = input === 0 && output === 0
   const hasPricing = input != null || output != null
   if (!hasPricing) return null
 
-  const cacheRead = cost.cache_read_per_mtok
-  const cacheWrite = cost.cache_write_per_mtok
+  const cacheRead = cost.cache_read
+  const cacheWrite = cost.cache_write
   const hasCache = cacheRead != null || cacheWrite != null
   const cacheLabel = hasCache
     ? [
@@ -905,6 +911,7 @@ function ModelsPanel({
   models,
   visibleModels,
   modelCosts,
+  modelDetails,
   search,
   onSearchChange,
   expanded,
@@ -916,6 +923,7 @@ function ModelsPanel({
   models: string[]
   visibleModels: string[]
   modelCosts?: Record<string, ModelCost>
+  modelDetails?: Record<string, ProviderModelDetail>
   search: string
   onSearchChange: (v: string) => void
   expanded: boolean
@@ -1032,6 +1040,7 @@ function ModelsPanel({
                   onToggleVisible={() => toggleVisibleModel(modelId)}
                   onCopy={handleCopy}
                   modelCost={modelCosts?.[modelId]}
+                  detail={modelDetails?.[modelId]}
                 />
               ))
             )}
@@ -1044,6 +1053,59 @@ function ModelsPanel({
 
 // ─── Model row ───────────────────────────────────────────────────────────────
 
+/** A capability flag worth a chip, and the letter that stands for it. */
+const MODEL_FLAGS: ReadonlyArray<{
+  key: keyof ProviderModelDetail
+  label: string
+  title: string
+}> = [
+  { key: 'vision', label: 'Vision', title: 'Accepts images' },
+  { key: 'tool_call', label: 'Tools', title: 'Supports tool calling' },
+  { key: 'attachment', label: 'Files', title: 'Accepts file attachments' },
+]
+
+/**
+ * The catalogue facts for one model, on their own line.
+ *
+ * The row used to show a bare `provider:model` string, which told a reader
+ * nothing they had not already typed. Every value here comes from the model
+ * catalogue, so it is the same data the model picker and the runtime use.
+ */
+function ModelFacts({ detail }: { detail: ProviderModelDetail }) {
+  const context = formatTokenCount(detail.context_length)
+  const flags = MODEL_FLAGS.filter((flag) => detail[flag.key] === true)
+  const thinking = detail.thinking_levels?.filter((level) => level !== 'none') ?? []
+  const bits: string[] = []
+  if (context) bits.push(`${context} ctx`)
+  if (detail.knowledge) bits.push(`knows ${detail.knowledge}`)
+  if (thinking.length > 0) bits.push(`thinking ${thinking.join('/')}`)
+  if (bits.length === 0 && flags.length === 0 && !detail.description) return null
+
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5">
+      {detail.description && (
+        <span className="truncate text-[0.7rem] text-(--color-text-muted)">
+          {detail.description}
+        </span>
+      )}
+      {(bits.length > 0 || flags.length > 0) && (
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.65rem] text-(--color-text-subtle)">
+          {bits.length > 0 && <span className="tabular-nums">{bits.join(' · ')}</span>}
+          {flags.map((flag) => (
+            <span
+              key={flag.key}
+              title={flag.title}
+              className="rounded bg-(--bg-key) px-1 py-px font-medium"
+            >
+              {flag.label}
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
+  )
+}
+
 function ModelRow({
   qualifiedId,
   selected,
@@ -1051,6 +1113,7 @@ function ModelRow({
   onToggleVisible,
   onCopy,
   modelCost,
+  detail,
 }: {
   qualifiedId: string
   selected: boolean
@@ -1058,6 +1121,7 @@ function ModelRow({
   onToggleVisible: () => void
   onCopy: (qualifiedId: string) => Promise<void>
   modelCost?: ModelCost
+  detail?: ProviderModelDetail
 }) {
   const isMobile = useIsMobile()
   const { isTauri, os } = usePlatform()
@@ -1107,10 +1171,32 @@ function ModelRow({
       onPointerCancel={clearLongPress}
       onPointerLeave={clearLongPress}
     >
-      <span className="min-w-0 flex-1 truncate font-mono text-xs text-(--color-text)">
-        {qualifiedId}
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="min-w-0 truncate font-mono text-xs text-(--color-text)">
+            {qualifiedId}
+          </span>
+          {detail?.free && (
+            <span className="shrink-0 rounded bg-(--color-success-subtle) px-1 py-px text-[0.6rem] font-medium tracking-wide text-(--color-success) uppercase">
+              free
+            </span>
+          )}
+          {detail?.status && (
+            <span
+              className={cn(
+                'shrink-0 rounded px-1 py-px text-[0.6rem] font-medium tracking-wide uppercase',
+                detail.status === 'deprecated'
+                  ? 'bg-(--color-error-subtle) text-(--color-error)'
+                  : 'bg-(--color-accent)/12 text-(--color-accent)',
+              )}
+            >
+              {detail.status}
+            </span>
+          )}
+        </span>
+        {detail && <ModelFacts detail={detail} />}
       </span>
-      {modelCost && <PricingBadge cost={modelCost} />}
+      {modelCost && !detail?.free && <PricingBadge cost={modelCost} />}
       <button
         type="button"
         onClick={onToggleVisible}
@@ -1425,31 +1511,130 @@ function OAuthLoginDialog({
 
 // ─── Main page ───────────────────────────────────────────────────────────────
 
+/** Does this provider count as set up? */
+function isConnected(provider: ProviderInfo): boolean {
+  return provider.is_configured || (provider.kind === 'oauth' && provider.is_saved)
+}
+
+/** Text a provider matches against in the search box. */
+function providerHaystack(provider: ProviderInfo): string {
+  return `${provider.label} ${provider.description} ${provider.id}`.toLowerCase()
+}
+
+function matches(provider: ProviderInfo, query: string): boolean {
+  return !query || providerHaystack(provider).includes(query)
+}
+
+/** Suggested providers first, then alphabetical — a stable, readable order. */
+function byRankThenLabel(a: ProviderInfo, b: ProviderInfo): number {
+  const rank = (a.rank ?? 0) - (b.rank ?? 0)
+  return rank !== 0 ? rank : a.label.localeCompare(b.label)
+}
+
+/**
+ * One row of the models.dev long tail.
+ *
+ * Deliberately not a `ProviderCard`: with 160-odd of them, a card each turns
+ * the page into a wall. A row states the two things worth knowing before you
+ * have a key — how many models it serves, and how many of those are free —
+ * and expands into the same card as everything else when clicked.
+ */
+function CatalogProviderRow({ provider }: { provider: ProviderInfo }) {
+  const [expanded, setExpanded] = useState(false)
+  if (expanded) return <ProviderCard provider={provider} />
+  return (
+    <button
+      type="button"
+      onClick={() => setExpanded(true)}
+      className="group flex w-full min-w-0 items-center gap-3 rounded-lg border border-transparent px-3 py-2 text-left outline-none transition-colors hover:border-(--color-border) hover:bg-(--bg-key)/40 focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40"
+    >
+      <SharedProviderBrandIcon providerId={provider.id} size="xs" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm text-(--color-text)">{provider.label}</span>
+        <span className="block truncate text-xs text-(--color-text-muted)">{provider.description}</span>
+      </span>
+      {(provider.free_model_count ?? 0) > 0 && (
+        <span className="shrink-0 rounded-full bg-(--color-success-subtle) px-2 py-0.5 text-[0.65rem] font-medium text-(--color-success)">
+          {provider.free_model_count} free
+        </span>
+      )}
+      {(provider.model_count ?? 0) > 0 && (
+        <span className="hidden shrink-0 font-mono text-[0.65rem] tabular-nums text-(--color-text-muted) sm:inline">
+          {provider.model_count} models
+        </span>
+      )}
+      <ChevronRight
+        size={14}
+        className="shrink-0 text-(--color-text-muted) transition-transform group-hover:translate-x-0.5"
+        aria-hidden="true"
+      />
+    </button>
+  )
+}
+
 export function ProvidersSettingsPage() {
   const providersQ = useProvidersQuery()
   const [search, setSearch] = useState('')
+  const [showCatalog, setShowCatalog] = useState(false)
 
-  const providers = providersQ.data?.providers ?? []
-  const connectedProviders = providers.filter((p) => p.is_configured || (p.kind === 'oauth' && p.is_saved))
-  const availableProviders = providers.filter((p) => !p.is_configured && !(p.kind === 'oauth' && p.is_saved))
+  const providers = useMemo(
+    () => providersQ.data?.providers ?? [],
+    [providersQ.data],
+  )
+  const query = search.trim().toLowerCase()
 
-  const filteredConnected = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return connectedProviders
-    return connectedProviders.filter(
-      (p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.id.toLowerCase().includes(q),
-    )
-  }, [connectedProviders, search])
+  const { connected, recommended, other, catalog } = useMemo(() => {
+    const connectedRows: ProviderInfo[] = []
+    const recommendedRows: ProviderInfo[] = []
+    const otherRows: ProviderInfo[] = []
+    const catalogRows: ProviderInfo[] = []
+    for (const provider of providers) {
+      if (isConnected(provider)) connectedRows.push(provider)
+      else if (provider.source === 'catalog') catalogRows.push(provider)
+      else if (provider.recommended) recommendedRows.push(provider)
+      else otherRows.push(provider)
+    }
+    // The suggestion order is the backend's; the UI does not re-rank it.
+    recommendedRows.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
+    connectedRows.sort(byRankThenLabel)
+    otherRows.sort(byRankThenLabel)
+    return {
+      connected: connectedRows,
+      recommended: recommendedRows,
+      other: otherRows,
+      catalog: catalogRows,
+    }
+  }, [providers])
 
-  const filteredAvailable = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return availableProviders
-    return availableProviders.filter(
-      (p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.id.toLowerCase().includes(q),
-    )
-  }, [availableProviders, search])
-
-  const totalFiltered = filteredConnected.length + filteredAvailable.length
+  const filteredConnected = useMemo(
+    () => connected.filter((p) => matches(p, query)),
+    [connected, query],
+  )
+  const filteredRecommended = useMemo(
+    () => recommended.filter((p) => matches(p, query)),
+    [recommended, query],
+  )
+  const filteredOther = useMemo(
+    () => other.filter((p) => matches(p, query)),
+    [other, query],
+  )
+  // The long tail is a directory, not a menu: it stays collapsed until the
+  // user searches or opens it, so the page is a short list of providers with
+  // real support rather than 160 rows of catalog entries.
+  const filteredCatalog = useMemo(
+    () => catalog.filter((p) => matches(p, query)),
+    [catalog, query],
+  )
+  const catalogVisible = Boolean(query) || showCatalog
+  const totalFiltered =
+    filteredConnected.length +
+    filteredRecommended.length +
+    filteredOther.length +
+    (catalogVisible ? filteredCatalog.length : 0)
+  const freeInCatalog = useMemo(
+    () => catalog.reduce((sum, p) => sum + (p.free_model_count ?? 0), 0),
+    [catalog],
+  )
 
   return (
     <SettingsPage
@@ -1458,9 +1643,9 @@ export function ProvidersSettingsPage() {
       size="wide"
       lede="Connect a model provider so EvoFlux can run agents. API keys and OAuth tokens are stored on this machine only."
       actions={
-        connectedProviders.length > 0 ? (
+        connected.length > 0 ? (
           <span className="rounded-full bg-(--color-success-subtle) px-2.5 py-1 text-[11px] font-medium text-(--color-success)">
-            {connectedProviders.length} connected
+            {connected.length} connected
           </span>
         ) : undefined
       }
@@ -1480,7 +1665,7 @@ export function ProvidersSettingsPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search providers…"
+            placeholder={`Search ${providers.length} providers…`}
             aria-label="Search providers"
             className="h-full flex-1 border-0 bg-transparent px-0 text-sm shadow-none focus:ring-0 focus-visible:ring-0"
           />
@@ -1500,20 +1685,64 @@ export function ProvidersSettingsPage() {
             </SettingsGroup>
           )}
 
-          {filteredAvailable.length > 0 && (
+          {filteredRecommended.length > 0 && (
             <SettingsGroup
-              title="Available"
-              description="Add a key or sign in to make these usable by your agents."
+              title="Recommended"
+              description="Where most people start — frontier vendors, the subscriptions you may already pay for, and MiMo."
               bare
               className="space-y-2"
             >
-              {filteredAvailable.map((provider) => (
+              {filteredRecommended.map((provider) => (
                 <ProviderCard key={provider.id} provider={provider} />
               ))}
             </SettingsGroup>
           )}
 
-          {totalFiltered === 0 && search.trim() && (
+          {filteredOther.length > 0 && (
+            <SettingsGroup
+              title="Also supported"
+              description="Providers with a hand-written integration in EvoFlux — inference hosts, gateways, cloud platforms and local daemons."
+              bare
+              className="space-y-2"
+            >
+              {filteredOther.map((provider) => (
+                <ProviderCard key={provider.id} provider={provider} />
+              ))}
+            </SettingsGroup>
+          )}
+
+          {catalog.length > 0 && (
+            <SettingsGroup
+              title={`All providers · models.dev (${catalog.length})`}
+              description={
+                freeInCatalog > 0
+                  ? `Every other provider in the models.dev catalogue — ${freeInCatalog} of their models cost nothing per token. Each needs its own key.`
+                  : 'Every other provider in the models.dev catalogue. Each needs its own key.'
+              }
+              bare
+              className="space-y-1"
+            >
+              {!catalogVisible ? (
+                <button
+                  type="button"
+                  onClick={() => setShowCatalog(true)}
+                  className="w-full rounded-lg border border-dashed border-(--color-border) py-3 text-sm text-(--color-text-muted) transition-colors hover:border-(--color-border-strong) hover:text-(--color-text)"
+                >
+                  Browse all {catalog.length} providers
+                </button>
+              ) : filteredCatalog.length > 0 ? (
+                filteredCatalog.map((provider) => (
+                  <CatalogProviderRow key={provider.id} provider={provider} />
+                ))
+              ) : (
+                <p className="py-3 text-center text-xs text-(--color-text-muted)">
+                  No catalogue provider matches &ldquo;{search}&rdquo;.
+                </p>
+              )}
+            </SettingsGroup>
+          )}
+
+          {totalFiltered === 0 && query && (
             <div className="rounded-lg border border-dashed border-(--color-border) py-12 text-center">
               <p className="text-sm text-(--color-text-muted)">
                 No providers match &ldquo;{search}&rdquo;.

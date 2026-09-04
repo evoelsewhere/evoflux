@@ -1957,6 +1957,64 @@ export interface ModelCatalogEntry {
   thinking_default_enabled?: boolean | null
   thinking_source?: string | null
   interfaces?: string[]
+
+  // ── Catalog facts ─────────────────────────────────────────────────────────
+  //
+  // Read from the model catalog rather than restated in the frontend, so the
+  // picker's badges, prices and limits follow the catalog. Every field is
+  // optional: a self-hosted or brand-new model still lists, just plainer.
+
+  /** Catalog display name, e.g. `MiMo-V2.5-Pro`. */
+  display_name?: string | null
+  description?: string | null
+  /** Model family (`claude-opus`, `gemini-pro`), for grouping. */
+  family?: string | null
+  /** `beta` | `deprecated`. Badged in the picker. */
+  status?: string | null
+  release_date?: string | null
+  last_updated?: string | null
+  /** Training-data cutoff as the catalog states it, e.g. `2024-12`. */
+  knowledge?: string | null
+
+  max_output_tokens?: number | null
+  tool_call?: boolean | null
+  attachment?: boolean | null
+  temperature?: boolean | null
+  structured_output?: boolean | null
+  open_weights?: boolean | null
+
+  /** USD per million tokens, plus any long-context `tiers`. */
+  cost?: ModelCatalogCost
+  /**
+   * Zero per-token cost — a genuinely free tier, or a model included in a
+   * plan the user already pays for. `null`/absent means the catalog quotes
+   * no price, which is not the same as free.
+   */
+  free?: boolean | null
+  /** Bounds on an explicit thinking-token budget. */
+  thinking_budget?: { min?: number | null; max?: number | null }
+  /** Alternate service tiers this model offers, e.g. `["fast"]`. */
+  modes?: string[]
+  /**
+   * What each tier costs relative to the standard rate, by output price. A
+   * fast lane commonly bills at 2.5-5x, so a toggle switching one on has to
+   * be able to say so. A tier with no published price is absent rather than
+   * reported as 1.0.
+   */
+  mode_cost_multiplier?: Record<string, number>
+}
+
+/** Per-million-token rates, as the catalog publishes them. */
+export interface ModelCatalogCost {
+  input?: number
+  output?: number
+  cache_read?: number
+  cache_write?: number
+  reasoning?: number
+  input_audio?: number
+  output_audio?: number
+  /** Rates replacing the headline ones past `above_tokens` of context. */
+  tiers?: Array<Record<string, number>>
 }
 
 export interface RegistryResponse {

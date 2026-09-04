@@ -343,6 +343,24 @@ export type ProviderInfo = {
   is_saved: boolean
   is_reachable?: boolean | null
   visible_models: string[]
+  /**
+   * How much EvoFlux knows about this provider. `builtin` and `plugin` have
+   * hand-written support; `catalog` is derived from models.dev alone — a
+   * base URL and a credential name, nothing more.
+   */
+  source?: 'builtin' | 'plugin' | 'catalog'
+  /** Wire protocol, meaningful mainly for catalog-derived rows. */
+  transport?: string
+  /** Models the catalog lists for this provider, and how many cost nothing. */
+  model_count?: number
+  free_model_count?: number
+  /**
+   * Whether EvoFlux suggests connecting this one first, and where it sits in
+   * that order. With ~200 providers reachable, a flat alphabetical list makes
+   * the choice harder rather than easier.
+   */
+  recommended?: boolean
+  rank?: number
 }
 
 export type ProvidersListBody = {
@@ -356,10 +374,32 @@ export type ProviderSaveRequest = {
 }
 
 export type ModelCost = {
-  input_per_mtok?: number | null
-  output_per_mtok?: number | null
-  cache_read_per_mtok?: number | null
-  cache_write_per_mtok?: number | null
+  /** USD per 1M tokens; omitted when the catalog has no rate. */
+  input?: number | null
+  output?: number | null
+  cache_read?: number | null
+  cache_write?: number | null
+}
+
+/** What the model catalogue knows about one listed model. */
+export type ProviderModelDetail = {
+  /** Catalogue display name, e.g. `MiMo-V2.5-Pro`. */
+  name?: string | null
+  description?: string | null
+  family?: string | null
+  /** `beta` | `deprecated`. */
+  status?: string | null
+  release_date?: string | null
+  knowledge?: string | null
+  context_length?: number | null
+  max_output_tokens?: number | null
+  /** Zero per-token cost — a free tier, or included in a paid plan. */
+  free?: boolean | null
+  vision?: boolean
+  tool_call?: boolean | null
+  attachment?: boolean | null
+  /** Selectable reasoning levels; empty when the model exposes no control. */
+  thinking_levels?: string[]
 }
 
 export type ProviderModelsResponse = {
@@ -367,6 +407,9 @@ export type ProviderModelsResponse = {
   models: string[]
   source: 'provider' | 'fallback'
   model_costs?: Record<string, ModelCost>
+  /** Keyed by provider-local model ID; absent for models the catalogue
+   *  has never heard of, which still list with just their ID. */
+  model_details?: Record<string, ProviderModelDetail>
 }
 
 export type ProviderUsageWindow = {

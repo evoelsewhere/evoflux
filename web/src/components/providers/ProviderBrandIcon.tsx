@@ -1,18 +1,23 @@
 /**
- * Provider brand icons — bundled locally as React components, no runtime fetches.
+ * Provider brand icons, in three tiers.
  *
- * SVG glyphs come from the LobeHub icon set (lobehub/lobe-icons, MIT) and are
- * vendored in ``web/src/assets/providers/``.  They are imported with
- * ``?react`` (vite-plugin-svgr) and rendered inline with ``fill="currentColor"``,
- * tinted via the provider's brand color — crisp at every size, theme-safe, and
- * fully offline (no CDN, no proxy issues).
+ * 1. **Vendored glyph.** The providers most users connect first are bundled
+ *    as React components from the LobeHub set (MIT) in
+ *    `web/src/assets/providers/`, imported with `?react` and rendered inline
+ *    with `fill="currentColor"` tinted by the brand colour. No request, no
+ *    flash, crisp at every size — worth the bytes for the common case.
+ * 2. **Catalogue logo.** models.dev publishes a mark for every provider it
+ *    lists, so the remaining ~165 get a real icon instead of an initial.
+ *    It is served by our own API rather than linked, which keeps the
+ *    renderer from making third-party requests and keeps the icons working
+ *    offline after first fetch. See `GET /settings/providers/{id}/logo`.
+ * 3. **Initial letter.** For a provider with neither — a local daemon, a
+ *    plugin, a custom endpoint.
  *
  * FCI uses the official multi-color FPT symbol rendered with <img>.
- *
- * Keep ids aligned with ``app.agent.providers.catalog``.  Providers without a
- * glyph fall back to a brand-colored initial letter.
  */
-import type { ComponentType, SVGProps } from 'react'
+import { useState, type ComponentType, type SVGProps } from 'react'
+import { useThemePreference } from '@/hooks/useThemePreference'
 import { cn } from '@/lib/utils'
 
 import AnthropicGlyph from '@/assets/providers/anthropic.svg?react'
@@ -68,15 +73,36 @@ const PROVIDER_BRANDS: Record<string, ProviderBrand> = {
   cliproxy: { color: '#F59E0B', tagline: 'CLI proxy' },
 }
 
-const FALLBACK_COLOR = '#6B7280'
+/**
+ * The colour a provider with no brand entry is drawn in, per theme.
+ *
+ * The catalogue's marks are monochrome, so they read as UI chrome rather
+ * than branding — which means they should follow the theme's text colour,
+ * not sit at one fixed grey that is dim on dark and washed out on light.
+ * Kept as hex because the logo endpoint only accepts hex, deliberately: a
+ * colour that reaches an SVG must not be able to carry CSS with it.
+ */
+const FALLBACK_COLOR_BY_THEME = { dark: '#A1A1AA', light: '#52525B' } as const
 
-function getProviderBrand(id: string): ProviderBrand {
-  return PROVIDER_BRANDS[id] ?? { color: FALLBACK_COLOR }
+function getProviderBrand(id: string, fallbackColor: string): ProviderBrand {
+  return PROVIDER_BRANDS[id] ?? { color: fallbackColor }
 }
 
 function providerPrefix(modelOrProviderId: string): string {
   const colon = modelOrProviderId.indexOf(':')
   return (colon === -1 ? modelOrProviderId : modelOrProviderId.slice(0, colon)).toLowerCase()
+}
+
+/**
+ * Our own endpoint, so the renderer never talks to models.dev directly.
+ *
+ * The colour has to be asked for rather than inherited: the marks are drawn
+ * with `fill="currentColor"`, and an `<img>` is an isolated document that
+ * page CSS cannot reach, so without this every logo renders black.
+ */
+function catalogLogoUrl(providerId: string, color: string): string {
+  const params = new URLSearchParams({ color })
+  return `/api/settings/providers/${encodeURIComponent(providerId)}/logo?${params}`
 }
 
 export function ProviderBrandIcon({
@@ -89,7 +115,11 @@ export function ProviderBrandIcon({
   className?: string
 }) {
   const id = providerPrefix(providerId)
-  const brand = getProviderBrand(id)
+  const { resolved } = useThemePreference()
+  const brand = getProviderBrand(id, FALLBACK_COLOR_BY_THEME[resolved])
+  // A provider the catalogue has no mark for answers 404; remember that so
+  // the row settles on its initial instead of retrying on every render.
+  const [logoFailed, setLogoFailed] = useState(false)
 
   const sizeClasses = {
     xs: 'h-5 w-5 rounded-md',
@@ -131,6 +161,16 @@ export function ProviderBrandIcon({
           width={glyphPx}
           height={glyphPx}
           style={{ color: brand.color }}
+        />
+      ) : !logoFailed ? (
+        <img
+          src={catalogLogoUrl(id, brand.color)}
+          width={glyphPx}
+          height={glyphPx}
+          alt=""
+          loading="lazy"
+          onError={() => setLogoFailed(true)}
+          className="object-contain"
         />
       ) : (
         <span
