@@ -309,14 +309,10 @@ function persistSidebarCollapsed(collapsed: boolean): void {
   }
 }
 
-interface UIStore {
-  workbenchTabs: WorkbenchTab[]
-  activeWorkbenchTabId: string | null
-  activeWorkbenchTool: WorkbenchTool | null
-  workbenchOpen: boolean
-  workbenchMaximized: boolean
-  pullRequestsScope: PullRequestsScope
-  gitWorkspaceView: GitWorkspaceView
+// Extends rather than restates WorkbenchState: the two lists were
+// duplicates, so a field added to one silently failed to reach consumers
+// typed against the other.
+interface UIStore extends WorkbenchState {
   sidebarCollapsed: boolean
   /** Transient responsive mode; unlike collapse/width this is not persisted. */
   sidebarOverlay: boolean

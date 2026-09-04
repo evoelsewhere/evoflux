@@ -16,6 +16,7 @@ function surface(
     order,
     isActive: () => active,
     getTab: () => ({ url, title: instanceId }),
+    unavailableReason: () => '',
     execute: vi.fn(async (action) => action === 'status'
       ? { url, title: instanceId, readyState: 'complete' }
       : `${instanceId}:${action}`),

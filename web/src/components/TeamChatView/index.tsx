@@ -465,6 +465,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const wikiOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'wiki'))
   const sideChatOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'side-chat'))
   const hasFilesTab = useUIStore((s) => sessionHasWorkbenchTool(s, 'files'))
+  const schedulerOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'scheduler'))
   const setWorkbenchSession = useUIStore((s) => s.setWorkbenchSession)
   const toggleWiki = useUIStore((s) => s.toggleWiki)
   const toggleScheduler = useUIStore((s) => s.toggleScheduler)
@@ -1746,7 +1747,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         </WorkbenchSurface>
         <WorkbenchSurface tool="scheduler">
           <SchedulerPanel
-            open={workbenchTabs.some((tab) => tab.tool === 'scheduler')}
+            open={schedulerOpen}
             embedded
             onClose={() => closeWorkbenchTool('scheduler')}
             contextMode={workOrCodingMode}
