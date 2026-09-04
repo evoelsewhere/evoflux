@@ -1,7 +1,19 @@
+/**
+ * WorkspaceHtmlPreview — renders a workspace HTML file as an inert page.
+ *
+ * The file is parsed, its relative references are rewritten to the API that
+ * serves the workspace, and the result is handed to a fully sandboxed iframe
+ * with a restrictive CSP: no scripts, no network, images and fonts only from
+ * the workspace itself. Previewing a page with `allow-scripts allow-same-origin`
+ * instead would let a generated file reach into the app's own origin.
+ *
+ * Serves both modes: Work mode passes ``sessionId`` (session workspace media
+ * proxy), Code mode passes ``workspace`` (coding workspace file endpoint).
+ */
 import { useEffect, useState } from 'react'
 import { FileText, Loader2 } from 'lucide-react'
 
-import { workspaceMediaUrl } from '@/api/client'
+import { codingWorkspaceFileUrl, workspaceMediaUrl } from '@/api/client'
 import type { WorkspaceFileInfo } from '@/api/types'
 import { formatBytes } from '@/utils/format'
 
@@ -15,6 +27,9 @@ type WorkspaceReference = {
   path: string
   suffix: string
 }
+
+/** Resolves a workspace-relative path to the URL that serves its bytes. */
+type UrlResolver = (path: string) => string
 
 function dirname(path: string): string {
   const index = path.lastIndexOf('/')
@@ -76,15 +91,19 @@ function appendReferenceSuffix(url: string, suffix: string): string {
   return `${url}${separator}${query.slice(1)}${hash}`
 }
 
-function referenceToMediaUrl(sessionId: string, baseFilePath: string, reference: string): string | null {
+function referenceToMediaUrl(
+  resolve: UrlResolver,
+  baseFilePath: string,
+  reference: string,
+): string | null {
   const resolved = resolveWorkspaceReference(baseFilePath, reference)
   if (!resolved) return null
-  return appendReferenceSuffix(workspaceMediaUrl(sessionId, resolved.path), resolved.suffix)
+  return appendReferenceSuffix(resolve(resolved.path), resolved.suffix)
 }
 
-function rewriteCssUrls(css: string, sessionId: string, baseFilePath: string): string {
+function rewriteCssUrls(css: string, resolve: UrlResolver, baseFilePath: string): string {
   const rewrite = (reference: string): string => (
-    referenceToMediaUrl(sessionId, baseFilePath, reference) ?? reference
+    referenceToMediaUrl(resolve, baseFilePath, reference) ?? reference
   )
   const withUrls = css.replace(
     /url\(\s*(['"]?)([^'")]+)\1\s*\)/gi,
@@ -96,29 +115,29 @@ function rewriteCssUrls(css: string, sessionId: string, baseFilePath: string): s
   )
 }
 
-function rewriteSrcset(sessionId: string, baseFilePath: string, value: string): string {
+function rewriteSrcset(resolve: UrlResolver, baseFilePath: string, value: string): string {
   if (/^\s*data:/i.test(value)) return value
   return value.split(',').map((candidate) => {
     const match = /^(\s*)(\S+)(.*)$/.exec(candidate)
     if (!match) return candidate
-    const rewritten = referenceToMediaUrl(sessionId, baseFilePath, match[2])
+    const rewritten = referenceToMediaUrl(resolve, baseFilePath, match[2])
     return rewritten ? `${match[1]}${rewritten}${match[3]}` : candidate
   }).join(',')
 }
 
-function mediaOrigin(sessionId: string, filePath: string): string {
+function mediaOrigin(resolve: UrlResolver, filePath: string): string {
   try {
-    return new URL(workspaceMediaUrl(sessionId, filePath), window.location.href).origin
+    return new URL(resolve(filePath), window.location.href).origin
   } catch {
     return window.location.origin
   }
 }
 
-function installPreviewPolicy(document: Document, sessionId: string, filePath: string): void {
+function installPreviewPolicy(document: Document, resolve: UrlResolver, filePath: string): void {
   document.querySelectorAll('meta[http-equiv="Content-Security-Policy" i]').forEach((meta) => meta.remove())
   const meta = document.createElement('meta')
   meta.httpEquiv = 'Content-Security-Policy'
-  const origin = mediaOrigin(sessionId, filePath)
+  const origin = mediaOrigin(resolve, filePath)
   meta.content = [
     "default-src 'none'",
     `img-src data: blob: ${origin}`,
@@ -140,14 +159,14 @@ function installPreviewPolicy(document: Document, sessionId: string, filePath: s
   }
 }
 
-async function fetchWorkspaceText(sessionId: string, path: string): Promise<string> {
-  const response = await fetch(workspaceMediaUrl(sessionId, path), { cache: 'no-store' })
+async function fetchWorkspaceText(resolve: UrlResolver, path: string): Promise<string> {
+  const response = await fetch(resolve(path), { cache: 'no-store' })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   return response.text()
 }
 
 async function prepareRegularHtml(
-  sessionId: string,
+  resolve: UrlResolver,
   file: WorkspaceFileInfo,
   source: string,
 ): Promise<PreparedHtml> {
@@ -159,13 +178,13 @@ async function prepareRegularHtml(
     const resolved = resolveWorkspaceReference(file.path, href)
     if (!resolved) return
     try {
-      const css = await fetchWorkspaceText(sessionId, resolved.path)
+      const css = await fetchWorkspaceText(resolve, resolved.path)
       const style = document.createElement('style')
-      style.textContent = rewriteCssUrls(css, sessionId, resolved.path)
+      style.textContent = rewriteCssUrls(css, resolve, resolved.path)
       style.dataset.workspacePreviewResolved = 'true'
       link.replaceWith(style)
     } catch {
-      const rewritten = referenceToMediaUrl(sessionId, file.path, href)
+      const rewritten = referenceToMediaUrl(resolve, file.path, href)
       if (rewritten) link.setAttribute('href', rewritten)
     }
   }))
@@ -174,30 +193,34 @@ async function prepareRegularHtml(
     for (const attribute of ['src', 'href', 'poster', 'data']) {
       const value = element.getAttribute(attribute)
       if (!value) continue
-      const rewritten = referenceToMediaUrl(sessionId, file.path, value)
+      const rewritten = referenceToMediaUrl(resolve, file.path, value)
       if (rewritten) element.setAttribute(attribute, rewritten)
     }
   })
   document.querySelectorAll<HTMLElement>('[srcset]').forEach((element) => {
     const value = element.getAttribute('srcset')
-    if (value) element.setAttribute('srcset', rewriteSrcset(sessionId, file.path, value))
+    if (value) element.setAttribute('srcset', rewriteSrcset(resolve, file.path, value))
   })
   document.querySelectorAll<HTMLStyleElement>('style:not([data-workspace-preview-resolved])').forEach((style) => {
-    style.textContent = rewriteCssUrls(style.textContent ?? '', sessionId, file.path)
+    style.textContent = rewriteCssUrls(style.textContent ?? '', resolve, file.path)
   })
   document.querySelectorAll<HTMLElement>('[style]').forEach((element) => {
     const value = element.getAttribute('style')
-    if (value) element.setAttribute('style', rewriteCssUrls(value, sessionId, file.path))
+    if (value) element.setAttribute('style', rewriteCssUrls(value, resolve, file.path))
   })
-  installPreviewPolicy(document, sessionId, file.path)
+  installPreviewPolicy(document, resolve, file.path)
   return { srcDoc: `<!doctype html>${document.documentElement.outerHTML}` }
 }
 
 export function WorkspaceHtmlPreview({
   sessionId,
+  workspace,
   file,
 }: {
-  sessionId: string
+  /** Session workspace the file belongs to (Work mode). */
+  sessionId?: string
+  /** Coding workspace root the file belongs to (Code mode). */
+  workspace?: string
   file: WorkspaceFileInfo
 }) {
   const tooLarge = file.size > MAX_HTML_PREVIEW_BYTES
@@ -208,8 +231,12 @@ export function WorkspaceHtmlPreview({
   useEffect(() => {
     if (tooLarge) return
     let cancelled = false
-    void fetchWorkspaceText(sessionId, file.path)
-      .then((source) => prepareRegularHtml(sessionId, file, source))
+    const resolve: UrlResolver = workspace
+      ? (path) => codingWorkspaceFileUrl(workspace, path)
+      : (path) => workspaceMediaUrl(sessionId ?? '', path)
+
+    void fetchWorkspaceText(resolve, file.path)
+      .then((source) => prepareRegularHtml(resolve, file, source))
       .then((result) => {
         if (!cancelled) {
           setPrepared(result)
@@ -223,7 +250,7 @@ export function WorkspaceHtmlPreview({
         }
     })
     return () => { cancelled = true }
-  }, [file, sessionId, tooLarge])
+  }, [file, sessionId, tooLarge, workspace])
 
   if (tooLarge) {
     return (

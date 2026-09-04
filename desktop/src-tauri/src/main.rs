@@ -443,18 +443,45 @@ async fn save_workspace_file(
     let path = target
         .into_path()
         .map_err(|_| "Selected destination is not a local file path".to_string())?;
-    let bytes = reqwest::get(&request.url)
+
+    // Copied chunk by chunk: workspace artifacts can be arbitrarily large
+    // (datasets, videos, model files), and buffering the whole body before
+    // writing would hold a second full copy in memory.
+    match copy_url_to_path(&request.url, &path).await {
+        Ok(()) => Ok(true),
+        Err(error) => {
+            // Never leave a half-written file at the destination the user
+            // picked — it would look like a complete save.
+            let _ = tokio::fs::remove_file(&path).await;
+            Err(error)
+        }
+    }
+}
+
+async fn copy_url_to_path(url: &str, path: &Path) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut response = reqwest::get(url)
         .await
         .map_err(|e| format!("Download file: {e}"))?
         .error_for_status()
-        .map_err(|e| format!("Download file: {e}"))?
-        .bytes()
+        .map_err(|e| format!("Download file: {e}"))?;
+    let mut file = tokio::fs::File::create(path)
         .await
-        .map_err(|e| format!("Read downloaded file: {e}"))?;
-    tokio::fs::write(&path, bytes)
+        .map_err(|e| format!("Create {}: {e}", path.display()))?;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("Read downloaded file: {e}"))?
+    {
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Write {}: {e}", path.display()))?;
+    }
+    file.flush()
         .await
         .map_err(|e| format!("Write {}: {e}", path.display()))?;
-    Ok(true)
+    Ok(())
 }
 
 #[tauri::command]

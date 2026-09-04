@@ -21,6 +21,7 @@ import asyncio
 import difflib
 import mimetypes
 import os
+import shutil
 import subprocess
 import uuid
 from pathlib import Path
@@ -111,6 +112,35 @@ def _safe_resolve(root: Path, rel: str) -> Path:
     if not resolved.exists() or not resolved.is_file():
         raise HTTPException(status_code=404, detail="Media file not found.")
 
+    return resolved
+
+
+def _resolve_workspace_entry(root: Path, rel: str) -> Path:
+    """Resolve ``rel`` under ``root`` for reads *and* writes.
+
+    Unlike :func:`_safe_resolve` the target may be a directory or may not
+    exist yet — creations and renames need to name something that is not
+    there. Traversal, absolute paths, and naming the root itself are still
+    rejected; callers add their own existence checks.
+    """
+    if not rel or not rel.strip():
+        raise HTTPException(status_code=400, detail="Empty path.")
+    candidate = Path(rel)
+    if candidate.is_absolute() or (len(rel) >= 2 and rel[1] == ":"):
+        raise HTTPException(status_code=400, detail="Path must be relative.")
+    if ".." in candidate.parts:
+        raise HTTPException(status_code=400, detail="Path must not traverse upward.")
+    try:
+        resolved = (root / candidate).resolve(strict=False)
+        root_resolved = root.resolve(strict=False)
+    except (OSError, RuntimeError):
+        raise HTTPException(status_code=400, detail="Invalid path.")
+    if resolved == root_resolved:
+        raise HTTPException(status_code=400, detail="Path must name an entry.")
+    try:
+        resolved.relative_to(root_resolved)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path escapes workspace root.")
     return resolved
 
 
@@ -415,6 +445,156 @@ async def upload_workspace_files(
     return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
 
 
+# ── Coding-workspace file mutations ─────────────────────────────────────────
+#
+# Backs the explorer context menu (New file/folder, Rename, Duplicate,
+# Delete) for coding workspaces, which are addressed by absolute root
+# instead of a session id.
+#
+# Declared *before* the ``/{session_id}/files/...`` routes on purpose: those
+# patterns also match ``/workspace/files/...`` and would capture the literal
+# "workspace" as a session id. FastAPI resolves routes in declaration order,
+# so moving this block below them would 400 every request here.
+
+
+def _resolve_coding_workspace_path(workspace: str, path: str) -> tuple[Path, Path]:
+    """Resolve ``path`` inside ``workspace``, rejecting escapes.
+
+    Returns the resolved ``(root, target)`` pair. The target need not exist —
+    callers decide whether absence is an error, so the same guard serves
+    renames, copies, and creations.
+    """
+    try:
+        resolved = team_manager.validate_workspace(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    root = Path(resolved).resolve(strict=False)
+    return root, _resolve_workspace_entry(root, path)
+
+
+class CodingWorkspaceMoveRequest(BaseModel):
+    from_path: str  # Relative POSIX path within the workspace
+    to_path: str  # Relative POSIX path within the workspace
+
+
+@router.post("/workspace/files/create")
+async def create_coding_workspace_entry(
+    workspace: str, path: str, kind: str = "file"
+) -> dict[str, str]:
+    """Create an empty file or a directory in the coding workspace."""
+    if kind not in ("file", "directory"):
+        raise HTTPException(status_code=422, detail="kind must be file or directory.")
+    root, target = _resolve_coding_workspace_path(workspace, path)
+    if target.exists():
+        raise HTTPException(status_code=409, detail=f"{target.name} already exists.")
+
+    def _create() -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if kind == "directory":
+            target.mkdir()
+        else:
+            # ``x`` mode so a file that appears between the check above and
+            # here is reported instead of silently truncated.
+            with target.open("x", encoding="utf-8"):
+                pass
+
+    try:
+        await asyncio.to_thread(_create)
+    except FileExistsError:
+        raise HTTPException(status_code=409, detail=f"{target.name} already exists.")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Create failed: {exc}")
+    return {"path": target.relative_to(root).as_posix()}
+
+
+@router.post("/workspace/files/move")
+async def move_coding_workspace_entry(
+    workspace: str, body: CodingWorkspaceMoveRequest
+) -> dict[str, bool]:
+    """Rename or move a file/folder inside the coding workspace."""
+    _, src = _resolve_coding_workspace_path(workspace, body.from_path)
+    _, dest = _resolve_coding_workspace_path(workspace, body.to_path)
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="File not found.")
+    if dest == src:
+        return {"ok": True}
+    if dest.exists():
+        raise HTTPException(status_code=409, detail=f"{dest.name} already exists.")
+    if src.is_dir() and dest.is_relative_to(src):
+        raise HTTPException(status_code=400, detail="Cannot move a folder into itself.")
+
+    def _move() -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        src.rename(dest)
+
+    try:
+        await asyncio.to_thread(_move)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Move failed: {exc}")
+    return {"ok": True}
+
+
+@router.post("/workspace/files/copy")
+async def copy_coding_workspace_entry(
+    workspace: str, body: CodingWorkspaceMoveRequest
+) -> dict[str, bool]:
+    """Duplicate a file or folder inside the coding workspace."""
+    _, src = _resolve_coding_workspace_path(workspace, body.from_path)
+    _, dest = _resolve_coding_workspace_path(workspace, body.to_path)
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="File not found.")
+    if dest.exists():
+        raise HTTPException(status_code=409, detail=f"{dest.name} already exists.")
+    # Copying a folder into itself would make ``copytree`` recurse forever.
+    if src.is_dir() and dest.is_relative_to(src):
+        raise HTTPException(status_code=400, detail="Cannot copy a folder into itself.")
+
+    def _copy() -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_dir():
+            shutil.copytree(src, dest, symlinks=True)
+        else:
+            shutil.copy2(src, dest)
+
+    try:
+        await asyncio.to_thread(_copy)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Copy failed: {exc}")
+    return {"ok": True}
+
+
+@router.delete("/workspace/files/entry")
+async def delete_coding_workspace_entry(
+    workspace: str, path: str, recursive: bool = False
+) -> dict[str, bool]:
+    """Delete a file, or a directory when ``recursive`` is set.
+
+    Directories need the explicit flag so a mis-typed request can never take
+    a whole subtree with it.
+    """
+    _, target = _resolve_coding_workspace_path(workspace, path)
+    is_dir = target.is_dir() and not target.is_symlink()
+    if is_dir and not recursive:
+        raise HTTPException(
+            status_code=400, detail="Directory delete requires recursive=true."
+        )
+
+    def _delete() -> None:
+        if is_dir:
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+
+    try:
+        await asyncio.to_thread(_delete)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found.")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {exc}")
+    return {"ok": True}
+
+
 class FileMoveRequest(BaseModel):
     from_path: str  # Relative POSIX path within workspace
     to_path: str  # Relative POSIX path within workspace
@@ -436,26 +616,104 @@ async def move_workspace_file(
         raise HTTPException(status_code=400, detail="Invalid session id.")
 
     workspace = await _session_workspace(session_id)
-    src = _safe_resolve(workspace, body.from_path)
-    dest_candidate = Path(body.to_path)
-    if dest_candidate.is_absolute() or ".." in dest_candidate.parts:
-        raise HTTPException(
-            status_code=400, detail="Destination path must be relative."
-        )
-    dest = (workspace / dest_candidate).resolve()
-    try:
-        dest.relative_to(workspace.resolve())
-    except ValueError:
-        raise HTTPException(
-            status_code=400, detail="Destination escapes workspace root."
-        )
+    src = _resolve_workspace_entry(workspace, body.from_path)
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="File not found.")
+    dest = _resolve_workspace_entry(workspace, body.to_path)
     if dest == src:
         return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    try:
+    if dest.exists():
+        raise HTTPException(status_code=409, detail=f"{dest.name} already exists.")
+    if src.is_dir() and dest.is_relative_to(src):
+        raise HTTPException(status_code=400, detail="Cannot move a folder into itself.")
+
+    def _move() -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
         src.rename(dest)
+
+    try:
+        await asyncio.to_thread(_move)
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"Move failed: {exc}")
+    return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
+
+
+class FileCopyRequest(BaseModel):
+    from_path: str  # Relative POSIX path within workspace
+    to_path: str  # Relative POSIX path within workspace
+
+
+@router.post("/{session_id}/files/create", response_model=WorkspaceFilesResponse)
+async def create_workspace_entry(
+    session_id: str,
+    path: str,
+    kind: str = "file",
+) -> WorkspaceFilesResponse:
+    """Create an empty file or a folder in the session workspace."""
+    try:
+        uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+    if kind not in ("file", "directory"):
+        raise HTTPException(status_code=422, detail="kind must be file or directory.")
+
+    workspace = await _session_workspace(session_id)
+    target = _resolve_workspace_entry(workspace, path)
+    if target.exists():
+        raise HTTPException(status_code=409, detail=f"{target.name} already exists.")
+
+    def _create() -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if kind == "directory":
+            target.mkdir()
+        else:
+            # ``x`` mode so a file that appears between the check above and
+            # here is reported instead of silently truncated.
+            with target.open("x", encoding="utf-8"):
+                pass
+
+    try:
+        await asyncio.to_thread(_create)
+    except FileExistsError:
+        raise HTTPException(status_code=409, detail=f"{target.name} already exists.")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Create failed: {exc}")
+    return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
+
+
+@router.post("/{session_id}/files/copy", response_model=WorkspaceFilesResponse)
+async def copy_workspace_entry(
+    session_id: str,
+    body: FileCopyRequest,
+) -> WorkspaceFilesResponse:
+    """Duplicate a file or folder inside the session workspace."""
+    try:
+        uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid session id.")
+
+    workspace = await _session_workspace(session_id)
+    src = _resolve_workspace_entry(workspace, body.from_path)
+    if not src.exists():
+        raise HTTPException(status_code=404, detail="File not found.")
+    dest = _resolve_workspace_entry(workspace, body.to_path)
+    if dest.exists():
+        raise HTTPException(status_code=409, detail=f"{dest.name} already exists.")
+    # Copying a folder into itself would make ``copytree`` recurse forever.
+    if src.is_dir() and dest.is_relative_to(src):
+        raise HTTPException(status_code=400, detail="Cannot copy a folder into itself.")
+
+    def _copy() -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_dir():
+            shutil.copytree(src, dest, symlinks=True)
+        else:
+            shutil.copy2(src, dest)
+
+    try:
+        await asyncio.to_thread(_copy)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Copy failed: {exc}")
     return await asyncio.to_thread(_list_workspace_files, workspace, session_id)
 
 
@@ -465,17 +723,34 @@ async def move_workspace_file(
 async def delete_workspace_file(
     session_id: str,
     file_path: str,
+    recursive: bool = False,
 ) -> WorkspaceFilesResponse:
-    """Delete a single file from the session workspace."""
+    """Delete a file, or a folder when ``recursive`` is set.
+
+    Folders need the explicit flag so a mis-typed request can never take a
+    whole subtree with it.
+    """
     try:
         uuid.UUID(session_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid session id.")
 
     workspace = await _session_workspace(session_id)
-    target = _safe_resolve(workspace, file_path)
+    target = _resolve_workspace_entry(workspace, file_path)
+    is_dir = target.is_dir() and not target.is_symlink()
+    if is_dir and not recursive:
+        raise HTTPException(
+            status_code=400, detail="Directory delete requires recursive=true."
+        )
+
+    def _delete() -> None:
+        if is_dir:
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+
     try:
-        target.unlink()
+        await asyncio.to_thread(_delete)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="File not found.")
     except OSError as exc:
