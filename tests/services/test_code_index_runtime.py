@@ -19,7 +19,12 @@ from app.services.code_index.project import (
     RepositoryIndexRegistry,
 )
 from app.services.code_index.paths import paths_for_repository
-from app.services.code_index.query import _fts_query, search_index, snapshot_graph
+from app.services.code_index.query import (
+    _fts_query,
+    _rows_with_content,
+    search_index,
+    snapshot_graph,
+)
 from app.services.code_index.service import query_code_context
 from app.services.code_index.chunking import (
     MAX_CHUNK_CHARS,
@@ -738,6 +743,117 @@ async def test_search_keeps_semantic_fallback_without_lexical_candidates(
 
     assert result.hits
     assert similarity_calls == stats.chunks
+
+
+@pytest.mark.asyncio
+async def test_semantic_fallback_reads_content_for_the_shortlist_only(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fallback still ranks every chunk, but reads few of them in full.
+
+    Content is the expensive column: an identifier lookup against an index
+    that does not hold the symbol used to read all of it, which on the
+    largest index here is most of 698 MB, to produce a coverage score of
+    zero. Scoring needs only the vector and the path, so the scan pays for
+    content once the candidates are known.
+    """
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    for ordinal in range(120):
+        (repository / f"ledger{ordinal}.py").write_text(
+            f"def settle_invoice_{ordinal}(amount: int) -> int:\n"
+            f"    note = 'invoice {ordinal} cleared against the ledger'\n"
+            f"    return amount + {ordinal}\n",
+            encoding="utf-8",
+        )
+    index = await RepositoryIndex.create(repository)
+    stats = await index.update()
+    scored = 0
+
+    def tracked_similarity(_left: bytes, _right: bytes) -> float:
+        nonlocal scored
+        scored += 1
+        return 0.5
+
+    read_in_full: list[int] = []
+
+    def tracked_rows_with_content(
+        conn: sqlite3.Connection, shortlist: list[tuple[float, tuple[object, ...]]]
+    ) -> list[tuple[object, ...]]:
+        read_in_full.append(len(shortlist))
+        return _rows_with_content(conn, shortlist)
+
+    monkeypatch.setattr("app.services.code_index.query.similarity", tracked_similarity)
+    monkeypatch.setattr(
+        "app.services.code_index.query._rows_with_content", tracked_rows_with_content
+    )
+
+    result = await search_index(
+        [("repo", index)],
+        query="abstractconcept",
+        languages=None,
+        paths=None,
+        limit=10,
+        stats={"repo": stats},
+    )
+
+    assert stats.chunks > 80
+    # Ranking still sees every chunk, and pays for its vector exactly once.
+    assert scored == stats.chunks
+    # Reading in full stops at the candidate pool the lexical branch uses.
+    assert read_in_full == [80]
+    assert result.hits and all(hit.content for hit in result.hits)
+
+
+@pytest.mark.asyncio
+async def test_semantic_fallback_leaves_the_language_filter_to_sql(
+    tmp_path: Path,
+    isolated_cache: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An excluded language costs nothing: SQL drops it before the read."""
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    (repository / "ledger.py").write_text(
+        "def settle_invoice():\n    return 'cleared'\n", encoding="utf-8"
+    )
+    (repository / "ledger.ts").write_text(
+        "export function settleInvoice() {\n  return 'cleared'\n}\n",
+        encoding="utf-8",
+    )
+    index = await RepositoryIndex.create(repository)
+    stats = await index.update()
+    scanned: list[str] = []
+
+    def tracked_rows_with_content(
+        conn: sqlite3.Connection, shortlist: list[tuple[float, tuple[object, ...]]]
+    ) -> list[tuple[object, ...]]:
+        scanned.extend(str(row[1]) for _score, row in shortlist)
+        return _rows_with_content(conn, shortlist)
+
+    monkeypatch.setattr(
+        "app.services.code_index.query._rows_with_content", tracked_rows_with_content
+    )
+    monkeypatch.setattr(
+        "app.services.code_index.query.similarity", lambda _left, _right: 0.5
+    )
+
+    result = await search_index(
+        [("repo", index)],
+        query="abstractconcept",
+        languages=["typescript"],
+        paths=None,
+        limit=10,
+        stats={"repo": stats},
+    )
+
+    assert stats.chunks > 1
+    # The Python-side filter would have let the excluded chunk into the scan
+    # and dropped it after reading it. Nothing here reaches that far.
+    assert scanned and all(path.endswith(".ts") for path in scanned)
+    assert result.hits and all(hit.file_path.endswith(".ts") for hit in result.hits)
 
 
 @pytest.mark.asyncio
