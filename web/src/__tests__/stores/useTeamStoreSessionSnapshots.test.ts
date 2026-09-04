@@ -22,8 +22,13 @@ import type { ContentBlock } from '@/api/types'
 
 const store = () => useTeamStore.getState()
 
-const textBlock = (text: string): ContentBlock =>
-  ({ type: 'text', text }) as ContentBlock
+// Derived from the text so a stored block and a freshly built one with
+// the same text compare equal.
+const textBlock = (text: string): ContentBlock => ({
+  id: `block:${text}`,
+  type: 'text',
+  content: text,
+} as unknown as ContentBlock)
 
 /** Put a session on screen with some transcript, as a load would. */
 function seedSession(sessionId: string, text: string): void {
