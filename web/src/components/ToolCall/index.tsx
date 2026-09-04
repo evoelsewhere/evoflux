@@ -16,7 +16,7 @@
  * this module owns only the chrome (collapse, copy, motion).
  */
 
-import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronRight,
@@ -62,41 +62,67 @@ const DocumentPreview = lazy(() =>
 )
 
 // ── Shared live clock ─────────────────────────────────────────────────────────
-// A single 1 s interval drives *all* ToolCall elapsed timers so React can
-// batch every subscriber update into one render.  The clock auto-starts on
-// first subscription, pauses when the document is hidden, and tears down
-// when no subscribers remain.
+// A single interval drives *all* ToolCall elapsed timers so React can batch
+// every subscriber update into one render. The clock auto-starts on first
+// subscription, pauses while the document is hidden, and tears down — both
+// the interval *and* the visibilitychange listener — once the last subscriber
+// leaves. Tearing down only the interval leaks a listener per start/stop
+// cycle, and a long conversation runs through many of those.
+//
+// 250 ms rather than 1 s: `formatDuration` renders one decimal place below
+// 10 s, which is where most tool calls land, so a 1 s tick makes the tenths
+// digit jump a whole second at a time. This still cuts timer wakeups by 40×
+// versus a per-instance 100 ms interval.
+const CLOCK_INTERVAL_MS = 250
+
 let _clockInterval: ReturnType<typeof setInterval> | null = null
+let _clockOnVisibility: (() => void) | null = null
 const _clockListeners = new Set<(now: number) => void>()
 
-function subscribeClock(listener: (now: number) => void) {
-  _clockListeners.add(listener)
-  if (_clockInterval === null && typeof window !== 'undefined') {
-    const tick = () => {
-      if (typeof document === 'undefined' || !document.hidden) {
-        const t = Date.now()
-        _clockListeners.forEach((fn) => fn(t))
-      }
-    }
-    _clockInterval = setInterval(tick, 1000)
-    document.addEventListener('visibilitychange', tick)
+function startClock() {
+  if (_clockInterval !== null || typeof window === 'undefined') return
+  const tick = () => {
+    if (typeof document !== 'undefined' && document.hidden) return
+    const t = Date.now()
+    _clockListeners.forEach((fn) => fn(t))
   }
-  return () => {
-    _clockListeners.delete(listener)
-    if (_clockListeners.size === 0 && _clockInterval !== null) {
-      clearInterval(_clockInterval)
-      _clockInterval = null
-    }
+  _clockInterval = setInterval(tick, CLOCK_INTERVAL_MS)
+  if (typeof document !== 'undefined') {
+    // Catch up immediately when the tab comes back to the foreground.
+    _clockOnVisibility = tick
+    document.addEventListener('visibilitychange', tick)
   }
 }
 
-/** Subscribe to a 1-second clock that pauses in background tabs. */
+function stopClock() {
+  if (_clockInterval !== null) {
+    clearInterval(_clockInterval)
+    _clockInterval = null
+  }
+  if (_clockOnVisibility !== null) {
+    document.removeEventListener('visibilitychange', _clockOnVisibility)
+    _clockOnVisibility = null
+  }
+}
+
+export function subscribeClock(listener: (now: number) => void) {
+  _clockListeners.add(listener)
+  startClock()
+  return () => {
+    _clockListeners.delete(listener)
+    if (_clockListeners.size === 0) stopClock()
+  }
+}
+
+/** Subscribe to the shared clock; it pauses in background tabs. */
 function useLiveClock(enabled: boolean): number {
   const [now, setNow] = useState(Date.now)
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (!enabled) return undefined
+    // Re-sync on subscribe so a remount doesn't show a stale elapsed value.
+    setNow(Date.now())
     return subscribeClock(setNow)
-  }, [enabled, setNow])
+  }, [enabled])
   return now
 }
 
