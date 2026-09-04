@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 
 import pytest
@@ -527,3 +529,107 @@ codex:gpt-live:
     limits = get_model_limits("codex:gpt-live")
     assert limits.context_length == 999
     assert limits.max_completion_tokens == 88
+
+
+def _models_dev_payload(model_id: str) -> dict[str, object]:
+    return {
+        "openai": {
+            "id": "openai",
+            "models": {
+                model_id: {
+                    "id": model_id,
+                    "modalities": {"input": ["text"], "output": ["text"]},
+                    "limit": {"context": 1000, "output": 100},
+                }
+            },
+        }
+    }
+
+
+def _refreshing_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache")
+    )
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config")
+    )
+    monkeypatch.setattr(model_registry.settings, "EVOFLUX_MODEL_REGISTRY_REFRESH", True)
+
+
+def test_refresh_models_dev_cache_publishes_new_models(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The merged registry is memoized per process, so a model that appears
+    # after boot is only reachable if the refresh drops the derived caches.
+    _refreshing_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        model_registry, "_fetch_models_dev", lambda: _models_dev_payload("gpt-first")
+    )
+    assert "openai:gpt-first" in model_registry.load_model_registry()
+
+    monkeypatch.setattr(
+        model_registry, "_fetch_models_dev", lambda: _models_dev_payload("gpt-second")
+    )
+    assert model_registry.refresh_models_dev_cache() is True
+
+    registry = model_registry.load_model_registry()
+    assert "openai:gpt-second" in registry
+    assert "openai:gpt-first" not in registry
+
+
+def test_refresh_models_dev_cache_keeps_caches_when_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _refreshing_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        model_registry, "_fetch_models_dev", lambda: _models_dev_payload("gpt-first")
+    )
+    model_registry.load_model_registry()
+
+    resets: list[bool] = []
+    monkeypatch.setattr(
+        model_registry, "reset_catalog_caches", lambda: resets.append(True)
+    )
+    cache_path = model_registry._models_dev_cache_path()
+    stale = time.time() - (2 * model_registry.MODELS_DEV_CACHE_TTL_SECONDS)
+    os.utime(cache_path, (stale, stale))
+
+    assert model_registry.refresh_models_dev_cache() is False
+    assert resets == []
+    # The mtime is the TTL clock: an identical payload still has to bump it,
+    # or the next cold start refetches for nothing.
+    assert cache_path.stat().st_mtime > stale
+
+
+def test_refresh_models_dev_cache_respects_the_toggle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _refreshing_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_MODEL_REGISTRY_REFRESH", False
+    )
+    fetches: list[bool] = []
+
+    def _fetch() -> dict[str, object]:
+        fetches.append(True)
+        return _models_dev_payload("gpt-first")
+
+    monkeypatch.setattr(model_registry, "_fetch_models_dev", _fetch)
+
+    assert model_registry.refresh_models_dev_cache() is False
+    assert fetches == []
+
+
+def test_refresh_models_dev_cache_survives_a_failed_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _refreshing_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        model_registry, "_fetch_models_dev", lambda: _models_dev_payload("gpt-first")
+    )
+    model_registry.load_model_registry()
+
+    monkeypatch.setattr(model_registry, "_fetch_models_dev", lambda: None)
+    assert model_registry.refresh_models_dev_cache() is False
+    # A dead network must not empty the catalog the process is already serving.
+    assert "openai:gpt-first" in model_registry.load_model_registry()

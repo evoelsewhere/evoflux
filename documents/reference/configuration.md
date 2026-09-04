@@ -83,6 +83,7 @@ before atomic save. Models use `provider:model`.
 | `SSL_VERIFY` | TLS verification for supported HTTP clients |
 | `CORS_ORIGINS` | allowed development/external API origins |
 | `EVOFLUX_MODEL_REGISTRY_REFRESH` | allow refreshed `models.dev` metadata |
+| `EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS` | background `models.dev` re-fetch interval (24, minimum 1) |
 | `EVOFLUX_CODE_INDEX_EXECUTION` | `process` (production) or test/embedder `thread` |
 | `EVOFLUX_DESKTOP_TOKEN` | random desktop-shell bearer token |
 | `EVOFLUX_ACCESS_KEY` | external/LAN bearer fallback |

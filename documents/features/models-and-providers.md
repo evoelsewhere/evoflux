@@ -245,7 +245,31 @@ reading "unknown" until the catalogue downloads — a silent failure, and a
 worse trade than the bytes. `--curated-only` keeps the smaller shape for
 anyone who wants it. Refresh both with
 `python scripts/update_model_registry.py`; `--check` fails when they are
-stale.
+stale, and the `Bundled model registry` workflow runs that check weekly so a
+snapshot going stale is noticed without anyone remembering to look.
+
+### Staying current
+
+The catalogue is fetched from `models.dev/api.json` into
+`{EVOFLUX_CACHE_DIR}/models-dev.json` with a 24-hour TTL, and the merged
+registry is memoized for the life of the process. That memoization is why the
+TTL alone is not enough: it is only consulted on the first read, so a server
+left running for a month keeps the catalogue it saw at boot and a model
+released yesterday stays invisible until a restart.
+
+`registry_refresh.py` runs a background task that re-fetches on
+`EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS` (24 h) and drops the derived
+caches — the merged registry, provider envelopes, model counts and the
+Settings rows built on them — only when the payload actually differs. An
+unchanged catalogue still rewrites the cache file, because its `mtime` is the
+TTL clock. A failed fetch changes nothing: the process keeps serving the
+catalogue it already has.
+
+Its first pass matters even when nothing changed, and even under
+`EVOFLUX_MODEL_REGISTRY_REFRESH=false`: it warms the registry on a worker
+thread. The fetch is a blocking request, so left to the first reader it runs
+wherever that reader happens to be — normally an API handler on the event
+loop, where it stalls every other request for its duration.
 
 ### Reasoning controls
 
@@ -276,7 +300,8 @@ catalogue asserting there are no controls, and is respected as such.
 The resolver combines:
 
 1. live provider catalogue facts;
-2. bundled registry and refreshed `models.dev` metadata for missing fields;
+2. bundled registry and refreshed `models.dev` metadata for missing fields
+   (refreshed on an interval, not only at boot — see *Staying current*);
 3. local `model_registry.yaml` corrections;
 4. the actual features implemented by the selected adapter.
 
@@ -371,9 +396,10 @@ Luna for narrow repeatable work.
 Primary code: `app/agent/providers/registry.py` (provider resolution),
 `model_registry.py` (catalogue normalization), `model_metadata.py` (per-model
 resolution), `thinking.py` (effort translation), `catalog.py`, `factory.py`,
-`capabilities.py`, `model_discovery.py`, provider subpackages, Settings routes
-and model-picker components. `scripts/update_model_registry.py` regenerates the
-bundled snapshots.
+`capabilities.py`, `model_discovery.py`, `registry_refresh.py` (background
+catalogue refresh), provider subpackages, Settings routes and model-picker
+components. `scripts/update_model_registry.py` regenerates the bundled
+snapshots.
 
 Every provider has adapter/factory tests; shared suites cover streaming,
 capability resolution, discovery, tool content, unconfigured providers and
