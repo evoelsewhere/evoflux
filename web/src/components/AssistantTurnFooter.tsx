@@ -149,6 +149,29 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
   } = footerData
   const canContinue = Boolean(onContinue && (textContent || hasTool) && !hasEasdReviewAction)
   const totalTokens = turnUsage ? turnUsage.input + turnUsage.output : 0
+  // `input` is summed across every model call in the turn, so a prompt that
+  // was read from cache is counted once per call. Measured on a three-call
+  // turn: 58,798 input tokens of which 38,592 were cache reads — so the
+  // headline read as 59k next to a cost of $0.003, and anyone multiplying
+  // the two got three times the real spend.
+  //
+  // Both cache classes are part of `input` and neither bills at the input
+  // rate, so both break that multiplication — in opposite directions. Reads
+  // are a fraction of the rate and make a turn look dearer than it was;
+  // writes cost more than plain input and make it look cheaper. Naming the
+  // shares is what lets the volume and the price agree.
+  const inputShares = turnUsage && turnUsage.input > 0
+    ? ([
+        ['cached', turnUsage.cache ?? 0],
+        ['written', turnUsage.cache_write ?? 0],
+      ] as const)
+        .map(([name, tokens]) => ({
+          name,
+          percent: Math.round((tokens / turnUsage.input) * 100),
+        }))
+        // Under a twentieth of the prompt explains nothing about the price.
+        .filter((share) => share.percent >= 5)
+    : []
   const cost = turnUsage?.cost
 
 
@@ -177,7 +200,11 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
   if (turnUsage && totalTokens > 0) {
     meta.push({
       key: 'tokens',
-      label: `${formatTokens(totalTokens)} tokens`,
+      label: inputShares.length
+        ? `${formatTokens(totalTokens)} tokens · ${inputShares
+            .map((share) => `${share.percent}% ${share.name}`)
+            .join(', ')}`
+        : `${formatTokens(totalTokens)} tokens`,
       title: usageTooltip(turnUsage),
     })
   }
