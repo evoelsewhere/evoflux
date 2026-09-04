@@ -97,15 +97,50 @@ const NEW_TAB_URL = '/browser-new-tab.html'
  * opening" for the rest of the session and never retries.
  */
 const CREATE_TIMEOUT_MS = 20_000
-const withTimeout = async <T,>(work: Promise<T>, label: string): Promise<T> => {
+/**
+ * Ceiling on the health check that runs before a page is opened.
+ *
+ * Everything this panel does goes through Tauri IPC, and an IPC call that
+ * never answers is indistinguishable from a slow one — the panel simply
+ * reported "still opening" forever. One cheap call first turns that into
+ * a diagnosis.
+ */
+const IPC_PROBE_TIMEOUT_MS = 4_000
+/**
+ * Write one line into the desktop app's own log.
+ *
+ * A browser panel that cannot start used to leave nothing behind but a
+ * toast, which is gone by the time anyone asks what happened — and the
+ * WebView console is not somewhere a user can be walked to over chat.
+ * The log plugin already writes to stdout and the app's log directory,
+ * so a failure here is recoverable after the fact.
+ */
+const LOG_LEVELS = { info: 3, warn: 4, error: 5 } as const
+
+const logToDesktop = async (
+  level: keyof typeof LOG_LEVELS,
+  message: string,
+): Promise<void> => {
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('plugin:log|log', {
+    level: LOG_LEVELS[level],
+    message: `browser-panel: ${message}`,
+  })
+}
+
+const withTimeout = async <T,>(
+  work: Promise<T>,
+  label: string,
+  ms: number = CREATE_TIMEOUT_MS,
+): Promise<T> => {
   let timer = 0
   try {
     return await Promise.race([
       work,
       new Promise<never>((_resolve, reject) => {
         timer = window.setTimeout(
-          () => reject(new Error(`${label} did not respond within ${CREATE_TIMEOUT_MS / 1000}s`)),
-          CREATE_TIMEOUT_MS,
+          () => reject(new Error(`${label} did not respond within ${ms / 1000}s`)),
+          ms,
         )
       }),
     ])
@@ -346,6 +381,23 @@ export function useDirectBrowserTabs({
     setCreating(true)
     createStageRef.current = 'the Tauri API modules'
     const token = createTokenRef.current
+    createStageRef.current = 'the desktop shell to answer'
+    try {
+      await withTimeout(
+        logToDesktop('info', 'opening a page'),
+        'the desktop shell',
+        IPC_PROBE_TIMEOUT_MS,
+      )
+    } catch {
+      lastCreateErrorRef.current =
+        'the desktop shell is not answering (Tauri IPC timed out) — '
+        + 'nothing in this panel can work until it does; restart EvoFlux Desktop'
+      createStageRef.current = ''
+      creatingRef.current = false
+      setCreating(false)
+      retryCreateRef.current?.()
+      return
+    }
     // `finally` cannot release the guard if an await never settles, and
     // every await below crosses into the native shell. Without this, one
     // unanswered IPC call left the panel reporting "still opening" for the
@@ -354,6 +406,8 @@ export function useDirectBrowserTabs({
       if (!creatingRef.current || createTokenRef.current !== token) return
       lastCreateErrorRef.current = `opening the page timed out (waiting on ${
         createStageRef.current || 'the desktop shell'})`
+      void logToDesktop('warn', `${lastCreateErrorRef.current}; retrying`)
+        .catch(() => {})
       createTokenRef.current += 1
       createStageRef.current = ''
       creatingRef.current = false
@@ -443,6 +497,10 @@ export function useDirectBrowserTabs({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       lastCreateErrorRef.current = `creating the WebView failed (${message})`
+      void logToDesktop(
+        'error',
+        `create failed at stage "${createStageRef.current}": ${message}`,
+      ).catch(() => {})
       onError(message)
       // Creation can fail for reasons that pass: the WebView runtime is
       // still starting, the window is mid-resize. One shot and a dead
@@ -1204,13 +1262,27 @@ export function useDirectBrowserTabs({
     return () => window.clearInterval(timer)
   }, [activeTab, invokeFor, supported, visible])
 
-  useEffect(() => () => {
-    disposedRef.current = true
-    for (const webview of webviewsRef.current.values()) {
-      void webview.close().catch(() => {})
+  useEffect(() => {
+    // React invokes an effect, tears it down, and invokes it again on mount
+    // in development. Without this reset the teardown latched `disposed`
+    // on for the instance's whole life, so every WebView it created was
+    // closed on the next line and the panel retried forever — which is
+    // exactly what "the browser can't start" looked like.
+    disposedRef.current = false
+    // The refs hold Maps whose identity never changes, only their
+    // contents, so aliasing them here is the same object cleanup would
+    // read later — and it keeps the exhaustive-deps rule from mistaking
+    // them for DOM nodes captured too early.
+    const webviews = webviewsRef.current
+    const visibilities = visibilityRef.current
+    return () => {
+      disposedRef.current = true
+      for (const webview of webviews.values()) {
+        void webview.close().catch(() => {})
+      }
+      webviews.clear()
+      visibilities.clear()
     }
-    webviewsRef.current.clear()
-    visibilityRef.current.clear()
   }, [])
 
   return {
