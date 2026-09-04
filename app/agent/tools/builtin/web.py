@@ -138,7 +138,9 @@ def _get_http_client() -> httpx.AsyncClient:
     """Return the shared pooled HTTP client, creating it on first call."""
     global _http_client  # noqa: PLW0603
     if _http_client is None or _http_client.is_closed:
-        allow_private = bool(getattr(settings, "WEB_FETCH_ALLOW_PRIVATE_NETWORK", False))
+        allow_private = bool(
+            getattr(settings, "WEB_FETCH_ALLOW_PRIVATE_NETWORK", False)
+        )
         _http_client = httpx.AsyncClient(
             follow_redirects=True,
             transport=_PublicOnlyTransport(allow_private=allow_private),
