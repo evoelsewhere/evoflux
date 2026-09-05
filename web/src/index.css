@@ -192,9 +192,31 @@
     --color-text-subtle:    #A39D96;
     --color-text-on-accent: #211A16;
 
-    /* Accent */
-    --color-accent:      #A39D96;
+    /* Accent — clay, the product default. Warm enough to belong on the
+       charcoal surfaces and distinct enough to read as a deliberate colour
+       rather than another shade of the chrome. */
+    --color-accent:      #D97757;
     --color-accent-soft: color-mix(in srgb, var(--color-accent) 14%, transparent);
+
+    /* The Appearance accent palette. Deliberately its own namespace: the
+       `--accent-*` chip tokens carry semantic meaning (success is
+       accent-green, info is accent-blue) and must not move when someone
+       picks a UI colour. Dark values sit light on charcoal and pair with
+       --color-text-on-accent. */
+    --ui-accent-clay:   #D97757;
+    --ui-accent-red:    #F87171;
+    --ui-accent-orange: #DD8246;
+    --ui-accent-amber:  #D9A441;
+    --ui-accent-lime:   #A3C563;
+    --ui-accent-green:  #55A27C;
+    --ui-accent-teal:   #4FA8A0;
+    --ui-accent-cyan:   #56B3CE;
+    --ui-accent-blue:   #60A5FA;
+    --ui-accent-indigo: #8B93F8;
+    --ui-accent-purple: #A78BFA;
+    --ui-accent-pink:   #F472B6;
+    --ui-accent-rose:   #E8798F;
+    --ui-accent-slate:  #A8AFB8;
     --color-overlay: rgba(0, 0, 0, 0.62);
 
     /* Loading feedback stays neutral and never follows the user accent. */
@@ -283,7 +305,7 @@
     --color-syn-operator: #8B949E;
 
     /* Focus + depth */
-    --focus-ring:   #A39D96;
+    --focus-ring:   #D97757;
     --shadow-depth: 0 2px 4px rgba(0, 0, 0, 0.40), 0 4px 16px rgba(0, 0, 0, 0.30);
     --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.55), 0 6px 24px rgba(0, 0, 0, 0.38);
 
@@ -371,9 +393,26 @@
     --color-text-subtle:    #6A6A6A;
     --color-text-on-accent: #FFFFFF;
 
-    /* Accent */
-    --color-accent:      #575757;
+    /* Accent — the light counterpart of clay, darkened until white label
+       text clears 4.5:1 against it. */
+    --color-accent:      #B85736;
     --color-accent-soft: color-mix(in srgb, var(--color-accent) 8%, transparent);
+
+    /* Appearance accent palette, light theme: dark enough for white text. */
+    --ui-accent-clay:   #B85736;
+    --ui-accent-red:    #DC2626;
+    --ui-accent-orange: #B65F2B;
+    --ui-accent-amber:  #A9761B;
+    --ui-accent-lime:   #5E7F2B;
+    --ui-accent-green:  #34785B;
+    --ui-accent-teal:   #2F7D77;
+    --ui-accent-cyan:   #1F7C99;
+    --ui-accent-blue:   #2563EB;
+    --ui-accent-indigo: #4F46E5;
+    --ui-accent-purple: #7C3AED;
+    --ui-accent-pink:   #BE185D;
+    --ui-accent-rose:   #C43D5C;
+    --ui-accent-slate:  #4A5568;
     --color-overlay: rgba(0, 0, 0, 0.40);
 
     /* Loading feedback stays neutral and never follows the user accent. */
@@ -462,7 +501,7 @@
     --color-syn-operator: #737373;
 
     /* Focus + depth — neutral ink focus with soft, warm shadows. */
-    --focus-ring:   #575757;
+    --focus-ring:   #B85736;
     --shadow-depth: 0 1px 3px rgba(0, 0, 0, 0.07), 0 4px 12px rgba(0, 0, 0, 0.09);
     --shadow-popover: 0 8px 32px rgba(0, 0, 0, 0.16), 0 4px 16px rgba(0, 0, 0, 0.10);
 
