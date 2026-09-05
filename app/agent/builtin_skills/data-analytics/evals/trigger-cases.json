@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Diagnose why weekly active users dropped 8% and tell me which segment drives it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Define the KPI set for the onboarding funnel and build a dashboard the team can read.",
+    "should_trigger": true
+  },
+  {
+    "query": "Size the addressable market for this feature from the data we have and state the assumptions.",
+    "should_trigger": true
+  },
+  {
+    "query": "Reformat this sheet so the header row is bold and the columns are wide enough.",
+    "should_trigger": false,
+    "near_miss": "Spreadsheet formatting, not analysis."
+  },
+  {
+    "query": "Find published research on retention benchmarks in this industry.",
+    "should_trigger": false,
+    "near_miss": "External source research rather than analysis of our data."
+  },
+  {
+    "query": "Write the nightly job that loads these events into the warehouse.",
+    "should_trigger": false,
+    "near_miss": "Pipeline engineering; the deliverable is production code."
+  }
+]

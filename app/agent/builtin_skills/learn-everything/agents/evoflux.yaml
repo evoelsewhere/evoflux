@@ -1,0 +1,6 @@
+interface:
+  display_name: "Adaptive Courses"
+  short_description: "Teach a document or topic chapter by chapter"
+  default_prompt: "Use $learn-everything to turn this into a course with exercises and progress tracking."
+policy:
+  allow_implicit_invocation: true

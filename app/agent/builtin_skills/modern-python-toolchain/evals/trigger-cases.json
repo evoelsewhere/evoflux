@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Set up a new Python project with uv, Ruff, and Pyright configured properly.",
+    "should_trigger": true
+  },
+  {
+    "query": "This repo has no pyproject.toml and mixed pip and venv usage — straighten out the toolchain.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add this dependency and pin the Python version the project targets.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write the retry logic for this API client.",
+    "should_trigger": false,
+    "near_miss": "Application code, not toolchain setup."
+  },
+  {
+    "query": "Design the test strategy for this service.",
+    "should_trigger": false,
+    "near_miss": "Test design is a separate concern."
+  },
+  {
+    "query": "Explain what this decorator does.",
+    "should_trigger": false,
+    "near_miss": "A code question with no toolchain change."
+  }
+]
