@@ -20,7 +20,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 
-import { ActivityStatus } from './motion/ActivityStatus'
 import { getToolIcon } from './ToolCallGroup'
 import { subscribeClock } from './ToolCall'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -214,14 +213,29 @@ export function TurnStatusLine({
         <StatusIcon toolName={activity.toolName} size={iconSize} animated={animated} />
       </span>
 
-      <ActivityStatus
-        label={activity.label}
-        className={cn('min-w-0 truncate', size === 'roomy' ? 'text-xs' : 'text-[11px]')}
-        aria-label={activity.label}
-      />
-
-      <span className="shrink-0 font-mono text-(--color-text-subtle) text-[11px]">
-        {meta.join(' · ')}
+      {/* Label and meta sweep together: one highlight crossing the whole
+          line, rather than the label lighting up while its own timing and
+          cost sit dim beside it. Inside the sweep the text colour is the
+          gradient, so the two levels are told apart by size and family. */}
+      <span
+        className={cn(
+          'flex min-w-0 items-center gap-2',
+          animated && 'activity-text-shimmer',
+        )}
+      >
+        {/* These colours only show when the sweep is off (reduced motion):
+            inside it the gradient fill wins over `color`. */}
+        <span
+          className={cn(
+            'min-w-0 truncate text-(--color-text-muted)',
+            size === 'roomy' ? 'text-xs' : 'text-[11px]',
+          )}
+        >
+          {activity.label}
+        </span>
+        <span className="shrink-0 font-mono text-[11px] text-(--color-text-subtle)">
+          {meta.join(' · ')}
+        </span>
       </span>
     </div>
   )
