@@ -11,6 +11,7 @@ import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { Copy, Check, Play } from 'lucide-react'
 import { lastTurnText } from '@/utils/format'
 import {
+  costTooltip,
   formatTurnCost,
   formatTurnDuration,
   formatTurnTokens,
@@ -19,7 +20,7 @@ import {
 import { cn } from '@/lib/utils'
 import { AssistantTurnContent } from './AssistantTurnContent'
 import { easdToolReviewTarget } from './easd/easdToolReviewTarget'
-import type { ContentBlock, TurnCost, TurnUsage } from '@/api/types'
+import type { ContentBlock, TurnUsage } from '@/api/types'
 
 export interface AssistantTurnFooterProps {
   /** Blocks belonging to a single assistant turn (no user blocks inside). */
@@ -40,26 +41,6 @@ function usageTooltip(usage: TurnUsage): string {
   lines.push(`Output ${usage.output.toLocaleString()}`)
   if (usage.thoughts) lines.push(`  of which thinking ${usage.thoughts.toLocaleString()}`)
   if (usage.calls && usage.calls > 1) lines.push(`${usage.calls} model calls`)
-  return lines.join(newline)
-}
-
-const COST_COMPONENT_LABELS: [keyof TurnCost, string][] = [
-  ['input_usd', 'Input'],
-  ['cache_read_usd', 'Cache read'],
-  ['cache_write_usd', 'Cache write'],
-  ['reasoning_usd', 'Thinking'],
-  ['output_usd', 'Output'],
-]
-
-function costTooltip(cost: TurnCost): string {
-  const newline = String.fromCharCode(10)
-  const lines = COST_COMPONENT_LABELS.flatMap(([key, label]) => {
-    const value = cost[key]
-    return typeof value === 'number' && value > 0
-      ? [`${label} ${formatTurnCost(value)}`]
-      : []
-  })
-  lines.push(`Estimated from models.dev rates`)
   return lines.join(newline)
 }
 

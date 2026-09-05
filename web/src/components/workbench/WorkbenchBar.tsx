@@ -284,12 +284,16 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             compact
             used={activeUsage.promptTokens}
             max={contextMax}
+            contextLength={contextMax}
             input={activeUsage.promptTokens}
             cached={activeUsage.cachedTokens}
+            cacheWrite={activeUsage.cacheWriteTokens}
             turnInput={activeUsage.turnPromptTokens}
             turnOutput={activeUsage.turnCompletionTokens}
             turnCached={activeUsage.turnCachedTokens}
+            turnCacheWrite={activeUsage.turnCacheWriteTokens}
             turnCalls={activeUsage.turnCalls}
+            cost={activeUsage.turnCost}
             trigger={summaryTrigger}
             onCompact={canCompactContext ? compactTeam : undefined}
             compactDisabled={isTeamWorking}

@@ -10,6 +10,12 @@
 
 import { useState } from 'react'
 import { LoaderCircle, Minimize2, X } from 'lucide-react'
+import type { ContextSettings, TurnCost } from '@/api/types'
+import {
+  useContextSettingsQuery,
+  useUpdateContextSettingsMutation,
+} from '@/queries'
+import { costTooltip, formatTurnCost } from '@/utils/turn-meta'
 import {
   Popover,
   PopoverClose,
@@ -17,6 +23,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { SelectControl } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { formatTokens as formatTokensShort } from '@/utils/format'
 
@@ -28,24 +35,36 @@ export interface ContextBudgetBarProps {
   used: number
   /** Context window ceiling; defaults to 200 000. */
   max?: number
+  /**
+   * The model's real context window, or `undefined` when it is not in the
+   * registry. Unlike `max` this is never defaulted, so it is what the
+   * threshold list uses to say which choices this model cannot reach.
+   */
+  contextLength?: number
   className?: string
   /** Show the percentage label on the trigger. Defaults to true. */
   showLabel?: boolean
   /** Compact trigger for dense chrome. */
   compact?: boolean
-  /** Latest input-token count (prompt). */
+  /** Latest input-token count (prompt) — includes cache reads and writes. */
   input?: number
-  /** Latest cache-token count. */
+  /** Latest cache-read token count. Subset of `input`. */
   cached?: number
+  /** Latest cache-write token count. Subset of `input`, billed at ~1.25x. */
+  cacheWrite?: number
   /** Total input tokens consumed by all model calls in the current turn. */
   turnInput?: number
   /** Total output tokens consumed by all model calls in the current turn. */
   turnOutput?: number
-  /** Total cached input tokens across all model calls in the current turn. */
+  /** Total cache-read tokens this turn. Subset of `turnInput`. */
   turnCached?: number
+  /** Total cache-write tokens this turn. Subset of `turnInput`. */
+  turnCacheWrite?: number
   /** Number of model calls included in the current turn total. */
   turnCalls?: number
-  /** Auto-summary input threshold. */
+  /** What this turn cost, by component, priced from the models.dev catalog. */
+  cost?: TurnCost
+  /** Auto-summary input threshold, already clamped to the model's window. */
   trigger?: number
   /** Manually summarize earlier turns to free context. */
   onCompact?: () => void | Promise<void>
@@ -53,7 +72,7 @@ export interface ContextBudgetBarProps {
   compactDisabled?: boolean
 }
 
-type UsageCategoryId = 'input' | 'cache'
+type UsageCategoryId = 'input' | 'cache' | 'cacheWrite' | 'output'
 
 interface UsageCategory {
   id: UsageCategoryId
@@ -75,44 +94,236 @@ function formatTokenCount(n: number): string {
   return String(Math.round(n))
 }
 
-function buildContextCategories(input: number, cached: number): UsageCategory[] {
-  const safeCache = Math.max(0, Math.min(cached, Math.max(input, 0)))
-  const freshInput = Math.max(0, input - safeCache)
-  // Fresh input + cache partition the current main prompt exactly.
+/**
+ * Split a prompt total into the three classes the provider bills separately.
+ *
+ * `input` from the API is the whole prompt: cache reads (~0.1x) and cache
+ * writes (~1.25x) are already inside it. Subtracting both leaves the tokens
+ * charged at the plain rate, so the three slices partition the prompt
+ * exactly and can be read as a sum.
+ */
+function buildContextCategories(
+  input: number,
+  cached: number,
+  cacheWrite = 0,
+): UsageCategory[] {
+  const total = Math.max(input, 0)
+  const safeCache = Math.max(0, Math.min(cached, total))
+  const safeWrite = Math.max(0, Math.min(cacheWrite, total - safeCache))
+  const freshInput = Math.max(0, total - safeCache - safeWrite)
   return [
     {
       id: 'input',
-      label: 'Input',
+      label: 'Fresh input',
       tokens: freshInput,
       color: 'var(--accent-blue)',
     },
     {
       id: 'cache',
-      label: 'Cache',
+      label: 'Cache read',
       tokens: safeCache,
       color: 'var(--accent-purple)',
     },
+    {
+      id: 'cacheWrite',
+      label: 'Cache write',
+      tokens: safeWrite,
+      color: 'var(--accent-orange)',
+    },
+  ]
+}
+
+/**
+ * Share of a prompt the provider served from its cache.
+ *
+ * Returns `null` when there is no cache signal at all — a provider that never
+ * reports cache reads is indistinguishable from one that reported zero, and
+ * printing "0% cached" for the former reads as a regression that isn't there.
+ */
+function cacheHitPercent(
+  input: number,
+  cached: number,
+  cacheWrite = 0,
+): number | null {
+  if (input <= 0) return null
+  if (cached <= 0 && cacheWrite <= 0) return null
+  return Math.min(100, Math.round((Math.max(cached, 0) / input) * 100))
+}
+
+/**
+ * One block of token accounting: a ratio bar, then the rows that add up to it.
+ *
+ * The bar carries the colour coding, so a row's dot reads as "this slice"
+ * rather than as decoration, and the two blocks in the popover stay visually
+ * parallel instead of each inventing its own layout.
+ */
+function UsageSection({
+  id,
+  title,
+  meta,
+  cacheHit,
+  categories,
+  footer,
+  divided = false,
+}: {
+  id: string
+  title: string
+  meta?: string
+  cacheHit: number | null
+  categories: UsageCategory[]
+  footer?: React.ReactNode
+  /** Draw a rule above this block, separating it from the one before. */
+  divided?: boolean
+}) {
+  const rows = categories.filter((category) => category.tokens > 0)
+  if (rows.length === 0) return null
+  const total = rows.reduce((sum, row) => sum + row.tokens, 0)
+
+  return (
+    <section
+      className={cn(
+        'mt-3 border-(--color-border) pt-3',
+        divided ? 'border-t' : 'mt-0 pt-0',
+      )}
+      aria-labelledby={`${id}-heading`}
+    >
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <h3
+          id={`${id}-heading`}
+          className="flex min-w-0 items-baseline gap-1.5 text-[11px] font-medium text-(--color-text-2)"
+        >
+          <span className="truncate">{title}</span>
+          {meta && (
+            <span className="shrink-0 text-[10px] font-normal text-(--color-text-subtle)">
+              {meta}
+            </span>
+          )}
+        </h3>
+        {cacheHit !== null && (
+          <span
+            className="shrink-0 text-[11px] font-medium tabular-nums text-(--accent-purple)"
+            title="Share of these input tokens the provider served from its cache"
+          >
+            {cacheHit}% cached
+          </span>
+        )}
+      </div>
+      <div
+        className="mb-2 flex h-1 w-full gap-px overflow-hidden rounded-full bg-(--bg-key)"
+        aria-hidden="true"
+      >
+        {rows.map((row) => (
+          <span
+            key={row.id}
+            className="h-full min-w-px first:rounded-l-full last:rounded-r-full"
+            style={{
+              width: `${(row.tokens / Math.max(total, 1)) * 100}%`,
+              backgroundColor: row.color,
+            }}
+          />
+        ))}
+      </div>
+      <ul className="flex flex-col gap-1.5" aria-label={`${title} breakdown`}>
+        {rows.map((row) => (
+          <li
+            key={row.id}
+            className="flex items-center justify-between gap-3 text-[12px] leading-none"
+          >
+            <span className="flex min-w-0 items-center gap-2 text-(--color-text-2)">
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ backgroundColor: row.color }}
+                aria-hidden="true"
+              />
+              <span className="truncate">{row.label}</span>
+            </span>
+            <span className="shrink-0 tabular-nums text-(--color-text-muted)">
+              {formatTokenCount(row.tokens)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {footer && (
+        <div className="mt-2 border-t border-(--color-border) pt-2">{footer}</div>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Selectable thresholds, bracketing the cost-optimal value so the trade-off
+ * is visible in both directions: lower compacts sooner and spends less on
+ * carried context, higher keeps more history verbatim.
+ */
+const THRESHOLD_PRESETS = [60_000, 100_000, 150_000, 250_000, 350_000, 500_000, 750_000]
+
+/**
+ * Highest threshold the model in front of the user can actually reach. The
+ * setting is global, so a choice above this is still legitimate — it simply
+ * has no effect here, and every option says so rather than silently
+ * disappearing from a list that other models still need.
+ */
+function modelCeiling(
+  settings: ContextSettings,
+  contextLength: number | undefined,
+): number | null {
+  // Undefined means the model is not in the registry, so nothing is known
+  // about its window — say nothing rather than guess from the bar's
+  // placeholder scale.
+  if (!contextLength || !(settings.context_ratio > 0)) return null
+  return Math.min(settings.max_tokens, Math.floor(contextLength * settings.context_ratio))
+}
+
+function thresholdOptions(settings: ContextSettings, contextLength: number | undefined) {
+  const ceiling = modelCeiling(settings, contextLength)
+  const label = (value: number, base: string) =>
+    ceiling !== null && value > ceiling
+      ? `${base} (${formatTokenCount(ceiling)} here)`
+      : base
+  return [
+    {
+      value: 'default',
+      label: label(
+        settings.defaults.summary_trigger_tokens,
+        `Cost-optimal — ${formatTokenCount(settings.defaults.summary_trigger_tokens)}`,
+      ),
+    },
+    ...THRESHOLD_PRESETS.filter((value) => value <= settings.max_tokens).map(
+      (value) => ({
+        value: String(value),
+        label: label(value, formatTokenCount(value)),
+      }),
+    ),
   ]
 }
 
 export function ContextBudgetBar({
   used,
   max = DEFAULT_CONTEXT_MAX,
+  contextLength,
   className,
   showLabel = true,
   compact = false,
   input = 0,
   cached = 0,
+  cacheWrite = 0,
   turnInput,
   turnOutput,
   turnCached,
+  turnCacheWrite,
   turnCalls,
+  cost,
   trigger,
   onCompact,
   compactDisabled = false,
 }: ContextBudgetBarProps) {
   const [open, setOpen] = useState(false)
   const [compactPending, setCompactPending] = useState(false)
+  // Auto-compaction is a global setting shared with the Context settings
+  // page. Going through the same query keeps the two in step and, on save,
+  // refreshes the per-model trigger this popover prints beside it.
+  const contextSettings = useContextSettingsQuery(open).data ?? null
+  const updateThreshold = useUpdateContextSettingsMutation()
   const safeMax = Math.max(max, 1)
   // Context occupancy is the latest prompt size; fall back to `used` when
   // callers only pass a single aggregate.
@@ -120,14 +331,45 @@ export function ContextBudgetBar({
   const pct = Math.min(100, Math.round((contextUsed / safeMax) * 100))
   const isDanger = pct >= 95
   const isWarn = pct >= 80 || (trigger !== undefined && contextUsed >= trigger)
-  const contextCategories = buildContextCategories(input > 0 ? input : used, cached)
-    .filter((category) => category.tokens > 0)
+  const contextCategories = buildContextCategories(
+    input > 0 ? input : used,
+    cached,
+    cacheWrite,
+  ).filter((category) => category.tokens > 0)
   const contextSegmentTotal = contextCategories.reduce((sum, c) => sum + c.tokens, 0)
   const summaryUsed = contextSegmentTotal > 0 ? contextSegmentTotal : contextUsed
   const safeTurnInput = Math.max(turnInput ?? 0, 0)
   const safeTurnOutput = Math.max(turnOutput ?? 0, 0)
-  const safeTurnCached = Math.max(0, Math.min(turnCached ?? 0, safeTurnInput))
+  // The turn's input is one total that already contains its cache reads and
+  // writes. Partition it the same way as the context breakdown above, so the
+  // rows can be added up instead of double-counting the cached share.
+  const turnCategories = buildContextCategories(
+    safeTurnInput,
+    turnCached ?? 0,
+    turnCacheWrite ?? 0,
+  )
   const hasTurnUsage = safeTurnInput > 0 || safeTurnOutput > 0
+  const contextCacheHit = cacheHitPercent(
+    input > 0 ? input : used,
+    cached,
+    cacheWrite,
+  )
+  const turnCacheHit = cacheHitPercent(
+    safeTurnInput,
+    turnCached ?? 0,
+    turnCacheWrite ?? 0,
+  )
+  // Where auto-compaction sits on the window bar, when it is inside it.
+  const compactMarkerPct =
+    trigger !== undefined && trigger > 0 && trigger < safeMax
+      ? Math.min(99, (trigger / safeMax) * 100)
+      : null
+
+  const handleThresholdChange = (raw: string) => {
+    updateThreshold.mutate({
+      summary_trigger_tokens: raw === 'default' ? null : Number(raw),
+    })
+  }
 
   const handleCompact = async () => {
     if (!onCompact || compactDisabled || compactPending) return
@@ -230,7 +472,7 @@ export function ContextBudgetBar({
         side="bottom"
         sideOffset={8}
         collisionPadding={12}
-        className="w-[min(17.5rem,calc(100vw-1.5rem))] gap-0 rounded-[10px] border-(--color-border) bg-(--bg-card) p-3.5 shadow-(--shadow-popover)"
+        className="w-[min(19rem,calc(100vw-1.5rem))] gap-0 rounded-[10px] border-(--color-border) bg-(--bg-card) p-3.5 shadow-(--shadow-popover)"
       >
         {/* Header */}
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -250,115 +492,130 @@ export function ContextBudgetBar({
           </PopoverClose>
         </div>
 
-        {/* Summary */}
-        <div className="mb-2.5 flex items-baseline justify-between gap-3 text-[12px] leading-none">
-          <span className="font-medium tabular-nums text-(--color-text)">{pct}% Full</span>
-          <span className="tabular-nums text-(--color-text-muted)">
-            ~{formatTokenCount(summaryUsed)} / {formatTokenCount(safeMax)} Tokens
-          </span>
-        </div>
-
-        {/* Segmented progress bar — filled share = % Full; slices = context categories */}
-        <div
-          className="mb-3.5 flex h-1.5 w-full gap-px overflow-hidden rounded-full bg-(--bg-key)"
-          role="meter"
-          aria-valuemin={0}
-          aria-valuemax={safeMax}
-          aria-valuenow={Math.min(contextUsed, safeMax)}
-          aria-label={ariaLabel}
-        >
-          {contextCategories.map((cat) => {
-            const shareOfUsed = cat.tokens / Math.max(summaryUsed, 1)
-            const widthPct = Math.max(0.35, shareOfUsed * pct)
-            return (
-              <span
-                key={cat.id}
-                title={`${cat.label}: ${formatTokenCount(cat.tokens)}`}
-                className="h-full min-w-px first:rounded-l-full last:rounded-r-full"
-                style={{
-                  width: `${widthPct}%`,
-                  backgroundColor: cat.color,
-                }}
-              />
-            )
-          })}
-        </div>
-
-        {/* Current context */}
-        <section aria-labelledby="current-context-heading">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h3 id="current-context-heading" className="text-[11px] font-medium text-(--color-text-2)">
-              Current context
+        {/* How full the window is — one bar, one number, and where
+            auto-compaction sits on it. */}
+        <section className="mb-4" aria-labelledby="window-heading">
+          <div className="mb-1.5 flex items-baseline justify-between gap-3">
+            <h3
+              id="window-heading"
+              className="text-[12px] font-medium leading-none text-(--color-text)"
+            >
+              {formatTokenCount(summaryUsed)} in context
             </h3>
-            <span className="text-[10px] tabular-nums text-(--color-text-subtle)">
-              Latest main prompt
+            <span className="text-[11px] tabular-nums leading-none text-(--color-text-muted)">
+              {pct}% of {formatTokenCount(safeMax)}
             </span>
           </div>
-          <ul className="flex flex-col gap-2" aria-label="Current context breakdown">
-            {contextCategories.map((cat) => (
-              <li
-                key={cat.id}
-                className="flex items-center justify-between gap-3 text-[12px] leading-none"
-              >
-                <span className="flex min-w-0 items-center gap-2 text-(--color-text-2)">
-                  <span
-                    className="size-2.5 shrink-0 rounded-[3px]"
-                    style={{ backgroundColor: cat.color }}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate">{cat.label}</span>
-                </span>
-                <span className="shrink-0 tabular-nums text-(--color-text-muted)">
-                  {formatTokenCount(cat.tokens)}
-                </span>
-              </li>
-            ))}
-            {trigger !== undefined && trigger > 0 && (
-              <li className="mt-1 flex items-center justify-between gap-3 border-t border-(--color-border) pt-2.5 text-[11px] leading-none text-(--color-text-subtle)">
-                <span>Auto-summary at</span>
-                <span className="tabular-nums">{formatTokenCount(trigger)}</span>
-              </li>
+          <div
+            className="relative h-1.5 w-full overflow-hidden rounded-full bg-(--bg-key)"
+            role="meter"
+            aria-valuemin={0}
+            aria-valuemax={safeMax}
+            aria-valuenow={Math.min(contextUsed, safeMax)}
+            aria-label={ariaLabel}
+          >
+            <span
+              className={cn(
+                'absolute inset-y-0 left-0 rounded-full transition-[width] duration-(--motion-glacial)',
+                isDanger
+                  ? 'bg-(--color-error)'
+                  : isWarn
+                    ? 'bg-(--color-warning)'
+                    : 'bg-(--accent-blue)',
+              )}
+              style={{ width: `${Math.max(pct, 1)}%` }}
+            />
+            {compactMarkerPct !== null && (
+              // The threshold is a place on this bar, so draw it there instead
+              // of spending another text row on the number.
+              <span
+                className="absolute inset-y-0 w-px bg-(--color-text-subtle)"
+                style={{ left: `${compactMarkerPct}%` }}
+                aria-hidden="true"
+              />
             )}
-          </ul>
+          </div>
+          {trigger !== undefined && trigger > 0 && (
+            <p className="mt-1.5 text-[10px] leading-none text-(--color-text-subtle)">
+              Auto-compacts at {formatTokenCount(trigger)}
+            </p>
+          )}
         </section>
 
+        <UsageSection
+          id="latest-prompt"
+          title="Latest prompt"
+          cacheHit={contextCacheHit}
+          categories={contextCategories}
+        />
+
         {hasTurnUsage && (
-          <section className="mt-3 border-t border-(--color-border) pt-3" aria-labelledby="turn-usage-heading">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <h3 id="turn-usage-heading" className="text-[11px] font-medium text-(--color-text-2)">
-                Turn usage
-              </h3>
-              <span className="text-[10px] tabular-nums text-(--color-text-subtle)">
-                {turnCalls ? `${turnCalls} model ${turnCalls === 1 ? 'call' : 'calls'}` : 'All model calls'}
-              </span>
-            </div>
-            <ul className="flex flex-col gap-2" aria-label="Turn usage breakdown">
-              <li className="flex items-center justify-between gap-3 text-[12px] leading-none">
-                <span className="flex min-w-0 items-center gap-2 text-(--color-text-2)">
-                  <span className="size-2.5 shrink-0 rounded-[3px] bg-(--accent-blue)" aria-hidden="true" />
-                  <span>Input</span>
-                </span>
-                <span className="tabular-nums text-(--color-text-muted)">{formatTokenCount(safeTurnInput)}</span>
-              </li>
-              <li className="flex items-center justify-between gap-3 text-[12px] leading-none">
-                <span className="flex min-w-0 items-center gap-2 text-(--color-text-2)">
-                  <span className="size-2.5 shrink-0 rounded-[3px] bg-(--accent-orange)" aria-hidden="true" />
-                  <span>Output</span>
-                </span>
-                <span className="tabular-nums text-(--color-text-muted)">{formatTokenCount(safeTurnOutput)}</span>
-              </li>
-              {safeTurnCached > 0 && (
-                <li className="flex items-center justify-between gap-3 text-[12px] leading-none">
-                  <span className="flex min-w-0 items-center gap-2 text-(--color-text-2)">
-                    <span className="size-2.5 shrink-0 rounded-[3px] bg-(--accent-purple)" aria-hidden="true" />
-                    <span>Cached input</span>
+          <UsageSection
+            divided
+            id="this-turn"
+            title="This turn"
+            meta={
+              turnCalls
+                ? `${turnCalls} model ${turnCalls === 1 ? 'call' : 'calls'}`
+                : 'all model calls'
+            }
+            cacheHit={turnCacheHit}
+            categories={[
+              ...turnCategories.filter((category) => category.tokens > 0),
+              {
+                id: 'output',
+                label: 'Output',
+                tokens: safeTurnOutput,
+                color: 'var(--accent-green)',
+              } satisfies UsageCategory,
+            ]}
+            footer={
+              cost && cost.estimated_usd > 0 ? (
+                <div
+                  className="flex items-center justify-between gap-3 text-[12px] leading-none"
+                  title={costTooltip(cost)}
+                >
+                  <span className="text-(--color-text-2)">Cost</span>
+                  <span className="font-medium tabular-nums text-(--color-text)">
+                    {formatTurnCost(cost.estimated_usd)}
                   </span>
-                  <span className="tabular-nums text-(--color-text-muted)">{formatTokenCount(safeTurnCached)}</span>
-                </li>
-              )}
-            </ul>
-          </section>
+                </div>
+              ) : undefined
+            }
+          />
         )}
+
+        {/* A control, not a statistic — so it sits below the numbers. */}
+        <section
+          className="mt-4 border-t border-(--color-border) pt-3"
+          aria-labelledby="auto-compact-heading"
+        >
+          <h3
+            id="auto-compact-heading"
+            className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)"
+          >
+            Compaction threshold
+          </h3>
+          {contextSettings ? (
+            <>
+              <SelectControl
+                size="sm"
+                value={String(contextSettings.summary_trigger_tokens ?? 'default')}
+                disabled={updateThreshold.isPending}
+                onValueChange={handleThresholdChange}
+                ariaLabel="Auto-compaction threshold"
+                options={thresholdOptions(contextSettings, contextLength)}
+              />
+              <p className="mt-1.5 text-[10px] leading-snug text-(--color-text-subtle)">
+                {contextSettings.summary_trigger_tokens === null
+                  ? 'Lower compacts sooner and carries fewer tokens; each compaction loses some detail.'
+                  : 'Global override, clamped to 75% of each model’s window.'}
+              </p>
+            </>
+          ) : (
+            <p className="text-[10px] text-(--color-text-subtle)">Loading…</p>
+          )}
+        </section>
 
         {onCompact && (
           <div className="mt-3 border-t border-(--color-border) pt-3">

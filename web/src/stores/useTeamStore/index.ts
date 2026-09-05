@@ -18,6 +18,7 @@ function resetTurnUsage(stream: AgentStream) {
   stream.usage.turnCompletionTokens = 0
   stream.usage.turnTotalTokens = 0
   stream.usage.turnCachedTokens = 0
+  stream.usage.turnCacheWriteTokens = 0
   stream.usage.turnCalls = 0
   stream.usage.turnPhases = {}
 }

@@ -20,6 +20,52 @@ class SandboxSettingsBody(BaseModel):
     max_output_bytes: int = Field(default=131072, ge=4096, le=1048576)
 
 
+class IgnoredSettingBody(BaseModel):
+    """A hand-edited ``settings.yaml`` value that failed validation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Field name within its section, e.g. ``summary_trigger_tokens``.
+    field: str
+    #: Why it was rejected, in the validator's own words.
+    message: str
+
+
+class ContextSettingsBody(BaseModel):
+    """Context-window tuning, global across sessions.
+
+    The writable fields mirror
+    :class:`app.core.runtime_settings.ContextSettings`, where ``null`` means
+    "use the built-in default". ``defaults`` reports what those defaults
+    currently are so the UI can label them without duplicating the cost
+    model in TypeScript.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary_trigger_tokens: int | None = Field(default=None, ge=20_000, le=2_000_000)
+    summary_max_tokens: int | None = Field(default=None, ge=2_000, le=120_000)
+    keep_recent_turns: int | None = Field(default=None, ge=0, le=10)
+    tool_result_offload_chars: int | None = Field(default=None, ge=2_000, le=500_000)
+    keep_recent_tool_batches: int | None = Field(default=None, ge=1, le=12)
+    #: Read-only: the value each unset field falls back to, keyed by field
+    #: name. These are the Work-mode built-ins.
+    defaults: dict[str, int] = Field(default_factory=dict)
+    #: Read-only: for the fields whose built-in differs in Coding, that value.
+    #: Absent keys mean both modes share the value in ``defaults``.
+    coding_defaults: dict[str, int] = Field(default_factory=dict)
+    #: Read-only: values this section declares in ``settings.yaml`` that failed
+    #: validation and are being ignored. Non-empty means the file says one
+    #: thing and the running sessions do another; saving here repairs it.
+    ignored: list[IgnoredSettingBody] = Field(default_factory=list)
+    #: Read-only: hard ceiling the compaction threshold is clamped to.
+    max_tokens: int = Field(default=0, ge=0)
+    #: Read-only: fraction of a model's context window the threshold is
+    #: clamped to, so a caller can name a model's own ceiling without
+    #: restating the rule.
+    context_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 # ── Providers (Settings → Providers tab) ────────────────────────────────────
 
 

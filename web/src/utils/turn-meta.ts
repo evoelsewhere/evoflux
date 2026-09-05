@@ -6,6 +6,8 @@
  * reformatting themselves the moment a turn ends.
  */
 
+import type { TurnCost } from '@/api/types'
+
 export function formatTurnDuration(ms: number): string {
   if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`
   if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`
@@ -52,4 +54,30 @@ export function formatTurnCost(usd: number): string {
 export function shortModelName(modelId: string | null | undefined): string | null {
   if (!modelId) return null
   return modelId.split(':').at(-1)?.split('/').at(-1) || modelId
+}
+
+/**
+ * Per-component cost lines for a `title` tooltip.
+ *
+ * Shared by the turn footer and the context popover so one turn's spend
+ * never reads two different ways depending on where it is shown.
+ */
+const COST_COMPONENT_LABELS: [keyof TurnCost, string][] = [
+  ['input_usd', 'Input'],
+  ['cache_read_usd', 'Cache read'],
+  ['cache_write_usd', 'Cache write'],
+  ['reasoning_usd', 'Thinking'],
+  ['output_usd', 'Output'],
+]
+
+export function costTooltip(cost: TurnCost): string {
+  const newline = String.fromCharCode(10)
+  const lines = COST_COMPONENT_LABELS.flatMap(([key, label]) => {
+    const value = cost[key]
+    return typeof value === 'number' && value > 0
+      ? [`${label} ${formatTurnCost(value)}`]
+      : []
+  })
+  lines.push('Estimated from models.dev rates')
+  return lines.join(newline)
 }

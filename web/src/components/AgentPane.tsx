@@ -317,12 +317,16 @@ export function AgentPane({
              compact
              used={stream.usage.promptTokens}
              max={modelEntry?.context_length ?? undefined}
+             contextLength={modelEntry?.context_length ?? undefined}
              input={stream.usage.promptTokens}
              cached={stream.usage.cachedTokens}
+             cacheWrite={stream.usage.cacheWriteTokens}
              turnInput={stream.usage.turnPromptTokens}
              turnOutput={stream.usage.turnCompletionTokens}
              turnCached={stream.usage.turnCachedTokens}
+             turnCacheWrite={stream.usage.turnCacheWriteTokens}
              turnCalls={stream.usage.turnCalls}
+             cost={stream.usage.turnCost}
              trigger={modelEntry?.summary_trigger_tokens}
              onCompact={isLead ? compactTeam : undefined}
              compactDisabled={isTeamWorking}

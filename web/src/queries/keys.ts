@@ -191,6 +191,7 @@ export const queryKeys = {
   },
   settings: {
     sandbox: () => ['settings', 'sandbox'] as const,
+    context: () => ['settings', 'context'] as const,
     versionControl: () => ['settings', 'version-control'] as const,
     webbridge: () => ['settings', 'webbridge'] as const,
     multimodal: () => ['settings', 'multimodal'] as const,

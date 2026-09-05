@@ -37,6 +37,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import math
 import time
 from typing import TYPE_CHECKING
 
@@ -69,9 +70,11 @@ if TYPE_CHECKING:
     from app.agent.state import AgentState, ModelCallHandler, ModelRequest, RunContext
 
 # ── Module-level defaults ─────────────────────────────────────────────────
-# These are the single source of truth for summarisation tuning. There is no
-# per-agent override and no file-based override — change the values here to
-# reconfigure summarisation.
+# The built-in defaults for summarisation tuning. An operator can override
+# each of them globally under ``context:`` in ``settings.yaml`` (see
+# :class:`app.core.runtime_settings.ContextSettings`); these values apply
+# whenever the corresponding override is unset. There is still no per-agent
+# override.
 #
 # Both the prompt and the ``keep_last_assistants`` window are mode-aware:
 #
@@ -86,8 +89,47 @@ if TYPE_CHECKING:
 #   reproduce those strings byte-for-byte. Keeping the last two turns verbatim
 #   preserves them at a small token cost.
 DEFAULT_PROMPT_TOKEN_THRESHOLD = 250000
+# Safety ceiling, not a target: compact before a long session can overflow
+# the window. The cost model below picks the actual threshold, and these two
+# only clamp it.
 MAX_PROMPT_TOKEN_THRESHOLD = 750000
 PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO = 0.75
+# Never compact so eagerly that a summary costs more than the history it
+# replaces; below this a session is cheaper left alone.
+MIN_PROMPT_TOKEN_THRESHOLD = 60000
+
+# ── Cost model for the compaction threshold ───────────────────────────────
+# Carrying context is not free. With prompt caching warm, every retained
+# token is re-read at ``CACHE_READ_RATE`` x the base input price on every
+# later turn. Compacting is not free either: the summariser reads the
+# history, writes a summary, and the rewritten prefix costs a full cache
+# write instead of a cheap read on the next turn.
+#
+# Compacting at threshold X, resetting to S, growing D tokens per turn, a
+# cycle lasts (X - S)/D turns at an average prompt of (X + S)/2, so the
+# per-turn cost in base-input-token equivalents is
+#
+#     f(X) = CACHE_READ_RATE/2 * (X + S) + C * D / (X - S)
+#
+# and f'(X) = 0 gives the minimum
+#
+#     X_opt = S + sqrt(2 * C * D / CACHE_READ_RATE)
+#
+# The context window does not appear: a larger window does not make carrying
+# tokens cheaper, which is why tying the threshold to a fraction of it was
+# the wrong shape. It enters only through the ceiling above.
+CACHE_READ_RATE = 0.1
+CACHE_WRITE_RATE = 1.25
+# Output costs roughly this many times input per token on frontier models.
+OUTPUT_PRICE_MULTIPLE = 5.0
+# Tokens one turn adds to the prompt, averaged over a tool-using session.
+TURN_GROWTH_TOKENS = 18000
+# Prompt size just after compaction: the summary plus the verbatim window.
+POST_COMPACTION_TOKENS = 45000
+# Representative history the summariser reads. Using a fixed reference
+# keeps the optimum closed-form instead of recursive in X; the term is a
+# small share of the total, so the approximation costs little.
+SUMMARISER_READ_REFERENCE_TOKENS = 300000
 DEFAULT_KEEP_LAST_ASSISTANTS = 3
 CODING_KEEP_LAST_ASSISTANTS = 2
 DEFAULT_MAX_TOKEN_LENGTH = 30000
@@ -241,13 +283,17 @@ Rules:
 def keep_last_for_mode(mode: str | None) -> int:
     """Return the ``keep_last_assistants`` window for a given session mode.
 
-    ``mode == "coding"`` → :data:`CODING_KEEP_LAST_ASSISTANTS` (0 — summarise
-    everything). Anything else → :data:`DEFAULT_KEEP_LAST_ASSISTANTS`.
+    ``mode == "coding"`` → :data:`CODING_KEEP_LAST_ASSISTANTS`. Anything else
+    → :data:`DEFAULT_KEEP_LAST_ASSISTANTS`. An operator override in
+    ``settings.yaml`` replaces both.
     """
-    return (
+    from app.agent.hooks.context_settings import resolve
+
+    return resolve(
+        "keep_recent_turns",
         CODING_KEEP_LAST_ASSISTANTS
         if mode == "coding"
-        else DEFAULT_KEEP_LAST_ASSISTANTS
+        else DEFAULT_KEEP_LAST_ASSISTANTS,
     )
 
 
@@ -412,15 +458,56 @@ def _durable_skill_message_ids(
     return protected
 
 
-def prompt_token_threshold_for_model(model_id: str | None) -> int:
-    """Return summarisation threshold capped by the module default."""
-    context_length = get_model_limits(model_id).context_length
-    if context_length is None:
-        return DEFAULT_PROMPT_TOKEN_THRESHOLD
-    return min(
-        MAX_PROMPT_TOKEN_THRESHOLD,
-        int(context_length * PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO),
+def compaction_cost_tokens() -> float:
+    """One compaction priced in base-input-token equivalents.
+
+    Three parts: the summariser reading the history (a cache read), the
+    summary it writes (billed at the output rate), and the next turn paying
+    a cache *write* on the rewritten prefix where it would otherwise have
+    paid a cache read.
+    """
+    summariser_read = CACHE_READ_RATE * SUMMARISER_READ_REFERENCE_TOKENS
+    summary_output = OUTPUT_PRICE_MULTIPLE * DEFAULT_MAX_TOKEN_LENGTH
+    prefix_rewrite = (CACHE_WRITE_RATE - CACHE_READ_RATE) * POST_COMPACTION_TOKENS
+    return summariser_read + summary_output + prefix_rewrite
+
+
+def cost_optimal_prompt_token_threshold() -> int:
+    """The threshold minimising cost per turn — ``X_opt`` from the model above."""
+    span = math.sqrt(
+        2.0 * compaction_cost_tokens() * TURN_GROWTH_TOKENS / CACHE_READ_RATE
     )
+    return int(POST_COMPACTION_TOKENS + span)
+
+
+def prompt_token_threshold_for_model(model_id: str | None) -> int:
+    """Return the summarisation threshold for *model_id*.
+
+    The operator override in ``settings.yaml`` wins when set; otherwise the
+    cost-optimal threshold applies. Either way the model's own safety
+    ceiling clamps the result, so a small-context model never gets a
+    threshold its window cannot reach.
+    """
+    from app.agent.hooks.context_settings import context_settings
+
+    override = context_settings().summary_trigger_tokens
+    target = override or cost_optimal_prompt_token_threshold()
+
+    context_length = get_model_limits(model_id).context_length
+    ceiling = MAX_PROMPT_TOKEN_THRESHOLD
+    if context_length is not None:
+        ceiling = min(
+            ceiling, int(context_length * PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO)
+        )
+    # The ceiling wins over the floor: a 32K model gets 24K, not 60K.
+    return min(ceiling, max(target, min(MIN_PROMPT_TOKEN_THRESHOLD, ceiling)))
+
+
+def summary_max_tokens() -> int:
+    """Ceiling on the summary the summariser is asked to produce."""
+    from app.agent.hooks.context_settings import resolve
+
+    return resolve("summary_max_tokens", DEFAULT_MAX_TOKEN_LENGTH)
 
 
 def build_summarization_hook(
@@ -452,7 +539,7 @@ def build_summarization_hook(
         summary_prompt=prompt_for_mode(mode),
         prompt_token_threshold=prompt_token_threshold_for_model(model_id),
         keep_last_assistants=keep_last_for_mode(mode),
-        max_token_length=DEFAULT_MAX_TOKEN_LENGTH,
+        max_token_length=summary_max_tokens(),
     )
 
 
@@ -495,8 +582,8 @@ def build_team_summarization_hook(
         default_provider,
         summary_prompt=prompt,
         prompt_token_threshold=prompt_token_threshold_for_model(model_id),
-        keep_last_assistants=CODING_KEEP_LAST_ASSISTANTS,
-        max_token_length=DEFAULT_MAX_TOKEN_LENGTH,
+        keep_last_assistants=keep_last_for_mode("coding"),
+        max_token_length=summary_max_tokens(),
     )
 
 
