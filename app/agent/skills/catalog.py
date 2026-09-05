@@ -186,6 +186,35 @@ def _ordered_records(
     return ordered, query_ranked
 
 
+def _render_stable(
+    records: Sequence[SkillRecord], description_limits: Sequence[int]
+) -> str:
+    """Render the chosen entries in name order, whatever order they were picked in.
+
+    Ranking decides *which* skills survive the budget; it must not decide the
+    byte order of the text, because this block is concatenated into the system
+    prompt. Every provider EvoFlux talks to caches a prompt by its leading byte
+    run, so re-sorting the same set of skills against each new user message
+    rewrote the prompt at position 0 and threw away the cache for the entire
+    conversation — measured on MiMo, one such turn dropped an 83k-token prompt
+    to 4k cached tokens.
+
+    Emitting in name order makes the block byte-identical between turns
+    whenever the included set is unchanged, which is the ordinary case: the
+    set only moves when the budget forces an omission.
+
+    Line length is unaffected by order, so callers that only measure the
+    rendered size may keep using :func:`_render_lines`.
+    """
+    pairs = sorted(
+        zip(records, description_limits, strict=True), key=lambda pair: pair[0].name
+    )
+    if not pairs:
+        return _render_lines(records, description_limits)
+    ordered_records, ordered_limits = zip(*pairs)
+    return _render_lines(list(ordered_records), list(ordered_limits))
+
+
 def _render_lines(
     records: Sequence[SkillRecord], description_limits: Sequence[int]
 ) -> str:
@@ -227,7 +256,7 @@ def render_skill_catalog(
         return SkillCatalogRender(text="", included=(), budget_chars=budget)
 
     full_limits = [len(_compact_description(record.description)) for record in eligible]
-    full_text = _render_lines(eligible, full_limits)
+    full_text = _render_stable(eligible, full_limits)
     if _utf8_size(full_text) <= budget:
         return SkillCatalogRender(
             text=full_text,
@@ -273,7 +302,7 @@ def render_skill_catalog(
         if not progressed:
             break
 
-    text = _render_lines(included, limits)
+    text = _render_stable(included, limits)
     omitted = tuple(record.name for record in eligible[len(included) :])
     shortened = bool(omitted) or any(
         actual < wanted for actual, wanted in zip(limits, desired, strict=True)
