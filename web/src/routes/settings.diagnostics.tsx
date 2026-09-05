@@ -1,13 +1,17 @@
 /** /settings/diagnostics — active health checks across all EvoFlux subsystems. */
 import { motion } from 'framer-motion'
-import { AlertTriangle, CheckCircle2, RefreshCw, Activity, XCircle } from 'lucide-react'
+import { Activity, AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react'
 
-import { useDiagnosticsQuery } from '@/queries'
+import { useDiagnosticsActionMutation, useDiagnosticsQuery } from '@/queries'
 import { SettingsCallout, SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
 import { Button } from '@/components/ui/button'
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useConfirm } from '@/hooks/use-confirm'
+import { useToastStore } from '@/stores/useToastStore'
+import { errorMessage } from '@/utils/errors'
 import type { DiagnosticsCheck, DiagnosticsStatus } from '@/api/types'
 
 function StatusIcon({ status, className }: { status: DiagnosticsStatus; className?: string }) {
@@ -24,8 +28,20 @@ const SUMMARY_COPY: Record<DiagnosticsStatus, { label: string; tone: 'success' |
   fail: { label: 'One or more checks failed', tone: 'error' },
 }
 
-function CheckRow({ check, index }: { check: DiagnosticsCheck; index: number }) {
+function CheckRow({
+  check,
+  index,
+  onRunAction,
+  runningActionId,
+}: {
+  check: DiagnosticsCheck
+  index: number
+  onRunAction: (check: DiagnosticsCheck) => void
+  runningActionId: string | null
+}) {
   const preset = useMotionPreset()
+  const action = check.action ?? null
+  const running = action !== null && runningActionId === action.id
   return (
     <motion.div
       initial={{ y: 6 * preset.distance }}
@@ -45,6 +61,21 @@ function CheckRow({ check, index }: { check: DiagnosticsCheck; index: number }) 
           <p className="mt-1 text-xs leading-relaxed text-(--color-text-subtle)">{check.hint}</p>
         )}
       </div>
+      {/* A check that knows how to fix itself says so with a button. Telling
+          someone to stop the app and run VACUUM by hand is a fix the product
+          could have performed. */}
+      {action && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onRunAction(check)}
+          disabled={runningActionId !== null}
+          className="mt-0.5 shrink-0 gap-1.5 text-xs"
+        >
+          {running && <Loader2 size={12} className="animate-spin" aria-hidden="true" />}
+          {running ? action.running_label : action.label}
+        </Button>
+      )}
     </motion.div>
   )
 }
@@ -52,6 +83,33 @@ function CheckRow({ check, index }: { check: DiagnosticsCheck; index: number }) 
 export function DiagnosticsPage() {
   const { data, isLoading, isRefetching, error, refetch } = useDiagnosticsQuery()
   const summary = data ? SUMMARY_COPY[data.summary] : null
+  const runAction = useDiagnosticsActionMutation()
+  const pushToast = useToastStore((state) => state.push)
+  const { request, confirm, close } = useConfirm()
+
+  // A fix that rewrites the database is worth one question first, and the
+  // wording comes from the check itself so the backend stays the authority
+  // on what the action will actually do.
+  const askThenRun = (check: DiagnosticsCheck) => {
+    const action = check.action
+    if (!action) return
+    confirm({
+      title: action.confirm_title,
+      description: action.confirm_body,
+      confirmLabel: action.confirm_label,
+      onConfirm: () => {
+        close()
+        runAction.mutate(action.id, {
+          onSuccess: (result) => pushToast({ tone: 'success', title: result.message }),
+          onError: (mutationError) => pushToast({
+            tone: 'error',
+            title: `${action.label} failed`,
+            description: errorMessage(mutationError),
+          }),
+        })
+      },
+    })
+  }
 
   return (
     <SettingsPage
@@ -98,12 +156,19 @@ export function DiagnosticsPage() {
 
           <SettingsGroup title="Checks">
             {data.checks.map((check, index) => (
-              <CheckRow key={check.id} check={check} index={index} />
+              <CheckRow
+                key={check.id}
+                check={check}
+                index={index}
+                onRunAction={askThenRun}
+                runningActionId={runAction.isPending ? runAction.variables ?? null : null}
+              />
             ))}
           </SettingsGroup>
         </>
       )}
       </SettingsAsyncBoundary>
+      <ConfirmDialog request={request} busy={runAction.isPending} onClose={close} />
     </SettingsPage>
   )
 }

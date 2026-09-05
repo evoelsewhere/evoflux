@@ -143,12 +143,60 @@ def _truthy(value: object) -> bool:
     return bool(value)
 
 
+#: ``PRAGMA auto_vacuum`` values. A database created before the incremental
+#: pragma reports NONE and only a full VACUUM can move it, which is the one
+#: case where reclaiming rewrites the file instead of trimming its free list.
+_AUTO_VACUUM_NONE = 0
+_AUTO_VACUUM_INCREMENTAL = 2
+
+_DB_RECLAIM_HINT = {
+    "incremental": (
+        "Free pages are reclaimed a little at a time on startup. "
+        "Reclaim them now to finish in one pass."
+    ),
+    "full": (
+        "This database predates incremental reclamation, so freeing the pages "
+        "rewrites the file once. It runs as a single atomic step — an "
+        "interrupted rewrite leaves the original untouched — but it needs "
+        "free disk space roughly the size of the database, and writes wait "
+        "while it runs."
+    ),
+}
+
+
+def _db_reclaim_action(auto_vacuum: int, reclaimable_mib: float) -> dict[str, Any]:
+    """The button the Diagnostics row offers for a bloated database."""
+
+    full = auto_vacuum != _AUTO_VACUUM_INCREMENTAL
+    return {
+        "id": "db_reclaim",
+        "label": "Reclaim space",
+        "running_label": "Reclaiming…",
+        "confirm_title": "Reclaim database space?",
+        "confirm_body": (
+            (
+                "EvoFlux rewrites the database once to release "
+                f"{reclaimable_mib:.0f} MiB and switches it to incremental "
+                "reclamation, so this is a one-off. Writes wait until it "
+                "finishes; no data is changed."
+            )
+            if full
+            else (
+                f"EvoFlux releases the {reclaimable_mib:.0f} MiB of free pages "
+                "back to the filesystem. No data is changed."
+            )
+        ),
+        "confirm_label": "Reclaim",
+    }
+
+
 def _check(
     id: str,  # noqa: A002
     label: str,
     status_val: str,
     detail: str,
     hint: str | None = None,
+    action: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "id": id,
@@ -156,6 +204,7 @@ def _check(
         "status": status_val,
         "detail": detail,
         "hint": hint,
+        "action": action,
     }
 
 
@@ -189,18 +238,31 @@ async def health_diagnostics(session: AsyncSession = Depends(get_session)) -> di
             )
             free_ratio = free_pages / page_count if page_count else 0
             reclaimable_mib = free_pages * page_size / (1024 * 1024)
+            auto_vacuum = int(
+                (await session.exec(text("PRAGMA auto_vacuum"))).one()[0]  # ty: ignore[no-matching-overload]
+            )
+            needs_reclaim = free_ratio >= 0.3
             checks.append(
                 _check(
                     "db_storage",
                     "Database storage",
-                    "warn" if free_ratio >= 0.3 else "ok",
+                    "warn" if needs_reclaim else "ok",
                     (
                         f"{free_ratio:.0%} free pages; "
                         f"{reclaimable_mib:.1f} MiB reclaimable"
                     ),
                     hint=(
-                        "Stop EvoFlux, back up the database, then run SQLite VACUUM."
-                        if free_ratio >= 0.3
+                        _DB_RECLAIM_HINT[
+                            "incremental"
+                            if auto_vacuum == _AUTO_VACUUM_INCREMENTAL
+                            else "full"
+                        ]
+                        if needs_reclaim
+                        else None
+                    ),
+                    action=(
+                        _db_reclaim_action(auto_vacuum, reclaimable_mib)
+                        if needs_reclaim
                         else None
                     ),
                 )
@@ -399,3 +461,105 @@ async def health_diagnostics(session: AsyncSession = Depends(get_session)) -> di
         summary = "ok"
 
     return {"checks": checks, "summary": summary}
+
+
+@router.post("/diagnostics/actions/db_reclaim")
+async def diagnostics_db_reclaim() -> dict[str, Any]:
+    """Release SQLite's free pages back to the filesystem.
+
+    Two shapes, chosen by what the database already supports:
+
+    - ``auto_vacuum=INCREMENTAL`` — ``PRAGMA incremental_vacuum`` trims the
+      free list in place. No rewrite, no extra disk, no long lock.
+    - ``auto_vacuum=NONE`` — a database from before that pragma. Setting the
+      pragma only takes effect through a full ``VACUUM``, so we do both once
+      and every later reclaim takes the cheap path. VACUUM is atomic: an
+      interrupted run leaves the original file intact.
+
+    Refused while an agent is working, because the rewrite holds a write lock
+    for its whole duration and a turn mid-flight would stall on it.
+    """
+    from app.core.db import _is_sqlite, engine, incremental_vacuum
+
+    if not _is_sqlite:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Space reclamation only applies to SQLite databases.",
+        )
+    if team_manager.has_active_team_turn():
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=(
+                "An agent is working. Wait for the turn to finish, then "
+                "reclaim space."
+            ),
+        )
+
+    started = time.monotonic()
+    async with engine.begin() as connection:
+        page_size = int(
+            (await connection.exec_driver_sql("PRAGMA page_size")).scalar_one()
+        )
+        before_free = int(
+            (await connection.exec_driver_sql("PRAGMA freelist_count")).scalar_one()
+        )
+        auto_vacuum = int(
+            (await connection.exec_driver_sql("PRAGMA auto_vacuum")).scalar_one()
+        )
+
+    full = auto_vacuum != _AUTO_VACUUM_INCREMENTAL
+    if full:
+        db_path = Path(str(engine.url.database or ""))
+        db_bytes = db_path.stat().st_size if db_path.is_file() else 0
+        free_bytes = shutil.disk_usage(db_path.parent).free if db_bytes else 0
+        # VACUUM builds the new file beside the old one before swapping.
+        if db_bytes and free_bytes < db_bytes * 1.2:
+            raise HTTPException(
+                status.HTTP_507_INSUFFICIENT_STORAGE,
+                detail=(
+                    "Rewriting the database needs about "
+                    f"{db_bytes / (1024 * 1024):.0f} MiB of free disk space; "
+                    f"only {free_bytes / (1024 * 1024):.0f} MiB is available."
+                ),
+            )
+
+    try:
+        # VACUUM cannot run inside a transaction, and neither statement should
+        # be wrapped in one — AUTOCOMMIT keeps SQLAlchemy from opening it.
+        async with engine.connect() as connection:
+            autocommit = await connection.execution_options(
+                isolation_level="AUTOCOMMIT"
+            )
+            if full:
+                await autocommit.exec_driver_sql("PRAGMA auto_vacuum=INCREMENTAL")
+                await autocommit.exec_driver_sql("VACUUM")
+            else:
+                await incremental_vacuum(autocommit)
+            after_free = int(
+                (await autocommit.exec_driver_sql("PRAGMA freelist_count")).scalar_one()
+            )
+    except SQLAlchemyError as exc:
+        logger.warning("diagnostics_db_reclaim_failed full={} error={}", full, exc)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Could not reclaim space: {exc}",
+        ) from exc
+
+    reclaimed_mib = max(0, before_free - after_free) * page_size / (1024 * 1024)
+    elapsed_s = time.monotonic() - started
+    logger.info(
+        "diagnostics_db_reclaim_done full={} reclaimed_mib={:.1f} elapsed_s={:.1f}",
+        full,
+        reclaimed_mib,
+        elapsed_s,
+    )
+    return {
+        "reclaimed_mib": round(reclaimed_mib, 1),
+        "elapsed_s": round(elapsed_s, 1),
+        "rewrote_database": full,
+        "message": (
+            f"Reclaimed {reclaimed_mib:.0f} MiB"
+            if reclaimed_mib >= 1
+            else "Nothing left to reclaim"
+        ),
+    }

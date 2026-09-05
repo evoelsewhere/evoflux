@@ -1,5 +1,5 @@
 export { useHealthQuery } from './useHealthQuery'
-export { useDiagnosticsQuery } from './useDiagnosticsQuery'
+export { useDiagnosticsQuery, useDiagnosticsActionMutation } from './useDiagnosticsQuery'
 export {
   useTeamAgentsQuery,
   useTeamLeadsQuery,

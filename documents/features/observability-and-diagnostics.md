@@ -44,6 +44,21 @@ call; the next usage event assigns over the estimate.
 Session-specific JSONL logs provide a local evidence trail per agent. Sensitive
 values are sanitized before tool/provider errors are logged or streamed.
 
+### Diagnostics actions
+
+A check may carry an `action` alongside its hint, and the row renders it as a
+button rather than describing a fix the user has to perform by hand. The
+backend owns the wording, including the confirmation, so the dialog can say
+what will actually happen to that particular installation.
+
+`db_reclaim` frees SQLite's unused pages. A database on `auto_vacuum=
+INCREMENTAL` has its free list trimmed in place. One created before that
+pragma cannot switch without a full `VACUUM`, so the action performs both
+once and every later reclaim takes the cheap path; that branch first checks
+there is disk space for the rewrite, and is refused while an agent is working
+because the rewrite holds a write lock for its duration. `VACUUM` is atomic —
+an interrupted run leaves the original file intact.
+
 ## OpenTelemetry
 
 The sidecar records spans for agent runs, model calls, tools and relevant

@@ -5,6 +5,7 @@
 import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
 import type {
+  DiagnosticsActionResult,
   DiagnosticsResponse,
   TeamStatusResponse,
 } from '../types'
@@ -20,6 +21,18 @@ export async function health(): Promise<{ status: string; version: string }> {
 export async function getDiagnostics(): Promise<DiagnosticsResponse> {
   const res = await fetch(`${apiBaseUrl()}/health/diagnostics`)
   if (!res.ok) await parseDetailOrThrow(res, 'getDiagnostics')
+  return res.json()
+}
+
+/** Run the fix a check offers. The check's `action.id` names the endpoint. */
+export async function runDiagnosticsAction(
+  actionId: string,
+): Promise<DiagnosticsActionResult> {
+  const res = await fetch(
+    `${apiBaseUrl()}/health/diagnostics/actions/${encodeURIComponent(actionId)}`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'runDiagnosticsAction')
   return res.json()
 }
 
