@@ -401,6 +401,47 @@ async def get_read_session() -> AsyncGenerator[AsyncSession, None]:
             await session.rollback()
 
 
+#: ``PRAGMA auto_vacuum`` reporting INCREMENTAL.
+AUTO_VACUUM_INCREMENTAL = 2
+
+
+async def incremental_vacuum(connection, pages: int | None = None) -> int:
+    """Reclaim free pages, and actually reclaim them. Returns pages freed.
+
+    ``PRAGMA incremental_vacuum`` does its work one page per step of the
+    statement, and it declares no result columns. SQLAlchemy sees a result
+    that returns no rows and closes it after the first step, so
+    ``exec_driver_sql("PRAGMA incremental_vacuum(2048)")`` frees exactly one
+    page — measured on a 105 MiB fixture: 19,661 free pages went to 19,660.
+    Stepping the cursor to exhaustion frees all of them and shrinks the file
+    to 26 MiB.
+
+    ``pages`` bounds the work; ``None`` reclaims everything.
+    """
+    if not _is_sqlite:
+        return 0
+    before = int(
+        (await connection.exec_driver_sql("PRAGMA freelist_count")).scalar_one()
+    )
+    statement = (
+        "PRAGMA incremental_vacuum"
+        if pages is None
+        else f"PRAGMA incremental_vacuum({int(pages)})"
+    )
+    # The aiosqlite cursor is the only way to step the pragma; SQLAlchemy's
+    # own result object is closed before the work happens.
+    raw = await connection.get_raw_connection()
+    cursor = await raw.driver_connection.execute(statement)
+    try:
+        await cursor.fetchall()
+    finally:
+        await cursor.close()
+    after = int(
+        (await connection.exec_driver_sql("PRAGMA freelist_count")).scalar_one()
+    )
+    return max(0, before - after)
+
+
 async def optimize_sqlite() -> None:
     """Refresh SQLite planner statistics opportunistically at startup."""
     if not _is_sqlite:
@@ -410,10 +451,12 @@ async def optimize_sqlite() -> None:
         auto_vacuum = (
             await connection.exec_driver_sql("PRAGMA auto_vacuum")
         ).scalar_one()
-        if int(auto_vacuum) == 2:
+        if int(auto_vacuum) == AUTO_VACUUM_INCREMENTAL:
             # Reclaim at most 8 MiB (with the default 4 KiB page size) per
             # startup so maintenance never turns into an unbounded pause.
-            await connection.exec_driver_sql("PRAGMA incremental_vacuum(2048)")
+            freed = await incremental_vacuum(connection, 2048)
+            if freed:
+                logger.debug("sqlite_incremental_vacuum pages={}", freed)
 
 
 async def dispose_engines() -> None:
