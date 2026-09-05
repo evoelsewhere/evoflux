@@ -22,6 +22,7 @@ from loguru import logger
 
 from app.agent.usage import usage_to_dict
 from app.agent.schemas.chat import (
+    EncryptedReasoningItem,
     AssistantMessage,
     ChatCompletionChunk,
     ChatCompletionChunkChoice,
@@ -120,6 +121,18 @@ class ResponsesHandler:
                     input_items.append({"role": "user", "content": msg.content})
 
             elif isinstance(msg, AssistantMessage):
+                # Ahead of everything else in the turn: the model emitted its
+                # reasoning before the text and the calls, and replaying the
+                # turn in a different order is a different history.
+                for reasoning_item in msg.reasoning_items or []:
+                    item: dict[str, Any] = {
+                        "type": "reasoning",
+                        "summary": reasoning_item.summary,
+                        "encrypted_content": reasoning_item.encrypted_content,
+                    }
+                    if reasoning_item.id:
+                        item["id"] = reasoning_item.id
+                    input_items.append(item)
                 if msg.content:
                     input_items.append({"role": "assistant", "content": msg.content})
                 if msg.tool_calls:
@@ -197,8 +210,24 @@ class ResponsesHandler:
             body["max_output_tokens"] = merged["max_tokens"]
 
         self.customize_thinking(merged, body)
+        # Reasoning is opaque and, with ``store: false``, gone unless asked
+        # for. Requesting the encrypted payload is what makes replaying it on
+        # the next call possible at all.
+        if self.wants_encrypted_reasoning(body):
+            body["include"] = ["reasoning.encrypted_content"]
         body.update(self._service_tier_body(merged))
         return body
+
+    def wants_encrypted_reasoning(self, body: dict[str, Any]) -> bool:
+        """Whether to ask for reasoning payloads alongside the response.
+
+        Keyed off an explicit ``reasoning`` block by default: on the public
+        endpoint a model that was not asked to reason returns none, and a
+        pointless ``include`` is one more thing a gateway can reject.
+        Subclasses whose models always reason override this — the request
+        never mentions reasoning there, yet every response carries it.
+        """
+        return bool(body.get("reasoning"))
 
     def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
         """Apply provider-specific reasoning translation for the Responses API.
@@ -254,6 +283,7 @@ class ResponsesHandler:
         output = data.get("output", [])
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
+        reasoning_items: list[EncryptedReasoningItem] = []
         tool_calls: list[ToolCall] = []
 
         for item in output:
@@ -266,6 +296,14 @@ class ResponsesHandler:
                 for s in item.get("summary", []):
                     if s.get("type") == "summary_text":
                         reasoning_parts.append(s.get("text", ""))
+                if item.get("encrypted_content"):
+                    reasoning_items.append(
+                        EncryptedReasoningItem(
+                            id=item.get("id"),
+                            summary=item.get("summary", []),
+                            encrypted_content=item["encrypted_content"],
+                        )
+                    )
             elif item_type == "function_call":
                 tool_calls.append(
                     ToolCall(
@@ -286,6 +324,7 @@ class ResponsesHandler:
             reasoning_content=(
                 "\n\n".join(reasoning_parts) if reasoning_parts else None
             ),
+            reasoning_items=reasoning_items or None,
             tool_calls=tool_calls if tool_calls else None,
             extra={"usage": usage_dict} if usage_dict is not None else None,
         )
@@ -475,6 +514,35 @@ class ResponsesHandler:
 
             if etype == "response.created":
                 response_id = event.get("response", {}).get("id", "")
+
+            elif etype == "response.output_item.done":
+                # Reasoning arrives complete on this event when
+                # ``include: ["reasoning.encrypted_content"]`` was requested.
+                # Delivered once, not as text deltas.
+                done_item = event.get("item", {})
+                if done_item.get("type") == "reasoning" and done_item.get(
+                    "encrypted_content"
+                ):
+                    yield ChatCompletionChunk(
+                        id=response_id,
+                        created=int(time.time()),
+                        model=self.model,
+                        choices=[
+                            ChatCompletionChunkChoice(
+                                index=0,
+                                delta=ChatCompletionDelta(
+                                    reasoning_item=EncryptedReasoningItem(
+                                        id=done_item.get("id"),
+                                        summary=done_item.get("summary", []),
+                                        encrypted_content=done_item[
+                                            "encrypted_content"
+                                        ],
+                                    ),
+                                ),
+                                finish_reason=None,
+                            )
+                        ],
+                    )
 
             elif etype == "response.output_item.added":
                 # Capture function name from the item header event

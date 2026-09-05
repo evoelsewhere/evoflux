@@ -699,3 +699,103 @@ class TestResponsesHandlerHTTP:
 # ─────────────────────────────────────────────────────────────────────────────
 # Test ResponsesHandler._parse_stream() edge cases
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestReasoningReplay:
+    """Reasoning items must survive the tool round-trip.
+
+    With ``store: false`` the server keeps nothing, so a reasoning model's
+    own thinking is lost between calls unless the client asks for the
+    encrypted payload and hands it back. Dropping it also breaks prefix
+    caching from the first tool call onward.
+    """
+
+    @pytest.fixture
+    def handler(self):
+        return ResponsesHandler(
+            model="gpt-5.4",
+            base_url="https://api.openai.com/v1",
+            headers={"Authorization": "Bearer sk-test"},
+        )
+
+    @staticmethod
+    def _response(**overrides):
+        data = {
+            "output": [
+                {
+                    "type": "reasoning",
+                    "id": "rs_1",
+                    "encrypted_content": "OPAQUE",
+                    "summary": [],
+                },
+                {
+                    "type": "function_call",
+                    "call_id": "call_1",
+                    "name": "read",
+                    "arguments": '{"path":"a.py"}',
+                },
+            ]
+        }
+        data.update(overrides)
+        return data
+
+    @staticmethod
+    def _history():
+        return [
+            HumanMessage(content="read a.py"),
+            AssistantMessage(
+                tool_calls=[
+                    ToolCall(
+                        id="call_1",
+                        function=FunctionCall(name="read", arguments='{"path":"a.py"}'),
+                    )
+                ]
+            ),
+            ToolMessage(tool_call_id="call_1", content="file body"),
+        ]
+
+    def test_parsed_response_carries_the_encrypted_item(self, handler):
+        msg = handler.parse_response(self._response())
+        assert msg.reasoning_items is not None
+        assert msg.reasoning_items[0].encrypted_content == "OPAQUE"
+        assert msg.reasoning_items[0].id == "rs_1"
+
+    def test_reasoning_is_replayed_ahead_of_the_turn_it_belongs_to(self, handler):
+        parsed = handler.parse_response(self._response())
+        history = self._history()
+        history[1].reasoning_items = parsed.reasoning_items
+
+        items = handler.convert_messages(history)
+        types = [item.get("type") or item.get("role") for item in items]
+        assert types == ["user", "reasoning", "function_call", "function_call_output"]
+        assert items[1]["encrypted_content"] == "OPAQUE"
+
+    def test_a_turn_without_reasoning_is_unchanged(self, handler):
+        items = handler.convert_messages(self._history())
+        types = [item.get("type") or item.get("role") for item in items]
+        assert types == ["user", "function_call", "function_call_output"]
+
+    def test_summary_without_the_payload_is_not_kept(self, handler):
+        """A bare summary is rejected on replay, so it must not be kept."""
+        msg = handler.parse_response(
+            self._response(
+                output=[
+                    {"type": "reasoning", "id": "rs_1", "summary": [{"text": "hi"}]},
+                    {"type": "function_call", "call_id": "call_1", "name": "read"},
+                ]
+            )
+        )
+        assert msg.reasoning_items is None
+
+    def test_request_asks_for_the_encrypted_payload_when_reasoning_is_on(
+        self, handler
+    ):
+        body = handler.build_request(
+            [HumanMessage(content="hi")], None, False, {"thinking_level": "high"}
+        )
+        assert body.get("reasoning")
+        assert body["include"] == ["reasoning.encrypted_content"]
+
+    def test_no_include_when_the_model_is_not_reasoning(self, handler):
+        body = handler.build_request([HumanMessage(content="hi")], None, False, {})
+        assert "include" not in body
