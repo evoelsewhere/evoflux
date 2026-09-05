@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   Braces,
@@ -8,6 +8,7 @@ import {
   Loader2,
   Blocks,
   RefreshCw,
+  X,
 } from 'lucide-react'
 
 import type { LanguageServerStatus } from '@/api/types'
@@ -19,9 +20,12 @@ import {
 } from '@/components/settings/SettingsLayout'
 import { Button } from '@/components/ui/button'
 import {
+  useDismissLanguageServerErrorMutation,
   useInstallLanguageServerMutation,
   useLanguageServersQuery,
 } from '@/queries'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useConfirm } from '@/hooks/use-confirm'
 import { useCodingOverviewQuery } from '@/queries/useProjectsQuery'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { cn } from '@/lib/utils'
@@ -50,19 +54,25 @@ function ServerState({ server }: { server: LanguageServerStatus }) {
   )
 }
 
+/**
+ * One language's row, including why its action cannot be taken.
+ *
+ * The action used to be hidden whenever it was unavailable, which made three
+ * different situations look identical: no managed installer exists, the
+ * installer exists but its prerequisite is missing, and the server is already
+ * installed. "Install does nothing" was usually "there was never a button".
+ */
 function LanguageServerRow({
   server,
-  installing,
   onInstall,
+  onDismissError,
 }: {
   server: LanguageServerStatus
-  installing: boolean
   onInstall: (server: LanguageServerStatus) => void
+  onDismissError: (server: LanguageServerStatus) => void
 }) {
-  const canInstall =
-    server.installable
-    && server.installer_available
-    && server.state !== 'ready'
+  const running = server.install_phase === 'running'
+  const canInstall = server.installable && server.blocked_reason === null && !running
   const repositories = server.repositories.map((item) => item.name).join(', ')
   const version = server.source === 'managed'
     ? server.installed_version
@@ -71,56 +81,120 @@ function LanguageServerRow({
       : null
 
   return (
-    <div className={cn('flex items-start gap-3 px-4 py-4 sm:px-5', server.detected && server.state === 'missing' && 'bg-(--color-warning)/4')}>
-      <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--bg-key) text-(--color-text-muted)">
-        <Braces size={14} aria-hidden="true" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm font-medium text-(--color-text)">{server.display_name}</p>
-          <ServerState server={server} />
-          {version && (
-            <span className="font-mono text-[10px] text-(--color-text-subtle)">v{version}</span>
-          )}
+    <div
+      className={cn(
+        'flex flex-col gap-2 px-4 py-4 sm:px-5',
+        server.detected && server.state === 'missing' && 'bg-(--color-warning)/4',
+        server.install_phase === 'failed' && 'bg-(--color-error)/5',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--bg-key) text-(--color-text-muted)">
+          <Braces size={14} aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-(--color-text)">{server.display_name}</p>
+            <ServerState server={server} />
+            {version && (
+              <span className="font-mono text-[10px] text-(--color-text-subtle)">v{version}</span>
+            )}
+            {server.installer && (
+              <span className="rounded-full bg-(--bg-key) px-2 py-0.5 font-mono text-[10px] text-(--color-text-subtle)">
+                {server.installer}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-(--color-text-muted)">
+            {server.detected
+              ? `${server.file_count} matching ${server.file_count === 1 ? 'file' : 'files'}${repositories ? ` across ${repositories}` : ''}.`
+              : 'Not detected in the active repository set.'}
+            {' '}{server.install_hint}
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-(--color-text-subtle)">
+            <span>{server.extensions.slice(0, 8).join(' ')}</span>
+            {server.command && (
+              <span className="max-w-full truncate font-mono" title={server.command}>
+                {server.command}
+              </span>
+            )}
+          </div>
         </div>
-        <p className="mt-1 text-xs leading-relaxed text-(--color-text-muted)">
-          {server.detected
-            ? `${server.file_count} matching ${server.file_count === 1 ? 'file' : 'files'}${repositories ? ` across ${repositories}` : ''}.`
-            : 'Not detected in the active repository set.'}
-          {' '}{server.install_hint}
-        </p>
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-(--color-text-subtle)">
-          <span>{server.extensions.slice(0, 8).join(' ')}</span>
-          {server.command && (
-            <span className="max-w-full truncate font-mono" title={server.command}>
-              {server.command}
-            </span>
-          )}
-        </div>
+
+        {server.installable && (
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <Button
+              size="sm"
+              variant={server.detected ? 'default' : 'outline'}
+              disabled={!canInstall}
+              title={server.blocked_reason ?? undefined}
+              onClick={() => onInstall(server)}
+              aria-label={
+                server.blocked_reason
+                  ? `${server.display_name}: ${server.blocked_reason}`
+                  : `Install ${server.display_name} language server`
+              }
+            >
+              {running ? (
+                <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+              ) : server.state === 'update_available' ? (
+                <RefreshCw size={13} aria-hidden="true" />
+              ) : (
+                <Download size={13} aria-hidden="true" />
+              )}
+              {running
+                ? 'Installing…'
+                : server.state === 'update_available'
+                  ? 'Update'
+                  : 'Install'}
+            </Button>
+            {running && server.install_started_at && (
+              <InstallElapsed startedAt={server.install_started_at} />
+            )}
+          </div>
+        )}
       </div>
-      {canInstall && (
-        <Button
-          size="sm"
-          variant={server.detected ? 'default' : 'outline'}
-          disabled={installing}
-          onClick={() => onInstall(server)}
-          className="shrink-0"
-        >
-          {installing ? (
-            <Loader2 size={13} className="animate-spin" aria-hidden="true" />
-          ) : server.state === 'update_available' ? (
-            <RefreshCw size={13} aria-hidden="true" />
-          ) : (
-            <Download size={13} aria-hidden="true" />
-          )}
-          {installing
-            ? 'Installing…'
-            : server.state === 'update_available'
-              ? 'Update'
-              : 'Install'}
-        </Button>
+
+      {/* A blocked action explains itself where the button is, not in a
+          paragraph of grey prose above it. */}
+      {server.blocked_reason && server.state !== 'ready' && !running && (
+        <p className="pl-11 text-[11px] text-(--color-text-subtle)">
+          {server.blocked_reason}
+        </p>
+      )}
+
+      {server.install_error && (
+        <div className="ml-11 flex items-start gap-2 rounded-md border border-(--color-error)/40 bg-(--color-error)/8 px-3 py-2">
+          <AlertTriangle size={12} className="mt-0.5 shrink-0 text-(--color-error)" aria-hidden="true" />
+          <p className="min-w-0 flex-1 text-[11px] leading-relaxed break-words text-(--color-error)">
+            {server.install_error}
+          </p>
+          <button
+            type="button"
+            onClick={() => onDismissError(server)}
+            aria-label={`Dismiss ${server.display_name} install error`}
+            className="shrink-0 rounded p-0.5 text-(--color-error)/70 hover:text-(--color-error)"
+          >
+            <X size={12} aria-hidden="true" />
+          </button>
+        </div>
       )}
     </div>
+  )
+}
+
+/** How long the running install has been going, so it never looks stuck. */
+function InstallElapsed({ startedAt }: { startedAt: string }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const seconds = Math.max(0, Math.round((now - new Date(startedAt).getTime()) / 1000))
+  return (
+    <span className="font-mono text-[10px] text-(--color-text-subtle)">
+      {seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`}
+    </span>
   )
 }
 
@@ -139,15 +213,23 @@ export function LanguageServersSettingsPage() {
   }, [activeWorkspace, projectId, projectsQuery.data?.projects])
   const statusQuery = useLanguageServersQuery(workspaces)
   const installMutation = useInstallLanguageServerMutation(workspaces)
-  const installingLanguage = installMutation.isPending ? installMutation.variables : null
+  const dismissMutation = useDismissLanguageServerErrorMutation(workspaces)
+  const { request, confirm, close } = useConfirm()
 
   const install = (server: LanguageServerStatus) => {
     const action = server.state === 'update_available' ? 'Update' : 'Install'
-    const confirmed = window.confirm(
-      `${action} ${server.display_name} language server v${server.expected_version ?? 'pinned'} with ${server.installer ?? 'the configured installer'}?\n\n${server.install_hint}\nIt will be stored in the EvoFlux cache and shared across repositories.`,
-    )
-    if (!confirmed) return
-    installMutation.mutate(server.language_id)
+    const version = server.expected_version ? ` v${server.expected_version}` : ' the pinned version'
+    confirm({
+      title: `${action} ${server.display_name} language server?`,
+      description:
+        `EvoFlux runs ${server.installer ?? 'the configured installer'} to install`
+        + `${version}. ${server.install_hint}`,
+      confirmLabel: action,
+      onConfirm: () => {
+        close()
+        installMutation.mutate(server.language_id)
+      },
+    })
   }
 
   const detected = statusQuery.data?.servers.filter((server) => server.detected) ?? []
@@ -207,7 +289,18 @@ export function LanguageServersSettingsPage() {
               <SettingsCallout icon={AlertTriangle} tone="error">
                 {installMutation.error instanceof Error
                   ? installMutation.error.message
-                  : 'Language server installation failed.'}
+                  : 'Could not start the installation.'}
+              </SettingsCallout>
+            )}
+
+            {statusQuery.data.scan_truncated && (
+              <SettingsCallout icon={AlertTriangle} tone="warning">
+                <span className="font-medium">Detection stopped early.</span>
+                <span className="text-(--color-text-muted)">
+                  {' '}More than {statusQuery.data.scan_limit.toLocaleString()} files were
+                  walked, so languages further down the tree may be missing from the list
+                  below. Everything remains installable by hand.
+                </span>
               </SettingsCallout>
             )}
 
@@ -221,8 +314,8 @@ export function LanguageServersSettingsPage() {
                 <LanguageServerRow
                   key={server.language_id}
                   server={server}
-                  installing={installingLanguage === server.language_id}
                   onInstall={install}
+                  onDismissError={(item) => dismissMutation.mutate(item.language_id)}
                 />
               )) : (
                 <div className="px-5 py-8 text-center text-sm text-(--color-text-muted)">
@@ -237,8 +330,8 @@ export function LanguageServersSettingsPage() {
                   <LanguageServerRow
                     key={server.language_id}
                     server={server}
-                    installing={installingLanguage === server.language_id}
                     onInstall={install}
+                    onDismissError={(item) => dismissMutation.mutate(item.language_id)}
                   />
                 ))}
               </SettingsGroup>
@@ -252,14 +345,15 @@ export function LanguageServersSettingsPage() {
                 <LanguageServerRow
                   key={server.language_id}
                   server={server}
-                  installing={installingLanguage === server.language_id}
                   onInstall={install}
+                  onDismissError={(item) => dismissMutation.mutate(item.language_id)}
                 />
               ))}
             </SettingsGroup>
           </>
         )}
       </SettingsAsyncBoundary>
+      <ConfirmDialog request={request} onClose={close} />
     </SettingsPage>
   )
 }

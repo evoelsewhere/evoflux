@@ -145,6 +145,7 @@ export {
 } from './useEasdQuery'
 export {
   useLanguageServersQuery,
+  useDismissLanguageServerErrorMutation,
   useInstallLanguageServerMutation,
 } from './useLanguageServersQuery'
 export {

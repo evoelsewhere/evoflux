@@ -514,15 +514,34 @@ export interface LanguageServerStatus {
   installed_version: string | null
   expected_version: string | null
   installable: boolean
-  installer: 'npm' | 'uv' | null
+  installer: LanguageServerInstaller | null
   installer_available: boolean
   install_hint: string
+  /** Why the install action cannot be taken, or null when it can. */
+  blocked_reason: string | null
+  install_phase: LanguageServerInstallPhase
+  install_started_at: string | null
+  install_error: string | null
+}
+
+export type LanguageServerInstaller = 'npm' | 'uv' | 'go' | 'rustup' | 'gem' | 'dotnet'
+export type LanguageServerInstallPhase = 'idle' | 'running' | 'failed'
+
+export interface LanguageServerInstallJob {
+  language_id: string
+  phase: LanguageServerInstallPhase
+  started_at: string
+  finished_at: string | null
+  error: string | null
 }
 
 export interface LanguageServerOverview {
   workspaces: string[]
   cache_dir: string
   servers: LanguageServerStatus[]
+  /** True when detection stopped at `scan_limit`, so languages may be missing. */
+  scan_truncated: boolean
+  scan_limit: number
 }
 
 // ── Code context (/api/code-context) ────────────────────────────────────────
