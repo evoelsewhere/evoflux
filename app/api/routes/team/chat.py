@@ -231,6 +231,38 @@ def _serialize_blueprint(team_obj, bp) -> dict:
     return payload
 
 
+def _parse_uuid_or_422(value: str | None, field: str) -> UUID | None:
+    """Parse an optional form-supplied UUID, or 422 naming the field."""
+    if not value:
+        return None
+    try:
+        return UUID(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid {field}.") from exc
+
+
+def _normalize_work_workspace_or_422(workspace: str | None) -> str | None:
+    """Absolute, existing (created if missing), resolved — or 422.
+
+    A Work chat can be pointed at a folder before it has a session row, so
+    the folder arrives with the first message instead of through
+    ``PUT /{session_id}/workspace``. Same rule as that endpoint, so a chat
+    started this way is indistinguishable from one moved afterwards.
+    """
+    if workspace is None:
+        return None
+    path = Path(workspace).expanduser()
+    if not path.is_absolute():
+        raise HTTPException(status_code=422, detail="Workspace path must be absolute.")
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"Cannot create directory: {exc}"
+        ) from exc
+    return str(path.resolve())
+
+
 def _validate_workspace_or_422(workspace: str) -> str:
     try:
         return team_manager.validate_workspace(workspace)
@@ -239,18 +271,43 @@ def _validate_workspace_or_422(workspace: str) -> str:
 
 
 async def _project_paths_for_session(
-    db: DbSession, existing: ChatSession, workspace: str
+    db: DbSession, project_id: UUID | None, workspace: str
 ) -> tuple[list[str], list[str]]:
     """(extra_workspace_paths, read_only_paths) for a project-bound session."""
     extra_ws_paths: list[str] = []
     read_only_paths: list[str] = []
-    if existing.project_id is not None:
+    if project_id is not None:
         from app.services.coding_project_service import get_project_workspace_paths
 
         async with db.begin():
-            all_paths = await get_project_workspace_paths(db, existing.project_id)
+            all_paths = await get_project_workspace_paths(db, project_id)
         extra_ws_paths = [p for p in all_paths if p != workspace]
     return extra_ws_paths, read_only_paths
+
+
+async def _project_for_new_coding_session(
+    db: DbSession, project_id: UUID | None, workspace: str
+) -> UUID | None:
+    """Owning project for a Coding session about to be created by a message.
+
+    Mirrors the canonicalisation ``/sessions/resolve`` applies: an explicit
+    project wins, otherwise the workspace's own membership decides, and a repo
+    shared by several projects refuses rather than picking one — a session
+    filed under an arbitrary project is one the sidebar can never show back.
+    """
+    if project_id is not None:
+        return project_id
+    async with db.begin():
+        inferred = await get_visible_project_ids_for_workspace_path(db, workspace)
+    if len(inferred) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Workspace belongs to multiple projects. Open one of those "
+                "projects explicitly instead of opening it as standalone."
+            ),
+        )
+    return inferred[0] if inferred else None
 
 
 async def _team_for_session_mode(db: DbSession, session_id: str):
@@ -342,6 +399,28 @@ async def team_chat(
         async with db.begin():
             existing = await db.get(ChatSession, session_uuid)
 
+    # Placement fields for a session this very message brings into being.
+    # The client holds a new chat as a draft until the first send, so the
+    # folder it was started from (and, in Coding, the project it was focused
+    # under) arrive here rather than through /sessions/resolve. A persisted
+    # session owns its own placement, exactly as it owns mode and workspace,
+    # so these are read only while ``existing is None``.
+    new_folder_id: UUID | None = None
+    new_project_id: UUID | None = None
+    if existing is None:
+        new_folder_id = _parse_uuid_or_422(body.folder_id, "folder_id")
+        new_project_id = _parse_uuid_or_422(body.project_id, "project_id")
+        if new_folder_id is not None:
+            async with db.begin():
+                folder = await get_folder(db, new_folder_id)
+            if folder is None:
+                raise HTTPException(status_code=404, detail="Folder not found.")
+            if normalize_mode(folder.mode) != mode:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Folder belongs to a different mode than the session.",
+                )
+
     session_tags = set(existing.tags or ()) if existing is not None else set()
     if body.webbridge_enabled is not None:
         if body.webbridge_enabled:
@@ -404,14 +483,32 @@ async def team_chat(
     if mode == "coding":
         if session_id is None:
             session_id = str(uuid7())
+        if workspace is None and new_project_id is not None:
+            # A draft opened on a project names only the project; its primary
+            # repo is derived here, by the same rule /sessions/resolve uses.
+            from app.services.coding_project_service import (
+                get_project_workspace_paths,
+            )
+
+            async with db.begin():
+                project_paths = await get_project_workspace_paths(db, new_project_id)
+            if not project_paths:
+                raise HTTPException(
+                    status_code=422, detail="Project has no workspaces configured."
+                )
+            workspace = project_paths[0]
         assert workspace is not None
         workspace = _validate_workspace_or_422(workspace)
-        extra_ws_paths: list[str] = []
-        read_only_paths: list[str] = []
-        if existing is not None:
-            extra_ws_paths, read_only_paths = await _project_paths_for_session(
-                db, existing, workspace
+        if existing is None:
+            new_project_id = await _project_for_new_coding_session(
+                db, new_project_id, workspace
             )
+        project_id_for_team = (
+            existing.project_id if existing is not None else new_project_id
+        )
+        extra_ws_paths, read_only_paths = await _project_paths_for_session(
+            db, project_id_for_team, workspace
+        )
         try:
             team_obj = await team_manager.get_or_start_coding_team(
                 workspace,
@@ -425,14 +522,21 @@ async def team_chat(
     else:
         if session_id is None:
             session_id = str(uuid7())
+        # Work sessions are placeless apart from their folder — a project id
+        # from a stale client must never follow a message into this mode.
+        new_project_id = None
         team_obj = await team_manager.get_or_start_team_for_session(session_id)
         team_obj = _require_team(team_obj)
         # The persisted session is authoritative for Work workspaces.  A
         # reloaded/stale client may omit the field (or still carry the
         # previously selected folder), but the live team must always use the
         # folder most recently saved through PUT /{session_id}/workspace.
+        # Only a session this message creates may name its own folder — that
+        # is the draft the user picked one for before there was a row.
         if existing is not None:
             workspace = existing.workspace
+        else:
+            workspace = _normalize_work_workspace_or_422(workspace)
         team_obj.workspace = workspace
 
     # Restore persisted session settings so the in-memory team reflects the
@@ -503,6 +607,8 @@ async def team_chat(
             session_id=session_id,
             mode=mode,
             workspace=workspace,
+            project_id=new_project_id if existing is None else None,
+            folder_id=new_folder_id if existing is None else None,
             model=model,
             model_provided=model_provided,
             thinking_level=thinking_level,
@@ -632,6 +738,8 @@ async def team_chat(
                 attachments=attachments,
                 mode=mode,
                 workspace=workspace,
+                project_id=new_project_id if existing is None else None,
+                folder_id=new_folder_id if existing is None else None,
                 model=model,
                 attachment_model=effective_request_model,
                 model_provided=model_provided,
@@ -1049,14 +1157,31 @@ async def list_team_sessions(
     )
 
 
-@router.post("/sessions/resolve", response_model=TeamSessionResolveResponse)
+@router.post("/sessions/resolve", response_model=TeamSessionResolveResponse | None)
 async def resolve_team_session(
     body: TeamSessionResolveRequest, db: DbSession
-) -> TeamSessionResolveResponse:
-    """Return the newest matching top-level session, creating one if absent."""
+) -> TeamSessionResolveResponse | None:
+    """Return the newest matching top-level session, creating one if absent.
+
+    With ``existing_only`` the creating half is switched off: the answer is
+    the matching session or ``null``. That is what a focus or a restore wants
+    — reopen the chat that is already there, and otherwise leave the client
+    on an unsaved draft rather than minting a session nobody has written in.
+    """
     body.mode = normalize_mode(body.mode)
     if body.mode not in {"work", "coding"}:
         raise HTTPException(status_code=422, detail="mode must be 'work' or 'coding'.")
+    if body.existing_only and body.create:
+        raise HTTPException(
+            status_code=422, detail="create and existing_only are mutually exclusive."
+        )
+    if body.existing_only and (
+        body.worktree_from or body.worktree_name or body.worktree_branch
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Worktree options create a session; drop existing_only.",
+        )
     try:
         default_lead, _rosters = await asyncio.to_thread(
             team_manager.configured_lead_rosters, body.mode
@@ -1195,6 +1320,8 @@ async def resolve_team_session(
                 agent_name=requested_lead,
                 include_unassigned_agent=requested_lead == default_lead,
             )
+        if session is None and body.existing_only:
+            return None
         created = session is None
         if session is None:
             session = ChatSession(

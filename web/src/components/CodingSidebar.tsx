@@ -62,6 +62,7 @@ import {
 import { apiBaseUrl } from "@/api/base-url";
 import {
   browseWorkspaces,
+  findTeamSession,
   gitClone,
   listWorktrees,
   removeWorktree,
@@ -377,7 +378,6 @@ export function CodingSidebar({
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [deleteProjectTarget, setDeleteProjectTarget] =
     useState<CodingProject | null>(null);
-  const [pendingProject, setPendingProject] = useState<string | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     () => new Set(),
   );
@@ -636,15 +636,21 @@ export function CodingSidebar({
   ) => {
     const shouldCreate = opts.create === true;
     const state = useTeamStore.getState();
-    const create =
-      shouldCreate &&
-      !(
-        state.isEmptyIdleSession() &&
-        state.sessionId === currentSessionId &&
-        workspace === path
-      );
-    if (shouldCreate && !create) {
+    // "New session in this repo" is a draft: no round-trip, nothing written
+    // until the first message. Already sitting in an empty chat on this repo?
+    // Then it is already the new session being asked for.
+    if (shouldCreate) {
       setPendingWorkspace(null);
+      if (state.isEmptyIdleSession() && state._workspace === path) return;
+      state.beginResolvedSession(null, {
+        mode: "coding",
+        workspace: path,
+        model: state.sessionId ? state.sessionModel : null,
+        thinkingLevel: state.sessionId ? state.sessionThinkingLevel : null,
+      });
+      saveLastCodingWorkspace(path);
+      navigate({ to: "/coding/$focusId", params: { focusId: path } });
+      onMobileClose?.();
       return;
     }
     setPendingWorkspace(path);
@@ -661,13 +667,16 @@ export function CodingSidebar({
         model: carryModel,
         thinkingLevel: carryThinkingLevel,
       });
-      const session = await resolveTeamSession({
-        mode: "coding",
-        workspace: path,
-        model: carryModel,
-        thinkingLevel: carryThinkingLevel,
-        create,
-      });
+      const session = await findTeamSession({ mode: "coding", workspace: path });
+      if (!session) {
+        // First time in this repo — stay on the draft opened above and let
+        // the first message create the session.
+        setPendingWorkspace(null);
+        saveLastCodingWorkspace(path);
+        navigate({ to: "/coding/$focusId", params: { focusId: path } });
+        onMobileClose?.();
+        return;
+      }
       state.beginResolvedSession(session.id, {
         mode: "coding",
         workspace: session.workspace ?? path,
@@ -719,63 +728,28 @@ export function CodingSidebar({
     }
   };
 
-  const openProjectSession = async (project: CodingProject) => {
+  // Project "+": a draft bound to the project. Its primary repo is the
+  // project's to derive, so the draft names only the project and the first
+  // message resolves the rest server-side.
+  const openProjectSession = (project: CodingProject) => {
     if (!project.workspaces?.length) return;
-    setPendingProject(project.id);
-    try {
-      const state = useTeamStore.getState();
-      state.beginResolvedSession(null, { mode: "coding" });
-      // Only carry the current model/thinking-level over when there's an
-      // existing session to carry them FROM — see selectWorkspace above.
-      const carryModel = state.sessionId ? state.sessionModel : null;
-      const carryThinkingLevel = state.sessionId ? state.sessionThinkingLevel : null;
-      // Backend derives workspace from project — no primaryPath passed from UI.
-      const session = await resolveTeamSession({
-        mode: "coding",
-        project_id: project.id,
-        model: carryModel,
-        thinkingLevel: carryThinkingLevel,
-        create: true,
-      });
-      const resolvedWorkspace = session.workspace ?? null;
-      state.beginResolvedSession(session.id, {
-        mode: "coding",
-        workspace: resolvedWorkspace,
-        model: session.model ?? carryModel,
-        thinkingLevel: session.thinking_level ?? carryThinkingLevel,
-        skipInitialRestore: session.created,
-      });
-      // beginResolvedSession resets projectId to null — restore it immediately.
-      useTeamStore.setState({ projectId: project.id });
-      if (session.created) {
-        prependSession(queryClient, session);
-        // Surface the freshly-created session in the project-scoped list
-        // immediately instead of waiting for the query to go stale.
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.team.sessions.project(project.id),
-        });
-      }
-      // A project session spans all repos — do NOT persist paths[0] as the
-      // "last coding workspace" (a later restore would reopen it as a single
-      // repo). projectId is what drives multi-repo context.
-      if (resolvedWorkspace) {
-        await refreshWorkspaceTree();
-      }
-      const focusId = codingFocusId({ project_id: project.id, workspace: resolvedWorkspace });
-      navigate(
-        focusId
-          ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: session.id } }
-          : { to: "/coding" },
-      );
-    } catch (err) {
-      useToastStore.getState().push({
-        tone: "error",
-        title: "Couldn't open project session",
-        description: err instanceof Error ? err.message : String(err),
-      });
-    } finally {
-      setPendingProject(null);
-    }
+    const state = useTeamStore.getState();
+    if (state.isEmptyIdleSession() && state.projectId === project.id) return;
+    // Only carry the current model/thinking-level over when there's an
+    // existing session to carry them FROM — see selectWorkspace above.
+    state.beginResolvedSession(null, {
+      mode: "coding",
+      // The project's primary repo, same first entry the backend derives.
+      workspace: project.workspaces[0]?.path ?? null,
+      projectId: project.id,
+      model: state.sessionId ? state.sessionModel : null,
+      thinkingLevel: state.sessionId ? state.sessionThinkingLevel : null,
+    });
+    // A project session spans all repos — do NOT persist paths[0] as the
+    // "last coding workspace" (a later restore would reopen it as a single
+    // repo). projectId is what drives multi-repo context.
+    navigate({ to: "/coding/$focusId", params: { focusId: project.id } });
+    onMobileClose?.();
   };
 
   // Purge a standalone workspace's app-owned sessions and indexes. The source
@@ -1248,7 +1222,6 @@ export function CodingSidebar({
               const project = selectedProject;
               const isActive = currentProjectId === project.id;
               const repositoriesExpanded = expandedProjects.has(project.id);
-              const isPending = pendingProject === project.id;
               const canCreateSession = (project.workspaces?.length ?? 0) > 0;
               const projectHasRunning = codingSessions.some(
                 (session) => session.project_id === project.id && session.running === true,
@@ -1312,20 +1285,16 @@ export function CodingSidebar({
                     >
                       <FolderPlus size={12} aria-hidden="true" />
                     </button>
-                    {isPending ? (
-                      <Loader2 size={11} className="animate-spin text-(--color-text-muted)" />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => void openProjectSession(project)}
-                        disabled={!canCreateSession}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={canCreateSession ? `New session in ${project.name}` : `${project.name} has no repositories yet`}
-                        title={canCreateSession ? `New session in ${project.name}` : "Add a repository first"}
-                      >
-                        <Plus size={12} aria-hidden="true" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => openProjectSession(project)}
+                      disabled={!canCreateSession}
+                      className="flex h-6 w-6 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={canCreateSession ? `New session in ${project.name}` : `${project.name} has no repositories yet`}
+                      title={canCreateSession ? `New session in ${project.name}` : "Add a repository first"}
+                    >
+                      <Plus size={12} aria-hidden="true" />
+                    </button>
                     <button
                       type="button"
                       onClick={() => setDeleteProjectTarget(project)}

@@ -31,6 +31,11 @@ class TeamSessionResolveRequest(BaseModel):
     model: str | None = None
     thinking_level: str | None = None
     create: bool = False
+    # Look, but do not bring into being. The client opens a chat as a draft
+    # and lets the first message create it, so a focus/restore asks only
+    # whether there is already a session worth reopening; ``null`` means
+    # "nothing here yet", not an error. Mutually exclusive with ``create``.
+    existing_only: bool = False
     worktree_from: str | None = None
     worktree_name: str | None = None
     worktree_branch: str | None = None

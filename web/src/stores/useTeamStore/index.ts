@@ -320,6 +320,16 @@ export function forgetSessionSnapshot(sessionId: string): void {
   sessionSnapshots.delete(sessionId)
 }
 
+/**
+ * Placement to send with a message that may be the one creating the session.
+ * Only a draft has any: once ``sessionId`` exists the row owns its folder and
+ * project, and the backend ignores these fields anyway.
+ */
+function draftPlacement(state: TeamStore): { folderId: string | null; projectId: string | null } | undefined {
+  if (state.sessionId) return undefined
+  return { folderId: state.newChatDraft?.folderId ?? null, projectId: state.projectId }
+}
+
 function resetSessionState(
   state: TeamStore,
   options: {
@@ -329,11 +339,23 @@ function resetSessionState(
     fastMode?: boolean
     mode?: string
     workspace?: string | null
+    projectId?: string | null
+    folderId?: string | null
   },
 ) {
   const leadName = state.leadName ?? state.agentNames[0] ?? null
   state.sessionId = options.sessionId
-  state.projectId = null
+  state.projectId = options.projectId ?? null
+  // Beginning a session-less session is the user asking for a blank chat;
+  // a resolved one clears the mark and owns its folder on the row. A Work
+  // draft carries its chosen folder here rather than in `_workspace`, which
+  // stays coding-only.
+  state.newChatDraft = options.sessionId
+    ? null
+    : {
+      folderId: options.folderId ?? null,
+      workspace: options.mode === 'coding' ? null : (options.workspace ?? null),
+    }
   state.sessionTitle = null
   state.sessionTags = []
   state.sessionPermissionMode = 'auto'
@@ -451,6 +473,7 @@ export const useTeamStore = create<TeamStore>()(
     sidebarOpen: false,
     sessionId: null,
     projectId: null,
+    newChatDraft: null,
     sessionTitle: null,
     sessionTags: [],
     sessionPermissionMode: 'auto',
@@ -494,6 +517,13 @@ export const useTeamStore = create<TeamStore>()(
       })
     },
 
+    setDraftWorkspace: (workspace: string | null) => {
+      set((state) => {
+        if (state.sessionId || !state.newChatDraft) return
+        state.newChatDraft.workspace = workspace
+      })
+    },
+
     beginResolvedSession: (sessionId, options) => {
       get()._abortController?.abort()
       abortSessionLoads()
@@ -509,6 +539,8 @@ export const useTeamStore = create<TeamStore>()(
           fastMode: options?.fastMode,
           mode: options?.mode,
           workspace: options?.workspace,
+          projectId: options?.projectId,
+          folderId: options?.folderId,
         })
         // Restoring is for paint only. `loadSession` still runs and is
         // still authoritative: a turn can have finished while we were
@@ -524,7 +556,10 @@ export const useTeamStore = create<TeamStore>()(
 
     isEmptyIdleSession: () => {
       const state = get()
-      if (!state.sessionId || state.isTeamWorking) return false
+      if (state.isTeamWorking) return false
+      // A draft has no session row yet, which is as new as a chat gets —
+      // "New chat" on top of one should do nothing rather than reset it.
+      if (!state.sessionId) return true
       return state.agentNames.every((name) => !hasVisibleBlocks(state.agentStreams[name]))
     },
 
@@ -698,15 +733,20 @@ export const useTeamStore = create<TeamStore>()(
           resolvedOptions?.shell ?? false,
           resolvedOptions?.fastMode ?? get().sessionFastMode,
           resolvedOptions?.webBridgeEnabled,
+          draftPlacement(get()),
         )
         set((draft) => {
           draft.sessionId = result.session_id
+          draft.newChatDraft = null
           draft.sessionModel = resolvedOptions?.model ?? get().sessionModel
           draft.sessionThinkingLevel = resolvedOptions?.thinkingLevel ?? get().sessionThinkingLevel
           draft._pendingMessages.forEach((msg) => {
             if (msg.sessionId === null || msg.sessionId === undefined) msg.sessionId = result.session_id
           })
-          if (resolvedOptions?.workspace) {
+          // `_workspace` is the Coding repo binding; a Work chat's folder
+          // lives on the session row and is read back through the workspace
+          // query, so sending one must not populate this.
+          if (resolvedOptions?.workspace && resolvedOptions?.mode === 'coding') {
             draft._workspace = resolvedOptions.workspace
           }
         })
@@ -979,10 +1019,13 @@ export const useTeamStore = create<TeamStore>()(
           options?.thinkingLevel ?? get().sessionThinkingLevel,
           false,
           options?.fastMode ?? get().sessionFastMode,
+          undefined,
+          draftPlacement(get()),
         )
         const goal = await getTeamGoal(result.session_id)
         set((draft) => {
           draft.sessionId = result.session_id
+          draft.newChatDraft = null
           draft.sessionModel = options?.model ?? get().sessionModel
           draft.sessionThinkingLevel = options?.thinkingLevel ?? get().sessionThinkingLevel
           draft.activeGoal = goal

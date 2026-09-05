@@ -52,6 +52,20 @@ class ChatForm(BaseModel):
         None,
         description="Whether this turn enables real-browser WebBridge for its session.",
     )
+    folder_id: str | None = Field(
+        None,
+        description=(
+            "Sidebar folder to file the session in. Only read when this "
+            "message creates the session; a persisted session owns its folder."
+        ),
+    )
+    project_id: str | None = Field(
+        None,
+        description=(
+            "Coding project the session belongs to. Only read when this "
+            "message creates the session; otherwise the persisted value wins."
+        ),
+    )
 
     @classmethod
     def as_form(
@@ -66,6 +80,8 @@ class ChatForm(BaseModel):
         fast_mode: bool = Form(False),
         shell: bool = Form(False),
         webbridge_enabled: bool | None = Form(None),
+        folder_id: str | None = Form(None),
+        project_id: str | None = Form(None),
     ) -> "ChatForm":
         try:
             return cls(
@@ -79,6 +95,8 @@ class ChatForm(BaseModel):
                 fast_mode=fast_mode,
                 shell=shell,
                 webbridge_enabled=webbridge_enabled,
+                folder_id=folder_id,
+                project_id=project_id,
             )
         except ValidationError as exc:
             raise HTTPException(
@@ -98,8 +116,13 @@ class ChatForm(BaseModel):
         self.mode = normalize_mode(self.mode)
         if self.mode not in {"work", "coding"}:
             raise ValueError("mode must be 'work' or 'coding'.")
-        if self.mode == "coding" and not self.workspace:
-            raise ValueError("workspace is required when mode='coding'.")
+        if self.mode == "coding" and not self.workspace and not self.project_id:
+            # A project session spans repos and its primary path is the
+            # project's to derive, so naming the project is enough. Every
+            # other Coding send still has to say which workspace it means.
+            raise ValueError(
+                "workspace is required when mode='coding' (or name a project_id)."
+            )
         if (
             self.model is not None
             and self.model.strip()
