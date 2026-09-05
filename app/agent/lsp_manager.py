@@ -60,8 +60,11 @@ SPECS: tuple[LanguageServerSpec, ...] = (
     ),
     LanguageServerSpec(
         "csharp",
+        # csharp-ls first: it is the one EvoFlux can install into its own
+        # cache, so a managed install wins over whatever OmniSharp a machine
+        # happens to expose.
         frozenset({".cs"}),
-        (("OmniSharp", "-lsp"), ("omnisharp", "-lsp")),
+        (("csharp-ls",), ("OmniSharp", "-lsp"), ("omnisharp", "-lsp")),
     ),
     LanguageServerSpec(
         "php",

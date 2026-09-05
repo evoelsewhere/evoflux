@@ -7,15 +7,16 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from app.api.schemas.language_servers import (
+    LanguageServerInstallResponse,
     LanguageServerOverviewResponse,
     LanguageServerStatusRequest,
-    LanguageServerStatusResponse,
 )
 from app.services import team_manager
 from app.services.language_server_service import (
     LanguageServerInstallError,
-    install_language_server,
+    dismiss_install_error,
     language_server_overview,
+    start_language_server_install,
 )
 
 router = APIRouter(prefix="/workspace/language-servers")
@@ -44,12 +45,19 @@ async def language_server_status_route(
     return LanguageServerOverviewResponse.model_validate(asdict(overview))
 
 
-@router.post("/{language_id}/install", response_model=LanguageServerStatusResponse)
+@router.post("/{language_id}/install", response_model=LanguageServerInstallResponse)
 async def install_language_server_route(
     language_id: str,
-) -> LanguageServerStatusResponse:
+) -> LanguageServerInstallResponse:
+    """Start an install and report its state; progress arrives via /status."""
     try:
-        status = await install_language_server(language_id)
+        job = start_language_server_install(language_id)
     except LanguageServerInstallError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return LanguageServerStatusResponse.model_validate(asdict(status))
+    return LanguageServerInstallResponse.model_validate(asdict(job))
+
+
+@router.post("/{language_id}/install/dismiss", status_code=204)
+async def dismiss_install_error_route(language_id: str) -> None:
+    """Drop a failed install so the row stops reporting it."""
+    dismiss_install_error(language_id)

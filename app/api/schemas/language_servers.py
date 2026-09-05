@@ -28,12 +28,28 @@ class LanguageServerStatusResponse(BaseModel):
     installed_version: str | None
     expected_version: str | None
     installable: bool
-    installer: Literal["npm", "uv"] | None
+    installer: Literal["npm", "uv", "go", "rustup", "gem", "dotnet"] | None
     installer_available: bool
     install_hint: str
+    blocked_reason: str | None
+    install_phase: Literal["idle", "running", "failed"]
+    install_started_at: str | None
+    install_error: str | None
 
 
 class LanguageServerOverviewResponse(BaseModel):
     workspaces: list[str]
     cache_dir: str
     servers: list[LanguageServerStatusResponse]
+    scan_truncated: bool
+    scan_limit: int
+
+
+class LanguageServerInstallResponse(BaseModel):
+    """State of the install that was just started, not its outcome."""
+
+    language_id: str
+    phase: Literal["idle", "running", "failed"]
+    started_at: str
+    finished_at: str | None
+    error: str | None
