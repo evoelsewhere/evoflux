@@ -6,6 +6,7 @@ Exposes the user-editable sandbox deny-list and the provider catalog.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import os
 import time
@@ -207,9 +208,76 @@ async def pull_conductor_resource(resource_id: str) -> dict:
 _PROVIDER_MODEL_CACHE_TTL_S = 60.0
 _provider_model_cache: dict[str, tuple[float, list[str]]] = {}
 
+#: Manual (``auto_connect=False``) providers are connected by an explicit
+#: "list models" request, never by a background poll, so their model list
+#: has no other source to fall back on. Keeping it in memory alone meant a
+#: daemon restart silently un-listed every catalog provider — the picker
+#: lost the models and any session already pinned to one was refused with
+#: "Choose a model from the registry". These ids are mirrored to disk.
+_manual_model_ids: set[str] = set()
+_manual_cache_loaded_from: str | None = None
+
+
+def _manual_models_persist(entry: "ProviderEntry") -> bool:
+    """Whether this provider's manual model list survives a restart.
+
+    A remote catalog provider's list is a fact about its API and stays
+    true, so re-listing after every restart is pure friction. A local
+    daemon's is a fact about a process that may since have stopped, and
+    Ollama deliberately stays disconnected until the user asks — so it
+    keeps its in-memory-only cache.
+    """
+    return not entry.get("auto_connect", True) and entry.get("kind") != "local"
+
+
+def _manual_model_cache_path() -> Path:
+    return Path(settings.EVOFLUX_CACHE_DIR or "") / "provider-models.json"
+
+
+def _load_manual_model_cache() -> None:
+    """Seed the in-memory cache from disk once per cache directory."""
+    global _manual_cache_loaded_from
+
+    path = _manual_model_cache_path()
+    if _manual_cache_loaded_from == str(path):
+        return
+    _manual_cache_loaded_from = str(path)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(raw, dict):
+        return
+    now = time.monotonic()
+    for provider_id, models in raw.items():
+        if not isinstance(provider_id, str) or not isinstance(models, list):
+            continue
+        cleaned = [m for m in models if isinstance(m, str) and m]
+        if not cleaned or provider_id in _provider_model_cache:
+            continue
+        _provider_model_cache[provider_id] = (now, cleaned)
+        _manual_model_ids.add(provider_id)
+
+
+def _save_manual_model_cache() -> None:
+    """Mirror the manual providers' model lists to disk. Best-effort."""
+    payload = {
+        provider_id: cached[1]
+        for provider_id in sorted(_manual_model_ids)
+        if (cached := _provider_model_cache.get(provider_id))
+    }
+    path = _manual_model_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.debug("manual_model_cache_write_failed path={} error={}", path, exc)
+
 
 def _cached_provider_models(entry: "ProviderEntry") -> list[str] | None:
     """Return reusable discovered models without contacting the provider."""
+    if _manual_models_persist(entry):
+        _load_manual_model_cache()
     cached = _provider_model_cache.get(entry["id"])
     if cached is None:
         return None
@@ -226,6 +294,26 @@ def _cache_provider_models(entry: "ProviderEntry", models: list[str]) -> None:
         _provider_model_cache[entry["id"]] = (time.monotonic(), list(models))
     elif not entry.get("auto_connect", True):
         _provider_model_cache.pop(entry["id"], None)
+    if _manual_models_persist(entry):
+        _load_manual_model_cache()
+        if models:
+            _manual_model_ids.add(entry["id"])
+        else:
+            _manual_model_ids.discard(entry["id"])
+        _save_manual_model_cache()
+
+
+def _manual_provider_is_connected(entry: "ProviderEntry") -> bool:
+    """Whether a manual provider is usable, not merely once reachable.
+
+    Listing a catalog provider's models proves the endpoint answered the
+    key typed into the form — which is not the same as that key having
+    been *saved*. Requiring both keeps "connected" honest: a listed but
+    unsaved provider used to show as configured and offer its models to
+    the picker, and every turn using one was then refused because the
+    credential the request needed was never on disk.
+    """
+    return _provider_is_configured(entry) and bool(_cached_provider_models(entry))
 
 
 @router.get("/sandbox")
@@ -611,7 +699,7 @@ async def _provider_is_reachable(entry: "ProviderEntry") -> bool:
     """
     provider_id = entry["id"]
     if not entry.get("auto_connect", True):
-        return bool(_cached_provider_models(entry))
+        return _manual_provider_is_connected(entry)
     if provider_id in _DAEMON_PROVIDER_IDS:
         # For api_key daemon providers (router9, cliproxy) the static
         # check additionally requires the env var. No env var → don't
@@ -641,7 +729,7 @@ async def list_providers() -> ProvidersListBody:
     saved_states = [
         _provider_is_configured(entry)
         if entry.get("auto_connect", True)
-        else bool(_cached_provider_models(entry))
+        else _manual_provider_is_connected(entry)
         for entry in entries
     ]
     reachability = await asyncio.gather(
@@ -1212,6 +1300,11 @@ async def delete_provider(provider_id: str) -> dict[str, bool]:
         raise HTTPException(status_code=404, detail=f"Unknown provider '{provider_id}'")
 
     kind = entry.get("kind")
+
+    # Drop the discovered model list too: for a manual provider it is the
+    # only thing keeping it in the picker, and it outlives the process.
+    _cache_provider_models(entry, [])
+    _provider_model_cache.pop(provider_id, None)
 
     # OAuth providers: delete the token file
     if kind == "oauth":
