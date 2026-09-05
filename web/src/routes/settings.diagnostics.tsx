@@ -1,6 +1,6 @@
 /** /settings/diagnostics — active health checks across all EvoFlux subsystems. */
 import { motion } from 'framer-motion'
-import { AlertTriangle, CheckCircle2, RefreshCw, Stethoscope, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, RefreshCw, Activity, XCircle } from 'lucide-react'
 
 import { useDiagnosticsQuery } from '@/queries'
 import { SettingsCallout, SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
@@ -55,7 +55,7 @@ export function DiagnosticsPage() {
 
   return (
     <SettingsPage
-      icon={Stethoscope}
+      icon={Activity}
       title="Diagnostics"
       lede="Live health checks across every EvoFlux subsystem. Start here when a provider key, sandbox path or background job is misbehaving."
       size="wide"

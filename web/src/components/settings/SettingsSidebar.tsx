@@ -8,12 +8,14 @@
 import { useLocation } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
 import {
+  Activity,
   ArrowLeft,
-  BarChart3,
   Bell,
+  Blocks,
   Bot,
-  BrainCircuit,
+  Brain,
   Building2,
+  ChartColumn,
   GitBranch,
   Globe2,
   Info,
@@ -22,10 +24,8 @@ import {
   Plug,
   Search,
   Server,
-  ServerCog,
   Shield,
   Sparkles,
-  Stethoscope,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -117,7 +117,7 @@ function SidebarRow({
       onClick={go}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative mx-2 flex min-h-10 items-center gap-2.5 overflow-hidden rounded-lg px-3 text-left text-[13px] transition-[background-color,color,transform] duration-(--motion-fast) active:scale-[0.985]',
+        'group relative mx-2 flex min-h-10 items-center gap-2.5 overflow-hidden rounded-xl px-3 text-left text-[13px] transition-[background-color,color,transform] duration-(--motion-fast) active:scale-[0.985]',
         'text-(--color-text-muted) hover:bg-(--bg-key)/70 hover:text-(--color-text)',
         'focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none',
         active && 'text-(--color-text)',
@@ -129,12 +129,17 @@ function SidebarRow({
         <motion.span
           layoutId="settings-nav-active"
           transition={preset.spring}
-          className="absolute inset-0 rounded-lg border border-(--color-accent)/15 bg-(--color-accent-soft)"
+          className="absolute inset-0 rounded-xl border border-(--color-accent)/15 bg-(--color-accent-soft)"
           aria-hidden="true"
         />
       )}
+      {/* 15px at lucide's default stroke of 2 puts a third of each glyph's
+          width into its own outline, which is what made this rail read as a
+          smudge. A wider box on a lighter stroke keeps the same optical
+          weight and gives the shapes room to be recognisable. */}
       <Icon
-        size={15}
+        size={16}
+        strokeWidth={1.6}
         className={cn(
           'relative z-(--z-panel) shrink-0',
           active ? 'text-(--color-accent)' : 'text-(--color-text-subtle) group-hover:text-(--color-text-muted)',
@@ -241,7 +246,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
           {
             to: '/settings/language-servers',
             label: t('Language servers'),
-            icon: ServerCog,
+            icon: Blocks,
             matchPrefix: '/settings/language-servers',
           },
         ],
@@ -252,7 +257,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
           {
             to: '/settings/memory',
             label: t('Memory'),
-            icon: BrainCircuit,
+            icon: Brain,
             matchPrefix: '/settings/memory',
           },
         ],
@@ -321,13 +326,13 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
           {
             to: '/settings/telemetry',
             label: t('Telemetry'),
-            icon: BarChart3,
+            icon: ChartColumn,
             matchPrefix: '/settings/telemetry',
           },
           {
             to: '/settings/diagnostics',
             label: t('Diagnostics'),
-            icon: Stethoscope,
+            icon: Activity,
             matchPrefix: '/settings/diagnostics',
           },
           {
@@ -394,13 +399,14 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             onClick={onBack}
             className="mb-3 flex h-9 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-(--color-text-muted) transition-[background-color,color,transform] hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.985] focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 focus-visible:outline-none"
           >
-            <ArrowLeft size={15} aria-hidden="true" />
+            <ArrowLeft size={16} strokeWidth={1.6} aria-hidden="true" />
             <span>Back to app</span>
           </button>
         )}
         <div role="search" className="relative">
           <Search
-            size={14}
+            size={15}
+            strokeWidth={1.6}
             aria-hidden="true"
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-(--color-text-subtle)"
           />

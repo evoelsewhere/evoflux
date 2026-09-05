@@ -1,7 +1,7 @@
 import {
   ArrowRight,
   BookOpenText,
-  BrainCircuit,
+  Brain,
   Database,
   FileStack,
   Inbox,
@@ -81,7 +81,7 @@ export function MemorySettingsPage() {
 
   return (
     <SettingsPage
-      icon={BrainCircuit}
+      icon={Brain}
       title="Memory"
       size="wide"
       lede="Long-term knowledge that agents can recall across conversations. Raw material stays separate until Dream synthesizes it into curated pages."
