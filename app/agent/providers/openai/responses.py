@@ -39,6 +39,7 @@ from app.agent.schemas.chat import (
     ToolMessage,
     Usage,
 )
+from app.agent.providers import cache_probe
 from .sanitization import sanitize_openai_tool_pairs
 from app.agent.providers.registry import Transport
 
@@ -295,11 +296,10 @@ class ResponsesHandler:
         usage = self._usage_from_data(usage_data)
         return usage_to_dict(usage, self.usage_model_id)
 
-    @staticmethod
-    def _usage_from_data(usage_data: dict[str, Any]) -> Usage:
+    def _usage_from_data(self, usage_data: dict[str, Any]) -> Usage:
         input_details = usage_data.get("input_tokens_details", {}) or {}
         output_details = usage_data.get("output_tokens_details", {}) or {}
-        return Usage(
+        result = Usage(
             prompt_tokens=usage_data.get("input_tokens", 0),
             completion_tokens=usage_data.get("output_tokens", 0),
             total_tokens=usage_data.get("total_tokens", 0),
@@ -311,6 +311,12 @@ class ResponsesHandler:
             ),
             thoughts_tokens=output_details.get("reasoning_tokens") or None,
         )
+        cache_probe.record_usage(
+            provider=self.provider_id or self.default_provider_id,
+            model=self.model,
+            usage=result,
+        )
+        return result
 
     # ------------------------------------------------------------------
     # Public API
@@ -367,6 +373,11 @@ class ResponsesHandler:
         merged: dict[str, Any],
     ) -> AssistantMessage:
         body = self.build_request(messages, tools, stream=False, merged=merged)
+        cache_probe.record(
+            body,
+            provider=self.provider_id or self.default_provider_id,
+            model=self.model,
+        )
         url = f"{self.base_url}/responses"
 
         async with httpx.AsyncClient() as client:
@@ -392,6 +403,11 @@ class ResponsesHandler:
         merged: dict[str, Any],
     ) -> AsyncIterator[ChatCompletionChunk]:
         body = self.build_request(messages, tools, stream=True, merged=merged)
+        cache_probe.record(
+            body,
+            provider=self.provider_id or self.default_provider_id,
+            model=self.model,
+        )
         url = f"{self.base_url}/responses"
 
         async with httpx.AsyncClient() as client:

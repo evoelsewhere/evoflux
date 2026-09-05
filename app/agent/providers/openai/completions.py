@@ -39,6 +39,7 @@ from .schemas import (
     OpenAITool,
     OpenAIToolCall,
 )
+from app.agent.providers import cache_probe
 from .sanitization import sanitize_openai_tool_pairs
 from .tool_content import flatten_tool_content_for_provider
 from app.agent.providers.registry import Transport
@@ -421,6 +422,11 @@ class CompletionsHandler:
         merged: dict[str, Any],
     ) -> AssistantMessage:
         body = self.build_request(messages, tools, stream=False, merged=merged)
+        cache_probe.record(
+            body,
+            provider=self.provider_id or self.default_provider_id,
+            model=self.model,
+        )
         url = f"{self.base_url}/chat/completions"
 
         async with httpx.AsyncClient() as client:
@@ -443,6 +449,11 @@ class CompletionsHandler:
         merged: dict[str, Any],
     ) -> AsyncIterator[ChatCompletionChunk]:
         body = self.build_request(messages, tools, stream=True, merged=merged)
+        cache_probe.record(
+            body,
+            provider=self.provider_id or self.default_provider_id,
+            model=self.model,
+        )
         url = f"{self.base_url}/chat/completions"
 
         async with httpx.AsyncClient() as client:
@@ -533,7 +544,7 @@ class CompletionsHandler:
             thoughts = _positive_token_count(
                 u.completion_tokens_details.reasoning_tokens
             )
-        return Usage(
+        result = Usage(
             prompt_tokens=u.prompt_tokens,
             completion_tokens=u.completion_tokens,
             total_tokens=u.total_tokens,
@@ -541,6 +552,12 @@ class CompletionsHandler:
             cache_write_tokens=cache_write,
             thoughts_tokens=thoughts,
         )
+        cache_probe.record_usage(
+            provider=self.provider_id or self.default_provider_id,
+            model=self.model,
+            usage=result,
+        )
+        return result
 
     def _usage_chunk(self, chunk: OpenAIStreamChunk) -> ChatCompletionChunk:
         return ChatCompletionChunk(

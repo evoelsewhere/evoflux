@@ -81,6 +81,42 @@ def test_catalog_ranks_matching_metadata_without_filtering_other_skills():
     assert "server-selected workflow" in rendered.text
 
 
+def test_catalog_text_is_byte_identical_across_different_queries():
+    """Ranking may reorder the priority list; it must not reorder the text.
+
+    The rendered catalog is concatenated into the system prompt, which sits at
+    the very front of every request. Re-sorting the same skills against each
+    new user message rewrote byte 0 of the prompt and discarded the whole
+    conversation's prompt cache.
+    """
+    records = [
+        _record("work-writing", "Draft substantial knowledge-work products."),
+        _record("work-research", "Research and verify a sourced report."),
+        _record("work-planning", "Create an execution plan."),
+    ]
+
+    records_names = {record.name for record in records}
+
+    research_turn = render_skill_catalog(
+        records, mode="work", query="Research and verify a sourced report."
+    )
+    planning_turn = render_skill_catalog(
+        records, mode="work", query="Create an execution plan for the rollout."
+    )
+
+    assert research_turn.text == planning_turn.text
+    # Ranking still happened — it just no longer leaks into the byte order.
+    assert research_turn.query_ranked[0] == "work-research"
+    assert planning_turn.query_ranked[0] == "work-planning"
+    names = [
+        line[2:].split(":", 1)[0]
+        for line in research_turn.text.splitlines()
+        if line.startswith("- ") and line[2:].split(":", 1)[0] in set(records_names)
+    ]
+    assert names == sorted(names)
+    assert len(names) == len(records)
+
+
 def test_catalog_uses_preferred_skill_when_query_has_no_lexical_match():
     rendered = render_skill_catalog(
         [
