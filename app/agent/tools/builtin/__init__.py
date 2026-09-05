@@ -48,6 +48,7 @@ _EXPORT_MODULES = {
 
 _SUBMODULES = {
     "browser_use_tool",
+    "document_preview",
     "process",
     "preview",
     "shell_runtime",

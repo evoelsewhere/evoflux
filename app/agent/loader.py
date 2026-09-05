@@ -343,6 +343,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     )
     from app.agent.tools.builtin.visualize import visualize_read_me, show_widget
     from app.agent.tools.builtin.preview import preview_tool
+    from app.agent.tools.builtin.document_preview import document_preview
 
     registry: dict[str, Tool] = {
         "web_search": web_search,
@@ -351,6 +352,7 @@ def _default_tool_registry() -> dict[str, Tool]:
         "browser_use": browser_use,
         "webbridge": webbridge,
         "preview": preview_tool,
+        "document_preview": document_preview,
         "date": get_date,
         "get_goal": get_goal,
         "update_goal": update_goal,
