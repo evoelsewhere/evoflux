@@ -198,7 +198,7 @@ export function TurnStatusLine({
   if (costUsd > 0) meta.push(formatTurnCost(costUsd))
 
   const animated = preset.intensity !== 'reduced'
-  const iconSize = size === 'roomy' ? 12 : 11
+  const iconSize = size === 'roomy' ? 15 : 13
 
   const row = (
     <div
@@ -210,7 +210,7 @@ export function TurnStatusLine({
       role="status"
       aria-label={`${activity.label} — ${meta.join(', ')}`}
     >
-      <span className="flex size-3 shrink-0 items-center justify-center">
+      <span className="flex size-4 shrink-0 items-center justify-center">
         <StatusIcon toolName={activity.toolName} size={iconSize} animated={animated} />
       </span>
 
