@@ -28,7 +28,6 @@ import {
   useCreateSessionFolderMutation,
   useLoadMoreFolderSessionsMutation,
   useSetSessionFolderMutation,
-  queryKeys,
 } from "@/queries";
 import { Skeleton } from "./ui/skeleton";
 import { SidebarItem } from "@/components/ui/sidebar-item";
@@ -67,9 +66,6 @@ import {
   setSessionDragPayload,
   wasSessionDropHandled,
 } from "@/components/shell/session-drag";
-import { resolveTeamSession } from "@/api/client";
-import { prependSession } from "@/stores/cache-invalidation-bridge";
-import { useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/stores/useToastStore";
 import { useTeamStore } from "@/stores/useTeamStore";
 import type { SessionFolder, SessionResponse } from "@/api/types";
@@ -169,7 +165,6 @@ export function Sidebar({
   const setSessionFolder = useSetSessionFolderMutation("work");
   const createFolder = useCreateSessionFolderMutation("work");
   const loadMoreFolderSessions = useLoadMoreFolderSessionsMutation("work");
-  const queryClient = useQueryClient();
   const pushToast = useToastStore((s) => s.push);
   const sessionListRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -367,7 +362,7 @@ export function Sidebar({
           replace: true,
         });
       } else {
-        // Navigate to "/" — TeamLayoutBase will auto-resolve a new empty session.
+        // Nothing left to fall back to — "/" holds the draft opened above.
         navigate({ to: "/", replace: true });
       }
     }
@@ -386,38 +381,46 @@ export function Sidebar({
     handleSelect(id);
   };
 
+  /**
+   * Model and thinking level a new draft should open with: whatever the
+   * current session uses, so starting a chat does not silently drop the user
+   * back to the global default. Only carried when there is a session to carry
+   * them FROM — a draft's own picker already holds its choice.
+   */
+  const carriedModelSettings = () => {
+    const state = useTeamStore.getState();
+    return state.sessionId
+      ? { model: state.sessionModel, thinkingLevel: state.sessionThinkingLevel }
+      : {};
+  };
+
   const handleNewChat = () => {
     if (onNewChat) {
       onNewChat();
     } else {
+      // Mark the draft before navigating: a bare "/" without one reopens the
+      // newest chat instead of starting a blank one.
+      useTeamStore
+        .getState()
+        .beginResolvedSession(null, { mode, ...carriedModelSettings() });
       navigate({ to: "/" });
     }
     onMobileClose?.();
   };
 
-  // Folder "+" button: create the session already filed in the folder rather
-  // than creating it loose and moving it, so it never flashes in Recent.
-  const handleNewChatInFolder = async (folder: SessionFolder) => {
-    try {
-      const session = await resolveTeamSession({
-        mode: "work",
-        workspace: null,
-        folder_id: folder.id,
-        create: true,
-      });
-      prependSession(queryClient, session);
-      void queryClient.invalidateQueries({
-        queryKey: queryKeys.team.sessionFolders("work"),
-      });
-      navigate({ to: "/$sessionId", params: { sessionId: session.id } });
-      onMobileClose?.();
-    } catch (err) {
-      pushToast({
-        tone: "error",
-        title: "Could not start a chat in this folder",
-        description: err instanceof Error ? err.message : "Please try again.",
-      });
-    }
+  // Folder "+" button: open a draft that remembers the folder. The folder
+  // travels with the first message, so the session is filed in it the moment
+  // it exists — never created loose and moved, and never created at all if
+  // the user walks away without typing.
+  const handleNewChatInFolder = (folder: SessionFolder) => {
+    useTeamStore.getState().beginResolvedSession(null, {
+      mode: "work",
+      workspace: null,
+      folderId: folder.id,
+      ...carriedModelSettings(),
+    });
+    navigate({ to: "/" });
+    onMobileClose?.();
   };
 
   const moveSessionToFolder = (

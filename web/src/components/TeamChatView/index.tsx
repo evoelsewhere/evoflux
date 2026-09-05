@@ -678,8 +678,14 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     enabled: mode === 'work' && Boolean(validWorkSessionId),
     staleTime: 30_000,
   })
+  // An unsaved Work chat: the folder the user picked in the composer, held
+  // here until the first message carries it to the backend. `null` while
+  // they have not picked one, which is what the default sandbox looks like.
+  const isWorkDraft = useTeamStore((s) => mode === 'work' && s.sessionId === null && s.newChatDraft !== null)
+  const draftWorkspace = useTeamStore((s) => s.newChatDraft?.workspace ?? null)
+  const setDraftWorkspace = useTeamStore((s) => s.setDraftWorkspace)
   const workbenchWorkspace = mode === 'work'
-    ? workWorkspaceQuery.data?.workspace_root ?? null
+    ? (isWorkDraft ? draftWorkspace : workWorkspaceQuery.data?.workspace_root ?? null)
     : agentWorkspace
   const hasCodingWorkspace = mode !== 'coding' || Boolean(workspace)
   const isCodingSessionLoading = mode === 'coding' && codingSessionLoading
@@ -832,55 +838,30 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
   const isEmptyIdleSession = useCallback(() => useTeamStore.getState().isEmptyIdleSession(), [])
 
+  // New chat is a local act: the composer clears, the store opens a draft,
+  // and the URL drops back to the mode's blank route. No session exists until
+  // the first message is sent, so a chat the user thinks better of leaves
+  // nothing behind.
   const handleNewSession = useCallback(() => {
     if (isEmptyIdleSession()) return
     abortRef.current?.abort()
     abortRef.current = null
     inputRef.current?.setValue('')
     inputRef.current?.setFiles([])
-    ;(async () => {
-      try {
-        const sessionOptions = {
-          mode,
-          workspace: mode === 'coding' ? workspace : null,
-          model: sessionIdState ? sessionModel : null,
-          thinkingLevel: sessionIdState ? sessionThinkingLevel : null,
-          agentName: leadName,
-        }
-        beginResolvedSession(null, sessionOptions)
-        const session = await resolveTeamSession({
-          ...sessionOptions,
-          create: true,
-        })
-        beginResolvedSession(session.id, {
-          mode,
-          workspace: session.workspace ?? workspace,
-          model: session.model ?? sessionModel,
-          thinkingLevel: session.thinking_level ?? sessionThinkingLevel,
-          skipInitialRestore: session.created,
-        })
-        if (session.created) {
-          prependSession(queryClient, session)
-        }
-        if (mode === 'coding' && workspace) {
-          if (session.created) prependWorkspaceSession(queryClient, workspace, session)
-          saveLastCodingWorkspace(workspace)
-          const focusId = codingFocusId({ project_id: session.project_id, workspace: session.workspace ?? workspace })
-          navigate(
-            focusId
-              ? { to: '/coding/$focusId/$sessionId', params: { focusId, sessionId: session.id } }
-              : { to: '/coding' },
-          )
-        } else {
-          navigate({ to: '/$sessionId', params: { sessionId: session.id } })
-        }
-      } catch (err) {
-        useTeamStore.setState((state) => {
-          state.error = err instanceof Error ? err.message : 'Failed to create session'
-        })
-      }
-    })()
-  }, [beginResolvedSession, isEmptyIdleSession, leadName, mode, navigate, queryClient, sessionIdState, sessionModel, sessionThinkingLevel, workspace, abortRef])
+    beginResolvedSession(null, {
+      mode,
+      workspace: mode === 'coding' ? workspace : null,
+      projectId: mode === 'coding' ? projectIdState : null,
+      model: sessionIdState ? sessionModel : null,
+      thinkingLevel: sessionIdState ? sessionThinkingLevel : null,
+    })
+    if (mode === 'coding') {
+      const focusId = codingFocusId({ project_id: projectIdState, workspace })
+      navigate(focusId ? { to: '/coding/$focusId', params: { focusId } } : { to: '/coding' })
+    } else {
+      navigate({ to: '/' })
+    }
+  }, [beginResolvedSession, isEmptyIdleSession, mode, navigate, projectIdState, sessionIdState, sessionModel, sessionThinkingLevel, workspace, abortRef])
 
   const handleOpenCodeReviewChat = useCallback(async (
     repository: RepositoryCodeReviews,
@@ -1945,9 +1926,18 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     const current = useTeamStore.getState()
     await sendMessage(expanded, files, {
       mode,
-      workspace,
-      model: current.sessionId ? selectedModel || null : null,
-      thinkingLevel: current.sessionId ? selectedThinkingLevel || null : null,
+      // In Work, a folder is only ever sent for a draft: it is the one thing
+      // the session cannot be told afterwards without the opening turn
+      // already having run somewhere else. A saved session's folder lives on
+      // its row and is changed through the workspace endpoint.
+      workspace: mode === 'coding'
+        ? workspace
+        : (current.sessionId ? null : current.newChatDraft?.workspace ?? null),
+      // A draft's model/thinking level are the picker's own, not a leftover
+      // from some other session: they were seeded when the draft opened, so
+      // send them and let the session be born with what the user chose.
+      model: selectedModel || null,
+      thinkingLevel: selectedThinkingLevel || null,
       fastMode: current.sessionFastMode,
       shell,
       webBridgeEnabled,
@@ -2286,8 +2276,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             workspaceSelector={mode === 'work' ? (
               <WorkFolderSelector
                 sessionId={validWorkSessionId}
-                workspaceRoot={workWorkspaceQuery.data?.workspace_root ?? null}
-                loading={workWorkspaceQuery.isLoading}
+                workspaceRoot={isWorkDraft ? draftWorkspace : (workWorkspaceQuery.data?.workspace_root ?? null)}
+                loading={!isWorkDraft && workWorkspaceQuery.isLoading}
+                draft={isWorkDraft}
+                onDraftChange={setDraftWorkspace}
               />
             ) : undefined}
             permissionMode={permissionMode}

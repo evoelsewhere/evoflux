@@ -63,6 +63,11 @@ export function useTeamSse({
   useEffect(() => {
     if (hasCodingWorkspace)
       void loadTeamStatus(agentWorkspace, 'coding', sessionId)
+    // A draft has no history to load, but it still needs a lead: the model
+    // picker, the composer's capabilities and the optimistic user bubble all
+    // hang off the roster, which otherwise only arrives with a session.
+    else if (!sessionId)
+      void loadTeamStatus(null, mode === 'coding' ? 'coding' : null, null)
     if (isCodingSessionLoading) return
     if (!sessionId) return
     const store = useTeamStore.getState()
@@ -138,7 +143,7 @@ export function useTeamSse({
       markStreamStopped(controller)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, agentWorkspace, hasCodingWorkspace, isCodingSessionLoading, reloadToken])
+  }, [sessionId, agentWorkspace, hasCodingWorkspace, isCodingSessionLoading, mode, reloadToken])
 
   useEffect(() => {
     if (!sessionId) return

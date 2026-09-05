@@ -78,6 +78,13 @@ export async function postTeamChat(
   shell = false,
   fastMode = false,
   webBridgeEnabled?: boolean,
+  /**
+   * Where the session should land if this message is the one that creates it
+   * — a new chat is held as a draft until the first send, so the folder it was
+   * started from (and, in Coding, the project it was focused under) travels
+   * with the message. Ignored by the backend for a session that already exists.
+   */
+  placement?: { folderId?: string | null; projectId?: string | null },
 ): Promise<{ status: string; session_id: string; message_id?: string }> {
   const formData = new FormData()
   if (message) {
@@ -109,6 +116,12 @@ export async function postTeamChat(
   }
   if (shell) {
     formData.append('shell', 'true')
+  }
+  if (placement?.folderId) {
+    formData.append('folder_id', placement.folderId)
+  }
+  if (placement?.projectId) {
+    formData.append('project_id', placement.projectId)
   }
   if (files && files.length > 0) {
     for (const file of files) {
@@ -556,6 +569,39 @@ export async function resolveTeamSession(options: {
     body: JSON.stringify(body),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'resolveTeamSession')
+  return res.json()
+}
+
+/**
+ * The session already sitting in this context, or ``null`` when there is
+ * none. Never creates one — a focus or a restore reopens what exists, and
+ * otherwise the client stays on a draft until the user actually writes.
+ */
+export async function findTeamSession(options: {
+  mode?: string
+  workspace?: string | null
+  project_id?: string | null
+  folder_id?: string | null
+  tags?: string[]
+  tagMatch?: 'exact' | 'contains'
+  agentName?: string | null
+}): Promise<TeamSessionResolveResponse | null> {
+  const body: Record<string, string | string[] | boolean | null> = {
+    mode: options.mode ?? 'work',
+    existing_only: true,
+  }
+  if (options.workspace !== undefined) body.workspace = options.workspace
+  if (options.project_id !== undefined) body.project_id = options.project_id
+  if (options.folder_id !== undefined) body.folder_id = options.folder_id
+  if (options.tags !== undefined) body.tags = options.tags
+  if (options.tagMatch !== undefined) body.tag_match = options.tagMatch
+  if (options.agentName !== undefined) body.agent_name = options.agentName
+  const res = await fetch(`${apiBaseUrl()}/team/sessions/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'findTeamSession')
   return res.json()
 }
 

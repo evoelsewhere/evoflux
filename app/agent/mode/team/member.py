@@ -62,7 +62,7 @@ from app.agent.lifecycle import is_sleep_message
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
 from app.agent.mode.team.hooks.team_inbox import TeamInboxHook
 from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
-from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
+from app.agent.hooks.tool_result_offload import build_tool_result_offload_hook
 from app.agent.hooks.tool_context_projection import (
     build_tool_context_projection_hook,
 )
@@ -455,8 +455,15 @@ class TeamMemberBase(abc.ABC):
         mode: str = "work",
         workspace: str | None = None,
         project_id: uuid.UUID | None = None,
+        folder_id: uuid.UUID | None = None,
     ) -> None:
-        """Ensure a DB chat session row exists for self.session_id."""
+        """Ensure a DB chat session row exists for self.session_id.
+
+        ``project_id``/``folder_id`` place a row this call brings into being —
+        a chat the user started as a draft and only now, on the first message,
+        becomes durable. They are ignored for a row that already exists, which
+        owns its own placement.
+        """
         db_factory = resolve_db_factory(self.db_factory)
         session_uuid = uuid.UUID(self.session_id)
         try:
@@ -470,6 +477,7 @@ class TeamMemberBase(abc.ABC):
                         mode=mode,
                         workspace=workspace,
                         project_id=project_id,
+                        folder_id=folder_id,
                         tags=sorted(self._team.session_tags) or None
                         if self._team
                         else None,
@@ -1531,12 +1539,12 @@ class TeamMemberBase(abc.ABC):
                 agent_name=self.name,
             )
             checkpointer.mark_loaded(self.session_id, history)
-            # Tool result offload uses the hook's module-level defaults
-            # (see app.agent.hooks.tool_result_offload.DEFAULT_CHAR_THRESHOLD).
+            # Threshold comes from the operator's context settings, falling
+            # back to app.agent.hooks.tool_result_offload.DEFAULT_CHAR_THRESHOLD.
             pipeline.add(
                 HookStage.CONTEXT_CONTROL,
                 "tool-result-offload",
-                ToolResultOffloadHook(),
+                build_tool_result_offload_hook(),
             )
             summarization_provider = runtime_provider or self.agent.llm_provider
             summarization_model = runtime_model or self.agent.model_id
