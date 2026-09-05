@@ -2,11 +2,10 @@
  * One stable, bounded activity group for an adjacent run of semantic
  * thinking/tool events. Content events split groups before they reach here.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { BlockEnter } from './motion/BlockEnter'
-import { ActivityStatus } from './motion/ActivityStatus'
 import { groupLabel } from './ToolCallGroup'
 import { EasdToolReviewAction } from './easd/EasdToolReviewAction'
 import { easdToolReviewTarget } from './easd/easdToolReviewTarget'
@@ -40,8 +39,7 @@ export function ActivityTimeline({
   isActive,
   renderBlock,
 }: ActivityTimelineProps) {
-  const [open, setOpen] = useState(isActive)
-  const wasActiveRef = useRef(isActive)
+  const [open, setOpen] = useState(false)
   const toolBlocks = useMemo(
     () => blocks.filter((block) => block.type === 'tool' && block.toolName),
     [blocks],
@@ -69,16 +67,10 @@ export function ActivityTimeline({
     followEnabled: open && isActive,
   })
 
-  // A historical group starts collapsed. A group first observed live opens
-  // once and then preserves the reader's choice through every later delta and
-  // through the transition to commentary/completion.
-  useEffect(() => {
-    const shouldOpen = isActive && !wasActiveRef.current
-    wasActiveRef.current = isActive
-    if (!shouldOpen) return
-    const frame = requestAnimationFrame(() => setOpen(true))
-    return () => cancelAnimationFrame(frame)
-  }, [isActive])
+  // Every group starts collapsed, live or historical: a run in progress should
+  // read as one quiet summary row rather than unfolding the transcript on its
+  // own. Opening is the reader's decision, and it survives every later delta
+  // and the transition to commentary/completion.
 
   const toggleOpen = () => {
     if (open) {
@@ -113,8 +105,9 @@ export function ActivityTimeline({
           className={cn('shrink-0 transition-transform', open && 'rotate-90')}
           aria-hidden="true"
         />
+        {/* No per-group running badge: the turn status line directly below
+            already says what is running, for how long, and at what cost. */}
         <span className="min-w-0 truncate font-medium text-(--color-text-2)">{label}</span>
-        {isActive && <ActivityStatus label="Running" className="shrink-0 text-xs" />}
       </button>
 
       {easdReviewTarget && (

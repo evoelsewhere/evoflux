@@ -202,11 +202,11 @@ export function TurnStatusLine({
 
   const row = (
     <div
-      className={cn(
-        'flex min-w-0 items-center gap-2',
-        size === 'roomy' ? 'pt-3' : 'pt-2',
-        className,
-      )}
+      // No top padding of its own: both hosts already space their children
+      // (`space-y-4` in the transcript, `space-y-3` in the pane), so adding
+      // padding here double-counted the gap and pushed the line away from the
+      // output it describes.
+      className={cn('flex min-w-0 items-center gap-2', className)}
       role="status"
       aria-label={`${activity.label} — ${meta.join(', ')}`}
     >
