@@ -95,6 +95,7 @@ const DAEMON_BASE_URL: Record<string, { var: string; placeholder: string }> = {
 function eventLabel(event: OAuthLoginEvent): string {
   if (event.event === 'started') return 'Starting secure login'
   if (event.event === 'device_code') return 'Waiting for browser approval'
+  if (event.event === 'browser_auth') return 'Waiting for browser sign-in'
   if (event.event === 'polling' && typeof event.elapsed_s === 'number') return `Still waiting (${event.elapsed_s}s)`
   if (event.event === 'token_acquired') return 'Token received'
   if (event.event === 'verifying') return 'Verifying provider access'
@@ -616,7 +617,13 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                     />
                   </label>
                 )}
-                <div className="flex items-center gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {provider.browser_login && (
+                    <Button type="button" size="sm" onClick={() => setOauthOpen(true)}>
+                      <ShieldCheck size={14} aria-hidden="true" />
+                      Sign in with browser
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     size="sm"
@@ -648,6 +655,11 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                     </Button>
                   )}
                 </div>
+                {provider.browser_login && !hasCandidateKey && (
+                  <p className="text-xs text-(--color-text-muted)">
+                    <span className="font-medium text-(--color-text)">Sign in with browser</span> has {provider.label} mint a key and saves it for you — no need to visit the console.
+                  </p>
+                )}
                 {hasCandidateKey && !hasVerifiedKey && (
                   <p className="text-xs text-(--color-text-muted)">
                     Click <span className="font-medium text-(--color-text)">List models</span> to verify this key before saving.
@@ -838,7 +850,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
         </div>
       </div>
 
-      {provider.kind === 'oauth' && oauthOpen && (
+      {(provider.kind === 'oauth' || provider.browser_login) && oauthOpen && (
         <OAuthLoginDialog provider={provider} open={oauthOpen} onOpenChange={setOauthOpen} />
       )}
     </>

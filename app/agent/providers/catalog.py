@@ -71,6 +71,7 @@ class ProviderEntry(TypedDict, total=False):
     model_registry_aliases: dict[str, str]  # target model -> source provider:model
     live_model_metadata: bool  # discovery also returns per-model capabilities
     auto_connect: bool  # whether catalog/registry loads may contact the provider
+    browser_login: bool  # provider can mint its own key via a browser sign-in
     source: str  # "builtin" | "plugin" | "catalog" — how much EvoFlux knows
     transport: str  # wire protocol, for catalog-derived rows
 
@@ -309,6 +310,7 @@ def _curated_entry(provider_id: str, config: Any) -> ProviderEntry:
         "model_registry_aliases": {},
         "live_model_metadata": False,
         "auto_connect": True,
+        "browser_login": bool(getattr(config, "browser_login", False)),
         "source": "builtin",
         "transport": str(config.transport),
     }
