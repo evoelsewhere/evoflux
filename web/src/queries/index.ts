@@ -100,6 +100,10 @@ export {
   useUpdateVersionControlSettingsMutation,
 } from './useVersionControlSettingsQuery'
 export {
+  useContextSettingsQuery,
+  useUpdateContextSettingsMutation,
+} from './useContextSettingsQuery'
+export {
   useWebBridgeSettingsQuery,
   useUpdateWebBridgeSettingsMutation,
 } from './useWebBridgeSettingsQuery'

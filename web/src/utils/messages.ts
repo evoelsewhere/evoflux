@@ -1,4 +1,4 @@
-import type { AgentUsage, ChatMessage, ContentBlock, MessageResponse, TurnUsage } from '@/api/types'
+import type { AgentUsage, ChatMessage, ContentBlock, MessageResponse, TurnCost, TurnUsage } from '@/api/types'
 
 // Me sort messages by timestamp asc, assistant before tool on ties
 
@@ -140,6 +140,20 @@ function assistantBlocks(
     if (tool.id) pendingToolBlocks.set(tool.id, block)
   }
 
+  // The turn snapshot is cumulative: each assistant message of a turn carries
+  // the running total, and the footer shows the last one it finds. Hanging it
+  // only on the text block loses it whenever a message is tool calls alone —
+  // and a turn that ends by calling tools then reports a mid-turn total, which
+  // is why the same turn could read $0.005 in the footer and $0.008 in the
+  // context popover, the popover reading the last message directly.
+  //
+  // Mutated in place, not replaced: `pendingToolBlocks` holds this same
+  // object, and the tool-result message that arrives later writes
+  // `toolResult`/`toolDone` through that reference.
+  if (turnUsage && blocks.length > 0 && !blocks.some((item) => item.turnUsage)) {
+    blocks[blocks.length - 1].turnUsage = turnUsage
+  }
+
   return blocks
 }
 
@@ -251,17 +265,20 @@ export function sumUsageFromMessages(msgs: MessageResponse[]): AgentUsage {
   const acc: AgentUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedTokens: 0 }
   let lastInput = 0
   let lastCache = 0
+  let lastCacheWrite = 0
   let lastTurn: {
     input?: number
     output?: number
     cache?: number
+    cache_write?: number
     calls?: number
     phases?: AgentUsage['turnPhases']
+    cost?: TurnCost
   } | undefined
   for (const msg of sortMessages(msgs)) {
     if (msg.role !== 'assistant') continue
     const extra = msg.extra as {
-      usage?: { input?: number; output?: number; cache?: number }
+      usage?: { input?: number; output?: number; cache?: number; cache_write?: number }
       turn_usage?: typeof lastTurn
     } | null
     if (!extra?.usage) continue
@@ -270,18 +287,25 @@ export function sumUsageFromMessages(msgs: MessageResponse[]): AgentUsage {
     acc.completionTokens += o
     lastInput = i
     lastCache = extra.usage.cache ?? 0
+    lastCacheWrite = extra.usage.cache_write ?? 0
     if (extra.turn_usage) lastTurn = extra.turn_usage
   }
   acc.promptTokens = lastInput
   acc.cachedTokens = lastCache
+  acc.cacheWriteTokens = lastCacheWrite
   acc.totalTokens  = lastInput + acc.completionTokens
   if (lastTurn) {
     acc.turnPromptTokens = lastTurn.input ?? 0
     acc.turnCompletionTokens = lastTurn.output ?? 0
     acc.turnTotalTokens = (lastTurn.input ?? 0) + (lastTurn.output ?? 0)
     acc.turnCachedTokens = lastTurn.cache ?? 0
+    // The persisted snapshot carries these two; dropping them made the cost
+    // row and the cache-write slice vanish on reload while the token counts
+    // beside them survived.
+    acc.turnCacheWriteTokens = lastTurn.cache_write ?? 0
     acc.turnCalls = lastTurn.calls
     acc.turnPhases = lastTurn.phases
+    acc.turnCost = lastTurn.cost
   }
   return acc
 }

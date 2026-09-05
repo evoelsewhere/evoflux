@@ -20,6 +20,7 @@ import {
   Globe2,
   Info,
   KeyRound,
+  Layers,
   Palette,
   Plug,
   Search,
@@ -61,6 +62,7 @@ type SidebarPath =
   | '/settings/mcp'
   | '/settings/language-servers'
   | '/settings/memory'
+  | '/settings/context'
   | '/settings/sandbox'
   | '/settings/browser'
   | '/settings/notifications'
@@ -259,6 +261,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             label: t('Memory'),
             icon: Brain,
             matchPrefix: '/settings/memory',
+          },
+          {
+            to: '/settings/context',
+            label: t('Context'),
+            icon: Layers,
+            matchPrefix: '/settings/context',
           },
         ],
       },

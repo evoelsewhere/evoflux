@@ -17,13 +17,35 @@ from app.agent.hooks.summarization import (
     CODING_SUMMARY_PROMPT,
     DEFAULT_KEEP_LAST_ASSISTANTS,
     DEFAULT_MAX_TOKEN_LENGTH,
-    DEFAULT_PROMPT_TOKEN_THRESHOLD,
     MAX_PROMPT_TOKEN_THRESHOLD,
     PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO,
     SummarizationHook,
     build_summarization_hook,
+    cost_optimal_prompt_token_threshold,
     prompt_token_threshold_for_model,
 )
+from app.core.runtime_settings import ContextSettings, RuntimeSettings
+
+
+@pytest.fixture(autouse=True)
+def _no_operator_override(monkeypatch):
+    """Pin the global override off so a developer's settings.yaml cannot
+    change what these tests measure."""
+    import app.core.runtime_settings as rs
+
+    monkeypatch.setattr(rs, "load_runtime_settings", lambda *a, **k: RuntimeSettings())
+
+
+def _override(monkeypatch, tokens):
+    import app.core.runtime_settings as rs
+
+    monkeypatch.setattr(
+        rs,
+        "load_runtime_settings",
+        lambda *a, **k: RuntimeSettings(
+            context=ContextSettings(summary_trigger_tokens=tokens)
+        ),
+    )
 
 
 @pytest.fixture
@@ -37,7 +59,7 @@ def test_builds_hook_with_module_defaults(mock_provider):
     """No mode → CHAT prompt + module-level numeric defaults."""
     result = build_summarization_hook(mock_provider)
     assert isinstance(result, SummarizationHook)
-    assert result._prompt_token_threshold == DEFAULT_PROMPT_TOKEN_THRESHOLD
+    assert result._prompt_token_threshold == cost_optimal_prompt_token_threshold()
     assert result._keep_last_assistants == DEFAULT_KEEP_LAST_ASSISTANTS
     assert result._max_token_length == DEFAULT_MAX_TOKEN_LENGTH
     assert result._summary_prompt == CHAT_SUMMARY_PROMPT
@@ -70,10 +92,15 @@ def test_mode_none_picks_chat_prompt_and_default_keep(mock_provider):
     assert result._keep_last_assistants == DEFAULT_KEEP_LAST_ASSISTANTS
 
 
-def test_prompt_token_threshold_for_model_caps_at_module_max():
-    assert (
-        prompt_token_threshold_for_model("openai:gpt-4.1") == MAX_PROMPT_TOKEN_THRESHOLD
-    )
+def test_large_context_model_gets_cost_optimal_not_the_ceiling():
+    """A big window no longer buys a big threshold.
+
+    Carrying context costs the same per token whatever the window is, so the
+    cost model — not ``MAX_PROMPT_TOKEN_THRESHOLD`` — sets the value here.
+    """
+    threshold = prompt_token_threshold_for_model("openai:gpt-4.1")
+    assert threshold == cost_optimal_prompt_token_threshold()
+    assert threshold < MAX_PROMPT_TOKEN_THRESHOLD
 
 
 def test_prompt_token_threshold_for_model_uses_75_percent_context():
@@ -82,11 +109,29 @@ def test_prompt_token_threshold_for_model_uses_75_percent_context():
     ) == int(32000 * PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO)
 
 
-def test_prompt_token_threshold_for_model_unknown_uses_default():
+def test_prompt_token_threshold_for_model_unknown_uses_cost_optimal():
     assert (
         prompt_token_threshold_for_model("unknown:model")
-        == DEFAULT_PROMPT_TOKEN_THRESHOLD
+        == cost_optimal_prompt_token_threshold()
     )
+
+
+def test_operator_override_replaces_the_cost_optimal_default(monkeypatch):
+    _override(monkeypatch, 120_000)
+    assert prompt_token_threshold_for_model("openai:gpt-4.1") == 120_000
+
+
+def test_operator_override_still_clamped_by_the_model_window(monkeypatch):
+    """A 600K override on a 32K model must not disable compaction."""
+    _override(monkeypatch, 600_000)
+    assert prompt_token_threshold_for_model(
+        "bedrock:mistral.voxtral-small-24b-2507"
+    ) == int(32000 * PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO)
+
+
+def test_cost_optimal_threshold_sits_between_the_floor_and_the_ceiling():
+    value = cost_optimal_prompt_token_threshold()
+    assert 60_000 < value < MAX_PROMPT_TOKEN_THRESHOLD
 
 
 def test_builds_hook_with_model_threshold(mock_provider):

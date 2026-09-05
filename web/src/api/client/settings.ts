@@ -6,7 +6,7 @@ import { apiBaseUrl } from '../base-url'
 import { readSSE } from '../sse'
 import type { SSECallbacks } from '../sse'
 import { parseDetailOrThrow } from './_shared'
-import type { ManagedResourceProvider } from '../types'
+import type { ContextOverrides, ContextSettings, ManagedResourceProvider } from '../types'
 
 export type SandboxSettings = {
   denied_patterns: string[]
@@ -52,6 +52,29 @@ export async function updateSandboxSettings(
     body: JSON.stringify(body),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/sandbox')
+  return res.json()
+}
+
+export async function getContextSettings(): Promise<ContextSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/context`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/context')
+  return res.json()
+}
+
+/**
+ * Replace every override at once — the endpoint is a PUT, not a patch, so
+ * callers changing one field must send the others alongside it. Any field
+ * set to `null` reverts to its built-in default.
+ */
+export async function updateContextSettings(
+  overrides: ContextOverrides,
+): Promise<ContextSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/context`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(overrides),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/context')
   return res.json()
 }
 

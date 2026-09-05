@@ -23,6 +23,7 @@ import { SettingsHubPage } from '@/routes/settings.index'
 import { McpServerDetailPage } from '@/routes/settings.mcp.$name'
 import { NewMcpServerPage } from '@/routes/settings.mcp.new'
 import { McpListPage } from '@/routes/settings.mcp'
+import { ContextSettingsPage } from '@/routes/settings.context'
 import { MemorySettingsPage } from '@/routes/settings.memory'
 import { NotificationSettingsPage } from '@/routes/settings.notifications'
 import { ProvidersSettingsPage } from '@/routes/settings.providers'
@@ -101,6 +102,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'mcp' && sub) return <McpServerDetailPage />
   if (section === 'mcp') return <McpListPage />
   if (section === 'memory') return <MemorySettingsPage />
+  if (section === 'context') return <ContextSettingsPage />
   if (section === 'connection') return <BackendConnectionPage />
   if (section === 'version-control') return <VersionControlSettingsPage />
   if (section === 'providers') return <ProvidersSettingsPage />

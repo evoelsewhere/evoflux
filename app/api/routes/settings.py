@@ -23,9 +23,11 @@ from app.core.runtime_settings import (
     BuiltInBrowserSettings,
     CodeReviewSettings,
     ConductorSettings,
+    ContextSettings,
     GitSettings,
     WebBridgeSettings,
     load_runtime_settings,
+    load_runtime_settings_report,
     provider_visible_models,
     save_runtime_settings,
     set_provider_visible_models,
@@ -36,6 +38,8 @@ if TYPE_CHECKING:
 from app.api.schemas.settings import (
     ConductorEnrollmentRequest,
     ConductorSettingsBody,
+    ContextSettingsBody,
+    IgnoredSettingBody,
     ProviderInfo,
     ProviderModelsRequest,
     ProviderModelDetail,
@@ -394,6 +398,89 @@ def _version_control_settings_body() -> VersionControlSettingsBody:
             cfg.code_reviews.require_successful_checks_before_merge
         ),
     )
+
+
+def _context_settings_body() -> ContextSettingsBody:
+    from app.agent.hooks.summarization import (
+        CODING_KEEP_LAST_ASSISTANTS,
+        DEFAULT_KEEP_LAST_ASSISTANTS,
+        DEFAULT_MAX_TOKEN_LENGTH,
+        MAX_PROMPT_TOKEN_THRESHOLD,
+        PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO,
+        cost_optimal_prompt_token_threshold,
+    )
+    from app.agent.hooks.tool_context_projection import (
+        CODING_KEEP_RECENT_BATCHES,
+        DEFAULT_KEEP_RECENT_BATCHES,
+    )
+    from app.agent.hooks.tool_result_offload import DEFAULT_CHAR_THRESHOLD
+
+    loaded, ignored = load_runtime_settings_report()
+    ctx = loaded.context
+    return ContextSettingsBody(
+        summary_trigger_tokens=ctx.summary_trigger_tokens,
+        summary_max_tokens=ctx.summary_max_tokens,
+        keep_recent_turns=ctx.keep_recent_turns,
+        tool_result_offload_chars=ctx.tool_result_offload_chars,
+        keep_recent_tool_batches=ctx.keep_recent_tool_batches,
+        defaults={
+            "summary_trigger_tokens": cost_optimal_prompt_token_threshold(),
+            "summary_max_tokens": DEFAULT_MAX_TOKEN_LENGTH,
+            "keep_recent_turns": DEFAULT_KEEP_LAST_ASSISTANTS,
+            "tool_result_offload_chars": DEFAULT_CHAR_THRESHOLD,
+            "keep_recent_tool_batches": DEFAULT_KEEP_RECENT_BATCHES,
+        },
+        # Two of the built-ins are mode-aware. Reporting only Work's would
+        # tell a Coding user their sessions keep 3 turns and 4 batches when
+        # they keep 2 and 3 — so name the Coding value wherever it differs
+        # and let the UI say so.
+        coding_defaults={
+            "keep_recent_turns": CODING_KEEP_LAST_ASSISTANTS,
+            "keep_recent_tool_batches": CODING_KEEP_RECENT_BATCHES,
+        },
+        # Only this section's rejects: another section's bad value is that
+        # page's business, not a warning to show here.
+        ignored=[
+            IgnoredSettingBody(
+                field=item.field.removeprefix("context."), message=item.message
+            )
+            for item in ignored
+            if item.field.startswith("context.")
+        ],
+        max_tokens=MAX_PROMPT_TOKEN_THRESHOLD,
+        context_ratio=PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO,
+    )
+
+
+@router.get("/context")
+async def get_context_settings() -> ContextSettingsBody:
+    try:
+        return _context_settings_body()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/context")
+async def update_context_settings(body: ContextSettingsBody) -> ContextSettingsBody:
+    """Replace the global context-window overrides.
+
+    ``defaults`` and ``max_tokens`` are derived and ignored on write; they
+    are echoed back so the response keeps one shape. Any field sent as
+    ``null`` reverts to its built-in default.
+    """
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.context = ContextSettings(
+        summary_trigger_tokens=body.summary_trigger_tokens,
+        summary_max_tokens=body.summary_max_tokens,
+        keep_recent_turns=body.keep_recent_turns,
+        tool_result_offload_chars=body.tool_result_offload_chars,
+        keep_recent_tool_batches=body.keep_recent_tool_batches,
+    )
+    save_runtime_settings(cfg)
+    return _context_settings_body()
 
 
 @router.get("/version-control")

@@ -1656,13 +1656,62 @@ export interface AgentUsage {
   completionTokens: number
   totalTokens: number
   cachedTokens: number
+  /**
+   * Tokens written to the prompt cache on the latest call. Part of
+   * `promptTokens`, like `cachedTokens` — but billed at ~1.25x rather than
+   * ~0.1x, so the two must never be shown as one bucket.
+   */
+  cacheWriteTokens?: number
   turnPromptTokens?: number
   turnCompletionTokens?: number
   turnTotalTokens?: number
   turnCachedTokens?: number
+  turnCacheWriteTokens?: number
   turnCalls?: number
   turnPhases?: Record<string, TurnUsageBreakdown>
   turnCost?: TurnCost
+}
+
+/**
+ * Writable context-window overrides. `null` on any field means "use the
+ * built-in default", whose current value is reported in
+ * `ContextSettings.defaults` under the same key.
+ */
+export interface ContextOverrides {
+  /** Prompt size that triggers compaction. */
+  summary_trigger_tokens: number | null
+  /** Ceiling on the summary the summariser produces. */
+  summary_max_tokens: number | null
+  /** Assistant turns kept verbatim after a compaction. */
+  keep_recent_turns: number | null
+  /** Tool results longer than this are offloaded to a session artifact. */
+  tool_result_offload_chars: number | null
+  /** Tool-call batches kept verbatim at the provider boundary. */
+  keep_recent_tool_batches: number | null
+}
+
+/** Global context settings (`GET/PUT /settings/context`). */
+export interface ContextSettings extends ContextOverrides {
+  /** What each unset override falls back to in Work, keyed by field name. */
+  defaults: Record<keyof ContextOverrides, number>
+  /**
+   * For the fields whose built-in differs in Coding, that value. A missing
+   * key means both modes fall back to the same number.
+   */
+  coding_defaults: Partial<Record<keyof ContextOverrides, number>>
+  /**
+   * Values `settings.yaml` declares for this section that failed validation
+   * and are being ignored. Non-empty means the file and the running sessions
+   * disagree; saving from the UI rewrites the file without them.
+   */
+  ignored: { field: string; message: string }[]
+  /** Hard ceiling the compaction threshold is clamped to. */
+  max_tokens: number
+  /**
+   * Fraction of a model's context window the threshold is clamped to, so the
+   * UI can name a model's real ceiling without restating the rule.
+   */
+  context_ratio: number
 }
 
 // ── Wiki ─────────────────────────────────────────────────────────────────────

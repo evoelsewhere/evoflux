@@ -104,6 +104,7 @@ function stampTurnUsage(
     input,
     output,
     cache: usage.turnCachedTokens,
+    cache_write: usage.turnCacheWriteTokens,
     calls: usage.turnCalls,
     cost: usage.turnCost,
   }
@@ -126,6 +127,7 @@ function resetTurnUsage(stream: TeamStore['agentStreams'][string]) {
   stream.usage.turnCompletionTokens = 0
   stream.usage.turnTotalTokens = 0
   stream.usage.turnCachedTokens = 0
+  stream.usage.turnCacheWriteTokens = 0
   stream.usage.turnCalls = 0
   stream.usage.turnCost = undefined
   stream.usage.turnPhases = {}
@@ -430,11 +432,13 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           const promptTokens = (d.prompt_tokens as number) || 0
           const completionTokens = (d.completion_tokens as number) || 0
           const cachedTokens = d.cached_tokens as number | undefined
+          const cacheWriteTokens = d.cache_write_tokens as number | undefined
           if (meta?.turn_total) {
             u.turnPromptTokens = promptTokens
             u.turnCompletionTokens = completionTokens
             u.turnTotalTokens = (d.total_tokens as number) || (promptTokens + completionTokens)
             u.turnCachedTokens = cachedTokens ?? 0
+            u.turnCacheWriteTokens = cacheWriteTokens ?? 0
             u.turnCalls = typeof meta.calls === 'number' ? meta.calls : undefined
             u.turnPhases = meta.phases && typeof meta.phases === 'object'
               ? meta.phases as Record<string, TurnUsageBreakdown>
@@ -450,6 +454,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           u.promptTokens     = promptTokens
           u.completionTokens = stream._completionBase + completionTokens
           u.cachedTokens     = cachedTokens ?? u.cachedTokens
+          u.cacheWriteTokens = cacheWriteTokens ?? u.cacheWriteTokens
           u.totalTokens      = u.promptTokens + u.completionTokens
           stream._completionEstimated = completionTokens
         })
