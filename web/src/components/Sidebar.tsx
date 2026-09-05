@@ -566,8 +566,7 @@ export function Sidebar({
         )}
 
         {/* Folders and Recent share one scroll track and one horizontal grid. */}
-        <div className={isDrawer ? 'px-1.5' : 'px-1'}>
-          <div className="mx-1.5 h-px bg-(--color-border)" aria-hidden="true" />
+        <div className={isDrawer ? 'px-1.5 pt-1' : 'px-1 pt-1'}>
           <SessionFolders
             folders={folderList}
             isLoading={folders.isLoading}
@@ -635,7 +634,6 @@ export function Sidebar({
             if (sessionId) moveSessionToFolder(sessionId, null);
           }}
         >
-          <div className="mx-1.5 h-px bg-(--color-border)" aria-hidden="true" />
           <CollapsibleSection
             label="Recent"
             collapsed={recentCollapsed}
@@ -643,7 +641,7 @@ export function Sidebar({
             size={isDrawer ? 'large' : 'default'}
             className={cn(
               'px-2',
-              isDrawer ? 'pb-1 pt-1' : 'pb-0.5 pt-0.5',
+              isDrawer ? 'pb-1 pt-2' : 'pb-0.5 pt-1.5',
             )}
             rightSlot={(
               <button
@@ -690,7 +688,7 @@ export function Sidebar({
             <SidebarModeSlot />
           </div>
           {onCommandPalette && (
-            <div className="px-2.5 pt-2">
+            <div className="px-1.5 pt-2">
               <SidebarSearchTrigger onClick={onCommandPalette} compact />
             </div>
           )}
