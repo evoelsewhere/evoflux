@@ -28,6 +28,7 @@ from app.agent.providers.codex.oauth import CODEX_ORIGINATOR, CodexOAuth
 from app.agent.providers.openai.responses import ResponsesHandler
 from app.agent.schemas.chat import (
     AssistantMessage,
+    EncryptedReasoningItem,
     ChatMessage,
     FunctionCall,
     SystemMessage,
@@ -92,6 +93,16 @@ class _CodexResponsesHandler(ResponsesHandler):
         # same table.
         return body
 
+    def wants_encrypted_reasoning(self, body: dict[str, Any]) -> bool:
+        """Always: every Codex model reasons, and ``store`` is always false.
+
+        The request never carries a ``reasoning`` block — the endpoint picks
+        the effort itself — so the base class's "did we ask for it" test
+        would never fire, and the reasoning that does come back would be
+        dropped on the next call along with the cached prefix behind it.
+        """
+        return True
+
     async def chat(
         self,
         messages: list[ChatMessage],
@@ -101,6 +112,7 @@ class _CodexResponsesHandler(ResponsesHandler):
         """Return a final message using Codex's required streaming endpoint."""
         content = ""
         reasoning = ""
+        reasoning_items: list[EncryptedReasoningItem] = []
         tool_calls: dict[int, dict[str, str]] = {}
         usage: Usage | None = None
         async for chunk in self.stream(messages, tools, merged):
@@ -113,6 +125,8 @@ class _CodexResponsesHandler(ResponsesHandler):
                 content += delta.content
             if delta.reasoning_content:
                 reasoning += delta.reasoning_content
+            if delta.reasoning_item:
+                reasoning_items.append(delta.reasoning_item)
             for tool_delta in delta.tool_calls or []:
                 index = tool_delta.index if tool_delta.index is not None else 0
                 buffered = tool_calls.setdefault(
@@ -162,6 +176,7 @@ class _CodexResponsesHandler(ResponsesHandler):
         return AssistantMessage(
             content=content or None,
             reasoning_content=reasoning or None,
+            reasoning_items=reasoning_items or None,
             tool_calls=complete_tool_calls or None,
             extra=(
                 {"usage": usage_to_dict(usage, self.usage_model_id)}

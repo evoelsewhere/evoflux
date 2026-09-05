@@ -37,6 +37,7 @@ from app.agent.schemas.chat import (
     AssistantMessage,
     ChatMessage,
     ChatCompletionDelta,
+    EncryptedReasoningItem,
     HumanMessage,
     SystemMessage,
     ToolCall,
@@ -187,6 +188,7 @@ async def stream_and_assemble(
     """
     full_content = ""
     reasoning = ""
+    reasoning_items: list[EncryptedReasoningItem] = []
     content_filter = SleepSentinelStreamFilter()
     last_choice_chunk = None
     tool_calls_buffer: dict[int, dict] = {}
@@ -301,6 +303,10 @@ async def stream_and_assemble(
 
         if delta.reasoning_content:
             reasoning += delta.reasoning_content
+        # Opaque and replayed verbatim on the next call, unlike the summary
+        # above — see EncryptedReasoningItem.
+        if delta.reasoning_item:
+            reasoning_items.append(delta.reasoning_item)
         if delta.content:
             full_content += delta.content
 
@@ -458,6 +464,7 @@ async def stream_and_assemble(
     msg = AssistantMessage(
         content=full_content or None,
         reasoning_content=reasoning or None,
+        reasoning_items=reasoning_items or None,
         tool_calls=tc_list or None,
         agent_id=agent_id,
         agent_name=agent_name,
