@@ -5,10 +5,35 @@
     if (!raw) return;
     var parsed = JSON.parse(raw);
     var root = document.documentElement;
-    var ACCENTS = ['default', 'blue', 'green', 'orange', 'pink', 'purple', 'red'];
+    var ACCENTS = [
+      'default',
+      'clay', 'red', 'orange', 'amber', 'lime', 'green', 'teal',
+      'cyan', 'blue', 'indigo', 'purple', 'pink', 'rose', 'slate',
+      'custom'
+    ];
     var accent = ACCENTS.indexOf(parsed.accent) !== -1 ? parsed.accent : 'default';
-    if (accent !== 'default') {
-      var ref = 'var(--accent-' + accent + ')';
+    if (accent === 'custom') {
+      var hex = typeof parsed.accentCustom === 'string' ? parsed.accentCustom.trim() : '';
+      if (/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) {
+        if (hex.length === 4) {
+          hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+        }
+        root.style.setProperty('--focus-ring', hex);
+        root.style.setProperty('--color-accent', hex);
+        // Same label-colour rule as accentContrast() in lib/appearance.ts.
+        var chan = function (pair) {
+          var v = parseInt(pair, 16) / 255;
+          return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        };
+        var lum = 0.2126 * chan(hex.slice(1, 3))
+          + 0.7152 * chan(hex.slice(3, 5))
+          + 0.0722 * chan(hex.slice(5, 7));
+        var onDark = (lum + 0.05) / (0.0184 + 0.05);
+        var onWhite = (1.05) / (lum + 0.05);
+        root.style.setProperty('--color-text-on-accent', onDark >= onWhite ? '#211A16' : '#FFFFFF');
+      }
+    } else if (accent !== 'default') {
+      var ref = 'var(--ui-accent-' + accent + ')';
       root.style.setProperty('--focus-ring', ref);
       root.style.setProperty('--color-accent', ref);
     }
