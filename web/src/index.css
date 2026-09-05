@@ -192,6 +192,12 @@
     --color-text-subtle:    #A39D96;
     --color-text-on-accent: #211A16;
 
+    /* Shimmer sweep — the trough sits above body text so a live line reads
+       brighter than a settled one, and the crest goes past the brightest
+       text level so the sweep stays legible against it. */
+    --color-text-sweep-base: #C8C3BC;
+    --color-text-sweep-peak: #FFFFFF;
+
     /* Accent — clay, the product default. Warm enough to belong on the
        charcoal surfaces and distinct enough to read as a deliberate colour
        rather than another shade of the chrome. */
@@ -392,6 +398,11 @@
     --color-text-muted:     #5F5F5F;
     --color-text-subtle:    #6A6A6A;
     --color-text-on-accent: #FFFFFF;
+
+    /* Shimmer sweep — same intent inverted: on light the crest is the
+       darkest ink, so "brighter" means more contrast against the surface. */
+    --color-text-sweep-base: #4A4A4A;
+    --color-text-sweep-peak: #000000;
 
     /* Accent — the light counterpart of clay, darkened until white label
        text clears 4.5:1 against it. */
@@ -869,18 +880,27 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
   to   { background-position: -80% 0; }
 }
 .activity-text-shimmer {
-  color: var(--color-text-muted);
+  color: var(--color-text-sweep-base);
   background-image: linear-gradient(
     100deg,
-    var(--color-text-subtle) 15%,
-    var(--color-text) 45%,
-    var(--color-text-subtle) 75%
+    var(--color-text-sweep-base) 15%,
+    var(--color-text-sweep-peak) 45%,
+    var(--color-text-sweep-base) 75%
   );
   background-size: 240% 100%;
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: activity-text-sweep 2.2s linear infinite;
+}
+
+/* Applied to a wrapper, the sweep crosses everything inside it as one band
+   instead of restarting per child, so a status line reads as a single
+   travelling highlight. Descendants inherit the clip, so their own `color`
+   would be ignored anyway — hierarchy inside a swept cluster has to come
+   from size and weight. */
+.activity-text-shimmer * {
+  -webkit-text-fill-color: inherit;
 }
 
 @keyframes activity-live-pulse {
