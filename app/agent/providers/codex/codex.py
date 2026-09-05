@@ -206,6 +206,32 @@ class _CodexResponsesHandler(ResponsesHandler):
         )
 
 
+def _refresh_catalog_limits() -> None:
+    """Keep the endpoint's own context limits current in the registry.
+
+    TTL-guarded inside ``load_codex_catalog``, so this touches the network at
+    most once an hour. Only clears the registry cache when the limits
+    actually changed — rebuilding it on every provider construction would
+    cost far more than it saves.
+    """
+    from app.agent.providers.codex.catalog import (
+        cached_codex_catalog,
+        load_codex_catalog,
+        model_registry_overlay,
+    )
+    from app.agent.providers.model_registry import load_model_registry
+
+    try:
+        before = model_registry_overlay(cached_codex_catalog())
+        after = model_registry_overlay(load_codex_catalog())
+    except Exception as exc:
+        logger.warning("codex_catalog_refresh_failed error={}", type(exc).__name__)
+        return
+    if after and after != before:
+        load_model_registry.cache_clear()
+        logger.info("codex_catalog_limits_updated models={}", len(after))
+
+
 def _load_token() -> tuple[str, str | None]:
     """Return (access_token, account_id) from cached oauth credentials.
 
@@ -262,6 +288,8 @@ class CodexProvider(LLMProviderBase):
             max_tokens=max_tokens,
             model_kwargs=model_kwargs,
         )
+
+        _refresh_catalog_limits()
 
         access_token, account_id = _load_token()
         self.model = model

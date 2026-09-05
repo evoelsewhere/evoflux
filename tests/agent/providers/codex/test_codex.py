@@ -1090,3 +1090,74 @@ class TestCodexProviderIntegration:
         assert body["model"] == "gpt-5.4"
         # Should have 3 non-system messages
         assert len(body["input"]) == 3
+
+
+class TestCatalogOverlay:
+    """The Codex endpoint is the authority on its own context limits.
+
+    models.dev describes the public-API model, whose window is larger. Taking
+    that number sets the compaction threshold above what this endpoint
+    accepts, so a long session is refused before compaction can run.
+    """
+
+    def test_overlay_takes_the_effective_window_not_the_ceiling(self):
+        """``max_context_window`` is what the plan could offer, not what a
+        session gets. Using it would put the compaction threshold above what
+        the endpoint accepts — the failure this overlay exists to prevent."""
+        from app.agent.providers.codex.catalog import model_registry_overlay
+
+        overlay = model_registry_overlay(
+            {
+                "models": [
+                    {
+                        "slug": "gpt-5.6-luna",
+                        "context_window": 272_000,
+                        "max_context_window": 872_000,
+                        "effective_context_window_percent": 95,
+                    }
+                ]
+            }
+        )
+
+        assert overlay["codex:gpt-5.6-luna"]["limits"] == {
+            "context_length": 272_000,
+            "max_input_tokens": 258_400,
+        }
+
+    def test_falls_back_to_context_window_and_default_percent(self):
+        from app.agent.providers.codex.catalog import model_registry_overlay
+
+        overlay = model_registry_overlay(
+            {"models": [{"slug": "gpt-5.6-sol", "max_context_window": 100_000}]}
+        )
+
+        assert overlay["codex:gpt-5.6-sol"]["limits"] == {
+            "context_length": 100_000,
+            "max_input_tokens": 95_000,
+        }
+
+    def test_unusable_rows_are_skipped_rather_than_guessed(self):
+        from app.agent.providers.codex.catalog import model_registry_overlay
+
+        overlay = model_registry_overlay(
+            {
+                "models": [
+                    {"slug": "no-window"},
+                    {"slug": "", "context_window": 1},
+                    {
+                        "slug": "bad-percent",
+                        "context_window": 10,
+                        "effective_context_window_percent": 0,
+                    },
+                    "not-a-dict",
+                ]
+            }
+        )
+
+        assert overlay == {}
+
+    def test_a_missing_catalog_is_not_an_error(self):
+        from app.agent.providers.codex.catalog import model_registry_overlay
+
+        assert model_registry_overlay(None) == {}
+        assert model_registry_overlay({"models": "nope"}) == {}

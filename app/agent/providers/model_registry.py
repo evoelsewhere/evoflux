@@ -737,6 +737,29 @@ def _normalize_models_dev(data: Any, *, include_plugins: bool = True) -> ModelRe
     return registry
 
 
+def _load_codex_overlay() -> ModelRegistry:
+    """Context limits the Codex endpoint publishes for its own models.
+
+    models.dev describes the public-API model, whose window is larger than
+    what the subscription endpoint accepts — believing it puts the
+    compaction threshold above the limit, so a long session is refused
+    before compaction can run. Reads the on-disk cache only: resolving
+    metadata must not make network calls.
+    """
+    from app.agent.providers.codex.catalog import (
+        cached_codex_catalog,
+        model_registry_overlay,
+    )
+
+    try:
+        return _coerce_registry(
+            model_registry_overlay(cached_codex_catalog()), "codex catalog"
+        )
+    except Exception as exc:  # metadata is never worth failing a load over
+        logger.warning("codex_overlay_unavailable error={}", type(exc).__name__)
+        return {}
+
+
 def _load_user_overlay() -> ModelRegistry:
     path = Path(settings.EVOFLUX_CONFIG_DIR) / "model_registry.yaml"
     try:
@@ -755,9 +778,16 @@ def load_model_registry() -> ModelRegistry:
     registry = _load_bundled_registry()
     bundled_count = len(registry)
     models_dev = _normalize_models_dev(_load_models_dev_data())
+    codex_overlay = _load_codex_overlay()
     overlay = _load_user_overlay()
 
     for key, value in models_dev.items():
+        registry[key] = _deep_merge(registry.get(key, {}), value)
+
+    # Ahead of the user overlay so an explicit user entry still wins, but
+    # behind nothing else: for a Codex model the endpoint is the authority
+    # on its own limits.
+    for key, value in codex_overlay.items():
         registry[key] = _deep_merge(registry.get(key, {}), value)
 
     # Source-provider overrides must participate in alias generation (for
@@ -772,13 +802,16 @@ def load_model_registry() -> ModelRegistry:
 
     # Reapply target-provider overrides after aliases so an explicit
     # ``codex:model`` row remains the highest-precedence static source.
+    for key, value in codex_overlay.items():
+        registry[key] = _deep_merge(registry.get(key, {}), value)
     for key, value in overlay.items():
         registry[key] = _deep_merge(registry.get(key, {}), value)
 
     logger.debug(
-        "model registry loaded bundled={} models_dev={} overlay={} final={}",
+        "model registry loaded bundled={} models_dev={} codex={} overlay={} final={}",
         bundled_count,
         len(models_dev),
+        len(codex_overlay),
         len(overlay),
         len(registry),
     )
