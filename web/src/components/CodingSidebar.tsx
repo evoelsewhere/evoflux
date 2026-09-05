@@ -1567,7 +1567,7 @@ export function CodingSidebar({
       resizeLabel="Resize coding sidebar"
     >
       <SidebarCard
-        className={`shrink-0 px-2.5 pb-0 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}
+        className={`shrink-0 px-1.5 pb-0 ${isMacOverlay ? 'pt-10' : 'pt-1.5'}`}
       >
         <SidebarModeSlot />
         {onCommandPalette && (

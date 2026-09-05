@@ -33,6 +33,10 @@ export function PersistentModeNavigation() {
 
   const transitionDuration = DURATIONS.base * motionPreset.scale
 
+  // The strip is anchored to the sidebar card's own top edge (the shell's
+  // 2px inset) and inset by the same 6px column the sidebar rows use, so it
+  // lands exactly on the SidebarModeSlot each sidebar reserves for it —
+  // `top-0.5 + pt-1.5` here must stay equal to the slot's own top padding.
   return (
     <div
       data-testid="persistent-mode-navigation"
@@ -41,11 +45,11 @@ export function PersistentModeNavigation() {
         width: Math.max(0, sidebarWidth - 8),
         transition: `width ${transitionDuration}ms var(--ease-out)`,
       }}
-      className="pointer-events-none fixed left-1 top-1 z-(--z-header) hidden md:block"
+      className="pointer-events-none fixed left-1 top-0.5 z-(--z-header) hidden md:block"
     >
       <div
-        className={`pointer-events-auto w-full px-2 ${
-          isMacOverlay ? 'pt-10' : 'pt-2'
+        className={`pointer-events-auto w-full px-0.5 ${
+          isMacOverlay ? 'pt-10' : 'pt-1.5'
         }`}
       >
         <ModeSwitchTabs active={active} compact />
