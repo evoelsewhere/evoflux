@@ -98,6 +98,9 @@ class ProviderInfo(BaseModel):
     fallback_models: list[str] = Field(default_factory=list)
     oauth_command: str = ""
     docs_url: str = ""
+    # This provider can mint its own key through a browser sign-in, so the
+    # UI offers that alongside the key field instead of only a docs link.
+    browser_login: bool = False
     # State the UI uses to decide whether to render "Connected" or a CTA.
     is_configured: bool = False
     # Static credential/config presence, before reachability probes. This lets

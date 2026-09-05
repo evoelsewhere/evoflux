@@ -780,6 +780,7 @@ async def list_providers() -> ProvidersListBody:
                 ),
                 oauth_command=entry.get("oauth_command", ""),
                 docs_url=entry.get("docs_url", ""),
+                browser_login=bool(entry.get("browser_login", False)),
                 is_configured=is_configured and bool(live_models),
                 is_saved=is_saved,
                 is_reachable=bool(live_models) if is_configured else None,

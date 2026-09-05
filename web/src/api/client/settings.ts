@@ -339,6 +339,12 @@ export type ProviderInfo = {
   fallback_models: string[]
   oauth_command: string
   docs_url: string
+  /**
+   * Whether this provider can mint its own key through a browser sign-in.
+   * Independent of `kind`: the flow ends in an ordinary API key, so the key
+   * field stays for anyone who already has one.
+   */
+  browser_login?: boolean
   is_configured: boolean
   is_saved: boolean
   is_reachable?: boolean | null

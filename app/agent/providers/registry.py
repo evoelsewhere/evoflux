@@ -174,6 +174,13 @@ class ProviderConfig:
     #: Declaring it here is what keeps those models listed.
     extra_transports: tuple[Transport, ...] = ()
 
+    #: Whether this provider can mint its own key through a browser sign-in
+    #: (``evoflux auth <id>`` / the Settings button), instead of the user
+    #: creating one in a console and pasting it. Orthogonal to :attr:`auth`:
+    #: the flow ends in an ordinary API key, so the provider stays
+    #: ``api_key`` and the key field keeps working for anyone who has one.
+    browser_login: bool = False
+
     def speaks(self, transport: Transport) -> bool:
         """Whether one of this provider's adapters speaks *transport*."""
         return transport is self.transport or transport in self.extra_transports
@@ -288,6 +295,7 @@ PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
         env_var="XIAOMI_API_KEY",
         base_url_env_var="XIAOMI_BASE_URL",
         docs_url="https://xiaomimimo.com",
+        browser_login=True,
     ),
     "zai": ProviderConfig(
         id="zai",
