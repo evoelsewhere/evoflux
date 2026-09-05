@@ -1250,6 +1250,14 @@ async def save_provider(
         list(creds.keys()),
     )
 
+    # A workspace seeded before this save may still carry the placeholder
+    # model, which quietly keeps every member out of the roster. Adopt the
+    # lead's model for those now rather than at the next restart.
+    from app.agent.loader import backfill_placeholder_agent_models
+
+    agents_dir = Path(settings.AGENTS_DIR)
+    backfill_placeholder_agent_models(agents_dir, agents_dir / "coding")
+
     return ProviderSaveResponse(
         saved=True,
         is_first_provider=is_first,

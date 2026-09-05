@@ -11,7 +11,7 @@ import {
   AGENT_TEAM_VISUALS,
   type AgentTeam,
 } from '@/lib/agent-visuals'
-import { providerOf, shortModelName } from '@/lib/model-settings'
+import { isModelConfigured, providerOf, shortModelName } from '@/lib/model-settings'
 import { cn } from '@/lib/utils'
 
 export function AgentGlyph({
@@ -63,7 +63,9 @@ export function AgentRoleBadge({ role }: { role: 'lead' | 'member' }) {
 }
 
 export function AgentModelBadge({ model }: { model: string | null | undefined }) {
-  if (!model) {
+  // The seed placeholder is a model in name only: it reads as configured
+  // here while the backend leaves any member carrying it off the roster.
+  if (!isModelConfigured(model)) {
     return (
       <span className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-(--color-warning)/25 bg-(--color-warning-subtle) px-2 text-[11px] text-(--color-warning)">
         <RefreshCw size={11} aria-hidden="true" />

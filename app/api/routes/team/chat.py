@@ -861,7 +861,8 @@ async def list_team_agents(
             {"name": "executor", "description": "...",
              "live_instances": ["executor#1", "executor#2"]},
             ...
-          ]
+          ],
+          "unconfigured_members": ["architect", "coder"]
         }
     """
     selected_lead: str | None = None
@@ -920,6 +921,10 @@ async def list_team_agents(
             _serialize_agent(m.agent, is_lead=(m is team_obj.lead)) for m in all_members
         ],
         "blueprints": blueprints,
+        # Members this lead owns that have no model, and so cannot be
+        # spawned. Reported rather than omitted: an empty roster with no
+        # stated reason is the hardest version of this to diagnose.
+        "unconfigured_members": list(team_obj.unconfigured_members),
         "mode": team_obj.mode,
         "workspace": team_obj.workspace,
         "lead_name": team_obj.lead.name,

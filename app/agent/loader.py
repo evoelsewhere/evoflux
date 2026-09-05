@@ -88,6 +88,7 @@ __all__ = [
     "PROVIDER_MODEL_TOKEN",
     "ProviderFactory",
     "_FRONTMATTER_RE",
+    "backfill_placeholder_agent_models",
     "detect_drift",
     "member_model_is_configured",
     "parse_agent_md",
@@ -161,6 +162,44 @@ def ensure_builtin_agent_blueprints(agents_dir: Path, *, mode: str) -> list[str]
             mode,
             agents_dir,
             written,
+        )
+    return written
+
+
+def backfill_placeholder_agent_models(*agents_dirs: Path) -> list[str]:
+    """Adopt a real model for agents still carrying the seed placeholder.
+
+    A workspace seeded before any provider existed writes
+    ``__PROVIDER_MODEL__`` into every agent, and a member that still holds
+    it is dropped from the roster — so the lead boots with an empty team
+    long after the user has configured a model. This applies the rule
+    :func:`ensure_builtin_agent_blueprints` already uses when it writes a
+    new blueprint: follow the mode's lead, or the other mode's lead when
+    this one is not configured either. Nothing to adopt means nothing is
+    written.
+    """
+    fallback = next(
+        (model for d in agents_dirs if (model := _lead_model_for_dir(d))), None
+    )
+    written: list[str] = []
+    for agents_dir in agents_dirs:
+        model = _lead_model_for_dir(agents_dir) or fallback
+        if not member_model_is_configured(model) or not agents_dir.exists():
+            continue
+        for path in sorted(agents_dir.glob("*.md")):
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if PROVIDER_MODEL_TOKEN not in text:
+                continue
+            _atomic_write_text(path, text.replace(PROVIDER_MODEL_TOKEN, str(model)))
+            written.append(path.name)
+    if written:
+        logger.info(
+            "agent_placeholder_models_backfilled files={} dirs={}",
+            written,
+            [str(d) for d in agents_dirs],
         )
     return written
 
@@ -636,6 +675,15 @@ def load_team_from_dir(
         if member_model_is_configured(c.model)
         and not _is_retired_builtin_member(mode, c.name)
     ]
+    # Kept so the team can say *why* it has no one to delegate to. A member
+    # without a model used to vanish from the roster with no trace, leaving
+    # the lead to fail against an empty list it could not explain.
+    unconfigured_members = sorted(
+        c.name
+        for (c, _p) in owned_members
+        if not member_model_is_configured(c.model)
+        and not _is_retired_builtin_member(mode, c.name)
+    )
 
     # Validate: blueprint names must be unique and must not collide with the
     # lead.  Also reject ``#`` in blueprint names since we use ``blueprint#N``
@@ -693,11 +741,13 @@ def load_team_from_dir(
         db_factory=db_factory,
         mode=mode,
         workspace=workspace,
+        unconfigured_members=unconfigured_members,
     )
     logger.info(
-        "team_loaded lead={} blueprints={}",
+        "team_loaded lead={} blueprints={} unconfigured_members={}",
         lead_cfg.name,
         sorted(blueprints.keys()),
+        unconfigured_members,
     )
     return team
 

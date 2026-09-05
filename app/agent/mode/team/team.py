@@ -328,9 +328,14 @@ class AgentTeam:
         # were spawned by name; their handles stay verbatim (no ``#1``
         # suffix is added) so existing tests keep passing.
         members: dict[str, "TeamMember"] | None = None,
+        # Members this lead owns that were left out of ``blueprints`` for
+        # want of a configured model. Carried so spawn failures can name
+        # the fix instead of reporting an unexplained empty roster.
+        unconfigured_members: list[str] | None = None,
     ) -> None:
         self.lead = lead
         self.blueprints: dict[str, MemberBlueprint] = blueprints or {}
+        self.unconfigured_members: list[str] = list(unconfigured_members or [])
         self.members: dict[str, TeamMember] = dict(members or {})
 
         self._provider_factory = provider_factory
@@ -2582,6 +2587,27 @@ class AgentTeam:
             await self.refresh_delegations()
         return member
 
+    def _unknown_blueprint_message(self, blueprint: str) -> str:
+        """Explain an unspawnable name, including an empty roster.
+
+        ``Available: []`` on its own tells the lead nothing it can act on,
+        and the usual reason is mundane: the members exist on disk but
+        carry no model, so the loader left them out. Say that, and say
+        where it is fixed.
+        """
+        available = sorted(self.blueprints)
+        message = f"Unknown blueprint '{blueprint}'. Available: {available}."
+        if self.unconfigured_members:
+            names = ", ".join(self.unconfigured_members)
+            message += (
+                f" Left off the roster for want of a model: {names}."
+                " Give each one a model in Settings > Agents"
+                " (or set the lead's model, which they adopt)."
+            )
+        elif not available:
+            message += " This lead owns no members."
+        return message
+
     async def _spawn_locked(
         self,
         blueprint: str,
@@ -2591,8 +2617,7 @@ class AgentTeam:
     ) -> TeamMember:
         bp = self.blueprints.get(blueprint)
         if bp is None:
-            idle = sorted(self.blueprints.keys())
-            raise KeyError(f"Unknown blueprint '{blueprint}'. Available: {idle}.")
+            raise KeyError(self._unknown_blueprint_message(blueprint))
         if not self.blueprint_allowed_this_turn(blueprint):
             allowed = sorted(self.turn_allowed_blueprints or [])
             raise KeyError(
@@ -2688,9 +2713,7 @@ class AgentTeam:
 
         bp = self.blueprints.get(blueprint)
         if bp is None:
-            raise KeyError(
-                f"Unknown blueprint '{blueprint}'. Available: {sorted(self.blueprints)}."
-            )
+            raise KeyError(self._unknown_blueprint_message(blueprint))
 
         from app.agent.ask_user import get_active_ask_user_service
         from app.agent.config import parse_agent_md

@@ -637,7 +637,24 @@ async def bulk_update_model(body: AgentBulkModelRequest) -> AgentBulkModelRespon
 
         results.append(AgentBulkModelResult(name=name, ok=True))
 
+    if any(result.ok for result in results):
+        _adopt_lead_model_for_placeholders()
+
     return AgentBulkModelResponse(results=results)
+
+
+def _adopt_lead_model_for_placeholders() -> None:
+    """Give a newly-modelled lead's placeholder members the same model.
+
+    Setting the lead's model is the moment a seeded workspace first knows
+    which model to use; without this the members keep the placeholder and
+    stay silently out of the roster.
+    """
+    from app.agent.loader import backfill_placeholder_agent_models
+    from app.core.config import settings as core_settings
+
+    agents_dir = Path(core_settings.AGENTS_DIR)
+    backfill_placeholder_agent_models(agents_dir, agents_dir / "coding")
 
 
 @router.patch("/runtime-model/{name:path}")
@@ -856,6 +873,9 @@ async def update_agent(name: str, body: AgentWriteRequest) -> AgentDetail:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     await _validate_or_restore(rollback_name=name, rollback_content=previous.content)
+
+    if cfg.role == "lead":
+        _adopt_lead_model_for_placeholders()
 
     return AgentDetail(
         name=record.name,

@@ -902,6 +902,7 @@ def refresh_blueprints(team: "AgentTeam") -> None:
         return
 
     seen: set[str] = set()
+    unconfigured: list[str] = []
     for raw_cfg, md_path in owned_entries:
         try:
             cfg = apply_managed_agent_runtime_model(raw_cfg, source_path=md_path)
@@ -910,11 +911,14 @@ def refresh_blueprints(team: "AgentTeam") -> None:
                 "blueprint_refresh_parse_failed path={} error={}", md_path.name, exc
             )
             continue
-        if not member_model_is_configured(cfg.model):
-            continue
         if "#" in cfg.name or cfg.name == team.lead.name:
             # Same invariants ``load_team_from_dir`` enforces; silently
             # drop the bad file rather than 500 the listing endpoint.
+            continue
+        if not member_model_is_configured(cfg.model):
+            # Not spawnable, but the lead is told why rather than being
+            # left to guess at a roster that is short a member.
+            unconfigured.append(cfg.name)
             continue
         seen.add(cfg.name)
         existing = team.blueprints.get(cfg.name)
@@ -940,6 +944,8 @@ def refresh_blueprints(team: "AgentTeam") -> None:
             continue
         team.blueprints.pop(name, None)
         logger.info("blueprint_removed name={}", name)
+
+    team.unconfigured_members = sorted(unconfigured)
 
 
 # ── Skill cache invalidation ─────────────────────────────────────────────────

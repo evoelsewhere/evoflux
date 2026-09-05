@@ -219,7 +219,15 @@ def _recipient_error(
         )
     available = [a for a in mailbox.registered_agents if a != sender]
     blueprints = sorted(team.blueprints.keys())
-    return (
+    message = (
         f"Agent '{name}' not found. "
         f"Live: {available}. Spawnable blueprints: {blueprints}."
     )
+    if team.unconfigured_members:
+        names = ", ".join(team.unconfigured_members)
+        message += (
+            f" Left off the roster for want of a model: {names}."
+            " Give each one a model in Settings > Agents"
+            " (or set the lead's model, which they adopt)."
+        )
+    return message
