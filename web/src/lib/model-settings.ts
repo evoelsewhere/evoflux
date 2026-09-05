@@ -68,6 +68,20 @@ export function reconcileThinkingLevel(
   return nextModel?.thinking_levels?.includes(currentLevel) ? currentLevel : null
 }
 
+/**
+ * The sentinel a seeded agent carries until a model is chosen for it.
+ *
+ * Mirrors `PROVIDER_MODEL_TOKEN` in app/agent/config.py. It is a truthy
+ * string, so a plain `agent.model` check reads it as configured — while
+ * the backend drops any member holding it from the team roster.
+ */
+export const PROVIDER_MODEL_PLACEHOLDER = '__PROVIDER_MODEL__'
+
+export function isModelConfigured(id: string | null | undefined): id is string {
+  const trimmed = id?.trim() ?? ''
+  return trimmed !== '' && trimmed !== PROVIDER_MODEL_PLACEHOLDER
+}
+
 export function shortModelName(id: string): string {
   const colon = id.indexOf(':')
   return colon === -1 ? id : id.slice(colon + 1)

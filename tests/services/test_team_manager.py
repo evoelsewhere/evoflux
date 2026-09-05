@@ -590,6 +590,36 @@ def test_refresh_blueprints_keeps_removed_blueprint_with_live_instance(
     assert "executor" in team.blueprints  # kept because instance is live
 
 
+def test_refresh_blueprints_reports_members_without_a_model(tmp_path, monkeypatch):
+    """An unspawnable member is named, not quietly missing from the roster.
+
+    This list is what the lead's spawn failure and the agent-info panel
+    read to explain a roster that is short a member.
+    """
+    from app.agent.config import PROVIDER_MODEL_TOKEN
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "AGENTS_DIR", str(tmp_path))
+    team = _make_real_team()
+    _write_member_md(tmp_path / "executor.md", "executor")
+    (tmp_path / "unset.md").write_text(
+        f"---\nname: unset\nrole: member\nmodel: {PROVIDER_MODEL_TOKEN}\n---\nbody\n",
+        encoding="utf-8",
+    )
+
+    team_manager.refresh_blueprints(team)
+
+    assert set(team.blueprints) == {"executor"}
+    assert team.unconfigured_members == ["unset"]
+
+    # Give it a model and it joins the roster on the next refresh.
+    _write_member_md(tmp_path / "unset.md", "unset")
+    team_manager.refresh_blueprints(team)
+
+    assert set(team.blueprints) == {"executor", "unset"}
+    assert team.unconfigured_members == []
+
+
 def test_refresh_blueprints_skips_lead_file(tmp_path, monkeypatch):
     """The lead's lifecycle is owned by ``reload``; ``refresh_blueprints``
     must never register the lead as a member blueprint."""
