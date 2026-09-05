@@ -51,6 +51,27 @@ _DEFAULT_HEADERS = {
 }
 
 
+def _assistant_extra(
+    usage: dict[str, Any] | None,
+    reasoning_items: list[EncryptedReasoningItem],
+) -> dict[str, Any] | None:
+    """Bundle what must outlive the run into the persisted ``extra`` column.
+
+    ``reasoning_items`` is excluded from the message dump, and history is
+    reloaded from the database each turn, so an item kept only on the field
+    would be gone by the next turn — and the replayed turn would no longer
+    match what the model produced, costing the cached prefix behind it.
+    """
+    extra: dict[str, Any] = {}
+    if usage is not None:
+        extra["usage"] = usage
+    if reasoning_items:
+        extra["reasoning_items"] = [
+            item.model_dump(exclude_none=True) for item in reasoning_items
+        ]
+    return extra or None
+
+
 class _CodexResponsesHandler(ResponsesHandler):
     """ResponsesHandler variant for the Codex endpoint.
 
@@ -178,10 +199,9 @@ class _CodexResponsesHandler(ResponsesHandler):
             reasoning_content=reasoning or None,
             reasoning_items=reasoning_items or None,
             tool_calls=complete_tool_calls or None,
-            extra=(
-                {"usage": usage_to_dict(usage, self.usage_model_id)}
-                if usage is not None
-                else None
+            extra=_assistant_extra(
+                usage_to_dict(usage, self.usage_model_id) if usage else None,
+                reasoning_items,
             ),
         )
 

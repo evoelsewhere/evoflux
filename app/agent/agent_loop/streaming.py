@@ -460,6 +460,19 @@ async def stream_and_assemble(
     if last_usage is not None:
         model_id = state.metadata.get("effective_model") or primary_label
         extra = {**(extra or {}), "usage": usage_to_dict(last_usage, model_id)}
+    if reasoning_items:
+        # Into ``extra`` because that column is persisted and the field is
+        # not: history is reloaded from the database at the start of every
+        # turn, so an in-memory-only item would survive the turn that made
+        # it and vanish before the next one — taking the cached prefix with
+        # it, since the replayed turn then differs from the one the model
+        # produced.
+        extra = {
+            **(extra or {}),
+            "reasoning_items": [
+                item.model_dump(exclude_none=True) for item in reasoning_items
+            ],
+        }
 
     msg = AssistantMessage(
         content=full_content or None,
