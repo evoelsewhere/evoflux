@@ -8,7 +8,7 @@
  * tabs, and `/telemetry` redirects.
  */
 import { useMemo, useState } from 'react'
-import { ArrowLeft, BarChart3 } from 'lucide-react'
+import { ArrowLeft, ChartColumn } from 'lucide-react'
 
 import { useIsMobile } from '@/hooks/use-mobile'
 import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
@@ -54,7 +54,7 @@ export function TelemetrySettingsPage() {
 
   return (
     <SettingsPage
-      icon={BarChart3}
+      icon={ChartColumn}
       title="Telemetry"
       size="full"
       lede={

@@ -6,8 +6,8 @@ import {
   CircleDashed,
   Download,
   Loader2,
+  Blocks,
   RefreshCw,
-  ServerCog,
 } from 'lucide-react'
 
 import type { LanguageServerStatus } from '@/api/types'
@@ -161,7 +161,7 @@ export function LanguageServersSettingsPage() {
 
   return (
     <SettingsPage
-      icon={ServerCog}
+      icon={Blocks}
       title="Language servers"
       lede="Detect semantic engines across the active project, install pinned servers with confirmation, and reuse one managed cache across repositories."
       size="wide"
