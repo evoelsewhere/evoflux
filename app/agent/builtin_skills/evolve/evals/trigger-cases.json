@@ -1,0 +1,29 @@
+[
+  {
+    "query": "We have hand-run this same deployment check five times now — make it a durable capability.",
+    "should_trigger": true
+  },
+  {
+    "query": "You keep forgetting this project's release conventions; persist that knowledge properly.",
+    "should_trigger": true
+  },
+  {
+    "query": "We need the agent to reach our internal ticket system. What is the right way to add that?",
+    "should_trigger": true
+  },
+  {
+    "query": "Run the deployment check for me now.",
+    "should_trigger": false,
+    "near_miss": "Ordinary task work, not extension."
+  },
+  {
+    "query": "Install this specific MCP server from the URL I pasted.",
+    "should_trigger": false,
+    "near_miss": "A direct installation request goes straight to the MCP workflow."
+  },
+  {
+    "query": "Change the button label on the settings page.",
+    "should_trigger": false,
+    "near_miss": "Product work with no extension decision in it."
+  }
+]

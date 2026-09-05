@@ -1,0 +1,6 @@
+interface:
+  display_name: "Word Documents"
+  short_description: "Produce, edit, and inspect .docx files"
+  default_prompt: "Use $docx-official to produce this Word document and verify it opens cleanly."
+policy:
+  allow_implicit_invocation: true

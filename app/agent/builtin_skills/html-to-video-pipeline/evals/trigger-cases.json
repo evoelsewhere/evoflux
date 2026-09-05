@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Build a pipeline that renders these animated HTML scenes into one MP4 at a stable frame rate.",
+    "should_trigger": true
+  },
+  {
+    "query": "The exported video starts with three frozen seconds and the fonts flash — fix the capture pipeline.",
+    "should_trigger": true
+  },
+  {
+    "query": "Our concatenated segments produce a video whose duration is four times too long. Diagnose the encode step.",
+    "should_trigger": true
+  },
+  {
+    "query": "Trim ten seconds off this existing MP4.",
+    "should_trigger": false,
+    "near_miss": "Editing finished footage, not building a render pipeline."
+  },
+  {
+    "query": "Design the animation for the landing page hero.",
+    "should_trigger": false,
+    "near_miss": "Authoring the page, not capturing it."
+  },
+  {
+    "query": "Record my screen while I demo the app.",
+    "should_trigger": false,
+    "near_miss": "Live screen capture is a different task."
+  }
+]

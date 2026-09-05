@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Pull the fee tables out of this 90-page contract PDF and tell me which pages they came from.",
+    "should_trigger": true
+  },
+  {
+    "query": "Merge these four PDFs in order, rotate the scanned pages upright, and add a draft watermark.",
+    "should_trigger": true
+  },
+  {
+    "query": "This form PDF has no fillable fields — overlay these values in the right boxes and flatten it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write the report in Word and export it to PDF at the end.",
+    "should_trigger": false,
+    "near_miss": "Word authoring; the export is a final step."
+  },
+  {
+    "query": "Remove the password protection from this PDF; I do not have the password.",
+    "should_trigger": false,
+    "near_miss": "Defeating protection is out of scope."
+  },
+  {
+    "query": "What is our refund policy?",
+    "should_trigger": false,
+    "near_miss": "A knowledge question with no PDF to read or produce."
+  }
+]

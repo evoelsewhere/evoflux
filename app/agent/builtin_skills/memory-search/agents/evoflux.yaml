@@ -1,0 +1,6 @@
+interface:
+  display_name: "Session Database Queries"
+  short_description: "Read-only SQL over the local session database"
+  default_prompt: "Use $memory-search to answer this with a read-only query over the session database."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Audit this signup flow against real screenshots and tell me what is hurting completion.",
+    "should_trigger": true
+  },
+  {
+    "query": "Gather the product and user context first, then ideate directions for the new dashboard.",
+    "should_trigger": true
+  },
+  {
+    "query": "Turn this reference page into an interactive prototype and run design QA on it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Implement the approved design in our production React app.",
+    "should_trigger": false,
+    "near_miss": "Production implementation belongs to the frontend workflow."
+  },
+  {
+    "query": "Make a poster for the launch event.",
+    "should_trigger": false,
+    "near_miss": "Static artwork rather than product experience."
+  },
+  {
+    "query": "Apply our theme to this existing deck.",
+    "should_trigger": false,
+    "near_miss": "Formatting an existing document, not designing an experience."
+  }
+]

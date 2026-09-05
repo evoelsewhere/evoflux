@@ -1,0 +1,6 @@
+interface:
+  display_name: "Autonomous Research"
+  short_description: "Long-horizon experiments with an auditable log"
+  default_prompt: "Use $super-research to run this as a logged, auditable investigation to a stated stopping condition."
+policy:
+  allow_implicit_invocation: true

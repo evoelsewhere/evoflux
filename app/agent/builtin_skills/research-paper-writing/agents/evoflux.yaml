@@ -1,0 +1,6 @@
+interface:
+  display_name: "Academic Papers"
+  short_description: "Draft, revise, and review research papers"
+  default_prompt: "Use $research-paper-writing to draft or review this section against reviewer expectations."
+policy:
+  allow_implicit_invocation: true

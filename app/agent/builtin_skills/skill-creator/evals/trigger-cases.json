@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Help me design a skill for our release checklist: use cases, description, and structure.",
+    "should_trigger": true
+  },
+  {
+    "query": "This skill never triggers on the requests it should — diagnose and rewrite its description.",
+    "should_trigger": true
+  },
+  {
+    "query": "Turn this repeated workflow into a well-structured skill with progressive disclosure.",
+    "should_trigger": true
+  },
+  {
+    "query": "Install this skill bundle from the folder I downloaded.",
+    "should_trigger": false,
+    "near_miss": "Installation belongs to the skill-installer workflow."
+  },
+  {
+    "query": "Write a better system prompt for this agent.",
+    "should_trigger": false,
+    "near_miss": "Prompt writing, not skill design."
+  },
+  {
+    "query": "Fix the markdown formatting in this document.",
+    "should_trigger": false,
+    "near_miss": "Ordinary file editing."
+  }
+]

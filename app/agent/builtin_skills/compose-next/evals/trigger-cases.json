@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Run the Compose Next workflow on this feature: grill the requirements, then spec, implement, verify, and review it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use the compose-next delivery workflow for the billing refactor and keep a feature document as we go.",
+    "should_trigger": true
+  },
+  {
+    "query": "I want the full spec-to-ship workflow you have, by name, for this bug fix.",
+    "should_trigger": true
+  },
+  {
+    "query": "This refactor is large; get started on it.",
+    "should_trigger": false,
+    "near_miss": "Task size alone does not authorize the workflow."
+  },
+  {
+    "query": "Fix the typo in the error message.",
+    "should_trigger": false,
+    "near_miss": "A one-shot edit needs no orchestration."
+  },
+  {
+    "query": "What does this module do?",
+    "should_trigger": false,
+    "near_miss": "A question, not a delivery workflow."
+  }
+]

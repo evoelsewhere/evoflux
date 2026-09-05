@@ -1,0 +1,6 @@
+interface:
+  display_name: "Data Analytics"
+  short_description: "Data quality, KPIs, dashboards, reports, and sizing"
+  default_prompt: "Use $data-analytics to answer this with a reproducible, decision-ready analysis."
+policy:
+  allow_implicit_invocation: true
