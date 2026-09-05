@@ -13,6 +13,7 @@ from sqlmodel import and_, col, or_, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from pydantic import TypeAdapter
+from pydantic import ValidationError
 
 from app.agent.multimodal import build_parts_from_metas
 from app.agent.lifecycle import normalize_sleep_message
@@ -1532,6 +1533,37 @@ async def get_team_history(
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
+def _restore_reasoning_items(
+    msg: "AssistantMessage", extra: dict | None
+) -> None:
+    """Put the provider's reasoning items back on a rehydrated turn.
+
+    They ride in ``extra`` because the field itself is excluded from the
+    message dump. Without this, history reloaded at the start of each turn
+    replays assistant turns stripped of the reasoning the model actually
+    produced — a different history than it wrote, which costs the cached
+    prefix behind it on stateless endpoints.
+
+    Malformed entries are dropped rather than raised on: a turn that loses
+    its reasoning still answers correctly, just without the cache.
+    """
+    from app.agent.schemas.chat import EncryptedReasoningItem
+
+    raw = (extra or {}).get("reasoning_items")
+    if not isinstance(raw, list):
+        return
+    items: list[EncryptedReasoningItem] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            items.append(EncryptedReasoningItem.model_validate(entry))
+        except ValidationError:
+            logger.warning("reasoning_item_restore_skipped")
+    if items:
+        msg.reasoning_items = items
+
+
 def _deserialize_messages(
     db_messages: Sequence[SessionMessage], *, sanitize_tool_pairs: bool = False
 ) -> list[ChatMessage]:
@@ -1557,6 +1589,7 @@ def _deserialize_messages(
             msg = _chat_message_adapter.validate_python(d)
             if isinstance(msg, AssistantMessage):
                 normalize_sleep_message(msg)
+                _restore_reasoning_items(msg, m.extra)
             # Me stash DB row PK so checkpointer can do reliable PK lookups
             msg.db_id = m.id
 
