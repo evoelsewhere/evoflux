@@ -475,6 +475,7 @@ async def _discover_configured_registry_models() -> list[tuple[str, str]]:
     # from settings.py for the configuration check.
     from app.api.routes.settings import (
         _cached_provider_models,
+        _manual_provider_is_connected,
         _provider_is_configured,
         _provider_saved_overrides,
     )
@@ -485,8 +486,13 @@ async def _discover_configured_registry_models() -> list[tuple[str, str]]:
     cached_manual: list[tuple[str, list[str]]] = []
     for entry in all_providers():
         if not entry.get("auto_connect", True):
-            if models := _cached_provider_models(entry):
-                cached_manual.append((entry["id"], models))
+            # A listed-but-unsaved provider is not usable: offering its
+            # models here would put a model in the picker that every
+            # turn using it is then refused for.
+            if _manual_provider_is_connected(entry):
+                cached_manual.append(
+                    (entry["id"], _cached_provider_models(entry) or [])
+                )
         elif _provider_is_configured(entry):
             configured.append(entry)
     if not configured and not cached_manual:
@@ -528,25 +534,27 @@ async def _discover_configured_registry_models() -> list[tuple[str, str]]:
 
 
 async def is_registered_model_id(model_id: str) -> bool:
-    """Return whether *model_id* is currently selectable from the registry."""
+    """Return whether *model_id* is currently selectable from the registry.
+
+    This has to answer exactly what ``GET /agents/registry`` offers, so it
+    asks the same discovery helper instead of re-deriving "configured"
+    from the env. A manual (``auto_connect=False``) provider is connected
+    by the user listing its models, not by a background poll, and the
+    older env-var gate rejected every model the picker had just shown for
+    one — the turn failed with "Choose a model from the registry" naming
+    a model that came *from* the registry.
+    """
     if ":" not in model_id:
         return False
     provider, model = model_id.split(":", 1)
     if not provider or not model:
         return False
 
-    from app.api.routes.settings import _provider_is_configured
-    from app.agent.providers.catalog import all_providers
-
-    for entry in all_providers():
-        if entry["id"] != provider or not _provider_is_configured(entry):
-            continue
-        visible = set(provider_visible_models(provider))
-        if visible and model not in visible:
-            return False
-        discovered = await _discover_configured_registry_models()
-        return any(p == provider and m == model for p, m in discovered)
-    return False
+    visible = set(provider_visible_models(provider))
+    if visible and model not in visible:
+        return False
+    discovered = await _discover_configured_registry_models()
+    return any(p == provider and m == model for p, m in discovered)
 
 
 @router.patch("/model")

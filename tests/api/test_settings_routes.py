@@ -51,14 +51,20 @@ def _reset_local_reachable_cache(monkeypatch: pytest.MonkeyPatch):
     async def _available(_entry, **_kwargs):  # type: ignore[no-untyped-def]
         return ["test-model"]
 
-    settings_routes._local_reachable_cache.clear()
-    settings_routes._provider_model_cache.clear()
+    _reset_provider_caches()
     monkeypatch.setattr(
         "app.agent.providers.model_discovery.discover_provider_models", _available
     )
     yield
+    _reset_provider_caches()
+
+
+def _reset_provider_caches() -> None:
+    """Forget every provider cache, including the on-disk manual mirror."""
     settings_routes._local_reachable_cache.clear()
     settings_routes._provider_model_cache.clear()
+    settings_routes._manual_model_ids.clear()
+    settings_routes._manual_cache_loaded_from = None
 
 
 def test_connect_conductor_forwards_token_and_returns_status(
@@ -1536,6 +1542,110 @@ def test_registry_skips_unconfigured_discovery(monkeypatch: pytest.MonkeyPatch) 
 
     assert response.status_code == 200
     assert call_count == 0
+
+
+def _manual_catalog_entry() -> dict:
+    """A models.dev catalog row: connected by hand, never auto-polled."""
+    return {
+        "id": "zenprov",
+        "label": "Zen Provider",
+        "description": "",
+        "kind": "api_key",
+        "env_var": "ZENPROV_API_KEY",
+        "env_vars": ["ZENPROV_API_KEY"],
+        "credentials": [
+            {
+                "name": "ZENPROV_API_KEY",
+                "label": "API key",
+                "secret": True,
+                "required": True,
+                "placeholder": "",
+            }
+        ],
+        "fallback_models": [],
+        "oauth_command": "",
+        "docs_url": "",
+        "auto_connect": False,
+        "source": "catalog",
+        "transport": "openai-completions",
+    }
+
+
+@pytest.fixture
+def manual_catalog_provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict:
+    from app.api.routes import agents as agents_module
+
+    entry = _manual_catalog_entry()
+    monkeypatch.setattr(
+        "app.agent.providers.catalog.all_providers",
+        lambda **_kwargs: [entry],
+    )
+    monkeypatch.setattr(settings_routes.settings, "EVOFLUX_CACHE_DIR", str(tmp_path))
+    agents_module._registry_model_cache.clear()
+    return entry
+
+
+async def test_saved_manual_provider_model_passes_the_chat_validator(
+    monkeypatch: pytest.MonkeyPatch, manual_catalog_provider: dict
+) -> None:
+    """What the picker offers, a turn must be allowed to use.
+
+    The two used to disagree: the registry listed a manual provider's
+    models from its cache, while the validator demanded a saved env var
+    and rejected them — a 422 naming a model the registry had just
+    handed the user.
+    """
+    from app.api.routes import agents as agents_module
+
+    monkeypatch.setenv("ZENPROV_API_KEY", "sk-zen")
+    settings_routes._cache_provider_models(manual_catalog_provider, ["zen-model"])
+
+    discovered = await agents_module._discover_configured_registry_models()
+
+    assert ("zenprov", "zen-model") in discovered
+    assert await agents_module.is_registered_model_id("zenprov:zen-model") is True
+
+
+async def test_unsaved_manual_provider_is_offered_to_nobody(
+    monkeypatch: pytest.MonkeyPatch, manual_catalog_provider: dict
+) -> None:
+    """Listing models proves the typed key works, not that it was saved."""
+    from app.api.routes import agents as agents_module
+
+    monkeypatch.delenv("ZENPROV_API_KEY", raising=False)
+    settings_routes._cache_provider_models(manual_catalog_provider, ["zen-model"])
+
+    discovered = await agents_module._discover_configured_registry_models()
+
+    assert discovered == []
+    assert await agents_module.is_registered_model_id("zenprov:zen-model") is False
+    assert settings_routes._manual_provider_is_connected(manual_catalog_provider) is (
+        False
+    )
+
+
+def test_manual_provider_models_survive_a_restart(
+    manual_catalog_provider: dict,
+) -> None:
+    """A catalog provider stays listed without re-running "list models"."""
+    settings_routes._cache_provider_models(manual_catalog_provider, ["zen-model"])
+
+    _reset_provider_caches()  # a fresh process
+
+    assert settings_routes._cached_provider_models(manual_catalog_provider) == [
+        "zen-model"
+    ]
+
+
+def test_clearing_a_manual_provider_forgets_its_models(
+    manual_catalog_provider: dict,
+) -> None:
+    settings_routes._cache_provider_models(manual_catalog_provider, ["zen-model"])
+    settings_routes._cache_provider_models(manual_catalog_provider, [])
+
+    _reset_provider_caches()
+
+    assert settings_routes._cached_provider_models(manual_catalog_provider) is None
 
 
 def test_manual_ollama_connection_populates_registry_without_reconnecting(
