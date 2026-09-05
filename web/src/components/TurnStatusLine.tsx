@@ -7,7 +7,10 @@
  * (`app/agent/turn_usage.py`), and what the agent is doing is derivable from
  * the turn's own blocks (`utils/turn-status.ts`).
  *
- *   ◐ Editing main.rs   1m 57s · 1.1k tokens · $0.004 ─────────────────
+ *   ✦ Editing main.rs   1m 57s · 1.1k tokens · $0.004
+ *
+ * It trails the turn rather than heading it, in the slot the footer takes
+ * once the turn finishes, so the line always reports on the output above it.
  *
  * It ticks once a second, so it owns its own store subscriptions and stays
  * out of the memoized transcript turn that renders it — the transcript must
@@ -37,10 +40,19 @@ export interface TurnStatusLineProps {
   className?: string
 }
 
-/** The stream this line reports on: the named agent, else the working one. */
+/**
+ * The stream this line reports on.
+ *
+ * Resolution has to be stable for the whole turn. Picking "whichever agent is
+ * working" is not: between two activations no stream is working, so the line
+ * lost its start time and its spend, and came back reading `0ms` with the
+ * previous turn's cost. The view's own agent is the answer, and the scan is
+ * only the last resort.
+ */
 function targetStream(state: TeamStoreState, agentName?: string): AgentStream | null {
   const streams = state.agentStreams ?? {}
-  if (agentName) return streams[agentName] ?? null
+  const named = agentName ?? state.activeAgent ?? state.leadName
+  if (named && streams[named]) return streams[named]
   for (const stream of Object.values(streams)) {
     if (stream.status === 'working') return stream
   }
@@ -170,7 +182,16 @@ export function TurnStatusLine({
   // The clock must start when the turn did, not when this instance mounted.
   // The runway line and the turn's own line are two mounts of the same turn,
   // and a block-derived start made the elapsed jump backwards at the handover.
-  const start = streamStartedAt ?? mountedAt
+  // Keep the earliest start seen while this line is up. The store restarts
+  // `_turnStartedAt` on every agent activation, and a turn that pauses and
+  // resumes is still one answer to the reader — measured in the app, the
+  // elapsed otherwise dropped from 20s back to 580ms mid-answer. The latch
+  // resets with the component, which unmounts once the turn really ends.
+  const [firstStart, setFirstStart] = useState<number | null>(streamStartedAt)
+  if (streamStartedAt !== null && (firstStart === null || streamStartedAt < firstStart)) {
+    setFirstStart(streamStartedAt)
+  }
+  const start = firstStart ?? mountedAt
   const elapsed = formatTurnDuration(Math.max(0, now - start))
   const meta = [elapsed]
   if (tokens > 0) meta.push(`${formatTurnTokens(tokens)} tokens`)
@@ -183,7 +204,7 @@ export function TurnStatusLine({
     <div
       className={cn(
         'flex min-w-0 items-center gap-2',
-        size === 'roomy' ? 'pb-3' : 'pb-2',
+        size === 'roomy' ? 'pt-3' : 'pt-2',
         className,
       )}
       role="status"

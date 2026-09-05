@@ -29,6 +29,7 @@ import {
 import type { AgentStream } from '@/stores/useTeamStore'
 import { AnimatePresence } from 'framer-motion'
 import { TurnStatusLine } from './TurnStatusLine'
+import { useHeldTrue } from '@/hooks/useHeldTrue'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { TurnChangesCard } from './TurnChangesCard'
 import { TranscriptHistoryControl } from './TranscriptHistoryControl'
@@ -103,13 +104,10 @@ interface CompactAssistantTranscriptTurnProps {
   sessionId?: string
   startIndex: number
   totalBlocks: number
-  /** Whose stream the live status line reports on. */
-  agentName: string
 }
 
 /** Historical assistant turns do not rerender when the window grows upward. */
 const CompactAssistantTranscriptTurn = memo(function CompactAssistantTranscriptTurn({
-  agentName,
   blocks,
   isTrailingTurn,
   isWorking,
@@ -120,12 +118,6 @@ const CompactAssistantTranscriptTurn = memo(function CompactAssistantTranscriptT
   totalBlocks,
 }: CompactAssistantTranscriptTurnProps) {
   return (
-    <>
-    <AnimatePresence initial={false}>
-      {isWorking && isTrailingTurn && (
-        <TurnStatusLine agentName={agentName} blocks={blocks} size="compact" />
-      )}
-    </AnimatePresence>
     <AssistantTurn
       blocks={blocks}
       startIndex={startIndex}
@@ -146,9 +138,11 @@ const CompactAssistantTranscriptTurn = memo(function CompactAssistantTranscriptT
         />
       )}
     />
-    </>
   )
 })
+
+/** How long the status line outlives `isWorking`, in ms. */
+const STATUS_HOLD_MS = 900
 
 export function AgentPane({
   name, stream, isLead, todos, isContinuing = false, onContinue,
@@ -179,6 +173,8 @@ export function AgentPane({
   const isOffline = stream.status === 'offline'
   // Me show waiting indicator when a user message exists but the agent hasn't woken yet
   const isPending = !isWorking && !isError && !isOffline && stream.currentBlocks.some(isDirectUserBlock)
+  // Bridge the pause between two agent activations. See `useHeldTrue`.
+  const showLiveStatus = useHeldTrue(isWorking || isPending, STATUS_HOLD_MS)
 
   const memberTier = useMemo(
     () => (!isLead && todos ? resolveMemberTier(todos, name) : null),
@@ -418,7 +414,6 @@ export function AgentPane({
                        className={isTrailingTurn ? 'oa-latest-turn-runway' : 'oa-transcript-turn'}
                      >
                        <CompactAssistantTranscriptTurn
-                         agentName={name}
                          blocks={item.blocks}
                          startIndex={item.startIndex}
                          isWorking={isWorking}
@@ -443,24 +438,19 @@ export function AgentPane({
               </div>
             )}
 
-          {/* Show a stable activity state while waiting for the first agent block.
-            * `[].every()` returns true, so the working branch also requires a non-empty
-            * currentBlocks list — otherwise the indicator persists after `done` flushes
-            * the buffer if a stale `working` status briefly survives. */}
-          {(isPending ||
-            (isWorking && (
-              (isContinuing && stream.currentBlocks.length === 0) ||
-              (stream.currentBlocks.length > 0 && stream.currentBlocks.every((b) => b.type === 'user'))
-            ))) && (
-            <div className="px-3 pt-3">
+          {/* One status line for the whole turn, below the output it
+            * describes. `showLiveStatus` bridges the idle moment between two
+            * activations so it does not blink out mid-answer. */}
+          <AnimatePresence initial={false}>
+            {showLiveStatus && (
               <TurnStatusLine
                 agentName={name}
                 blocks={stream.currentBlocks}
                 size="compact"
-                className="mb-0"
+                className="px-3"
               />
-            </div>
-          )}
+            )}
+          </AnimatePresence>
 
           {isError && stream.lastError && (
            <div className="mx-3 mt-3 rounded-lg border border-(--color-error) bg-(--color-error-subtle) px-3 py-2">

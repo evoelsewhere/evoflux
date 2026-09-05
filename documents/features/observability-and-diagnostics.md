@@ -28,6 +28,14 @@ means the provider has the turn again ("Waiting for <model>"). The
 before the first block arrives, because it is emitted once per turn and cannot
 distinguish the model calls inside a tool loop.
 
+The line sits below the turn's output, in the slot the footer takes once the
+turn finishes, and there is exactly one of it per view for the whole turn. A
+turn is not one continuous working run — an activation ends, the stream
+flushes, and the next activation starts — so the line outlives the working
+flag by a short hold. Without it the line blinked out for over a second in the
+middle of a single answer and came back with a restarted clock; the elapsed
+now measures from the earliest start observed while the line is up.
+
 Turn tokens are authoritative only per completed model call, which the usage
 event publishes. Between those events the line extends the last measured total
 with a character-length estimate so the counter keeps moving through a long
