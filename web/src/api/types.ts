@@ -2,12 +2,31 @@
 
 export type DiagnosticsStatus = 'ok' | 'warn' | 'fail'
 
+/** A fix the user can trigger from the check's row. */
+export interface DiagnosticsAction {
+  id: string
+  label: string
+  running_label: string
+  confirm_title: string
+  confirm_body: string
+  confirm_label: string
+}
+
 export interface DiagnosticsCheck {
   id: string
   label: string
   status: DiagnosticsStatus
   detail: string
   hint: string | null
+  /** Present when the check can be acted on rather than only described. */
+  action?: DiagnosticsAction | null
+}
+
+export interface DiagnosticsActionResult {
+  message: string
+  reclaimed_mib?: number
+  elapsed_s?: number
+  rewrote_database?: boolean
 }
 
 export interface DiagnosticsResponse {
@@ -128,6 +147,8 @@ export interface TeamBlueprintInfo extends AgentInfo {
 export interface TeamAgentsResponse {
   agents: TeamAgentInfo[]
   blueprints: TeamBlueprintInfo[]
+  /** Members this lead owns that have no model, and so cannot be spawned. */
+  unconfigured_members?: string[]
   mode?: string
   workspace?: string | null
   lead_name?: string
