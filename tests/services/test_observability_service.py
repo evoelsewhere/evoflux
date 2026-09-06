@@ -290,6 +290,141 @@ def test_summarize_survives_a_window_with_no_turn_spans(
     assert result.total_llm_calls == 1
 
 
+def test_tokens_by_model_splits_each_bucket_by_model_and_cache_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The token chart stacks these rows and compares them to the line.
+
+    So two things have to hold: a bucket's rows must sum back to that
+    bucket's ``time_series`` input, and the three input segments must be
+    disjoint — overlapping them would draw a stack taller than the total it
+    sits under.
+    """
+    spans_dir = _point_EVOFLUX_at(tmp_path, monkeypatch)
+    now = datetime.now(timezone.utc)
+    ts_ns = int(now.timestamp() * 1e9)
+    _write_spans(
+        spans_dir / f"{now.strftime('%Y-%m-%d-%H')}.jsonl",
+        [
+            _span(
+                name="chat gpt-4o",
+                end_time_ns=ts_ns,
+                duration_ms=500.0,
+                attributes={
+                    "gen_ai.provider.name": "openai",
+                    "gen_ai.request.model": "gpt-4o",
+                    "gen_ai.usage.input_tokens": 1000,
+                    "gen_ai.usage.output_tokens": 200,
+                    "gen_ai.usage.cache_read.input_tokens": 600,
+                    "gen_ai.usage.cache_write.input_tokens": 100,
+                },
+            ),
+            _span(
+                name="chat sonnet",
+                end_time_ns=ts_ns,
+                duration_ms=400.0,
+                attributes={
+                    "gen_ai.provider.name": "anthropic",
+                    "gen_ai.request.model": "sonnet",
+                    "gen_ai.usage.input_tokens": 400,
+                    "gen_ai.usage.output_tokens": 80,
+                },
+            ),
+        ],
+    )
+
+    result = summarize(days=7)
+    rows = {row["provider_model"]: row for row in result.tokens_by_model}
+
+    gpt = rows["openai:gpt-4o"]
+    assert gpt["input_tokens"] == 1000
+    assert gpt["cached_tokens"] == 600
+    assert gpt["cache_write_tokens"] == 100
+    assert gpt["fresh_input_tokens"] == 300
+    assert gpt["output_tokens"] == 200
+    assert gpt["cache_percent"] == 60.0
+    # Disjoint: the three segments are the whole of input, counted once.
+    assert (
+        gpt["cached_tokens"] + gpt["cache_write_tokens"] + gpt["fresh_input_tokens"]
+        == gpt["input_tokens"]
+    )
+
+    sonnet = rows["anthropic:sonnet"]
+    assert sonnet["fresh_input_tokens"] == 400
+    assert sonnet["cached_tokens"] == 0
+
+    # Every row lands in a bucket the time series actually has, and the two
+    # agree on what that bucket held.
+    buckets = {point["bucket_start"]: point for point in result.time_series}
+    for row in result.tokens_by_model:
+        assert row["bucket_start"] in buckets
+    for bucket_start, point in buckets.items():
+        stacked = sum(
+            row["input_tokens"]
+            for row in result.tokens_by_model
+            if row["bucket_start"] == bucket_start
+        )
+        assert stacked == point["input_tokens"]
+
+
+def test_tokens_by_model_clamps_a_span_reporting_more_cache_than_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A malformed span must not produce a negative segment.
+
+    Fresh input is input minus cache, and a provider that over-reports cache
+    would drive it below zero — which draws a bar hanging off the baseline.
+    """
+    spans_dir = _point_EVOFLUX_at(tmp_path, monkeypatch)
+    now = datetime.now(timezone.utc)
+    _write_spans(
+        spans_dir / f"{now.strftime('%Y-%m-%d-%H')}.jsonl",
+        [
+            _span(
+                name="chat weird",
+                end_time_ns=int(now.timestamp() * 1e9),
+                duration_ms=100.0,
+                attributes={
+                    "gen_ai.provider.name": "openai",
+                    "gen_ai.request.model": "weird",
+                    "gen_ai.usage.input_tokens": 100,
+                    "gen_ai.usage.output_tokens": 10,
+                    "gen_ai.usage.cache_read.input_tokens": 400,
+                },
+            )
+        ],
+    )
+
+    row = summarize(days=7).tokens_by_model[0]
+
+    assert row["fresh_input_tokens"] == 0
+    assert row["cache_percent"] == 100.0
+
+
+def test_tokens_by_model_skips_a_model_that_reported_no_tokens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """An empty row would claim a colour slot and draw nothing."""
+    spans_dir = _point_EVOFLUX_at(tmp_path, monkeypatch)
+    now = datetime.now(timezone.utc)
+    _write_spans(
+        spans_dir / f"{now.strftime('%Y-%m-%d-%H')}.jsonl",
+        [
+            _span(
+                name="chat silent",
+                end_time_ns=int(now.timestamp() * 1e9),
+                duration_ms=100.0,
+                attributes={
+                    "gen_ai.provider.name": "openai",
+                    "gen_ai.request.model": "silent",
+                },
+            )
+        ],
+    )
+
+    assert summarize(days=7).tokens_by_model == []
+
+
 def test_summarize_handles_missing_cache_read_tokens(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -360,6 +495,7 @@ def test_to_dict_round_trips(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         "by_model",
         "cache_by_step",
         "by_tool",
+        "tokens_by_model",
     }
     assert set(d["totals"].keys()) == {
         "turns",

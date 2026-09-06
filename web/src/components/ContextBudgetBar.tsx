@@ -112,23 +112,27 @@ function buildContextCategories(
   const safeWrite = Math.max(0, Math.min(cacheWrite, total - safeCache))
   const freshInput = Math.max(0, total - safeCache - safeWrite)
   return [
+    // Same three hues, in the same roles, as the telemetry token chart — one
+    // cache vocabulary across the product. Blue/purple used to sit adjacent
+    // here, which is ΔE 0.3 under deuteranopia: two segments of one stacked
+    // bar that a colourblind reader cannot tell apart.
     {
       id: 'input',
       label: 'Fresh input',
       tokens: freshInput,
-      color: 'var(--accent-blue)',
+      color: 'var(--color-marker-orange)',
     },
     {
       id: 'cache',
       label: 'Cache read',
       tokens: safeCache,
-      color: 'var(--accent-purple)',
+      color: 'var(--color-marker-blue)',
     },
     {
       id: 'cacheWrite',
       label: 'Cache write',
       tokens: safeWrite,
-      color: 'var(--accent-orange)',
+      color: 'var(--color-marker-pink)',
     },
   ]
 }
