@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
-import { subscribeClock } from '@/components/ToolCall'
+import { subscribeClock } from '@/components/ToolCall/liveClock'
 
 /**
  * The shared clock replaced one 100 ms interval per running ToolCall. It must

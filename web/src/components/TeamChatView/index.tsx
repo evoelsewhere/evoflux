@@ -75,6 +75,7 @@ import type { AgentStream } from '@/stores/useTeamStore'
 import { PlanActionBar } from '../PlanReviewPanel'
 import { type InputBarHandle } from '../InputBar'
 import { FloatingInputBar } from '../FloatingInputBar'
+import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBrowserPresence'
 import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
@@ -338,7 +339,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
   const [showActivity, setShowActivity] = useState(false)
   const [todosOpen, setTodosOpen] = useState(false)
-  const [permissionMode, setPermissionMode] = useState<import('@/api/types').PermissionMode>('auto')
   const [showMobileActions, setShowMobileActions] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
   const [fileRefsEnabled, setFileRefsEnabled] = useState(false)
@@ -398,10 +398,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     const timer = window.setTimeout(preload, 200)
     return () => window.clearTimeout(timer)
   }, [isMobile])
-  useEffect(() => {
+  // A different workspace cannot keep showing the old one's open file.
+  useResetOnChange(workspace, () => {
     setCodingFileViewer(null)
     setCodingFileViewerHost(null)
-  }, [workspace])
+  })
 
   const sendMessage    = useTeamStore((s) => s.sendMessage)
   const continueTeam   = useTeamStore((s) => s.continueTeam)
@@ -472,12 +473,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
   const openGitChanges = useUIStore((s) => s.openGitChanges)
-  useEffect(() => {
-    if (!shouldClearFilesEditor(codingFileViewerHost, workbenchOpen, hasFilesTab)) return
+  // Self-terminating: clearing the host makes the predicate false, so this
+  // settles on the retry rather than looping.
+  if (shouldClearFilesEditor(codingFileViewerHost, workbenchOpen, hasFilesTab)) {
     setCodingFileViewer(null)
     setCodingFileViewerHost(null)
     setCodingFileViewerMode('file')
-  }, [codingFileViewerHost, hasFilesTab, workbenchOpen])
+  }
 
   useEffect(() => {
     if (
@@ -487,6 +489,12 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       || workspaceFileRequest?.sessionId !== sessionIdState
     ) return
     const path = workspaceFileRequest.path
+    // These writes are inseparable from `clearWorkspaceFileRequest` below,
+    // which updates a *different* component's store. Hoisting the group into
+    // render to satisfy the rule would trade a cascading render for the thing
+    // React actually forbids: updating another component while this one
+    // renders.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- paired with an external store write
     setCodingFileViewer({
       path,
       name: path.split('/').at(-1) ?? path,
@@ -568,9 +576,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     isMobile,
     macOverlay: isMacOverlay,
   })
-  useEffect(() => {
-    setMobileSidebarOpen(false)
-  }, [sidebarOverlay])
+  // Switching between overlay and inline sidebar drops the drawer: the two
+  // layouts do not share a meaning for "open".
+  useResetOnChange(sidebarOverlay, () => setMobileSidebarOpen(false))
 
   // Finalized blocks update on turn boundaries and feed composer history.
   // The hot `currentBlocks` array is intentionally subscribed inside
@@ -641,24 +649,36 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const persistedWebBridgeEnabled = sessionTags?.includes('webbridge')
   const webBridgeSettings = useWebBridgeSettingsQuery()
   const webBridgePolicyEnabled = webBridgeSettings.data?.enabled !== false
-  useEffect(() => {
-    let cancelled = false
-    if (!webBridgePolicyEnabled) {
-      setWebBridgeEnabled(false)
-      return
-    }
-    const requested = activeSessionId
+  // Whether WebBridge is *wanted*, which is a pure function of policy, the
+  // session's tag and the new-chat default. ``null`` means the tags have not
+  // loaded, which is not the same as "off" and must not disturb the toggle.
+  const webBridgeRequest = useMemo(() => {
+    if (!webBridgePolicyEnabled) return false
+    return activeSessionId
       ? sessionTags === undefined
         ? null
         : Boolean(persistedWebBridgeEnabled)
       : areWebBridgeDefaultsEnabled()
-    if (requested === null) return
+  }, [activeSessionId, persistedWebBridgeEnabled, sessionTags, webBridgePolicyEnabled])
+  // Keyed on the raw inputs rather than on `webBridgeRequest`, so a change
+  // that leaves the answer the same still invalidates the last verification.
+  const webBridgeInputKey =
+    `${activeSessionId ?? ''}|${String(persistedWebBridgeEnabled)}`
+    + `|${sessionTags === undefined}|${webBridgePolicyEnabled}`
 
-    // Fail closed while connection state is unknown. A persisted session tag
-    // or the new-chat default is only a preference; it must never make the UI
-    // appear enabled before a live extension has been verified.
-    setWebBridgeEnabled(false)
-    if (!requested) return
+  // Fail closed while connection state is unknown. A persisted session tag or
+  // the new-chat default is only a preference; it must never make the UI
+  // appear enabled before a live extension has been verified. Done during
+  // render so the stale "on" is never committed — as an effect this painted
+  // the wrong state for a frame first.
+  useResetOnChange(webBridgeInputKey, () => {
+    if (webBridgeRequest !== null) setWebBridgeEnabled(false)
+  })
+
+  // Only the verification itself is an effect: it talks to the extension.
+  useEffect(() => {
+    if (!webBridgeRequest) return
+    let cancelled = false
     void getWebBridgeStatus()
       .then((status) => {
         if (!cancelled && status.connected) setWebBridgeEnabled(true)
@@ -669,7 +689,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     return () => {
       cancelled = true
     }
-  }, [activeSessionId, persistedWebBridgeEnabled, sessionTags, webBridgePolicyEnabled])
+  }, [webBridgeInputKey, webBridgeRequest])
   // Lead capabilities — used to drive composer affordances (slash menu).
   const agentWorkspace = mode === 'coding' ? workspace : null
   const workWorkspaceQuery = useQuery({
@@ -809,6 +829,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     if (!pending || sessionId !== pending.sessionId) return
     const state = useTeamStore.getState()
     if (state.sessionId !== pending.sessionId || state.isSessionLoading) return
+    // Clearing the request is how this fires exactly once. The effect exists
+    // to *send a message*, which can never happen during render, so the write
+    // is part of that side effect rather than derived state that belongs
+    // earlier.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- consumes a one-shot trigger
     setPendingCodeReviewStart(null)
     void state.sendMessage(pending.prompt, undefined, {
       mode: 'coding',
@@ -992,7 +1017,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
   const handlePermissionModeChange = useCallback(async (newMode: import('@/api/types').PermissionMode) => {
     const previous = useTeamStore.getState().sessionPermissionMode
-    setPermissionMode(newMode)
     useTeamStore.setState({ sessionPermissionMode: newMode })
     // No row yet: the pick travels with the first message instead (see
     // `draftPlacement`), so there is nothing to PATCH and nothing to revert.
@@ -1003,7 +1027,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       // Roll the badge back. Leaving it on the new mode was the dangerous
       // half of this failure: the run kept enforcing the old one while the
       // UI insisted the user's choice had taken.
-      setPermissionMode(previous)
       useTeamStore.setState({ sessionPermissionMode: previous })
       pushToast({
         tone: 'error',
@@ -1200,9 +1223,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   }, [sideChatOpen, openSideChat])
 
   // Clear the quote once the side chat panel has consumed it (on close).
-  useEffect(() => {
-    if (!sideChatOpen) setSideChatQuote(null)
-  }, [sideChatOpen])
+  // Guarded on the current value so it settles after one retry.
+  if (!sideChatOpen && sideChatQuote !== null) setSideChatQuote(null)
 
   const handleCodingFileSelect = useCallback((file: WorkspaceFileInfo | null) => {
     setCodingFileViewer(file)
@@ -1224,11 +1246,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     return () => window.removeEventListener('queue:restore-draft', handler)
   }, [])
 
-  // History already carries session metadata. Reuse it instead of issuing a
-  // second GET that hydrates the same paginated history payload.
-  useEffect(() => {
-    setPermissionMode(sessionPermissionMode)
-  }, [sessionIdState, sessionPermissionMode])
 
   // Push the active session/workspace label to the desktop tray. The
   // command is a no-op outside Tauri so this is safe to fire from the
@@ -2296,7 +2313,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 onDraftChange={setDraftWorkspace}
               />
             ) : undefined}
-            permissionMode={permissionMode}
+            permissionMode={sessionPermissionMode}
             onPermissionModeChange={handlePermissionModeChange}
           />
         )}
