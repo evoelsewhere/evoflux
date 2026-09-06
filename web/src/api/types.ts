@@ -92,6 +92,12 @@ export interface PermissionRequestPending {
   sessionId: string
   tool: string
   patterns: string[]
+  /**
+   * What replying "always" would grant, which is usually broader than
+   * `patterns` — approving `git commit -m x` allows `git commit *`. The
+   * dialog states it rather than leaving the user to guess the scope.
+   */
+  alwaysPatterns: string[]
   metadata: Record<string, unknown>
 }
 

@@ -18,6 +18,14 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+#: Tools plan mode records instead of running. Lives here rather than in the
+#: tool executor because the permission service needs the same list: a tool on
+#: it will not run this turn and needs no approval, while a tool off it runs
+#: for real and must still be asked about.
+PLAN_INTERCEPTED_TOOLS: frozenset[str] = frozenset(
+    {"edit", "write", "patch", "rm", "shell", "python", "process"}
+)
+
 PlanDecision = Literal["approved", "rejected", "revise"]
 
 #: (decision, feedback) — feedback is empty unless the user typed revision

@@ -186,6 +186,8 @@ class PermissionRequestResponse(BaseModel):
     session_id: str
     tool: str
     patterns: list[str]
+    #: What "always allow" would grant — see ``PermissionAskedEvent``.
+    always_patterns: list[str] = Field(default_factory=list)
     metadata: dict
 
 

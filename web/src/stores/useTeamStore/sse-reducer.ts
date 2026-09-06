@@ -818,6 +818,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             sessionId: d.session_id as string,
             tool: d.tool as string,
             patterns: (d.patterns as string[]) ?? [],
+            alwaysPatterns: (d.always_patterns as string[]) ?? [],
             metadata: (d.metadata as Record<string, unknown>) ?? {},
           }
         })

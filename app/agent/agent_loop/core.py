@@ -1063,9 +1063,10 @@ class Agent(Generic[TContext]):
                     break
 
             # Model-visible ToolMessages must stay in the exact call order,
-            # including calls rejected by batch contracts.
+            # including calls rejected by batch contracts. Paired with the call
+            # they came from so a failure can still be reported against it.
             results = [
-                result_by_call_id[tool_call.id]
+                (tool_call, result_by_call_id[tool_call.id])
                 for tool_call in tc_list
                 if tool_call.id in result_by_call_id
             ]
@@ -1085,9 +1086,28 @@ class Agent(Generic[TContext]):
             cancelled = interrupt_event is not None and interrupt_event.is_set()
             tool_durations = state.metadata.pop("_tool_duration_ms", {})
             tool_result_chars = 0
-            for item in results:
+            permission_refused = False
+            for source_call, item in results:
                 if isinstance(item, BaseException):
                     logger.error("tool_gather_error error={}", item)
+                    if isinstance(item, PermissionError):
+                        # Tell the model, not just the log.
+                        #
+                        # A raising tool used to leave its call with no
+                        # ToolMessage at all, so the model saw an unanswered
+                        # tool call and did the obvious thing: called again.
+                        # That is what turned one rejection into an endless
+                        # round of identical approval prompts. It also left
+                        # the provider with a dangling tool call, which the
+                        # OpenAI sanitiser then had to strip.
+                        messages.append(
+                            ToolMessage(
+                                content=str(item),
+                                tool_call_id=source_call.id,
+                                name=source_call.function.name,
+                            )
+                        )
+                        permission_refused = True
                     continue
                 tc, result = item
                 tool_msg = ToolMessage(
@@ -1129,6 +1149,20 @@ class Agent(Generic[TContext]):
 
             # Me sync after tool execution — captures tool results
             await self._sync(checkpointer, ctx, state)
+
+            if permission_refused:
+                # Refusing is the user taking the wheel, so hand it to them
+                # rather than looping the model against a wall it cannot get
+                # past. Without this the turn kept iterating on the refusal
+                # for as long as the model felt like retrying, at full token
+                # cost and with nothing to show for it.
+                logger.info(
+                    "agent_iteration_done agent={} iteration={} "
+                    "action=permission_refused",
+                    self.name,
+                    iteration,
+                )
+                break
 
             stop_after_tool = state.metadata.pop("stop_after_tool_call", None)
             if stop_after_tool:

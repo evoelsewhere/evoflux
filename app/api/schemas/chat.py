@@ -66,6 +66,15 @@ class ChatForm(BaseModel):
             "message creates the session; otherwise the persisted value wins."
         ),
     )
+    permission_mode: str | None = Field(
+        None,
+        description=(
+            "Permission mode for a session this message brings into being. "
+            "Only read when this message creates the session; a persisted "
+            "session owns its mode and changes it through "
+            "PATCH /team/sessions/{id}/permission-mode."
+        ),
+    )
 
     @classmethod
     def as_form(
@@ -82,6 +91,7 @@ class ChatForm(BaseModel):
         webbridge_enabled: bool | None = Form(None),
         folder_id: str | None = Form(None),
         project_id: str | None = Form(None),
+        permission_mode: str | None = Form(None),
     ) -> "ChatForm":
         try:
             return cls(
@@ -97,6 +107,7 @@ class ChatForm(BaseModel):
                 webbridge_enabled=webbridge_enabled,
                 folder_id=folder_id,
                 project_id=project_id,
+                permission_mode=permission_mode,
             )
         except ValidationError as exc:
             raise HTTPException(
