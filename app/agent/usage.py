@@ -11,8 +11,6 @@ from app.agent.providers.model_metadata import (
 from app.agent.schemas.chat import Usage
 
 
-_NON_TOKEN_BILLED_PROVIDERS = frozenset({"codex", "copilot", "kimi", "ollama"})
-
 #: Cost component -> span attribute. Kept flat so the aggregation query
 #: can sum each one without parsing a nested value out of a span.
 _COST_SPAN_ATTRIBUTES = {
@@ -167,10 +165,13 @@ def estimate_cost(
     Takes loose counts rather than a ``Usage`` so a turn aggregate can be
     priced per model call and summed: rates differ per model, so a turn
     that switched models cannot be priced from its totals alone.
+
+    Every provider with catalog rates is priced, including the ones billed
+    by subscription rather than by token — Codex, Copilot, Kimi, Ollama.
+    What comes back for those is what the same tokens would cost at API
+    rates, not money leaving an account, so a bill-shaped total that sums
+    them reads high by whatever those turns would have cost.
     """
-    provider_id = model_id.partition(":")[0].lower() if model_id else ""
-    if provider_id in _NON_TOKEN_BILLED_PROVIDERS:
-        return None
     prices = get_model_cost(model_id)
 
     mode_cost: Mapping[str, float] | None = None
