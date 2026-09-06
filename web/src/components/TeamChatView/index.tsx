@@ -74,6 +74,7 @@ import { Button } from '@/components/ui/button'
 import type { AgentStream } from '@/stores/useTeamStore'
 import { PlanActionBar } from '../PlanReviewPanel'
 import { type InputBarHandle } from '../InputBar'
+import { splitQuotedContext } from '../InputBar.skills'
 import { FloatingInputBar } from '../FloatingInputBar'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBrowserPresence'
@@ -1274,6 +1275,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const {
     slashCommands,
     snippetCommands,
+    composerSkills,
     handleSlashCommand,
     handleSnippetCommand,
     tryHandleBuiltinGoalCommand,
@@ -1941,7 +1943,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         return true
       }
     }
-    if (/^\/loop(?:\s|:|$)/.test(content.trim())) {
+    // Quoted chat context is prepended as ``> `` lines, so a command the user
+    // typed is no longer at index 0 — matching the raw content used to send
+    // "> …\n\n/goal x" to the model as ordinary prose instead of starting the
+    // goal. The interceptors below split the quote off themselves; only this
+    // guard and the shell check need the body up front.
+    const { body } = splitQuotedContext(content)
+    if (/^\/loop(?:\s|:|$)/.test(body.trim())) {
       pushToast({
         tone: 'error',
         title: '/loop has been removed',
@@ -1951,9 +1959,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     }
     if (await tryHandleBuiltinGoalCommand(content)) return true
     if (await tryHandleWorkflowCommand(content)) return true
-    const shell = content.startsWith('!')
-    const command = shell ? content.slice(1).trim() : content
-    const expanded = shell ? `!${command}` : await expandUserCommand(content)
+    const shell = body.startsWith('!')
+    const expanded = shell
+      ? `!${body.slice(1).trim()}`
+      : await expandUserCommand(content)
     const current = useTeamStore.getState()
     await sendMessage(expanded, files, {
       mode,
@@ -2270,19 +2279,21 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             onSnippetCommand={handleSnippetCommand}
             slashCommands={slashCommands}
             snippetCommands={snippetCommands}
+            skills={composerSkills}
             historyPrompts={historyPrompts}
             fileRefs={fileRefs}
             onFileRefsNeeded={() => setFileRefsEnabled(true)}
             isStreaming={isTeamWorking}
             disabled={mode === 'coding' && isCodingSessionLoading}
+            // Idle text stays a short lead-in: InputBar appends the trigger
+            // guideline (``@ tag files/folders, $ use skills, / for commands``)
+            // for whichever pickers are actually wired up.
             placeholder={
               dreamMutation.isPending
                 ? 'Dream is running…'
-                : isTeamWorking
-                  ? 'Team working… type to interrupt'
-                  : codingIdentityLabel
-                    ? `Coding in ${codingIdentityLabel}`
-                    : 'Message the team…'
+                : codingIdentityLabel
+                  ? `Ask anything in ${codingIdentityLabel}`
+                  : 'Ask anything'
             }
             capabilities={effectiveCapabilities}
             revertedCount={leadRevertedCount}
