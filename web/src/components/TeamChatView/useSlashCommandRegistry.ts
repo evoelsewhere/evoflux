@@ -18,9 +18,10 @@ import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { parseGoalCommand } from '@/lib/parseGoalCommand'
+import { splitQuotedContext } from '../InputBar.skills'
 import { mapWorkflowArgs, parseWorkflowCommand } from '@/lib/parseWorkflowCommand'
 import type { RunInputsRequest } from '../RunInputsDialog'
-import type { InputBarHandle, SlashCommand, SnippetCommand } from '../InputBar'
+import type { ComposerSkill, InputBarHandle, SlashCommand, SnippetCommand } from '../InputBar'
 import type { MessageAttachment } from '@/api/types'
 
 async function attachmentToFile(att: MessageAttachment): Promise<File | null> {
@@ -116,44 +117,6 @@ export function useSlashCommandRegistry({
     { id: 'goal:pause', label: 'goal:pause', displayName: 'goal:pause', description: 'Pause the active goal' },
     { id: 'goal:resume', label: 'goal:resume', displayName: 'goal:resume', description: 'Resume the paused goal' },
     { id: 'goal:stop', label: 'goal:stop', displayName: 'goal:stop', description: 'Remove the session goal' },
-    {
-      id: 'skill',
-      label: 'skill:',
-      displayName: 'skill:',
-      insertText: 'skill:',
-      description: 'Choose a skill to use for this message',
-      category: 'skill',
-      keepInputOpen: true,
-      appendSpace: false,
-      hideAfterPrefix: 'skill:',
-    },
-    ...(skillsQ.data?.skills ?? [])
-      .filter(
-        (skill) =>
-          skill.valid &&
-          skill.user_invocable !== false &&
-          (skill.modes ?? ['work', 'coding']).includes(mode),
-      )
-      .map((skill) => {
-        const skillName = skill.name.replace('/', ':')
-        const directive = `skill:${skillName}`
-        const starter = (skill.default_prompt ?? '')
-          .replaceAll(`$${skill.name}`, '')
-          .trim()
-        return {
-          id: directive,
-          label: skill.display_name || skillName,
-          displayName: directive,
-          insertText: starter ? `${directive} ${starter}` : directive,
-          description:
-            skill.short_description || skill.description || `Load the ${skillName} skill`,
-          category: 'skill',
-          keepInputOpen: true,
-          // Keep the root ``/`` menu compact. Skill choices appear only once
-          // the user enters the dedicated ``/skill:`` namespace.
-          filterPrefix: 'skill:',
-        }
-      }),
     ...runnableWorkflows.map((wf) => ({
       id: `workflow-${wf.name}`,
       label: `workflow ${wf.name}`,
@@ -176,6 +139,42 @@ export function useSlashCommandRegistry({
       }
     }),
   ]
+
+  /**
+   * Skills are picked with ``$`` in the composer, not from the ``/`` menu —
+   * one directive, one affordance. The backend still resolves the legacy
+   * ``/skill:<name>`` text, so nothing already typed or already sent breaks.
+   */
+  const composerSkills: ComposerSkill[] = useMemo(
+    () =>
+      (skillsQ.data?.skills ?? [])
+        .filter(
+          (skill) =>
+            skill.valid &&
+            skill.user_invocable !== false &&
+            (skill.modes ?? ['work', 'coding']).includes(mode),
+        )
+        .map((skill) => {
+          const skillName = skill.name.replace('/', ':')
+          return {
+            name: skillName,
+            label: skill.display_name || skillName,
+            description:
+              skill.short_description || skill.description || `Load the ${skillName} skill`,
+            // Verbatim: ``default_prompt`` is written around its own
+            // directive ("Use $my-skill for …"), and the picker inserts it
+            // whole rather than cutting the token out of the sentence.
+            // Nested skills are ``parent/child`` on the wire and
+            // ``parent:child`` in the composer, so rewrite the prompt's
+            // self-reference into the notation the directive uses.
+            prompt: (skill.default_prompt ?? '').replaceAll(
+              `$${skill.name}`,
+              `$${skillName}`,
+            ),
+          }
+        }),
+    [skillsQ.data, mode],
+  )
 
   const snippetCommands: SnippetCommand[] = (snippetsQ.data?.snippets ?? []).map((item) => ({
     id: item.name,
@@ -276,8 +275,30 @@ export function useSlashCommandRegistry({
     }
   }, [handleNewSession, runGoalCommand, mode, agentWorkspace, pushToast, inputRef])
 
-  const tryHandleBuiltinGoalCommand = useCallback(async (content: string): Promise<boolean> => {
+  /**
+   * Warn once when an intercepted command has to leave the composer's
+   * "Selected from chat" block behind. Dropping it silently is what made the
+   * quote-plus-command combination feel broken.
+   */
+  const noteDroppedQuote = useCallback(() => {
+    pushToast({
+      tone: 'info',
+      title: 'Quoted context was not included',
+      description: 'This command takes no free text — send the quote in its own message.',
+    })
+  }, [pushToast])
+
+  /**
+   * ``raw`` is the composed message, quote block and all: the composer
+   * prepends "Selected from chat" as ``> `` lines, so the command no longer
+   * opens the string and every parser here has to work on the body. A goal
+   * objective is free text, so the quote rides along with it; the control
+   * forms take no arguments, so it cannot and the user is told.
+   */
+  const tryHandleBuiltinGoalCommand = useCallback(async (raw: string): Promise<boolean> => {
+    const { quote, body: content } = splitQuotedContext(raw)
     const parsed = parseGoalCommand(content)
+    if (quote && parsed.kind !== 'none' && parsed.kind !== 'start') noteDroppedQuote()
     switch (parsed.kind) {
       case 'none':
         return false
@@ -295,9 +316,13 @@ export function useSlashCommandRegistry({
           description: 'Enter a positive token count, or use none for no limit.',
         })
         return true
-      case 'start':
-        await runGoalCommand(content, parsed.objective)
+      case 'start': {
+        // The server re-parses the command text, so the quote has to be part
+        // of it — not just of the optimistic bubble's objective.
+        const suffix = quote ? `\n\n${quote.trimEnd()}` : ''
+        await runGoalCommand(`${content}${suffix}`, `${parsed.objective}${suffix}`)
         return true
+      }
       case 'status':
         await runGoalCommand('/goal')
         return true
@@ -310,7 +335,7 @@ export function useSlashCommandRegistry({
         await runGoalCommand(`/goal:${parsed.kind}`)
         return true
     }
-  }, [pushToast, runGoalCommand])
+  }, [pushToast, runGoalCommand, noteDroppedQuote])
 
   const startWorkflowRun = useCallback(
     async (name: string, values: Record<string, unknown>) => {
@@ -325,7 +350,8 @@ export function useSlashCommandRegistry({
    *  sent as a chat message; positional args map onto declared inputs and
    *  missing required ones open RunInputsDialog. */
   const tryHandleWorkflowCommand = useCallback(
-    async (content: string): Promise<boolean> => {
+    async (raw: string): Promise<boolean> => {
+      const { quote, body: content } = splitQuotedContext(raw)
       const parsed = parseWorkflowCommand(content)
       if (parsed.kind === 'none') return false
       if (parsed.kind === 'missing_name') {
@@ -350,6 +376,10 @@ export function useSlashCommandRegistry({
         pushToast({ tone: 'error', title: 'Bad workflow arguments', description: mapped.errors.join('; ') })
         return true
       }
+      // Run inputs are declared and typed; there is no slot a free-text quote
+      // could fill. Said once the command is otherwise valid, so it doesn't
+      // pile on top of a "needs a name" error.
+      if (quote) noteDroppedQuote()
       if (mapped.missing.length > 0) {
         setRunInputsRequest({ name: wf.name, inputs: wf.inputs, prefilled: mapped.values })
         return true
@@ -366,15 +396,19 @@ export function useSlashCommandRegistry({
       }
       return true
     },
-    [runnableWorkflows, pushToast, startWorkflowRun],
+    [runnableWorkflows, pushToast, startWorkflowRun, noteDroppedQuote],
   )
 
-  /** If *content* starts with a known user-defined command, render server-side
-   *  and return the expanded body; otherwise return *content* unchanged. */
+  /** If the message body starts with a known user-defined command, render it
+   *  server-side and return the expanded message; otherwise return *raw*
+   *  unchanged. A leading quote block is split off before matching and put
+   *  back in front of the rendered body, so quoting a message and running a
+   *  command on it are not mutually exclusive. */
   const expandUserCommand = useCallback(
-    async (content: string): Promise<string> => {
-      if (!content.startsWith('/')) return content
-      if (content === '/goal' || content.startsWith('/goal:') || content.startsWith('/goal ')) return content
+    async (raw: string): Promise<string> => {
+      const { quote, body: content } = splitQuotedContext(raw)
+      if (!content.startsWith('/')) return raw
+      if (content === '/goal' || content.startsWith('/goal:') || content.startsWith('/goal ')) return raw
       // The command name may include slashes (nested folders), so we
       // greedily match the longest known prefix instead of splitting on
       // the first space. Tokens are separated by whitespace.
@@ -392,18 +426,18 @@ export function useSlashCommandRegistry({
           const args = (argsHead + restOfMessage).trim()
           try {
             const res = await renderCommand(commandName, args, agentWorkspace)
-            return res.content
+            return `${quote}${res.content}`
           } catch (err) {
             pushToast({
               tone: 'error',
               title: `Failed to render /${candidate}`,
               description: (err as Error).message,
             })
-            return content
+            return raw
           }
         }
       }
-      return content
+      return raw
     },
     [userCommandNames, agentWorkspace, pushToast],
   )
@@ -411,6 +445,7 @@ export function useSlashCommandRegistry({
   return {
     slashCommands,
     snippetCommands,
+    composerSkills,
     handleSlashCommand,
     handleSnippetCommand,
     tryHandleBuiltinGoalCommand,
