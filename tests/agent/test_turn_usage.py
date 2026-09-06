@@ -289,3 +289,32 @@ def test_a_provider_fallback_prices_against_the_model_it_fell_back_to() -> None:
     assert _catalog_model_id("claude-sonnet-4-5", state) == (
         "anthropic:claude-sonnet-4-5"
     )
+
+
+def test_subscription_providers_are_priced_like_any_other():
+    """Codex is priced from the catalog, same as a pay-per-token provider.
+
+    It bills by ChatGPT subscription, so this figure is what the tokens would
+    have cost at API rates rather than money leaving an account — a caller
+    summing it into a bill-shaped total gets a number that reads high.
+    Reporting it is the deliberate choice: an operator asking "what did this
+    turn consume" gets an answer instead of a blank.
+    """
+    from app.agent.usage import estimate_cost
+
+    codex = estimate_cost(
+        "codex:gpt-5.6-luna", input_tokens=10_000, output_tokens=1_000
+    )
+    direct = estimate_cost(
+        "openai:gpt-5.6-luna", input_tokens=10_000, output_tokens=1_000
+    )
+
+    assert codex is not None
+    assert codex == direct
+
+
+def test_a_model_the_catalog_has_no_rates_for_stays_unpriced():
+    """The only reason to return nothing is having no rate to apply."""
+    from app.agent.usage import estimate_cost
+
+    assert estimate_cost("ollama:llama3", input_tokens=10_000, output_tokens=1) is None
