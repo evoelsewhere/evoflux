@@ -991,16 +991,30 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   }, [])
 
   const handlePermissionModeChange = useCallback(async (newMode: import('@/api/types').PermissionMode) => {
+    const previous = useTeamStore.getState().sessionPermissionMode
     setPermissionMode(newMode)
     useTeamStore.setState({ sessionPermissionMode: newMode })
-    if (sessionIdState) {
-      try {
-        await setSessionPermissionMode(sessionIdState, newMode)
-      } catch {
-        // non-fatal: in-memory mode is already updated; DB sync failed silently
-      }
+    // No row yet: the pick travels with the first message instead (see
+    // `draftPlacement`), so there is nothing to PATCH and nothing to revert.
+    if (!sessionIdState) return
+    try {
+      await setSessionPermissionMode(sessionIdState, newMode)
+    } catch (error) {
+      // Roll the badge back. Leaving it on the new mode was the dangerous
+      // half of this failure: the run kept enforcing the old one while the
+      // UI insisted the user's choice had taken.
+      setPermissionMode(previous)
+      useTeamStore.setState({ sessionPermissionMode: previous })
+      pushToast({
+        tone: 'error',
+        title: 'Permission mode not changed',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'The server did not accept the change. The agent is still running under the previous mode.',
+      })
     }
-  }, [sessionIdState])
+  }, [sessionIdState, pushToast])
 
   const handleCodingSidebarToggle = useCallback(() => {
     if (isMobile || sidebarOverlay) {

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from app.agent.plan import PLAN_INTERCEPTED_TOOLS as plan_intercepted_tools_const
 from app.agent.errors import ToolArgumentError, ToolNotFoundError
 from app.agent.schemas.chat import ContentBlock, TextBlock, ToolResult
 from app.agent.tool_media import materialize_tool_attachments
@@ -41,10 +42,9 @@ def sanitize_error(message: str) -> str:
     return message
 
 
-# Tools intercepted in plan mode — recorded rather than executed.
-_PLAN_INTERCEPTED: frozenset[str] = frozenset(
-    {"edit", "write", "patch", "rm", "shell", "python", "process"}
-)
+# Tools intercepted in plan mode — recorded rather than executed. Re-exported
+# from app.agent.plan so the permission service gates on the same list.
+_PLAN_INTERCEPTED = plan_intercepted_tools_const
 
 
 def _plan_summary(tool_name: str, args: dict) -> str:

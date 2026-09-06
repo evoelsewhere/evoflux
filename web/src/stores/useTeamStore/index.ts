@@ -11,7 +11,7 @@ import { useToastStore } from '@/stores/useToastStore'
 import { isTransientNetworkError } from '@/utils/errors'
 import { createStreamScheduler } from '@/api/stream-scheduler'
 import type { AgentStream, TeamStore, TeamStoreState } from './types'
-import type { ContentBlock, MessageResponse, TeamHistoryResponse } from '@/api/types'
+import type { ContentBlock, MessageResponse, PermissionMode, TeamHistoryResponse } from '@/api/types'
 
 function resetTurnUsage(stream: AgentStream) {
   stream.usage.turnPromptTokens = 0
@@ -322,13 +322,26 @@ export function forgetSessionSnapshot(sessionId: string): void {
 }
 
 /**
- * Placement to send with a message that may be the one creating the session.
- * Only a draft has any: once ``sessionId`` exists the row owns its folder and
- * project, and the backend ignores these fields anyway.
+ * Settings to send with a message that may be the one creating the session.
+ * Only a draft has any: once ``sessionId`` exists the row owns its folder,
+ * project and permission mode, and the backend ignores these fields anyway.
+ *
+ * The permission mode rides along because there is nothing to PATCH it to
+ * until the row exists. Left out, the pick was silently dropped and the first
+ * turn ran under the column default — approving everything for a user who
+ * had just asked to be asked.
  */
-function draftPlacement(state: TeamStore): { folderId: string | null; projectId: string | null } | undefined {
+function draftPlacement(state: TeamStore): {
+  folderId: string | null
+  projectId: string | null
+  permissionMode: PermissionMode
+} | undefined {
   if (state.sessionId) return undefined
-  return { folderId: state.newChatDraft?.folderId ?? null, projectId: state.projectId }
+  return {
+    folderId: state.newChatDraft?.folderId ?? null,
+    projectId: state.projectId,
+    permissionMode: state.sessionPermissionMode,
+  }
 }
 
 function resetSessionState(

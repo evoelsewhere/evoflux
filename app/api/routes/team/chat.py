@@ -544,6 +544,18 @@ async def team_chat(
     team_obj.session_tags = frozenset(session_tags)
     if existing is not None:
         team_obj.permission_mode = existing.permission_mode
+    else:
+        # A session this message brings into being. The mode the user picked
+        # while the chat was still a draft has nowhere to be PATCHed to yet,
+        # so it rides the first message — the same way folder and project do.
+        #
+        # Without this the pick was silently dropped: the row took the column
+        # default, the badge went on showing what was chosen, and a user who
+        # selected "Ask permissions" got a turn that approved everything.
+        # Falling back to the default rather than leaving ``team_obj`` alone
+        # also stops a new chat inheriting the previous session's mode from
+        # the long-lived in-memory team.
+        team_obj.permission_mode = _validated_permission_mode(body.permission_mode)
 
     # An explicit blank model clears the session override and therefore uses
     # the lead default for this very turn. When the field is omitted, preserve
@@ -1617,6 +1629,25 @@ async def duplicate_team_session(session_id: UUID, db: DbSession) -> SessionResp
 
 
 _VALID_PERMISSION_MODES = frozenset({"ask", "accept-edits", "plan", "auto", "bypass"})
+DEFAULT_PERMISSION_MODE = "auto"
+
+
+def _validated_permission_mode(mode: str | None) -> str:
+    """Return *mode* if the client sent a known one, else the default.
+
+    422s an unknown value rather than quietly downgrading it: a client that
+    asks for a mode this server does not have must not be told "fine" and
+    then given the permissive default.
+    """
+    if mode is None:
+        return DEFAULT_PERMISSION_MODE
+    if mode not in _VALID_PERMISSION_MODES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown permission_mode '{mode}'.",
+        )
+    return mode
+
 
 
 class PermissionModeRequest(BaseModel):

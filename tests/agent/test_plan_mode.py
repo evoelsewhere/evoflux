@@ -189,3 +189,62 @@ async def test_tool_rejected_message_includes_optional_feedback(
     assert "Plan rejected" in msg
     assert "wrong direction entirely" in msg
     assert state.metadata["_plan_mode"] is False
+
+
+# ---------------------------------------------------------------------------
+# Run wiring
+# ---------------------------------------------------------------------------
+
+
+def test_run_config_copies_the_metadata_dict_it_is_handed():
+    """Pin the pydantic behaviour that silently disabled plan mode.
+
+    ``RunConfig`` validation copies the dict, so anything written to the
+    caller's dict afterwards lands somewhere the run never reads. The team
+    member used to build its ``RunConfig`` before setting ``_plan_mode``, so
+    the flag never arrived: the tool executor intercepted nothing, and because
+    the permission service treated "plan" as auto-allow, the mode quietly
+    became the most permissive one instead of the most cautious.
+    """
+    from app.agent.schemas.agent import RunConfig
+
+    metadata: dict[str, object] = {"team_mode": "work"}
+    config = RunConfig(session_id=None, metadata=metadata)
+    metadata["_plan_mode"] = True
+
+    assert config.metadata is not metadata
+    assert config.metadata.get("_plan_mode") is None
+
+
+def test_member_builds_run_config_after_writing_plan_metadata():
+    """Guard the ordering, since the failure mode is silent.
+
+    Nothing raises when the two are the wrong way round — plan mode just stops
+    planning — so the only cheap protection is asserting the order in source.
+    """
+    import inspect
+
+    from app.agent.mode.team import member as member_module
+
+    source = inspect.getsource(member_module.TeamMember._handle_messages)
+    plan_flag = source.index('run_metadata["_plan_mode"] = True')
+    build = source.index("config = RunConfig(")
+    assert plan_flag < build, (
+        "RunConfig must be built after the last write to run_metadata; "
+        "pydantic copies the dict, so later writes are lost."
+    )
+
+
+def test_plan_intercepted_tools_is_the_list_both_layers_gate_on():
+    """One list, two readers.
+
+    The tool executor decides what to record; the permission service decides
+    what still needs approval because it will really run. If those drift, a
+    tool is either recorded and asked about, or neither.
+    """
+    from app.agent.agent_loop.tool_executor import _PLAN_INTERCEPTED
+    from app.agent.plan import PLAN_INTERCEPTED_TOOLS
+
+    assert _PLAN_INTERCEPTED is PLAN_INTERCEPTED_TOOLS
+    assert "shell" in PLAN_INTERCEPTED_TOOLS
+    assert "browser_use" not in PLAN_INTERCEPTED_TOOLS

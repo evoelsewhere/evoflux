@@ -1840,6 +1840,11 @@ async def create_side_chat_session(
         mode=main.mode,
         workspace=main.workspace,
         project_id=main.project_id,
+        # A side chat runs against the same workspace with the same tools, so
+        # it inherits the parent's guard rails too. It used to fall back to
+        # the column default, quietly turning a session the user had set to
+        # "Ask permissions" into one that approves everything.
+        permission_mode=main.permission_mode,
         tags=["side_chat"],
     )
     db.add(session)

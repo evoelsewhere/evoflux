@@ -38,6 +38,13 @@ function PermissionApprovalForm({
     return () => cancelAnimationFrame(frame)
   }, [])
 
+  // What "always" actually grants. The backend widens a command to its
+  // family (`git commit -m x` → `git commit *`), and the dialog used to show
+  // only the exact command, so the broader grant was invisible.
+  const alwaysScope = (permissionRequest.alwaysPatterns ?? [])
+    .filter((p) => p && !permissionRequest.patterns.includes(p))
+    .join(', ')
+
   const handleReply = async (reply: 'once' | 'always' | 'reject') => {
     setReplying(true)
     setReplyError(null)
@@ -98,6 +105,13 @@ function PermissionApprovalForm({
             ) : (
               <span className="text-xs italic text-(--color-text-subtle)">no arguments</span>
             )}
+            {alwaysScope && (
+              <p className="mt-1.5 text-[11px] leading-4 text-(--color-text-subtle)">
+                Always allow covers{' '}
+                <span className="font-mono text-(--color-text-muted)">{alwaysScope}</span>{' '}
+                for the rest of this run.
+              </p>
+            )}
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
@@ -121,19 +135,6 @@ function PermissionApprovalForm({
               disabled={replying}
               onClick={() => handleReply('once')}
               className={cn(
-                'flex items-center gap-1 rounded-lg border border-(--color-border) px-2.5 py-1.5 text-xs font-medium transition-colors',
-                'bg-(--bg-card) text-(--color-text) hover:bg-(--bg-key)',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
-                replying && 'pointer-events-none opacity-50',
-              )}
-            >
-              Allow once
-            </button>
-            <button
-              type="button"
-              disabled={replying}
-              onClick={() => handleReply('always')}
-              className={cn(
                 'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
                 'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
@@ -141,7 +142,20 @@ function PermissionApprovalForm({
               )}
             >
               <ShieldCheck size={12} aria-hidden="true" />
-              {replying ? 'Allowing…' : 'Always allow'}
+              {replying ? 'Allowing…' : 'Allow once'}
+            </button>
+            <button
+              type="button"
+              disabled={replying}
+              onClick={() => handleReply('always')}
+              className={cn(
+                'flex items-center gap-1 rounded-lg border border-(--color-border) px-2.5 py-1.5 text-xs font-medium transition-colors',
+                'bg-(--bg-card) text-(--color-text) hover:bg-(--bg-key)',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
+                replying && 'pointer-events-none opacity-50',
+              )}
+            >
+              Always allow
             </button>
           </div>
         </div>

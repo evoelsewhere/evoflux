@@ -35,6 +35,7 @@ async def list_permissions(session_id: str) -> dict:
                 session_id=req.session_id,
                 tool=req.tool,
                 patterns=req.patterns,
+                always_patterns=req.always_patterns,
                 metadata=req.metadata,
             ).model_dump()
             for service in get_services_for_stream(session_id)

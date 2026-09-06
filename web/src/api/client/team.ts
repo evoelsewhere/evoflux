@@ -79,12 +79,18 @@ export async function postTeamChat(
   fastMode = false,
   webBridgeEnabled?: boolean,
   /**
-   * Where the session should land if this message is the one that creates it
-   * — a new chat is held as a draft until the first send, so the folder it was
-   * started from (and, in Coding, the project it was focused under) travels
-   * with the message. Ignored by the backend for a session that already exists.
+   * Settings the session should be born with if this message is the one that
+   * creates it — a new chat is held as a draft until the first send, so the
+   * folder it was started from (and, in Coding, the project it was focused
+   * under) travels with the message, as does the permission mode, which has
+   * no row to be PATCHed onto yet. Ignored by the backend for a session that
+   * already exists.
    */
-  placement?: { folderId?: string | null; projectId?: string | null },
+  placement?: {
+    folderId?: string | null
+    projectId?: string | null
+    permissionMode?: string | null
+  },
 ): Promise<{ status: string; session_id: string; message_id?: string }> {
   const formData = new FormData()
   if (message) {
@@ -122,6 +128,9 @@ export async function postTeamChat(
   }
   if (placement?.projectId) {
     formData.append('project_id', placement.projectId)
+  }
+  if (placement?.permissionMode) {
+    formData.append('permission_mode', placement.permissionMode)
   }
   if (files && files.length > 0) {
     for (const file of files) {

@@ -478,6 +478,12 @@ class TeamMemberBase(abc.ABC):
                         workspace=workspace,
                         project_id=project_id,
                         folder_id=folder_id,
+                        # The mode the user picked before this row existed.
+                        # Omitting it let the column default win, so a draft
+                        # chat set to "Ask permissions" was born in "auto".
+                        permission_mode=(
+                            self._team.permission_mode if self._team else "auto"
+                        ),
                         tags=sorted(self._team.session_tags) or None
                         if self._team
                         else None,
@@ -1637,7 +1643,6 @@ class TeamMemberBase(abc.ABC):
             run_metadata["stop_after_before_model"] = True
         if task_workspace.workspace:
             run_metadata["team_workspace"] = task_workspace.workspace
-        config = RunConfig(session_id=self.session_id, metadata=run_metadata)
 
         # Coding mode uses the exact project workspace for every team member.
         session_sandbox = SandboxConfig(
@@ -1682,6 +1687,18 @@ class TeamMemberBase(abc.ABC):
                 "enter_plan_mode",
                 "exit_plan_mode",
             }
+
+        # Built here, after the last write to ``run_metadata``.
+        #
+        # ``RunConfig`` is a pydantic model, so validation *copies* the dict it
+        # is handed. Constructing it earlier meant every key written after that
+        # point — the two above among them — landed in a dict the run never
+        # read. Plan mode was the casualty: ``_plan_mode`` never arrived, the
+        # tool executor never intercepted anything, and because ``_blocks()``
+        # returns False for "plan" the mode degraded into approving everything
+        # while still calling itself Plan mode. Do not move this back up, and
+        # do not mutate ``run_metadata`` below it.
+        config = RunConfig(session_id=self.session_id, metadata=run_metadata)
 
         # Scope ask-user service — blocks the ask_user tool until the user
         # answers, publishing to the same lead stream as plan approvals.
