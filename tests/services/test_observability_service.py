@@ -252,6 +252,44 @@ def test_summarize_aggregates_turns_llm_tools(
     assert tools["web_fetch"]["errors"] == 1
 
 
+def test_summarize_survives_a_window_with_no_turn_spans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """A window can hold LLM spans and no ``agent_run`` at all.
+
+    Retention can trim the parent while a child survives, and a background
+    title generation is a real LLM call that never had one. DuckDB's
+    ``count_if`` returns NULL rather than 0 over an empty relation, so the
+    unguarded totals used to crash the entire summary endpoint.
+    """
+    spans_dir = _point_EVOFLUX_at(tmp_path, monkeypatch)
+    now = datetime.now(timezone.utc)
+    _write_spans(
+        spans_dir / f"{now.strftime('%Y-%m-%d-%H')}.jsonl",
+        [
+            _span(
+                name="title_generation",
+                end_time_ns=int(now.timestamp() * 1e9),
+                duration_ms=90.0,
+                attributes={
+                    "gen_ai.operation.name": "title_generation",
+                    "gen_ai.provider.name": "openai",
+                    "gen_ai.request.model": "gpt-4o-mini",
+                    "gen_ai.usage.input_tokens": 120,
+                    "gen_ai.usage.output_tokens": 15,
+                },
+            )
+        ],
+    )
+
+    result = summarize(days=7)
+
+    assert result.total_turns == 0
+    assert result.failed_turns == 0
+    assert result.error_spans == 0
+    assert result.total_llm_calls == 1
+
+
 def test_summarize_handles_missing_cache_read_tokens(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
