@@ -21,7 +21,7 @@ import { Loader2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 import { getToolIcon } from './ToolCallGroup'
-import { subscribeClock } from './ToolCall'
+import { subscribeClock } from './ToolCall/liveClock'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
