@@ -409,8 +409,12 @@ def _run_queries(
           (SELECT count(*) FROM turn_spans) AS turns,
           (SELECT count(*) FROM llm_spans) AS llm_calls,
           (SELECT count(*) FROM tool_spans) AS tool_calls,
-          (SELECT count_if(status = 'ERROR') FROM turn_spans) AS failed_turns,
-          (SELECT count_if(status = 'ERROR') FROM spans_window_map) AS error_spans,
+          -- ``count_if`` returns NULL over zero rows, unlike ``count(*)``. A
+          -- window holding LLM spans but no turn span — retention trimmed the
+          -- parent, or the only traffic was title generation — would otherwise
+          -- crash the whole summary on ``int(None)``.
+          (SELECT coalesce(count_if(status = 'ERROR'), 0) FROM turn_spans) AS failed_turns,
+          (SELECT coalesce(count_if(status = 'ERROR'), 0) FROM spans_window_map) AS error_spans,
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT)), 0) FROM llm_spans) AS input_tokens,
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT)), 0) FROM llm_spans) AS output_tokens,
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) FROM llm_spans) AS cached_tokens,
