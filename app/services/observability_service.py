@@ -172,6 +172,13 @@ class ObservabilitySummary:
     cache_by_step: list[dict]
     by_tool: list[dict]  # [{"tool": "read", "calls": 12, "errors": 0}]
 
+    #: ``by_model`` crossed with ``time_series``: one row per bucket per model,
+    #: carrying the cache split. ``by_model`` alone cannot say *when* a model
+    #: ran, and ``time_series`` alone cannot say which model or how much of its
+    #: input the provider served from cache — the two questions the token
+    #: chart is asked. Sparse: a bucket a model did not run in has no row.
+    tokens_by_model: list[dict]
+
     def to_dict(self) -> dict:
         return {
             "window_start": self.window_start.isoformat(),
@@ -210,6 +217,7 @@ class ObservabilitySummary:
             "by_model": self.by_model,
             "cache_by_step": self.cache_by_step,
             "by_tool": self.by_tool,
+            "tokens_by_model": self.tokens_by_model,
         }
 
 
@@ -265,6 +273,7 @@ def _empty_summary(
         by_model=[],
         cache_by_step=[],
         by_tool=[],
+        tokens_by_model=[],
     )
 
 
@@ -538,6 +547,58 @@ def _run_queries(
         sparse_series, window_start, window_end, bucket_size=bucket_size
     )
 
+    # ``by_model`` crossed with the bucket grid. Reads ``llm_spans`` — the same
+    # view the totals and ``by_model`` read, and the same predicate the series
+    # query inlines — so a bucket's rows sum back to that bucket's
+    # ``input_tokens`` and the stack can be trusted against the line.
+    tokens_by_model_rows = con.execute(
+        f"""
+        SELECT
+          strftime(date_trunc('{bucket_unit}', make_timestamp(end_time // 1000)), '{bucket_format}') AS bucket_start,
+          coalesce(attributes['gen_ai.provider.name'], 'unknown') AS provider,
+          coalesce(attributes['gen_ai.request.model'], 'unknown') AS model,
+          coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT)), 0) AS input_tokens,
+          coalesce(sum(try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT)), 0) AS output_tokens,
+          coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
+          coalesce(sum(try_cast(attributes['gen_ai.usage.cache_write.input_tokens'] AS BIGINT)), 0) AS cache_write_tokens,
+          count(*) AS calls
+        FROM llm_spans
+        GROUP BY bucket_start, provider, model
+        HAVING input_tokens > 0 OR output_tokens > 0
+        ORDER BY bucket_start, provider, model
+        """
+    ).fetchall()
+    tokens_by_model = [
+        {
+            "bucket_start": str(bucket),
+            "provider": provider,
+            "model": model,
+            "provider_model": f"{provider}:{model}",
+            "input_tokens": int(input_tokens),
+            "output_tokens": int(output_tokens),
+            "cached_tokens": int(cached_tokens),
+            "cache_write_tokens": int(cache_write_tokens),
+            # What the provider actually charged full price for. Clamped
+            # because a malformed span can report more cache than input, and a
+            # negative segment would draw a bar upside down.
+            "fresh_input_tokens": max(
+                int(input_tokens) - int(cached_tokens) - int(cache_write_tokens), 0
+            ),
+            "cache_percent": _cache_percent(int(cached_tokens), int(input_tokens)),
+            "calls": int(calls),
+        }
+        for (
+            bucket,
+            provider,
+            model,
+            input_tokens,
+            output_tokens,
+            cached_tokens,
+            cache_write_tokens,
+            calls,
+        ) in tokens_by_model_rows
+    ]
+
     model_rows = con.execute(
         """
         SELECT
@@ -721,6 +782,7 @@ def _run_queries(
         by_model=by_model,
         cache_by_step=cache_by_step,
         by_tool=by_tool,
+        tokens_by_model=tokens_by_model,
     )
 
 

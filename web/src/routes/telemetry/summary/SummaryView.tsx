@@ -7,16 +7,15 @@ import {
   formatPercent,
   formatUsd,
 } from '@/utils/telemetryFormat'
-import { ChartCard, TimeChart, TokenVolumeChart } from '../charts'
+import { ChartCard, TimeChart } from '../charts'
 import { SectionHeader, Stat } from '../primitives'
+import { TokenConsumptionChart } from './TokenConsumptionChart'
 
 const COLORS = {
   turns: 'var(--color-marker-blue)',
   llm: 'var(--color-violet)',
   tools: 'var(--color-marker-mint)',
   errors: 'var(--color-error)',
-  input: 'var(--color-marker-blue)',
-  output: 'var(--color-marker-orange)',
 }
 
 export function SummaryView({ data }: { data: ObservabilitySummary }) {
@@ -92,16 +91,11 @@ export function SummaryView({ data }: { data: ObservabilitySummary }) {
           <Stat label="Cache hit" value={formatPercent(totals.cache_percent)} />
           <Stat label="Estimated cost" value={formatUsd(totals.estimated_cost_usd)} />
         </div>
-        <ChartCard
-          title="Token volume"
-          description="Aligned buckets with independent scales for input and output"
-          legend={[
-            { label: 'Input', color: COLORS.input },
-            { label: 'Output', color: COLORS.output },
-          ]}
-        >
-          <TokenVolumeChart data={data.time_series} bucketSize={data.bucket_size} />
-        </ChartCard>
+        <TokenConsumptionChart
+          data={data.time_series}
+          bucketSize={data.bucket_size}
+          tokensByModel={data.tokens_by_model}
+        />
       </section>
     </div>
   )
