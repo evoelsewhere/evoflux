@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from contextvars import ContextVar
 import json
 from typing import Annotated, Any, Literal, cast
 
@@ -35,6 +36,11 @@ from app.agent.tools.registry import InjectedArg, tool
 from app.services.webbridge_service import webbridge_manager
 
 
+_webbridge_target_id: ContextVar[str | None] = ContextVar(
+    "webbridge_target_id", default=None
+)
+
+
 def _get_sid(state: Any) -> str:
     if not state:
         return "default"
@@ -46,7 +52,12 @@ async def _send_command(
     session_id: str, action: str, params: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Send a command to the extension via the manager and wait for response."""
-    return await webbridge_manager.send_command(session_id, action, params)
+    return await webbridge_manager.send_command(
+        session_id,
+        action,
+        params,
+        extension_id=_webbridge_target_id.get(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -755,19 +766,24 @@ async def webbridge(
 ) -> str | ToolResult:
     """Control the user's real browser via the WebBridge Chrome extension."""
     session_id = _get_sid(_state)
+    metadata = _state.metadata if _state else {}
+    target_token = _webbridge_target_id.set(
+        metadata.get("webbridge_extension_id") if metadata else None
+    )
     results: list[str | ToolResult] = []
-
-    for act in actions:
-        try:
-            result = await _dispatch_webbridge(act, session_id)
-            if act.action in _UNTRUSTED_BROWSER_ACTIONS:
-                result = mark_untrusted_browser_result(result)
-            results.append(result)
-        except Exception as e:
-            logger.debug("webbridge_error action={} error={}", act.action, e)
-            results.append(f"Error ({act.action}): {e}")
-
-    return combine_browser_results(results)
+    try:
+        for act in actions:
+            try:
+                result = await _dispatch_webbridge(act, session_id)
+                if act.action in _UNTRUSTED_BROWSER_ACTIONS:
+                    result = mark_untrusted_browser_result(result)
+                results.append(result)
+            except Exception as e:
+                logger.debug("webbridge_error action={} error={}", act.action, e)
+                results.append(f"Error ({act.action}): {e}")
+        return combine_browser_results(results)
+    finally:
+        _webbridge_target_id.reset(target_token)
 
 
 async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:

@@ -47,7 +47,11 @@ from app.api.schemas.sessions import (
     TeamSessionUpdateRequest,
     TeamWorkspaceVisibilityRequest,
 )
-from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
+from app.webbridge_tags import (
+    WEBBRIDGE_SESSION_TAG,
+    WEBBRIDGE_TARGET_TAG_PREFIX,
+    webbridge_target_tag,
+)
 from app.api.schemas.team import GoalResponse, TeamHistoryMember, TeamHistoryResponse
 from app.api.routes.team.worktrees import (
     WorktreeCreateRequest,
@@ -425,8 +429,50 @@ async def team_chat(
     if body.webbridge_enabled is not None:
         if body.webbridge_enabled:
             session_tags.add(WEBBRIDGE_SESSION_TAG)
+            if not webbridge_manager.has_active_extension():
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "WebBridge is enabled, but no browser extension is connected. "
+                        "Connect it from the WebBridge panel and try again."
+                    ),
+                )
+            active_extensions = webbridge_manager.active_extensions()
+            requested_extension_id = (body.webbridge_extension_id or "").strip()
+            if not requested_extension_id:
+                if len(active_extensions) != 1:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "Choose a connected browser before enabling WebBridge."
+                        ),
+                    )
+                requested_extension_id = active_extensions[0].extension_id
+            if requested_extension_id not in {
+                extension.extension_id for extension in active_extensions
+            }:
+                raise HTTPException(
+                    status_code=409,
+                    detail="The selected WebBridge browser is no longer connected.",
+                )
+            session_tags = {
+                tag
+                for tag in session_tags
+                if not tag.startswith(WEBBRIDGE_TARGET_TAG_PREFIX)
+            }
+            session_tags.add(webbridge_target_tag(requested_extension_id))
         else:
             session_tags.discard(WEBBRIDGE_SESSION_TAG)
+            session_tags = {
+                tag
+                for tag in session_tags
+                if not tag.startswith(WEBBRIDGE_TARGET_TAG_PREFIX)
+            }
+    elif body.webbridge_extension_id is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="webbridge_extension_id requires webbridge_enabled=true.",
+        )
 
     if (
         WEBBRIDGE_SESSION_TAG in session_tags

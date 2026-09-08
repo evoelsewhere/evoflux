@@ -97,6 +97,8 @@ interface WebBridgeStatusPopoverProps {
   onOpenChange: (open: boolean) => void
   enabled: boolean
   onEnabledChange: (enabled: boolean) => void
+  selectedExtensionId: string | null
+  onSelectedExtensionChange: (extensionId: string) => void
   onStatusChange?: (status: WebBridgeStatusResponse) => void
   /** When false, the master policy switch is off and per-chat enable is blocked. */
   policyEnabled?: boolean
@@ -107,6 +109,8 @@ export function WebBridgeStatusPopover({
   onOpenChange,
   enabled,
   onEnabledChange,
+  selectedExtensionId,
+  onSelectedExtensionChange,
   onStatusChange,
   policyEnabled = true,
 }: WebBridgeStatusPopoverProps) {
@@ -184,8 +188,11 @@ export function WebBridgeStatusPopover({
     }
   }, [pushToast])
 
-  const extension = status?.extensions[0]
+  const extensions = status?.extensions ?? []
+  const extension = extensions.find((item) => item.extension_id === selectedExtensionId)
+    ?? (extensions.length === 1 ? extensions[0] : null)
   const connected = status?.connected ?? false
+  const browserSelected = extension !== null
   const relayUrl = deriveRelayUrl()
   const automation = extension?.automation
   const textWatches = automation?.text_watches ?? []
@@ -382,6 +389,8 @@ export function WebBridgeStatusPopover({
                 ? 'WebBridge is disabled in Settings.'
                 : !connected
                   ? 'Connect the browser extension to enable WebBridge.'
+                  : !browserSelected
+                    ? 'Choose the browser this chat can control.'
                 : enabled
                   ? 'The agent can use WebBridge.'
                   : 'WebBridge is currently disabled.'}
@@ -392,13 +401,43 @@ export function WebBridgeStatusPopover({
             size="sm"
             variant={enabled ? 'outline' : 'default'}
             onClick={() => onEnabledChange(!enabled)}
-            disabled={!policyEnabled || !connected}
+            disabled={!policyEnabled || !connected || !browserSelected}
             aria-label={enabled ? 'Disable WebBridge for this chat' : 'Enable WebBridge for this chat'}
             className="shrink-0"
           >
             {enabled ? 'Disable' : 'Enable'}
           </Button>
         </div>
+
+        {extensions.length > 1 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-(--color-text-muted)">Browser for this chat</p>
+            <div className="space-y-1 rounded-md border border-(--color-border-subtle) bg-(--bg-key) p-1.5">
+              {extensions.map((candidate) => {
+                const selected = candidate.extension_id === extension?.extension_id
+                return (
+                  <button
+                    key={candidate.extension_id}
+                    type="button"
+                    onClick={() => onSelectedExtensionChange(candidate.extension_id)}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors',
+                      selected
+                        ? 'bg-(--color-accent)/12 text-(--color-text)'
+                        : 'text-(--color-text-muted) hover:bg-(--bg-2) hover:text-(--color-text)',
+                    )}
+                    aria-pressed={selected}
+                  >
+                    <span className={cn('size-1.5 shrink-0 rounded-full', selected ? 'bg-(--color-accent)' : 'bg-(--color-text-subtle)')} />
+                    <span className="min-w-0 flex-1 truncate">
+                      {candidate.browser} · {candidate.current_title || candidate.current_url || `v${candidate.version}`}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">

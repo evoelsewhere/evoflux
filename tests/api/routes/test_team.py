@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -313,6 +314,10 @@ class TestTeamChatRoute:
             "app.api.routes.team.chat.webbridge_manager.has_active_extension",
             lambda: True,
         )
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.active_extensions",
+            lambda: [SimpleNamespace(extension_id="browser-1")],
+        )
 
         response = TestClient(app_with_team).post(
             "/api/team/chat",
@@ -321,6 +326,60 @@ class TestTeamChatRoute:
 
         assert response.status_code == 202
         assert "webbridge" in test_team.session_tags
+        assert "webbridge_target:browser-1" in test_team.session_tags
+
+    def test_team_chat_requires_browser_choice_when_multiple_webbridge_extensions(
+        self, app_with_team, test_team, monkeypatch
+    ):
+        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.active_extensions",
+            lambda: [
+                SimpleNamespace(extension_id="browser-1"),
+                SimpleNamespace(extension_id="browser-2"),
+            ],
+        )
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
+            lambda: True,
+        )
+
+        response = TestClient(app_with_team).post(
+            "/api/team/chat",
+            data={"message": "Use my browser", "webbridge_enabled": "true"},
+        )
+
+        assert response.status_code == 409
+        assert "Choose a connected browser" in response.json()["detail"]
+        test_team.handle_user_message.assert_not_awaited()
+
+    def test_team_chat_pins_webbridge_to_selected_extension(
+        self, app_with_team, test_team, monkeypatch
+    ):
+        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.active_extensions",
+            lambda: [
+                SimpleNamespace(extension_id="browser-1"),
+                SimpleNamespace(extension_id="browser-2"),
+            ],
+        )
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
+            lambda: True,
+        )
+
+        response = TestClient(app_with_team).post(
+            "/api/team/chat",
+            data={
+                "message": "Use my browser",
+                "webbridge_enabled": "true",
+                "webbridge_extension_id": "browser-2",
+            },
+        )
+
+        assert response.status_code == 202
+        assert "webbridge_target:browser-2" in test_team.session_tags
 
     def test_team_chat_disables_webbridge_and_uses_normal_session(
         self, app_with_team, test_team, monkeypatch

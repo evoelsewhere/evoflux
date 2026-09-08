@@ -78,6 +78,7 @@ export async function postTeamChat(
   shell = false,
   fastMode = false,
   webBridgeEnabled?: boolean,
+  webBridgeExtensionId?: string | null,
   /**
    * Settings the session should be born with if this message is the one that
    * creates it — a new chat is held as a draft until the first send, so the
@@ -119,6 +120,9 @@ export async function postTeamChat(
   }
   if (webBridgeEnabled !== undefined) {
     formData.append('webbridge_enabled', String(webBridgeEnabled))
+  }
+  if (webBridgeExtensionId) {
+    formData.append('webbridge_extension_id', webBridgeExtensionId)
   }
   if (shell) {
     formData.append('shell', 'true')
