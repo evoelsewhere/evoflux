@@ -59,6 +59,8 @@ interface WorkbenchBarProps {
   /** Controls whether the active session can use the connected browser. */
   webBridgeEnabled: boolean
   onWebBridgeEnabledChange: (enabled: boolean) => void
+  selectedExtensionId?: string | null
+  onSelectedExtensionChange?: (extensionId: string) => void
   webBridgePopoverOpen: boolean
   onWebBridgePopoverOpenChange: (open: boolean) => void
   dragHandlers?: {
@@ -230,6 +232,8 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           onOpenChange={props.onWebBridgePopoverOpenChange}
           enabled={props.webBridgeEnabled}
           onEnabledChange={props.onWebBridgeEnabledChange}
+          selectedExtensionId={props.selectedExtensionId ?? null}
+          onSelectedExtensionChange={props.onSelectedExtensionChange ?? (() => {})}
           policyEnabled={webBridgePolicyEnabled}
         />
 

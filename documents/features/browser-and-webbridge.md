@@ -59,6 +59,8 @@ Implemented capabilities include:
 
 - native discovery and scoped pairing;
 - one-time relay tickets and persistent extension connections;
+- explicit browser selection per EvoFlux chat when multiple paired browsers are
+  connected; the selected connection remains pinned for later tool calls;
 - session/model management and full agent chat in the browser side panel;
 - tab-to-session binding without stealing focus;
 - page navigation, semantic read/write/select and bounded browser actions;

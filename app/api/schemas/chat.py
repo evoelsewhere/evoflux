@@ -52,6 +52,11 @@ class ChatForm(BaseModel):
         None,
         description="Whether this turn enables real-browser WebBridge for its session.",
     )
+    webbridge_extension_id: str | None = Field(
+        None,
+        max_length=128,
+        description="Connected WebBridge extension selected for this session.",
+    )
     folder_id: str | None = Field(
         None,
         description=(
@@ -89,6 +94,7 @@ class ChatForm(BaseModel):
         fast_mode: bool = Form(False),
         shell: bool = Form(False),
         webbridge_enabled: bool | None = Form(None),
+        webbridge_extension_id: str | None = Form(None),
         folder_id: str | None = Form(None),
         project_id: str | None = Form(None),
         permission_mode: str | None = Form(None),
@@ -105,6 +111,7 @@ class ChatForm(BaseModel):
                 fast_mode=fast_mode,
                 shell=shell,
                 webbridge_enabled=webbridge_enabled,
+                webbridge_extension_id=webbridge_extension_id,
                 folder_id=folder_id,
                 project_id=project_id,
                 permission_mode=permission_mode,

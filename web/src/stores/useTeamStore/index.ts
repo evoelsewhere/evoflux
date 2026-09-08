@@ -594,7 +594,7 @@ export const useTeamStore = create<TeamStore>()(
       return true
     },
 
-    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean }) => {
+    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean; webBridgeExtensionId?: string | null }) => {
       let resolvedOptions = options
       const current = get()
       if (current.sessionId) {
@@ -667,6 +667,7 @@ export const useTeamStore = create<TeamStore>()(
             resolvedOptions?.shell ?? false,
             resolvedOptions?.fastMode ?? get().sessionFastMode,
             resolvedOptions?.webBridgeEnabled,
+            resolvedOptions?.webBridgeExtensionId,
           )
           if (result.status === 'queued' && !result.message_id) {
             throw new Error('Backend did not return a queued message id')
@@ -747,6 +748,7 @@ export const useTeamStore = create<TeamStore>()(
           resolvedOptions?.shell ?? false,
           resolvedOptions?.fastMode ?? get().sessionFastMode,
           resolvedOptions?.webBridgeEnabled,
+          resolvedOptions?.webBridgeExtensionId,
           draftPlacement(get()),
         )
         set((draft) => {
@@ -1033,6 +1035,7 @@ export const useTeamStore = create<TeamStore>()(
           options?.thinkingLevel ?? get().sessionThinkingLevel,
           false,
           options?.fastMode ?? get().sessionFastMode,
+          undefined,
           undefined,
           draftPlacement(get()),
         )
