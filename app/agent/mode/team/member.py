@@ -76,7 +76,7 @@ from app.agent.mode.team.tier_policy import (
     side_chat_session_excluded_tools,
     webbridge_session_excluded_tools,
 )
-from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
+from app.webbridge_tags import WEBBRIDGE_SESSION_TAG, webbridge_target_from_tags
 from app.agent.plugins.role import reset_role, set_role
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.core.paths import session_workspace_dir
@@ -1632,6 +1632,9 @@ class TeamMemberBase(abc.ABC):
             # members keep their own session IDs for history/checkpointing,
             # but WebBridge commands must reuse the lead's tab binding/group.
             "webbridge_session_id": lead_session_id,
+            "webbridge_extension_id": webbridge_target_from_tags(
+                self._team.session_tags
+            ),
             # Lead stream id — file-change tracking + SSE publish to one place.
             "stream_session_id": lead_session_id,
             "session_id": self.session_id,

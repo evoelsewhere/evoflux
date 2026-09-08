@@ -350,6 +350,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const requestedViewModeRef = useRef<ViewMode>('agent')
   const [sideChatQuote, setSideChatQuote] = useState<string | null>(null)
   const [webBridgeEnabled, setWebBridgeEnabled] = useState(false)
+  const [webBridgeExtensionId, setWebBridgeExtensionId] = useState<string | null>(null)
   const [webBridgeDialogOpen, setWebBridgeDialogOpen] = useState(false)
   const [pendingCodeReviewStart, setPendingCodeReviewStart] =
     useState<PendingCodeReviewStart | null>(null)
@@ -648,6 +649,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     [sessionTags],
   )
   const persistedWebBridgeEnabled = sessionTags?.includes('webbridge')
+  const persistedWebBridgeExtensionId = useMemo(
+    () => sessionTags?.find((tag) => tag.startsWith('webbridge_target:'))?.slice('webbridge_target:'.length) ?? null,
+    [sessionTags],
+  )
   const webBridgeSettings = useWebBridgeSettingsQuery()
   const webBridgePolicyEnabled = webBridgeSettings.data?.enabled !== false
   // Whether WebBridge is *wanted*, which is a pure function of policy, the
@@ -673,7 +678,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // render so the stale "on" is never committed — as an effect this painted
   // the wrong state for a frame first.
   useResetOnChange(webBridgeInputKey, () => {
-    if (webBridgeRequest !== null) setWebBridgeEnabled(false)
+    if (webBridgeRequest !== null) {
+      setWebBridgeEnabled(false)
+      setWebBridgeExtensionId(persistedWebBridgeExtensionId)
+    }
   })
 
   // Only the verification itself is an effect: it talks to the extension.
@@ -682,7 +690,12 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     let cancelled = false
     void getWebBridgeStatus()
       .then((status) => {
-        if (!cancelled && status.connected) setWebBridgeEnabled(true)
+        if (!cancelled && status.connected) {
+          setWebBridgeEnabled(true)
+          if (!persistedWebBridgeExtensionId && status.extensions.length === 1) {
+            setWebBridgeExtensionId(status.extensions[0].extension_id)
+          }
+        }
       })
       .catch(() => {
         // Backend/status failures stay disabled.
@@ -690,7 +703,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     return () => {
       cancelled = true
     }
-  }, [webBridgeInputKey, webBridgeRequest])
+  }, [webBridgeInputKey, webBridgeRequest, persistedWebBridgeExtensionId])
   // Lead capabilities — used to drive composer affordances (slash menu).
   const agentWorkspace = mode === 'coding' ? workspace : null
   const workWorkspaceQuery = useQuery({
@@ -1186,6 +1199,19 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     try {
       const status = await getWebBridgeStatus()
       if (status.connected) {
+        const selected = status.extensions.find(
+          (extension) => extension.extension_id === webBridgeExtensionId,
+        ) ?? (status.extensions.length === 1 ? status.extensions[0] : null)
+        if (!selected) {
+          pushToast({
+            tone: 'error',
+            title: 'Choose a browser',
+            description: 'Select the browser this chat should control before enabling WebBridge.',
+          })
+          setWebBridgeDialogOpen(true)
+          return
+        }
+        setWebBridgeExtensionId(selected.extension_id)
         setWebBridgeEnabled(true)
         return
       }
@@ -1198,7 +1224,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       description: 'Connect the browser extension before enabling WebBridge.',
     })
     setWebBridgeDialogOpen(true)
-  }, [pushToast])
+  }, [pushToast, webBridgeExtensionId])
 
   // Lifted above the panel: the side chat session (and any in-flight
   // generation + SSE stream) survives closing/reopening the panel.
@@ -1981,6 +2007,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       fastMode: current.sessionFastMode,
       shell,
       webBridgeEnabled,
+      webBridgeExtensionId,
     })
     return true
   }, [
@@ -1993,6 +2020,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     tryHandleBuiltinGoalCommand,
     tryHandleWorkflowCommand,
     webBridgeEnabled,
+    webBridgeExtensionId,
     workspace,
   ])
 
@@ -2054,6 +2082,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           onOpenReviewContext={() => openWorkbenchTool('pull-requests')}
           webBridgeEnabled={webBridgeEnabled}
           onWebBridgeEnabledChange={handleWebBridgeEnabledChange}
+          selectedExtensionId={webBridgeExtensionId}
+          onSelectedExtensionChange={setWebBridgeExtensionId}
           webBridgePopoverOpen={webBridgeDialogOpen}
           onWebBridgePopoverOpenChange={setWebBridgeDialogOpen}
         />

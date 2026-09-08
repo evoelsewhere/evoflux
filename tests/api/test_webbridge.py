@@ -5313,6 +5313,30 @@ async def test_tool_navigate_success_text(
     assert seen == [("navigate", {"url": "https://example.com"})]
 
 
+async def test_tool_routes_commands_to_session_selected_extension(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    first = _recorder_ext(manager, "browser-1")
+    second = _recorder_ext(manager, "browser-2")
+
+    await _run(
+        manager,
+        lambda: webbridge(
+            actions=[_action({"action": "navigate", "url": "https://example.com"})],
+            _state=SimpleNamespace(
+                metadata={
+                    "session_id": "session-1",
+                    "webbridge_extension_id": "browser-1",
+                }
+            ),
+        ),
+        first,
+    )
+
+    assert len(first) == 1
+    assert second == []
+
+
 async def test_tool_screenshot_returns_image_block(
     manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
 ):
