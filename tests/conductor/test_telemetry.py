@@ -117,6 +117,7 @@ async def test_hook_queues_only_safe_model_and_tool_metadata(
                     "input": 120,
                     "output": 40,
                     "cache": 20,
+                    "cache_write": 15,
                     "thoughts": 10,
                     "cost": {"estimated_usd": 0.00125},
                 },
@@ -143,6 +144,8 @@ async def test_hook_queues_only_safe_model_and_tool_metadata(
     assert events[0][TelemetryField.MODEL] == "gpt-5.1"
     assert events[0][TelemetryField.TOKENS_IN] == 120
     assert events[0][TelemetryField.TOKENS_OUT] == 40
+    assert events[0][TelemetryField.CACHE_READ_TOKENS] == 20
+    assert events[0][TelemetryField.CACHE_WRITE_TOKENS] == 15
     assert events[0][TelemetryField.RESPONSE_MODEL] == "openai:gpt-5.1"
     assert events[0][TelemetryField.ESTIMATED_COST_USD_MICROS] == 1250
     assert events[0][TelemetryField.COST_SOURCE] == "evoflux_catalog"
