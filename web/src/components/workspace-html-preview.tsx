@@ -2,16 +2,19 @@
  * WorkspaceHtmlPreview — renders a workspace HTML file as an inert page.
  *
  * The file is parsed, its relative references are rewritten to the API that
- * serves the workspace, and the result is handed to a fully sandboxed iframe
- * with a restrictive CSP: no scripts, no network, images and fonts only from
- * the workspace itself. Previewing a page with `allow-scripts allow-same-origin`
- * instead would let a generated file reach into the app's own origin.
+ * serves the workspace, and the result is handed to a sandboxed iframe with a
+ * restrictive CSP. By default: no scripts, no network, images and fonts only
+ * from the workspace itself. A JS toggle lets the user opt into
+ * `script-src`/`connect-src`/`sandbox="allow-scripts allow-same-origin"` for
+ * pages that rely on JavaScript to render — off by default, since that
+ * combination would otherwise let a generated file reach into the app's own
+ * origin.
  *
  * Serves both modes: Work mode passes ``sessionId`` (session workspace media
  * proxy), Code mode passes ``workspace`` (coding workspace file endpoint).
  */
-import { useEffect, useState } from 'react'
-import { FileText, Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { FileText, Loader2, ShieldAlert, ShieldCheck } from 'lucide-react'
 
 import { codingWorkspaceFileUrl, workspaceMediaUrl } from '@/api/client'
 import type { WorkspaceFileInfo } from '@/api/types'
@@ -133,7 +136,7 @@ function mediaOrigin(resolve: UrlResolver, filePath: string): string {
   }
 }
 
-function installPreviewPolicy(document: Document, resolve: UrlResolver, filePath: string): void {
+function installPreviewPolicy(document: Document, resolve: UrlResolver, filePath: string, scriptsEnabled: boolean): void {
   document.querySelectorAll('meta[http-equiv="Content-Security-Policy" i]').forEach((meta) => meta.remove())
   const meta = document.createElement('meta')
   meta.httpEquiv = 'Content-Security-Policy'
@@ -144,8 +147,8 @@ function installPreviewPolicy(document: Document, resolve: UrlResolver, filePath
     `media-src data: blob: ${origin}`,
     `font-src data: blob: ${origin}`,
     `style-src 'unsafe-inline' ${origin}`,
-    "script-src 'none'",
-    "connect-src 'none'",
+    scriptsEnabled ? `script-src 'unsafe-inline' 'unsafe-eval' ${origin}` : "script-src 'none'",
+    scriptsEnabled ? `connect-src ${origin}` : "connect-src 'none'",
     "frame-src 'none'",
     "object-src 'none'",
     "form-action 'none'",
@@ -169,6 +172,7 @@ async function prepareRegularHtml(
   resolve: UrlResolver,
   file: WorkspaceFileInfo,
   source: string,
+  scriptsEnabled: boolean,
 ): Promise<PreparedHtml> {
   const document = new DOMParser().parseFromString(source, 'text/html')
 
@@ -189,6 +193,26 @@ async function prepareRegularHtml(
     }
   }))
 
+  if (scriptsEnabled) {
+    const scriptTags = Array.from(document.querySelectorAll<HTMLScriptElement>('script[src]'))
+    await Promise.all(scriptTags.map(async (script) => {
+      const src = script.getAttribute('src') ?? ''
+      const resolved = resolveWorkspaceReference(file.path, src)
+      if (!resolved) return
+      try {
+        const js = await fetchWorkspaceText(resolve, resolved.path)
+        const inline = document.createElement('script')
+        inline.textContent = js
+        for (const attr of script.attributes) {
+          if (attr.name !== 'src') inline.setAttribute(attr.name, attr.value)
+        }
+        script.replaceWith(inline)
+      } catch {
+        // keep original src — CSP will decide
+      }
+    }))
+  }
+
   document.querySelectorAll<HTMLElement>('[src], [href], [poster], [data]').forEach((element) => {
     for (const attribute of ['src', 'href', 'poster', 'data']) {
       const value = element.getAttribute(attribute)
@@ -208,7 +232,7 @@ async function prepareRegularHtml(
     const value = element.getAttribute('style')
     if (value) element.setAttribute('style', rewriteCssUrls(value, resolve, file.path))
   })
-  installPreviewPolicy(document, resolve, file.path)
+  installPreviewPolicy(document, resolve, file.path, scriptsEnabled)
   return { srcDoc: `<!doctype html>${document.documentElement.outerHTML}` }
 }
 
@@ -227,6 +251,11 @@ export function WorkspaceHtmlPreview({
   const [prepared, setPrepared] = useState<PreparedHtml | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!tooLarge)
+  const [scriptsEnabled, setScriptsEnabled] = useState(false)
+
+  const toggleScripts = useCallback(() => {
+    setScriptsEnabled((prev) => !prev)
+  }, [])
 
   useEffect(() => {
     if (tooLarge) return
@@ -236,7 +265,7 @@ export function WorkspaceHtmlPreview({
       : (path) => workspaceMediaUrl(sessionId ?? '', path)
 
     void fetchWorkspaceText(resolve, file.path)
-      .then((source) => prepareRegularHtml(resolve, file, source))
+      .then((source) => prepareRegularHtml(resolve, file, source, scriptsEnabled))
       .then((result) => {
         if (!cancelled) {
           setPrepared(result)
@@ -250,7 +279,7 @@ export function WorkspaceHtmlPreview({
         }
     })
     return () => { cancelled = true }
-  }, [file, sessionId, tooLarge, workspace])
+  }, [file, sessionId, tooLarge, workspace, scriptsEnabled])
 
   if (tooLarge) {
     return (
@@ -280,12 +309,29 @@ export function WorkspaceHtmlPreview({
   if (!prepared) return null
 
   return (
-    <iframe
-      srcDoc={prepared.srcDoc}
-      title={`${file.name} preview`}
-      sandbox=""
-      referrerPolicy="no-referrer"
-      className="h-full w-full border-0 bg-white"
-    />
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-end gap-2 border-b border-(--color-border-subtle) px-2 py-1">
+        <button
+          type="button"
+          onClick={toggleScripts}
+          className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
+            scriptsEnabled
+              ? 'bg-(--color-warning-bg) text-(--color-warning)'
+              : 'text-(--color-text-subtle) hover:text-(--color-text-2)'
+          }`}
+          title={scriptsEnabled ? 'Disable JavaScript' : 'Enable JavaScript'}
+        >
+          {scriptsEnabled ? <ShieldAlert size={12} /> : <ShieldCheck size={12} />}
+          {scriptsEnabled ? 'JS On' : 'JS Off'}
+        </button>
+      </div>
+      <iframe
+        srcDoc={prepared.srcDoc}
+        title={`${file.name} preview`}
+        sandbox={scriptsEnabled ? 'allow-scripts allow-same-origin' : ''}
+        referrerPolicy="no-referrer"
+        className="min-h-0 flex-1 border-0 bg-white"
+      />
+    </div>
   )
 }
