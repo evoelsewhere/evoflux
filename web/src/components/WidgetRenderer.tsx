@@ -177,7 +177,7 @@ export function WidgetRenderer({
   html,
   isStreaming = false,
   title = 'Widget',
-  width = 800,
+  width: _width = 800,
   height = 600,
   loadingMessages = ['Loading visualization...'],
   className,
@@ -244,10 +244,10 @@ export function WidgetRenderer({
       <div
         ref={containerRef}
         className={cn(
-          'flex items-center justify-center rounded-lg border border-(--color-border) bg-(--color-background)',
+          'flex w-full items-center justify-center rounded-lg border border-(--color-border) bg-(--color-background)',
           className,
         )}
-        style={{ width, height }}
+        style={{ minHeight: height }}
       >
         <div className="flex flex-col items-center gap-2 text-(--color-text-muted)">
           <Loader2 size={24} className="animate-spin" />
@@ -284,14 +284,13 @@ export function WidgetRenderer({
         </div>
       </div>
       
-      {/* Widget content */}
+      {/* Widget content — fill container width so chart spans the full border */}
       <iframe
         ref={iframeRef}
         title={title}
-        width={width}
         height={effectiveHeight - 32} // Account for title bar
         sandbox="allow-scripts allow-same-origin"
-        className="border-0 transition-[height] duration-(--motion-fast)"
+        className="w-full border-0 transition-[height] duration-(--motion-fast)"
         onLoad={handleLoad}
         onError={handleError}
       />
