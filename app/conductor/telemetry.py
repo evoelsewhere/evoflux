@@ -130,7 +130,6 @@ class TelemetryOutbox:
         tokens_in = 0
         tokens_out = 0
         cache_read_tokens = 0
-        estimated_cost_usd_micros = 0
         attributed_events = 0
         reported_at: list[str] = []
         for event in events:
@@ -141,9 +140,6 @@ class TelemetryOutbox:
             tokens_out += _non_negative_int(event.get(TelemetryField.TOKENS_OUT))
             cache_read_tokens += _non_negative_int(
                 event.get(TelemetryField.CACHE_READ_TOKENS)
-            )
-            estimated_cost_usd_micros += _non_negative_int(
-                event.get(TelemetryField.ESTIMATED_COST_USD_MICROS)
             )
             if event.get(TelemetryField.RESOURCES):
                 attributed_events += 1
@@ -163,7 +159,6 @@ class TelemetryOutbox:
             "tokens_in": tokens_in,
             "tokens_out": tokens_out,
             "cache_read_tokens": cache_read_tokens,
-            "estimated_cost_usd_micros": estimated_cost_usd_micros,
         }
 
     def _read(self) -> list[dict[str, Any]]:
@@ -240,14 +235,16 @@ def _managed_metadata(skill_name: str) -> dict[str, object] | None:
 def record_skill_usage(
     skill_name: str,
     *,
-    source: Literal["manual", "implicit", "configured"],
-    mode: Literal["work", "coding"],
     outcome: Literal["success", "failure", "cancelled"] = "success",
     duration_ms: int = 0,
-    failure_category: str | None = None,
     session_id: str | None = None,
 ) -> None:
-    """Append one content-free event when the skill is Conductor-managed."""
+    """Append one content-free event when the skill is Conductor-managed.
+
+    Only the fields Conductor stores are accepted. Invocation source, runtime
+    mode and failure category used to be sent and silently discarded on
+    arrival, which made the wire look richer than the data ever was.
+    """
 
     metadata = _managed_metadata(skill_name)
     if metadata is None:
@@ -261,13 +258,8 @@ def record_skill_usage(
         "resource_id": resource_id,
         "resource_version": resource_version,
         "session_id": session_id[:120] if session_id else None,
-        "invocation_source": source,
-        "runtime_mode": mode,
-        "failure_category": failure_category[:80] if failure_category else None,
         "outcome": outcome,
         "duration_ms": max(0, duration_ms),
-        "tokens_in": 0,
-        "tokens_out": 0,
         "occurred_at": datetime.now(UTC).isoformat(),
     }
     path = _queue_path()

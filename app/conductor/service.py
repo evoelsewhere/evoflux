@@ -113,7 +113,6 @@ class ConductorTelemetryReport(BaseModel):
     tokens_in: int = 0
     tokens_out: int = 0
     cache_read_tokens: int = 0
-    estimated_cost_usd_micros: int = 0
     last_flush_accepted: int = 0
     last_flush_duplicates: int = 0
     delivery: TelemetryDeliverySummary | None = None

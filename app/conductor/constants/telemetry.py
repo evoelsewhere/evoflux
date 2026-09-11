@@ -25,19 +25,6 @@ class TelemetryResourceRelation(StrEnum):
     PLUGIN_CONTRIBUTED_TOOL = "plugin_contributed_tool"
 
 
-class TelemetryCostSource(StrEnum):
-    EVOFLUX_CATALOG = "evoflux_catalog"
-
-
-class TelemetryToolCategory(StrEnum):
-    MCP = "mcp"
-    FILESYSTEM = "filesystem"
-    WEB = "web"
-    VERSION_CONTROL = "version_control"
-    COLLABORATION = "collaboration"
-    OTHER = "other"
-
-
 class TelemetryCollectionLevel(StrEnum):
     OFF = "L0"
     COUNTERS = "L1"
@@ -79,12 +66,8 @@ class TelemetryField(StrEnum):
     CACHE_WRITE_TOKENS = "cache_write_tokens"
     REASONING_TOKENS = "reasoning_tokens"
     TOOL_USE_TOKENS = "tool_use_tokens"
-    TOOL_NAME = "tool_name"
-    TOOL_CATEGORY = "tool_category"
     STATUS = "status"
     ERROR_CATEGORY = "error_category"
-    ESTIMATED_COST_USD_MICROS = "estimated_cost_usd_micros"
-    COST_SOURCE = "cost_source"
     SERVICE_TIER = "service_tier"
     RESOURCES = "resources"
 
@@ -144,7 +127,6 @@ TELEMETRY_BATCH_SIZE = 100
 TELEMETRY_DRAIN_MAX_BATCHES = 10
 TELEMETRY_FLUSH_INTERVAL_SECONDS = 5.0
 TELEMETRY_ELAPSED_MS_MULTIPLIER = 1_000
-TELEMETRY_USD_MICROS_MULTIPLIER = 1_000_000
 TELEMETRY_OUTBOX_DIRECTORY = "conductor"
 TELEMETRY_OUTBOX_FILENAME = "telemetry-outbox.json"
 CONDUCTOR_TELEMETRY_HOOK_NAME = "conductor-telemetry"
@@ -152,14 +134,3 @@ CONDUCTOR_ACTIVE_RESOURCE_REFS_METADATA_KEY = "conductor_active_resource_refs"
 CONDUCTOR_REQUEST_STATUS_METADATA_KEY = "conductor_request_status"
 CONDUCTOR_REQUEST_TERMINAL_RECORDED_METADATA_KEY = "conductor_request_terminal_recorded"
 PLUGIN_MCP_GRANTS_METADATA_KEY = "plugin_mcp_grants"
-
-MCP_TOOL_PREFIX = "mcp_"
-TELEMETRY_TOOL_CATEGORY_RULES = (
-    (
-        TelemetryToolCategory.FILESYSTEM,
-        ("file", "read", "write", "edit", "glob", "grep"),
-    ),
-    (TelemetryToolCategory.WEB, ("browser", "web", "http")),
-    (TelemetryToolCategory.VERSION_CONTROL, ("git",)),
-    (TelemetryToolCategory.COLLABORATION, ("team", "message", "task")),
-)

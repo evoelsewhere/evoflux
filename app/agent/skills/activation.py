@@ -146,17 +146,7 @@ def inject_skill_activation(
     try:
         from app.conductor.telemetry import record_skill_usage
 
-        record_skill_usage(
-            skill_name,
-            source=(
-                "implicit"
-                if source in {"resolved", "implicit"}
-                else "configured"
-                if source == "configured"
-                else "manual"
-            ),
-            mode="coding" if state.metadata.get("team_mode") == "coding" else "work",
-        )
+        record_skill_usage(skill_name)
     except Exception:  # noqa: BLE001 - telemetry cannot block activation
         # Telemetry is best-effort and must never block skill activation.
         pass

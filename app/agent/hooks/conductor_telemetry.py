@@ -11,26 +11,20 @@ from typing import TYPE_CHECKING, Any
 
 from app.agent.hooks.base import BaseAgentHook
 from app.conductor.constants.telemetry import (
-    MCP_TOOL_PREFIX,
     CONDUCTOR_ACTIVE_RESOURCE_REFS_METADATA_KEY,
     CONDUCTOR_REQUEST_STATUS_METADATA_KEY,
     CONDUCTOR_REQUEST_TERMINAL_RECORDED_METADATA_KEY,
     PLUGIN_MCP_GRANTS_METADATA_KEY,
     TELEMETRY_ELAPSED_MS_MULTIPLIER,
     TELEMETRY_MAX_LABEL_LENGTH,
-    TELEMETRY_TOOL_CATEGORY_RULES,
-    TELEMETRY_USD_MICROS_MULTIPLIER,
     TelemetryCollectionLevel,
-    TelemetryCostSource,
     TelemetryEventStatus,
     TelemetryEventType,
     TelemetryField,
     TelemetryResourceField,
     TelemetryResourceRelation,
-    TelemetryToolCategory,
 )
 from app.conductor.telemetry import TelemetryOutbox, telemetry_outbox
-from app.core.version import VERSION
 from app.core.runtime_settings import load_runtime_settings
 
 if TYPE_CHECKING:
@@ -46,10 +40,17 @@ class ConductorTelemetryHook(BaseAgentHook):
         *,
         agent_name: str,
         model_id: str | None,
+        service_tier: str | None = None,
         outbox: TelemetryOutbox | None = None,
     ) -> None:
         self._agent_name = agent_name
         self._provider, self._model = _split_model_id(model_id)
+        # The lane these calls are billed under. Conductor prices a tier that
+        # publishes its own rate above the model's headline price, so this
+        # must name a tier the request actually selected — reporting one that
+        # was merely asked for and silently dropped would overcharge exactly
+        # the calls the caller thought they were paying less for.
+        self._service_tier = service_tier
         self._outbox = outbox or telemetry_outbox
         self._sequence = 0
         self._run_started = 0.0
@@ -128,7 +129,6 @@ class ConductorTelemetryHook(BaseAgentHook):
             cache_write_tokens=_counter(usage.get("cache_write")),
             reasoning_tokens=_counter(usage.get("thoughts")),
             tool_use_tokens=_counter(usage.get("tool_use")),
-            estimated_cost_usd_micros=_cost_micros(usage),
         )
         return response
 
@@ -140,7 +140,6 @@ class ConductorTelemetryHook(BaseAgentHook):
         handler,
     ) -> str:
         started = time.monotonic()
-        tool_name = tool_call.function.name
         resource_refs = _tool_resource_refs(state, tool_call)
         _remember_used_resources(state, resource_refs)
         try:
@@ -153,8 +152,6 @@ class ConductorTelemetryHook(BaseAgentHook):
                 event_type=TelemetryEventType.TOOL_CALL,
                 duration_ms=_elapsed_ms(started),
                 status=TelemetryEventStatus.CANCELLED,
-                tool_name=tool_name,
-                tool_category=_tool_category(tool_name),
                 additional_resources=resource_refs,
             )
             self._record_terminal_request(ctx, state)
@@ -168,8 +165,6 @@ class ConductorTelemetryHook(BaseAgentHook):
                 duration_ms=_elapsed_ms(started),
                 status=TelemetryEventStatus.ERROR,
                 error_category=type(exc).__name__,
-                tool_name=tool_name,
-                tool_category=_tool_category(tool_name),
                 additional_resources=resource_refs,
             )
             raise
@@ -179,8 +174,6 @@ class ConductorTelemetryHook(BaseAgentHook):
             event_type=TelemetryEventType.TOOL_CALL,
             duration_ms=_elapsed_ms(started),
             status=TelemetryEventStatus.SUCCESS,
-            tool_name=tool_name,
-            tool_category=_tool_category(tool_name),
             additional_resources=resource_refs,
         )
         _remember_used_resources(state, resource_refs)
@@ -194,7 +187,6 @@ class ConductorTelemetryHook(BaseAgentHook):
         reason: str,
     ) -> None:
         del reason
-        tool_name = tool_call.function.name
         resource_refs = _tool_resource_refs(state, tool_call)
         _remember_used_resources(state, resource_refs)
         self._promote_request_status(state, TelemetryEventStatus.BLOCKED)
@@ -204,8 +196,6 @@ class ConductorTelemetryHook(BaseAgentHook):
             event_type=TelemetryEventType.TOOL_CALL,
             duration_ms=0,
             status=TelemetryEventStatus.BLOCKED,
-            tool_name=tool_name,
-            tool_category=_tool_category(tool_name),
             additional_resources=resource_refs,
         )
 
@@ -271,9 +261,6 @@ class ConductorTelemetryHook(BaseAgentHook):
         cache_write_tokens: int = 0,
         reasoning_tokens: int = 0,
         tool_use_tokens: int = 0,
-        tool_name: str | None = None,
-        tool_category: TelemetryToolCategory | None = None,
-        estimated_cost_usd_micros: int | None = None,
         additional_resources: list[dict[str, str]] | None = None,
     ) -> None:
         config = load_runtime_settings().conductor
@@ -308,15 +295,13 @@ class ConductorTelemetryHook(BaseAgentHook):
                 TelemetryField.CACHE_WRITE_TOKENS: cache_write_tokens,
                 TelemetryField.REASONING_TOKENS: reasoning_tokens,
                 TelemetryField.TOOL_USE_TOKENS: tool_use_tokens,
-                TelemetryField.TOOL_NAME: tool_name,
-                TelemetryField.TOOL_CATEGORY: tool_category,
-                TelemetryField.ESTIMATED_COST_USD_MICROS: estimated_cost_usd_micros,
-                TelemetryField.COST_SOURCE: (
-                    TelemetryCostSource.EVOFLUX_CATALOG
-                    if estimated_cost_usd_micros is not None
+                # Only a model call is billed, so only a model call carries a
+                # billing lane.
+                TelemetryField.SERVICE_TIER: (
+                    self._service_tier
+                    if event_type == TelemetryEventType.MODEL_CALL
                     else None
                 ),
-                TelemetryField.EVOFLUX_VERSION: VERSION,
                 TelemetryField.RESOURCES: _deduplicate_resource_refs(resources),
             }
         )
@@ -345,24 +330,6 @@ def _elapsed_ms(started: float) -> int:
         0,
         round((time.monotonic() - started) * TELEMETRY_ELAPSED_MS_MULTIPLIER),
     )
-
-
-def _tool_category(name: str) -> TelemetryToolCategory:
-    lowered = name.lower()
-    if lowered.startswith(MCP_TOOL_PREFIX):
-        return TelemetryToolCategory.MCP
-    for category, markers in TELEMETRY_TOOL_CATEGORY_RULES:
-        if any(marker in lowered for marker in markers):
-            return category
-    return TelemetryToolCategory.OTHER
-
-
-def _cost_micros(usage: dict[str, Any]) -> int | None:
-    cost = usage.get("cost")
-    estimated = cost.get("estimated_usd") if isinstance(cost, dict) else None
-    if isinstance(estimated, bool) or not isinstance(estimated, int | float):
-        return None
-    return max(0, round(float(estimated) * TELEMETRY_USD_MICROS_MULTIPLIER))
 
 
 def _resource_refs_for_state(
