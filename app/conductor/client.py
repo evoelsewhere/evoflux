@@ -5,6 +5,7 @@ import hashlib
 import json
 import random
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
 import httpx
@@ -31,6 +32,7 @@ from app.conductor.constants.api import (
     API_TEXT_FIELD_MAX_LENGTH,
     CONDUCTOR_TOKEN_PREFIX,
     V1_HEARTBEAT_PATH,
+    V1_REALTIME_EVENTS_PATH,
     V1_REGISTER_PATH,
     V1_RESOURCE_USAGE_PATH,
     V1_RESOURCE_KINDS,
@@ -40,6 +42,7 @@ from app.conductor.constants.api import (
     V2_CHANGES_PATH,
     V2_INVENTORY_PATH,
 )
+from app.conductor.realtime import RealtimeEvent, parse_sse_events
 from app.conductor.constants.telemetry import (
     TELEMETRY_EVENT_FIELD_ALLOWLIST,
     TELEMETRY_NUMERIC_TOKEN_FIELDS,
@@ -159,9 +162,63 @@ class CredentialStore:
 
 
 class ConductorRequestError(RuntimeError):
-    def __init__(self, status_code: int, message: str) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        message: str,
+        *,
+        retry_after_seconds: float | None = None,
+    ) -> None:
         self.status_code = status_code
+        self.retry_after_seconds = retry_after_seconds
         super().__init__(message[:API_TEXT_FIELD_MAX_LENGTH])
+
+
+def _verify_managed_payload(version: EffectiveResourceVersion) -> None:
+    """Check the inline files against the digests Conductor published.
+
+    Conductor addresses a release by its bundle artifact, so ``version.sha256``
+    and ``version.size`` describe that ZIP — not the JSON of ``payload``. The
+    bundle manifest carries a digest per file, so verify each inline file
+    against its own entry: that is stricter than one hash over the whole
+    payload, and it names the file that failed.
+
+    A release published before bundles existed has no manifest; those still
+    carry a digest over the canonical payload JSON, so fall back to it rather
+    than accepting the content unverified.
+    """
+    payload = version.payload
+    bundle = payload.get("bundle") if isinstance(payload, dict) else None
+    manifest = bundle.get("files") if isinstance(bundle, dict) else None
+    if not isinstance(manifest, list) or not manifest:
+        canonical = json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        if len(canonical) != version.size:
+            raise ValueError("Conductor managed-resource payload size mismatch.")
+        if hashlib.sha256(canonical).hexdigest() != version.sha256:
+            raise ValueError("Conductor managed-resource payload digest mismatch.")
+        return
+
+    inline = {
+        entry.get("path"): entry.get("content")
+        for entry in payload.get("files", [])
+        if isinstance(entry, dict)
+    }
+    for entry in manifest:
+        if not isinstance(entry, dict):
+            raise ValueError("Conductor bundle manifest entry is invalid.")
+        path = entry.get("path")
+        content = inline.get(path)
+        if not isinstance(path, str) or not isinstance(content, str):
+            raise ValueError(
+                f"Conductor bundle manifest lists {path!r} with no inline content."
+            )
+        encoded = content.encode("utf-8")
+        if entry.get("size") != len(encoded):
+            raise ValueError(f"Conductor managed file size mismatch: {path}.")
+        if hashlib.sha256(encoded).hexdigest() != entry.get("sha256"):
+            raise ValueError(f"Conductor managed file digest mismatch: {path}.")
 
 
 class ConductorClient:
@@ -271,16 +328,7 @@ class ConductorClient:
         )
         version = EffectiveResourceVersion.model_validate(response.json())
         if version.kind != "plugin":
-            payload = json.dumps(
-                version.payload,
-                sort_keys=True,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode("utf-8")
-            if len(payload) != version.size:
-                raise ValueError("Conductor managed-resource payload size mismatch.")
-            if hashlib.sha256(payload).hexdigest() != version.sha256:
-                raise ValueError("Conductor managed-resource payload digest mismatch.")
+            _verify_managed_payload(version)
         return version
 
     async def download_resource_artifact(
@@ -336,6 +384,37 @@ class ConductorClient:
             idempotent=True,
         )
 
+    async def stream_realtime_events(self) -> AsyncIterator[RealtimeEvent]:
+        """Open the Conductor realtime SSE stream and yield parsed events.
+
+        Deliberately no internal retry: backing off, honoring `Retry-After`
+        or suspending depends on *why* the stream ended, which only
+        `ConductorService._realtime_loop` can decide. The read timeout is
+        unbounded, so a dead connection is caught by that loop's heartbeat
+        watchdog rather than by httpx.
+        """
+
+        headers = {
+            **self._auth_headers(),
+            "Accept": "text/event-stream",
+            "Cache-Control": "no-cache",
+        }
+        async with self._http.stream(
+            "GET",
+            V1_REALTIME_EVENTS_PATH,
+            headers=headers,
+            timeout=httpx.Timeout(API_DEFAULT_TIMEOUT_SECONDS, read=None),
+        ) as response:
+            if response.is_error:
+                await response.aread()
+                raise ConductorRequestError(
+                    response.status_code,
+                    _safe_error_message(response),
+                    retry_after_seconds=_parse_retry_after(response),
+                )
+            async for event in parse_sse_events(response.aiter_lines()):
+                yield event
+
     def _auth_headers(self) -> dict[str, str]:
         loaded = self.credentials.load()
         if loaded is None:
@@ -386,6 +465,20 @@ class ConductorClient:
                 delay + random.uniform(0, delay / API_RETRY_JITTER_DIVISOR)
             )
         raise RuntimeError("Conductor request exhausted retries.")
+
+
+def _parse_retry_after(response: httpx.Response) -> float | None:
+    """Conductor sends plain integer seconds. An HTTP-date from some other
+    server is not parsed; the caller falls back to its own default.
+    """
+
+    header = response.headers.get("retry-after")
+    if header is None:
+        return None
+    try:
+        return float(header)
+    except ValueError:
+        return None
 
 
 def _safe_error_message(response: httpx.Response) -> str:

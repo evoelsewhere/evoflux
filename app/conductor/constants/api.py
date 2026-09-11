@@ -8,6 +8,7 @@ V1_REGISTER_PATH = "/api/v1/client/register"
 V1_HEARTBEAT_PATH = "/api/v1/client/heartbeat"
 V1_TELEMETRY_PATH = "/api/v1/telemetry/batch"
 V1_RESOURCE_USAGE_PATH = "/api/v1/usage/resources"
+V1_REALTIME_EVENTS_PATH = "/api/v1/realtime/events"
 V2_CHANGES_PATH = "/api/v1/resources/changes"
 V2_INVENTORY_PATH = "/api/v1/client/inventory"
 
@@ -22,3 +23,16 @@ API_NOT_MODIFIED_STATUS = 304
 API_MAX_RETRY_DELAY_SECONDS = 8.0
 API_BASE_RETRY_DELAY_SECONDS = 0.25
 API_RETRY_JITTER_DIVISOR = 4
+
+# Realtime contract; values follow evo-conductor/docs/evoflux-integration.md.
+REALTIME_PROTOCOL_NAME = "evoflux.realtime.v1"
+# random(0, min(30s, 500ms * 2**attempt)).
+REALTIME_RETRY_BASE_DELAY_SECONDS = 0.5
+REALTIME_RETRY_MAX_DELAY_SECONDS = 30.0
+# A missing heartbeat for 3x the interval means a dead connection.
+REALTIME_HEARTBEAT_TIMEOUT_MULTIPLIER = 3
+# Replaced by control.hello's heartbeat_seconds once the stream is open.
+REALTIME_DEFAULT_HEARTBEAT_SECONDS = 20.0
+# Used when a 429/503 carries no Retry-After.
+REALTIME_DEFAULT_RETRY_AFTER_SECONDS = 5.0
+REALTIME_DEFAULT_SERVER_DRAIN_DELAY_SECONDS = 2.0

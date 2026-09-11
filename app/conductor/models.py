@@ -58,7 +58,7 @@ def hash_matches(expected: str, value: Any) -> bool:
 
 
 class ResourceDependency(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     kind: ResourceKind
     slug: str
@@ -168,6 +168,11 @@ class ReconcileResult(BaseModel):
     error: str | None = None
 
 
+# Requests EvoFlux builds keep ``extra="forbid"`` so a typo here fails at
+# construction. Everything parsed out of a Conductor response uses
+# ``extra="ignore"``: Conductor is free to add fields, and a client that
+# refused them would stop enrolling the moment the server shipped one — which
+# is exactly what `project.description` did.
 class RegistrationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -179,7 +184,7 @@ class RegistrationRequest(BaseModel):
 
 
 class RegisteredInstallation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     id: str
     display_name: str
@@ -187,11 +192,12 @@ class RegisteredInstallation(BaseModel):
 
 
 class RegisteredProject(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     id: str
     name: str
     display_name: str | None = None
+    description: str | None = None
     logo_url: str | None = None
 
 
@@ -214,7 +220,7 @@ class RegistrationPolicy(BaseModel):
 
 
 class RegistrationResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     installation: RegisteredInstallation
     project: RegisteredProject
@@ -223,7 +229,7 @@ class RegistrationResponse(BaseModel):
 
 
 class HeartbeatResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     server_time: datetime
     heartbeat_interval_seconds: int = Field(ge=30, le=300)
@@ -231,7 +237,7 @@ class HeartbeatResponse(BaseModel):
 
 
 class ResourceVersionNotice(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     version_id: str
     version: str
@@ -243,7 +249,7 @@ class ResourceVersionNotice(BaseModel):
 
 
 class ResourceChange(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     project_id: str
     resource_id: str
@@ -263,7 +269,7 @@ class ResourceChange(BaseModel):
 
 
 class ResourceChangePage(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     schema_version: Literal[2]
     project_id: str
@@ -273,7 +279,7 @@ class ResourceChangePage(BaseModel):
 
 
 class EffectiveResourceVersion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     project_id: str
     resource_id: str
@@ -385,7 +391,7 @@ class ResourceInventoryRequest(BaseModel):
 
 
 class TelemetryDeliverySummary(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     installation_id: str
     window_days: int = Field(ge=1)
@@ -408,7 +414,7 @@ class TelemetryDeliverySummary(BaseModel):
 
 
 class TelemetryBatchResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     accepted: int = Field(ge=0)
     duplicates: int = Field(ge=0)
