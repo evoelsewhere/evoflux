@@ -744,3 +744,39 @@ async def test_tombstone_keeps_locally_modified_managed_agent(
     )
     assert kept[0].observed_state == "ownership_conflict"
     assert target.exists()
+
+
+def test_a_release_naming_the_retired_aim_mode_still_applies() -> None:
+    """`aim` shipped in real Conductor releases before it was retired.
+
+    Rejecting the whole bundle for an unknown mode left those resources
+    permanently unappliable, so an unimplemented mode is skipped instead.
+    """
+    from app.conductor.constants.resource import (
+        RESOURCE_MODE_SCOPE_FILENAME,
+        ResourceTargetMode,
+    )
+    from app.conductor.governed_reconciler import _resource_modes
+
+    files = [(RESOURCE_MODE_SCOPE_FILENAME, '{"modes": ["work", "coding", "aim"]}')]
+    assert _resource_modes(files) == [
+        ResourceTargetMode.WORK,
+        ResourceTargetMode.CODING,
+    ]
+
+    # Only the retired mode remains valid -> the resource names nothing this
+    # client can serve, which is a real failure worth reporting.
+    with pytest.raises(ValueError, match="no mode this EvoFlux version can serve"):
+        _resource_modes([(RESOURCE_MODE_SCOPE_FILENAME, '{"modes": ["aim"]}')])
+
+
+def test_mode_order_follows_the_client_contract_not_the_file() -> None:
+    from app.conductor.constants.resource import (
+        RESOURCE_MODE_SCOPE_FILENAME,
+        ResourceTargetMode,
+    )
+    from app.conductor.governed_reconciler import _resource_modes
+
+    assert _resource_modes(
+        [(RESOURCE_MODE_SCOPE_FILENAME, '{"modes": ["coding", "work"]}')]
+    ) == [ResourceTargetMode.WORK, ResourceTargetMode.CODING]

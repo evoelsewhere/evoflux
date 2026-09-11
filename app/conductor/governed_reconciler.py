@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from loguru import logger
+
 from app.agent.config import parse_agent_definition
 from app.agent.skills.validation import (
     parse_skill_definition,
@@ -171,8 +173,15 @@ class GovernedResourceReconciler:
             or previous.content_sha256 is None
         ):
             raise KeyError(resource_id)
-        if previous.observed_state not in {"update_pending", "incompatible"}:
-            raise ValueError("Managed resource is not waiting for a version pull.")
+        # `error` is retryable on purpose: a pull re-fetches the version and
+        # re-applies it, so a resource that failed once — a transient fetch,
+        # or a release since corrected — had no way back without wiping the
+        # whole enrolment.
+        if previous.observed_state not in {"update_pending", "incompatible", "error"}:
+            raise ValueError(
+                "Managed resource is not waiting for a version pull "
+                f"(state: {previous.observed_state})."
+            )
         change = ResourceChange(
             project_id=previous.project_id,
             resource_id=previous.resource_id,
@@ -232,10 +241,23 @@ class GovernedResourceReconciler:
                 return self._apply_agent(change, version, previous)
             return self._apply_skill(change, version, previous)
         except Exception as exc:
+            # The reason matters: these messages name the file or field that
+            # failed, and without them an operator sees only "ValueError" for
+            # any of a dozen distinct causes.
+            logger.warning(
+                "conductor_resource_reconcile_failed "
+                f"kind={change.kind} slug={change.slug} "
+                f"version={change.version} error={type(exc).__name__}: {exc}"
+            )
+            reason = str(exc).strip()
             return self._error(
                 change,
                 type(exc).__name__.lower(),
-                f"Managed resource could not be reconciled ({type(exc).__name__}).",
+                (
+                    f"Managed resource could not be reconciled: {reason}"
+                    if reason
+                    else f"Managed resource could not be reconciled ({type(exc).__name__})."
+                ),
                 previous=previous,
             )
 
@@ -809,13 +831,23 @@ def _resource_modes(
     for raw_mode in raw_modes:
         try:
             mode = ResourceTargetMode(raw_mode)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "Managed resource modes may contain only work and coding."
-            ) from exc
+        except (TypeError, ValueError):
+            # A mode this client does not implement is skipped rather than
+            # failing the resource. `aim` shipped in real releases before it
+            # was retired, and rejecting the whole bundle for it left those
+            # resources permanently unappliable.
+            logger.info(
+                "conductor_resource_mode_ignored "
+                f"mode={raw_mode!r} known={[item.value for item in ResourceTargetMode]}"
+            )
+            continue
         if mode in selected:
             raise ValueError("Managed resource modes must not contain duplicates.")
         selected.append(mode)
+    if not selected:
+        raise ValueError(
+            "Managed resource names no mode this EvoFlux version can serve."
+        )
     return [mode for mode in DEFAULT_RESOURCE_TARGET_MODES if mode in selected]
 
 
