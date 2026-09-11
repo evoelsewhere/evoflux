@@ -325,6 +325,148 @@ class TestToggleOnlyModels:
         assert payload == {"enable_thinking": True, "reasoning_effort": "high"}
 
 
+class TestWhatThePickerOffers:
+    """Which levels reach a user, as opposed to which a request may carry.
+
+    Unlike the rest of this file these run against the real catalog, because
+    what is pinned down *is* the reading of catalog data.
+
+    The reference point is MiMo-Code's ``variants()``: it opens with
+    ``if (!model.capabilities.reasoning) return {}``, returns ``{}`` for
+    minimax/glm/kimi/qwen/mistral, and gives everything on
+    ``@ai-sdk/openai-compatible`` — MiMo included — ``low``/``medium``/``high``.
+    """
+
+    def test_mimo_offers_what_its_own_client_offers(self) -> None:
+        """models.dev calls MiMo a bare toggle; the budget dialect invented six.
+
+        Budget dialects fell back to the whole vocabulary where every enum
+        dialect falls back to three. EvoFlux's own Xiaomi handler already
+        documents that the effort enum "stops at high".
+        """
+        assert th.offered_levels_for("xiaomi:mimo-v2.5") == (
+            "none",
+            "low",
+            "medium",
+            "high",
+        )
+
+    def test_a_model_that_does_not_reason_offers_nothing(self) -> None:
+        """A text-to-speech model was being offered seven thinking levels.
+
+        Its row carries no ``reasoning_options``, which reads as "unknown"
+        rather than "none" — but it does carry ``reasoning: false``, which
+        nothing consulted.
+        """
+        assert th.offered_levels_for("xiaomi:mimo-v2.5-tts") == ()
+        assert th.offered_levels_for("opencode:claude-3-5-haiku") == ()
+
+    def test_a_family_that_ignores_the_effort_offers_only_the_switch(self) -> None:
+        """MiMo-Code returns no ladder for these ids whatever the transport.
+
+        GLM on ``zai`` already behaved this way because its dialect is not
+        level-sensitive; the same model through another OpenAI-compatible
+        endpoint got three rungs, and minimax got six.
+        """
+        assert th.offered_levels_for("minimax:minimax-m3") == ("none",)
+        assert th.offered_levels_for("302ai:glm-4.5") == ("none",)
+
+    def test_the_catalog_still_outranks_the_family_list(self) -> None:
+        """MiMo-Code's list is absolute; here it only speaks where data does not."""
+        assert th.offered_levels_for("zai:glm-5.2") == ("none", "high", "max")
+
+    def test_a_catalog_named_ladder_is_left_alone(self) -> None:
+        assert th.offered_levels_for("anthropic:claude-opus-4-6") == (
+            "none",
+            "low",
+            "medium",
+            "high",
+            "max",
+        )
+        assert th.offered_levels_for("openai:gpt-5.2") == (
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+        )
+
+    def test_validation_still_accepts_a_level_the_picker_hides(self) -> None:
+        """Narrowing the offer must not narrow what a request may carry."""
+        honoured = th.honoured_levels_for("xiaomi:mimo-v2.5")
+        assert set(th.offered_levels_for("xiaomi:mimo-v2.5")) <= set(honoured)
+        assert "max" in honoured
+        assert th.thinking_request_fields("xiaomi", "mimo-v2.5", "max") == {
+            "thinking": {"type": "enabled", "budget_tokens": 31_999}
+        }
+
+    def test_a_google_model_newer_than_the_catalog_does_not_raise(self) -> None:
+        """`can_disable` passed a model string where a contract was expected.
+
+        Only the Google branch reads the contract, so it stayed hidden until
+        a Gemini row newer than the bundled snapshot reached it — and the
+        discovery filter passes those straight through to the picker.
+        """
+        assert th.offered_levels_for("googlegenai:gemini-4-pro") == (
+            "none",
+            "low",
+            "medium",
+            "high",
+        )
+        assert th.resolve_level("vertexai", "gemini-4-flash", "none") == "none"
+
+    def test_a_provider_that_sends_no_thinking_field_offers_nothing(self) -> None:
+        """FPT's gateway takes no reasoning parameter on either surface.
+
+        Its API reference documents none, its ``/v1/models`` lists
+        ``supported_parameters`` without a reasoning key, and both FCI
+        handlers send nothing. Four picker entries, one request.
+        """
+        assert th.offered_levels_for("fci:DeepSeek-V4-Flash") == ()
+        assert th.offered_levels_for("fci:Qwen3.6-27B") == ()
+        # The dialect still has an opinion; the FCI handler is what drops it.
+        assert th.thinking_request_fields("fci", "Qwen3.6-27B", "high") == {
+            "reasoning_effort": "high"
+        }
+
+    def test_a_level_already_saved_against_that_provider_still_validates(
+        self,
+    ) -> None:
+        """Silencing the offer must not start rejecting sessions that have one.
+
+        Hence :func:`offered_levels` rather than ``_ADAPTER_CANNOT_STEER``,
+        which would make the same request a 422.
+        """
+        assert th.accepts_thinking_level("fci:Qwen3.6-27B", "high") is True
+
+    def test_no_catalog_row_raises(self) -> None:
+        """The sweep that would have caught the above on the day it landed."""
+        from app.agent.providers.model_registry import load_model_registry
+
+        failures: list[str] = []
+        for model_id in load_model_registry():
+            if ":" not in model_id:
+                continue
+            try:
+                th.offered_levels_for(model_id)
+            except Exception as exc:  # noqa: BLE001 - the point is the sweep
+                failures.append(f"{model_id}: {type(exc).__name__}: {exc}")
+        assert failures[:5] == []
+
+    def test_nothing_offered_is_ever_unhonoured(self) -> None:
+        """The invariant the two functions exist to keep."""
+        from app.agent.providers.model_registry import load_model_registry
+
+        violations: list[str] = []
+        for model_id in load_model_registry():
+            if ":" not in model_id:
+                continue
+            offered = set(th.offered_levels_for(model_id))
+            if not offered <= set(th.honoured_levels_for(model_id)):
+                violations.append(model_id)
+        assert violations[:5] == []
+
+
 class TestNoControl:
     def test_a_model_the_catalog_says_has_no_control_sends_nothing(
         self, monkeypatch: pytest.MonkeyPatch

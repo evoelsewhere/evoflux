@@ -175,6 +175,35 @@ DIALECT_FALLBACK_LEVELS.update(
 )
 
 
+#: Providers whose adapter puts no thinking field on the wire at all, so
+#: every level would send identical bytes. FPT documents no reasoning
+#: parameter, its ``/v1/models`` advertises none, and both FCI handlers
+#: override ``customize_thinking`` to send nothing.
+#:
+#: Offer-side only: unlike ``_ADAPTER_CANNOT_STEER`` in ``model_metadata``
+#: this does not reject a request carrying a level, so a saved session that
+#: has one keeps working.
+_PROVIDER_SENDS_NO_THINKING: frozenset[str] = frozenset({"fci"})
+
+
+#: Model families whose effort *name* changes nothing, ported from
+#: MiMo-Code's ``variants()``, which returns no ladder for these ids.
+#:
+#: Applied only where the catalog names no efforts. MiMo-Code's list is
+#: absolute and predates the data: 997 rows matching these markers now
+#: publish real efforts, and honouring the list over them would delete
+#: ladders that work.
+_EFFORT_IGNORED_BY_FAMILY: tuple[str, ...] = (
+    "minimax",
+    "glm",
+    "mistral",
+    "kimi",
+    "k2p5",
+    "qwen",
+    "big-pickle",
+)
+
+
 #: Dialects whose payload actually changes with the level.
 #:
 #: A toggle-only model borrows its dialect's vocabulary (see
@@ -373,6 +402,33 @@ def _catalog_thinking(provider_id: str, model: str) -> Any:
     return get_effective_model_thinking(qualified)
 
 
+def _catalog_named_levels(thinking: Any) -> tuple[str, ...]:
+    """The efforts the catalog states by name, strongest last.
+
+    Normalized first: a live catalog may report ``ultra`` where EvoFlux
+    calls the same effort ``max``.
+    """
+    advertised = {normalize_thinking_level(name) for name in thinking.levels}
+    return tuple(name for name in THINKING_ORDER if name in advertised)
+
+
+def _catalog_denies_reasoning(provider_id: str, model: str) -> bool:
+    """Whether the catalog states outright that this model does not reason.
+
+    A separate fact from the reasoning *controls*: a text-to-speech row
+    carries no ``reasoning_options``, which reads as "unknown" to
+    :func:`_catalog_is_silent` and used to earn it the fallback ladder.
+    MiMo-Code's ``variants()`` opens on the same check.
+    """
+    from app.agent.providers.model_metadata import (
+        get_model_metadata,
+        qualified_model_id,
+    )
+
+    qualified = qualified_model_id(provider_id, model)
+    return get_model_metadata(qualified).features.reasoning is False
+
+
 def _catalog_is_silent(thinking: Any) -> bool:
     """Whether the catalog has no opinion about this model's reasoning.
 
@@ -403,12 +459,7 @@ def supported_levels(
     if _catalog_is_silent(thinking):
         resolved = dialect or dialect_for(provider_id, model)
         return DIALECT_FALLBACK_LEVELS.get(resolved, ())
-    # Normalize the catalog's own spellings before filtering. A provider's
-    # live catalog may report ``ultra`` where EvoFlux calls the same effort
-    # ``max``; comparing raw strings dropped it, so the strongest level a
-    # model advertised became one it did not support.
-    advertised = {normalize_thinking_level(name) for name in thinking.levels}
-    return tuple(name for name in THINKING_ORDER if name in advertised)
+    return _catalog_named_levels(thinking)
 
 
 def selectable_levels(
@@ -448,18 +499,32 @@ def offered_levels(
     carries ``clear_thinking: false``, which is what keeps the trace in the
     response.
 
-    This answers the different question a picker asks — "does the choice
-    change anything?" — and there the toggle dialects have to say no. GLM
-    sends the same bytes at every level, so six entries would be six ways to
-    press one switch. A model whose level really does reach the wire (MiMo's
-    token budget) keeps its ladder.
+    This answers the different question a picker asks — "is this a level the
+    model actually has?" — which only the catalog can answer. Anything past
+    the named-levels branch is a guess, kept to the three efforts every
+    reasoning endpoint implements. It used to be the dialect's whole
+    vocabulary, which on a budget dialect is all six names: ``mimo-v2.5``
+    offered ``minimal`` through ``max`` for a model models.dev calls a bare
+    toggle, where Xiaomi's own client gives it ``low``/``medium``/``high``.
+
+    The old guard asked :func:`supported_levels` whether the catalog had
+    named anything, but that substitutes the fallback when the catalog is
+    silent, so it answered yes either way.
     """
+    if provider_id.strip().lower() in _PROVIDER_SENDS_NO_THINKING:
+        return ()
     resolved = dialect or dialect_for(provider_id, model)
-    levels = selectable_levels(provider_id, model, dialect=resolved)
-    if supported_levels(provider_id, model, dialect=resolved):
-        # The catalog named these explicitly; it is not guessing.
-        return levels
-    return levels if resolved in LEVEL_SENSITIVE_DIALECTS else ()
+    named = _catalog_named_levels(_catalog_thinking(provider_id, model))
+    if named:
+        return named
+    if _catalog_denies_reasoning(provider_id, model):
+        return ()
+    if any(marker in model.lower() for marker in _EFFORT_IGNORED_BY_FAMILY):
+        return ()
+    if resolved not in LEVEL_SENSITIVE_DIALECTS:
+        return ()
+    selectable = selectable_levels(provider_id, model, dialect=resolved)
+    return tuple(name for name in selectable if name in _WIDELY_SUPPORTED)
 
 
 def can_disable(
@@ -469,7 +534,15 @@ def can_disable(
     thinking = _catalog_thinking(provider_id, model)
     if _catalog_is_silent(thinking):
         resolved = dialect or dialect_for(provider_id, model)
-        return bool(_disable_fields(resolved, model))
+        # Only the Google branch reads the contract, so passing the model
+        # string here stayed hidden until a Gemini release newer than the
+        # catalog snapshot raised `AttributeError` out of the model picker.
+        return bool(
+            _disable_fields(
+                resolved,
+                _model_contract(provider_id, model, dialect=resolved, max_output=None),
+            )
+        )
     if "none" in thinking.levels:
         return True
     # A model that reasons by default and has any effort control also has an
@@ -832,6 +905,14 @@ def offered_levels_for(model_id: str | None) -> tuple[str, ...]:
     if not provider_id:
         return ()
     levels = offered_levels(provider_id, model)
+    # An off switch is worth offering alone — a toggle really has two
+    # positions — but not where there is no reasoning to switch off, nor
+    # where this client sends no field to switch it with.
+    if not levels and (
+        provider_id.strip().lower() in _PROVIDER_SENDS_NO_THINKING
+        or _catalog_denies_reasoning(provider_id, model)
+    ):
+        return ()
     if can_disable(provider_id, model):
         return ("none", *levels)
     return levels
