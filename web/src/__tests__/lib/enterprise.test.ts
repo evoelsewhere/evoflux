@@ -5,7 +5,9 @@ import {
   buildEnterpriseNotices,
   enterpriseAttentionCount,
   loadEnterpriseFavorites,
+  resourceFailed,
   resourceHasUpdate,
+  resourceIsLocal,
   saveEnterpriseFavorites,
 } from '@/lib/enterprise'
 
@@ -85,5 +87,80 @@ describe('Enterprise view model', () => {
     saveEnterpriseFavorites(new Set(['resource-b', 'resource-a']))
 
     expect([...loadEnterpriseFavorites()]).toEqual(['resource-a', 'resource-b'])
+  })
+})
+
+describe('Enterprise view model · a resource that failed to apply', () => {
+  const failing = (message: string | null = null) => {
+    const value = status()
+    value.resources = [
+      {
+        kind: 'skill',
+        slug: 'integration-ping',
+        state: 'error',
+        observed_state: 'error',
+        message,
+      },
+    ]
+    return value
+  }
+
+  it('never reports the workspace as synchronized', () => {
+    // No notice covered a failed resource, so the summary fell through to the
+    // healthy branch and told the operator everything was fine.
+    const notices = buildEnterpriseNotices(failing())
+    expect(notices.some((notice) => notice.id === 'healthy')).toBe(false)
+    expect(notices.some((notice) => notice.id === 'resource-errors')).toBe(true)
+  })
+
+  it('surfaces the reason, which names what has to change', () => {
+    const notices = buildEnterpriseNotices(
+      failing('Managed resource modes may contain only work and coding.'),
+    )
+    const notice = notices.find((item) => item.id === 'resource-errors')
+    expect(notice?.tone).toBe('danger')
+    expect(notice?.detail).toContain('work and coding')
+  })
+
+  it('counts towards the attention badge', () => {
+    expect(enterpriseAttentionCount(failing())).toBeGreaterThan(0)
+  })
+
+  it('reports a failed sync lane even when the error field is empty', () => {
+    // `state` can say error while `error` is null; only the latter was checked.
+    const value = status()
+    value.state = 'error'
+    value.error = null
+    const notices = buildEnterpriseNotices(value)
+    expect(notices.some((notice) => notice.id === 'sync-error')).toBe(true)
+    expect(notices.some((notice) => notice.id === 'healthy')).toBe(false)
+  })
+})
+
+describe('Enterprise view model · resourceIsLocal', () => {
+  it('is true only once the resource exists on this machine', () => {
+    for (const state of ['applied', 'in_sync', 'drifted']) {
+      expect(
+        resourceIsLocal({ kind: 'skill', slug: 's', state, observed_state: state }),
+      ).toBe(true)
+    }
+    // Delivered but not applied: a local settings page for it would 404.
+    for (const state of ['update_pending', 'trust_pending', 'error', 'incompatible']) {
+      expect(
+        resourceIsLocal({ kind: 'skill', slug: 's', state, observed_state: state }),
+      ).toBe(false)
+    }
+  })
+
+  it('treats a failed resource as retryable', () => {
+    const record = (observed: string) => ({
+      kind: 'skill' as const,
+      slug: 's',
+      state: observed,
+      observed_state: observed,
+    })
+    expect(resourceFailed(record('error'))).toBe(true)
+    expect(resourceFailed(record('incompatible'))).toBe(true)
+    expect(resourceFailed(record('applied'))).toBe(false)
   })
 })

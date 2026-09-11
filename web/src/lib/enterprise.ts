@@ -49,6 +49,20 @@ export function resourceHasUpdate(
   )
 }
 
+/** Whether the resource exists on this machine, so a local settings page for
+ * it will resolve. A delivered-but-unapplied resource has no local record. */
+export function resourceIsLocal(
+  resource: ConductorManagedResource | LegacyConductorResource,
+): boolean {
+  return ['applied', 'in_sync', 'drifted'].includes(resourceState(resource))
+}
+
+export function resourceFailed(
+  resource: ConductorManagedResource | LegacyConductorResource,
+): boolean {
+  return ['error', 'incompatible'].includes(resourceState(resource))
+}
+
 export function buildEnterpriseNotices(status: ConductorStatus): EnterpriseNotice[] {
   const notices: EnterpriseNotice[] = []
   const telemetry = status.telemetry
@@ -60,13 +74,29 @@ export function buildEnterpriseNotices(status: ConductorStatus): EnterpriseNotic
       detail: 'Local work continues, but project changes and telemetry are waiting.',
       tab: 'sync',
     })
-  } else if (status.error) {
+  } else if (status.error || status.state === 'error') {
     notices.push({
       id: 'sync-error',
       tone: 'danger',
       title: 'A sync lane needs attention',
-      detail: status.error,
+      detail: status.error ?? 'A sync lane reported a failure.',
       tab: 'sync',
+    })
+  }
+  const failed = status.resources.filter(resourceFailed)
+  if (failed.length > 0) {
+    notices.push({
+      id: 'resource-errors',
+      tone: 'danger',
+      title: `${failed.length} managed ${failed.length === 1 ? 'resource' : 'resources'} could not be applied`,
+      // The reason names the file or field that was rejected, which is the
+      // only thing that tells an operator what to change.
+      detail:
+        failed
+          .map((resource) => resource.message)
+          .find((message): message is string => Boolean(message)) ??
+        'Open the resource for the reason it was rejected.',
+      tab: 'updates',
     })
   }
   const updates = status.resources.filter(resourceHasUpdate).length

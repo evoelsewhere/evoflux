@@ -184,3 +184,68 @@ describe('ConductorConnectionSettings', () => {
     await waitFor(() => expect(mocks.approve).toHaveBeenCalledWith('resource-1'))
   })
 })
+
+describe('ConductorConnectionSettings · a revoked token', () => {
+  const revokedStatus = {
+    ...connectedStatus,
+    // The installation still exists server-side, so `enrolled` stays true.
+    // Only the credential is dead.
+    state: 'authorization_required',
+    error: 'unauthorized',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.getSettings.mockResolvedValue({ ...settings, url: 'http://127.0.0.1:4700' })
+    mocks.getStatus.mockResolvedValue(revokedStatus)
+    mocks.updateSettings.mockImplementation(async (value) => value)
+    mocks.connect.mockResolvedValue(connectedStatus)
+    mocks.disconnect.mockResolvedValue(disconnectedStatus)
+    mocks.sync.mockResolvedValue(connectedStatus)
+  })
+
+  it('offers the token field so a new key can be entered without disconnecting', async () => {
+    // The field used to be hidden whenever `enrolled` was true, so a revoked
+    // token left no way in: the only escape was Disconnect, which discards
+    // the managed state this installation had already applied.
+    render(<ConductorConnectionSettings />)
+
+    const token = await screen.findByLabelText('V1 connection token')
+    expect(token).toBeVisible()
+    expect(screen.getByLabelText('Conductor URL')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument()
+  })
+
+  it('says why the connection stopped instead of only showing "unauthorized"', async () => {
+    render(<ConductorConnectionSettings />)
+
+    await screen.findByLabelText('V1 connection token')
+    expect(screen.getByText(/revoked or has expired/i)).toBeVisible()
+    expect(screen.getByText(/Managed resources already applied stay in place/i)).toBeVisible()
+  })
+
+  it('re-authenticates in place, keeping the enrolment', async () => {
+    render(<ConductorConnectionSettings />)
+
+    fireEvent.change(await screen.findByLabelText('V1 connection token'), {
+      target: { value: 'evc_fresh_token_value' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect' }))
+
+    await waitFor(() => expect(mocks.connect).toHaveBeenCalledWith('evc_fresh_token_value'))
+    expect(mocks.disconnect).not.toHaveBeenCalled()
+  })
+
+  it('opens the field for a rejected scope and a lost registration too', async () => {
+    for (const [state, matcher] of [
+      ['forbidden', /scopes Conductor requires/i],
+      ['registration_required', /no longer recognises this installation/i],
+    ] as const) {
+      mocks.getStatus.mockResolvedValue({ ...revokedStatus, state })
+      const view = render(<ConductorConnectionSettings />)
+      expect(await screen.findByLabelText('V1 connection token')).toBeVisible()
+      expect(screen.getByText(matcher)).toBeVisible()
+      view.unmount()
+    }
+  })
+})
