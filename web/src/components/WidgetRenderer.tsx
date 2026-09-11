@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { Loader2, MessageCircle } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import morphdom from 'morphdom'
 import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -82,8 +82,14 @@ function wrapHtml(html: string): string {
   // instead of clipping content behind an internal scrollbar
   const resizeScript = `<script>(function(){
     function postHeight(){
-      var h = Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0);
-      window.parent.postMessage({ type: 'widget_resize', height: h }, '*');
+      var body = document.body;
+      var el = body || document.documentElement;
+      // Prefer actual rendered size over scrollHeight which inflates with
+      // margin/padding that doesn't contribute to visible content.
+      var h = el.getBoundingClientRect ? el.getBoundingClientRect().height : Math.max(document.documentElement.scrollHeight, body ? body.scrollHeight : 0);
+      // Fall back to scrollHeight when getBoundingClientRect returns 0 (e.g. detached DOM)
+      if (!h) h = Math.max(document.documentElement.scrollHeight, body ? body.scrollHeight : 0);
+      window.parent.postMessage({ type: 'widget_resize', height: Math.ceil(h) + 2 }, '*');
     }
     function init(){
       postHeight();
@@ -244,7 +250,7 @@ export function WidgetRenderer({
       <div
         ref={containerRef}
         className={cn(
-          'flex w-full items-center justify-center rounded-lg border border-(--color-border) bg-(--color-background)',
+          'flex w-full items-center justify-center bg-(--color-background)',
           className,
         )}
         style={{ minHeight: height }}
@@ -256,39 +262,17 @@ export function WidgetRenderer({
       </div>
     )
   }
-  
+
   return (
     <div
       ref={containerRef}
-      className={cn(
-        'relative overflow-hidden rounded-lg border border-(--color-border)',
-        className,
-      )}
+      className={cn('relative overflow-hidden', className)}
     >
-      {/* Title bar */}
-      <div className="flex items-center justify-between border-b border-(--color-border) bg-(--color-background-secondary) px-3 py-1.5">
-        <span className="text-xs font-medium text-(--color-text-muted)">{title}</span>
-        <div className="flex items-center gap-2">
-          {isStreaming && (
-            <div className="flex items-center gap-1.5 text-xs text-(--color-text-muted)">
-              <Loader2 size={12} className="animate-spin" />
-              <span>Streaming...</span>
-            </div>
-          )}
-          {onSendPrompt && (
-            <div className="flex items-center gap-1 text-xs text-(--color-text-muted)">
-              <MessageCircle size={12} />
-              <span>Interactive</span>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {/* Widget content — fill container width so chart spans the full border */}
+      {/* Widget content */}
       <iframe
         ref={iframeRef}
         title={title}
-        style={{ height: effectiveHeight }} // scrollHeight from inside iframe — title bar is outside
+        style={{ height: effectiveHeight }}
         sandbox="allow-scripts allow-same-origin"
         scrolling="no"
         className="w-full border-0 transition-[height] duration-(--motion-fast)"
