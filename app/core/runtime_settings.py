@@ -45,6 +45,19 @@ class MemoryVectorSettings(BaseModel):
     index_path: str | None = None
 
 
+class TeamSpawnModeSettings(BaseModel):
+    """Per-team spawn confirmation mode.
+
+    ``"ask"`` (default) shows the model/thinking picker before spawning.
+    ``"auto"`` uses defaults and spawns silently.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    work: Literal["ask", "auto"] = "ask"
+    coding: Literal["ask", "auto"] = "ask"
+
+
 class GitSettings(BaseModel):
     """Operational and safety defaults for local/remote Git commands."""
 
@@ -260,6 +273,7 @@ class RuntimeSettings(BaseModel):
     browser: BuiltInBrowserSettings = Field(default_factory=BuiltInBrowserSettings)
     webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
+    team_spawn: TeamSpawnModeSettings = Field(default_factory=TeamSpawnModeSettings)
 
 
 def provider_visible_models(provider_id: str) -> list[str]:

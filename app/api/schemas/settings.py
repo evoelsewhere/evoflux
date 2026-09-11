@@ -7,6 +7,15 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+class TeamSpawnSettingsBody(BaseModel):
+    """Per-team spawn confirmation mode (ask / auto)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    work: Literal["ask", "auto"] = "ask"
+    coding: Literal["ask", "auto"] = "ask"
+
+
 class SandboxSettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

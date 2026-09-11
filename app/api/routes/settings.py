@@ -50,6 +50,7 @@ from app.api.schemas.settings import (
     ProviderTestResponse,
     ProviderUsageResponse,
     ProviderVisibleModelsRequest,
+    TeamSpawnSettingsBody,
     ProviderVisibleModelsResponse,
     ProvidersListBody,
     SandboxSettingsBody,
@@ -585,6 +586,31 @@ async def update_webbridge_settings(
 
     webbridge_manager.reload_policy()
     return _webbridge_settings_body()
+
+
+# Team spawn mode (Settings -> Agent Teams tab)
+
+
+def _team_spawn_settings_body() -> dict[str, str]:
+    cfg = load_runtime_settings()
+    return {"work": cfg.team_spawn.work, "coding": cfg.team_spawn.coding}
+
+
+@router.get("/team-spawn")
+async def get_team_spawn_settings() -> dict[str, str]:
+    return _team_spawn_settings_body()
+
+
+@router.put("/team-spawn")
+async def save_team_spawn_settings(body: TeamSpawnSettingsBody) -> dict[str, str]:
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.team_spawn.work = body.work
+    cfg.team_spawn.coding = body.coding
+    save_runtime_settings(cfg)
+    return _team_spawn_settings_body()
 
 
 # Providers (Settings -> Providers tab)

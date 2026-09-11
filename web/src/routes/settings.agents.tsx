@@ -48,6 +48,8 @@ import {
   useAgentFilesQuery,
   useBulkUpdateAgentModelMutation,
   useRegistryQuery,
+  useTeamSpawnSettingsQuery,
+  useUpdateTeamSpawnSettingsMutation,
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 
@@ -437,6 +439,9 @@ function AgentTeamGroup({
 }) {
   const visual = AGENT_TEAM_VISUALS[team]
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const { data: spawnSettings } = useTeamSpawnSettingsQuery()
+  const updateSpawn = useUpdateTeamSpawnSettingsMutation()
+  const spawnMode = spawnSettings?.[team] ?? 'ask'
   const editableAgents = agents.filter((agent) => agent.editable)
   const allChecked =
     editableAgents.length > 0 && editableAgents.every((agent) => checked.has(agent.name))
@@ -475,6 +480,23 @@ function AgentTeamGroup({
         <div className="min-w-0 flex-1">
           <h2 id={`agent-team-${team}`} className="sr-only">{visual.label}</h2>
           <p className="truncate text-[11px] text-(--color-text-muted)">{visual.description}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] uppercase tracking-wide text-(--color-text-subtle)">spawn</span>
+          <SegmentedControl
+            value={spawnMode}
+            onChange={(val) => {
+              if (!spawnSettings) return
+              updateSpawn.mutate({ ...spawnSettings, [team]: val as 'ask' | 'auto' })
+            }}
+            options={[
+              { label: 'Ask', value: 'ask' },
+              { label: 'Auto', value: 'auto' },
+            ]}
+            layoutId={`team-spawn-${team}`}
+            ariaLabel={`Spawn mode for ${visual.label} team`}
+            className="scale-90 origin-right"
+          />
         </div>
         <span className="font-mono text-[10px] tabular-nums text-(--color-text-subtle)">{agents.length}</span>
       </div>

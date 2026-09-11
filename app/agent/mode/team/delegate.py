@@ -498,6 +498,18 @@ def make_team_delegate_tool(
 
         resolved: list[str] = []
         errors: list[str] = []
+
+        # Check team spawn mode setting to decide whether to confirm.
+        _team_mode = team.mode if team is not None else "work"
+        try:
+            from app.core.runtime_settings import load_runtime_settings as _lrs
+
+            _rs = _lrs()
+            _spawn_mode = getattr(_rs.team_spawn, _team_mode, "ask")
+        except Exception:
+            _spawn_mode = "ask"
+        _auto_spawn = _spawn_mode == "auto"
+
         for name in requested:
             target = (
                 team.resolve_delegation_recipient(name)
@@ -508,7 +520,7 @@ def make_team_delegate_tool(
                 live = team.live_instances_for_blueprint(name)
                 if not live:
                     try:
-                        spawned = await team.spawn(name, confirm=True)
+                        spawned = await team.spawn(name, confirm=not _auto_spawn)
                     except Exception as exc:  # noqa: BLE001 - tool boundary
                         logger.exception(
                             "team_delegate_auto_spawn_failed name={}", name
