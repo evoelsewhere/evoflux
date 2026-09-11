@@ -96,7 +96,7 @@ interface AgentViewProps {
 interface AssistantTranscriptTurnProps {
   blocks: ContentBlock[]
   canContinue?: () => void
-  hasRunway: boolean
+  isTrailing: boolean
   latestMCPAppBlockIds: Set<string>
   sessionId?: string
   turnChanges: TurnChangesPending | null
@@ -143,14 +143,14 @@ const UserTranscriptTurn = memo(function UserTranscriptTurn({
 const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
   blocks,
   canContinue,
-  hasRunway,
+  isTrailing,
   latestMCPAppBlockIds,
   sessionId,
   turnChanges,
   turnIsStreaming,
 }: AssistantTranscriptTurnProps) {
   return (
-    <div className={hasRunway ? 'oa-latest-turn-runway' : 'oa-transcript-turn'}>
+    <div className={isTrailing ? 'oa-trailing-turn' : 'oa-transcript-turn'}>
       <div className="space-y-2">
         <AssistantTurnContent
           blocks={blocks}
@@ -302,6 +302,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   const {
     contentRef,
     detach: detachFromBottom,
+    runwayRef,
     sentinelRef,
     scrollRef,
     scrollToBottom,
@@ -450,7 +451,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                      key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
                      blocks={item.blocks}
                      turnIsStreaming={turnIsStreaming}
-                     hasRunway={isTrailingTurn && !showLiveStatus}
+                     isTrailing={isTrailingTurn}
                      canContinue={isTrailingTurn && !isWorking ? onContinue : undefined}
                      sessionId={sessionId}
                      latestMCPAppBlockIds={latestMCPAppBlockIds}
@@ -475,8 +476,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                 <TurnStatusLine blocks={currentBlocks} className="pl-0.5" />
               )}
             </AnimatePresence>
-            {showLiveStatus && <div className="oa-active-turn-runway" aria-hidden="true" />}
-
             <PendingMessageQueue />
 
             {isError && lastError && (
@@ -486,6 +485,15 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
            )}
 
          </div>
+        {/* Sized by `usePinnedTranscript` to exactly the space the newest
+            prompt needs to reach the top of the viewport — see `syncRunway`.
+            It must sit between the prompt and the sentinel, which is what
+            the measurement spans. */}
+        <div
+          ref={runwayRef}
+          aria-hidden="true"
+          className="oa-transcript-runway [overflow-anchor:none]"
+        />
         {/* Whether this is visible is how the viewport knows it is at the
             bottom, so nothing has to measure the scroller. Excluded from
             scroll anchoring: as the last child it would otherwise be the

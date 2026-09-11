@@ -1629,19 +1629,25 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
   }
 }
 
-/* Codex-style conversation runway. The newest turn keeps the runway after its
- * completion, avoiding a large scroll-height collapse on the terminal event.
- * A following prompt replaces this runway with its own pending/live runway. */
-.oa-active-turn-runway,
-.oa-latest-turn-runway {
-  min-height: clamp(18rem, 70svh, 44rem);
+/* Codex-style conversation runway: the spacer between the newest prompt and
+ * the end of the transcript. `usePinnedTranscript` sizes it to exactly the
+ * height that makes everything below that prompt one viewport tall, so being
+ * scrolled to the bottom *is* having the prompt at the top. It shrinks as the
+ * answer grows and reaches zero when the answer fills the viewport on its own,
+ * which is why a three-line reply no longer leaves half a screen of blank
+ * space behind it. The fixed `clamp(18rem, 70svh, 44rem)` this replaced was
+ * added to every trailing turn whether it needed one or not, and outlived the
+ * turn that owned it. */
+.oa-transcript-runway {
+  block-size: 0;
+  flex-shrink: 0;
 }
 
-@media (max-width: 767px) {
-  .oa-active-turn-runway,
-  .oa-latest-turn-runway {
-    min-height: clamp(14rem, 62svh, 32rem);
-  }
+/* The trailing turn is the one that streams, so it keeps the cheap
+ * containment but opts out of the skipping below: its size has to stay live
+ * while content lands in it. */
+.oa-trailing-turn {
+  contain: layout style;
 }
 
 /* Expanded activity groups stay compact like Codex's work log. The mask keeps

@@ -228,6 +228,7 @@ export function AgentPane({
 
   const {
     contentRef,
+    runwayRef,
     sentinelRef,
     scrollRef,
     scrollToBottom,
@@ -415,7 +416,7 @@ export function AgentPane({
                    return (
                      <div
                        key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
-                       className={isTrailingTurn ? 'oa-latest-turn-runway' : 'oa-transcript-turn'}
+                       className={isTrailingTurn ? 'oa-trailing-turn' : 'oa-transcript-turn'}
                      >
                        <CompactAssistantTranscriptTurn
                          blocks={item.blocks}
@@ -461,6 +462,15 @@ export function AgentPane({
              <p className="text-xs text-(--color-error)">{stream.lastError}</p>
            </div>
           )}
+        {/* Sized by `usePinnedTranscript` to exactly the space the newest
+            prompt needs to reach the top of the viewport — see `syncRunway`.
+            It must sit between the prompt and the sentinel, which is what
+            the measurement spans. */}
+        <div
+          ref={runwayRef}
+          aria-hidden="true"
+          className="oa-transcript-runway [overflow-anchor:none]"
+        />
         {/* Visibility of this is how the viewport knows it is at the
             bottom. Excluded from scroll anchoring: as the last child the
             browser would prefer it as the anchor and hold the view there. */}
