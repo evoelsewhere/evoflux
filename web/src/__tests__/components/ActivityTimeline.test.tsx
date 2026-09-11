@@ -109,6 +109,10 @@ describe('ActivityTimeline', () => {
       />,
     )
 
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Read files, 4 activities' }),
+    )
+
     const ordered = [
       screen.getByTestId('thought-1'),
       screen.getByTestId('tool-1'),
@@ -120,6 +124,45 @@ describe('ActivityTimeline', () => {
     })
     expect(screen.getByRole('log', { name: 'Activity history' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Collapse Read files, 4 activities' })).toBeInTheDocument()
+  })
+
+  it('keeps a live group collapsed until the reader opens it', () => {
+    render(
+      <ActivityTimeline
+        blocks={[block('tool', 'tool')]}
+        isActive
+        renderBlock={renderBlock}
+      />,
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Expand Read files, 1 activity' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('log', { name: 'Activity history' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps a live group collapsed as further activity streams in', () => {
+    const first = block('tool-1', 'tool')
+    const { rerender } = render(
+      <ActivityTimeline blocks={[first]} isActive renderBlock={renderBlock} />,
+    )
+
+    rerender(
+      <ActivityTimeline
+        blocks={[first, block('tool-2', 'tool')]}
+        isActive
+        renderBlock={renderBlock}
+      />,
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Expand Read files, 2 activities' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('log', { name: 'Activity history' }),
+    ).not.toBeInTheDocument()
   })
 
   it('collapses completed activity to one summary row and expands on request', () => {
@@ -195,6 +238,9 @@ describe('ActivityTimeline', () => {
     const { rerender } = render(
       <ActivityTimeline blocks={blocks} isActive renderBlock={renderBlock} />,
     )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Read files, 1 activity' }),
+    )
     expect(screen.getByRole('log', { name: 'Activity history' })).toBeInTheDocument()
 
     rerender(<ActivityTimeline blocks={blocks} isActive={false} renderBlock={renderBlock} />)
@@ -209,6 +255,7 @@ describe('ActivityTimeline', () => {
       <ActivityTimeline blocks={[first]} isActive renderBlock={renderBlock} />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Read files, 1 activity' }))
     fireEvent.click(screen.getByRole('button', { name: 'Collapse Read files, 1 activity' }))
     expect(screen.queryByRole('log', { name: 'Activity history' })).not.toBeInTheDocument()
 
@@ -231,6 +278,9 @@ describe('ActivityTimeline', () => {
         isActive
         renderBlock={renderBlock}
       />,
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand Read files, 1 activity' }),
     )
 
     const log = screen.getByRole('log', { name: 'Activity history' })

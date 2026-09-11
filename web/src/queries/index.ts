@@ -1,5 +1,5 @@
 export { useHealthQuery } from './useHealthQuery'
-export { useDiagnosticsQuery } from './useDiagnosticsQuery'
+export { useDiagnosticsQuery, useDiagnosticsActionMutation } from './useDiagnosticsQuery'
 export {
   useTeamAgentsQuery,
   useTeamLeadsQuery,
@@ -38,6 +38,11 @@ export {
   useTerminateProcessMutation,
 } from './useProcessesQuery'
 export { useProblemsQuery, useProblemDecisionMutation } from './useProblemsQuery'
+export {
+  usePreviewTargetsQuery,
+  usePreviewStartMutation,
+  usePreviewStopMutation,
+} from './usePreviewTargetsQuery'
 export {
   useAgentFilesQuery,
   useAgentFileQuery,
@@ -95,6 +100,10 @@ export {
   useUpdateVersionControlSettingsMutation,
 } from './useVersionControlSettingsQuery'
 export {
+  useContextSettingsQuery,
+  useUpdateContextSettingsMutation,
+} from './useContextSettingsQuery'
+export {
   useWebBridgeSettingsQuery,
   useUpdateWebBridgeSettingsMutation,
 } from './useWebBridgeSettingsQuery'
@@ -140,6 +149,7 @@ export {
 } from './useEasdQuery'
 export {
   useLanguageServersQuery,
+  useDismissLanguageServerErrorMutation,
   useInstallLanguageServerMutation,
 } from './useLanguageServersQuery'
 export {

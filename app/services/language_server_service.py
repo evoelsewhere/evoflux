@@ -13,7 +13,7 @@ import os
 import shutil
 import sys
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -35,7 +35,15 @@ from app.agent.tools.builtin.filesystem._ignore import (
 from app.agent.tools.builtin.shell import _scrubbed_env
 from app.core.config import settings
 
-InstallerKind = Literal["npm", "uv"]
+InstallerKind = Literal["npm", "uv", "go", "rustup", "gem", "dotnet"]
+#: Where an install lands. ``managed`` is staged into the EvoFlux cache and
+#: resolved without consulting PATH. ``toolchain`` asks a toolchain the user
+#: already has to add the server to itself — rustup components and gems have
+#: no meaningful "copy it into our directory" form — and success is confirmed
+#: by the server then resolving on PATH.
+InstallScope = Literal["managed", "toolchain"]
+#: Lifecycle of a running or finished install, as the UI reports it.
+InstallPhase = Literal["idle", "running", "failed"]
 ServerState = Literal["ready", "missing", "update_available"]
 ServerSource = Literal["managed", "system", "missing"]
 
@@ -43,10 +51,24 @@ ServerSource = Literal["managed", "system", "missing"]
 @dataclass(frozen=True, slots=True)
 class InstallRecipe:
     kind: InstallerKind
-    version: str
+    #: Pinned version, or ``None`` when the toolchain decides it (a rustup
+    #: component ships with the toolchain and has no version of its own).
+    version: str | None
     packages: tuple[str, ...]
     prerequisite: str
     registry: str
+    scope: InstallScope = "managed"
+
+
+@dataclass(frozen=True, slots=True)
+class InstallJob:
+    """What one install is doing, so the UI can say more than "spinner"."""
+
+    language_id: str
+    phase: InstallPhase
+    started_at: str
+    finished_at: str | None
+    error: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +95,13 @@ class LanguageServerStatus:
     installer: InstallerKind | None
     installer_available: bool
     install_hint: str
+    #: Why the action is unavailable, or ``None`` when it can be taken. The UI
+    #: shows a disabled button carrying this rather than hiding the control,
+    #: because a hidden button and an impossible one look identical.
+    blocked_reason: str | None
+    install_phase: InstallPhase
+    install_started_at: str | None
+    install_error: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,6 +109,10 @@ class LanguageServerOverview:
     workspaces: tuple[str, ...]
     cache_dir: str
     servers: tuple[LanguageServerStatus, ...]
+    #: True when detection stopped at the file cap, so the language list is a
+    #: sample rather than the whole repository set.
+    scan_truncated: bool
+    scan_limit: int
 
 
 class LanguageServerInstallError(RuntimeError):
@@ -196,26 +229,72 @@ INSTALL_RECIPES: dict[str, InstallRecipe] = {
         prerequisite="npm",
         registry="https://registry.npmjs.org/",
     ),
+    # The four below install through a toolchain the user already has. They
+    # were "install it yourself" prose while `go`, `rustup`, `gem` and
+    # `dotnet` sat on PATH ready to do it in one command.
+    "go": InstallRecipe(
+        kind="go",
+        version="0.20.0",
+        packages=("golang.org/x/tools/gopls@v0.20.0",),
+        prerequisite="go",
+        registry="https://proxy.golang.org",
+    ),
+    "rust": InstallRecipe(
+        # A rustup component belongs to the toolchain and carries its
+        # version, so there is nothing for EvoFlux to pin.
+        kind="rustup",
+        version=None,
+        packages=("rust-analyzer",),
+        prerequisite="rustup",
+        registry="https://static.rust-lang.org",
+        scope="toolchain",
+    ),
+    "ruby": InstallRecipe(
+        kind="gem",
+        version="0.28.0",
+        packages=("ruby-lsp",),
+        prerequisite="gem",
+        registry="https://rubygems.org",
+        scope="toolchain",
+    ),
 }
 
 
 MANUAL_HINTS: dict[str, str] = {
+    # csharp-ls is the obvious managed candidate and was tried: its NuGet
+    # package ships without DotnetToolSettings.xml, so `dotnet tool install`
+    # refuses it at every version. The spec still looks for csharp-ls on PATH,
+    # so a hand-installed one is picked up.
+    "csharp": (
+        "Install OmniSharp or csharp-ls and expose it on PATH."
+    ),
     "c": "Install clangd with the LLVM toolchain.",
     "cpp": "Install clangd with the LLVM toolchain.",
     "java": "Install Eclipse JDT Language Server (jdtls).",
     "kotlin": "Install kotlin-language-server and expose it on PATH.",
-    "csharp": "Install OmniSharp and expose OmniSharp or omnisharp on PATH.",
     "swift": "Install an Apple or Swift toolchain containing sourcekit-lsp.",
     "dart": "Install the Dart SDK; the server is provided by the dart executable.",
-    "ruby": "Install ruby-lsp or solargraph with the active Ruby toolchain.",
     "lua": "Install lua-language-server and expose it on PATH.",
     "markdown": "Install Marksman and expose marksman on PATH.",
-    "go": "Install gopls with the active Go toolchain.",
-    "rust": "Install rust-analyzer with rustup or your Rust toolchain.",
 }
 
 _install_locks: dict[str, asyncio.Lock] = {}
+#: Live install state, keyed by language. An install outlives the request that
+#: started it, so the page can be left and come back to a running install
+#: instead of a spinner that vanished with the mutation.
+_install_jobs: dict[str, InstallJob] = {}
+_install_tasks: dict[str, asyncio.Task[None]] = {}
 _MAX_SCANNED_FILES = 50_000
+
+#: What to tell someone whose machine lacks the installer a recipe needs.
+PREREQUISITE_HINTS: dict[InstallerKind, str] = {
+    "npm": "Install Node.js to get npm, then refresh.",
+    "uv": "Install uv (astral.sh/uv), then refresh.",
+    "go": "Install the Go toolchain, then refresh.",
+    "rustup": "Install Rust with rustup, then refresh.",
+    "gem": "Install Ruby to get gem, then refresh.",
+    "dotnet": "Install the .NET SDK, then refresh.",
+}
 
 
 def _spec(language_id: str) -> LanguageServerSpec | None:
@@ -240,13 +319,17 @@ def _system_command(spec: LanguageServerSpec) -> tuple[str, ...] | None:
 
 def _detect_languages(
     workspaces: tuple[Path, ...],
-) -> dict[str, tuple[DetectedRepository, ...]]:
+) -> tuple[dict[str, tuple[DetectedRepository, ...]], bool]:
+    """Count matching files per language. Also reports whether the file cap
+    cut the walk short, because a truncated scan under-reports languages and
+    the page should say so rather than quietly listing fewer of them."""
     extension_map: dict[str, str] = {}
     for spec in SPECS:
         for extension in spec.extensions:
             extension_map.setdefault(extension, spec.language_id)
 
     by_language: dict[str, list[DetectedRepository]] = {}
+    truncated = False
     for workspace in workspaces:
         counts: dict[str, int] = {}
         rules = load_gitignore_rules(workspace)
@@ -278,6 +361,7 @@ def _detect_languages(
                 if language_id:
                     counts[language_id] = counts.get(language_id, 0) + 1
             if scanned > _MAX_SCANNED_FILES:
+                truncated = True
                 break
         for language_id, file_count in counts.items():
             by_language.setdefault(language_id, []).append(
@@ -287,7 +371,7 @@ def _detect_languages(
                     file_count=file_count,
                 )
             )
-    return {key: tuple(value) for key, value in by_language.items()}
+    return {key: tuple(value) for key, value in by_language.items()}, truncated
 
 
 def language_server_overview(
@@ -295,7 +379,7 @@ def language_server_overview(
 ) -> LanguageServerOverview:
     """Return detected and installed state across authorized repositories."""
     roots = tuple(dict.fromkeys(workspace.resolve() for workspace in workspaces))
-    detected = _detect_languages(roots)
+    detected, truncated = _detect_languages(roots)
     statuses: list[LanguageServerStatus] = []
     for spec in SPECS:
         repositories = detected.get(spec.language_id, ())
@@ -312,7 +396,11 @@ def language_server_overview(
             source: ServerSource = "managed"
             state: ServerState = (
                 "update_available"
-                if recipe is not None and installed_version != recipe.version
+                if (
+                    recipe is not None
+                    and recipe.version is not None
+                    and installed_version != recipe.version
+                )
                 else "ready"
             )
             command = managed[0]
@@ -345,6 +433,7 @@ def language_server_overview(
                 spec.language_id,
                 "Install a compatible language server and expose it on PATH.",
             )
+        job = _install_jobs.get(spec.language_id)
         statuses.append(
             LanguageServerStatus(
                 language_id=spec.language_id,
@@ -362,6 +451,12 @@ def language_server_overview(
                 installer=recipe.kind if recipe else None,
                 installer_available=prerequisite_available,
                 install_hint=install_hint,
+                blocked_reason=_blocked_reason(
+                    recipe, prerequisite_available, state, source
+                ),
+                install_phase=job.phase if job else "idle",
+                install_started_at=job.started_at if job else None,
+                install_error=job.error if job else None,
             )
         )
     statuses.sort(key=lambda item: (not item.detected, item.display_name.casefold()))
@@ -369,7 +464,49 @@ def language_server_overview(
         workspaces=tuple(str(root) for root in roots),
         cache_dir=str(Path(settings.EVOFLUX_CACHE_DIR) / "language-servers"),
         servers=tuple(statuses),
+        scan_truncated=truncated,
+        scan_limit=_MAX_SCANNED_FILES,
     )
+
+
+def _blocked_reason(
+    recipe: InstallRecipe | None,
+    prerequisite_available: bool,
+    state: ServerState,
+    source: ServerSource,
+) -> str | None:
+    """Why the install button is disabled, or None when it is not.
+
+    A row with no recipe and a row whose installer is missing used to render
+    identically — as no button at all — so "nothing happens when I click
+    install" was really "there was never anything to click, and no one said
+    why".
+    """
+    if recipe is None:
+        return "No managed installer for this server yet — install it yourself."
+    if not prerequisite_available:
+        return PREREQUISITE_HINTS.get(
+            recipe.kind, f"Install {recipe.prerequisite} first."
+        )
+    if state == "ready" and source == "managed":
+        return "Already installed and up to date."
+    if state == "ready" and source == "system":
+        return "Already available from your system PATH."
+    return None
+
+
+#: Seconds an installer may run. npm and uv unpack prebuilt artifacts; `go
+#: install` compiles gopls from source and `dotnet tool install` restores and
+#: builds, which measured 98s here on a warm network and would exceed the
+#: shared 180s budget on a slower machine or a cold module cache.
+_INSTALL_TIMEOUTS: dict[InstallerKind, float] = {
+    "npm": 180,
+    "uv": 180,
+    "gem": 300,
+    "rustup": 300,
+    "dotnet": 600,
+    "go": 600,
+}
 
 
 async def _run_installer_command(
@@ -377,6 +514,7 @@ async def _run_installer_command(
     *,
     cwd: Path,
     env: dict[str, str],
+    timeout: float = 180,
 ) -> None:
     process = await asyncio.create_subprocess_exec(
         *command,
@@ -386,12 +524,14 @@ async def _run_installer_command(
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(), timeout=timeout
+        )
     except TimeoutError as exc:
         process.kill()
         await process.wait()
         raise LanguageServerInstallError(
-            "Installation timed out after 180 seconds."
+            f"Installation timed out after {timeout:.0f} seconds."
         ) from exc
     if process.returncode == 0:
         return
@@ -436,7 +576,7 @@ async def _install_into_stage(recipe: InstallRecipe, stage: Path) -> None:
             str(user_config),
             *recipe.packages,
         )
-    else:
+    elif recipe.kind == "uv":
         env.update(
             {
                 "UV_TOOL_DIR": str(stage / "tools"),
@@ -459,7 +599,85 @@ async def _install_into_stage(recipe: InstallRecipe, stage: Path) -> None:
             recipe.registry,
             recipe.packages[0],
         )
-    await _run_installer_command(command, cwd=stage, env=env)
+    elif recipe.kind == "go":
+        # GOBIN puts the built binary exactly where the managed resolver
+        # looks. Every cache is redirected into the stage so a failed install
+        # leaves nothing behind and the user's own Go caches are untouched.
+        env.update(
+            {
+                "GOBIN": str(stage / "bin"),
+                "GOPATH": str(stage / "gopath"),
+                "GOMODCACHE": str(stage / "gopath" / "pkg" / "mod"),
+                "GOCACHE": str(stage / "gocache"),
+                "GOPROXY": recipe.registry,
+                "GOFLAGS": "-mod=mod",
+                "GOTOOLCHAIN": "local",
+                "CGO_ENABLED": "0",
+            }
+        )
+        command = (executable, "install", recipe.packages[0])
+    elif recipe.kind == "dotnet":
+        env.update(
+            {
+                "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+                "DOTNET_NOLOGO": "1",
+                "DOTNET_CLI_HOME": str(stage / "dotnet-home"),
+                "NUGET_PACKAGES": str(stage / "nuget"),
+            }
+        )
+        command = (
+            executable,
+            "tool",
+            "install",
+            recipe.packages[0],
+            "--tool-path",
+            str(stage / "bin"),
+            *(("--version", recipe.version) if recipe.version else ()),
+            "--add-source",
+            recipe.registry,
+        )
+    else:
+        raise LanguageServerInstallError(
+            f"Installer '{recipe.kind}' does not install into the managed cache."
+        )
+    await _run_installer_command(
+        command, cwd=stage, env=env, timeout=_INSTALL_TIMEOUTS[recipe.kind]
+    )
+
+
+async def _install_into_toolchain(recipe: InstallRecipe, cwd: Path) -> None:
+    """Ask a toolchain to add the server to itself.
+
+    A rustup component and a gem belong to the toolchain that owns them;
+    there is no copy of them EvoFlux could keep in its own cache and still
+    have work. The install succeeds when the server afterwards resolves on
+    PATH, which the caller checks.
+    """
+    executable = shutil.which(recipe.prerequisite)
+    if executable is None:
+        raise LanguageServerInstallError(
+            f"Required installer '{recipe.prerequisite}' is not available."
+        )
+    env = _scrubbed_env(inherit=False)
+    if recipe.kind == "rustup":
+        command = (executable, "component", "add", recipe.packages[0])
+    elif recipe.kind == "gem":
+        command = (
+            executable,
+            "install",
+            recipe.packages[0],
+            *(("--version", recipe.version) if recipe.version else ()),
+            "--no-document",
+            "--source",
+            recipe.registry,
+        )
+    else:
+        raise LanguageServerInstallError(
+            f"Installer '{recipe.kind}' has no toolchain form."
+        )
+    await _run_installer_command(
+        command, cwd=cwd, env=env, timeout=_INSTALL_TIMEOUTS[recipe.kind]
+    )
 
 
 def _activate_stage(stage: Path, target: Path) -> None:
@@ -480,7 +698,7 @@ def _activate_stage(stage: Path, target: Path) -> None:
 
 
 async def install_language_server(language_id: str) -> LanguageServerStatus:
-    """Install or update one allowlisted server into the managed cache."""
+    """Install or update one allowlisted server."""
     spec = _spec(language_id)
     if spec is None:
         raise LanguageServerInstallError(f"Unknown language server: {language_id}")
@@ -499,6 +717,27 @@ async def install_language_server(language_id: str) -> LanguageServerStatus:
         )
         if current.source == "managed" and current.state == "ready":
             return current
+
+        if recipe.scope == "toolchain":
+            with tempfile.TemporaryDirectory(prefix=f".{language_id}-install-") as cwd:
+                await _install_into_toolchain(recipe, Path(cwd))
+            if _system_command(spec) is None:
+                raise LanguageServerInstallError(
+                    f"{recipe.prerequisite} reported success, but "
+                    f"{spec.commands[0][0]} is still not on PATH. Open a new "
+                    "terminal session or check the toolchain's bin directory."
+                )
+            await close_language_servers(language_id)
+            logger.info(
+                "language_server_installed language={} installer={} scope=toolchain",
+                language_id,
+                recipe.kind,
+            )
+            return next(
+                item
+                for item in language_server_overview().servers
+                if item.language_id == language_id
+            )
 
         target = managed_language_server_root(language_id)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -546,13 +785,99 @@ async def install_language_server(language_id: str) -> LanguageServerStatus:
     )
 
 
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def install_job(language_id: str) -> InstallJob | None:
+    """The install state for one language, if anything ever ran for it."""
+    return _install_jobs.get(language_id)
+
+
+def start_language_server_install(language_id: str) -> InstallJob:
+    """Begin an install and return immediately with its state.
+
+    The install itself can take minutes. Holding the HTTP request open for it
+    meant the only status anyone had was a spinner that belonged to that one
+    request: navigate away and the install continued with nothing to show for
+    it. The work now outlives the request and the overview reports it.
+    """
+    spec = _spec(language_id)
+    if spec is None:
+        raise LanguageServerInstallError(f"Unknown language server: {language_id}")
+    recipe = INSTALL_RECIPES.get(language_id)
+    if recipe is None:
+        raise LanguageServerInstallError(
+            MANUAL_HINTS.get(language_id, "This server requires a system toolchain.")
+        )
+    if shutil.which(recipe.prerequisite) is None:
+        raise LanguageServerInstallError(
+            PREREQUISITE_HINTS.get(
+                recipe.kind, f"Install {recipe.prerequisite} first."
+            )
+        )
+
+    existing = _install_tasks.get(language_id)
+    if existing is not None and not existing.done():
+        return _install_jobs[language_id]
+
+    job = InstallJob(
+        language_id=language_id,
+        phase="running",
+        started_at=_now(),
+        finished_at=None,
+        error=None,
+    )
+    _install_jobs[language_id] = job
+
+    async def _run() -> None:
+        try:
+            await install_language_server(language_id)
+        except LanguageServerInstallError as exc:
+            _install_jobs[language_id] = replace(
+                job, phase="failed", finished_at=_now(), error=str(exc)
+            )
+            logger.warning(
+                "language_server_install_failed language={} error={}",
+                language_id,
+                exc,
+            )
+        except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
+            _install_jobs[language_id] = replace(
+                job, phase="failed", finished_at=_now(), error=str(exc)
+            )
+            logger.exception("language_server_install_crashed language={}", language_id)
+        else:
+            # Success is visible in the row's own state; a finished job with
+            # nothing to say would only keep a stale banner on screen.
+            _install_jobs.pop(language_id, None)
+
+    _install_tasks[language_id] = asyncio.create_task(
+        _run(), name=f"lsp-install-{language_id}"
+    )
+    return job
+
+
+def dismiss_install_error(language_id: str) -> None:
+    """Clear a failed job so its message stops being reported."""
+    job = _install_jobs.get(language_id)
+    if job is not None and job.phase == "failed":
+        _install_jobs.pop(language_id, None)
+
+
 __all__ = [
     "DISPLAY_NAMES",
     "INSTALL_RECIPES",
+    "PREREQUISITE_HINTS",
     "DetectedRepository",
+    "InstallJob",
     "LanguageServerInstallError",
     "LanguageServerOverview",
     "LanguageServerStatus",
+    "dismiss_install_error",
+    "install_job",
     "install_language_server",
     "language_server_overview",
+    "start_language_server_install",
 ]

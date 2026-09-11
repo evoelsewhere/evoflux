@@ -38,12 +38,66 @@ export interface WorkbenchTab {
   tool: WorkbenchTool
   title?: string
   initialUrl?: string
+  /**
+   * The chat session this tab belongs to.
+   *
+   * Tabs used to be one global list, so a terminal opened in one session
+   * stayed on screen in the next — and reconnected under the new session's
+   * id with the old tab's terminal id, which spawns a second, unrelated
+   * shell. `null` means the tab is not session-bound (settings-like tools
+   * that mean the same thing everywhere).
+   */
+  sessionId: string | null
 }
 
 export interface WorkbenchTabOptions {
   id?: string
   initialUrl?: string
   title?: string
+}
+
+/**
+ * Tools whose tab is about the session's own work, so it must not follow
+ * the user into another session. Everything else is global.
+ */
+const SESSION_SCOPED_TOOLS: ReadonlySet<WorkbenchTool> = new Set([
+  'overview',
+  'terminal',
+  'processes',
+  'browser',
+  'files',
+  'graph',
+  'side-chat',
+  'source-control',
+  'pull-requests',
+  'problems',
+  'easd',
+])
+// 'wiki', 'scheduler' and 'plugins' mean the same thing in every session,
+// so their tabs stay put across a switch.
+
+/**
+ * Tools whose tab must stay mounted while another session is on screen.
+ *
+ * Only the browser qualifies. Its page lives in a native WebView with no
+ * way to restore it, so unmounting loses whatever the user or the agent
+ * had loaded. A terminal does not need this: the PTY lives on the server
+ * and the socket replays its scrollback on reconnect, which is exactly
+ * what `terminal_ws` does. Keeping every session's tab mounted meant
+ * visiting five sessions left five xterm instances and five live sockets
+ * alive at once, none of them ever released.
+ */
+const TOOLS_MOUNTED_ACROSS_SESSIONS: ReadonlySet<WorkbenchTool> = new Set([
+  'browser',
+])
+
+/** Whether this tab should render while *sessionId* is the current session. */
+export function shouldMountWorkbenchTab(
+  tab: WorkbenchTab,
+  sessionId: string | null,
+): boolean {
+  return tabInSession(tab, sessionId)
+    || TOOLS_MOUNTED_ACROSS_SESSIONS.has(tab.tool)
 }
 
 export type PullRequestsScope = 'all' | 'session'
@@ -73,6 +127,10 @@ export interface EasdRunOpenRequest {
 interface WorkbenchState {
   workbenchTabs: WorkbenchTab[]
   activeWorkbenchTabId: string | null
+  /** The session whose tabs are on screen. */
+  workbenchSessionId: string | null
+  /** Which tab each session was last looking at, so a switch back restores it. */
+  _activeTabBySession: Record<string, string>
   activeWorkbenchTool: WorkbenchTool | null
   workbenchOpen: boolean
   workbenchMaximized: boolean
@@ -89,6 +147,7 @@ let easdRunOpenRequestSequence = 0
 function newWorkbenchTab(
   tool: WorkbenchTool,
   options: WorkbenchTabOptions = {},
+  sessionId: string | null = null,
 ): WorkbenchTab {
   workbenchTabSequence += 1
   return {
@@ -97,7 +156,41 @@ function newWorkbenchTab(
     tool,
     initialUrl: options.initialUrl,
     title: options.title,
+    sessionId: SESSION_SCOPED_TOOLS.has(tool) ? sessionId : null,
   }
+}
+
+/** Whether a tab belongs on screen while *sessionId* is the current one. */
+function tabInSession(tab: WorkbenchTab, sessionId: string | null): boolean {
+  return tab.sessionId === null || tab.sessionId === sessionId
+}
+
+/**
+ * The tabs visible for the current session.
+ *
+ * Exported so every consumer filters the same way — reading
+ * `workbenchTabs` directly shows another session's tabs.
+ */
+/**
+ * Whether this session has a tab open for *tool*.
+ *
+ * Returns a boolean rather than an array so callers can subscribe without
+ * a new identity on every store write.
+ */
+export function sessionHasWorkbenchTool(
+  state: { workbenchTabs: WorkbenchTab[]; workbenchSessionId: string | null },
+  tool: WorkbenchTool,
+): boolean {
+  return state.workbenchTabs.some((tab) =>
+    tab.tool === tool && tabInSession(tab, state.workbenchSessionId))
+}
+
+export function sessionWorkbenchTabs(state: {
+  workbenchTabs: WorkbenchTab[]
+  workbenchSessionId: string | null
+}): WorkbenchTab[] {
+  return state.workbenchTabs.filter((tab) =>
+    tabInSession(tab, state.workbenchSessionId))
 }
 
 function activateTab(state: WorkbenchState, tab: WorkbenchTab | undefined): void {
@@ -106,11 +199,15 @@ function activateTab(state: WorkbenchState, tab: WorkbenchTab | undefined): void
 }
 
 function lastTabForTool(
-  tabs: readonly WorkbenchTab[],
+  state: WorkbenchState,
   tool: WorkbenchTool,
 ): WorkbenchTab | undefined {
+  const tabs = state.workbenchTabs
   for (let index = tabs.length - 1; index >= 0; index -= 1) {
-    if (tabs[index]?.tool === tool) return tabs[index]
+    const tab = tabs[index]
+    if (tab?.tool === tool && tabInSession(tab, state.workbenchSessionId)) {
+      return tab
+    }
   }
   return undefined
 }
@@ -123,8 +220,8 @@ function addOrActivateTool(
 ): WorkbenchTab {
   const existing = forceNew && MULTI_INSTANCE_TOOLS.has(tool)
     ? undefined
-    : lastTabForTool(state.workbenchTabs, tool)
-  const tab = existing ?? newWorkbenchTab(tool, options)
+    : lastTabForTool(state, tool)
+  const tab = existing ?? newWorkbenchTab(tool, options, state.workbenchSessionId)
   if (!existing) state.workbenchTabs.push(tab)
   activateTab(state, tab)
   state.workbenchOpen = true
@@ -132,7 +229,7 @@ function addOrActivateTool(
 }
 
 function toggleTool(state: WorkbenchState, tool: WorkbenchTool): void {
-  const tab = lastTabForTool(state.workbenchTabs, tool)
+  const tab = lastTabForTool(state, tool)
   if (!tab) {
     addOrActivateTool(state, tool)
     return
@@ -152,13 +249,13 @@ function closeTab(state: WorkbenchState, tabId: string): void {
   const wasActive = state.activeWorkbenchTabId === tabId
   state.workbenchTabs.splice(index, 1)
   if (wasActive) {
+    const visible = sessionWorkbenchTabs(state)
     activateTab(
       state,
-      state.workbenchTabs[Math.min(index, state.workbenchTabs.length - 1)]
-        ?? state.workbenchTabs.at(-1),
+      visible[Math.min(index, visible.length - 1)] ?? visible.at(-1),
     )
   }
-  if (state.workbenchTabs.length === 0) state.workbenchMaximized = false
+  if (sessionWorkbenchTabs(state).length === 0) state.workbenchMaximized = false
 }
 
 function closeTool(state: WorkbenchState, tool: WorkbenchTool): void {
@@ -166,12 +263,13 @@ function closeTool(state: WorkbenchState, tool: WorkbenchTool): void {
     (tab) => tab.id === state.activeWorkbenchTabId,
   )
   const closingActive = state.activeWorkbenchTool === tool
-  state.workbenchTabs = state.workbenchTabs.filter((tab) => tab.tool !== tool)
+  state.workbenchTabs = state.workbenchTabs.filter((tab) =>
+    tab.tool !== tool || !tabInSession(tab, state.workbenchSessionId))
   if (closingActive) {
+    const visible = sessionWorkbenchTabs(state)
     activateTab(
       state,
-      state.workbenchTabs[Math.min(activeIndex, state.workbenchTabs.length - 1)]
-        ?? state.workbenchTabs.at(-1),
+      visible[Math.min(activeIndex, visible.length - 1)] ?? visible.at(-1),
     )
   }
   if (state.workbenchTabs.length === 0) state.workbenchMaximized = false
@@ -235,14 +333,10 @@ function persistSidebarCollapsed(collapsed: boolean): void {
   }
 }
 
-interface UIStore {
-  workbenchTabs: WorkbenchTab[]
-  activeWorkbenchTabId: string | null
-  activeWorkbenchTool: WorkbenchTool | null
-  workbenchOpen: boolean
-  workbenchMaximized: boolean
-  pullRequestsScope: PullRequestsScope
-  gitWorkspaceView: GitWorkspaceView
+// Extends rather than restates WorkbenchState: the two lists were
+// duplicates, so a field added to one silently failed to reach consumers
+// typed against the other.
+interface UIStore extends WorkbenchState {
   sidebarCollapsed: boolean
   /** Transient responsive mode; unlike collapse/width this is not persisted. */
   sidebarOverlay: boolean
@@ -273,6 +367,8 @@ interface UIStore {
     tool: WorkbenchTool,
     tabs: WorkbenchTabOptions[],
   ) => void
+  /** Point the workbench at a session, remembering where each one was. */
+  setWorkbenchSession: (sessionId: string | null) => void
   openWorkbenchTool: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
   toggleWorkbenchTool: (tool: WorkbenchTool) => void
   selectWorkbenchTab: (tabId: string) => void
@@ -322,6 +418,8 @@ export const useUIStore = create<UIStore>()(
   immer((set) => ({
     workbenchTabs: [],
     activeWorkbenchTabId: null,
+    workbenchSessionId: null,
+    _activeTabBySession: {},
     activeWorkbenchTool: null,
     workbenchOpen: false,
     workbenchMaximized: false,
@@ -336,11 +434,45 @@ export const useUIStore = create<UIStore>()(
       }
       addOrActivateTool(state, tool, options, true)
     }),
+    // Restoring is authoritative for this tool *in this session*: the
+    // server's list is the truth. Only adding meant a session's terminal
+    // tabs were never removed when another session's list arrived, so the
+    // bar accumulated tabs from every session visited.
+    setWorkbenchSession: (sessionId) => set((state) => {
+      if (state.workbenchSessionId === sessionId) return
+      const previous = state.workbenchSessionId
+      if (previous && state.activeWorkbenchTabId) {
+        state._activeTabBySession[previous] = state.activeWorkbenchTabId
+      }
+      state.workbenchSessionId = sessionId
+
+      // Prefer the tab this session was last on; otherwise its newest.
+      const remembered = sessionId ? state._activeTabBySession[sessionId] : null
+      const visible = sessionWorkbenchTabs(state)
+      const target = visible.find((tab) => tab.id === remembered) ?? visible.at(-1)
+      activateTab(state, target)
+      if (!target) state.workbenchMaximized = false
+    }),
     restoreWorkbenchTabs: (tool, tabs) => set((state) => {
+      const keep = new Set(tabs.map((options) => options.id).filter(Boolean))
+      state.workbenchTabs = state.workbenchTabs.filter((tab) =>
+        tab.tool !== tool
+        || !tabInSession(tab, state.workbenchSessionId)
+        || keep.has(tab.id))
       for (const options of tabs) {
         if (!options.id) continue
         const exists = state.workbenchTabs.some((tab) => tab.id === options.id)
-        if (!exists) state.workbenchTabs.push(newWorkbenchTab(tool, options))
+        if (!exists) {
+          state.workbenchTabs.push(
+            newWorkbenchTab(tool, options, state.workbenchSessionId),
+          )
+        }
+      }
+      if (
+        state.activeWorkbenchTabId
+        && !state.workbenchTabs.some((tab) => tab.id === state.activeWorkbenchTabId)
+      ) {
+        activateTab(state, sessionWorkbenchTabs(state).at(-1))
       }
     }),
     openWorkbenchTool: (tool, options = {}) => set((state) => {
@@ -368,7 +500,7 @@ export const useUIStore = create<UIStore>()(
       state.workbenchOpen = true
     }),
     selectWorkbenchTool: (tool) => set((state) => {
-      const tab = lastTabForTool(state.workbenchTabs, tool)
+      const tab = lastTabForTool(state, tool)
       if (!tab) return
       activateTab(state, tab)
       state.workbenchOpen = true

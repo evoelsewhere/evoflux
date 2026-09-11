@@ -328,9 +328,14 @@ class AgentTeam:
         # were spawned by name; their handles stay verbatim (no ``#1``
         # suffix is added) so existing tests keep passing.
         members: dict[str, "TeamMember"] | None = None,
+        # Members this lead owns that were left out of ``blueprints`` for
+        # want of a configured model. Carried so spawn failures can name
+        # the fix instead of reporting an unexplained empty roster.
+        unconfigured_members: list[str] | None = None,
     ) -> None:
         self.lead = lead
         self.blueprints: dict[str, MemberBlueprint] = blueprints or {}
+        self.unconfigured_members: list[str] = list(unconfigured_members or [])
         self.members: dict[str, TeamMember] = dict(members or {})
 
         self._provider_factory = provider_factory
@@ -1810,6 +1815,7 @@ class AgentTeam:
         mode: str | None = None,
         workspace: str | None = None,
         project_id: UUID | None = None,
+        folder_id: UUID | None = None,
     ) -> None:
         """Ensure a user session exists before deferred ingress is acknowledged.
 
@@ -1839,6 +1845,7 @@ class AgentTeam:
             mode=self.mode,
             workspace=self.workspace,
             project_id=project_id,
+            folder_id=folder_id,
         )
 
         # Reset blueprint counters so a fresh chat starts at #1 for each
@@ -1859,6 +1866,7 @@ class AgentTeam:
         mode: str | None = None,
         workspace: str | None = None,
         project_id: UUID | None = None,
+        folder_id: UUID | None = None,
         model: str | None = None,
         model_provided: bool = False,
         thinking_level: str | None = None,
@@ -1893,6 +1901,7 @@ class AgentTeam:
             mode=mode,
             workspace=workspace,
             project_id=project_id,
+            folder_id=folder_id,
         )
 
         if interrupt:
@@ -2582,6 +2591,27 @@ class AgentTeam:
             await self.refresh_delegations()
         return member
 
+    def _unknown_blueprint_message(self, blueprint: str) -> str:
+        """Explain an unspawnable name, including an empty roster.
+
+        ``Available: []`` on its own tells the lead nothing it can act on,
+        and the usual reason is mundane: the members exist on disk but
+        carry no model, so the loader left them out. Say that, and say
+        where it is fixed.
+        """
+        available = sorted(self.blueprints)
+        message = f"Unknown blueprint '{blueprint}'. Available: {available}."
+        if self.unconfigured_members:
+            names = ", ".join(self.unconfigured_members)
+            message += (
+                f" Left off the roster for want of a model: {names}."
+                " Give each one a model in Settings > Agents"
+                " (or set the lead's model, which they adopt)."
+            )
+        elif not available:
+            message += " This lead owns no members."
+        return message
+
     async def _spawn_locked(
         self,
         blueprint: str,
@@ -2591,8 +2621,7 @@ class AgentTeam:
     ) -> TeamMember:
         bp = self.blueprints.get(blueprint)
         if bp is None:
-            idle = sorted(self.blueprints.keys())
-            raise KeyError(f"Unknown blueprint '{blueprint}'. Available: {idle}.")
+            raise KeyError(self._unknown_blueprint_message(blueprint))
         if not self.blueprint_allowed_this_turn(blueprint):
             allowed = sorted(self.turn_allowed_blueprints or [])
             raise KeyError(
@@ -2688,9 +2717,7 @@ class AgentTeam:
 
         bp = self.blueprints.get(blueprint)
         if bp is None:
-            raise KeyError(
-                f"Unknown blueprint '{blueprint}'. Available: {sorted(self.blueprints)}."
-            )
+            raise KeyError(self._unknown_blueprint_message(blueprint))
 
         from app.agent.ask_user import get_active_ask_user_service
         from app.agent.config import parse_agent_md
@@ -2740,13 +2767,17 @@ class AgentTeam:
         if thinking_level is not None and not isinstance(thinking_level, str):
             raise ValueError("Agent spawn thinking_level must be a string or null.")
 
-        from app.agent.providers.model_metadata import get_model_thinking_levels
+        from app.agent.providers.thinking import (
+            accepts_thinking_level,
+            honoured_levels_for,
+        )
 
-        supported = get_model_thinking_levels(model)
-        if thinking_level and supported and thinking_level not in supported:
+        # Same answer the chat route and the model catalogue use, so a spawn
+        # cannot be rejected for a level the composer offered.
+        if thinking_level and not accepts_thinking_level(model, thinking_level):
             raise ValueError(
                 f"Model '{model}' does not support thinking level "
-                f"'{thinking_level}'. Supported: {list(supported)}."
+                f"'{thinking_level}'. Supported: {list(honoured_levels_for(model))}."
             )
         return SpawnRuntimeConfig(model.strip(), thinking_level or None)
 

@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Run experiments overnight to get this metric down, and keep a log of every attempt including failures.",
+    "should_trigger": true
+  },
+  {
+    "query": "Benchmark these four libraries on a fair matrix and pick a winner with evidence.",
+    "should_trigger": true
+  },
+  {
+    "query": "Ablate each component of this pipeline against the noise floor and attribute the gains.",
+    "should_trigger": true
+  },
+  {
+    "query": "What is the fastest JSON parser?",
+    "should_trigger": false,
+    "near_miss": "A single quick answer, no measurement run."
+  },
+  {
+    "query": "Write a report on the vendor landscape with citations.",
+    "should_trigger": false,
+    "near_miss": "Source-gathering research rather than a measured run."
+  },
+  {
+    "query": "Fix this failing unit test.",
+    "should_trigger": false,
+    "near_miss": "An ordinary fix with no measurable research outcome."
+  }
+]

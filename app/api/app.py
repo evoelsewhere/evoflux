@@ -11,6 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from app.agent.mcp import mcp_manager
+from app.agent.providers.registry_refresh import (
+    start_model_registry_refresh,
+    stop_model_registry_refresh,
+)
 from app.api.routes.agents import router as agents_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.code_context import router as code_context_router
@@ -78,6 +82,15 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
             "optional_service_start_failed service=otel_retention error={}", exc
         )
     _log_startup_timing("otel_retention", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
+        start_model_registry_refresh()
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "optional_service_start_failed service=model_registry_refresh error={}", exc
+        )
+    _log_startup_timing("model_registry_refresh", phase_started, process_started)
 
     phase_started = perf_counter()
     try:
@@ -293,11 +306,13 @@ async def lifespan(app: FastAPI):
     # explicit shutdown. The in-app browser is owned by Tauri.
     from app.agent.tools.builtin.process import stop_all_processes
     from app.agent.tools.builtin.preview import stop_all_servers
+    from app.agent.tools.builtin.web import close_http_client
     from app.agent.lsp_manager import close_language_servers
 
     await stop_all_processes()
     await stop_all_servers()
     await close_language_servers()
+    await close_http_client()
 
     # Extraction tasks own DB work and must finish (or record a retryable
     # failure) before the engines are disposed.
@@ -310,6 +325,7 @@ async def lifespan(app: FastAPI):
     await dispose_engines()
 
     await stream_store.close()
+    await stop_model_registry_refresh()
     await stop_otel_retention()
     shutdown_otel()
 

@@ -37,6 +37,7 @@ from app.agent.schemas.chat import (
     AssistantMessage,
     ChatMessage,
     ChatCompletionDelta,
+    EncryptedReasoningItem,
     HumanMessage,
     SystemMessage,
     ToolCall,
@@ -187,6 +188,7 @@ async def stream_and_assemble(
     """
     full_content = ""
     reasoning = ""
+    reasoning_items: list[EncryptedReasoningItem] = []
     content_filter = SleepSentinelStreamFilter()
     last_choice_chunk = None
     tool_calls_buffer: dict[int, dict] = {}
@@ -301,6 +303,10 @@ async def stream_and_assemble(
 
         if delta.reasoning_content:
             reasoning += delta.reasoning_content
+        # Opaque and replayed verbatim on the next call, unlike the summary
+        # above — see EncryptedReasoningItem.
+        if delta.reasoning_item:
+            reasoning_items.append(delta.reasoning_item)
         if delta.content:
             full_content += delta.content
 
@@ -454,10 +460,24 @@ async def stream_and_assemble(
     if last_usage is not None:
         model_id = state.metadata.get("effective_model") or primary_label
         extra = {**(extra or {}), "usage": usage_to_dict(last_usage, model_id)}
+    if reasoning_items:
+        # Into ``extra`` because that column is persisted and the field is
+        # not: history is reloaded from the database at the start of every
+        # turn, so an in-memory-only item would survive the turn that made
+        # it and vanish before the next one — taking the cached prefix with
+        # it, since the replayed turn then differs from the one the model
+        # produced.
+        extra = {
+            **(extra or {}),
+            "reasoning_items": [
+                item.model_dump(exclude_none=True) for item in reasoning_items
+            ],
+        }
 
     msg = AssistantMessage(
         content=full_content or None,
         reasoning_content=reasoning or None,
+        reasoning_items=reasoning_items or None,
         tool_calls=tc_list or None,
         agent_id=agent_id,
         agent_name=agent_name,

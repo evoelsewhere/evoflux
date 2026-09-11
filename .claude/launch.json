@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "evoflux-web",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "web", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "evoflux-api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "uvicorn", "app.server:app", "--port", "8000", "--no-access-log"],
+      "port": 8000
+    }
+  ]
+}

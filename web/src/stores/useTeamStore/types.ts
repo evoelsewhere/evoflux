@@ -48,6 +48,9 @@ export interface AgentStream {
   usage: AgentUsage
   _completionBase: number
   _completionEstimated?: number
+  /** Turn-scoped output estimate, so the live counter moves between the
+   *  per-model-call totals the backend publishes. Reset with the turn. */
+  _turnCompletionEstimated?: number
   _turnStartedAt?: number | null
   model: string | null
   lastError: string | null
@@ -91,6 +94,19 @@ export interface TeamStoreState {
   sidebarOpen: boolean
   sessionId: string | null
   projectId: string | null
+  /**
+   * Set while the user is sitting in a chat they started that has no session
+   * row yet. A new chat is not persisted until its first message, so this is
+   * what tells a blank ``/`` apart from a cold boot: the first stays blank,
+   * the second reopens the newest session. ``folderId`` is the folder the
+   * chat was started from — it rides along with the first message so the
+   * session is filed on arrival rather than created loose and moved.
+   * ``workspace`` is the Work folder picked before there was a session to
+   * point at, and travels the same way: the very first turn already runs in
+   * the folder the user chose, instead of in the default sandbox until they
+   * can change it afterwards.
+   */
+  newChatDraft: { folderId: string | null; workspace: string | null } | null
   sessionTitle: string | null
   sessionTags: string[]
   sessionPermissionMode: PermissionMode
@@ -122,6 +138,12 @@ export interface TeamStoreState {
   _leadRevertTime: number | null
   _workspace: string | null
   _loadingOlder: boolean
+  /**
+   * True when this session's view was painted from a snapshot rather than
+   * loaded. Consumers use it to know the transcript on screen is a cached
+   * one being reconciled, not a fresh load.
+   */
+  _restoredFromCache: boolean
   _resolvedSessionReadyId: string | null
   _unloading: boolean
   cacheInvalidations: CacheInvalidation[]
@@ -129,7 +151,7 @@ export interface TeamStoreState {
 }
 
 export interface TeamStoreActions {
-  sendMessage: (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean }) => Promise<void>
+  sendMessage: (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean; webBridgeExtensionId?: string | null }) => Promise<void>
   setSessionModelSettings: (model: string | null, thinkingLevel: string | null, fastMode?: boolean) => void
   continueTeam: () => Promise<void>
   compactTeam: () => Promise<void>
@@ -148,7 +170,7 @@ export interface TeamStoreActions {
     workspace?: string | null,
     mode?: 'coding' | null,
   ) => Promise<void>
-  beginResolvedSession: (sessionId: string | null, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; skipInitialRestore?: boolean }) => void
+  beginResolvedSession: (sessionId: string | null, options?: { mode?: string; workspace?: string | null; projectId?: string | null; folderId?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; skipInitialRestore?: boolean }) => void
   loadOlderMessages: () => Promise<void>
   setActiveAgent: (name: string) => void
   cycleActiveAgent: (dir: 'next' | 'prev') => void
@@ -160,6 +182,12 @@ export interface TeamStoreActions {
   consumeResolvedSessionReady: (sessionId: string, workspace?: string | null) => boolean
   /** Reset local chat state. Retained for stale async-generation guards in tests. */
   newSession: () => void
+  /**
+   * Point an unsaved Work chat at a local folder (``null`` = the default
+   * session sandbox). A no-op once the session exists, which owns its
+   * workspace on the row and changes it through the workspace endpoint.
+   */
+  setDraftWorkspace: (workspace: string | null) => void
   removePendingMessage: (id: string) => void
   _handleSSEEvent: (type: string, data: unknown) => void
   _drainCacheInvalidations: () => CacheInvalidation[]

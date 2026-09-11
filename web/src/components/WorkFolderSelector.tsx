@@ -38,6 +38,14 @@ interface WorkFolderSelectorProps {
   sessionId: string | null
   workspaceRoot: string | null
   loading?: boolean
+  /**
+   * The chat has no session row yet. The picker still works: the choice is
+   * held client-side and travels with the first message, so the opening turn
+   * already runs in the right folder. `onDraftChange` receives it; `null`
+   * means the default session sandbox.
+   */
+  draft?: boolean
+  onDraftChange?: (path: string | null) => void
 }
 
 const MAX_RECENT_FOLDERS = 5
@@ -101,6 +109,8 @@ export function WorkFolderSelector({
   sessionId,
   workspaceRoot,
   loading = false,
+  draft = false,
+  onDraftChange,
 }: WorkFolderSelectorProps) {
   const queryClient = useQueryClient()
   const sessions = useTeamSessionsQuery('work')
@@ -116,9 +126,11 @@ export function WorkFolderSelector({
   const [storedRecentFolders, setStoredRecentFolders] = useState(loadRecentFolders)
 
   const isTauriMobile = isTauri && (os === 'ios' || os === 'android')
-  const isDefault = Boolean(
-    sessionId && workspaceRoot && folderName(workspaceRoot) === sessionId,
-  )
+  // A draft has no session id to compare the folder name against, so "no
+  // choice yet" is what default means there.
+  const isDefault = draft
+    ? workspaceRoot === null
+    : Boolean(sessionId && workspaceRoot && folderName(workspaceRoot) === sessionId)
   const displayName = useMemo(() => {
     if (loading && !workspaceRoot) return 'Loading folder…'
     if (!workspaceRoot || isDefault) return 'Session folder'
@@ -149,7 +161,21 @@ export function WorkFolderSelector({
   }, [isDefault, rememberFolder, workspaceRoot])
 
   const applyWorkspace = useCallback(async (path: string | null) => {
-    if (!sessionId || saving) return
+    if (saving) return
+    if (draft) {
+      // Nothing to PATCH yet — the choice rides with the first message.
+      onDraftChange?.(path)
+      if (path) rememberFolder(path)
+      setBrowserOpen(false)
+      pushToast({
+        tone: 'success',
+        title: path
+          ? `This chat will use ${folderName(path)}`
+          : 'Using the default session folder',
+      })
+      return
+    }
+    if (!sessionId) return
     setSaving(true)
     try {
       const result = await updateSessionWorkspace(sessionId, path)
@@ -175,7 +201,7 @@ export function WorkFolderSelector({
     } finally {
       setSaving(false)
     }
-  }, [pushToast, queryClient, rememberFolder, saving, sessionId])
+  }, [draft, onDraftChange, pushToast, queryClient, rememberFolder, saving, sessionId])
 
   const loadBrowser = useCallback(async (path?: string | null) => {
     setBrowserLoading(true)
@@ -193,7 +219,7 @@ export function WorkFolderSelector({
   }, [])
 
   const chooseFolder = useCallback(async () => {
-    if (!sessionId || saving) return
+    if ((!sessionId && !draft) || saving) return
     if (!isTauri || isTauriMobile) {
       setBrowserOpen(true)
       void loadBrowser(workspaceRoot)
@@ -216,9 +242,9 @@ export function WorkFolderSelector({
         description: error instanceof Error ? error.message : String(error),
       })
     }
-  }, [applyWorkspace, isTauri, isTauriMobile, loadBrowser, pushToast, saving, sessionId, workspaceRoot])
+  }, [applyWorkspace, draft, isTauri, isTauriMobile, loadBrowser, pushToast, saving, sessionId, workspaceRoot])
 
-  const disabled = !sessionId || loading || saving
+  const disabled = (!sessionId && !draft) || loading || saving
 
   return (
     <>
@@ -252,7 +278,10 @@ export function WorkFolderSelector({
           <div className="min-w-0 px-2 pb-2">
             <p className="truncate text-xs font-medium text-(--color-text-2)">{displayName}</p>
             <p className="mt-0.5 truncate font-mono text-[10px] text-(--color-text-subtle)" title={workspaceRoot ?? undefined}>
-              {workspaceRoot ?? 'Preparing the session folder…'}
+              {workspaceRoot
+                ?? (draft
+                  ? 'A private folder, created with the chat'
+                  : 'Preparing the session folder…')}
             </p>
           </div>
           <DropdownMenuSeparator />

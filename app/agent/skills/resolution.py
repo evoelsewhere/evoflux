@@ -20,6 +20,14 @@ if TYPE_CHECKING:
 MAX_RESOLUTION_CANDIDATES = 64
 MIN_SKILL_CONFIDENCE = 0.72
 
+#: Cache-affinity key for the resolver pre-pass.
+#:
+#: Unlike a conversation, this call's prefix — the resolver system prompt plus
+#: the sorted skill catalog — is the same in every session on the machine, so
+#: the useful routing key is a constant rather than the session id. Providers
+#: that do not take a routing key return no kwargs for it and are unaffected.
+_RESOLUTION_CACHE_KEY = "evoflux-skill-resolver-v1"
+
 _RESOLUTION_SYSTEM_PROMPT = """You are the skill-resolution stage of an agent harness.
 Choose at most one reusable workflow before the main agent starts.
 
@@ -74,14 +82,29 @@ def eligible_resolution_records(
 
 
 def _request_payload(*, request: str, mode: str, records: Sequence[SkillRecord]) -> str:
+    """Serialize the resolver input with the volatile field last.
+
+    Every provider EvoFlux talks to caches a prompt by its leading byte run,
+    so a field that changes each turn discards everything printed after it.
+    ``skills`` is the same sorted catalog on every turn and dwarfs the rest of
+    this payload; ``request`` is the one part that always differs. Emitting
+    ``request`` first therefore made this pre-pass uncacheable by
+    construction — measured against MiMo, the resolver call reported 0 cached
+    tokens on every turn while the main agent sat at 99%. Keeping ``request``
+    last leaves the system prompt plus the whole catalog as a stable prefix
+    that is reused across turns *and* across sessions.
+
+    JSON object member order carries no meaning, so this is a wire-layout
+    change only.
+    """
     return json.dumps(
         {
             "mode": "coding" if mode == "coding" else "work",
-            "request": request,
             "skills": [
                 {"name": record.name, "description": record.description}
                 for record in records
             ],
+            "request": request,
         },
         ensure_ascii=False,
         separators=(",", ":"),
@@ -129,6 +152,7 @@ async def resolve_skill(
             ),
         ],
         tools=None,
+        **provider.cache_affinity_kwargs(_RESOLUTION_CACHE_KEY),
     )
     usage = (response.extra or {}).get("usage") if response.extra else None
     if isinstance(usage, dict):

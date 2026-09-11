@@ -1727,3 +1727,73 @@ def test_deferred_catalog_entry_derives_and_truncates_missing_summary():
     )
 
     assert deferred_catalog_entry(concise).summary == "Explicit summary."
+
+
+async def test_a_refused_tool_reports_back_to_the_model_and_ends_the_turn():
+    """A permission refusal must not leave its tool call unanswered.
+
+    The check runs in a hook wrapping the executor, so a raised
+    ``PermissionError`` escapes the executor's own try/except and arrives at
+    the loop as a bare exception. That path used to log it and move on,
+    appending no ToolMessage — so the model saw its own tool call with no
+    result and did the obvious thing: called again. One rejection became an
+    unbounded run of identical approval prompts, and the provider was left
+    stripping a dangling tool call. The turn also ends now: refusing is the
+    user taking the wheel, not a hint to try harder.
+    """
+    from app.agent.permission import PermissionRejectedError
+    from app.agent.tools.registry import Tool
+
+    executed = [0]
+
+    def secret() -> str:
+        executed[0] += 1
+        return "secret value"
+
+    class RefusingHook(BaseAgentHook):
+        async def wrap_tool_call(self, ctx, state, tool_call, handler):
+            raise PermissionRejectedError("", tool=tool_call.function.name, repeated=True)
+
+    def _iter1():
+        async def _gen():
+            yield _tool_chunk(0, "call_1", "secret", "{}")
+            yield _text_chunk("", finish="tool_calls")
+
+        return _gen()
+
+    def _iter2():
+        async def _gen():
+            yield _tool_chunk(0, "call_2", "secret", "{}")
+            yield _text_chunk("", finish="tool_calls")
+
+        return _gen()
+
+    calls = [0]
+
+    def _stream_side_effect(**kwargs):
+        calls[0] += 1
+        return _iter1() if calls[0] == 1 else _iter2()
+
+    mock_provider = MagicMock()
+    mock_provider.stream.side_effect = _stream_side_effect
+
+    agent = Agent(
+        llm_provider=mock_provider,
+        name="test-agent",
+        system_prompt="sys",
+        tools=[Tool(secret, name="secret")],
+        hooks=[RefusingHook()],
+    )
+
+    messages = await agent.run(
+        [HumanMessage(content="do the thing")],
+        config=RunConfig(session_id="s_refused", run_id="r_refused"),
+    )
+
+    tool_messages = [m for m in messages if isinstance(m, ToolMessage)]
+    assert len(tool_messages) == 1
+    assert tool_messages[0].tool_call_id == "call_1"
+    assert "refused" in tool_messages[0].content.lower()
+    assert executed[0] == 0, "a refused call must never reach the tool"
+    # One model call: the loop stopped instead of going round again.
+    assert calls[0] == 1

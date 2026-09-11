@@ -1657,3 +1657,113 @@ class TestListTeamSessionsCursorPagination:
         top_level_ids = {s["id"] for s in data["data"]}
         assert str(lead_id) in top_level_ids
         assert str(member_id) not in top_level_ids
+
+
+class TestPermissionModeEndpoint:
+    """PATCH /team/sessions/{id}/permission-mode — previously untested.
+
+    The gap mattered: the route is the only way a persisted session changes
+    its guard rails, and a client that fails to reach it leaves the badge
+    claiming a protection the run is not applying.
+    """
+
+    @pytest.mark.asyncio
+    async def test_patch_persists_the_new_mode(self, app_with_team):
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id, permission_mode="auto")
+
+        client = TestClient(app_with_team)
+        response = client.patch(
+            f"/api/team/sessions/{lead_id}/permission-mode",
+            json={"mode": "ask"},
+        )
+
+        assert response.status_code == 200
+        metadata = client.get(f"/api/team/sessions/{lead_id}/metadata").json()
+        assert metadata["permission_mode"] == "ask"
+
+    @pytest.mark.asyncio
+    async def test_patch_refuses_a_mode_the_server_does_not_have(
+        self, app_with_team
+    ):
+        """422, not a silent downgrade to the permissive default."""
+        import app.core.db as _db
+
+        lead_id = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _create_team_session(db, lead_id, permission_mode="ask")
+
+        client = TestClient(app_with_team)
+        response = client.patch(
+            f"/api/team/sessions/{lead_id}/permission-mode",
+            json={"mode": "yolo"},
+        )
+
+        assert response.status_code == 422
+        metadata = client.get(f"/api/team/sessions/{lead_id}/metadata").json()
+        assert metadata["permission_mode"] == "ask"
+
+    @pytest.mark.asyncio
+    async def test_patch_on_a_missing_session_is_404(self, app_with_team):
+        response = TestClient(app_with_team).patch(
+            f"/api/team/sessions/{uuid.uuid7()}/permission-mode",
+            json={"mode": "ask"},
+        )
+
+        assert response.status_code == 404
+
+
+class TestPermissionModeOnSessionCreation:
+    """The mode picked before the first message must survive into the row.
+
+    A new chat is a draft until the first send, so there is no row to PATCH.
+    The pick used to be dropped on the floor: the row took the column default,
+    the badge kept showing what the user chose, and a session set to "Ask
+    permissions" ran its first turn approving everything.
+    """
+
+    def test_validator_accepts_every_mode_the_picker_offers(self):
+        from app.api.routes.team.chat import (
+            _VALID_PERMISSION_MODES,
+            _validated_permission_mode,
+        )
+
+        for mode in _VALID_PERMISSION_MODES:
+            assert _validated_permission_mode(mode) == mode
+
+    def test_validator_defaults_when_the_client_sends_nothing(self):
+        from app.api.routes.team.chat import (
+            DEFAULT_PERMISSION_MODE,
+            _validated_permission_mode,
+        )
+        from app.models.chat import ChatSession
+
+        assert _validated_permission_mode(None) == DEFAULT_PERMISSION_MODE
+        # And the default agrees with the column, so an older client that
+        # omits the field lands where the database would have put it anyway.
+        assert ChatSession().permission_mode == DEFAULT_PERMISSION_MODE
+
+    def test_validator_rejects_an_unknown_mode(self):
+        from fastapi import HTTPException
+
+        from app.api.routes.team.chat import _validated_permission_mode
+
+        with pytest.raises(HTTPException) as excinfo:
+            _validated_permission_mode("yolo")
+        assert excinfo.value.status_code == 422
+
+    def test_chat_form_carries_the_mode(self):
+        import inspect
+
+        from app.api.schemas.chat import ChatForm
+
+        assert ChatForm(message="hi", permission_mode="ask").permission_mode == "ask"
+        assert ChatForm(message="hi").permission_mode is None
+        # The multipart form is the wire the client actually uses, so the
+        # field has to be declared there too, not only on the model.
+        assert "permission_mode" in inspect.signature(ChatForm.as_form).parameters

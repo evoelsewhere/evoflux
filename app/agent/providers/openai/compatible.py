@@ -1,10 +1,42 @@
+"""OpenAI-compatible provider specs, derived from the provider registry.
+
+The registry in :mod:`app.agent.providers.registry` is the single source of
+truth for endpoints and credentials. This module projects the subset that
+speaks an OpenAI-shaped wire protocol into the flat spec shape the factory
+and the CLI's provider prompts already consume.
+
+A provider qualifies when its transport is Chat Completions or Responses —
+i.e. it can be driven by a base URL plus a bearer token. Anthropic, Gemini,
+Bedrock, Vertex and Azure providers are excluded because they need their own
+handler, not a different URL.
+"""
+
 from __future__ import annotations
 
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from functools import lru_cache
+
+from app.agent.providers.registry import (
+    PROVIDER_REGISTRY,
+    ProviderConfig,
+    Transport,
+    resolve_base_url,
+)
+
+#: Transports that a plain base-URL-plus-key spec can describe.
+_OPENAI_SHAPED = frozenset({Transport.OPENAI_COMPLETIONS, Transport.OPENAI_RESPONSES})
 
 
 @dataclass(frozen=True)
 class OpenAICompatibleProviderSpec:
+    """Flat view of one OpenAI-compatible provider.
+
+    A projection of :class:`~app.agent.providers.registry.ProviderConfig`,
+    kept as its own type because callers (the factory, ``evoflux init``) only
+    need these five fields and should not depend on transport internals.
+    """
+
     provider_id: str
     label: str
     env_var: str
@@ -13,79 +45,66 @@ class OpenAICompatibleProviderSpec:
     default_api_key: str = ""
 
 
-OPENAI_COMPATIBLE_PROVIDER_SPECS: dict[str, OpenAICompatibleProviderSpec] = {
-    "openrouter": OpenAICompatibleProviderSpec(
-        provider_id="openrouter",
-        label="OpenRouter",
-        env_var="OPENROUTER_API_KEY",
-        base_url="https://openrouter.ai/api/v1",
-    ),
-    "nvidia": OpenAICompatibleProviderSpec(
-        provider_id="nvidia",
-        label="NVIDIA",
-        env_var="NVIDIA_API_KEY",
-        base_url="https://integrate.api.nvidia.com/v1",
-    ),
-    "router9": OpenAICompatibleProviderSpec(
-        provider_id="router9",
-        label="9Router",
-        env_var="ROUTER9_API_KEY",
-        base_url="http://localhost:20128/v1",
-        base_url_env_var="ROUTER9_BASE_URL",
-    ),
-    "cliproxy": OpenAICompatibleProviderSpec(
-        provider_id="cliproxy",
-        label="CLIProxyAPI",
-        env_var="CLIPROXY_API_KEY",
-        base_url="http://localhost:8317/v1",
-        base_url_env_var="CLIPROXY_BASE_URL",
-    ),
-    "ollama": OpenAICompatibleProviderSpec(
-        provider_id="ollama",
-        label="Ollama",
-        env_var="OLLAMA_API_KEY",
-        base_url="http://localhost:11434/v1",
-        base_url_env_var="OLLAMA_BASE_URL",
-        default_api_key="ollama",
-    ),
-    "xai": OpenAICompatibleProviderSpec(
-        provider_id="xai",
-        label="xAI",
-        env_var="XAI_API_KEY",
-        base_url="https://api.x.ai/v1",
-    ),
-    "deepseek": OpenAICompatibleProviderSpec(
-        provider_id="deepseek",
-        label="DeepSeek",
-        env_var="DEEPSEEK_API_KEY",
-        base_url="https://api.deepseek.com/v1",
-    ),
-    "xiaomi": OpenAICompatibleProviderSpec(
-        provider_id="xiaomi",
-        label="Xiaomi MiMo",
-        env_var="XIAOMI_API_KEY",
-        base_url="https://api.xiaomi.com/v1",
-        base_url_env_var="XIAOMI_BASE_URL",
-    ),
-    "kimi": OpenAICompatibleProviderSpec(
-        provider_id="kimi",
-        label="Kimi Code",
-        env_var="MOONSHOT_API_KEY",
-        base_url="https://api.kimi.com/coding/v1",
-        base_url_env_var="MOONSHOT_BASE_URL",
-    ),
-    "fci": OpenAICompatibleProviderSpec(
-        provider_id="fci",
-        label="FCI",
-        env_var="FCI_API_KEY",
-        base_url="https://mkp-api.fptcloud.com/v1",
-        base_url_env_var="FCI_BASE_URL",
-    ),
-    "qwencloud": OpenAICompatibleProviderSpec(
-        provider_id="qwencloud",
-        label="QwenCloud",
-        env_var="DASHSCOPE_API_KEY",
-        base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-        base_url_env_var="DASHSCOPE_BASE_URL",
-    ),
-}
+def _spec_from_config(config: ProviderConfig) -> OpenAICompatibleProviderSpec:
+    return OpenAICompatibleProviderSpec(
+        provider_id=config.id,
+        label=config.label,
+        env_var=config.env_var,
+        base_url=resolve_base_url(config),
+        base_url_env_var=config.base_url_env_var,
+        default_api_key=config.default_api_key,
+    )
+
+
+def is_openai_compatible(config: ProviderConfig) -> bool:
+    """Whether *config* can be reached with a base URL and a bearer token.
+
+    OAuth providers are excluded even when their wire format is OpenAI's:
+    they have no ``env_var`` to read a credential from, and their token comes
+    from a device flow that a spec cannot express.
+
+    The endpoint is read through :func:`resolve_base_url` rather than off
+    ``config.base_url``, because most providers no longer restate a URL that
+    models.dev already publishes — reading the field directly would make
+    every catalog-backed provider look unreachable.
+    """
+    if config.transport not in _OPENAI_SHAPED:
+        return False
+    if config.auth == "oauth":
+        return False
+    return bool(resolve_base_url(config) and config.env_var)
+
+
+@lru_cache(maxsize=1)
+def _build_compatible_specs() -> dict[str, OpenAICompatibleProviderSpec]:
+    return {
+        pid: _spec_from_config(config)
+        for pid, config in PROVIDER_REGISTRY.items()
+        if is_openai_compatible(config)
+    }
+
+
+class _CompatibleSpecs(Mapping[str, OpenAICompatibleProviderSpec]):
+    """The spec table, built on first read rather than at import.
+
+    Every entry now resolves its endpoint through the model catalog, and
+    reading the catalog can mean fetching it. Building this at import time
+    therefore put a blocking network call on the path of merely importing
+    the module — including at server startup. Deferring the build to first
+    use keeps the mapping interface its callers already rely on while
+    letting the process start without waiting on models.dev.
+    """
+
+    def __getitem__(self, key: str) -> OpenAICompatibleProviderSpec:
+        return _build_compatible_specs()[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(_build_compatible_specs())
+
+    def __len__(self) -> int:
+        return len(_build_compatible_specs())
+
+
+OPENAI_COMPATIBLE_PROVIDER_SPECS: Mapping[str, OpenAICompatibleProviderSpec] = (
+    _CompatibleSpecs()
+)

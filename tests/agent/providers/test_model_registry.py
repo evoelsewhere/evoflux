@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
+import time
 from pathlib import Path
 
 import pytest
 
-from app.agent.providers import capabilities, model_metadata, model_registry
+from app.agent.providers import model_metadata, model_registry
 from app.agent.providers.capabilities import get_capabilities
 from app.agent.providers.model_metadata import (
     get_model_cost,
@@ -15,9 +17,10 @@ from app.agent.providers.model_metadata import (
 
 
 def _clear_registry_caches() -> None:
-    model_registry.load_model_registry.cache_clear()
-    capabilities._registry.cache_clear()
-    model_metadata._registry.cache_clear()
+    # One call, because the catalog now feeds several caches — the provider
+    # envelopes and the settings-UI rows derived from them included — and
+    # clearing a subset leaves the rest answering from data that is gone.
+    model_registry.reset_catalog_caches()
     model_metadata.clear_runtime_model_metadata()
 
 
@@ -238,9 +241,34 @@ def test_provider_alias_can_exclude_endpoint_specific_metadata(
     assert get_model_thinking_levels("runtime:gpt-live") == ()
 
 
-def test_snapshot_builder_keeps_supported_providers_and_drops_stale_ones(
+def test_snapshot_bundles_the_whole_catalog_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Every provider EvoFlux can use gets offline metadata.
+
+    EvoFlux configures and uses every provider models.dev lists, so limiting
+    the bundle to curated ones would leave the long tail with real
+    credentials, a real endpoint and no idea what its models can do until
+    the catalog downloads — a silent failure, since limits and prices would
+    read "unknown".
+    """
+    from scripts.update_model_registry import _build_registry
+
+    registry = _build_registry(
+        {
+            "openai:gpt-live": {"limits": {"context_length": 123000}},
+            "chutes:some-model": {"limits": {"context_length": 1}},
+        }
+    )
+
+    assert registry["chutes:some-model"]["limits"]["context_length"] == 1
+    assert registry["openai:gpt-live"]["limits"]["context_length"] == 123000
+
+
+def test_snapshot_can_be_narrowed_to_curated_providers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``--curated-only`` keeps the older, smaller shape."""
     from scripts.update_model_registry import _build_registry
 
     monkeypatch.setattr(
@@ -254,11 +282,14 @@ def test_snapshot_builder_keeps_supported_providers_and_drops_stale_ones(
                 "thinking": {"levels": ["low", "high"]},
             },
             "removed-provider:stale-model": {"limits": {"context_length": 1}},
-        }
+        },
+        curated_only=True,
     )
 
     assert "removed-provider:stale-model" not in registry
     assert registry["openai:gpt-live"]["thinking"]["levels"] == ["low", "high"]
+    # Codex inherits OpenAI's limits but not its reasoning controls, which
+    # come from the Codex catalogue at runtime.
     assert registry["codex:gpt-live"]["limits"]["context_length"] == 123000
     assert "thinking" not in registry["codex:gpt-live"]
 
@@ -498,3 +529,107 @@ codex:gpt-live:
     limits = get_model_limits("codex:gpt-live")
     assert limits.context_length == 999
     assert limits.max_completion_tokens == 88
+
+
+def _models_dev_payload(model_id: str) -> dict[str, object]:
+    return {
+        "openai": {
+            "id": "openai",
+            "models": {
+                model_id: {
+                    "id": model_id,
+                    "modalities": {"input": ["text"], "output": ["text"]},
+                    "limit": {"context": 1000, "output": 100},
+                }
+            },
+        }
+    }
+
+
+def _refreshing_registry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache")
+    )
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config")
+    )
+    monkeypatch.setattr(model_registry.settings, "EVOFLUX_MODEL_REGISTRY_REFRESH", True)
+
+
+def test_refresh_models_dev_cache_publishes_new_models(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The merged registry is memoized per process, so a model that appears
+    # after boot is only reachable if the refresh drops the derived caches.
+    _refreshing_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        model_registry, "_fetch_models_dev", lambda: _models_dev_payload("gpt-first")
+    )
+    assert "openai:gpt-first" in model_registry.load_model_registry()
+
+    monkeypatch.setattr(
+        model_registry, "_fetch_models_dev", lambda: _models_dev_payload("gpt-second")
+    )
+    assert model_registry.refresh_models_dev_cache() is True
+
+    registry = model_registry.load_model_registry()
+    assert "openai:gpt-second" in registry
+    assert "openai:gpt-first" not in registry
+
+
+def test_refresh_models_dev_cache_keeps_caches_when_unchanged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _refreshing_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        model_registry, "_fetch_models_dev", lambda: _models_dev_payload("gpt-first")
+    )
+    model_registry.load_model_registry()
+
+    resets: list[bool] = []
+    monkeypatch.setattr(
+        model_registry, "reset_catalog_caches", lambda: resets.append(True)
+    )
+    cache_path = model_registry._models_dev_cache_path()
+    stale = time.time() - (2 * model_registry.MODELS_DEV_CACHE_TTL_SECONDS)
+    os.utime(cache_path, (stale, stale))
+
+    assert model_registry.refresh_models_dev_cache() is False
+    assert resets == []
+    # The mtime is the TTL clock: an identical payload still has to bump it,
+    # or the next cold start refetches for nothing.
+    assert cache_path.stat().st_mtime > stale
+
+
+def test_refresh_models_dev_cache_respects_the_toggle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _refreshing_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_MODEL_REGISTRY_REFRESH", False
+    )
+    fetches: list[bool] = []
+
+    def _fetch() -> dict[str, object]:
+        fetches.append(True)
+        return _models_dev_payload("gpt-first")
+
+    monkeypatch.setattr(model_registry, "_fetch_models_dev", _fetch)
+
+    assert model_registry.refresh_models_dev_cache() is False
+    assert fetches == []
+
+
+def test_refresh_models_dev_cache_survives_a_failed_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _refreshing_registry(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        model_registry, "_fetch_models_dev", lambda: _models_dev_payload("gpt-first")
+    )
+    model_registry.load_model_registry()
+
+    monkeypatch.setattr(model_registry, "_fetch_models_dev", lambda: None)
+    assert model_registry.refresh_models_dev_cache() is False
+    # A dead network must not empty the catalog the process is already serving.
+    assert "openai:gpt-first" in model_registry.load_model_registry()

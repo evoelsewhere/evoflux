@@ -122,7 +122,19 @@ async def test_active_trace_contract_is_injected_and_draft_is_not(tmp_path, setu
     state = AgentState(messages=[])
     request = ModelRequest(messages=(), system_prompt="Base prompt.")
     await hook.before_agent(ctx, state)
-    assert await hook.before_model(ctx, state, request) is None
+    # A draft specification is not an accepted contract, so none of its
+    # normative content may reach the prompt. The phase does get the bounded
+    # pre-implementation block — run identity, knowledge-base layout and
+    # toolchain — which carries no spec content of its own.
+    drafting = await hook.before_model(ctx, state, request)
+    assert drafting is not None
+    prompt = drafting.system_prompt or ""
+    assert "## EASD Pre-Implementation Context" in prompt
+    assert "## EASD Development Contract" not in prompt
+    assert "The lead can lose the accepted contract." not in prompt
+    assert "Every Coding turn sees the accepted EASD contract." not in prompt
+    assert "Preserve normative scope" not in prompt
+    assert "AC-1" not in prompt
 
     async with async_session_factory() as db:
         draft = (await trace_service.run_detail(db, run.id))["revisions"][0]
@@ -302,3 +314,98 @@ async def test_authoring_context_blocks_implementation_tools(tmp_path, setup_db)
         )
         assert result.startswith("BLOCKED — EASD pre-implementation work is read-only")
         assert called is False
+
+
+@pytest.mark.asyncio
+async def test_verify_turn_admits_its_completion_contract_as_machine_evidence(
+    tmp_path, setup_db
+):
+    """A single-agent run must be able to produce machine evidence.
+
+    `record_mission_handoff_evidence` only fires when a delegated mission hands
+    off, so a run driven by one agent could never satisfy a criterion whose
+    policy sets `machine_required` — Converge stayed blocked no matter how the
+    verifier reported. Verify already runs the accepted verification commands
+    and builds a revision-bound contract; the hook records it.
+    """
+
+    from app.core.db import async_session_factory
+
+    async with async_session_factory() as db:
+        session = ChatSession(agent_name="lead", mode="coding", workspace=str(tmp_path))
+        db.add(session)
+        await db.flush()
+        specification = _spec()
+        run = await trace_service.create_run(
+            db,
+            workspace=str(tmp_path),
+            title=specification.title,
+            risk_tier="standard",
+            specification=specification,
+            session_id=session.id,
+        )
+        draft = (await trace_service.run_detail(db, run.id))["revisions"][0]
+        await trace_service.accept_revision(
+            db,
+            run_id=run.id,
+            revision_id=draft["id"],
+            expected_hash=draft["content_hash"],
+        )
+        run.status = "verifying"
+        db.add(run)
+        await db.commit()
+        run_id = run.id
+
+    command = specification.verification_commands[0]
+    hook = EasdContextHook(
+        db_factory=async_session_factory,
+        lead_session_id=str(session.id),
+        agent_name="lead",
+        role="lead",
+    )
+    ctx = RunContext(session_id=str(session.id), run_id="run", agent_name="lead")
+    state = AgentState(messages=[])
+    state.metadata["_easd_phase"] = "verifying"
+    state.metadata["_easd_run_id"] = str(run_id)
+    state.metadata["completion_contract"] = {
+        "artifact_hash": "f" * 64,
+        "passed": True,
+        "evidence": [
+            {
+                "exit_code": 0,
+                "revision": "9" * 40,
+                "spec_command": command,
+                "output": "1 passed",
+            }
+        ],
+    }
+
+    await hook.after_agent(ctx, state, SimpleNamespace(content=""))
+
+    async with async_session_factory() as db:
+        detail = await trace_service.run_detail(db, run_id)
+    machine = [item for item in detail["evidence"] if item["kind"] == "machine"]
+    assert len(machine) == 1
+    assert machine[0]["result"] == "passed"
+    assert machine[0]["producer"].startswith("runtime:")
+    assert command in machine[0]["summary"]
+
+
+@pytest.mark.asyncio
+async def test_no_machine_evidence_outside_the_verify_phase(tmp_path, setup_db):
+    from app.core.db import async_session_factory
+
+    hook = EasdContextHook(
+        db_factory=async_session_factory,
+        lead_session_id="00000000-0000-0000-0000-000000000000",
+        agent_name="lead",
+        role="lead",
+    )
+    ctx = RunContext(session_id="s", run_id="run", agent_name="lead")
+    state = AgentState(messages=[])
+    state.metadata["_easd_phase"] = "active"
+    state.metadata["_easd_run_id"] = "00000000-0000-0000-0000-000000000001"
+    state.metadata["completion_contract"] = {"passed": True, "evidence": []}
+
+    # Must be a no-op, and must never raise into the turn.
+    await hook.after_agent(ctx, state, SimpleNamespace(content=""))

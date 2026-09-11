@@ -1,18 +1,87 @@
+/**
+ * The transcript viewport's contract, after it was rebuilt on browser
+ * primitives.
+ *
+ * Three things moved out of JavaScript and cannot be asserted here, so
+ * they were verified in the app's own WebView instead and are recorded in
+ * the hook's own comments: `overflow-anchor` holding the reader's place
+ * when history is prepended, the sentinel's visibility answering "are we
+ * at the bottom", and `scrollTo` being used in place of `scrollIntoView`
+ * because that one also scrolls every scrollable ancestor.
+ *
+ * What is left to test here is the part that is still logic: when the
+ * viewport follows, and what makes it stop.
+ */
+
 import { act, fireEvent, render, renderHook } from '@testing-library/react'
 import { StrictMode, createElement, useEffect, type PropsWithChildren } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  captureTranscriptPrependAnchor,
-  nextPinnedScrollTop,
   pinnedAfterViewportUpdate,
-  scrollTopAfterPrepend,
   usePinnedTranscript,
 } from '@/hooks/usePinnedTranscript'
+
+type ObserverCallback = (entries: { isIntersecting: boolean }[]) => void
+
+/** Lets a test say "the bottom came into view" without a layout engine. */
+const observers: { callback: ObserverCallback; targets: Element[] }[] = []
+
+function reportBottomVisible(isIntersecting: boolean): void {
+  act(() => {
+    for (const observer of observers) {
+      observer.callback([{ isIntersecting }])
+    }
+  })
+}
+
+beforeEach(() => {
+  observers.length = 0
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      callback: ObserverCallback
+      targets: Element[] = []
+      constructor(callback: ObserverCallback) {
+        this.callback = callback
+      }
+      observe(target: Element) {
+        this.targets.push(target)
+        observers.push({ callback: this.callback, targets: this.targets })
+      }
+      disconnect() {
+        const index = observers.findIndex((o) => o.callback === this.callback)
+        if (index !== -1) observers.splice(index, 1)
+      }
+      unobserve() {}
+      takeRecords() {
+        return []
+      }
+    },
+  )
+})
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
+
+/** A scroller whose `scrollTo` records where it was asked to go. */
+function fakeScroller(scrollHeight = 1_000) {
+  const calls: ScrollToOptions[] = []
+  const element = document.createElement('div')
+  Object.defineProperties(element, {
+    scrollHeight: { configurable: true, value: scrollHeight },
+    clientHeight: { configurable: true, value: 400 },
+    scrollTop: { configurable: true, value: 0, writable: true },
+    offsetHeight: { configurable: true, value: 400 },
+    offsetWidth: { configurable: true, value: 500 },
+    clientWidth: { configurable: true, value: 488 },
+  })
+  element.scrollTo = ((options: ScrollToOptions) => {
+    calls.push(options)
+  }) as typeof element.scrollTo
+  return { element, calls }
+}
 
 describe('pinnedAfterViewportUpdate', () => {
   it('keeps following when streamed content temporarily moves the bottom', () => {
@@ -28,108 +97,153 @@ describe('pinnedAfterViewportUpdate', () => {
   })
 })
 
-describe('nextPinnedScrollTop', () => {
-  it('eases toward new streamed height without jumping a full line', () => {
-    const next = nextPinnedScrollTop(500, 524, 16)
+describe('following new content', () => {
+  it('goes to the bottom when content grows while pinned', () => {
+    const { result, rerender } = renderHook(
+      ({ contentKey }) => usePinnedTranscript({
+        isEmpty: false,
+        contentKey,
+        resetKey: null,
+      }),
+      { initialProps: { contentKey: 1 } },
+    )
+    const { element, calls } = fakeScroller()
+    result.current.scrollRef.current = element
 
-    expect(next).toBeGreaterThan(500)
-    expect(next).toBeLessThan(524)
+    rerender({ contentKey: 2 })
+    expect(calls).toEqual([{ top: 1_000, behavior: 'auto' }])
   })
 
-  it('settles exactly and handles content shrinking', () => {
-    expect(nextPinnedScrollTop(523.6, 524, 16)).toBe(524)
-    expect(nextPinnedScrollTop(540, 524, 16)).toBe(524)
+  it('leaves a detached reader alone when content grows', () => {
+    const { result, rerender } = renderHook(
+      ({ contentKey }) => usePinnedTranscript({
+        isEmpty: false,
+        contentKey,
+        resetKey: null,
+      }),
+      { initialProps: { contentKey: 1 } },
+    )
+    const { element, calls } = fakeScroller()
+    result.current.scrollRef.current = element
+
+    act(() => result.current.detach())
+    calls.length = 0
+    rerender({ contentKey: 2 })
+    expect(calls).toEqual([])
+  })
+
+  it('does not follow when following is disabled for a dormant pane', () => {
+    const { result, rerender } = renderHook(
+      ({ contentKey }) => usePinnedTranscript({
+        isEmpty: false,
+        contentKey,
+        resetKey: null,
+        followEnabled: false,
+      }),
+      { initialProps: { contentKey: 1 } },
+    )
+    const { element, calls } = fakeScroller()
+    result.current.scrollRef.current = element
+
+    rerender({ contentKey: 2 })
+    expect(calls).toEqual([])
   })
 })
 
-describe('scrollTopAfterPrepend', () => {
-  it('preserves a reader offset that is already inside the load threshold', () => {
-    expect(scrollTopAfterPrepend(240, 1_200, 1_950)).toBe(990)
-  })
-
-  it('keeps a top-anchored reader at the same message after prepend', () => {
-    expect(scrollTopAfterPrepend(0, 1_200, 1_950)).toBe(750)
-  })
-
-  it('never produces a negative scroll position when content shrinks', () => {
-    expect(scrollTopAfterPrepend(20, 1_200, 1_000)).toBe(0)
-  })
-})
-
-describe('captureTranscriptPrependAnchor', () => {
-  it('captures the first turn intersecting the reader viewport', () => {
-    const scroller = document.createElement('div')
-    const above = document.createElement('div')
-    const visible = document.createElement('div')
-    above.className = 'oa-transcript-turn'
-    visible.className = 'oa-latest-turn-runway'
-    scroller.append(above, visible)
-    scroller.getBoundingClientRect = () => ({ top: 100, bottom: 500 }) as DOMRect
-    above.getBoundingClientRect = () => ({ top: 20, bottom: 80 }) as DOMRect
-    visible.getBoundingClientRect = () => ({ top: 140, bottom: 260 }) as DOMRect
-
-    expect(captureTranscriptPrependAnchor(scroller)).toEqual({
-      element: visible,
-      viewportTop: 140,
-    })
-  })
-})
-
-describe('usePinnedTranscript follow boundaries', () => {
-  it('ignores layout-driven scroll events but detaches on upward wheel intent', () => {
-    const frames: FrameRequestCallback[] = []
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      frames.push(callback)
-      return frames.length
-    })
-    vi.stubGlobal('cancelAnimationFrame', vi.fn())
-    const captured: { current: ReturnType<typeof usePinnedTranscript> | null } = { current: null }
-    const captureHook = (value: ReturnType<typeof usePinnedTranscript>) => {
-      captured.current = value
+describe('what stops the viewport following', () => {
+  const harness = () => {
+    const captured: { current: ReturnType<typeof usePinnedTranscript> | null } = {
+      current: null,
     }
-
-    function Harness({ onHook }: { onHook: typeof captureHook }) {
+    function Harness() {
       const value = usePinnedTranscript({
         isEmpty: false,
         contentKey: 1,
         resetKey: null,
       })
-      useEffect(() => onHook(value), [onHook, value])
+      useEffect(() => {
+        captured.current = value
+      }, [value])
       return createElement(
         'div',
         { ref: value.scrollRef },
         createElement('div', { ref: value.contentRef }),
+        createElement('div', { ref: value.sentinelRef }),
       )
     }
-
-    const { container } = render(createElement(Harness, { onHook: captureHook }))
+    const { container } = render(createElement(Harness))
     const scroller = container.firstElementChild as HTMLDivElement
     Object.defineProperties(scroller, {
-      clientHeight: { configurable: true, value: 400 },
-      scrollHeight: { configurable: true, value: 1_000 },
-      scrollTop: { configurable: true, value: 320, writable: true },
+      offsetWidth: { configurable: true, value: 500 },
+      clientWidth: { configurable: true, value: 488 },
     })
+    scroller.getBoundingClientRect = () =>
+      ({ right: 500, left: 0, top: 0, bottom: 400 }) as DOMRect
+    return { captured, scroller }
+  }
 
-    fireEvent.scroll(scroller)
-    act(() => {
-      let timestamp = 0
-      while (frames.length > 0) frames.shift()?.(timestamp += 16)
-    })
-    expect(scroller.scrollTop).toBe(600)
+  it('detaches on an upward wheel and offers the way back', () => {
+    const { captured, scroller } = harness()
     expect(captured.current?.showScrollButton).toBe(false)
 
     fireEvent.wheel(scroller, { deltaY: -20 })
+    expect(captured.current?.isPinned()).toBe(false)
     expect(captured.current?.showScrollButton).toBe(true)
   })
 
-  it('reattaches and scrolls when a new prompt is submitted', () => {
-    const frames: FrameRequestCallback[] = []
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      frames.push(callback)
-      return frames.length
-    })
-    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+  it('ignores a downward wheel', () => {
+    const { captured, scroller } = harness()
+    fireEvent.wheel(scroller, { deltaY: 20 })
+    expect(captured.current?.isPinned()).toBe(true)
+  })
 
+  it.each([
+    ['ArrowUp', {}],
+    ['PageUp', {}],
+    ['Home', {}],
+    [' ', { shiftKey: true }],
+  ])('detaches on %s', (key, modifiers) => {
+    const { captured, scroller } = harness()
+    fireEvent.keyDown(scroller, { key, ...modifiers })
+    expect(captured.current?.isPinned()).toBe(false)
+  })
+
+  it('leaves typing in an input alone', () => {
+    const { captured, scroller } = harness()
+    const input = document.createElement('input')
+    scroller.appendChild(input)
+    fireEvent.keyDown(input, { key: 'ArrowUp' })
+    expect(captured.current?.isPinned()).toBe(true)
+  })
+
+  it('detaches when the scrollbar itself is grabbed', () => {
+    const { captured, scroller } = harness()
+    fireEvent.pointerDown(scroller, { clientX: 496 })
+    expect(captured.current?.isPinned()).toBe(false)
+  })
+
+  it('reattaches once the bottom is back in view', () => {
+    const { captured, scroller } = harness()
+    fireEvent.wheel(scroller, { deltaY: -20 })
+    expect(captured.current?.isPinned()).toBe(false)
+
+    reportBottomVisible(true)
+    expect(captured.current?.isPinned()).toBe(true)
+    expect(captured.current?.showScrollButton).toBe(false)
+  })
+
+  it('does not detach just because content pushed the bottom away', () => {
+    const { captured } = harness()
+    // This is what a streaming turn looks like to the observer, and it
+    // must not be mistaken for the reader scrolling up.
+    reportBottomVisible(false)
+    expect(captured.current?.isPinned()).toBe(true)
+    expect(captured.current?.showScrollButton).toBe(false)
+  })
+})
+
+describe('jumping to the newest content', () => {
+  it('goes to the bottom when a new prompt is submitted', () => {
     const { result, rerender } = renderHook(
       ({ followKey }) => usePinnedTranscript({
         isEmpty: false,
@@ -139,22 +253,72 @@ describe('usePinnedTranscript follow boundaries', () => {
       }),
       { initialProps: { followKey: null as string | null } },
     )
+    const { element, calls } = fakeScroller()
+    result.current.scrollRef.current = element
 
-    const scroller = { scrollTop: 100, scrollHeight: 1_000, clientHeight: 400 }
-    result.current.scrollRef.current = scroller as HTMLDivElement
-
+    act(() => result.current.detach())
+    calls.length = 0
     rerender({ followKey: 'user-2' })
-    act(() => {
-      while (frames.length > 0) frames.shift()?.(16)
-    })
 
-    // A real scrolling element clamps `scrollHeight` assignments to its
-    // maximum scrollTop (scrollHeight - clientHeight).
-    expect(scroller.scrollTop).toBe(600)
-    expect(result.current.showScrollButton).toBe(false)
+    expect(calls).toEqual([{ top: 1_000, behavior: 'auto' }])
+    expect(result.current.isPinned()).toBe(true)
   })
 
-  it('pins a new user message to the viewport top and stops bottom-follow', () => {
+  it('goes to the bottom on a session change', () => {
+    const { result, rerender } = renderHook(
+      ({ resetKey }) => usePinnedTranscript({
+        isEmpty: false,
+        contentKey: 1,
+        resetKey,
+      }),
+      { initialProps: { resetKey: 'session-1' } },
+    )
+    const { element, calls } = fakeScroller(1_413)
+    result.current.scrollRef.current = element
+
+    calls.length = 0
+    rerender({ resetKey: 'session-2' })
+    expect(calls).toEqual([{ top: 1_413, behavior: 'auto' }])
+  })
+
+  it('still follows after StrictMode replays mount effects', () => {
+    const wrapper = ({ children }: PropsWithChildren) =>
+      createElement(StrictMode, null, children)
+    const { result, rerender } = renderHook(
+      ({ resetKey }) => usePinnedTranscript({
+        isEmpty: false,
+        contentKey: 1,
+        resetKey,
+      }),
+      { initialProps: { resetKey: 'session-1' }, wrapper },
+    )
+    const { element, calls } = fakeScroller(1_413)
+    result.current.scrollRef.current = element
+
+    calls.length = 0
+    rerender({ resetKey: 'session-2' })
+    expect(calls.at(-1)).toEqual({ top: 1_413, behavior: 'auto' })
+  })
+
+  it('animates only when the reader asked for it', () => {
+    const { result } = renderHook(() => usePinnedTranscript({
+      isEmpty: false,
+      contentKey: 1,
+      resetKey: null,
+    }))
+    const { element, calls } = fakeScroller()
+    result.current.scrollRef.current = element
+
+    act(() => result.current.scrollToBottom(true))
+    expect(calls.at(-1)).toEqual({ top: 1_000, behavior: 'smooth' })
+
+    act(() => result.current.scrollToBottom())
+    expect(calls.at(-1)).toEqual({ top: 1_000, behavior: 'auto' })
+  })
+})
+
+describe('a newly submitted prompt', () => {
+  it('sits at the top of the viewport and stops bottom-follow', () => {
     const frames = new Map<number, FrameRequestCallback>()
     let frameId = 0
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -173,59 +337,86 @@ describe('usePinnedTranscript follow boundaries', () => {
       }),
       { initialProps: { topAnchorKey: null as string | null } },
     )
-    const scroller = document.createElement('div')
+    const { element, calls } = fakeScroller()
+    element.scrollTop = 120
     const anchor = document.createElement('div')
     anchor.dataset.transcriptTopAnchor = 'true'
-    anchor.scrollIntoView = vi.fn()
-    scroller.appendChild(anchor)
-    result.current.scrollRef.current = scroller
+    anchor.getBoundingClientRect = () => ({ top: 260 }) as DOMRect
+    element.getBoundingClientRect = () => ({ top: 60 }) as DOMRect
+    element.appendChild(anchor)
+    result.current.scrollRef.current = element
 
+    calls.length = 0
     rerender({ topAnchorKey: 'user-2' })
     act(() => {
       for (const callback of frames.values()) callback(16)
       frames.clear()
     })
 
-    expect(anchor.scrollIntoView).toHaveBeenCalledWith({
-      behavior: 'auto',
-      block: 'start',
-    })
+    // scrollTop 120 + (anchor 260 - container 60) puts the prompt at the top.
+    expect(calls).toEqual([{ top: 320 }])
     expect(result.current.isPinned()).toBe(false)
     expect(result.current.showScrollButton).toBe(false)
   })
+})
 
-  it('still follows after StrictMode replays mount effects', () => {
-    const frames = new Map<number, FrameRequestCallback>()
-    let frameId = 0
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      frameId += 1
-      frames.set(frameId, callback)
-      return frameId
-    })
-    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
-
-    const wrapper = ({ children }: PropsWithChildren) => createElement(StrictMode, null, children)
+describe('an emptied transcript', () => {
+  it('returns to the top, following', () => {
     const { result, rerender } = renderHook(
-      ({ resetKey }) => usePinnedTranscript({
+      ({ isEmpty }) => usePinnedTranscript({
+        isEmpty,
+        contentKey: 1,
+        resetKey: null,
+      }),
+      { initialProps: { isEmpty: false } },
+    )
+    const { element } = fakeScroller()
+    element.scrollTop = 500
+    result.current.scrollRef.current = element
+
+    act(() => result.current.detach())
+    rerender({ isEmpty: true })
+
+    expect(element.scrollTop).toBe(0)
+    expect(result.current.isPinned()).toBe(true)
+  })
+})
+
+describe('scroll frame reporting', () => {
+  it('reports the scroller once per frame for history loading', () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.push(callback)
+      return frames.length
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    const onScrollFrame = vi.fn()
+
+    function Harness() {
+      const value = usePinnedTranscript({
         isEmpty: false,
         contentKey: 1,
-        resetKey,
-      }),
-      {
-        initialProps: { resetKey: 'session-1' },
-        wrapper,
-      },
-    )
+        resetKey: null,
+        onScrollFrame,
+      })
+      return createElement(
+        'div',
+        { ref: value.scrollRef },
+        createElement('div', { ref: value.contentRef }),
+        createElement('div', { ref: value.sentinelRef }),
+      )
+    }
+    const { container } = render(createElement(Harness))
+    const scroller = container.firstElementChild as HTMLDivElement
 
-    const scroller = { scrollTop: 0, scrollHeight: 1_413, clientHeight: 555 }
-    result.current.scrollRef.current = scroller as HTMLDivElement
-
-    rerender({ resetKey: 'session-2' })
+    fireEvent.scroll(scroller)
+    fireEvent.scroll(scroller)
     act(() => {
-      for (const callback of frames.values()) callback(16)
-      frames.clear()
+      while (frames.length > 0) frames.shift()?.(16)
     })
 
-    expect(scroller.scrollTop).toBe(1_413)
+    // Two events, one frame: coalesced.
+    expect(onScrollFrame).toHaveBeenCalledTimes(1)
+    expect(onScrollFrame).toHaveBeenCalledWith(scroller)
   })
 })

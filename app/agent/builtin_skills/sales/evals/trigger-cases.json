@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Prepare me for tomorrow's meeting with this account, including recent signals and open risks.",
+    "should_trigger": true
+  },
+  {
+    "query": "Prioritize my accounts for this quarter and explain what moved each one.",
+    "should_trigger": true
+  },
+  {
+    "query": "Build the business case for this deal and a competitive brief against their incumbent.",
+    "should_trigger": true
+  },
+  {
+    "query": "Send the follow-up email to the customer now.",
+    "should_trigger": false,
+    "near_miss": "Outbound sending needs explicit approval, not a workflow assumption."
+  },
+  {
+    "query": "Research the market size for this product category.",
+    "should_trigger": false,
+    "near_miss": "General market research rather than account work."
+  },
+  {
+    "query": "Write our public pricing page copy.",
+    "should_trigger": false,
+    "near_miss": "Marketing writing, not a sales workflow."
+  }
+]

@@ -78,6 +78,20 @@ export async function postTeamChat(
   shell = false,
   fastMode = false,
   webBridgeEnabled?: boolean,
+  webBridgeExtensionId?: string | null,
+  /**
+   * Settings the session should be born with if this message is the one that
+   * creates it — a new chat is held as a draft until the first send, so the
+   * folder it was started from (and, in Coding, the project it was focused
+   * under) travels with the message, as does the permission mode, which has
+   * no row to be PATCHed onto yet. Ignored by the backend for a session that
+   * already exists.
+   */
+  placement?: {
+    folderId?: string | null
+    projectId?: string | null
+    permissionMode?: string | null
+  },
 ): Promise<{ status: string; session_id: string; message_id?: string }> {
   const formData = new FormData()
   if (message) {
@@ -107,8 +121,20 @@ export async function postTeamChat(
   if (webBridgeEnabled !== undefined) {
     formData.append('webbridge_enabled', String(webBridgeEnabled))
   }
+  if (webBridgeExtensionId) {
+    formData.append('webbridge_extension_id', webBridgeExtensionId)
+  }
   if (shell) {
     formData.append('shell', 'true')
+  }
+  if (placement?.folderId) {
+    formData.append('folder_id', placement.folderId)
+  }
+  if (placement?.projectId) {
+    formData.append('project_id', placement.projectId)
+  }
+  if (placement?.permissionMode) {
+    formData.append('permission_mode', placement.permissionMode)
   }
   if (files && files.length > 0) {
     for (const file of files) {
@@ -559,6 +585,39 @@ export async function resolveTeamSession(options: {
   return res.json()
 }
 
+/**
+ * The session already sitting in this context, or ``null`` when there is
+ * none. Never creates one — a focus or a restore reopens what exists, and
+ * otherwise the client stays on a draft until the user actually writes.
+ */
+export async function findTeamSession(options: {
+  mode?: string
+  workspace?: string | null
+  project_id?: string | null
+  folder_id?: string | null
+  tags?: string[]
+  tagMatch?: 'exact' | 'contains'
+  agentName?: string | null
+}): Promise<TeamSessionResolveResponse | null> {
+  const body: Record<string, string | string[] | boolean | null> = {
+    mode: options.mode ?? 'work',
+    existing_only: true,
+  }
+  if (options.workspace !== undefined) body.workspace = options.workspace
+  if (options.project_id !== undefined) body.project_id = options.project_id
+  if (options.folder_id !== undefined) body.folder_id = options.folder_id
+  if (options.tags !== undefined) body.tags = options.tags
+  if (options.tagMatch !== undefined) body.tag_match = options.tagMatch
+  if (options.agentName !== undefined) body.agent_name = options.agentName
+  const res = await fetch(`${apiBaseUrl()}/team/sessions/resolve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'findTeamSession')
+  return res.json()
+}
+
 export async function updateTeamSessionTitle(id: string, title: string): Promise<SessionResponse> {
   const res = await fetch(`${apiBaseUrl()}/team/sessions/${id}`, {
     method: 'PATCH',
@@ -658,11 +717,47 @@ export async function moveWorkspaceFile(sessionId: string, fromPath: string, toP
   return res.json()
 }
 
-export async function deleteWorkspaceFile(sessionId: string, filePath: string): Promise<WorkspaceFilesResponse> {
-  const encoded = filePath.split('/').map(encodeURIComponent).join('/')
-  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/${encoded}`, {
-    method: 'DELETE',
+/** Create an empty file or folder in the session workspace. */
+export async function createWorkspaceEntry(
+  sessionId: string,
+  path: string,
+  kind: 'file' | 'directory',
+): Promise<WorkspaceFilesResponse> {
+  const params = new URLSearchParams({ path, kind })
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/create?${params}`,
+    { method: 'POST' },
+  )
+  if (!res.ok) await parseDetailOrThrow(res, 'createWorkspaceEntry')
+  return res.json()
+}
+
+/** Duplicate a session-workspace file or folder. */
+export async function copyWorkspaceFile(
+  sessionId: string,
+  fromPath: string,
+  toPath: string,
+): Promise<WorkspaceFilesResponse> {
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/copy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath }),
   })
+  if (!res.ok) await parseDetailOrThrow(res, 'copyWorkspaceFile')
+  return res.json()
+}
+
+export async function deleteWorkspaceFile(
+  sessionId: string,
+  filePath: string,
+  options?: { recursive?: boolean },
+): Promise<WorkspaceFilesResponse> {
+  const encoded = filePath.split('/').map(encodeURIComponent).join('/')
+  const query = options?.recursive ? '?recursive=true' : ''
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/files/${encoded}${query}`,
+    { method: 'DELETE' },
+  )
   if (!res.ok) await parseDetailOrThrow(res, 'deleteWorkspaceFile')
   return res.json()
 }
@@ -714,6 +809,59 @@ export async function writeCodingWorkspaceFile(workspace: string, path: string, 
     body: JSON.stringify({ content }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'writeCodingWorkspaceFile')
+}
+
+/** Create an empty file or folder in the coding workspace. */
+export async function createCodingWorkspaceEntry(
+  workspace: string,
+  path: string,
+  kind: 'file' | 'directory',
+): Promise<void> {
+  const params = new URLSearchParams({ workspace, path, kind })
+  const res = await fetch(apiUrl(`/team/workspace/files/create?${params}`), { method: 'POST' })
+  if (!res.ok) await parseDetailOrThrow(res, 'createCodingWorkspaceEntry')
+}
+
+/** Rename or move a coding-workspace file/folder. Paths are workspace-relative. */
+export async function moveCodingWorkspaceEntry(
+  workspace: string,
+  fromPath: string,
+  toPath: string,
+): Promise<void> {
+  const params = new URLSearchParams({ workspace })
+  const res = await fetch(apiUrl(`/team/workspace/files/move?${params}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'moveCodingWorkspaceEntry')
+}
+
+/** Duplicate a coding-workspace file/folder. */
+export async function copyCodingWorkspaceEntry(
+  workspace: string,
+  fromPath: string,
+  toPath: string,
+): Promise<void> {
+  const params = new URLSearchParams({ workspace })
+  const res = await fetch(apiUrl(`/team/workspace/files/copy?${params}`), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from_path: fromPath, to_path: toPath }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'copyCodingWorkspaceEntry')
+}
+
+/** Delete a coding-workspace file, or a folder when ``recursive`` is set. */
+export async function deleteCodingWorkspaceEntry(
+  workspace: string,
+  path: string,
+  options?: { recursive?: boolean },
+): Promise<void> {
+  const params = new URLSearchParams({ workspace, path })
+  if (options?.recursive) params.set('recursive', 'true')
+  const res = await fetch(apiUrl(`/team/workspace/files/entry?${params}`), { method: 'DELETE' })
+  if (!res.ok) await parseDetailOrThrow(res, 'deleteCodingWorkspaceEntry')
 }
 
 /** Ask the coding workspace LSP to diagnose the current (possibly unsaved) buffer. */

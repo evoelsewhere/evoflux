@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { useShallow } from 'zustand/react/shallow'
 import { Maximize2, Menu, Minimize2, Plus, X } from 'lucide-react'
 import { useResizableWidth } from '@/hooks/use-resizable-width'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -18,6 +19,8 @@ import {
 import {
   type WorkbenchTab,
   type WorkbenchTool,
+  sessionWorkbenchTabs,
+  shouldMountWorkbenchTab,
   useUIStore,
 } from '@/stores/useUIStore'
 import {
@@ -48,7 +51,7 @@ export function WorkbenchDock({
   onOpenSidebar,
 }: WorkbenchDockProps) {
   const open = useUIStore((state) => state.workbenchOpen)
-  const tabs = useUIStore((state) => state.workbenchTabs)
+  const tabs = useUIStore(useShallow(sessionWorkbenchTabs))
   const activeTabId = useUIStore((state) => state.activeWorkbenchTabId)
   const activeTool = useUIStore((state) => state.activeWorkbenchTool)
   const maximized = useUIStore((state) => state.workbenchMaximized)
@@ -354,9 +357,15 @@ interface WorkbenchSurfaceProps {
 }
 
 export function WorkbenchSurface({ tool, children }: WorkbenchSurfaceProps) {
-  const tabs = useUIStore((state) => state.workbenchTabs)
+  // Wider than the tab bar on purpose, but not unbounded. A browser tab
+  // from another session stays mounted because its page cannot be
+  // restored; everything else unmounts, since keeping it meant five
+  // visited sessions held five live terminals at once.
+  const tabs = useUIStore(useShallow((state) => state.workbenchTabs))
+  const sessionId = useUIStore((state) => state.workbenchSessionId)
   const activeTabId = useUIStore((state) => state.activeWorkbenchTabId)
-  const toolTabs = tabs.filter((tab) => tab.tool === tool)
+  const toolTabs = tabs.filter((tab) =>
+    tab.tool === tool && shouldMountWorkbenchTab(tab, sessionId))
   const motionPreset = useMotionPreset()
   return toolTabs.map((tab) => {
     const active = activeTabId === tab.id
@@ -380,6 +389,17 @@ export function WorkbenchSurface({ tool, children }: WorkbenchSurfaceProps) {
         )}
         style={{ zIndex: active ? 1 : 0 }}
         aria-hidden={!active}
+        // `overflow: hidden` stops a person scrolling this box; it does not
+        // stop the browser. Focusing a descendant — or a `scrollIntoView`
+        // from anywhere inside — scrolls every ancestor that can scroll,
+        // this one included, and then nothing can scroll it back: the
+        // panel's own header is left stranded above the top edge. Only the
+        // scroll container a panel declares for itself should move.
+        onScroll={(event) => {
+          const host = event.currentTarget
+          if (host.scrollTop !== 0) host.scrollTop = 0
+          if (host.scrollLeft !== 0) host.scrollLeft = 0
+        }}
       >
         {typeof children === 'function' ? children(tab, active) : children}
       </motion.section>

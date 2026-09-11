@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Teach me this paper chapter by chapter with exercises and check my answers as I go.",
+    "should_trigger": true
+  },
+  {
+    "query": "Turn this PDF into a course, starting with a course map, and track what I have mastered.",
+    "should_trigger": true
+  },
+  {
+    "query": "Continue the course we started last week from my saved progress.",
+    "should_trigger": true
+  },
+  {
+    "query": "Summarize this paper in one paragraph.",
+    "should_trigger": false,
+    "near_miss": "A one-shot summary, not a course."
+  },
+  {
+    "query": "What does this error message mean?",
+    "should_trigger": false,
+    "near_miss": "A reference answer, not a curriculum."
+  },
+  {
+    "query": "Write the documentation page for this API.",
+    "should_trigger": false,
+    "near_miss": "Documentation authoring rather than teaching."
+  }
+]

@@ -3,6 +3,7 @@ import { Activity, ArrowUp, ChevronDown, File, Folder, ListTodo, Loader2, Messag
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
+import { findActiveSkillToken } from './InputBar.skills'
 import { SessionPillsRow, type SessionPillsRowProps } from './SessionPillsRow'
 import { ModeSelector } from './ModeSelector'
 import { TodosList } from './TodosList'
@@ -63,6 +64,28 @@ export interface SnippetCommand {
   category?: string
 }
 
+/**
+ * A user-invocable skill offered by the ``$`` picker.
+ *
+ * ``$`` is the composer's only skill affordance — the old ``/skill:``
+ * namespace is gone from the slash menu (the backend still accepts that
+ * notation, and the highlighter still colors it, so old messages and typed
+ * directives keep working).
+ */
+export interface ComposerSkill {
+  /** Composer notation: ``release-audit`` or one level of ``git:commit``. */
+  name: string
+  label: string
+  description: string
+  /**
+   * The skill's raw ``default_prompt``, verbatim. These are written around
+   * the directive itself ("Use $deep-research to investigate …"), so the
+   * picker inserts the prompt as-is when it already carries the token
+   * instead of tearing the token out and leaving a hole in the sentence.
+   */
+  prompt?: string
+}
+
 interface InputBarProps {
   /** Return false to reject the send and preserve the current draft. */
   onSubmit: (message: string, files?: File[]) => boolean | void | Promise<boolean | void>
@@ -71,6 +94,8 @@ interface InputBarProps {
   onSnippetCommand?: (id: string) => Promise<string | null> | string | null
   slashCommands?: SlashCommand[]
   snippetCommands?: SnippetCommand[]
+  /** Skills offered by the ``$`` picker. */
+  skills?: ComposerSkill[]
   /**
    * Workspace files/folders the user can reference with `@`. When the list is
    * empty (or omitted) the picker stays dormant — the `@` character behaves as
@@ -207,12 +232,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   onSnippetCommand,
   slashCommands = [],
   snippetCommands = [],
+  skills = [],
   fileRefs = [],
   onFileRefsNeeded,
   isStreaming = false,
   disabled,
   attachmentsEnabled = true,
-  placeholder = 'Message EvoFlux…',
+  placeholder = 'Ask anything',
   autoFocus,
   floating = false,
   filesBelow = false,
@@ -250,9 +276,22 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const [localHistory, setLocalHistory] = useState<string[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [submitting, setSubmitting] = useState(false)
+  // The guard has to flip synchronously. ``submitting`` is React state read
+  // from this callback's closure, so several clicks landing in one tick all
+  // saw ``false`` and all submitted — five fast clicks on Send posted the
+  // message five times. Clearing the draft did not help either: ``value`` is
+  // captured in the same closure, so every queued call still had the text.
+  const submittingRef = useRef(false)
   const [snippetRange, setSnippetRange] = useState<
     { start: number; end: number; query: string } | null
   >(null)
+  // The ``$skill`` token being typed. Separate from ``snippetRange`` because
+  // the two pickers insert different things: a snippet expands into prose,
+  // a skill directive stays in the message for the backend hook to read.
+  const [skillRange, setSkillRange] = useState<
+    { start: number; end: number; query: string } | null
+  >(null)
+  const [skillMenuIndex, setSkillMenuIndex] = useState(0)
   const [shellMode, setShellMode] = useState(false)
   // IME composition tracking: during active CJK/accented input the native
   // textarea is ``text-transparent`` (owned by the overlay mirror), which
@@ -302,6 +341,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setShellMode(next?.shellMode ?? false)
     setMentionRange(null)
     setSnippetRange(null)
+    setSkillRange(null)
     setHistoryIndex(-1)
     activeSessionRef.current = sessionId
   }, [sessionId])
@@ -341,6 +381,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     const caret = el.selectionStart ?? el.value.length
     const next = shellMode ? null : findActiveMention(el.value, caret)
     setSnippetRange(next || shellMode ? null : findActiveSnippet(el.value, caret))
+    setSkillRange(next || shellMode ? null : findActiveSkillToken(el.value, caret))
     setMentionRange((prev) => {
       if (!prev && !next) return prev
       if (
@@ -411,6 +452,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       // its ``start``/``end`` indices refer to the old text.
       setMentionRange(null)
       setSnippetRange(null)
+      setSkillRange(null)
       // Trigger height recalculation after injecting text programmatically
       requestAnimationFrame(resize)
     },
@@ -423,6 +465,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       setHistoryIndex(-1)
       setMentionRange(null)
       setSnippetRange(null)
+      setSkillRange(null)
       requestAnimationFrame(resize)
     },
     insertText: (text: string) => {
@@ -447,6 +490,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       setHistoryIndex(-1)
       setMentionRange(null)
       setSnippetRange(null)
+      setSkillRange(null)
     },
     setFiles: (nextFiles: File[]) => {
       setFiles(nextFiles)
@@ -487,7 +531,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const submit = useCallback(async () => {
     const trimmed = value.trim()
     const context = quoteContext?.trim() ?? ''
-    if ((!trimmed && !context && files.length === 0) || disabled || submitting || slashFilter !== null) return
+    if (
+      (!trimmed && !context && files.length === 0)
+      || disabled
+      || submittingRef.current
+      || slashFilter !== null
+    ) return
+    submittingRef.current = true
     const quotedContext = context
       ? context
           .split('\n')
@@ -512,6 +562,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setFiles([])
     setMentionRange(null)
     setSnippetRange(null)
+    setSkillRange(null)
     setHistoryIndex(-1)
     draftsRef.current.delete(sessionId ?? '')
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
@@ -539,6 +590,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       restoreDraft()
       return
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
     if (trimmed) {
@@ -555,7 +607,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     files,
     shellMode,
     slashFilter,
-    submitting,
     resize,
     sessionId,
   ])
@@ -712,6 +763,52 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     snippetOptionRefs.current[clampedSnippetIndex]?.scrollIntoView({ block: 'nearest' })
   }, [clampedSnippetIndex, filteredSnippetCommands, snippetMenuOpen])
 
+  // ── $skill picker ──────────────────────────────────────────────────────────
+
+  /**
+   * The skill roster. Callers pass ``skills`` directly; the fallback keeps
+   * working for any caller still shipping skills as ``category: 'skill'``
+   * slash entries (the shape the WebBridge composer endpoint serves).
+   */
+  const composerSkills = useMemo<ComposerSkill[]>(() => {
+    if (skills.length > 0) return skills
+    return slashCommands
+      .filter((cmd) => cmd.category === 'skill' && cmd.id !== 'skill' && !cmd.isSeparator)
+      .map((cmd) => {
+        const name = (cmd.displayName ?? cmd.id).replace(/^skill:/, '')
+        const insert = (cmd.insertText ?? '').replace(/^skill:/, '')
+        // ``insertText`` is ``skill:<name> <starter prompt>`` when the skill
+        // ships a default prompt; keep the starter so both notations seed
+        // the same message.
+        const prompt = insert.startsWith(name) ? insert.slice(name.length).trim() : ''
+        return { name, label: cmd.label, description: cmd.description, prompt }
+      })
+  }, [skills, slashCommands])
+
+  const skillMenuId = 'inputbar-skill-menu'
+  const filteredSkills = useMemo(() => {
+    if (!skillRange || composerSkills.length === 0) return []
+    const query = skillRange.query.toLowerCase()
+    if (!query) return composerSkills
+    return composerSkills.filter(
+      (skill) =>
+        skill.name.toLowerCase().includes(query) ||
+        skill.label.toLowerCase().includes(query),
+    )
+  }, [composerSkills, skillRange])
+
+  const skillMenuOpen = skillRange !== null && filteredSkills.length > 0
+  const clampedSkillIndex = filteredSkills.length > 0
+    ? skillMenuIndex % filteredSkills.length
+    : 0
+
+  const skillOptionRefs = useRef<(HTMLButtonElement | null)[]>([])
+  useEffect(() => {
+    skillOptionRefs.current.length = filteredSkills.length
+    if (!skillMenuOpen) return
+    skillOptionRefs.current[clampedSkillIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [clampedSkillIndex, filteredSkills, skillMenuOpen])
+
   // Clamp index to valid range (handles filter changes reducing the list).
   // The index tracks position within ``selectableSlashCommands``, not the full
   // ``filteredSlashCommands`` list, so separator rows are never "focused".
@@ -768,7 +865,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setValue(next)
     setShellMode(false)
     setSnippetRange(null)
+    setSkillRange(null)
     setSnippetMenuIndex(0)
+    setSkillMenuIndex(0)
     const el = textareaRef.current
     if (el) {
       const caret = before.length + spacerBefore.length + rendered.length
@@ -779,6 +878,38 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       })
     }
   }, [onSnippetCommand, resize, snippetRange, value])
+
+  /** Replace the active ``$token`` with the chosen skill directive. */
+  const insertSkill = useCallback((skill: ComposerSkill) => {
+    if (!skillRange) return
+    const before = value.slice(0, skillRange.start)
+    const after = value.slice(skillRange.end)
+    const token = `$${skill.name}`
+    // The starter prompt only makes sense when the directive opens an empty
+    // message; mid-sentence it would bulldoze whatever the user is writing.
+    const prompt = !before.trim() && !after.trim() ? (skill.prompt ?? '').trim() : ''
+    const body = !prompt
+      ? token
+      // A prompt written around its own directive already carries the token.
+      : prompt.includes(token) ? prompt : `${token} ${prompt}`
+    const insertion = `${body} `
+    const next = before + insertion + after
+    setValue(next)
+    setShellMode(false)
+    setSkillRange(null)
+    setSnippetRange(null)
+    setMentionRange(null)
+    setSkillMenuIndex(0)
+    const el = textareaRef.current
+    if (el) {
+      const caret = before.length + insertion.length
+      requestAnimationFrame(() => {
+        el.focus()
+        el.setSelectionRange(caret, caret)
+        resize()
+      })
+    }
+  }, [skillRange, value, resize])
 
   // ── @-mention filtering ────────────────────────────────────────────────────
 
@@ -822,6 +953,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setShellMode(false)
     setMentionRange(null)
     setSnippetRange(null)
+    setSkillRange(null)
     setMentionMenuIndex(0)
     // Move the caret to just after the inserted token + trailing space. The
     // textarea state lags by one render so we defer with rAF.
@@ -849,6 +981,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       setShellMode(true)
       setMentionRange(null)
       setSnippetRange(null)
+      setSkillRange(null)
       return
     }
 
@@ -903,6 +1036,29 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       }
     }
 
+    if (skillMenuOpen && filteredSkills.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSkillMenuIndex((i) => (i + 1) % filteredSkills.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSkillMenuIndex((i) => (i - 1 + filteredSkills.length) % filteredSkills.length)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        insertSkill(filteredSkills[clampedSkillIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSkillRange(null)
+        return
+      }
+    }
+
     if (snippetMenuOpen && filteredSnippetCommands.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -922,6 +1078,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       if (e.key === 'Escape') {
         e.preventDefault()
         setSnippetRange(null)
+        setSkillRange(null)
         return
       }
     }
@@ -964,6 +1121,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           setShellMode(false)
           setMentionRange(null)
           setSnippetRange(null)
+          setSkillRange(null)
           requestAnimationFrame(resize)
           return
         }
@@ -976,6 +1134,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         setValue(nextValue)
         setMentionRange(null)
         setSnippetRange(null)
+        setSkillRange(null)
         requestAnimationFrame(() => {
           const el = textareaRef.current
           el?.setSelectionRange(nextValue.length, nextValue.length)
@@ -1007,9 +1166,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       setHistoryIndex(-1)
       setSlashMenuIndex(0)
       setSnippetMenuIndex(0)
+    setSkillMenuIndex(0)
       setMentionMenuIndex(0)
       setMentionRange(null)
       setSnippetRange(null)
+      setSkillRange(null)
       requestAnimationFrame(resize)
       return
     }
@@ -1017,6 +1178,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setHistoryIndex(-1)
     setSlashMenuIndex(0)
     setSnippetMenuIndex(0)
+    setSkillMenuIndex(0)
     setMentionMenuIndex(0)
     // ``selectionStart`` is already at the post-change caret position by the
     // time React fires onChange.
@@ -1025,6 +1187,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     if (next) onFileRefsNeeded?.()
     setMentionRange(next)
     setSnippetRange(next || shellMode ? null : findActiveSnippet(nextValue, caret))
+    setSkillRange(next || shellMode ? null : findActiveSkillToken(nextValue, caret))
     resize()
   }
 
@@ -1122,17 +1285,44 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     </button>
   ) : null
 
+  // The placeholder doubles as the composer's only affordance for its
+  // trigger characters — nothing else on screen advertises them. Each hint
+  // is listed only when that trigger is actually wired up here, so the side
+  // chat (no file refs, no commands) doesn't promise pickers it lacks.
+  // Mobile keeps the short form: the pill is far narrower than the text.
+  const composerHints = useMemo(() => {
+    const hints: string[] = []
+    if (fileRefs.length > 0 || onFileRefsNeeded) {
+      hints.push(isMobile ? '@ files' : '@ tag files/folders')
+    }
+    if (composerSkills.length > 0) hints.push(isMobile ? '$ skills' : '$ use skills')
+    if (slashCommands.length > 0) hints.push(isMobile ? '/ commands' : '/ for commands')
+    return hints
+  }, [fileRefs.length, onFileRefsNeeded, composerSkills.length, slashCommands.length, isMobile])
+
   const effectivePlaceholder = shellMode
-    ? 'Enter shell command... git status'
+    ? 'Run a shell command — git status · Esc to exit'
     : disabled
       ? 'Waiting for response…'
       : isStreaming
-        ? 'Queue a follow-up or /stop…'
-        : placeholder
+        ? 'Working… type to queue a follow-up or interrupt'
+        : composerHints.length > 0
+          // Drop the caller's trailing ellipsis so the hint list reads as one
+          // sentence: "Ask anything — @ tag files/folders, / for commands".
+          ? `${placeholder.replace(/[…\s.]+$/, '')} — ${composerHints.join(', ')}`
+          : placeholder
 
-  const activePopupId = mentionMenuOpen ? mentionMenuId : snippetMenuOpen ? snippetMenuId : slashMenuOpen ? slashMenuId : undefined
+  const activePopupId = mentionMenuOpen
+    ? mentionMenuId
+    : skillMenuOpen
+      ? skillMenuId
+      : snippetMenuOpen
+        ? snippetMenuId
+        : slashMenuOpen ? slashMenuId : undefined
   const activeOptionId = mentionMenuOpen
     ? `${mentionMenuId}-option-${clampedMentionIndex}`
+    : skillMenuOpen
+      ? `${skillMenuId}-option-${clampedSkillIndex}`
     : snippetMenuOpen
       ? `${snippetMenuId}-option-${clampedSnippetIndex}`
     : slashMenuOpen
@@ -1175,10 +1365,18 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   )
 
   const composerSkillNames = useMemo(
+    () => new Set(composerSkills.map((skill) => skill.name)),
+    [composerSkills],
+  )
+
+  // Command heads the overlay may highlight: the first token of each
+  // non-skill entry, so ``/workflow release-check`` lights up its ``/workflow``
+  // and a mistyped ``/wrkflow`` stays plain.
+  const composerCommandNames = useMemo(
     () => new Set(
       slashCommands
-        .filter((cmd) => cmd.category === 'skill')
-        .map((cmd) => (cmd.displayName ?? cmd.id).replace(/^skill:/, '')),
+        .filter((cmd) => !cmd.isSeparator && cmd.category !== 'skill')
+        .map((cmd) => (cmd.displayName ?? cmd.id).split(' ')[0]),
     ),
     [slashCommands],
   )
@@ -1204,6 +1402,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         textareaRef={textareaRef}
         fileRefs={fileRefs}
         skillNames={composerSkillNames}
+        commandNames={composerCommandNames}
         hidden={isComposing}
       />
       <textarea
@@ -1229,10 +1428,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         onBlur={() => {
           const canMinimize = value.trim().length === 0 && files.length === 0
           onBlur?.(canMinimize)
-          // Close the picker on blur — clicks on its items use ``onMouseDown``
-          // with ``preventDefault`` (see below) so they fire before the
-          // textarea blurs and the menu still gets to commit its choice.
+          // Close the pickers on blur — clicks on their items use
+          // ``onMouseDown`` with ``preventDefault`` (see below) so they fire
+          // before the textarea blurs and the menu still gets to commit.
           setMentionRange(null)
+          setSkillRange(null)
         }}
         disabled={disabled || minimized}
         placeholder={minimized ? '' : effectivePlaceholder}
@@ -1275,7 +1475,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         // off. Same call Discord/Slack/ChatGPT make for the same reason.
         spellCheck={false}
         aria-label={shellMode ? 'Shell command input' : 'Message input'}
-        aria-expanded={mentionMenuOpen || snippetMenuOpen || slashMenuOpen}
+        aria-expanded={mentionMenuOpen || skillMenuOpen || snippetMenuOpen || slashMenuOpen}
         aria-controls={activePopupId}
         aria-activedescendant={activeOptionId}
       />
@@ -1346,6 +1546,47 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   </button>
                 )
               })}
+          </div>
+        )}
+
+        {/* $-skill picker — the shorthand notation for ``/skill:<name>``.
+            Only offered on the message's first content line, which is the
+            only place the backend reads a skill directive from. */}
+        {!minimized && skillMenuOpen && (
+          <div
+            id={skillMenuId}
+            role="listbox"
+            aria-label="Skills"
+            className="absolute bottom-full left-0 right-0 z-(--z-panel) mb-1 max-h-64 overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--color-surface)"
+          >
+            {filteredSkills.map((skill, idx) => {
+              const active = idx === clampedSkillIndex
+              return (
+                <button
+                  key={skill.name}
+                  id={`${skillMenuId}-option-${idx}`}
+                  ref={(node) => { skillOptionRefs.current[idx] = node }}
+                  role="option"
+                  aria-selected={active}
+                  onMouseDown={(e) => { e.preventDefault(); insertSkill(skill) }}
+                  className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
+                    active
+                      ? 'bg-(--bg-key) text-(--color-text)'
+                      : 'text-(--color-text-muted) hover:bg-(--bg-key)'
+                  }`}
+                >
+                  <span className="shrink-0 font-mono text-xs text-(--color-accent)">
+                    ${skill.name}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-(--color-text-2)">
+                    {skill.description}
+                  </span>
+                  <span className="shrink-0 rounded-md bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted) ring-1 ring-(--color-border)">
+                    skill
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
 
@@ -1542,6 +1783,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                           setShellMode(false)
                           setMentionRange(null)
                           setSnippetRange(null)
+                          setSkillRange(null)
                           requestAnimationFrame(() => textareaRef.current?.focus())
                         }}
                         disabled={disabled}

@@ -261,19 +261,13 @@ def _plugin_to_response(status: dict[str, object]) -> ServerStatusResponse:
         state=str(status["state"]),
         error=str(status["error"]) if status.get("error") else None,
         tool_names=tool_names,
-        started_at=(
-            str(status["started_at"]) if status.get("started_at") else None
-        ),
+        started_at=(str(status["started_at"]) if status.get("started_at") else None),
         config=None,
         source="plugin",
         plugin_installation_id=(
-            str(status["installation_id"])
-            if status.get("installation_id")
-            else None
+            str(status["installation_id"]) if status.get("installation_id") else None
         ),
-        plugin_name=(
-            str(status["plugin_name"]) if status.get("plugin_name") else None
-        ),
+        plugin_name=(str(status["plugin_name"]) if status.get("plugin_name") else None),
         plugin_server_name=(
             str(status["server_name"]) if status.get("server_name") else None
         ),

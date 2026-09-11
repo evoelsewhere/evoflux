@@ -66,6 +66,29 @@ Python falls back to Ruff when no LSP is available.
 The Problems hub stores a current workspace projection with dismiss/suppress
 actions. Static evidence is advisory: behavioral tests remain required.
 
+## Managed language servers
+
+Settings → Language servers lists every supported language with what EvoFlux
+can do about it. Fourteen have a pinned install recipe; the rest carry a hint
+for installing the server yourself. Recipes install through `npm`, `uv`, `go`,
+`rustup` or `gem`, in one of two scopes: `managed` stages the binary into the
+EvoFlux cache and resolves it without consulting PATH, while `toolchain` asks a
+toolchain that owns its own components — a rustup component, a gem — to add the
+server to itself, and confirms it by resolving the server on PATH afterwards.
+
+The row always shows what can be done and why not. A language with no recipe, a
+recipe whose prerequisite is absent, and an already-installed server are three
+different states with three different sentences, rather than three rows with no
+button. Detection reports when its file cap cut the walk short, because a
+truncated scan under-reports languages.
+
+An install outlives the request that starts it. `POST .../install` returns the
+job's state and the status endpoint reports `install_phase` per language, so a
+running install survives navigation and a failed one keeps its installer output
+on its own row until dismissed. Compiling installers get a longer budget than
+unpacking ones: `go install` builds gopls from source and measured 98s on a warm
+network, where npm and uv finish well inside 180s.
+
 ## Search Everywhere and editor context
 
 Search Everywhere combines bounded file/symbol/text sources for command-palette

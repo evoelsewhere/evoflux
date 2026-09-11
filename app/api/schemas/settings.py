@@ -20,6 +20,52 @@ class SandboxSettingsBody(BaseModel):
     max_output_bytes: int = Field(default=131072, ge=4096, le=1048576)
 
 
+class IgnoredSettingBody(BaseModel):
+    """A hand-edited ``settings.yaml`` value that failed validation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Field name within its section, e.g. ``summary_trigger_tokens``.
+    field: str
+    #: Why it was rejected, in the validator's own words.
+    message: str
+
+
+class ContextSettingsBody(BaseModel):
+    """Context-window tuning, global across sessions.
+
+    The writable fields mirror
+    :class:`app.core.runtime_settings.ContextSettings`, where ``null`` means
+    "use the built-in default". ``defaults`` reports what those defaults
+    currently are so the UI can label them without duplicating the cost
+    model in TypeScript.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary_trigger_tokens: int | None = Field(default=None, ge=20_000, le=2_000_000)
+    summary_max_tokens: int | None = Field(default=None, ge=2_000, le=120_000)
+    keep_recent_turns: int | None = Field(default=None, ge=0, le=10)
+    tool_result_offload_chars: int | None = Field(default=None, ge=2_000, le=500_000)
+    keep_recent_tool_batches: int | None = Field(default=None, ge=1, le=12)
+    #: Read-only: the value each unset field falls back to, keyed by field
+    #: name. These are the Work-mode built-ins.
+    defaults: dict[str, int] = Field(default_factory=dict)
+    #: Read-only: for the fields whose built-in differs in Coding, that value.
+    #: Absent keys mean both modes share the value in ``defaults``.
+    coding_defaults: dict[str, int] = Field(default_factory=dict)
+    #: Read-only: values this section declares in ``settings.yaml`` that failed
+    #: validation and are being ignored. Non-empty means the file says one
+    #: thing and the running sessions do another; saving here repairs it.
+    ignored: list[IgnoredSettingBody] = Field(default_factory=list)
+    #: Read-only: hard ceiling the compaction threshold is clamped to.
+    max_tokens: int = Field(default=0, ge=0)
+    #: Read-only: fraction of a model's context window the threshold is
+    #: clamped to, so a caller can name a model's own ceiling without
+    #: restating the rule.
+    context_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
 # ── Providers (Settings → Providers tab) ────────────────────────────────────
 
 
@@ -98,6 +144,9 @@ class ProviderInfo(BaseModel):
     fallback_models: list[str] = Field(default_factory=list)
     oauth_command: str = ""
     docs_url: str = ""
+    # This provider can mint its own key through a browser sign-in, so the
+    # UI offers that alongside the key field instead of only a docs link.
+    browser_login: bool = False
     # State the UI uses to decide whether to render "Connected" or a CTA.
     is_configured: bool = False
     # Static credential/config presence, before reachability probes. This lets
@@ -109,6 +158,25 @@ class ProviderInfo(BaseModel):
     # Provider-local model IDs shown in normal model pickers. Empty means all
     # discovered models for this provider are visible.
     visible_models: list[str] = Field(default_factory=list)
+    # How much EvoFlux knows about this provider: "builtin" for a curated
+    # integration, "plugin" for an installed one, "catalog" for a row derived
+    # from models.dev alone. The UI leads with the first two and keeps the
+    # long tail behind a search, because 160-odd rows is a directory, not a
+    # menu.
+    source: str = "builtin"
+    # Wire protocol, for catalog-derived rows where it is the only thing that
+    # says how the endpoint will be spoken to.
+    transport: str = ""
+    # Number of models the catalog lists for this provider, and how many of
+    # those cost nothing per token. Both are shown before connecting, which
+    # is the only useful thing to say about a provider you have no key for.
+    model_count: int = 0
+    free_model_count: int = 0
+    # Whether EvoFlux suggests connecting this one first, and where it sits
+    # in that suggestion order. With ~200 providers reachable, a flat
+    # alphabetical list makes the choice harder rather than easier.
+    recommended: bool = False
+    rank: int = 0
 
 
 class ProvidersListBody(BaseModel):
@@ -118,6 +186,35 @@ class ProvidersListBody(BaseModel):
 
     providers: list[ProviderInfo]
     has_any_configured: bool
+
+
+class ProviderModelDetail(BaseModel):
+    """What the model catalog knows about one listed model.
+
+    Every field is optional: a self-hosted checkpoint or a proxy that
+    renames models is simply absent from the catalog, and a row for it
+    should still list — just with less to say.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Catalog display name, e.g. ``MiMo-V2.5-Pro``.
+    name: str | None = None
+    description: str | None = None
+    family: str | None = None
+    #: ``beta`` / ``deprecated``.
+    status: str | None = None
+    release_date: str | None = None
+    knowledge: str | None = None
+    context_length: int | None = None
+    max_output_tokens: int | None = None
+    #: Zero per-token cost — a free tier, or included in a paid plan.
+    free: bool | None = None
+    vision: bool = False
+    tool_call: bool | None = None
+    attachment: bool | None = None
+    #: Selectable reasoning levels, empty when the model exposes no control.
+    thinking_levels: list[str] = Field(default_factory=list)
 
 
 class ProviderModelsResponse(BaseModel):
@@ -137,6 +234,11 @@ class ProviderModelsResponse(BaseModel):
     # derived from the shared model catalog. Empty when the catalog has no
     # pricing for the listed models.
     model_costs: dict[str, Any] = Field(default_factory=dict)
+    # Everything else the catalog knows about each listed model, keyed by
+    # provider-local model ID. The settings list used to render a bare
+    # `provider:model` string per row even though the catalog carries a
+    # name, a description, limits and capability flags for most of them.
+    model_details: dict[str, ProviderModelDetail] = Field(default_factory=dict)
 
 
 class ProviderUsageWindow(BaseModel):

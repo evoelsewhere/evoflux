@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 
+import { activityLabelForPhase } from '@/lib/activity-phase'
 import { AgentPane } from '@/components/AgentPane'
 import { AgentChip } from '@/components/ui/agent-chip'
 import { cn } from '@/lib/utils'
@@ -87,7 +88,7 @@ function latestActivity(stream: AgentStream): string {
   const last = blocks.at(-1)
   if (!last) {
     if (stream.status === 'working') {
-      return stream.phase === 'model_calling' ? 'Thinking…' : 'Preparing…'
+      return `${activityLabelForPhase(stream.phase)}…`
     }
     if (stream.status === 'offline') return 'Offline'
     return 'No activity yet'

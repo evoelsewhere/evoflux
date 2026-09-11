@@ -28,6 +28,8 @@ XAI_API_BASE = "https://api.x.ai/v1"
 
 
 class _XAICompletionsHandler(CompletionsHandler):
+    default_provider_id = "xai"
+
     def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
         headers = dict(self.headers)
         cache_key = merged.get("cache_affinity_key")
@@ -50,6 +52,8 @@ class XAIProvider(OpenAIProvider):
         max_tokens: Hard cap on completion tokens.
         model_kwargs: Extra request body fields passed as-is.
     """
+
+    default_provider_id = "xai"
 
     def __init__(
         self,

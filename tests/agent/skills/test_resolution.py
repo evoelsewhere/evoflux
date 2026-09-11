@@ -47,6 +47,13 @@ class _Provider:
         self.payload = payload
         self.usage = usage
         self.calls: list[tuple[list, list | None]] = []
+        self.cache_keys: list[str | None] = []
+
+    def cache_affinity_kwargs(self, cache_key: str | None) -> dict:
+        # Stands in for a provider that takes a routing key, so the resolver's
+        # constant-key behavior is observable.
+        self.cache_keys.append(cache_key)
+        return {"prompt_cache_key": cache_key} if cache_key else {}
 
     async def chat(self, messages, tools=None, **_kwargs):
         self.calls.append((messages, tools))
@@ -105,6 +112,36 @@ async def test_resolver_selects_one_exact_eligible_skill():
         "coding-investigation",
         "coding-debugging",
     }
+
+
+def test_resolver_payload_keeps_the_volatile_request_last():
+    """The catalog must precede the request so the prefix survives the turn.
+
+    Prompt caching keys on the leading byte run. ``skills`` is identical on
+    every turn and is the bulk of this payload, while ``request`` always
+    differs — printing ``request`` first left the resolver call with nothing
+    cacheable at all.
+    """
+    from app.agent.skills.resolution import _request_payload
+
+    records = [
+        _record("coding-debugging", "Debug a reproducible failure."),
+        _record("coding-investigation", "Investigate unfamiliar behavior."),
+    ]
+
+    first = _request_payload(request="one", mode="coding", records=records)
+    second = _request_payload(request="two", mode="coding", records=records)
+
+    assert first.index('"skills"') < first.index('"request"')
+
+    shared = 0
+    for left, right in zip(first, second):
+        if left != right:
+            break
+        shared += 1
+    # Everything up to the request value — the whole catalog — is identical.
+    assert shared == first.index('"request"') + len('"request":"')
+    assert shared > len(first) * 0.8
 
 
 @pytest.mark.asyncio

@@ -42,12 +42,14 @@ from app.agent.schemas.chat import (
 # ============================================================================
 
 
-def _make_provider(**kwargs) -> BedrockProvider:
+def _make_provider(
+    model: str = "anthropic.claude-sonnet-4-6", **kwargs
+) -> BedrockProvider:
     """Build a BedrockProvider with the boto3 client patched out."""
     with patch(
         "app.agent.providers.bedrock.bedrock._make_client", return_value=MagicMock()
     ):
-        return BedrockProvider(model="anthropic.claude-sonnet-4-6", **kwargs)
+        return BedrockProvider(model=model, **kwargs)
 
 
 # ============================================================================
@@ -651,9 +653,40 @@ class TestBuildRequestStripsProviderKeys:
 
     def test_no_additional_fields_key_when_all_stripped(self):
         """If all extra keys are stripped, additionalModelRequestFields must be absent."""
+        prov = _make_provider(model_kwargs={"responses_api": True})
+        messages = [HumanMessage(content="hi")]
+        req = prov._build_request(messages, tools=None, merged={"responses_api": True})
+        assert "additionalModelRequestFields" not in req
+
+    def test_thinking_level_becomes_reasoning_config(self):
+        """``thinking_level`` is translated, not stripped.
+
+        Converse expresses reasoning through ``reasoningConfig`` inside
+        additionalModelRequestFields. The raw ``thinking_level`` key must
+        never survive — it is not a Bedrock field and forwarding it raises
+        ValidationException — but the effort it names has to reach the model.
+        """
         prov = _make_provider(model_kwargs={"thinking_level": "high"})
         messages = [HumanMessage(content="hi")]
         req = prov._build_request(
             messages, tools=None, merged={"thinking_level": "high"}
         )
-        assert "additionalModelRequestFields" not in req
+        additional = req["additionalModelRequestFields"]
+        assert "thinking_level" not in additional
+        assert additional["reasoningConfig"] == {
+            "type": "adaptive",
+            "maxReasoningEffort": "high",
+            "display": "summarized",
+        }
+
+    def test_nova_thinking_level_uses_named_effort(self):
+        """Amazon's own models take a named effort, not a token budget."""
+        prov = _make_provider(model="amazon.nova-2-lite-v1:0")
+        messages = [HumanMessage(content="hi")]
+        req = prov._build_request(
+            messages, tools=None, merged={"thinking_level": "medium"}
+        )
+        assert req["additionalModelRequestFields"]["reasoningConfig"] == {
+            "type": "enabled",
+            "maxReasoningEffort": "medium",
+        }

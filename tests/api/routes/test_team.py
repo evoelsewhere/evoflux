@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -313,6 +314,10 @@ class TestTeamChatRoute:
             "app.api.routes.team.chat.webbridge_manager.has_active_extension",
             lambda: True,
         )
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.active_extensions",
+            lambda: [SimpleNamespace(extension_id="browser-1")],
+        )
 
         response = TestClient(app_with_team).post(
             "/api/team/chat",
@@ -321,6 +326,60 @@ class TestTeamChatRoute:
 
         assert response.status_code == 202
         assert "webbridge" in test_team.session_tags
+        assert "webbridge_target:browser-1" in test_team.session_tags
+
+    def test_team_chat_requires_browser_choice_when_multiple_webbridge_extensions(
+        self, app_with_team, test_team, monkeypatch
+    ):
+        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.active_extensions",
+            lambda: [
+                SimpleNamespace(extension_id="browser-1"),
+                SimpleNamespace(extension_id="browser-2"),
+            ],
+        )
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
+            lambda: True,
+        )
+
+        response = TestClient(app_with_team).post(
+            "/api/team/chat",
+            data={"message": "Use my browser", "webbridge_enabled": "true"},
+        )
+
+        assert response.status_code == 409
+        assert "Choose a connected browser" in response.json()["detail"]
+        test_team.handle_user_message.assert_not_awaited()
+
+    def test_team_chat_pins_webbridge_to_selected_extension(
+        self, app_with_team, test_team, monkeypatch
+    ):
+        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.active_extensions",
+            lambda: [
+                SimpleNamespace(extension_id="browser-1"),
+                SimpleNamespace(extension_id="browser-2"),
+            ],
+        )
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
+            lambda: True,
+        )
+
+        response = TestClient(app_with_team).post(
+            "/api/team/chat",
+            data={
+                "message": "Use my browser",
+                "webbridge_enabled": "true",
+                "webbridge_extension_id": "browser-2",
+            },
+        )
+
+        assert response.status_code == 202
+        assert "webbridge_target:browser-2" in test_team.session_tags
 
     def test_team_chat_disables_webbridge_and_uses_normal_session(
         self, app_with_team, test_team, monkeypatch
@@ -414,7 +473,35 @@ class TestTeamChatRoute:
         kwargs = test_team.handle_user_message.call_args.kwargs
         assert kwargs["service_tier"] == "fast"
 
-    def test_team_chat_ignores_fast_mode_for_non_codex_model(
+    def test_team_chat_ignores_fast_mode_for_a_model_without_that_tier(
+        self, app_with_team, test_team
+    ):
+        """Fast mode is a per-model fact, not a per-provider one.
+
+        This used to assert "non-Codex means no fast mode". Fast lanes are
+        now read from the model catalogue, so ``gpt-5.5`` genuinely has one
+        and Claude Sonnet 4.5 genuinely does not — which is the distinction
+        worth holding.
+        """
+        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
+        client = TestClient(app_with_team)
+        with patch(
+            "app.api.routes.team.chat.is_registered_model_id",
+            AsyncMock(return_value=True),
+        ):
+            response = client.post(
+                "/api/team/chat",
+                data={
+                    "message": "Hello team",
+                    "model": "anthropic:claude-sonnet-4-5",
+                    "fast_mode": "true",
+                },
+            )
+        assert response.status_code == 202
+        kwargs = test_team.handle_user_message.call_args.kwargs
+        assert kwargs["service_tier"] is None
+
+    def test_team_chat_honours_fast_mode_when_the_model_has_that_tier(
         self, app_with_team, test_team
     ):
         test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
@@ -433,7 +520,7 @@ class TestTeamChatRoute:
             )
         assert response.status_code == 202
         kwargs = test_team.handle_user_message.call_args.kwargs
-        assert kwargs["service_tier"] is None
+        assert kwargs["service_tier"] == "fast"
 
     def test_team_chat_empty_model_settings_reset(self, app_with_team, test_team):
         test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
@@ -815,11 +902,18 @@ class TestTeamChatFormValidation:
         )
         set_runtime_model_metadata(
             "codex:gpt-5.6-luna",
-            {"thinking": {"levels": ["low", "medium", "high", "xhigh", "max"]}},
+            {"thinking": {"levels": ["low", "medium", "high"]}},
         )
         try:
+            # ``ultra`` is EvoFlux's alias for ``max``, so a model that
+            # advertises either spelling accepts it. Comparing raw strings
+            # used to drop the alias, which made the strongest level a model
+            # published one it appeared not to support.
             await _validate_thinking_level_for_model("codex:gpt-5.6-sol", "ultra")
+            await _validate_thinking_level_for_model("codex:gpt-5.6-sol", "max")
 
+            # Luna tops out at ``high``, so the strongest efforts and the
+            # explicit off switch are both genuinely unavailable.
             with pytest.raises(HTTPException, match="does not support"):
                 await _validate_thinking_level_for_model("codex:gpt-5.6-luna", "ultra")
             with pytest.raises(HTTPException, match="does not support"):

@@ -9,6 +9,8 @@ import {
 } from '@/api/client'
 import type { PluginCredentialState, PluginInstallation } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useConfirm } from '@/hooks/use-confirm'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { queryKeys } from '@/queries/keys'
@@ -63,6 +65,11 @@ export function PluginCredentialsPanel({
   })
   const [draft, setDraft] = useState<DraftValues>({})
   const [busy, setBusy] = useState<'save' | 'clear' | null>(null)
+  const {
+    request: confirmRequest,
+    confirm: confirmAction,
+    close: closeConfirm,
+  } = useConfirm()
   const [missingKeys, setMissingKeys] = useState<Set<string>>(new Set())
   const missingRequiredLabels = query.data?.fields
     .filter((field) => field.required && !field.configured)
@@ -119,7 +126,6 @@ export function PluginCredentialsPanel({
   }
 
   const clear = async () => {
-    if (!window.confirm(`Clear all credentials for ${installation.name}?`)) return
     setBusy('clear')
     try {
       const credentials = await clearPluginCredentials(installation.id)
@@ -236,7 +242,13 @@ export function PluginCredentialsPanel({
               ))}
             </div>
             <div className="flex justify-end gap-2">
-              <Button variant="destructive" onClick={() => void clear()} disabled={busy !== null}>
+              <Button variant="destructive" onClick={() => confirmAction({
+                title: `Clear credentials for ${installation.name}?`,
+                description: 'Every stored value for this plugin is deleted. The plugin keeps running but anything that needs a credential will start failing until you enter them again.',
+                confirmLabel: 'Clear credentials',
+                destructive: true,
+                onConfirm: () => void clear(),
+              })} disabled={busy !== null}>
                 {busy === 'clear' ? <Loader2 className="animate-spin" /> : <Trash2 />} Clear
               </Button>
               <Button onClick={() => void save()} disabled={busy !== null}>
@@ -246,6 +258,7 @@ export function PluginCredentialsPanel({
           </div>
         )}
       </div>
+      <ConfirmDialog request={confirmRequest} onClose={closeConfirm} />
     </section>
   )
 }

@@ -50,6 +50,15 @@ async def test_lead_tool_persists_draft_without_approving_or_implementing(
                 }
             ],
             "risk_tier": "standard",
+            "delivery_flow": {
+                "mode": "direct",
+                "rationale": (
+                    "One documentation file in one repository, no schema, API or "
+                    "concurrency surface."
+                ),
+                "confidence": 0.9,
+                "required_by": [],
+            },
             "criteria": [
                 {
                     "id": "AC-1",
@@ -75,7 +84,8 @@ async def test_lead_tool_persists_draft_without_approving_or_implementing(
         confidence=0.9,
     )
 
-    assert "Specification draft persisted" in result
+    assert result.startswith("Accepted:")
+    assert "flow=direct" in result
     assert state.metadata["stop_after_tool_call"] == "easd_submit_specification"
     async with async_session_factory() as db:
         detail = await trace_service.run_detail(db, run.id)

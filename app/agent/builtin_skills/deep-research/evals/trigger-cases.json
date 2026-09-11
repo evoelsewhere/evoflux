@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Research the vector database landscape across sources and give me a cited report on which to pick.",
+    "should_trigger": true
+  },
+  {
+    "query": "Do a thorough investigation of how this regulation changed in the last year, with sources.",
+    "should_trigger": true
+  },
+  {
+    "query": "Compare twenty frontend frameworks on licensing, maintenance, and ecosystem, and cite everything.",
+    "should_trigger": true
+  },
+  {
+    "query": "What is the current version of Python?",
+    "should_trigger": false,
+    "near_miss": "One search answers it."
+  },
+  {
+    "query": "Run an experiment to see which prompt performs better on our eval set.",
+    "should_trigger": false,
+    "near_miss": "Measured experimentation, not source gathering."
+  },
+  {
+    "query": "Summarize the document I just attached.",
+    "should_trigger": false,
+    "near_miss": "The source is already supplied; no investigation is needed."
+  }
+]

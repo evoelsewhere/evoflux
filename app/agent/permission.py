@@ -98,14 +98,31 @@ class PermissionDeniedError(PermissionError):
 
 
 class PermissionRejectedError(PermissionError):
-    """Raised when the user explicitly rejects a permission request."""
+    """Raised when the user has refused a tool call.
 
-    def __init__(self, request_id: str) -> None:
+    Raised both when a request is rejected and when a later call repeats one
+    the user already refused this run. The second case never reaches the user
+    — re-prompting for a call they just declined is how a reject turns into an
+    endless loop — so the message has to be unambiguous on its own.
+    """
+
+    def __init__(
+        self, request_id: str, *, tool: str | None = None, repeated: bool = False
+    ) -> None:
         self.request_id = request_id
-        super().__init__(
-            f"The user rejected permission request {request_id}. "
-            "Do not retry the same call; ask the user how to proceed."
-        )
+        self.tool = tool
+        self.repeated = repeated
+        if repeated:
+            super().__init__(
+                f"The user already refused this exact '{tool}' call and was not "
+                "asked again. Do not retry it, and do not try to reach the same "
+                "effect another way. Stop and ask the user how to proceed."
+            )
+        else:
+            super().__init__(
+                f"The user rejected permission request {request_id}. "
+                "Do not retry the same call; ask the user how to proceed."
+            )
 
 
 # ── Rule evaluation ───────────────────────────────────────────────────────────
@@ -261,6 +278,13 @@ class PermissionService:
         self.stream_session_id = stream_session_id or session_id
         self.base_ruleset: Ruleset = list(base_ruleset or [])
         self.session_ruleset: Ruleset = []
+        #: (tool, pattern) pairs the user refused during this run. A reply of
+        #: "always" writes an allow rule and is honoured forever after; a
+        #: reply of "reject" used to write nothing at all, so the model could
+        #: — and did — re-issue the identical call and get a fresh prompt for
+        #: it, indefinitely. Cleared by ``set_mode``: changing mode is the
+        #: user explicitly reconsidering.
+        self.rejected: set[tuple[str, str]] = set()
         self.pending: dict[str, PermissionRequest] = {}
         # Optional observer fired when a blocking request is created (tests).
         self._on_ask = on_ask
@@ -309,6 +333,11 @@ class PermissionService:
 
         if not needs_ask:
             return
+
+        # Already refused this run: fail it outright rather than asking again.
+        if self._already_rejected(tool, patterns):
+            raise PermissionRejectedError("", tool=tool, repeated=True)
+
         if not important and not self._blocks(tool):
             return
 
@@ -336,7 +365,9 @@ class PermissionService:
             self.pending.pop(req.id, None)
 
         if reply == "reject":
-            raise PermissionRejectedError(req.id)
+            for p in req.patterns:
+                self.rejected.add((tool, p))
+            raise PermissionRejectedError(req.id, tool=tool)
 
         if reply == "always":
             for p in req.always_patterns:
@@ -344,10 +375,28 @@ class PermissionService:
                 if rule not in self.session_ruleset:
                     self.session_ruleset.append(rule)
 
+    def _already_rejected(self, tool: str, patterns: list[str]) -> bool:
+        """Whether every pattern of this call was refused earlier in the run.
+
+        Every, not any: a batch that mixes a refused command with new ones is
+        a different request and deserves its own prompt.
+        """
+        return bool(patterns) and all((tool, p) in self.rejected for p in patterns)
+
     def _blocks(self, tool: str) -> bool:
         """Whether an unresolved ``ask`` action blocks on the user in ``self.mode``."""
-        if self.mode in ("auto", "plan"):
+        if self.mode == "auto":
             return False
+        if self.mode == "plan":
+            # Only the tools plan mode actually records get a free pass —
+            # they are not going to run, so approving them is meaningless.
+            # Everything else executes for real and is asked about. Waving
+            # all of them through made "Plan mode" the single most permissive
+            # setting in the list for MCP tools, browser control and anything
+            # else the recorder does not cover.
+            from app.agent.plan import PLAN_INTERCEPTED_TOOLS
+
+            return tool not in PLAN_INTERCEPTED_TOOLS
         if self.mode == "accept-edits" and tool in _ACCEPT_EDITS_TOOLS:
             return False
         return True
@@ -375,6 +424,11 @@ class PermissionService:
         of the requests that were auto-resolved.
         """
         self.mode = mode
+        # Picking a different mode is the user reconsidering, so it lifts the
+        # refusals recorded under the old one. Without this a rejected call
+        # would stay dead for the rest of the run even after switching to a
+        # mode that approves everything — a dead end with no way out.
+        self.rejected.clear()
         resolved: list[str] = []
         for req_id, req in list(self.pending.items()):
             if mode == "bypass" or not self._blocks(req.tool):
@@ -417,6 +471,7 @@ class PermissionService:
                         session_id=self.session_id,
                         tool=req.tool,
                         patterns=req.patterns,
+                        always_patterns=req.always_patterns,
                         metadata=req.metadata,
                     )
                 ),

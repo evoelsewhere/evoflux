@@ -29,18 +29,15 @@ import { appendLiveTurnItems, getVisibleTurnWindow, partitionTurns } from '@/uti
 import { latestDirectUserBlockId } from '@/utils/blocks'
 import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
-import {
-  captureTranscriptPrependAnchor,
-  type TranscriptPrependAnchor,
-  usePinnedTranscript,
-} from '@/hooks/usePinnedTranscript'
+import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
 import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
-import { ActivityStatus } from './motion/ActivityStatus'
 import { TextSelectionAction } from './TextSelectionAction'
 import { TurnChangesCard } from './TurnChangesCard'
 import { UserMessageNavigationRail } from './UserMessageNavigationRail'
-import { StreamingTurnHeader } from './StreamingTurnHeader'
+import { AnimatePresence } from 'framer-motion'
+import { TurnStatusLine } from './TurnStatusLine'
+import { useHeldTrue } from '@/hooks/useHeldTrue'
 import { TranscriptHistoryControl } from './TranscriptHistoryControl'
 import { shouldShowPendingActivity } from '@/utils/transcript-layout'
 import {
@@ -51,6 +48,11 @@ import {
   shouldPrimeOlderHistory,
 } from '@/utils/transcript-history'
 import type { ContentBlock, TurnChangesPending } from '@/api/types'
+
+/** How long the status line outlives `isWorking`, in ms. Long enough to
+ *  bridge the pause between two activations, short enough that a finished
+ *  turn settles while the reader is still looking at the answer. */
+const STATUS_HOLD_MS = 900
 
 function findUserMessageNavigationAnchor(
   container: HTMLDivElement,
@@ -147,14 +149,8 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
   turnChanges,
   turnIsStreaming,
 }: AssistantTranscriptTurnProps) {
-  const turnStartedAt = useMemo(
-    () => blocks.find((block) => block.startedAt)?.startedAt,
-    [blocks],
-  )
-
   return (
     <div className={hasRunway ? 'oa-latest-turn-runway' : 'oa-transcript-turn'}>
-      {turnIsStreaming && <StreamingTurnHeader startedAt={turnStartedAt} />}
       <div className="space-y-2">
         <AssistantTurnContent
           blocks={blocks}
@@ -188,10 +184,6 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
 export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges }: AgentViewProps) {
   const [renderedTurnCount, setRenderedTurnCount] = useState(HISTORY_INITIAL_RENDERED_TURNS)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
-  const prevScrollHeightRef = useRef<number | null>(null)
-  const prevScrollTopRef = useRef<number | null>(null)
-  const prependAnchorRef = useRef<TranscriptPrependAnchor | null>(null)
-  const pendingRestoreRef = useRef(false)
   const historyLoadStartBlockCountRef = useRef<number | null>(null)
   const pendingUserNavigationRef = useRef<{
     messageId: string
@@ -278,15 +270,14 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     isError: Boolean(isError),
     isWorking,
   })
+  // Bridge the idle moment between two agent activations, so the line does
+  // not blink out in the middle of one answer. See `useHeldTrue`.
+  const showLiveStatus = useHeldTrue(isWorking || showPendingActivity, STATUS_HOLD_MS)
 
+  // No before-state to capture: `overflow-anchor` on the scroller holds
+  // the reader's position when turns are inserted above them.
   const loadOlderMessages = useCallback((element: HTMLDivElement | null) => {
-    if (element) {
-      prevScrollHeightRef.current = element.scrollHeight
-      prevScrollTopRef.current = element.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
-      pendingRestoreRef.current = true
-      historyLoadStartBlockCountRef.current = blocks.length
-    }
+    if (element) historyLoadStartBlockCountRef.current = blocks.length
     void useTeamStore.getState().loadOlderMessages()
   }, [blocks.length])
 
@@ -300,10 +291,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
     topLoadArmedRef.current = false
     if (hiddenTurnCount > 0) {
-      prevScrollHeightRef.current = element.scrollHeight
-      prevScrollTopRef.current = element.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
-      pendingRestoreRef.current = true
       setRenderedTurnCount((count) => Math.min(turnItems.length, count + HISTORY_RENDER_STEP))
       return
     }
@@ -315,7 +302,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   const {
     contentRef,
     detach: detachFromBottom,
-    restorePrependOffset,
+    sentinelRef,
     scrollRef,
     scrollToBottom,
     showScrollButton: showScrollBtn,
@@ -360,15 +347,8 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
   ])
 
   const showEarlierTurns = useCallback(() => {
-    const element = scrollRef.current
-    if (element) {
-      prevScrollHeightRef.current = element.scrollHeight
-      prevScrollTopRef.current = element.scrollTop
-      prependAnchorRef.current = captureTranscriptPrependAnchor(element)
-      pendingRestoreRef.current = true
-    }
     setRenderedTurnCount((count) => Math.min(turnItems.length, count + HISTORY_RENDER_STEP))
-  }, [scrollRef, turnItems.length])
+  }, [turnItems.length])
 
   const loadOlderFromControl = useCallback(() => {
     loadOlderMessages(scrollRef.current)
@@ -378,10 +358,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     topLoadArmedRef.current = true
     primedHistorySessionRef.current = null
     historyLoadStartBlockCountRef.current = null
-    pendingRestoreRef.current = false
-    prevScrollHeightRef.current = null
-    prevScrollTopRef.current = null
-    prependAnchorRef.current = null
     pendingUserNavigationRef.current = null
   }, [sessionId])
 
@@ -409,36 +385,11 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
     setRenderedTurnCount((count) => Math.max(count, requiredTurnCount))
   }, [detachFromBottom, scrollRef, turnItems.length, userMessageNavigationItems])
 
-  // Me restore scroll position after older messages are prepended.
-  // We track a "pending restore" flag separately from blocks.length so
-  // that SSE flushes (which also grow blocks) never accidentally trigger
-  // a scroll-position restore.
-  useLayoutEffect(() => {
-    if (
-      !pendingRestoreRef.current
-      || prevScrollHeightRef.current === null
-      || prevScrollTopRef.current === null
-    ) return
-    pendingRestoreRef.current = false
-    restorePrependOffset(
-      prevScrollHeightRef.current,
-      prevScrollTopRef.current,
-      prependAnchorRef.current,
-    )
-    prevScrollHeightRef.current = null
-    prevScrollTopRef.current = null
-    prependAnchorRef.current = null
-  }, [blocks.length, renderedTurnCount, restorePrependOffset])
-
   useEffect(() => {
     const startCount = historyLoadStartBlockCountRef.current
     if (loadingOlder || startCount === null) return
     historyLoadStartBlockCountRef.current = null
     if (blocks.length !== startCount) return
-    pendingRestoreRef.current = false
-    prevScrollHeightRef.current = null
-    prevScrollTopRef.current = null
-    prependAnchorRef.current = null
   }, [blocks.length, loadingOlder])
 
   useEffect(() => {
@@ -453,7 +404,10 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
 
   return (
     <div className="@container/agent-view relative flex min-h-0 flex-1 flex-col">
-    <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:none]">
+    {/* `overflow-anchor:auto` is load-bearing: the browser keeps the
+        reader's position when older turns mount above the viewport, which
+        used to be done by hand from captured scroll offsets. */}
+    <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto overscroll-contain [overflow-anchor:auto]">
       <div
         ref={contentRef}
         className={cn(
@@ -496,7 +450,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                      key={`turn-${item.startIndex}-${item.blocks[0]?.id ?? k}`}
                      blocks={item.blocks}
                      turnIsStreaming={turnIsStreaming}
-                     hasRunway={isTrailingTurn && !showPendingActivity}
+                     hasRunway={isTrailingTurn && !showLiveStatus}
                      canContinue={isTrailingTurn && !isWorking ? onContinue : undefined}
                      sessionId={sessionId}
                      latestMCPAppBlockIds={latestMCPAppBlockIds}
@@ -512,15 +466,16 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                  )
                 })}
 
-            {/* Keep one stable activity state across the POST → first SSE gap.
-             * Only a direct user message may reserve this pending runway;
-             * internal system/wait messages are deliberately excluded.
-             */}
-            {showPendingActivity && (
-              <div className="oa-active-turn-runway">
-                <ActivityStatus className="py-1 pl-0.5 text-xs" />
-              </div>
-            )}
+            {/* One status line for the whole turn, below the output it
+             * describes, with the scroll runway beneath it. It covers the
+             * POST → first SSE gap as well, so nothing has to hand over from
+             * one copy of the line to another mid-turn. */}
+            <AnimatePresence initial={false}>
+              {showLiveStatus && (
+                <TurnStatusLine blocks={currentBlocks} className="pl-0.5" />
+              )}
+            </AnimatePresence>
+            {showLiveStatus && <div className="oa-active-turn-runway" aria-hidden="true" />}
 
             <PendingMessageQueue />
 
@@ -531,6 +486,15 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
            )}
 
          </div>
+        {/* Whether this is visible is how the viewport knows it is at the
+            bottom, so nothing has to measure the scroller. Excluded from
+            scroll anchoring: as the last child it would otherwise be the
+            browser's preferred anchor and hold the view at the end. */}
+        <div
+          ref={sentinelRef}
+          aria-hidden="true"
+          className="h-px w-full shrink-0 [overflow-anchor:none]"
+        />
       </div>
     </div>
     <UserMessageNavigationRail

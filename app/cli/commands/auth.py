@@ -34,6 +34,13 @@ _PROVIDERS: dict[str, tuple[str, str]] = {
         "app.agent.providers.codex.oauth",
         "OpenAI Codex — PKCE OAuth (ChatGPT subscription)",
     ),
+    # Not an OAuth provider: the browser flow mints an ordinary API key and
+    # saves it to .env, so Xiaomi stays an api_key provider that happens to
+    # offer a way to fill the field without visiting the console.
+    "xiaomi": (
+        "app.agent.providers.xiaomi.oauth",
+        "Xiaomi MiMo — browser sign-in that provisions an API key",
+    ),
 }
 
 

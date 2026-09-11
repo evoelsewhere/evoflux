@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Before you build anything, write the design spec for this launch page: direction, structure, and the decisions behind it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Plan the deck's visual system and layout structure first, then we will implement it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Critique this dashboard against a principled design spec rather than surface tweaks.",
+    "should_trigger": true
+  },
+  {
+    "query": "Here is the approved DESIGN.md — build the page.",
+    "should_trigger": false,
+    "near_miss": "Specification exists; only implementation remains."
+  },
+  {
+    "query": "Change the button colour to match the brand blue.",
+    "should_trigger": false,
+    "near_miss": "A cosmetic tweak needs no blueprint."
+  },
+  {
+    "query": "Fix the failing layout test in the component suite.",
+    "should_trigger": false,
+    "near_miss": "Test repair, not design work."
+  }
+]

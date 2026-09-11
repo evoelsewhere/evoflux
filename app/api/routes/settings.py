@@ -6,13 +6,15 @@ Exposes the user-editable sandbox deny-list and the provider catalog.
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import os
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Response
 from loguru import logger
 
 from app.agent.sandbox_config import SandboxFileConfig, load_config, save_config
@@ -21,9 +23,11 @@ from app.core.runtime_settings import (
     BuiltInBrowserSettings,
     CodeReviewSettings,
     ConductorSettings,
+    ContextSettings,
     GitSettings,
     WebBridgeSettings,
     load_runtime_settings,
+    load_runtime_settings_report,
     provider_visible_models,
     save_runtime_settings,
     set_provider_visible_models,
@@ -34,8 +38,11 @@ if TYPE_CHECKING:
 from app.api.schemas.settings import (
     ConductorEnrollmentRequest,
     ConductorSettingsBody,
+    ContextSettingsBody,
+    IgnoredSettingBody,
     ProviderInfo,
     ProviderModelsRequest,
+    ProviderModelDetail,
     ProviderModelsResponse,
     ProviderSaveRequest,
     ProviderSaveResponse,
@@ -205,9 +212,76 @@ async def pull_conductor_resource(resource_id: str) -> dict:
 _PROVIDER_MODEL_CACHE_TTL_S = 60.0
 _provider_model_cache: dict[str, tuple[float, list[str]]] = {}
 
+#: Manual (``auto_connect=False``) providers are connected by an explicit
+#: "list models" request, never by a background poll, so their model list
+#: has no other source to fall back on. Keeping it in memory alone meant a
+#: daemon restart silently un-listed every catalog provider — the picker
+#: lost the models and any session already pinned to one was refused with
+#: "Choose a model from the registry". These ids are mirrored to disk.
+_manual_model_ids: set[str] = set()
+_manual_cache_loaded_from: str | None = None
+
+
+def _manual_models_persist(entry: "ProviderEntry") -> bool:
+    """Whether this provider's manual model list survives a restart.
+
+    A remote catalog provider's list is a fact about its API and stays
+    true, so re-listing after every restart is pure friction. A local
+    daemon's is a fact about a process that may since have stopped, and
+    Ollama deliberately stays disconnected until the user asks — so it
+    keeps its in-memory-only cache.
+    """
+    return not entry.get("auto_connect", True) and entry.get("kind") != "local"
+
+
+def _manual_model_cache_path() -> Path:
+    return Path(settings.EVOFLUX_CACHE_DIR or "") / "provider-models.json"
+
+
+def _load_manual_model_cache() -> None:
+    """Seed the in-memory cache from disk once per cache directory."""
+    global _manual_cache_loaded_from
+
+    path = _manual_model_cache_path()
+    if _manual_cache_loaded_from == str(path):
+        return
+    _manual_cache_loaded_from = str(path)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(raw, dict):
+        return
+    now = time.monotonic()
+    for provider_id, models in raw.items():
+        if not isinstance(provider_id, str) or not isinstance(models, list):
+            continue
+        cleaned = [m for m in models if isinstance(m, str) and m]
+        if not cleaned or provider_id in _provider_model_cache:
+            continue
+        _provider_model_cache[provider_id] = (now, cleaned)
+        _manual_model_ids.add(provider_id)
+
+
+def _save_manual_model_cache() -> None:
+    """Mirror the manual providers' model lists to disk. Best-effort."""
+    payload = {
+        provider_id: cached[1]
+        for provider_id in sorted(_manual_model_ids)
+        if (cached := _provider_model_cache.get(provider_id))
+    }
+    path = _manual_model_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except OSError as exc:
+        logger.debug("manual_model_cache_write_failed path={} error={}", path, exc)
+
 
 def _cached_provider_models(entry: "ProviderEntry") -> list[str] | None:
     """Return reusable discovered models without contacting the provider."""
+    if _manual_models_persist(entry):
+        _load_manual_model_cache()
     cached = _provider_model_cache.get(entry["id"])
     if cached is None:
         return None
@@ -224,6 +298,26 @@ def _cache_provider_models(entry: "ProviderEntry", models: list[str]) -> None:
         _provider_model_cache[entry["id"]] = (time.monotonic(), list(models))
     elif not entry.get("auto_connect", True):
         _provider_model_cache.pop(entry["id"], None)
+    if _manual_models_persist(entry):
+        _load_manual_model_cache()
+        if models:
+            _manual_model_ids.add(entry["id"])
+        else:
+            _manual_model_ids.discard(entry["id"])
+        _save_manual_model_cache()
+
+
+def _manual_provider_is_connected(entry: "ProviderEntry") -> bool:
+    """Whether a manual provider is usable, not merely once reachable.
+
+    Listing a catalog provider's models proves the endpoint answered the
+    key typed into the form — which is not the same as that key having
+    been *saved*. Requiring both keeps "connected" honest: a listed but
+    unsaved provider used to show as configured and offer its models to
+    the picker, and every turn using one was then refused because the
+    credential the request needed was never on disk.
+    """
+    return _provider_is_configured(entry) and bool(_cached_provider_models(entry))
 
 
 @router.get("/sandbox")
@@ -304,6 +398,89 @@ def _version_control_settings_body() -> VersionControlSettingsBody:
             cfg.code_reviews.require_successful_checks_before_merge
         ),
     )
+
+
+def _context_settings_body() -> ContextSettingsBody:
+    from app.agent.hooks.summarization import (
+        CODING_KEEP_LAST_ASSISTANTS,
+        DEFAULT_KEEP_LAST_ASSISTANTS,
+        DEFAULT_MAX_TOKEN_LENGTH,
+        MAX_PROMPT_TOKEN_THRESHOLD,
+        PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO,
+        cost_optimal_prompt_token_threshold,
+    )
+    from app.agent.hooks.tool_context_projection import (
+        CODING_KEEP_RECENT_BATCHES,
+        DEFAULT_KEEP_RECENT_BATCHES,
+    )
+    from app.agent.hooks.tool_result_offload import DEFAULT_CHAR_THRESHOLD
+
+    loaded, ignored = load_runtime_settings_report()
+    ctx = loaded.context
+    return ContextSettingsBody(
+        summary_trigger_tokens=ctx.summary_trigger_tokens,
+        summary_max_tokens=ctx.summary_max_tokens,
+        keep_recent_turns=ctx.keep_recent_turns,
+        tool_result_offload_chars=ctx.tool_result_offload_chars,
+        keep_recent_tool_batches=ctx.keep_recent_tool_batches,
+        defaults={
+            "summary_trigger_tokens": cost_optimal_prompt_token_threshold(),
+            "summary_max_tokens": DEFAULT_MAX_TOKEN_LENGTH,
+            "keep_recent_turns": DEFAULT_KEEP_LAST_ASSISTANTS,
+            "tool_result_offload_chars": DEFAULT_CHAR_THRESHOLD,
+            "keep_recent_tool_batches": DEFAULT_KEEP_RECENT_BATCHES,
+        },
+        # Two of the built-ins are mode-aware. Reporting only Work's would
+        # tell a Coding user their sessions keep 3 turns and 4 batches when
+        # they keep 2 and 3 — so name the Coding value wherever it differs
+        # and let the UI say so.
+        coding_defaults={
+            "keep_recent_turns": CODING_KEEP_LAST_ASSISTANTS,
+            "keep_recent_tool_batches": CODING_KEEP_RECENT_BATCHES,
+        },
+        # Only this section's rejects: another section's bad value is that
+        # page's business, not a warning to show here.
+        ignored=[
+            IgnoredSettingBody(
+                field=item.field.removeprefix("context."), message=item.message
+            )
+            for item in ignored
+            if item.field.startswith("context.")
+        ],
+        max_tokens=MAX_PROMPT_TOKEN_THRESHOLD,
+        context_ratio=PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO,
+    )
+
+
+@router.get("/context")
+async def get_context_settings() -> ContextSettingsBody:
+    try:
+        return _context_settings_body()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/context")
+async def update_context_settings(body: ContextSettingsBody) -> ContextSettingsBody:
+    """Replace the global context-window overrides.
+
+    ``defaults`` and ``max_tokens`` are derived and ignored on write; they
+    are echoed back so the response keeps one shape. Any field sent as
+    ``null`` reverts to its built-in default.
+    """
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.context = ContextSettings(
+        summary_trigger_tokens=body.summary_trigger_tokens,
+        summary_max_tokens=body.summary_max_tokens,
+        keep_recent_turns=body.keep_recent_turns,
+        tool_result_offload_chars=body.tool_result_offload_chars,
+        keep_recent_tool_batches=body.keep_recent_tool_batches,
+    )
+    save_runtime_settings(cfg)
+    return _context_settings_body()
 
 
 @router.get("/version-control")
@@ -609,7 +786,7 @@ async def _provider_is_reachable(entry: "ProviderEntry") -> bool:
     """
     provider_id = entry["id"]
     if not entry.get("auto_connect", True):
-        return bool(_cached_provider_models(entry))
+        return _manual_provider_is_connected(entry)
     if provider_id in _DAEMON_PROVIDER_IDS:
         # For api_key daemon providers (router9, cliproxy) the static
         # check additionally requires the env var. No env var → don't
@@ -631,12 +808,15 @@ async def list_providers() -> ProvidersListBody:
     """
     from app.agent.providers.catalog import all_providers
     from app.agent.providers.model_discovery import filter_agent_model_ids
+    from app.agent.providers.model_registry import provider_model_counts
+    from app.agent.providers.registry import is_recommended, provider_rank
 
     entries = all_providers()
+    counts = provider_model_counts()
     saved_states = [
         _provider_is_configured(entry)
         if entry.get("auto_connect", True)
-        else bool(_cached_provider_models(entry))
+        else _manual_provider_is_connected(entry)
         for entry in entries
     ]
     reachability = await asyncio.gather(
@@ -687,10 +867,17 @@ async def list_providers() -> ProvidersListBody:
                 ),
                 oauth_command=entry.get("oauth_command", ""),
                 docs_url=entry.get("docs_url", ""),
+                browser_login=bool(entry.get("browser_login", False)),
                 is_configured=is_configured and bool(live_models),
                 is_saved=is_saved,
                 is_reachable=bool(live_models) if is_configured else None,
                 visible_models=provider_visible_models(entry["id"]),
+                source=entry.get("source", "builtin"),
+                transport=entry.get("transport", ""),
+                model_count=counts.get(entry["id"], (0, 0))[0],
+                free_model_count=counts.get(entry["id"], (0, 0))[1],
+                recommended=is_recommended(entry["id"]),
+                rank=provider_rank(entry["id"]),
             )
         )
     has_any = any(p.is_configured for p in out)
@@ -713,6 +900,73 @@ def _build_overrides(
     # override must not clobber the saved value during discovery.
     overrides.update({name: value for name, value in body_extra.items() if value})
     return overrides
+
+
+def _model_cost_map(model_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Per-model pricing in USD per 1M tokens, for the models we know rates for.
+
+    Lets the Settings model listing show pricing next to each model without
+    an extra round-trip. Models with no known input *and* no known output
+    rate are omitted so the UI can tell "free" apart from "unknown".
+    """
+    from app.agent.providers.model_metadata import get_model_cost
+
+    costs: dict[str, dict[str, Any]] = {}
+    for model_id in model_ids:
+        cost = get_model_cost(model_id)
+        if cost.input is None and cost.output is None:
+            continue
+        costs[model_id] = {k: v for k, v in cost.to_dict().items() if v is not None}
+    return costs
+
+
+def _model_detail_map(
+    provider_id: str, model_ids: list[str]
+) -> dict[str, "ProviderModelDetail"]:
+    """Catalog detail per listed model, for the settings model list.
+
+    The list used to show a bare ``provider:model`` string per row, which
+    told a reader nothing they did not already type. The catalog carries a
+    name, a description, a context window and capability flags for most
+    models, and this is what puts them on the row.
+    """
+    from app.agent.providers.capabilities import get_capabilities
+    from app.agent.providers.model_metadata import (
+        get_model_metadata,
+        qualified_model_id,
+    )
+    from app.agent.providers.thinking import offered_levels_for
+
+    details: dict[str, ProviderModelDetail] = {}
+    for model_id in model_ids:
+        qualified = qualified_model_id(provider_id, model_id)
+        metadata = get_model_metadata(qualified)
+        features = metadata.features
+        cost = metadata.cost
+        detail = ProviderModelDetail(
+            name=features.name,
+            description=features.description,
+            family=features.family,
+            status=features.status,
+            release_date=features.release_date,
+            knowledge=features.knowledge,
+            context_length=metadata.limits.context_length,
+            max_output_tokens=metadata.limits.max_completion_tokens,
+            free=(
+                cost.input == 0 and cost.output == 0
+                if cost.input is not None and cost.output is not None
+                else None
+            ),
+            vision=get_capabilities(qualified).input.vision,
+            tool_call=features.tool_call,
+            attachment=features.attachment,
+            thinking_levels=list(offered_levels_for(qualified)),
+        )
+        # A row with nothing to add stays out of the payload rather than
+        # shipping a wall of nulls for every model.
+        if detail != ProviderModelDetail(vision=detail.vision) or detail.vision:
+            details[model_id] = detail
+    return details
 
 
 @router.post("/providers/{provider_id}/models")
@@ -746,25 +1000,171 @@ async def list_provider_models(
     if not entry.get("auto_connect", True):
         _cache_provider_models(entry, discovered)
     if discovered:
-        from app.agent.providers.model_metadata import get_model_cost as _get_cost
-
-        # Build per-model cost map so the UI can display pricing
-        # information (input/output/cache rates per 1M tokens) next to
-        # each model checkbox without additional round-trips.
-        model_costs: dict[str, dict[str, Any]] = {}
-        for mid in discovered:
-            cost = _get_cost(mid)
-            if cost.input_per_mtok is None and cost.output_per_mtok is None:
-                continue
-            model_costs[mid] = cost.model_dump(exclude_defaults=True)
-
         return ProviderModelsResponse(
             provider=provider_id,
             models=discovered,
             source="provider",
-            model_costs=model_costs,
+            model_costs=_model_cost_map(discovered),
+            model_details=_model_detail_map(provider_id, discovered),
         )
     return ProviderModelsResponse(provider=provider_id, models=[], source="provider")
+
+
+#: Where models.dev serves provider logos. Every provider in the catalog has
+#: one, drawn with ``fill="currentColor"`` so it inherits the UI's text
+#: colour in either theme.
+_LOGO_URL = "https://models.dev/logos/{provider_id}.svg"
+
+#: Markup an SVG has no business carrying. The renderer loads these through
+#: ``<img>``, where scripts do not execute, but a cached file is also written
+#: to disk and served back by this API — so anything active is rejected at
+#: the door rather than trusted to a downstream sandbox.
+_SVG_FORBIDDEN = ("<script", "javascript:", "<foreignobject", "onload=", "onerror=")
+
+_LOGO_MAX_BYTES = 256 * 1024
+
+
+def _logo_cache_path(provider_id: str) -> Path:
+    return Path(settings.EVOFLUX_CACHE_DIR) / "provider-logos" / f"{provider_id}.svg"
+
+
+def _logo_source_id(provider_id: str) -> str | None:
+    """The models.dev ID whose logo represents *provider_id*.
+
+    A curated provider borrows the logo of the catalog row it reads — Codex
+    shows OpenAI's mark, Vertex shows Google's — because that is whose API
+    it is. Returns ``None`` for an ID no provider claims, which is what
+    stops this endpoint being a fetch-anything proxy.
+    """
+    from app.agent.providers.model_registry import models_dev_provider_entry
+    from app.agent.providers.registry import resolve_provider
+
+    normalized = (provider_id or "").strip().lower()
+    if not normalized or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", normalized):
+        return None
+    # The registry's catalog ID is the right source here even where the
+    # model registry deliberately does not follow it: Codex reads OpenAI's
+    # rows without taking them over, but it is still OpenAI's API and so
+    # OpenAI's mark.
+    config = resolve_provider(normalized)
+    source = config.models_dev_provider_id if config else normalized
+    if models_dev_provider_entry(source) is None:
+        return None
+    return source
+
+
+def _read_cached_logo(path: Path) -> bytes | None:
+    try:
+        return path.read_bytes()
+    except (FileNotFoundError, OSError):
+        return None
+
+
+async def _fetch_logo(source_id: str) -> bytes | None:
+    """Fetch one provider logo, refusing anything that is not a plain SVG."""
+    url = _LOGO_URL.format(provider_id=source_id)
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
+            response = await client.get(url, headers={"User-Agent": "EvoFlux"})
+    except httpx.HTTPError as exc:
+        logger.debug("provider_logo_fetch_failed provider={} error={}", source_id, exc)
+        return None
+    if response.status_code != 200:
+        return None
+    if "svg" not in response.headers.get("content-type", "").lower():
+        return None
+    payload = response.content
+    if not payload or len(payload) > _LOGO_MAX_BYTES:
+        return None
+    lowered = payload[:4096].lower()
+    if any(marker.encode() in lowered for marker in _SVG_FORBIDDEN):
+        logger.warning(
+            "provider_logo_rejected provider={} reason=active-svg", source_id
+        )
+        return None
+    return payload
+
+
+#: A colour the caller may ask a logo to be tinted. Kept to hex so the value
+#: can never smuggle CSS into the SVG it is substituted into.
+_LOGO_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$")
+
+
+def _tint_logo(payload: bytes, color: str | None) -> bytes:
+    """Resolve a logo's ``currentColor`` to an explicit colour.
+
+    Nearly every mark models.dev publishes is drawn with
+    ``fill="currentColor"``, which is exactly right for an inlined SVG: it
+    inherits the surrounding text colour and works in either theme. Loaded
+    through ``<img>`` it is exactly wrong — the image is an isolated
+    document that CSS on the page cannot reach, so ``currentColor`` falls
+    back to its initial value and every logo renders black.
+
+    Inlining the markup instead would fix the colour by handing third-party
+    SVG to the DOM, so the substitution happens here: the caller passes the
+    colour it would have inherited, and the bytes leave with that colour
+    baked in. A handful of marks are full-colour artwork with no
+    ``currentColor`` at all; those pass through untouched.
+
+    Literal ``black`` is treated the same way. Three providers hardcode it,
+    which is invisible against a dark background.
+    """
+    if not color or not _LOGO_COLOR_RE.match(color):
+        return payload
+    encoded = color.encode()
+    tinted = payload.replace(b"currentColor", encoded)
+    tinted = tinted.replace(b'fill="black"', b'fill="' + encoded + b'"')
+    tinted = tinted.replace(b'stroke="black"', b'stroke="' + encoded + b'"')
+    return tinted
+
+
+@router.get("/providers/{provider_id}/logo", include_in_schema=False)
+async def get_provider_logo(
+    provider_id: str,
+    color: Annotated[str | None, Query()] = None,
+) -> Response:
+    """Serve a provider's logo, proxied and cached from models.dev.
+
+    The catalog publishes a mark for every provider it lists, which is the
+    only way a 200-provider picker gets icons without vendoring 200 files or
+    falling back to initials for most of them.
+
+    It is proxied rather than linked so the renderer makes no third-party
+    request, so a restricted network breaks nothing after the first fetch,
+    and so the same offline story as the rest of the catalog holds.
+
+    *color* is the colour the mark would have inherited had it been inlined;
+    see :func:`_tint_logo` for why an ``<img>`` cannot inherit it. Only the
+    response is tinted — the cache holds the original bytes, so one fetch
+    serves every theme.
+    """
+    source_id = _logo_source_id(provider_id)
+    if source_id is None:
+        raise HTTPException(status_code=404, detail="Unknown provider")
+
+    path = _logo_cache_path(source_id)
+    payload = _read_cached_logo(path)
+    if payload is None:
+        payload = await _fetch_logo(source_id)
+        if payload is None:
+            raise HTTPException(status_code=404, detail="No logo for this provider")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+        except OSError as exc:
+            logger.debug("provider_logo_cache_write_failed path={} error={}", path, exc)
+
+    return Response(
+        content=_tint_logo(payload, color),
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "public, max-age=604800",
+            # The payload is a validated static asset, but it is still
+            # third-party markup: forbid it sourcing anything of its own.
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get("/providers/{provider_id}/usage")
@@ -938,6 +1338,14 @@ async def save_provider(
         list(creds.keys()),
     )
 
+    # A workspace seeded before this save may still carry the placeholder
+    # model, which quietly keeps every member out of the roster. Adopt the
+    # lead's model for those now rather than at the next restart.
+    from app.agent.loader import backfill_placeholder_agent_models
+
+    agents_dir = Path(settings.AGENTS_DIR)
+    backfill_placeholder_agent_models(agents_dir, agents_dir / "coding")
+
     return ProviderSaveResponse(
         saved=True,
         is_first_provider=is_first,
@@ -988,6 +1396,11 @@ async def delete_provider(provider_id: str) -> dict[str, bool]:
         raise HTTPException(status_code=404, detail=f"Unknown provider '{provider_id}'")
 
     kind = entry.get("kind")
+
+    # Drop the discovered model list too: for a manual provider it is the
+    # only thing keeping it in the picker, and it outlives the process.
+    _cache_provider_models(entry, [])
+    _provider_model_cache.pop(provider_id, None)
 
     # OAuth providers: delete the token file
     if kind == "oauth":

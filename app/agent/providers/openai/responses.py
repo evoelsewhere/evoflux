@@ -22,6 +22,7 @@ from loguru import logger
 
 from app.agent.usage import usage_to_dict
 from app.agent.schemas.chat import (
+    EncryptedReasoningItem,
     AssistantMessage,
     ChatCompletionChunk,
     ChatCompletionChunkChoice,
@@ -39,14 +40,24 @@ from app.agent.schemas.chat import (
     ToolMessage,
     Usage,
 )
+from app.agent.providers import cache_probe
 from .sanitization import sanitize_openai_tool_pairs
+from app.agent.providers.registry import Transport
 
 if TYPE_CHECKING:
     pass
 
 
+#: Tier values that mean "serve this the normal way".
+_NO_SERVICE_TIER = frozenset({"", "auto", "default", "none", "off", "standard"})
+
+
 class ResponsesHandler:
     """Handles all interaction with /v1/responses."""
+
+    #: Registry ID this handler subclass serves; see the same attribute on
+    #: :class:`~app.agent.providers.openai.completions.CompletionsHandler`.
+    default_provider_id: str | None = None
 
     def __init__(
         self,
@@ -60,6 +71,16 @@ class ResponsesHandler:
         self.base_url = base_url
         self.headers = headers
         self.request_timeout = request_timeout
+        # Bound by ``LLMProviderBase.bind_provider_name``; see the same
+        # attribute on ``CompletionsHandler``.
+        self.provider_id: str | None = type(self).default_provider_id
+
+    @property
+    def qualified_model(self) -> str:
+        """``"provider:model"`` when the provider is known, else the model."""
+        if self.provider_id and ":" not in self.model:
+            return f"{self.provider_id}:{self.model}"
+        return self.model
 
     # ------------------------------------------------------------------
     # Message / tool conversion
@@ -100,6 +121,18 @@ class ResponsesHandler:
                     input_items.append({"role": "user", "content": msg.content})
 
             elif isinstance(msg, AssistantMessage):
+                # Ahead of everything else in the turn: the model emitted its
+                # reasoning before the text and the calls, and replaying the
+                # turn in a different order is a different history.
+                for reasoning_item in msg.reasoning_items or []:
+                    item: dict[str, Any] = {
+                        "type": "reasoning",
+                        "summary": reasoning_item.summary,
+                        "encrypted_content": reasoning_item.encrypted_content,
+                    }
+                    if reasoning_item.id:
+                        item["id"] = reasoning_item.id
+                    input_items.append(item)
                 if msg.content:
                     input_items.append({"role": "assistant", "content": msg.content})
                 if msg.tool_calls:
@@ -177,19 +210,54 @@ class ResponsesHandler:
             body["max_output_tokens"] = merged["max_tokens"]
 
         self.customize_thinking(merged, body)
+        # Reasoning is opaque and, with ``store: false``, gone unless asked
+        # for. Requesting the encrypted payload is what makes replaying it on
+        # the next call possible at all.
+        if self.wants_encrypted_reasoning(body):
+            body["include"] = ["reasoning.encrypted_content"]
+        body.update(self._service_tier_body(merged))
         return body
+
+    def wants_encrypted_reasoning(self, body: dict[str, Any]) -> bool:
+        """Whether to ask for reasoning payloads alongside the response.
+
+        Keyed off an explicit ``reasoning`` block by default: on the public
+        endpoint a model that was not asked to reason returns none, and a
+        pointless ``include`` is one more thing a gateway can reject.
+        Subclasses whose models always reason override this — the request
+        never mentions reasoning there, yet every response carries it.
+        """
+        return bool(body.get("reasoning"))
 
     def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
         """Apply provider-specific reasoning translation for the Responses API.
 
-        Default behaviour: map ``thinking_level`` to ``reasoning: {effort, summary}``.
-        Subclasses override to gate by model or use a different shape.
+        Delegates to
+        :func:`app.agent.providers.thinking.thinking_request_fields`, which
+        clamps the requested effort to what the catalog says this model
+        accepts before emitting ``reasoning: {effort, summary}``. Sending an
+        effort the model does not advertise (``xhigh`` to a model that tops
+        out at ``high``) is a 400, so clamping is what makes the shared
+        vocabulary safe across model generations.
 
         Mutates ``body`` in place.
         """
-        thinking_level = merged.get("thinking_level")
-        if thinking_level and thinking_level not in ("none", "off"):
-            body["reasoning"] = {"effort": thinking_level, "summary": "auto"}
+        from app.agent.providers.thinking import thinking_request_fields
+
+        if not self.provider_id:
+            thinking_level = merged.get("thinking_level")
+            if thinking_level and thinking_level not in ("none", "off"):
+                body["reasoning"] = {"effort": thinking_level, "summary": "auto"}
+            return
+
+        body.update(
+            thinking_request_fields(
+                self.provider_id,
+                self.model,
+                merged.get("thinking_level"),
+                transport=Transport.OPENAI_RESPONSES,
+            )
+        )
 
     def _extract_call_id_and_name(self, event: dict[str, Any]) -> tuple[str, str]:
         """Pull the tool-call ID and (optional) function name from a streaming event.
@@ -215,6 +283,7 @@ class ResponsesHandler:
         output = data.get("output", [])
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
+        reasoning_items: list[EncryptedReasoningItem] = []
         tool_calls: list[ToolCall] = []
 
         for item in output:
@@ -227,6 +296,14 @@ class ResponsesHandler:
                 for s in item.get("summary", []):
                     if s.get("type") == "summary_text":
                         reasoning_parts.append(s.get("text", ""))
+                if item.get("encrypted_content"):
+                    reasoning_items.append(
+                        EncryptedReasoningItem(
+                            id=item.get("id"),
+                            summary=item.get("summary", []),
+                            encrypted_content=item["encrypted_content"],
+                        )
+                    )
             elif item_type == "function_call":
                 tool_calls.append(
                     ToolCall(
@@ -247,6 +324,7 @@ class ResponsesHandler:
             reasoning_content=(
                 "\n\n".join(reasoning_parts) if reasoning_parts else None
             ),
+            reasoning_items=reasoning_items or None,
             tool_calls=tool_calls if tool_calls else None,
             extra={"usage": usage_dict} if usage_dict is not None else None,
         )
@@ -257,11 +335,10 @@ class ResponsesHandler:
         usage = self._usage_from_data(usage_data)
         return usage_to_dict(usage, self.usage_model_id)
 
-    @staticmethod
-    def _usage_from_data(usage_data: dict[str, Any]) -> Usage:
+    def _usage_from_data(self, usage_data: dict[str, Any]) -> Usage:
         input_details = usage_data.get("input_tokens_details", {}) or {}
         output_details = usage_data.get("output_tokens_details", {}) or {}
-        return Usage(
+        result = Usage(
             prompt_tokens=usage_data.get("input_tokens", 0),
             completion_tokens=usage_data.get("output_tokens", 0),
             total_tokens=usage_data.get("total_tokens", 0),
@@ -273,10 +350,60 @@ class ResponsesHandler:
             ),
             thoughts_tokens=output_details.get("reasoning_tokens") or None,
         )
+        cache_probe.record_usage(
+            provider=self.provider_id or self.default_provider_id,
+            model=self.model,
+            usage=result,
+        )
+        return result
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def _service_tier_body(self, merged: dict[str, Any]) -> dict[str, Any]:
+        """Body fields selecting an alternate service tier.
+
+        A tier the catalog (or the provider table) describes is applied from
+        its own patch. Anything else the caller names is forwarded verbatim
+        as ``service_tier``, because that is a real field on this endpoint —
+        OpenAI documents ``flex`` and ``priority`` alongside the tiers a
+        model advertises, and dropping an explicit one would silently ignore
+        the caller.
+        """
+        tier = merged.get("service_tier")
+        if not isinstance(tier, str) or not tier.strip():
+            return {}
+        if self.provider_id:
+            from app.agent.providers.options import service_tier_fields
+
+            body, _headers = service_tier_fields(self.provider_id, self.model, tier)
+            if body:
+                return body
+        normalized = tier.strip().lower()
+        if normalized in _NO_SERVICE_TIER:
+            return {}
+        return {"service_tier": normalized}
+
+    def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
+        """Per-request wire headers. Subclasses override to add their own.
+
+        Mirrors ``CompletionsHandler._request_headers`` so a provider only has
+        to implement the hook once and get it honoured on both endpoints.
+        """
+        headers = dict(self.headers)
+        if self.provider_id:
+            from app.agent.providers.options import (
+                provider_request_headers,
+                service_tier_fields,
+            )
+
+            headers.update(provider_request_headers(self.provider_id))
+            _body, tier = service_tier_fields(
+                self.provider_id, self.model, merged.get("service_tier")
+            )
+            headers.update(tier)
+        return headers
 
     async def chat(
         self,
@@ -285,11 +412,19 @@ class ResponsesHandler:
         merged: dict[str, Any],
     ) -> AssistantMessage:
         body = self.build_request(messages, tools, stream=False, merged=merged)
+        cache_probe.record(
+            body,
+            provider=self.provider_id or self.default_provider_id,
+            model=self.model,
+        )
         url = f"{self.base_url}/responses"
 
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                url, headers=self.headers, json=body, timeout=self.request_timeout
+                url,
+                headers=self._request_headers(merged),
+                json=body,
+                timeout=self.request_timeout,
             )
             if response.status_code >= 400:
                 logger.error(
@@ -307,13 +442,18 @@ class ResponsesHandler:
         merged: dict[str, Any],
     ) -> AsyncIterator[ChatCompletionChunk]:
         body = self.build_request(messages, tools, stream=True, merged=merged)
+        cache_probe.record(
+            body,
+            provider=self.provider_id or self.default_provider_id,
+            model=self.model,
+        )
         url = f"{self.base_url}/responses"
 
         async with httpx.AsyncClient() as client:
             async with client.stream(
                 "POST",
                 url,
-                headers=self.headers,
+                headers=self._request_headers(merged),
                 json=body,
                 timeout=self.request_timeout,
             ) as response:
@@ -374,6 +514,35 @@ class ResponsesHandler:
 
             if etype == "response.created":
                 response_id = event.get("response", {}).get("id", "")
+
+            elif etype == "response.output_item.done":
+                # Reasoning arrives complete on this event when
+                # ``include: ["reasoning.encrypted_content"]`` was requested.
+                # Delivered once, not as text deltas.
+                done_item = event.get("item", {})
+                if done_item.get("type") == "reasoning" and done_item.get(
+                    "encrypted_content"
+                ):
+                    yield ChatCompletionChunk(
+                        id=response_id,
+                        created=int(time.time()),
+                        model=self.model,
+                        choices=[
+                            ChatCompletionChunkChoice(
+                                index=0,
+                                delta=ChatCompletionDelta(
+                                    reasoning_item=EncryptedReasoningItem(
+                                        id=done_item.get("id"),
+                                        summary=done_item.get("summary", []),
+                                        encrypted_content=done_item[
+                                            "encrypted_content"
+                                        ],
+                                    ),
+                                ),
+                                finish_reason=None,
+                            )
+                        ],
+                    )
 
             elif etype == "response.output_item.added":
                 # Capture function name from the item header event
@@ -462,11 +631,15 @@ class ResponsesHandler:
                     tool_names[call_id] = inline_name
 
                 idx = tool_call_map[call_id]
-                # Always inject id/name so parallel tool streams are
-                # disambiguated — only the first delta needs the prefix,
-                # but the receiver must see the call_id on every chunk.
+                # `id` rides every chunk so parallel tool streams stay
+                # attributable. `name` rides only the opening chunk, per the
+                # OpenAI streaming convention: repeating it on later chunks
+                # feeds the accumulator's index-shift heuristics, which can
+                # then stamp this call's name onto the previous one.
                 emit_id = call_id or None
-                emit_name = inline_name or tool_names.get(call_id) if first_delta else tool_names.get(call_id)
+                emit_name = (
+                    (inline_name or tool_names.get(call_id)) if first_delta else None
+                )
 
                 yield ChatCompletionChunk(
                     id=response_id,

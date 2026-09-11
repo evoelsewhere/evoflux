@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
 from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
+
+
+# Close code for a bridge socket displaced by a newer attach on the same
+# session. Distinct from a transport drop so the client can tell the two
+# apart: one warrants a reconnect, the other does not.
+_WS_DISPLACED = 4409
 
 
 class DirectBrowserUnavailable(RuntimeError):
@@ -89,9 +96,19 @@ class DirectBrowserBridge:
     async def attach(self, session_id: str, websocket: WebSocket) -> None:
         connection = _Connection(websocket)
         previous = self._connections.get(session_id)
-        if previous is not None:
-            previous.fail_pending("Desktop browser reconnected")
         self._connections[session_id] = connection
+        if previous is not None:
+            # The newest attach wins — a client whose socket died half-open
+            # has to be able to take its session back, or the browser wedges
+            # until restart. But the displaced one used to be left believing
+            # it was still connected: its socket stayed open, its UI still
+            # read "connected", and every command it thought it owned went
+            # somewhere else. Close it with a code it can recognise so it
+            # says so instead of reconnecting into a takeover loop.
+            previous.fail_pending("Desktop browser reconnected")
+            logger.warning("direct_browser_displaced session_id={}", session_id)
+            with suppress(Exception):
+                await previous.websocket.close(code=_WS_DISPLACED)
         logger.info("direct_browser_connected session_id={}", session_id)
 
         try:

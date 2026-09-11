@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Script a browser run that logs in, walks the checkout flow, and screenshots each step.",
+    "should_trigger": true
+  },
+  {
+    "query": "Automate scraping this paginated table from the command line and save the rows.",
+    "should_trigger": true
+  },
+  {
+    "query": "Drive a real browser from the terminal to reproduce the reported form-submission failure.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write Playwright tests for the checkout flow.",
+    "should_trigger": false,
+    "near_miss": "Test authoring belongs to the testing workflow."
+  },
+  {
+    "query": "Open the preview and check whether the layout looks right.",
+    "should_trigger": false,
+    "near_miss": "Interactive inspection uses the EvoFlux browser surface."
+  },
+  {
+    "query": "Fetch the JSON from this public endpoint.",
+    "should_trigger": false,
+    "near_miss": "A plain request needs no browser."
+  }
+]

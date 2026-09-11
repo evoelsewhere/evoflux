@@ -202,3 +202,12 @@ class ToolResultOffloadHook(BaseAgentHook):
         dest = offload_dir / f"{tool_call_id}.txt"
         dest.write_text(content, encoding="utf-8")
         return dest
+
+
+def build_tool_result_offload_hook() -> "ToolResultOffloadHook":
+    """Construct the hook with the operator's threshold, if one is set."""
+    from app.agent.hooks.context_settings import resolve
+
+    return ToolResultOffloadHook(
+        char_threshold=resolve("tool_result_offload_chars", DEFAULT_CHAR_THRESHOLD)
+    )

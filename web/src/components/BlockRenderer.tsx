@@ -29,7 +29,7 @@ import { EasdCommandBlock } from './easd/EasdTechnicalText'
 import { extractSleepPrefix, formatTime, hasSleepLifecycle } from '@/utils/format'
 import { isConsolidatedDelegationMessage } from '@/utils/blocks'
 import { findCommittedMentions } from './InputBar.mentions'
-import { findSkillDirectives } from './InputBar.skills'
+import { findCommandDirectives, findSkillDirectives } from './InputBar.skills'
 import { resolveApiUrl } from '@/api/client'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
 import { parseEasdChatMessage } from '@/utils/easd-chat-message'
@@ -43,30 +43,23 @@ function shortModelName(modelId: string | null | undefined): string | null {
 }
 
 /**
- * Render user prose with ``@mention`` and ``/skill:<name>`` tokens
- * syntax-highlighted.
+ * Render user prose with ``@mention``, ``/command`` and skill
+ * (``/skill:<name>`` or ``$<name>``) tokens syntax-highlighted.
  *
  * Matches the InputBar's overlay convention so a message looks the same
  * after send as it did while composing:
  *   - folders (token ends in ``/``)      → ``--accent-orange-text``
  *   - files (everything else, default)   → ``--accent-blue-text``
+ *   - commands and skill directives      → ``--color-accent`` chip
  *
  * The slash heuristic is what the picker inserts; using it (rather than
  * resolving against ``fileRefs``) keeps highlighting stable for old
  * messages whose referenced paths may since have been renamed/removed.
  * ``findCommittedMentions`` without refs falls back to syntax-only range
- * detection — same code path the overlay relies on.
+ * detection — same code path the overlay relies on, and the directive
+ * helpers are likewise called without a roster because the skills and
+ * commands that were installed at send time aren't knowable here.
  */
-function findCommandDirectives(content: string): Array<{ start: number; end: number }> {
-  const ranges: Array<{ start: number; end: number }> = []
-  const pattern = /(^|\n)\/(?!skill:)[a-zA-Z0-9][a-zA-Z0-9._:-]*(?=\s|$)/g
-  for (const match of content.matchAll(pattern)) {
-    const start = (match.index ?? 0) + match[1].length
-    ranges.push({ start, end: start + match[0].length - match[1].length })
-  }
-  return ranges
-}
-
 function renderMentionSegments(content: string): React.ReactNode[] {
   const ranges = [
     ...findCommittedMentions(content, null).map((range) => ({
@@ -187,7 +180,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
   // Touch: full opacity. Desktop: reveal on group hover / focus-within.
   return (
     <div
-      className={compact ? 'group mb-2 flex justify-end' : 'group mb-4 flex justify-end'}
+      className={compact ? 'group flex justify-end' : 'group flex justify-end'}
     >
       <div className={`flex max-w-full flex-col items-end gap-2 ${compact ? 'md:max-w-[90%]' : 'md:max-w-[78%]'}`}>
          {/* Attachments */}

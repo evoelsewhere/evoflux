@@ -57,6 +57,8 @@ class OllamaProvider(OpenAIProvider):
         model_kwargs: Extra request body fields passed as-is.
     """
 
+    default_provider_id = "ollama"
+
     def __init__(
         self,
         api_key: str | SecretStr | None = None,

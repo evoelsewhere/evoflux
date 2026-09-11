@@ -83,6 +83,36 @@ pipelines, redirected output, command chains, or quoted shell scripts as Proof
 commands. If behavior needs a custom probe, add or identify a focused repository
 test and invoke it through a canonical test command.
 
+## Code graph navigation
+
+`code_context` is the primary discovery tool for this phase. The injected EASD
+context already names the Run directory and the accepted repository set, so do
+not probe for them and do not sweep for build manifests to guess the toolchain.
+
+- Turn each behavior the Intent names into one `action="search"` call, then
+  promote the returned declared identifier. Prose from the Intent is never an
+  exact-symbol query.
+- Cite `action="definition"` results as `source_refs`. A specification grounded
+  in a symbol's real declaration survives review; one grounded in a filename
+  does not.
+- Size the change with `action="callers"` and `action="references"` before
+  writing `impact_targets`. Every target needs a reason traceable to a resolved
+  relationship, not an assumption about layout.
+- Use `action="impact"` only when arguing a transitive claim, such as a
+  `cross_layer` risk tier or a matched planned-flow condition. Record which
+  symbols carried the argument.
+- Ambiguity is evidence: multiple definitions for one name is exactly the kind
+  of finding worth a clarifying question before you choose behavior.
+
+Read `references/code-context-contract.md` for full action selection and
+interpretation rules. It is normative here. In short: call `code_context`
+with one `action="search"` to expose a declared identifier, then skip
+further search and call the exact-symbol action on that identifier; start
+at depth 1 unless the question is explicitly transitive; and never bulk
+scan. Keep `refresh=true` for the first indexed query and after any edit,
+and use `refresh=false` only for an immediate follow-up that intentionally
+reuses the returned index version. Do not repeat an unchanged query.
+
 ## Submit for human review
 
 When the run is in authoring state and the lead has the typed

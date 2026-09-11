@@ -28,6 +28,8 @@ import {
 } from '@/api/client'
 import type { PluginInspection, PluginWorkspaceEntry } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { useConfirm } from '@/hooks/use-confirm'
 import { Input } from '@/components/ui/input'
 import { FileTypeIcon, FolderTypeIcon } from '@/components/FileTypeIcon'
 import { languageForExt, useMonacoTheme, useSafeMonaco } from '@/hooks/useMonacoTheme'
@@ -183,6 +185,11 @@ export function PluginWorkspaceEditor({
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(new Set())
   const [treeInitializedFor, setTreeInitializedFor] = useState<string | null>(null)
   const [focusedPath, setFocusedPath] = useState('plugin.json')
+  const {
+    request: confirmRequest,
+    confirm: confirmAction,
+    close: closeConfirm,
+  } = useConfirm()
 
   const tree = useQuery({
     queryKey: ['plugin-workspace', root],
@@ -204,15 +211,31 @@ export function PluginWorkspaceEditor({
     setTreeInitializedFor(root)
   }, [root, tree.data, treeInitializedFor])
 
-  const confirmDiscard = useCallback(() => (
-    !dirty || window.confirm(`Discard unsaved changes to ${selectedPath}?`)
-  ), [dirty, selectedPath])
+  // The dialog answers asynchronously, so a discard guard cannot return a
+  // boolean the way `window.confirm` did. It takes the continuation
+  // instead, and runs it straight away when there is nothing to lose.
+  const guardDiscard = useCallback((proceed: () => void) => {
+    if (!dirty) {
+      proceed()
+      return
+    }
+    confirmAction({
+      title: 'Discard unsaved changes?',
+      description: `${selectedPath} has edits that were never saved. They are lost if you leave now.`,
+      confirmLabel: 'Discard changes',
+      cancelLabel: 'Keep editing',
+      destructive: true,
+      onConfirm: proceed,
+    })
+  }, [confirmAction, dirty, selectedPath])
 
   const selectFile = useCallback((path: string) => {
-    if (path === selectedPath || !confirmDiscard()) return
-    setFocusedPath(path)
-    setSelectedPath(path)
-  }, [confirmDiscard, selectedPath])
+    if (path === selectedPath) return
+    guardDiscard(() => {
+      setFocusedPath(path)
+      setSelectedPath(path)
+    })
+  }, [guardDiscard, selectedPath])
 
   const selectTreeEntry = useCallback((entry: PluginWorkspaceEntry) => {
     setFocusedPath(entry.path)
@@ -306,11 +329,10 @@ export function PluginWorkspaceEditor({
     return () => window.removeEventListener('keydown', handleKeyDown)
   })
 
-  const createEntry = async () => {
+  const createEntry = () => {
     const path = newPath.trim().replace(/^\/+|\/+$/g, '')
     if (!newKind || !path) return
-    if (newKind === 'file' && !confirmDiscard()) return
-    await run('create-entry', async () => {
+    const create = () => void run('create-entry', async () => {
       const result = await createPluginWorkspaceEntry(root, path, newKind)
       onInspection(result.inspection)
       setNewKind(null)
@@ -321,11 +343,26 @@ export function PluginWorkspaceEditor({
         setSelectedPath(path)
       }
     })
+    // Creating a file opens it, which would drop the current buffer.
+    if (newKind === 'file') guardDiscard(create)
+    else create()
+  }
+
+  const requestDeleteEntry = () => {
+    if (!focusedEntry || focusedEntry.path === 'plugin.json') return
+    confirmAction({
+      title: `Delete ${focusedEntry.path}?`,
+      description: focusedEntry.kind === 'directory'
+        ? 'The folder and everything inside it are removed from the plugin package. This cannot be undone.'
+        : 'The file is removed from the plugin package. This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: () => void deleteEntry(),
+    })
   }
 
   const deleteEntry = async () => {
     if (!focusedEntry || focusedEntry.path === 'plugin.json') return
-    if (!window.confirm(`Delete ${focusedEntry.path}?`)) return
     await run('delete-entry', async () => {
       const result = await deletePluginWorkspaceEntry(root, focusedEntry.path)
       onInspection(result.inspection)
@@ -360,7 +397,7 @@ export function PluginWorkspaceEditor({
           <div className="min-w-0">
             <button
               type="button"
-              onClick={() => confirmDiscard() && onBack()}
+              onClick={() => guardDiscard(onBack)}
               className="mb-1 inline-flex items-center gap-1 text-xs text-(--color-text-muted) hover:text-(--color-text)"
             >
               <ArrowLeft size={13} /> Plugin Center
@@ -405,7 +442,7 @@ export function PluginWorkspaceEditor({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => void deleteEntry()}
+                onClick={requestDeleteEntry}
                 disabled={!focusedEntry || focusedPath === 'plugin.json' || busy !== null}
                 aria-label="Delete selected plugin entry"
               >
@@ -466,7 +503,7 @@ export function PluginWorkspaceEditor({
                 value={newPath}
                 onChange={(event) => setNewPath(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') void createEntry()
+                  if (event.key === 'Enter') createEntry()
                   if (event.key === 'Escape') setNewKind(null)
                 }}
                 placeholder={newKind === 'file' ? 'path/file.ts' : 'path/folder'}
@@ -474,7 +511,7 @@ export function PluginWorkspaceEditor({
               />
               <div className="flex justify-end gap-1">
                 <Button size="sm" variant="ghost" onClick={() => setNewKind(null)}>Cancel</Button>
-                <Button size="sm" onClick={() => void createEntry()} disabled={!newPath.trim() || busy !== null}>Add</Button>
+                <Button size="sm" onClick={createEntry} disabled={!newPath.trim() || busy !== null}>Add</Button>
               </div>
             </div>
           )}
@@ -496,6 +533,7 @@ export function PluginWorkspaceEditor({
           </div>
         </aside>}
       </div>
+      <ConfirmDialog request={confirmRequest} onClose={closeConfirm} />
     </div>
   )
 }
