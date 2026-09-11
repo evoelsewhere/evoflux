@@ -332,6 +332,42 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
                   }
                 : undefined,
             )
+
+            // Fallback: when show_widget's widget_delta events never arrived
+            // (e.g. silent exception in the backend push), construct the widget
+            // block from the tool-call arguments at tool_end time.
+            if (toolName === 'show_widget' && toolCallId) {
+              const blocks = draft.agentStreams[agent].currentBlocks
+              const hasWidget = blocks.some(
+                (b) => b.type === 'widget' && b.toolCallId === toolCallId,
+              )
+              if (!hasWidget) {
+                const toolBlock = blocks.find(
+                  (b) => b.type === 'tool' && b.toolCallId === toolCallId,
+                )
+                let parsedArgs: Record<string, unknown> | undefined
+                try {
+                  parsedArgs =
+                    typeof toolBlock?.toolArgs === 'string'
+                      ? JSON.parse(toolBlock.toolArgs)
+                      : (toolBlock?.toolArgs as Record<string, unknown> | undefined)
+                } catch {
+                  // malformed args — skip
+                }
+                const widgetCode = parsedArgs?.widget_code as string | undefined
+                if (widgetCode) {
+                  blocks.push({
+                    id: generateBlockId(),
+                    type: 'widget',
+                    content: '',
+                    widgetHtml: widgetCode,
+                    toolCallId,
+                    isStreaming: false,
+                    title: (parsedArgs?.title as string) || 'Widget',
+                  })
+                }
+              }
+            }
           })
         }
         if (isBackgroundCompletion(toolName, result)) {

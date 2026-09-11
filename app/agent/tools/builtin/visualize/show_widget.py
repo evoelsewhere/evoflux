@@ -138,7 +138,10 @@ async def show_widget(
 
     except Exception:
         # Log but don't fail — widget will render on final result
-        pass
+        import logging
+        logging.getLogger(__name__).warning(
+            "show_widget: failed to push widget_delta events", exc_info=True,
+        )
 
     return {
         "success": True,
