@@ -18,6 +18,7 @@ from app.conductor.client import (
     redact_telemetry,
 )
 from app.conductor.models import (
+    EffectiveResourceVersion,
     ManagedResourceRecord,
     Manifest,
     RegistrationRequest,
@@ -1107,3 +1108,130 @@ def _telemetry_event(installation_id: str, event_id: str) -> dict[str, object]:
         TelemetryField.REPORTED_AT: "2026-08-18T00:00:00+00:00",
         TelemetryField.TOKENS_IN: 10,
     }
+
+
+def test_cache_write_tokens_survive_redaction() -> None:
+    """The redaction gate drops any field whose name contains "token" unless
+    it is listed in TELEMETRY_NUMERIC_TOKEN_FIELDS. Forgetting that listing
+    would silently strip cache-write tokens on the way out, leaving Conductor
+    unable to price the cache-write premium — with no error anywhere.
+    """
+
+    cleaned = redact_telemetry(
+        {
+            "event_type": "model_call",
+            "tokens_in": 1_000_000,
+            "cache_read_tokens": 200_000,
+            "cache_write_tokens": 300_000,
+            "reasoning_tokens": 0,
+            "tool_use_tokens": 0,
+            "service_tier": "priority",
+        }
+    )
+
+    assert cleaned["cache_write_tokens"] == 300_000
+    assert cleaned["cache_read_tokens"] == 200_000
+    assert cleaned["service_tier"] == "priority"
+
+
+def test_secret_bearing_token_fields_are_still_dropped() -> None:
+    """Widening the numeric-token allowlist must not widen it far enough to
+    let an actual credential through.
+    """
+
+    cleaned = redact_telemetry(
+        {
+            "tokens_in": 10,
+            "access_token": "secret",
+            "refresh_token": "secret",
+            "cache_write_tokens": 5,
+        }
+    )
+
+    assert "access_token" not in cleaned
+    assert "refresh_token" not in cleaned
+    assert cleaned["cache_write_tokens"] == 5
+
+
+def _bundle_version(files: dict[str, str], *, with_manifest: bool = True) -> dict:
+    """A version payload shaped the way Conductor publishes one."""
+    manifest = [
+        {
+            "path": path,
+            "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "size": len(content.encode("utf-8")),
+            "media_type": "text/markdown",
+            "executable": False,
+        }
+        for path, content in files.items()
+    ]
+    payload: dict = {
+        "storage_schema_version": 2,
+        "files": [{"path": path, "content": content} for path, content in files.items()],
+    }
+    if with_manifest:
+        payload["bundle"] = {"kind": "skill", "schema_version": 2, "files": manifest}
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return {
+        "project_id": str(uuid.uuid4()),
+        "resource_id": str(uuid.uuid4()),
+        "version_id": str(uuid.uuid4()),
+        "kind": "skill",
+        "slug": "integration-ping",
+        "version": "0.1.0",
+        "release_channel": "published",
+        "payload": payload,
+        # Conductor addresses a release by its ZIP, so these describe the
+        # artifact — deliberately not the canonical JSON above.
+        "sha256": hashlib.sha256(b"the zip bytes").hexdigest(),
+        "size": 664,
+        "_canonical": {
+            "sha256": hashlib.sha256(canonical).hexdigest(),
+            "size": len(canonical),
+        },
+    }
+
+
+def test_bundle_files_are_verified_against_the_manifest_not_the_payload_json() -> None:
+    """Conductor's `size`/`sha256` describe the bundle ZIP.
+
+    Verifying them against the canonical JSON of `payload` failed every
+    managed release, so no governed resource could ever be applied.
+    """
+    from app.conductor.client import _verify_managed_payload
+
+    raw = _bundle_version({"SKILL.md": "# Ping\n", "reference/notes.md": "# Notes\n"})
+    raw.pop("_canonical")
+    version = EffectiveResourceVersion.model_validate(raw)
+    _verify_managed_payload(version)
+
+
+def test_tampered_bundle_content_is_refused_and_names_the_file() -> None:
+    from app.conductor.client import _verify_managed_payload
+
+    raw = _bundle_version({"SKILL.md": "# Ping\n", "reference/notes.md": "# Notes\n"})
+    raw.pop("_canonical")
+    for entry in raw["payload"]["files"]:
+        if entry["path"] == "reference/notes.md":
+            entry["content"] = "# Notes\nsomething else\n"
+    version = EffectiveResourceVersion.model_validate(raw)
+    with pytest.raises(ValueError, match="reference/notes.md"):
+        _verify_managed_payload(version)
+
+
+def test_a_release_without_a_bundle_manifest_still_verifies_the_payload_digest() -> None:
+    """Releases published before bundles carry a digest over the payload JSON."""
+    from app.conductor.client import _verify_managed_payload
+
+    raw = _bundle_version({"SKILL.md": "# Ping\n"}, with_manifest=False)
+    canonical = raw.pop("_canonical")
+    raw["sha256"] = canonical["sha256"]
+    raw["size"] = canonical["size"]
+    version = EffectiveResourceVersion.model_validate(raw)
+    _verify_managed_payload(version)
+
+    raw["sha256"] = hashlib.sha256(b"wrong").hexdigest()
+    with pytest.raises(ValueError, match="digest mismatch"):
+        _verify_managed_payload(EffectiveResourceVersion.model_validate(raw))
