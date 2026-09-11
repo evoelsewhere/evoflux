@@ -334,11 +334,8 @@ async def load_skill(
 
             record_skill_usage(
                 skill_name,
-                source="manual",
-                mode=_mode,
                 outcome="failure",
                 duration_ms=int((time.perf_counter() - started_at) * 1000),
-                failure_category=type(exc).__name__,
             )
         except Exception:  # noqa: BLE001 - telemetry cannot block activation
             pass
@@ -348,8 +345,6 @@ async def load_skill(
 
         record_skill_usage(
             skill_name,
-            source="manual",
-            mode=_mode,
             duration_ms=int((time.perf_counter() - started_at) * 1000),
         )
     except Exception:  # noqa: BLE001 - telemetry cannot block activation

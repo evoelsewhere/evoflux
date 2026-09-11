@@ -180,7 +180,6 @@ class RegistrationRequest(BaseModel):
     display_name: str
     platform: Literal["macos", "linux", "windows"]
     evoflux_version: str
-    workspace_association: str | None = None
 
 
 class RegisteredInstallation(BaseModel):

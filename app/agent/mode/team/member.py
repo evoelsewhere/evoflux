@@ -1224,6 +1224,9 @@ class TeamMemberBase(abc.ABC):
         )
         runtime_provider: LLMProviderBase | None = None
         runtime_model = None
+        # The lane the calls will actually be billed under, for telemetry.
+        # Set only where the tier was really selected, never merely asked for.
+        runtime_service_tier: str | None = None
         session_model = session_row.model if session_row is not None else None
         session_thinking_level = (
             session_row.thinking_level if session_row is not None else None
@@ -1324,6 +1327,7 @@ class TeamMemberBase(abc.ABC):
             # a model without one would be forwarded as an unknown field.
             if last_service_tier and get_model_mode(effective_model, last_service_tier):
                 model_kwargs["service_tier"] = last_service_tier
+                runtime_service_tier = last_service_tier
             runtime_provider = self._team._provider_factory(
                 effective_model,
                 model_kwargs=model_kwargs,
@@ -1378,6 +1382,7 @@ class TeamMemberBase(abc.ABC):
             ConductorTelemetryHook(
                 agent_name=self.name,
                 model_id=runtime_model or self.agent.model_id,
+                service_tier=runtime_service_tier,
             ),
         )
         if self.db_factory:

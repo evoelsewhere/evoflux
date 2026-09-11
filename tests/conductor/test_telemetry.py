@@ -20,7 +20,6 @@ from app.conductor.constants.telemetry import (
     TelemetryEventStatus,
     TelemetryEventType,
     TelemetryField,
-    TelemetryToolCategory,
 )
 from app.conductor.managed_state import ManagedResourceStore
 from app.conductor.models import ManagedResourceRecord
@@ -93,6 +92,82 @@ def _configure(
 
 
 @pytest.mark.asyncio
+async def test_model_calls_carry_the_billing_lane_and_tool_calls_do_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Conductor prices a lane above the model's headline rate.
+
+    The hook is given the tier the request actually selected, never one that
+    was merely asked for, so Conductor cannot charge a fast-lane rate for a
+    call that was served at the ordinary one. A tool call is not billed, so
+    it carries no lane at all.
+    """
+
+    installation_id = str(uuid.uuid4())
+    _configure(tmp_path, monkeypatch, installation_id)
+    outbox = TelemetryOutbox(tmp_path / "outbox.json")
+    hook = ConductorTelemetryHook(
+        agent_name="lead",
+        model_id="anthropic:claude-sonnet-4",
+        service_tier="fast",
+        outbox=outbox,
+    )
+    ctx = RunContext(session_id="session-1", run_id="request-1", agent_name="lead")
+    state = AgentState(messages=[])
+    request = ModelRequest(messages=(), system_prompt="prompt")
+    await hook.before_agent(ctx, state)
+
+    async def model_handler(_request: ModelRequest) -> AssistantMessage:
+        return AssistantMessage(
+            content="ok",
+            extra={"usage": {"input": 10, "output": 5}},
+        )
+
+    await hook.wrap_model_call(ctx, state, request, model_handler)
+
+    tool_call = ToolCall(
+        id="tool-1",
+        function=FunctionCall(name="read_file", arguments="{}"),
+    )
+
+    async def tool_handler(_ctx, _state, _call) -> str:
+        return "contents"
+
+    await hook.wrap_tool_call(ctx, state, tool_call, tool_handler)
+
+    events = outbox.peek(installation_id)
+    assert events[0][TelemetryField.EVENT_TYPE] == TelemetryEventType.MODEL_CALL
+    assert events[0][TelemetryField.SERVICE_TIER] == "fast"
+    assert events[1][TelemetryField.EVENT_TYPE] == TelemetryEventType.TOOL_CALL
+    assert events[1][TelemetryField.SERVICE_TIER] is None
+
+
+@pytest.mark.asyncio
+async def test_no_lane_is_reported_when_none_was_selected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installation_id = str(uuid.uuid4())
+    _configure(tmp_path, monkeypatch, installation_id)
+    outbox = TelemetryOutbox(tmp_path / "outbox.json")
+    hook = ConductorTelemetryHook(
+        agent_name="lead", model_id="openai:gpt-5", outbox=outbox
+    )
+    ctx = RunContext(session_id="session-1", run_id="request-1", agent_name="lead")
+    state = AgentState(messages=[])
+    await hook.before_agent(ctx, state)
+
+    async def model_handler(_request: ModelRequest) -> AssistantMessage:
+        return AssistantMessage(content="ok", extra={"usage": {"input": 1}})
+
+    await hook.wrap_model_call(
+        ctx, state, ModelRequest(messages=(), system_prompt="p"), model_handler
+    )
+
+    events = outbox.peek(installation_id)
+    assert events[0][TelemetryField.SERVICE_TIER] is None
+
+
+@pytest.mark.asyncio
 async def test_hook_queues_only_safe_model_and_tool_metadata(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -144,11 +219,13 @@ async def test_hook_queues_only_safe_model_and_tool_metadata(
     assert events[0][TelemetryField.TOKENS_IN] == 120
     assert events[0][TelemetryField.TOKENS_OUT] == 40
     assert events[0][TelemetryField.RESPONSE_MODEL] == "openai:gpt-5.1"
-    assert events[0][TelemetryField.ESTIMATED_COST_USD_MICROS] == 1250
-    assert events[0][TelemetryField.COST_SOURCE] == "evoflux_catalog"
+    # Cost is Conductor's to compute; the client reports usage only.
+    assert "estimated_cost_usd_micros" not in events[0]
+    assert "cost_source" not in events[0]
     assert events[1][TelemetryField.EVENT_TYPE] == TelemetryEventType.TOOL_CALL
-    assert events[1][TelemetryField.TOOL_NAME] == "read_file"
-    assert events[1][TelemetryField.TOOL_CATEGORY] == TelemetryToolCategory.FILESYSTEM
+    # The tool's identity never leaves the machine, only that a tool ran.
+    assert "tool_name" not in events[1]
+    assert "tool_category" not in events[1]
     serialized = json.dumps(events)
     for secret in (
         "private system prompt",
@@ -427,7 +504,6 @@ def test_outbox_preserves_oldest_events_and_reports_queue_health(
         "tokens_in": 1,
         "tokens_out": 0,
         "cache_read_tokens": 0,
-        "estimated_cost_usd_micros": 0,
     }
     outbox.acknowledge({"event-1"})
     assert [
@@ -534,8 +610,8 @@ async def test_managed_skill_usage_is_durable_and_content_free(
     monkeypatch.setattr(settings, "SKILLS_DIR", str(skills))
     monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(state))
 
-    record_skill_usage("local-only", source="manual", mode="work")
-    record_skill_usage("research", source="implicit", mode="coding", duration_ms=12)
+    record_skill_usage("local-only")
+    record_skill_usage("research", duration_ms=12)
 
     captured: dict[str, object] = {}
 
@@ -558,6 +634,9 @@ async def test_managed_skill_usage_is_durable_and_content_free(
     events = captured["events"]
     assert isinstance(events, list) and len(events) == 1
     assert events[0]["resource_version"] == "1.2.3"
-    assert events[0]["invocation_source"] == "implicit"
+    # Only what Conductor actually stores goes on the wire.
+    assert "invocation_source" not in events[0]
+    assert "runtime_mode" not in events[0]
+    assert "failure_category" not in events[0]
     assert "prompt" not in events[0]
     assert not (state / "conductor" / "usage-queue.jsonl").read_text()
