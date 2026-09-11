@@ -288,8 +288,9 @@ export function WidgetRenderer({
       <iframe
         ref={iframeRef}
         title={title}
-        height={effectiveHeight - 32} // Account for title bar
+        style={{ height: effectiveHeight }} // scrollHeight from inside iframe — title bar is outside
         sandbox="allow-scripts allow-same-origin"
+        scrolling="no"
         className="w-full border-0 transition-[height] duration-(--motion-fast)"
         onLoad={handleLoad}
         onError={handleError}
