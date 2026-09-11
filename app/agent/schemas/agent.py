@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
+from uuid_extensions.uuid7 import timestamp_ns
 
 from app.uuid7 import uuid7
 
@@ -46,16 +47,27 @@ class RunConfig(BaseModel):
     def _decode_session_created_at(self) -> "RunConfig":
         """Decode session_created_at from the UUIDv7 session_id if not already set.
 
-        UUIDv7 embeds a millisecond-precision Unix timestamp in the top 48 bits.
+        UUIDv7 embeds a Unix timestamp in its leading bits. Supports both the
+        RFC millisecond layout and the legacy layout emitted by uuid_extensions.
         Silently skips non-UUID session_id values (e.g. synthetic test ids).
         """
         if self.session_created_at is None and self.session_id is not None:
             try:
-                ts_ms = UUID(self.session_id).int >> 80
-                self.session_created_at = datetime.fromtimestamp(
+                session_uuid = UUID(self.session_id)
+                if session_uuid.version != 7:
+                    return self
+                ts_ms = session_uuid.int >> 80
+                decoded_at = datetime.fromtimestamp(
                     ts_ms / 1000, tz=timezone.utc
                 )
-            except ValueError:
+                if decoded_at > datetime.now(timezone.utc) + timedelta(days=1):
+                    legacy_ts_ns = timestamp_ns(session_uuid)
+                    if legacy_ts_ns is not None:
+                        decoded_at = datetime.fromtimestamp(
+                            legacy_ts_ns / 1_000_000_000, tz=timezone.utc
+                        )
+                self.session_created_at = decoded_at
+            except (OSError, OverflowError, ValueError):
                 pass
         return self
 
