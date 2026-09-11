@@ -162,3 +162,7 @@ export {
   useDeleteGitServerConnectionMutation,
   useTestGitServerConnectionMutation,
 } from './useCodeReviewsQuery'
+export {
+  useTeamSpawnSettingsQuery,
+  useUpdateTeamSpawnSettingsMutation,
+} from './useTeamSpawnSettingsQuery'

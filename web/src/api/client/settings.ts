@@ -130,6 +130,31 @@ export async function updateWebBridgeSettings(
   return res.json()
 }
 
+// Team spawn mode settings
+
+export type TeamSpawnSettings = {
+  work: 'ask' | 'auto'
+  coding: 'ask' | 'auto'
+}
+
+export async function getTeamSpawnSettings(): Promise<TeamSpawnSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/team-spawn`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/team-spawn')
+  return res.json()
+}
+
+export async function updateTeamSpawnSettings(
+  body: TeamSpawnSettings,
+): Promise<TeamSpawnSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/team-spawn`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/team-spawn')
+  return res.json()
+}
+
 export type ConductorSettings = {
   enabled: boolean
   url: string

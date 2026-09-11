@@ -86,6 +86,16 @@ async def _manage_spawn(team: "AgentTeam", members: list[str]) -> str:
 
     from app.agent.mode.team.team import parse_instance_handle
 
+    # Check team spawn mode setting to decide whether to confirm.
+    from app.core.runtime_settings import load_runtime_settings
+
+    try:
+        _rs = load_runtime_settings()
+        _spawn_mode = getattr(_rs.team_spawn, team.mode, "ask")
+    except Exception:
+        _spawn_mode = "ask"
+    _confirm = _spawn_mode != "auto"
+
     for item in members:
         item = item.strip()
         if not item:
@@ -103,7 +113,7 @@ async def _manage_spawn(team: "AgentTeam", members: list[str]) -> str:
             member = await team.spawn(
                 blueprint,
                 instance_id=instance_id,
-                confirm=True,
+                confirm=_confirm,
             )
         except ValueError as exc:
             if "already live" in str(exc):
