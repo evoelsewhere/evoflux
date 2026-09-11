@@ -1287,9 +1287,7 @@ async def get_browser_panel_composer_catalog(
 
     workflow_response = await workflow_routes.list_workflows(
         db,
-        workspace=(
-            str(workspace) if workspace and session.mode in {"coding", "aim"} else None
-        ),
+        workspace=(str(workspace) if workspace and session.mode == "coding" else None),
     )
     commands.extend(
         BrowserComposerCommand(

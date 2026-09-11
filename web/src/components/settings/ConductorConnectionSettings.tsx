@@ -75,6 +75,15 @@ export function ConductorConnectionSettings() {
   const pending = pendingAction !== null
   const tokenValid = token.trim().startsWith('evc_')
   const urlValid = isValidConductorUrl(draft.url)
+  // The stored credential can no longer be used. `enrolled` stays true —
+  // the installation still exists server-side, only the token is dead — so
+  // the URL and token rows have to come back without disconnecting first,
+  // which would throw away the managed state this install already applied.
+  const credentialRejected =
+    status?.state === 'authorization_required' ||
+    status?.state === 'forbidden' ||
+    status?.state === 'registration_required'
+  const showConnectionInputs = !status?.enrolled || credentialRejected
   const connectionLabel: Record<string, string> = {
     connected: 'Connected',
     in_sync: 'Connected · in sync',
@@ -106,7 +115,7 @@ export function ConductorConnectionSettings() {
             />
           }
         />
-        {!status?.enrolled && (
+        {showConnectionInputs && (
           <SettingsRow
             label="Conductor URL"
             description="The authoritative organization control-plane endpoint."
@@ -190,7 +199,7 @@ export function ConductorConnectionSettings() {
             />
           }
         />
-        {!status?.enrolled && (
+        {showConnectionInputs && (
           <SettingsRow
             label="V1 connection token"
             description="A scoped evc_ token. After validation it is stored only in your operating system credential vault."
@@ -217,7 +226,11 @@ export function ConductorConnectionSettings() {
                       setToken('')
                     })}
                   >
-                    {pendingAction === CONDUCTOR_ACTION.CONNECT ? 'Connecting…' : 'Connect'}
+                    {pendingAction === CONDUCTOR_ACTION.CONNECT
+                      ? 'Connecting…'
+                      : credentialRejected
+                        ? 'Reconnect'
+                        : 'Connect'}
                   </Button>
                 </div>
                 {token.length > 0 && !tokenValid && (
@@ -429,6 +442,15 @@ export function ConductorConnectionSettings() {
           </div>
           )}
         </SettingsGroup>
+      )}
+      {credentialRejected && (
+        <SettingsCallout tone="warning">
+          {status?.state === 'forbidden'
+            ? 'This connection token no longer carries the scopes Conductor requires. Paste a token with subscribe, telemetry and inventory scopes above, then choose Reconnect.'
+            : status?.state === 'registration_required'
+              ? 'Conductor no longer recognises this installation. Paste a connection token above, then choose Reconnect to register it again.'
+              : 'Conductor rejected the stored connection token — it was most likely revoked or has expired. Paste a new token above and choose Reconnect. Managed resources already applied stay in place.'}
+        </SettingsCallout>
       )}
       {status?.maintenance_required && (
         <SettingsCallout tone="warning">

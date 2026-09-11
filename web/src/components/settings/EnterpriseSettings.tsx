@@ -46,6 +46,8 @@ import {
   enterpriseAttentionCount,
   isEnterpriseTab,
   loadEnterpriseFavorites,
+  resourceFailed,
+  resourceIsLocal,
   resourceHasUpdate,
   resourceId,
   resourceState,
@@ -140,6 +142,12 @@ export function EnterpriseSettingsPage() {
   }
 
   const openResourceSettings = (resource: ManagedResource) => {
+    // A delivered-but-unapplied resource has no local record yet, so its
+    // settings page would 404. Send the operator to the tab that can apply it.
+    if (!resourceIsLocal(resource)) {
+      setSearch({ tab: 'updates' })
+      return
+    }
     if (resource.kind === 'agent') {
       navigateSettings('/settings/agents/$name', {
         params: { name: resource.slug },
@@ -672,8 +680,12 @@ function ResourceListRow({
   const currentVersion = resource.applied_version ?? resource.version ?? 'Not applied'
   const desiredVersion = resource.version ?? '—'
   const waitingForTrust = resource.kind === 'plugin' && state === 'trust_pending'
-  const canPull = Boolean(resource.resource_id) && resourceHasUpdate(resource) && !waitingForTrust
-  const hasUpdate = resourceHasUpdate(resource)
+  // A failed resource is retryable: a pull re-fetches and re-applies, so the
+  // card has to offer the way back rather than stranding it.
+  const failed = resourceFailed(resource)
+  const canPull =
+    Boolean(resource.resource_id) && (resourceHasUpdate(resource) || failed) && !waitingForTrust
+  const hasUpdate = resourceHasUpdate(resource) || failed
   const description =
     'description' in resource && resource.description
       ? resource.description
@@ -803,7 +815,11 @@ function ResourceListRow({
                   ) : (
                     <Download />
                   )}
-                  {waitingForTrust ? 'Review & approve' : 'Apply update'}
+                  {waitingForTrust
+                    ? 'Review & approve'
+                    : failed
+                      ? 'Retry apply'
+                      : 'Apply update'}
                 </Button>
               ) : null}
             </div>
