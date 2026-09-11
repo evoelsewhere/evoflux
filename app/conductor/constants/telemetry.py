@@ -76,6 +76,7 @@ class TelemetryField(StrEnum):
     MODEL = "model"
     RESPONSE_MODEL = "response_model"
     CACHE_READ_TOKENS = "cache_read_tokens"
+    CACHE_WRITE_TOKENS = "cache_write_tokens"
     REASONING_TOKENS = "reasoning_tokens"
     TOOL_USE_TOKENS = "tool_use_tokens"
     TOOL_NAME = "tool_name"
@@ -84,6 +85,7 @@ class TelemetryField(StrEnum):
     ERROR_CATEGORY = "error_category"
     ESTIMATED_COST_USD_MICROS = "estimated_cost_usd_micros"
     COST_SOURCE = "cost_source"
+    SERVICE_TIER = "service_tier"
     RESOURCES = "resources"
 
 
@@ -108,6 +110,7 @@ TELEMETRY_NUMERIC_TOKEN_FIELDS = frozenset(
         TelemetryField.TOKENS_IN.value,
         TelemetryField.TOKENS_OUT.value,
         TelemetryField.CACHE_READ_TOKENS.value,
+        TelemetryField.CACHE_WRITE_TOKENS.value,
         TelemetryField.REASONING_TOKENS.value,
         TelemetryField.TOOL_USE_TOKENS.value,
     }
