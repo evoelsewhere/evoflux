@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import platform
+import random
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +21,14 @@ from app.conductor.client import (
     CredentialStore,
     CredentialStoreError,
     CredentialStoreProtocol,
+)
+from app.conductor.constants.api import (
+    REALTIME_DEFAULT_HEARTBEAT_SECONDS,
+    REALTIME_DEFAULT_RETRY_AFTER_SECONDS,
+    REALTIME_DEFAULT_SERVER_DRAIN_DELAY_SECONDS,
+    REALTIME_HEARTBEAT_TIMEOUT_MULTIPLIER,
+    REALTIME_RETRY_BASE_DELAY_SECONDS,
+    REALTIME_RETRY_MAX_DELAY_SECONDS,
 )
 from app.conductor.constants.telemetry import (
     TELEMETRY_BATCH_SIZE,
@@ -71,6 +81,24 @@ class ConductorSyncReport(BaseModel):
     telemetry: ConductorSyncLaneStatus = Field(default_factory=ConductorSyncLaneStatus)
 
 
+class ConductorRealtimeStatus(BaseModel):
+    """Connectivity of the SSE control-plane stream, tracked separately from
+    the polling lanes in `ConductorSyncReport`. States mirror "Connection
+    lifecycle" in evo-conductor/docs/evoflux-integration.md; "disabled"
+    covers both its Disconnected state and Conductor being off locally.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["disabled", "connecting", "streaming", "backoff", "suspended"] = (
+        "disabled"
+    )
+    connected_at: datetime | None = None
+    last_event_at: datetime | None = None
+    reconnect_attempts: int = 0
+    error: str | None = None
+
+
 class ConductorTelemetryReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -116,6 +144,7 @@ class ConductorStatus(BaseModel):
     error: str | None = None
     resources: list[dict[str, Any]] = Field(default_factory=list)
     sync: ConductorSyncReport = Field(default_factory=ConductorSyncReport)
+    realtime: ConductorRealtimeStatus = Field(default_factory=ConductorRealtimeStatus)
     telemetry: ConductorTelemetryReport = Field(
         default_factory=ConductorTelemetryReport
     )
@@ -664,6 +693,7 @@ class ConductorService:
                 group.create_task(
                     self._telemetry_loop(), name="conductor-telemetry-drain"
                 )
+                group.create_task(self._realtime_loop(), name="conductor-realtime")
         except asyncio.CancelledError:
             raise
 
@@ -687,6 +717,154 @@ class ConductorService:
                 await asyncio.wait_for(self._stop.wait(), timeout=delay)
             except TimeoutError:
                 pass
+
+    async def _interruptible_sleep(self, seconds: float) -> None:
+        try:
+            await asyncio.wait_for(self._stop.wait(), timeout=max(0.0, seconds))
+        except TimeoutError:
+            pass
+
+    async def _realtime_loop(self) -> None:
+        """Maintain the Conductor realtime SSE stream (control plane).
+
+        Runs alongside `_connection_loop`'s polling, which is left untouched
+        on purpose: SSE makes invalidations near-real-time, polling keeps
+        EvoFlux converging when this stream is down or the server predates
+        the endpoint (a 404 falls into the generic backoff branch).
+
+        Implements "Connection lifecycle" and "Reconnect and error policy"
+        from evo-conductor's docs/evoflux-integration.md. Fetching itself is
+        delegated to `sync_now()`; this loop only decides when to call it.
+        """
+
+        realtime = self.status.realtime
+        attempt = 0
+        while not self._stop.is_set():
+            config = self._config()
+            if (
+                not config.enabled
+                or not config.installation_id
+                or self._credentials().load() is None
+            ):
+                realtime.state = "disabled"
+                await self._interruptible_sleep(5.0)
+                continue
+            if self._client is None or self._client.base_url != config.url:
+                if self._client:
+                    await self._client.close()
+                self._client = self._new_client(config)
+            client = self._client
+
+            realtime.state = "connecting"
+            realtime.error = None
+            heartbeat_seconds = REALTIME_DEFAULT_HEARTBEAT_SECONDS
+            revoked = False
+            drain_delay: float | None = None
+
+            try:
+                async with contextlib.aclosing(
+                    client.stream_realtime_events()
+                ) as events:
+                    stream_iter = events.__aiter__()
+                    while not self._stop.is_set():
+                        timeout = (
+                            heartbeat_seconds * REALTIME_HEARTBEAT_TIMEOUT_MULTIPLIER
+                        )
+                        try:
+                            event = await asyncio.wait_for(
+                                stream_iter.__anext__(), timeout=timeout
+                            )
+                        except TimeoutError:
+                            realtime.error = (
+                                "No realtime heartbeat received; reconnecting."
+                            )
+                            break
+                        except StopAsyncIteration:
+                            break
+
+                        realtime.last_event_at = datetime.now(UTC)
+                        if event.event == "control.hello":
+                            realtime.state = "streaming"
+                            realtime.connected_at = datetime.now(UTC)
+                            hello_heartbeat = event.data.get("heartbeat_seconds")
+                            if (
+                                isinstance(hello_heartbeat, (int, float))
+                                and hello_heartbeat > 0
+                            ):
+                                heartbeat_seconds = float(hello_heartbeat)
+                            attempt = 0
+                            realtime.reconnect_attempts = 0
+                        elif event.event in (
+                            "resources.head",
+                            "resources.changed",
+                            "control.resync_required",
+                        ):
+                            await self.sync_now()
+                            if self.status.sync.resources.state == "healthy":
+                                attempt = 0
+                                realtime.reconnect_attempts = 0
+                        elif event.event == "control.heartbeat":
+                            pass
+                        elif event.event == "control.access_revoked":
+                            realtime.state = "suspended"
+                            realtime.error = "Conductor revoked this connection secret."
+                            logger.warning("conductor_realtime_access_revoked")
+                            revoked = True
+                            break
+                        elif event.event == "control.server_drain":
+                            retry_after_ms = event.data.get("retry_after_ms")
+                            drain_delay = (
+                                float(retry_after_ms) / 1000.0
+                                if isinstance(retry_after_ms, (int, float))
+                                else REALTIME_DEFAULT_SERVER_DRAIN_DELAY_SECONDS
+                            )
+                            break
+                        else:
+                            logger.debug(
+                                "conductor_realtime_unhandled_event event={}",
+                                event.event,
+                            )
+            except ConductorRequestError as exc:
+                if exc.status_code in (401, 403):
+                    realtime.state = "suspended"
+                    realtime.error = str(exc)
+                    logger.warning(
+                        "conductor_realtime_suspended status_code={}",
+                        exc.status_code,
+                    )
+                    self._handle_request_error(exc)
+                    return
+                realtime.state = "backoff"
+                realtime.error = str(exc)
+                if exc.status_code in (429, 503):
+                    await self._interruptible_sleep(
+                        exc.retry_after_seconds or REALTIME_DEFAULT_RETRY_AFTER_SECONDS
+                    )
+                    continue
+            except (httpx.HTTPError, OSError) as exc:
+                realtime.state = "backoff"
+                realtime.error = (
+                    f"Conductor realtime stream unreachable ({type(exc).__name__})."
+                )
+
+            if revoked or self._stop.is_set():
+                return
+            if drain_delay is not None:
+                realtime.state = "backoff"
+                await self._interruptible_sleep(drain_delay)
+                continue
+
+            attempt += 1
+            realtime.reconnect_attempts = attempt
+            realtime.state = "backoff"
+            delay = random.uniform(
+                0,
+                min(
+                    REALTIME_RETRY_MAX_DELAY_SECONDS,
+                    REALTIME_RETRY_BASE_DELAY_SECONDS * (2**attempt),
+                ),
+            )
+            await self._interruptible_sleep(delay)
 
     async def _telemetry_loop(self) -> None:
         while not self._stop.is_set():
