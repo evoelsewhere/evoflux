@@ -129,10 +129,20 @@ def _resolve_compatible_class(name: str) -> type:
 
 
 def require_api_key(secret: SecretStr | None, env_var: str, label: str) -> str:
-    """Resolve an API key from a Pydantic ``SecretStr`` or env var.
+    """Resolve an API key from the process environment or a Pydantic ``SecretStr``.
+
+    ``os.environ`` is checked first because the settings UI mirrors credential
+    writes into the process environment (see ``PUT /settings/providers/{id}``)
+    while the ``settings`` singleton is a frozen Pydantic instance that only
+    reflects values present at server start.  Prioritising the live process
+    environment lets credential updates take effect without a restart.
 
     Raises ``ValueError`` with a uniform message when neither is set.
     """
+    # Live process environment wins — the settings UI writes new keys here.
+    env_value = os.getenv(env_var, "")
+    if env_value:
+        return env_value
     if secret is not None:
         try:
             value = secret.get_secret_value()
@@ -142,9 +152,6 @@ def require_api_key(secret: SecretStr | None, env_var: str, label: str) -> str:
             # Treat plain strings the same as SecretStr in tests.
             if isinstance(secret, str) and secret:
                 return secret
-    env_value = os.getenv(env_var, "")
-    if env_value:
-        return env_value
     raise ValueError(f"{label} API key is required. Set {env_var} in your .env file.")
 
 
