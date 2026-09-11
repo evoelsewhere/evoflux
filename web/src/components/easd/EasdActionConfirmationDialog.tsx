@@ -66,15 +66,19 @@ export function EasdActionConfirmationDialog({
             <dt className="text-(--color-text-subtle)">Risk</dt><dd className="capitalize">{draft.spec.risk_tier.replace('_', '-')}</dd>
             <dt className="text-(--color-text-subtle)">Criteria</dt><dd>{draft.spec.criteria.length} acceptance criteria</dd>
             <dt className="text-(--color-text-subtle)">Flow</dt><dd className="capitalize">{deliveryMode}{deliveryMode === 'direct' ? ' · Plan will be skipped' : ' · Plan approval required'}</dd>
+            {/* The hash is what "accepted" is bound to; approving without
+                seeing it means accepting an unnamed revision. */}
+            <dt className="text-(--color-text-subtle)">Hash</dt><dd className="font-mono text-[10px] break-all">{draft.content_hash}</dd>
           </dl>
         )}
 
         {action === 'approve_plan' && planDraft && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-(--color-border) bg-(--bg-page) p-3 text-xs">
             <dt className="text-(--color-text-subtle)">Revision</dt><dd>Plan v{planDraft.version}</dd>
-            <dt className="text-(--color-text-subtle)">Spec</dt><dd>Accepted specification</dd>
+            <dt className="text-(--color-text-subtle)">Spec</dt><dd className="font-mono text-[10px] break-all">{planDraft.plan.spec_hash}</dd>
             <dt className="text-(--color-text-subtle)">Missions</dt><dd>{planDraft.plan.missions.length}</dd>
             <dt className="text-(--color-text-subtle)">Review</dt><dd>{planDraft.plan.review_required ? 'Independent review required' : 'Standard review required'}</dd>
+            <dt className="text-(--color-text-subtle)">Hash</dt><dd className="font-mono text-[10px] break-all">{planDraft.content_hash}</dd>
           </dl>
         )}
 

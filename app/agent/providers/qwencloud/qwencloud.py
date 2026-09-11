@@ -90,6 +90,8 @@ def _uses_max_completion_tokens(model: str) -> bool:
 class _QwenCloudCompletionsHandler(CompletionsHandler):
     """Chat Completions translation for QwenCloud thinking history."""
 
+    default_provider_id = "qwencloud"
+
     def _convert_messages_qwencloud(
         self, messages: list[ChatMessage]
     ) -> list[QwenCloudMessage]:
@@ -235,17 +237,19 @@ class _QwenCloudCompletionsHandler(CompletionsHandler):
         self.customize_thinking(merged, body)
         return body
 
-    def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
-        thinking_level = merged.get("thinking_level", "")
-        if thinking_level in {"none", "off"}:
-            body["enable_thinking"] = False
-        elif thinking_level:
-            body["enable_thinking"] = True
-            body["reasoning_effort"] = thinking_level
+    # Thinking translation is inherited. DashScope's contract — the
+    # ``enable_thinking`` toggle that makes reasoning happen at all, plus
+    # ``reasoning_effort`` to size it — is the ``enable_thinking`` dialect in
+    # :mod:`app.agent.providers.thinking`. This handler used to override it
+    # and forward the caller's level verbatim, which skipped the clamp: a
+    # request for ``max`` reached a model whose ladder tops out at ``xhigh``
+    # and was rejected outright.
 
 
 class _QwenCloudResponsesHandler(ResponsesHandler):
     """Responses API translation with explicit retention and thinking policy."""
+
+    default_provider_id = "qwencloud"
 
     def build_request(
         self,
@@ -291,6 +295,8 @@ class _QwenCloudResponsesHandler(ResponsesHandler):
 
 class QwenCloudProvider(OpenAIProvider):
     """QwenCloud Chat Completions and Responses provider."""
+
+    default_provider_id = "qwencloud"
 
     def __init__(
         self,

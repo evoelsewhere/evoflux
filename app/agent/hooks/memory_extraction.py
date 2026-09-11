@@ -207,7 +207,18 @@ async def _extract_and_store(
                 ",".join(redaction_report.categories),
             )
         response = await asyncio.wait_for(
-            provider.chat(protected_messages, tools=None, max_tokens=700),
+            provider.chat(
+                protected_messages,
+                tools=None,
+                max_tokens=700,
+                # Ask for no reasoning. This call wants a small JSON object,
+                # and a model that reasons by default spends the allowance
+                # on thought instead: with a real transcript the 700 tokens
+                # went entirely to reasoning and the content came back empty,
+                # which surfaced as "extractor returned invalid JSON".
+                # Providers with no off switch ignore this and are unchanged.
+                thinking_level="none",
+            ),
             timeout=45.0,
         )
         usage = (response.extra or {}).get("usage")

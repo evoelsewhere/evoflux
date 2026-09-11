@@ -26,6 +26,7 @@ import {
   type AgentTeam,
 } from '@/lib/agent-visuals'
 import { ModelCombobox } from '@/components/settings/AgentForm'
+import { isModelConfigured } from '@/lib/model-settings'
 import { ManagedResourceProviderBadge } from '@/components/settings/ManagedResourceProviderBadge'
 import { SettingsPage } from '@/components/settings/SettingsLayout'
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
@@ -362,7 +363,7 @@ function AgentRosterSummary({
   teams: Record<AgentTeam, AgentSummary[]>
 }) {
   const leads = agents.filter((agent) => agent.role === 'lead').length
-  const configured = agents.filter((agent) => agent.model && agent.valid).length
+  const configured = agents.filter((agent) => isModelConfigured(agent.model) && agent.valid).length
   return (
     <section className="grid grid-cols-3 overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card)">
       <RosterStat value={agents.length} label="Agents" icon={Users} />
@@ -609,6 +610,14 @@ function AgentRow({
             {!agent.valid && (
               <span className="inline-flex items-center gap-1 text-[10px] text-(--color-error)" title={agent.error ?? 'Invalid configuration'}>
                 <AlertCircle size={11} aria-hidden="true" /> Invalid
+              </span>
+            )}
+            {agent.valid && agent.role === 'member' && !isModelConfigured(agent.model) && (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] text-(--color-warning)"
+                title="A member with no model is left off the team roster — the lead cannot spawn it."
+              >
+                <AlertCircle size={11} aria-hidden="true" /> Not on the roster
               </span>
             )}
           </div>

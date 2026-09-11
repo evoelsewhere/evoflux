@@ -245,100 +245,63 @@ class GeminiProviderBase(LLMProviderBase):
 
     # --- Gemini turn normalization helpers -----------------------------------------
 
+    @staticmethod
+    def _content_is_empty(content: Content) -> bool:
+        """True when a turn carries nothing Gemini will accept.
+
+        A ``Content`` with no parts, or whose only parts are blank text, is
+        rejected by the API with a 400. Compaction and session restarts are
+        the usual way one of these appears in the history.
+        """
+        parts = content.parts or []
+        if not parts:
+            return True
+        for part in parts:
+            if part.function_call is not None or part.function_response is not None:
+                return False
+            if part.inline_data is not None or part.file_data is not None:
+                return False
+            if (part.text or "").strip():
+                return False
+        return True
+
     def _bridge_role_gap(
-        self,
-        contents: list[Content], bridge_text: str = "Understood."
+        self, contents: list[Content], bridge_text: str = "Understood."
     ) -> list[Content]:
+        """Insert a minimal opposite-role turn between same-role neighbours."""
         if not contents:
             return contents
         result = [contents[0]]
         for content in contents[1:]:
             if content.role == result[-1].role:
-                bridge_text = bridge_text
-                if content.role == "model":
-                    result.append(Content(role="user", parts=[Part(text=bridge_text)]))
-                else:
-                    result.append(Content(role="model", parts=[Part(text=bridge_text)]))
+                filler_role = "user" if content.role == "model" else "model"
+                result.append(Content(role=filler_role, parts=[Part(text=bridge_text)]))
             result.append(content)
         return result
 
-    def _strip_or_bridge_gemini_history(
-        self,
-        contents: list[Content],
-    ) -> list[Content]:
-        def _join_text(c: Content) -> str:
-            parts = getattr(c, "parts", None) or []
-            return " ".join(
-                getattr(p, "text", "") for p in parts if getattr(p, "text", None)
-            )
-        def _is_tool_response(c: Content) -> bool:
-            parts = getattr(c, "parts", None) or []
-            return all(
-                getattr(p, "function_response", None) is not None for p in parts
-            ) and bool(parts)
+    def _strip_or_bridge_gemini_history(self, contents: list[Content]) -> list[Content]:
+        """Drop turns Gemini rejects, without touching conversational payload.
 
-        result = list(contents)
+        Scope is deliberately narrow. The only turns removed are ones that
+        carry no content at all, plus a leading empty model turn left behind
+        by compaction — both of which produce a 400. Everything else is
+        preserved.
+
+        In particular a trailing tool-response turn is **kept**. That turn is
+        the result the model asked for on the previous step; dropping it
+        leaves the request ending on a model turn and the model never sees
+        any tool output, which breaks tool calling outright.
+        """
+        result = [c for c in contents if not self._content_is_empty(c)]
         if not result:
-            return contents
-        while len(result) > 1 and _is_tool_response(result[-1]):
-            result.pop()
-        if result and result[0].role == "model" and (
-            getattr(result[0], "thought", False)
-            or _join_text(result[0]).startswith("technical plan:")
-            or not _join_text(result[0]).strip()
+            return []
+        if (
+            len(result) > 1
+            and result[0].role == "model"
+            and self._content_is_empty(result[0])
         ):
             result.pop(0)
-        if len(result) > 1 and result[-1].role == result[-2].role:
-            result = self._bridge_role_gap(result)
-        return result
-
-    def _normalize_gemini_turns(
-        self,
-        contents: list[Content],
-        *,
-        bridge_text: str = "Understood.",
-    ) -> list[Content]:
-        def _join_text(c: Content) -> str:
-            parts = getattr(c, "parts", None) or []
-            return " ".join(
-                getattr(p, "text", "") for p in parts if getattr(p, "text", None)
-            )
-        def _is_tool_response(c: Content) -> bool:
-            parts = getattr(c, "parts", None) or []
-            return all(
-                getattr(p, "function_response", None) is not None for p in parts
-            ) and bool(parts)
-
-        result = list(contents)
-        while len(result) > 1 and result[0].role == "model":
-            model_text = _join_text(result[0])
-            is_valid_tech = (
-                getattr(result[0], "thought", False)
-                or model_text.startswith("technical plan:")
-                or not model_text.strip()
-            )
-            if is_valid_tech and _is_tool_response(result[0]):
-                result.pop(0)
-            elif not model_text.strip():
-                result.pop(0)
-            else:
-                break
-        while len(result) > 1 and _is_tool_response(result[-1]):
-            result.pop()
-        if not result:
-            return contents
-        while len(result) > 1 and result[0].role == result[-1].role:
-            if result[0].role == "user":
-                result.insert(0, Content(role="model", parts=[Part(text=bridge_text)]))
-            else:
-                result.insert(0, Content(role="user", parts=[Part(text=bridge_text)]))
-        while len(result) > 1 and result[0].role == result[1].role:
-            result = result[1:]
-        if len(result) > 1:
-            result = self._bridge_role_gap(result, bridge_text)
-        if len(result) > 1 and result[0].role == result[-1].role:
-            result.insert(0, Content(role="user", parts=[Part(text=bridge_text)]))
-        return result
+        return self._bridge_role_gap(result)
 
     def _sanitize_schema(self, schema: Any) -> Any:
         """Recursively strip JSON Schema keys unsupported by the Gemini API."""
@@ -374,47 +337,61 @@ class GeminiProviderBase(LLMProviderBase):
 
         return [Tool(function_declarations=declarations)] if declarations else None
 
-    def _build_generation_config(self, **kwargs: Any) -> GenerationConfig:
-        thinking_level = kwargs.get("thinking_level")
+    def _build_thinking_config(self, thinking_level: Any) -> ThinkingConfig | None:
+        """Translate a requested effort into Gemini's ``thinkingConfig``.
+
+        The two Gemini generations disagree on the field name — 2.5 takes
+        ``thinkingBudget`` (a token count), 3.x takes ``thinkingLevel`` (a
+        name) — and sending the wrong one is a request error. The shared
+        translator in :mod:`app.agent.providers.thinking` owns that split
+        and the clamping to what the model advertises, so this method only
+        maps its output onto the typed ``ThinkingConfig``.
+
+        Returns ``None`` when the model exposes no thinking control at all,
+        which leaves the field off the request entirely.
+        """
+        from app.agent.providers.thinking import thinking_request_fields
+
         model = self.model.lower()
-        thinking_config: ThinkingConfig | None = None
-        if "gemma" not in model and (
+        reasoning_family = "gemma" not in model and (
             model.startswith("gemini-2.5") or model.startswith("gemini-3")
-        ):
-            if thinking_level == "none":
-                if model.startswith("gemini-2.5-flash"):
-                    # Gemini 2.5 Flash/Lite supports the documented zero-token
-                    # budget. Omitting ThinkingConfig would keep dynamic
-                    # thinking enabled rather than turning it off.
-                    thinking_config = ThinkingConfig(
-                        include_thoughts=False,
-                        thinking_budget=0,
-                    )
-                else:
-                    raise ValueError(
-                        f"Model '{self.model}' does not support disabling thinking."
-                    )
-            elif thinking_level:
-                if not model.startswith("gemini-3"):
-                    raise ValueError(
-                        "Gemini 2.5 generateContent uses thinkingBudget, not "
-                        "thinkingLevel. Select Default or None where available."
-                    )
-                thinking_config = ThinkingConfig(
-                    include_thoughts=True,
-                    thinking_level=thinking_level,
+        )
+        if not reasoning_family:
+            if thinking_level:
+                raise ValueError(
+                    f"Model '{self.model}' exposes no configurable thinking control."
                 )
-            else:
-                thinking_config = ThinkingConfig(include_thoughts=True)
-        elif thinking_level:
-            raise ValueError(
-                f"Model '{self.model}' exposes no configurable thinking control."
-            )
+            return None
+
+        fields = thinking_request_fields(
+            self.provider_name or "googlegenai",
+            self.model,
+            thinking_level,
+        )
+        config = fields.get("thinkingConfig")
+        if not isinstance(config, dict):
+            if thinking_level and str(thinking_level).lower() == "none":
+                raise ValueError(
+                    f"Model '{self.model}' does not support disabling thinking."
+                )
+            # No explicit request, or one the model does not advertise: ask
+            # for the thought parts of whatever it reasons by default,
+            # otherwise EvoFlux renders an empty thinking panel.
+            return ThinkingConfig(include_thoughts=True)
+
+        budget = config.get("thinkingBudget")
+        return ThinkingConfig(
+            include_thoughts=bool(config.get("includeThoughts", budget != 0)),
+            thinking_budget=budget,
+            thinking_level=config.get("thinkingLevel"),
+        )
+
+    def _build_generation_config(self, **kwargs: Any) -> GenerationConfig:
         return GenerationConfig(
             temperature=kwargs.get("temperature"),
             top_p=kwargs.get("top_p"),
             max_output_tokens=kwargs.get("max_tokens"),
-            thinking_config=thinking_config,
+            thinking_config=self._build_thinking_config(kwargs.get("thinking_level")),
         )
 
     async def chat(
@@ -628,6 +605,8 @@ class GoogleGenAIProvider(GeminiProviderBase):
     Gemini Developer API (generativelanguage.googleapis.com).
     Authenticates with a Google AI Studio API key via x-goog-api-key header.
     """
+
+    default_provider_id = "googlegenai"
 
     def __init__(
         self,

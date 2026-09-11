@@ -37,6 +37,24 @@ must opt out of drag behavior where they are interactive.
 - Persist browser preferences through the `STORAGE_KEYS` registry. The pre-paint
   script is the only place that mirrors keys manually and must stay in sync.
 
+### Accent
+
+The product accent is clay — `#D97757` on dark, `#B85736` on light, the light
+value darkened until white label text clears 4.5:1 against it.
+
+Appearance offers fourteen presets plus a custom colour. Preset values live in
+their own `--ui-accent-*` namespace, deliberately separate from the
+`--accent-*` chip tokens: those carry meaning (`--color-success` is
+`--accent-green`, `--color-info` is `--accent-blue`) and must not move when
+someone picks a UI colour. Each preset is defined per theme — light on
+charcoal, dark under white text — so it can rely on the theme's own
+`--color-text-on-accent`.
+
+A custom colour cannot, so `applyAppearance` derives a label colour from its
+luminance and Settings reports the resulting contrast, warning below 4.5:1.
+`web/public/appearance-init.js` repeats that derivation for the pre-paint
+pass and must stay in sync with `web/src/lib/appearance.ts`.
+
 ## Motion
 
 Motion durations are `instant` (80ms), `fast` (150ms), `base` (240ms), `slow`

@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Turn these approved findings into a Word report with heading styles, a table of contents, and page numbers.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fill this .docx contract template with the negotiated terms without disturbing its styles.",
+    "should_trigger": true
+  },
+  {
+    "query": "Extract every comment and tracked change from the reviewed .docx and give me a clean accepted copy.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rewrite this paragraph so it reads better for an executive audience.",
+    "should_trigger": false,
+    "near_miss": "Prose quality with no Word file involved."
+  },
+  {
+    "query": "Build a slide deck summarizing the quarterly results.",
+    "should_trigger": false,
+    "near_miss": "Presentation output belongs to the deck workflow."
+  },
+  {
+    "query": "Merge these two PDFs and add a watermark.",
+    "should_trigger": false,
+    "near_miss": "PDF transformation, not Word production."
+  }
+]

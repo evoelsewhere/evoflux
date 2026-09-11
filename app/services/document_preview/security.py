@@ -413,14 +413,40 @@ def maintain_preview_cache(
 
 
 def mark_cached_preview_used(path: Path) -> None:
-    """Refresh LRU metadata without ever following a replaced symlink."""
+    """Refresh LRU metadata without ever following a replaced symlink.
+
+    ``follow_symlinks=False`` is not available for ``os.utime`` on every
+    platform, and asking for it there raises ``NotImplementedError`` rather
+    than an ``OSError`` — which turned every cache hit into a failed render.
+    Probe the capability instead of the platform: where the flag is missing,
+    open a descriptor and stamp that. A descriptor cannot be redirected by a
+    symlink swapped in afterwards, so the guarantee in the summary still holds.
+    """
 
     try:
         metadata = path.lstat()
         if not stat.S_ISREG(metadata.st_mode):
             return
-        os.utime(path, None, follow_symlinks=False)
-    except (FileNotFoundError, OSError):
+        if os.utime in os.supports_follow_symlinks:
+            os.utime(path, None, follow_symlinks=False)
+            return
+        if os.utime in os.supports_fd:
+            descriptor = os.open(path, os.O_RDONLY)
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    return
+                os.utime(descriptor, None)
+            finally:
+                os.close(descriptor)
+            return
+        # Neither form is available. Re-check the entry immediately before
+        # stamping and accept the remaining window: the worst outcome is one
+        # unrelated file's mtime being refreshed, and the platforms without
+        # either capability are the ones that gate symlink creation behind a
+        # privilege the cache directory's owner does not hold.
+        if stat.S_ISREG(path.lstat().st_mode):
+            os.utime(path, None)
+    except (FileNotFoundError, OSError, NotImplementedError, ValueError):
         return
 
 

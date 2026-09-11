@@ -34,6 +34,7 @@ import {
 } from 'lucide-react'
 import { CollapsibleSection } from '@/components/shell/CollapsibleSection'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -67,6 +68,9 @@ interface FolderMenuAnchor {
 const FOLDER_MENU_WIDTH = 224
 const FOLDER_MENU_HEIGHT = 174
 
+/** Name-bar widths for the loading placeholder — uneven, like real names. */
+const FOLDER_SKELETON_WIDTHS = ['58%', '42%', '50%']
+
 function folderMenuPosition(anchor: FolderMenuAnchor): { left: number; top: number } {
   return {
     left: Math.min(
@@ -97,6 +101,30 @@ function saveExpanded(ids: string[]): void {
   } catch {
     // ignore storage failures
   }
+}
+
+/**
+ * Placeholder rows for the first load, shaped like real folder rows (chevron,
+ * icon, name) so the sidebar does not jump once the list arrives.
+ */
+function FolderListSkeleton({ isMobile }: { isMobile?: boolean }) {
+  return (
+    <div aria-label="Loading folders">
+      {FOLDER_SKELETON_WIDTHS.map((width, index) => (
+        <div
+          key={index}
+          className={cn(
+            'flex items-center rounded-lg',
+            isMobile ? 'min-h-11 gap-2 px-2.5 py-2.5' : 'min-h-8 gap-1.5 px-2.5 py-2',
+          )}
+        >
+          <Skeleton className={cn('shrink-0 rounded-xs', isMobile ? 'size-3.5' : 'size-3')} />
+          <Skeleton className={cn('shrink-0 rounded-sm', isMobile ? 'size-4' : 'size-3.5')} />
+          <Skeleton className={isMobile ? 'h-3.5' : 'h-3'} style={{ width }} />
+        </div>
+      ))}
+    </div>
+  )
 }
 
 interface SessionFoldersProps {
@@ -259,9 +287,7 @@ export function SessionFolders({
             </div>
           )}
 
-          {isLoading && folders.length === 0 && (
-            <p className={labelClass}>Loading folders…</p>
-          )}
+          {isLoading && folders.length === 0 && <FolderListSkeleton isMobile={isMobile} />}
 
           {isError && folders.length === 0 && (
             <div className={cn(labelClass, 'flex items-center justify-between gap-2')}>

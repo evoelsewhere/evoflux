@@ -109,6 +109,9 @@ class UsageEvent(BaseModel):
     cache_write_tokens: int | None = None
     thoughts_tokens: int | None = None
     tool_use_tokens: int | None = None
+    #: USD by cost component, priced from the models.dev catalog. Present on
+    #: turn totals; ``None`` for providers billed by seat rather than token.
+    cost: dict[str, float] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -229,6 +232,11 @@ class PermissionAskedEvent(BaseModel):
     session_id: str
     tool: str  # tool name (e.g. "shell", "bash")
     patterns: list[str]  # command fragments / path globs being requested
+    #: What a reply of "always" would actually grant — usually broader than
+    #: ``patterns`` (``git commit -m x`` approves ``git commit *``). Sent so
+    #: the approval UI can say what it is about to allow instead of leaving
+    #: the user to guess between this command, this tool, and forever.
+    always_patterns: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

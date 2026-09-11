@@ -62,7 +62,7 @@ from app.agent.lifecycle import is_sleep_message
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
 from app.agent.mode.team.hooks.team_inbox import TeamInboxHook
 from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
-from app.agent.hooks.tool_result_offload import ToolResultOffloadHook
+from app.agent.hooks.tool_result_offload import build_tool_result_offload_hook
 from app.agent.hooks.tool_context_projection import (
     build_tool_context_projection_hook,
 )
@@ -76,7 +76,7 @@ from app.agent.mode.team.tier_policy import (
     side_chat_session_excluded_tools,
     webbridge_session_excluded_tools,
 )
-from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
+from app.webbridge_tags import WEBBRIDGE_SESSION_TAG, webbridge_target_from_tags
 from app.agent.plugins.role import reset_role, set_role
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.core.paths import session_workspace_dir
@@ -103,7 +103,11 @@ from app.agent.mode.team.mailbox import Message
 from app.core.db import DbFactory, resolve_db_factory
 from app.models.chat import ChatSession, SessionMessage
 from app.models.team import DelegationTask
-from app.agent.providers.model_metadata import get_effective_model_thinking
+from app.agent.providers.model_metadata import (
+    get_effective_model_thinking,
+    get_model_mode,
+)
+from app.agent.providers.thinking import honoured_levels_for
 from app.agent.providers.model_discovery import ensure_runtime_model_metadata
 from app.services.chat_service import get_messages_for_llm, save_message
 
@@ -451,8 +455,15 @@ class TeamMemberBase(abc.ABC):
         mode: str = "work",
         workspace: str | None = None,
         project_id: uuid.UUID | None = None,
+        folder_id: uuid.UUID | None = None,
     ) -> None:
-        """Ensure a DB chat session row exists for self.session_id."""
+        """Ensure a DB chat session row exists for self.session_id.
+
+        ``project_id``/``folder_id`` place a row this call brings into being —
+        a chat the user started as a draft and only now, on the first message,
+        becomes durable. They are ignored for a row that already exists, which
+        owns its own placement.
+        """
         db_factory = resolve_db_factory(self.db_factory)
         session_uuid = uuid.UUID(self.session_id)
         try:
@@ -466,6 +477,13 @@ class TeamMemberBase(abc.ABC):
                         mode=mode,
                         workspace=workspace,
                         project_id=project_id,
+                        folder_id=folder_id,
+                        # The mode the user picked before this row existed.
+                        # Omitting it let the column default win, so a draft
+                        # chat set to "Ask permissions" was born in "auto".
+                        permission_mode=(
+                            self._team.permission_mode if self._team else "auto"
+                        ),
                         tags=sorted(self._team.session_tags) or None
                         if self._team
                         else None,
@@ -1280,7 +1298,12 @@ class TeamMemberBase(abc.ABC):
             target_paths=claimed_paths,
             explicit_thinking_level=session_thinking_level,
             provider_default_thinking_level=thinking_profile.default_level,
-            supported_thinking_levels=thinking_profile.levels,
+            # What the request builder will honour, not the raw catalog list.
+            # The catalog says MiMo has a bare toggle; it takes a token
+            # budget, so clamping against the catalog turned a request for
+            # ``high`` into ``none`` — thinking switched off precisely when
+            # the most was asked for, and silently.
+            supported_thinking_levels=honoured_levels_for(effective_model),
         )
         from app.services.delegation_worktree_service import sandbox_binding
 
@@ -1296,7 +1319,10 @@ class TeamMemberBase(abc.ABC):
             model_kwargs: dict[str, object] = {}
             if execution_policy.thinking_level:
                 model_kwargs["thinking_level"] = execution_policy.thinking_level
-            if last_service_tier and effective_model.startswith("codex:"):
+            # Whether a model has this tier is catalog/registry data, not a
+            # provider prefix — see ``get_model_modes``. A tier that reaches
+            # a model without one would be forwarded as an unknown field.
+            if last_service_tier and get_model_mode(effective_model, last_service_tier):
                 model_kwargs["service_tier"] = last_service_tier
             runtime_provider = self._team._provider_factory(
                 effective_model,
@@ -1519,12 +1545,12 @@ class TeamMemberBase(abc.ABC):
                 agent_name=self.name,
             )
             checkpointer.mark_loaded(self.session_id, history)
-            # Tool result offload uses the hook's module-level defaults
-            # (see app.agent.hooks.tool_result_offload.DEFAULT_CHAR_THRESHOLD).
+            # Threshold comes from the operator's context settings, falling
+            # back to app.agent.hooks.tool_result_offload.DEFAULT_CHAR_THRESHOLD.
             pipeline.add(
                 HookStage.CONTEXT_CONTROL,
                 "tool-result-offload",
-                ToolResultOffloadHook(),
+                build_tool_result_offload_hook(),
             )
             summarization_provider = runtime_provider or self.agent.llm_provider
             summarization_model = runtime_model or self.agent.model_id
@@ -1606,6 +1632,9 @@ class TeamMemberBase(abc.ABC):
             # members keep their own session IDs for history/checkpointing,
             # but WebBridge commands must reuse the lead's tab binding/group.
             "webbridge_session_id": lead_session_id,
+            "webbridge_extension_id": webbridge_target_from_tags(
+                self._team.session_tags
+            ),
             # Lead stream id — file-change tracking + SSE publish to one place.
             "stream_session_id": lead_session_id,
             "session_id": self.session_id,
@@ -1617,7 +1646,6 @@ class TeamMemberBase(abc.ABC):
             run_metadata["stop_after_before_model"] = True
         if task_workspace.workspace:
             run_metadata["team_workspace"] = task_workspace.workspace
-        config = RunConfig(session_id=self.session_id, metadata=run_metadata)
 
         # Coding mode uses the exact project workspace for every team member.
         session_sandbox = SandboxConfig(
@@ -1662,6 +1690,18 @@ class TeamMemberBase(abc.ABC):
                 "enter_plan_mode",
                 "exit_plan_mode",
             }
+
+        # Built here, after the last write to ``run_metadata``.
+        #
+        # ``RunConfig`` is a pydantic model, so validation *copies* the dict it
+        # is handed. Constructing it earlier meant every key written after that
+        # point — the two above among them — landed in a dict the run never
+        # read. Plan mode was the casualty: ``_plan_mode`` never arrived, the
+        # tool executor never intercepted anything, and because ``_blocks()``
+        # returns False for "plan" the mode degraded into approving everything
+        # while still calling itself Plan mode. Do not move this back up, and
+        # do not mutate ``run_metadata`` below it.
+        config = RunConfig(session_id=self.session_id, metadata=run_metadata)
 
         # Scope ask-user service — blocks the ask_user tool until the user
         # answers, publishing to the same lead stream as plan approvals.

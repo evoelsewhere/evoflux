@@ -2,12 +2,31 @@
 
 export type DiagnosticsStatus = 'ok' | 'warn' | 'fail'
 
+/** A fix the user can trigger from the check's row. */
+export interface DiagnosticsAction {
+  id: string
+  label: string
+  running_label: string
+  confirm_title: string
+  confirm_body: string
+  confirm_label: string
+}
+
 export interface DiagnosticsCheck {
   id: string
   label: string
   status: DiagnosticsStatus
   detail: string
   hint: string | null
+  /** Present when the check can be acted on rather than only described. */
+  action?: DiagnosticsAction | null
+}
+
+export interface DiagnosticsActionResult {
+  message: string
+  reclaimed_mib?: number
+  elapsed_s?: number
+  rewrote_database?: boolean
 }
 
 export interface DiagnosticsResponse {
@@ -73,6 +92,12 @@ export interface PermissionRequestPending {
   sessionId: string
   tool: string
   patterns: string[]
+  /**
+   * What replying "always" would grant, which is usually broader than
+   * `patterns` — approving `git commit -m x` allows `git commit *`. The
+   * dialog states it rather than leaving the user to guess the scope.
+   */
+  alwaysPatterns: string[]
   metadata: Record<string, unknown>
 }
 
@@ -128,6 +153,8 @@ export interface TeamBlueprintInfo extends AgentInfo {
 export interface TeamAgentsResponse {
   agents: TeamAgentInfo[]
   blueprints: TeamBlueprintInfo[]
+  /** Members this lead owns that have no model, and so cannot be spawned. */
+  unconfigured_members?: string[]
   mode?: string
   workspace?: string | null
   lead_name?: string
@@ -493,15 +520,34 @@ export interface LanguageServerStatus {
   installed_version: string | null
   expected_version: string | null
   installable: boolean
-  installer: 'npm' | 'uv' | null
+  installer: LanguageServerInstaller | null
   installer_available: boolean
   install_hint: string
+  /** Why the install action cannot be taken, or null when it can. */
+  blocked_reason: string | null
+  install_phase: LanguageServerInstallPhase
+  install_started_at: string | null
+  install_error: string | null
+}
+
+export type LanguageServerInstaller = 'npm' | 'uv' | 'go' | 'rustup' | 'gem' | 'dotnet'
+export type LanguageServerInstallPhase = 'idle' | 'running' | 'failed'
+
+export interface LanguageServerInstallJob {
+  language_id: string
+  phase: LanguageServerInstallPhase
+  started_at: string
+  finished_at: string | null
+  error: string | null
 }
 
 export interface LanguageServerOverview {
   workspaces: string[]
   cache_dir: string
   servers: LanguageServerStatus[]
+  /** True when detection stopped at `scan_limit`, so languages may be missing. */
+  scan_truncated: boolean
+  scan_limit: number
 }
 
 // ── Code context (/api/code-context) ────────────────────────────────────────
@@ -1546,6 +1592,9 @@ export interface ContentBlock {
   durationMs?: number   // completed tool duration from SSE/session logs
   startedAt?: number    // client timestamp for realtime elapsed display
   responseDurationMs?: number // assistant response duration shown in turn footer
+  /** What the turn spent, shown in its footer. Stamped on the turn's last
+   *  text block, so the footer reads it the same way live and after a reload. */
+  turnUsage?: TurnUsage
   /** Widget-specific fields */
   widgetHtml?: string   // HTML content for widget blocks
   isStreaming?: boolean // whether widget is still streaming
@@ -1584,17 +1633,91 @@ export interface TurnUsageBreakdown {
   calls: number
 }
 
+/** USD by component, priced from the models.dev catalog. */
+export interface TurnCost {
+  estimated_usd: number
+  input_usd?: number
+  output_usd?: number
+  cache_read_usd?: number
+  cache_write_usd?: number
+  reasoning_usd?: number
+}
+
+/** What one assistant turn spent, as shown in its footer. */
+export interface TurnUsage {
+  input: number
+  output: number
+  cache?: number
+  cache_write?: number
+  thoughts?: number
+  tool_use?: number
+  calls?: number
+  models?: string[]
+  /** Absent for providers billed by seat rather than by token. */
+  cost?: TurnCost
+}
+
 export interface AgentUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
   cachedTokens: number
+  /**
+   * Tokens written to the prompt cache on the latest call. Part of
+   * `promptTokens`, like `cachedTokens` — but billed at ~1.25x rather than
+   * ~0.1x, so the two must never be shown as one bucket.
+   */
+  cacheWriteTokens?: number
   turnPromptTokens?: number
   turnCompletionTokens?: number
   turnTotalTokens?: number
   turnCachedTokens?: number
+  turnCacheWriteTokens?: number
   turnCalls?: number
   turnPhases?: Record<string, TurnUsageBreakdown>
+  turnCost?: TurnCost
+}
+
+/**
+ * Writable context-window overrides. `null` on any field means "use the
+ * built-in default", whose current value is reported in
+ * `ContextSettings.defaults` under the same key.
+ */
+export interface ContextOverrides {
+  /** Prompt size that triggers compaction. */
+  summary_trigger_tokens: number | null
+  /** Ceiling on the summary the summariser produces. */
+  summary_max_tokens: number | null
+  /** Assistant turns kept verbatim after a compaction. */
+  keep_recent_turns: number | null
+  /** Tool results longer than this are offloaded to a session artifact. */
+  tool_result_offload_chars: number | null
+  /** Tool-call batches kept verbatim at the provider boundary. */
+  keep_recent_tool_batches: number | null
+}
+
+/** Global context settings (`GET/PUT /settings/context`). */
+export interface ContextSettings extends ContextOverrides {
+  /** What each unset override falls back to in Work, keyed by field name. */
+  defaults: Record<keyof ContextOverrides, number>
+  /**
+   * For the fields whose built-in differs in Coding, that value. A missing
+   * key means both modes fall back to the same number.
+   */
+  coding_defaults: Partial<Record<keyof ContextOverrides, number>>
+  /**
+   * Values `settings.yaml` declares for this section that failed validation
+   * and are being ignored. Non-empty means the file and the running sessions
+   * disagree; saving from the UI rewrites the file without them.
+   */
+  ignored: { field: string; message: string }[]
+  /** Hard ceiling the compaction threshold is clamped to. */
+  max_tokens: number
+  /**
+   * Fraction of a model's context window the threshold is clamped to, so the
+   * UI can name a model's real ceiling without restating the rule.
+   */
+  context_ratio: number
 }
 
 // ── Wiki ─────────────────────────────────────────────────────────────────────
@@ -1957,6 +2080,64 @@ export interface ModelCatalogEntry {
   thinking_default_enabled?: boolean | null
   thinking_source?: string | null
   interfaces?: string[]
+
+  // ── Catalog facts ─────────────────────────────────────────────────────────
+  //
+  // Read from the model catalog rather than restated in the frontend, so the
+  // picker's badges, prices and limits follow the catalog. Every field is
+  // optional: a self-hosted or brand-new model still lists, just plainer.
+
+  /** Catalog display name, e.g. `MiMo-V2.5-Pro`. */
+  display_name?: string | null
+  description?: string | null
+  /** Model family (`claude-opus`, `gemini-pro`), for grouping. */
+  family?: string | null
+  /** `beta` | `deprecated`. Badged in the picker. */
+  status?: string | null
+  release_date?: string | null
+  last_updated?: string | null
+  /** Training-data cutoff as the catalog states it, e.g. `2024-12`. */
+  knowledge?: string | null
+
+  max_output_tokens?: number | null
+  tool_call?: boolean | null
+  attachment?: boolean | null
+  temperature?: boolean | null
+  structured_output?: boolean | null
+  open_weights?: boolean | null
+
+  /** USD per million tokens, plus any long-context `tiers`. */
+  cost?: ModelCatalogCost
+  /**
+   * Zero per-token cost — a genuinely free tier, or a model included in a
+   * plan the user already pays for. `null`/absent means the catalog quotes
+   * no price, which is not the same as free.
+   */
+  free?: boolean | null
+  /** Bounds on an explicit thinking-token budget. */
+  thinking_budget?: { min?: number | null; max?: number | null }
+  /** Alternate service tiers this model offers, e.g. `["fast"]`. */
+  modes?: string[]
+  /**
+   * What each tier costs relative to the standard rate, by output price. A
+   * fast lane commonly bills at 2.5-5x, so a toggle switching one on has to
+   * be able to say so. A tier with no published price is absent rather than
+   * reported as 1.0.
+   */
+  mode_cost_multiplier?: Record<string, number>
+}
+
+/** Per-million-token rates, as the catalog publishes them. */
+export interface ModelCatalogCost {
+  input?: number
+  output?: number
+  cache_read?: number
+  cache_write?: number
+  reasoning?: number
+  input_audio?: number
+  output_audio?: number
+  /** Rates replacing the headline ones past `above_tokens` of context. */
+  tiers?: Array<Record<string, number>>
 }
 
 export interface RegistryResponse {
@@ -2025,6 +2206,38 @@ export interface ManagedProcess {
 
 export interface ProcessListResponse {
   processes: ManagedProcess[]
+}
+
+// ── Preview (dev servers) ───────────────────────────────────────────────────
+
+export interface PreviewTarget {
+  name: string
+  port: number
+  url: string
+  command: string
+  cwd: string | null
+  depends_on: string | null
+  /** False for a tracked server whose launch.json entry was removed. */
+  configured: boolean
+  running: boolean
+  /** Listening, but not spawned by us — an external `npm run dev`, say. */
+  reused: boolean
+  pid: number | null
+}
+
+export interface PreviewTargetListResponse {
+  workspace: string
+  /** Absolute path of the launch config that was read, if any. */
+  source: string | null
+  suggested_source: string
+  error: string | null
+  targets: PreviewTarget[]
+}
+
+export interface PreviewActionResponse {
+  ok: boolean
+  message: string
+  url: string | null
 }
 
 // ── Scheduler ───────────────────────────────────────────────────────────────

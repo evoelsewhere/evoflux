@@ -55,7 +55,6 @@ from app.agent.schemas.chat import (
 from .schemas import (
     DeepSeekChatRequest,
     DeepSeekMessage,
-    DeepSeekThinking,
 )
 
 DEEPSEEK_API_BASE = "https://api.deepseek.com/v1"
@@ -75,6 +74,8 @@ class _DeepSeekCompletionsHandler(CompletionsHandler):
     4. ``customize_thinking`` sends both ``thinking: {type: enabled}``
        and ``reasoning_effort`` when ``thinking_level`` is configured.
     """
+
+    default_provider_id = "deepseek"
 
     uses_max_completion_tokens = False
 
@@ -212,20 +213,10 @@ class _DeepSeekCompletionsHandler(CompletionsHandler):
         self.customize_thinking(merged, body)
         return body
 
-    def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
-        """Map ``thinking_level`` to DeepSeek's thinking toggle + reasoning_effort.
-
-        DeepSeek requires both ``thinking: {type: enabled}`` and
-        ``reasoning_effort`` to activate thinking mode.  Sending
-        ``reasoning_effort`` alone without the ``thinking`` object is
-        insufficient.
-        """
-        thinking_level = merged.get("thinking_level", "")
-        if thinking_level in {"none", "off"}:
-            body["thinking"] = DeepSeekThinking(type="disabled").model_dump()
-        elif thinking_level:
-            body["thinking"] = DeepSeekThinking(type="enabled").model_dump()
-            body["reasoning_effort"] = thinking_level
+    # Thinking translation is inherited: DeepSeek's dialect (the ``thinking``
+    # toggle *plus* ``reasoning_effort``, since neither works alone) is
+    # registered in ``app.agent.providers.thinking.PROVIDER_DIALECTS``, and
+    # the level is clamped to what the model catalog advertises.
 
 
 class DeepSeekProvider(OpenAIProvider):
@@ -242,6 +233,8 @@ class DeepSeekProvider(OpenAIProvider):
         max_tokens: Hard cap on completion tokens.
         model_kwargs: Extra request body fields passed as-is.
     """
+
+    default_provider_id = "deepseek"
 
     def __init__(
         self,

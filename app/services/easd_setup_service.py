@@ -24,12 +24,15 @@ from app.core.skill_scope import (
 from app.easd_skills import (
     EASD_LEGACY_SKILL_SHA256,
     EASD_LEGACY_OPTIONAL_SKELETON_FILES,
+    EASD_SUPERSEDED_SKILL_SHA256,
     EASD_SKILL_NAMES,
+    EASD_SKILL_REFERENCE_FILES,
     EASD_SKELETON_FILES,
     EASD_TEMPLATE_NAMES,
     read_easd_rules,
     read_easd_skeleton,
     read_easd_skill,
+    read_easd_skill_reference,
     read_easd_template,
 )
 from app.services.easd_runtime import (
@@ -96,18 +99,44 @@ def normalize_data_directory(value: str | Path) -> Path:
     return Path(*path.parts)
 
 
+def _manifest_path_value(path: Path) -> str:
+    """Serialize one manifest path with POSIX separators.
+
+    `config.json` is version-controlled and read by collaborators on other
+    platforms, so it must never carry OS-native separators. `str(Path(...))`
+    yields backslashes on Windows and makes the committed manifest unreadable
+    on macOS/Linux.
+    """
+
+    return path.as_posix()
+
+
+def _manifest_paths_match(value: Any, expected: Path) -> bool:
+    """Compare a manifest path value tolerantly across platforms."""
+
+    if not isinstance(value, str):
+        return False
+    return value.strip().replace("\\", "/") == expected.as_posix()
+
+
+def _manifest_path_is_portable(value: Any, expected: Path) -> bool:
+    """Report whether the stored value is already POSIX-normalized."""
+
+    return isinstance(value, str) and value == expected.as_posix()
+
+
 def _manifest_text(data_directory: Path) -> str:
     payload: dict[str, Any] = {
         "product": "Evo Agent Specs",
         "methodology": "EASD",
         "methodology_name": "Evo Agent Specification-Driven Development",
         "data_directory": data_directory.as_posix(),
-        "rules_file": str(EASD_RULES),
-        "templates_directory": str(EASD_TEMPLATES_DIRECTORY),
+        "rules_file": _manifest_path_value(EASD_RULES),
+        "templates_directory": _manifest_path_value(EASD_TEMPLATES_DIRECTORY),
         "runtime_storage": "local",
-        "runtime_directory": str(EASD_RUNTIME_DIRECTORY),
+        "runtime_directory": _manifest_path_value(EASD_RUNTIME_DIRECTORY),
         "publish_converged_runs": "manual",
-        "skills_directory": str(EASD_SKILLS_DIRECTORY),
+        "skills_directory": _manifest_path_value(EASD_SKILLS_DIRECTORY),
         "skills": list(EASD_SKILL_NAMES),
     }
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
@@ -171,6 +200,13 @@ def _skill_paths(root: Path, name: str) -> tuple[Path, Path, Path]:
     return directory, skill_file, scope_file
 
 
+def _skill_reference_path(root: Path, name: str, reference: str) -> Path:
+    return _safe_path(
+        root,
+        EASD_SKILLS_DIRECTORY / name / "references" / reference,
+    )
+
+
 def _read_bounded_text(path: Path, *, limit: int, label: str) -> str:
     if path.stat().st_size > limit:
         raise ValueError(f"{label} exceeds {limit} bytes")
@@ -205,6 +241,23 @@ def _inspect_skill_bundle(root: Path) -> tuple[list[str], str | None]:
             return [], f"EASD SKILL.md must be a regular file: {name}"
         if scope_file.is_symlink() or not scope_file.is_file():
             return [], f"EASD skill scope must be a regular file: {name}"
+        reference_missing = False
+        for reference in EASD_SKILL_REFERENCE_FILES:
+            try:
+                reference_file = _skill_reference_path(root, name, reference)
+            except ValueError as exc:
+                return [], str(exc)
+            if not reference_file.exists():
+                reference_missing = True
+                break
+            if reference_file.is_symlink() or not reference_file.is_file():
+                return [], (
+                    f"EASD skill reference must be a regular file: "
+                    f"{name}/references/{reference}"
+                )
+        if reference_missing:
+            missing.append(name)
+            continue
         try:
             content = _read_bounded_text(
                 skill_file,
@@ -214,9 +267,13 @@ def _inspect_skill_bundle(root: Path) -> tuple[list[str], str | None]:
             _description, definition_error = parse_skill_definition(name, content)
             if definition_error:
                 raise ValueError(definition_error)
+            installed_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            superseded_digests = {
+                EASD_LEGACY_SKILL_SHA256.get(name),
+                EASD_SUPERSEDED_SKILL_SHA256.get(name),
+            }
             if (
-                hashlib.sha256(content.encode("utf-8")).hexdigest()
-                == EASD_LEGACY_SKILL_SHA256.get(name)
+                installed_digest in superseded_digests
                 or _LEGACY_SKILL_RUNTIME_CONTRACT in content
             ):
                 missing.append(name)
@@ -231,7 +288,21 @@ def _inspect_skill_bundle(root: Path) -> tuple[list[str], str | None]:
 
 
 def _is_legacy_bundled_skill(path: Path, name: str) -> bool:
-    expected = EASD_LEGACY_SKILL_SHA256.get(name)
+    """Report whether this file is an untouched copy of an older bundle.
+
+    Every superseded generation must be listed, not just the first: an
+    installed Skill that matches none of them is treated as a project edit and
+    preserved, which silently strands repositories on an old generation.
+    """
+
+    expected = {
+        digest
+        for digest in (
+            EASD_LEGACY_SKILL_SHA256.get(name),
+            EASD_SUPERSEDED_SKILL_SHA256.get(name),
+        )
+        if digest
+    }
     if not expected or not path.is_file() or path.is_symlink():
         return False
     try:
@@ -242,7 +313,7 @@ def _is_legacy_bundled_skill(path: Path, name: str) -> bool:
         )
     except (OSError, ValueError):
         return False
-    return hashlib.sha256(content.encode("utf-8")).hexdigest() == expected
+    return hashlib.sha256(content.encode("utf-8")).hexdigest() in expected
 
 
 def _normalize_legacy_skill_runtime_contract(path: Path) -> None:
@@ -340,7 +411,7 @@ def _normalize_knowledge_index(root: Path, data_directory: Path) -> None:
                 changed = True
     authority = payload.get("authority")
     if isinstance(authority, dict) and authority.get("execution") == "runs":
-        authority["execution"] = str(EASD_RUNTIME_DIRECTORY)
+        authority["execution"] = EASD_RUNTIME_DIRECTORY.as_posix()
         changed = True
     if changed:
         _atomic_write_text(
@@ -431,17 +502,17 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
             "display_name": target.display_name,
             "state": "invalid",
             "installed": False,
-            "manifest_path": str(EASD_MANIFEST),
+            "manifest_path": EASD_MANIFEST.as_posix(),
             "data_directory": DEFAULT_EASD_DATA_DIRECTORY.as_posix(),
             "data_path": str(root / DEFAULT_EASD_DATA_DIRECTORY),
-            "runtime_directory": str(EASD_RUNTIME_DIRECTORY),
+            "runtime_directory": EASD_RUNTIME_DIRECTORY.as_posix(),
             "runtime_path": str(runtime_path),
             "runtime_owner_path": str(runtime_owner),
             "runtime_shared_across_worktrees": runtime_owner != root,
             "legacy_run_count": 0,
             "legacy_generated_file_count": 0,
-            "rules_path": str(EASD_RULES),
-            "skills_path": str(EASD_SKILLS_DIRECTORY),
+            "rules_path": EASD_RULES.as_posix(),
+            "skills_path": EASD_SKILLS_DIRECTORY.as_posix(),
             "skill_names": list(EASD_SKILL_NAMES),
             "issue": str(exc),
         }
@@ -501,25 +572,22 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
                 data_directory = normalize_data_directory(
                     str(payload.get("data_directory") or "")
                 )
-                if payload.get("rules_file") != str(EASD_RULES):
-                    raise ValueError(f"config.json rules_file must be {EASD_RULES}")
-                if payload.get("templates_directory") != str(EASD_TEMPLATES_DIRECTORY):
-                    raise ValueError(
-                        f"config.json templates_directory must be {EASD_TEMPLATES_DIRECTORY}"
-                    )
+                manifest_paths = (
+                    ("rules_file", EASD_RULES),
+                    ("templates_directory", EASD_TEMPLATES_DIRECTORY),
+                    ("runtime_directory", EASD_RUNTIME_DIRECTORY),
+                    ("skills_directory", EASD_SKILLS_DIRECTORY),
+                )
+                for key, expected in manifest_paths:
+                    if not _manifest_paths_match(payload.get(key), expected):
+                        raise ValueError(
+                            f"config.json {key} must be {expected.as_posix()}"
+                        )
                 if payload.get("runtime_storage") != "local":
                     raise ValueError("config.json runtime_storage must be local")
-                if payload.get("runtime_directory") != str(EASD_RUNTIME_DIRECTORY):
-                    raise ValueError(
-                        f"config.json runtime_directory must be {EASD_RUNTIME_DIRECTORY}"
-                    )
                 if payload.get("publish_converged_runs") != "manual":
                     raise ValueError(
                         "config.json publish_converged_runs must be manual"
-                    )
-                if payload.get("skills_directory") != str(EASD_SKILLS_DIRECTORY):
-                    raise ValueError(
-                        f"config.json skills_directory must be {EASD_SKILLS_DIRECTORY}"
                     )
                 if payload.get("skills") != list(EASD_SKILL_NAMES):
                     raise ValueError(
@@ -569,7 +637,19 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
                 )
                 if skeleton_issue:
                     raise ValueError(skeleton_issue)
-                if local_missing:
+                non_portable = [
+                    key
+                    for key, expected in manifest_paths
+                    if not _manifest_path_is_portable(payload.get(key), expected)
+                ]
+                if non_portable:
+                    state = "upgrade_required"
+                    issue = (
+                        "config.json stores OS-native path separators and is not "
+                        "portable across platforms; upgrade rewrites "
+                        + ", ".join(non_portable)
+                    )
+                elif local_missing:
                     state = "upgrade_required"
                     issue = "Initialize local EASD " + " and ".join(local_missing)
                 elif missing_templates:
@@ -602,17 +682,17 @@ def inspect_repository(target: EasdRepositoryTarget) -> dict[str, Any]:
         "display_name": target.display_name,
         "state": state,
         "installed": state == "ready",
-        "manifest_path": str(EASD_MANIFEST),
+        "manifest_path": EASD_MANIFEST.as_posix(),
         "data_directory": data_directory.as_posix(),
         "data_path": str(data_path),
-        "runtime_directory": str(EASD_RUNTIME_DIRECTORY),
+        "runtime_directory": EASD_RUNTIME_DIRECTORY.as_posix(),
         "runtime_path": str(runtime_path),
         "runtime_owner_path": str(runtime_owner),
         "runtime_shared_across_worktrees": runtime_owner != root,
         "legacy_run_count": legacy_run_count,
         "legacy_generated_file_count": legacy_generated_file_count,
-        "rules_path": str(EASD_RULES),
-        "skills_path": str(EASD_SKILLS_DIRECTORY),
+        "rules_path": EASD_RULES.as_posix(),
+        "skills_path": EASD_SKILLS_DIRECTORY.as_posix(),
         "skill_names": list(EASD_SKILL_NAMES),
         "issue": issue,
     }
@@ -712,6 +792,13 @@ def initialize_repositories(
                 _normalize_legacy_skill_runtime_contract(skill_file)
             if overwrite or not scope_file.exists():
                 _atomic_write_text(scope_file, _SKILL_SCOPE_TEXT)
+            for reference in EASD_SKILL_REFERENCE_FILES:
+                reference_file = _skill_reference_path(root, name, reference)
+                if overwrite or not reference_file.exists():
+                    _atomic_write_text(
+                        reference_file,
+                        read_easd_skill_reference(name, reference),
+                    )
         if overwrite or not manifest_path.exists() or current["state"] != "ready":
             # Publish the manifest last so a partial filesystem failure remains
             # visibly retryable instead of claiming a complete installation.

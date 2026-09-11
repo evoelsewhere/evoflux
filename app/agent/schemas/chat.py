@@ -177,10 +177,32 @@ class HumanMessage(BaseMessage):
         return any(isinstance(p, (ImageUrlBlock, ImageDataBlock)) for p in self.parts)
 
 
+class EncryptedReasoningItem(BaseModel):
+    """One Responses-API reasoning item, kept so it can be replayed.
+
+    Unlike ``reasoning_content`` — a human-readable summary the provider
+    will not take back — this is the opaque payload the model produced and
+    expects to see again. On a stateless endpoint (``store: false``) an
+    assistant turn replayed without it is a history the model did not
+    write, and the server cannot continue the cached prefix past that
+    point.
+    """
+
+    id: str | None = None
+    summary: list[dict[str, Any]] = Field(default_factory=list)
+    encrypted_content: str
+
+
 class AssistantMessage(BaseMessage):
     role: Literal["assistant"] = "assistant"
     # Me: receive-only — provider sends this, but no API accepts it back
     reasoning_content: str | None = Field(default=None, exclude=True)
+    # Sent back, unlike ``reasoning_content``: see EncryptedReasoningItem.
+    # Excluded from the canonical dump because only the Responses API has a
+    # slot for it; that handler reads the field directly.
+    reasoning_items: list[EncryptedReasoningItem] | None = Field(
+        default=None, exclude=True
+    )
     tool_calls: list[ToolCall] | None = None
 
     # Me: agent tracking — internal only, never sent to provider
@@ -215,6 +237,10 @@ class ChatCompletionDelta(BaseModel):
     content: str | None = None
     # Me: ZAI may send reasoning_content as int (token count) in final chunk — accept and discard
     reasoning_content: str | None = None
+    #: Delivered once, whole, when the provider finishes a reasoning item —
+    #: not an incremental text delta. Collected by whoever assembles the
+    #: turn so it can be replayed on the next call.
+    reasoning_item: "EncryptedReasoningItem | None" = None
 
     @field_validator("reasoning_content", mode="before")
     @classmethod

@@ -190,11 +190,15 @@ async def _code_context(
         str | None,
         Field(
             description=(
-                "Optional authorized repository label or absolute root path. A dot "
-                "selects the primary workspace. Omit to search every authorized "
-                "repository. For multi-repository discovery, do not default to the "
-                "primary: omit this until user input or returned evidence identifies "
-                "the owner. For graph actions it disambiguates only the root symbol."
+                "Authorized repository label or absolute root path; a dot selects "
+                "the primary workspace. Pass it whenever the question already "
+                "names a repository or is about the open workspace — omitting it "
+                "searches every authorized index, and an index that does not "
+                "contain the symbol is the one that costs the most, because it "
+                "reads itself in full to establish that. Omit it only for genuine "
+                "cross-repository discovery, where the owner is unknown and "
+                "guessing the primary would hide it. For graph actions it "
+                "disambiguates only the root symbol."
             )
         ),
     ] = None,

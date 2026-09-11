@@ -6,25 +6,25 @@
  * same four groups as the sidebar.
  */
 import {
-  BarChart3,
+  Activity,
   Bell,
+  Blocks,
   BookOpen,
   Bot,
-  BrainCircuit,
+  Brain,
   Building2,
+  ChartColumn,
   ChevronRight,
   GitBranch,
   Globe2,
-  Server,
-  ServerCog,
   Info,
   KeyRound,
   Palette,
   Plug,
+  RefreshCw,
+  Server,
   Shield,
   Sparkles,
-  Stethoscope,
-  RefreshCw,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -182,7 +182,7 @@ export function SettingsHubPage() {
         },
         {
           to: '/settings/language-servers',
-          icon: ServerCog,
+          icon: Blocks,
           title: 'Language servers',
           description: 'Semantic engines detected and managed per repository',
         },
@@ -193,7 +193,7 @@ export function SettingsHubPage() {
       rows: [
         {
           to: '/settings/memory',
-          icon: BrainCircuit,
+          icon: Brain,
           title: 'Memory',
           description: 'Long-term knowledge and Dream synthesis',
         },
@@ -263,13 +263,13 @@ export function SettingsHubPage() {
         },
         {
           to: '/settings/telemetry',
-          icon: BarChart3,
+          icon: ChartColumn,
           title: 'Telemetry',
           description: 'Span aggregates, latency and recent traces',
         },
         {
           to: '/settings/diagnostics',
-          icon: Stethoscope,
+          icon: Activity,
           title: 'Diagnostics',
           description: 'Health checks across every subsystem',
         },

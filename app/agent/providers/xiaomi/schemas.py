@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.agent.providers.openai.schemas import (
     OpenAIStreamOptions,
@@ -47,9 +47,23 @@ class XiaomiMessage(BaseModel):
 
 
 class XiaomiThinking(BaseModel):
-    """Controls thinking mode on/off."""
+    """Controls thinking mode with budget-based token allocation.
+
+    MiMo-Code wire format supports:
+      - ``type: "disabled"`` — turn off thinking entirely.
+      - ``type: "enabled"``  — activate thinking with an optional
+        ``budget_tokens`` cap that limits how many tokens the model
+        may spend on its internal reasoning trace.
+
+    When ``budget_tokens`` is ``None`` the server applies its own
+    default.  EvoFlux maps the user-facing ``thinking_level`` string
+    (off / low / medium / high) to a concrete budget here.
+    """
+
+    model_config = ConfigDict()
 
     type: Literal["enabled", "disabled"] = "enabled"
+    budget_tokens: int | None = None
 
 
 class XiaomiChatRequest(BaseModel):

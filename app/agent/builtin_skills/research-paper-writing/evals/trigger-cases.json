@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Rewrite the method section of my paper so a skeptical reviewer can follow the contribution.",
+    "should_trigger": true
+  },
+  {
+    "query": "Draft the abstract and introduction from these results, and flag every claim the experiments do not support.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run a reviewer-style critique of this .tex draft before I submit it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Write the announcement blog post about our results.",
+    "should_trigger": false,
+    "near_miss": "General professional prose, not an academic paper."
+  },
+  {
+    "query": "Find recent papers on this topic for me to read.",
+    "should_trigger": false,
+    "near_miss": "Literature gathering with no paper to produce."
+  },
+  {
+    "query": "Document this API for our developer portal.",
+    "should_trigger": false,
+    "near_miss": "Product documentation, not a paper."
+  }
+]

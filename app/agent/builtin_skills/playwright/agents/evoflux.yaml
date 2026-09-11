@@ -1,0 +1,6 @@
+interface:
+  display_name: "Browser Automation CLI"
+  short_description: "Script a real browser from the command line"
+  default_prompt: "Use $playwright to script this browser flow from the command line."
+policy:
+  allow_implicit_invocation: false

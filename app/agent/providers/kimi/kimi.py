@@ -55,6 +55,8 @@ def _kimi_reasoning_effort(value: object) -> str | None:
 class _KimiCodeCompletionsHandler(CompletionsHandler):
     """Apply Kimi Code's fixed-sampling and model-aware thinking contract."""
 
+    default_provider_id = "kimi"
+
     def build_request(
         self,
         messages: list[ChatMessage],
@@ -96,6 +98,8 @@ class _KimiCodeCompletionsHandler(CompletionsHandler):
 
 class KimiCodeProvider(ChatCompletionsOnlyProvider):
     """Provider for Kimi Code's OpenAI-compatible Chat Completions API."""
+
+    default_provider_id = "kimi"
 
     def __init__(
         self,

@@ -1,0 +1,6 @@
+interface:
+  display_name: "PDF Files"
+  short_description: "Extract, transform, compose, and fill PDFs"
+  default_prompt: "Use $pdf-official to probe this PDF first, then extract or transform it and verify the result."
+policy:
+  allow_implicit_invocation: true

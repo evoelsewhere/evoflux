@@ -12,8 +12,52 @@ permission requests, questions, goals, workflows, queues, compaction and final
 completion/error. The React team store projects these into transcript blocks,
 Activity/Monitor views and progress controls.
 
+### Live turn status
+
+A streaming turn carries one status line above it, and a finished turn carries
+one meta run in its footer. Both print the same three facts — elapsed time,
+turn tokens, estimated USD — through shared formatters, so the numbers do not
+reformat themselves when the turn ends.
+
+The status line also names what the agent is doing, derived from the turn's
+own blocks rather than from a phase flag: an open tool call names the tool and
+its target ("Editing main.rs"), a growing thinking or text block reads as
+reasoning or answering, and a finished tool with nothing streamed after it
+means the provider has the turn again ("Waiting for <model>"). The
+`agent_status` phase (`ingress` vs `model_calling`) is the fallback used only
+before the first block arrives, because it is emitted once per turn and cannot
+distinguish the model calls inside a tool loop.
+
+The line sits below the turn's output, in the slot the footer takes once the
+turn finishes, and there is exactly one of it per view for the whole turn. A
+turn is not one continuous working run — an activation ends, the stream
+flushes, and the next activation starts — so the line outlives the working
+flag by a short hold. Without it the line blinked out for over a second in the
+middle of a single answer and came back with a restarted clock; the elapsed
+now measures from the earliest start observed while the line is up.
+
+Turn tokens are authoritative only per completed model call, which the usage
+event publishes. Between those events the line extends the last measured total
+with a character-length estimate so the counter keeps moving through a long
+call; the next usage event assigns over the estimate.
+
 Session-specific JSONL logs provide a local evidence trail per agent. Sensitive
 values are sanitized before tool/provider errors are logged or streamed.
+
+### Diagnostics actions
+
+A check may carry an `action` alongside its hint, and the row renders it as a
+button rather than describing a fix the user has to perform by hand. The
+backend owns the wording, including the confirmation, so the dialog can say
+what will actually happen to that particular installation.
+
+`db_reclaim` frees SQLite's unused pages. A database on `auto_vacuum=
+INCREMENTAL` has its free list trimmed in place. One created before that
+pragma cannot switch without a full `VACUUM`, so the action performs both
+once and every later reclaim takes the cheap path; that branch first checks
+there is disk space for the rewrite, and is refused while an agent is working
+because the rewrite holds a write lock for its duration. `VACUUM` is atomic —
+an interrupted run leaves the original file intact.
 
 ## OpenTelemetry
 

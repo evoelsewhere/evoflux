@@ -266,6 +266,113 @@ async def test_ask_mode_allows_safe_read_only_tools():
 
 
 @pytest.mark.asyncio
+async def test_plan_mode_asks_about_tools_the_plan_does_not_record():
+    """Plan mode must never be looser than Ask.
+
+    The plan recorder intercepts a fixed set of tools — those are not going to
+    run this turn, so approving them is meaningless. Everything else executes
+    for real. Waving all of it through made the mode with the most cautious
+    name the most permissive setting in the list for MCP tools, browser
+    control, and anything else the recorder does not cover.
+    """
+    service = PermissionService(session_id="s1", mode="plan")
+
+    # Recorded by the plan, so no prompt.
+    await service.ask("shell", ["rm -rf /"])
+    await service.ask("edit", ["/tmp/file.py"])
+    assert service.list_pending() == []
+
+    # Not recorded — runs for real, so it asks.
+    async def _reply_later():
+        while not service.list_pending():
+            await asyncio.sleep(0)
+        service.reply(service.list_pending()[0].id, "once")
+
+    asyncio.create_task(_reply_later())
+    await service.ask("browser_use", ["click #buy"])
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_call_is_refused_rather_than_asked_again():
+    """Rejecting used to record nothing, so the model could simply re-ask.
+
+    Observed in the app: three prompts for one ``whoami``, each looking like
+    the first, with no way out but the stop button. "Always" writes a rule;
+    "reject" has to leave a mark too.
+    """
+    service = PermissionService(session_id="s1", mode="ask")
+
+    async def _reject_first():
+        while not service.list_pending():
+            await asyncio.sleep(0)
+        service.reply(service.list_pending()[0].id, "reject")
+
+    asyncio.create_task(_reject_first())
+    with pytest.raises(PermissionRejectedError):
+        await service.ask("shell", ["whoami"])
+
+    # The retry never reaches the user.
+    with pytest.raises(PermissionRejectedError) as excinfo:
+        await service.ask("shell", ["whoami"])
+    assert excinfo.value.repeated is True
+    assert service.list_pending() == []
+
+    # A different command is a different question.
+    async def _allow():
+        while not service.list_pending():
+            await asyncio.sleep(0)
+        service.reply(service.list_pending()[0].id, "once")
+
+    asyncio.create_task(_allow())
+    await service.ask("shell", ["hostname"])
+
+
+@pytest.mark.asyncio
+async def test_a_batch_mixing_a_refused_command_with_a_new_one_still_asks():
+    service = PermissionService(session_id="s1", mode="ask")
+
+    async def _reject_first():
+        while not service.list_pending():
+            await asyncio.sleep(0)
+        service.reply(service.list_pending()[0].id, "reject")
+
+    asyncio.create_task(_reject_first())
+    with pytest.raises(PermissionRejectedError):
+        await service.ask("shell", ["whoami"])
+
+    async def _allow():
+        while not service.list_pending():
+            await asyncio.sleep(0)
+        service.reply(service.list_pending()[0].id, "once")
+
+    asyncio.create_task(_allow())
+    await service.ask("shell", ["whoami", "hostname"])
+
+
+@pytest.mark.asyncio
+async def test_changing_mode_lifts_earlier_refusals():
+    """Otherwise a rejected call is dead for the run with no way to revive it.
+
+    Picking a different mode is the user reconsidering, and it has to be able
+    to mean "go ahead after all".
+    """
+    service = PermissionService(session_id="s1", mode="ask")
+
+    async def _reject_first():
+        while not service.list_pending():
+            await asyncio.sleep(0)
+        service.reply(service.list_pending()[0].id, "reject")
+
+    asyncio.create_task(_reject_first())
+    with pytest.raises(PermissionRejectedError):
+        await service.ask("shell", ["whoami"])
+
+    service.set_mode("auto")
+    await service.ask("shell", ["whoami"])
+    assert service.list_pending() == []
+
+
+@pytest.mark.asyncio
 async def test_blocking_ask_fires_on_ask_callback():
     fired = []
 

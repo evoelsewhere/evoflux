@@ -284,8 +284,13 @@ async def test_thinking_level_none_sends_thinking_disabled():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_thinking_level_high_does_not_send_reasoning_effort():
-    """ZAI never sends reasoning_effort — even with non-none thinking_level."""
+async def test_thinking_level_high_enables_thinking_not_reasoning_effort():
+    """GLM takes a ``thinking`` object; ``reasoning_effort`` is never sent.
+
+    ``clear_thinking: false`` is what keeps the reasoning trace in the
+    response body — with it omitted GLM strips the trace and EvoFlux has
+    nothing to render.
+    """
     import json
 
     route = respx.post("https://api.z.ai/api/paas/v4/chat/completions").mock(
@@ -297,7 +302,7 @@ async def test_thinking_level_high_does_not_send_reasoning_effort():
 
     body = json.loads(route.calls[0].request.content)
     assert "reasoning_effort" not in body
-    assert "thinking" not in body
+    assert body["thinking"] == {"type": "enabled", "clear_thinking": False}
 
 
 @pytest.mark.asyncio

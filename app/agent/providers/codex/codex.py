@@ -28,6 +28,7 @@ from app.agent.providers.codex.oauth import CODEX_ORIGINATOR, CodexOAuth
 from app.agent.providers.openai.responses import ResponsesHandler
 from app.agent.schemas.chat import (
     AssistantMessage,
+    EncryptedReasoningItem,
     ChatMessage,
     FunctionCall,
     SystemMessage,
@@ -41,7 +42,6 @@ CODEX_API_BASE = "https://chatgpt.com/backend-api/codex"
 # legitimately remain silent for well over ten seconds before their first SSE
 # event, especially at high/max effort.
 CODEX_STREAM_IDLE_TIMEOUT_SECONDS = 300.0
-_NO_SERVICE_TIER = {"", "auto", "default", "none", "off", "standard"}
 
 # Identify requests honestly as EvoFlux.
 _DEFAULT_HEADERS = {
@@ -51,6 +51,27 @@ _DEFAULT_HEADERS = {
 }
 
 
+def _assistant_extra(
+    usage: dict[str, Any] | None,
+    reasoning_items: list[EncryptedReasoningItem],
+) -> dict[str, Any] | None:
+    """Bundle what must outlive the run into the persisted ``extra`` column.
+
+    ``reasoning_items`` is excluded from the message dump, and history is
+    reloaded from the database each turn, so an item kept only on the field
+    would be gone by the next turn — and the replayed turn would no longer
+    match what the model produced, costing the cached prefix behind it.
+    """
+    extra: dict[str, Any] = {}
+    if usage is not None:
+        extra["usage"] = usage
+    if reasoning_items:
+        extra["reasoning_items"] = [
+            item.model_dump(exclude_none=True) for item in reasoning_items
+        ]
+    return extra or None
+
+
 class _CodexResponsesHandler(ResponsesHandler):
     """ResponsesHandler variant for the Codex endpoint.
 
@@ -58,6 +79,8 @@ class _CodexResponsesHandler(ResponsesHandler):
     system messages embedded inside ``input``.  This subclass extracts any
     leading SystemMessage into ``instructions`` before building the request.
     """
+
+    default_provider_id = "codex"
 
     def build_request(
         self,
@@ -84,15 +107,22 @@ class _CodexResponsesHandler(ResponsesHandler):
         body["instructions"] = "\n\n".join(system_parts)
         body["store"] = False
 
-        service_tier = str(merged.get("service_tier") or "").lower()
-        if service_tier not in _NO_SERVICE_TIER:
-            # Codex Fast mode is exposed as the request service tier.  The
-            # official Codex config stores ``service_tier = "fast"``; the
-            # backend maps that subscription setting to priority processing.
-            body["service_tier"] = (
-                "priority" if service_tier == "fast" else service_tier
-            )
+        # The service tier itself is applied by the shared Responses handler
+        # from the tier's registered wire patch — Codex's fast lane is one
+        # entry in ``PROVIDER_MODES`` rather than a translation here, so the
+        # composer, the request builder and the model catalog all read the
+        # same table.
         return body
+
+    def wants_encrypted_reasoning(self, body: dict[str, Any]) -> bool:
+        """Always: every Codex model reasons, and ``store`` is always false.
+
+        The request never carries a ``reasoning`` block — the endpoint picks
+        the effort itself — so the base class's "did we ask for it" test
+        would never fire, and the reasoning that does come back would be
+        dropped on the next call along with the cached prefix behind it.
+        """
+        return True
 
     async def chat(
         self,
@@ -103,6 +133,7 @@ class _CodexResponsesHandler(ResponsesHandler):
         """Return a final message using Codex's required streaming endpoint."""
         content = ""
         reasoning = ""
+        reasoning_items: list[EncryptedReasoningItem] = []
         tool_calls: dict[int, dict[str, str]] = {}
         usage: Usage | None = None
         async for chunk in self.stream(messages, tools, merged):
@@ -115,6 +146,8 @@ class _CodexResponsesHandler(ResponsesHandler):
                 content += delta.content
             if delta.reasoning_content:
                 reasoning += delta.reasoning_content
+            if delta.reasoning_item:
+                reasoning_items.append(delta.reasoning_item)
             for tool_delta in delta.tool_calls or []:
                 index = tool_delta.index if tool_delta.index is not None else 0
                 buffered = tool_calls.setdefault(
@@ -164,13 +197,39 @@ class _CodexResponsesHandler(ResponsesHandler):
         return AssistantMessage(
             content=content or None,
             reasoning_content=reasoning or None,
+            reasoning_items=reasoning_items or None,
             tool_calls=complete_tool_calls or None,
-            extra=(
-                {"usage": usage_to_dict(usage, self.usage_model_id)}
-                if usage is not None
-                else None
+            extra=_assistant_extra(
+                usage_to_dict(usage, self.usage_model_id) if usage else None,
+                reasoning_items,
             ),
         )
+
+
+def _refresh_catalog_limits() -> None:
+    """Keep the endpoint's own context limits current in the registry.
+
+    TTL-guarded inside ``load_codex_catalog``, so this touches the network at
+    most once an hour. Only clears the registry cache when the limits
+    actually changed — rebuilding it on every provider construction would
+    cost far more than it saves.
+    """
+    from app.agent.providers.codex.catalog import (
+        cached_codex_catalog,
+        load_codex_catalog,
+        model_registry_overlay,
+    )
+    from app.agent.providers.model_registry import load_model_registry
+
+    try:
+        before = model_registry_overlay(cached_codex_catalog())
+        after = model_registry_overlay(load_codex_catalog())
+    except Exception as exc:
+        logger.warning("codex_catalog_refresh_failed error={}", type(exc).__name__)
+        return
+    if after and after != before:
+        load_model_registry.cache_clear()
+        logger.info("codex_catalog_limits_updated models={}", len(after))
 
 
 def _load_token() -> tuple[str, str | None]:
@@ -213,6 +272,8 @@ class CodexProvider(LLMProviderBase):
             mode for supported models (GPT-5.5/GPT-5.4 at time of writing).
     """
 
+    default_provider_id = "codex"
+
     def __init__(
         self,
         model: str,
@@ -227,6 +288,8 @@ class CodexProvider(LLMProviderBase):
             max_tokens=max_tokens,
             model_kwargs=model_kwargs,
         )
+
+        _refresh_catalog_limits()
 
         access_token, account_id = _load_token()
         self.model = model

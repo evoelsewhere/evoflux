@@ -51,14 +51,20 @@ def _reset_local_reachable_cache(monkeypatch: pytest.MonkeyPatch):
     async def _available(_entry, **_kwargs):  # type: ignore[no-untyped-def]
         return ["test-model"]
 
-    settings_routes._local_reachable_cache.clear()
-    settings_routes._provider_model_cache.clear()
+    _reset_provider_caches()
     monkeypatch.setattr(
         "app.agent.providers.model_discovery.discover_provider_models", _available
     )
     yield
+    _reset_provider_caches()
+
+
+def _reset_provider_caches() -> None:
+    """Forget every provider cache, including the on-disk manual mirror."""
     settings_routes._local_reachable_cache.clear()
     settings_routes._provider_model_cache.clear()
+    settings_routes._manual_model_ids.clear()
+    settings_routes._manual_cache_loaded_from = None
 
 
 def test_connect_conductor_forwards_token_and_returns_status(
@@ -1538,6 +1544,110 @@ def test_registry_skips_unconfigured_discovery(monkeypatch: pytest.MonkeyPatch) 
     assert call_count == 0
 
 
+def _manual_catalog_entry() -> dict:
+    """A models.dev catalog row: connected by hand, never auto-polled."""
+    return {
+        "id": "zenprov",
+        "label": "Zen Provider",
+        "description": "",
+        "kind": "api_key",
+        "env_var": "ZENPROV_API_KEY",
+        "env_vars": ["ZENPROV_API_KEY"],
+        "credentials": [
+            {
+                "name": "ZENPROV_API_KEY",
+                "label": "API key",
+                "secret": True,
+                "required": True,
+                "placeholder": "",
+            }
+        ],
+        "fallback_models": [],
+        "oauth_command": "",
+        "docs_url": "",
+        "auto_connect": False,
+        "source": "catalog",
+        "transport": "openai-completions",
+    }
+
+
+@pytest.fixture
+def manual_catalog_provider(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict:
+    from app.api.routes import agents as agents_module
+
+    entry = _manual_catalog_entry()
+    monkeypatch.setattr(
+        "app.agent.providers.catalog.all_providers",
+        lambda **_kwargs: [entry],
+    )
+    monkeypatch.setattr(settings_routes.settings, "EVOFLUX_CACHE_DIR", str(tmp_path))
+    agents_module._registry_model_cache.clear()
+    return entry
+
+
+async def test_saved_manual_provider_model_passes_the_chat_validator(
+    monkeypatch: pytest.MonkeyPatch, manual_catalog_provider: dict
+) -> None:
+    """What the picker offers, a turn must be allowed to use.
+
+    The two used to disagree: the registry listed a manual provider's
+    models from its cache, while the validator demanded a saved env var
+    and rejected them — a 422 naming a model the registry had just
+    handed the user.
+    """
+    from app.api.routes import agents as agents_module
+
+    monkeypatch.setenv("ZENPROV_API_KEY", "sk-zen")
+    settings_routes._cache_provider_models(manual_catalog_provider, ["zen-model"])
+
+    discovered = await agents_module._discover_configured_registry_models()
+
+    assert ("zenprov", "zen-model") in discovered
+    assert await agents_module.is_registered_model_id("zenprov:zen-model") is True
+
+
+async def test_unsaved_manual_provider_is_offered_to_nobody(
+    monkeypatch: pytest.MonkeyPatch, manual_catalog_provider: dict
+) -> None:
+    """Listing models proves the typed key works, not that it was saved."""
+    from app.api.routes import agents as agents_module
+
+    monkeypatch.delenv("ZENPROV_API_KEY", raising=False)
+    settings_routes._cache_provider_models(manual_catalog_provider, ["zen-model"])
+
+    discovered = await agents_module._discover_configured_registry_models()
+
+    assert discovered == []
+    assert await agents_module.is_registered_model_id("zenprov:zen-model") is False
+    assert settings_routes._manual_provider_is_connected(manual_catalog_provider) is (
+        False
+    )
+
+
+def test_manual_provider_models_survive_a_restart(
+    manual_catalog_provider: dict,
+) -> None:
+    """A catalog provider stays listed without re-running "list models"."""
+    settings_routes._cache_provider_models(manual_catalog_provider, ["zen-model"])
+
+    _reset_provider_caches()  # a fresh process
+
+    assert settings_routes._cached_provider_models(manual_catalog_provider) == [
+        "zen-model"
+    ]
+
+
+def test_clearing_a_manual_provider_forgets_its_models(
+    manual_catalog_provider: dict,
+) -> None:
+    settings_routes._cache_provider_models(manual_catalog_provider, ["zen-model"])
+    settings_routes._cache_provider_models(manual_catalog_provider, [])
+
+    _reset_provider_caches()
+
+    assert settings_routes._cached_provider_models(manual_catalog_provider) is None
+
+
 def test_manual_ollama_connection_populates_registry_without_reconnecting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1735,3 +1845,227 @@ def test_build_overrides_skips_blank_candidate_values() -> None:
     )
 
     assert overrides == {"FOUNDRY_RESOURCE_NAME": "evollm"}
+
+
+# ── Auto-compaction threshold ─────────────────────────────────────────────
+
+
+@pytest.fixture
+def isolated_runtime_settings(tmp_path: Path):
+    """Point load/save_runtime_settings at a tmp ``settings.yaml``."""
+    target = tmp_path / "settings.yaml"
+    with patch("app.core.runtime_settings.runtime_settings_path", return_value=target):
+        yield target
+
+
+def _overrides(**changes: int | None) -> dict[str, int | None]:
+    """A full override payload — the endpoint replaces rather than patches."""
+    body: dict[str, int | None] = {
+        "summary_trigger_tokens": None,
+        "summary_max_tokens": None,
+        "keep_recent_turns": None,
+        "tool_result_offload_chars": None,
+        "keep_recent_tool_batches": None,
+    }
+    body.update(changes)
+    return body
+
+
+def test_get_context_reports_every_default(
+    isolated_runtime_settings: Path,
+) -> None:
+    from app.agent.hooks.summarization import (
+        CODING_KEEP_LAST_ASSISTANTS,
+        DEFAULT_KEEP_LAST_ASSISTANTS,
+        DEFAULT_MAX_TOKEN_LENGTH,
+        MAX_PROMPT_TOKEN_THRESHOLD,
+        PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO,
+        cost_optimal_prompt_token_threshold,
+    )
+    from app.agent.hooks.tool_context_projection import (
+        CODING_KEEP_RECENT_BATCHES,
+        DEFAULT_KEEP_RECENT_BATCHES,
+    )
+    from app.agent.hooks.tool_result_offload import DEFAULT_CHAR_THRESHOLD
+
+    client = TestClient(_make_app())
+    response = client.get("/api/settings/context")
+    assert response.status_code == 200
+    assert response.json() == {
+        "summary_trigger_tokens": None,
+        "summary_max_tokens": None,
+        "keep_recent_turns": None,
+        "tool_result_offload_chars": None,
+        "keep_recent_tool_batches": None,
+        "defaults": {
+            "summary_trigger_tokens": cost_optimal_prompt_token_threshold(),
+            "summary_max_tokens": DEFAULT_MAX_TOKEN_LENGTH,
+            "keep_recent_turns": DEFAULT_KEEP_LAST_ASSISTANTS,
+            "tool_result_offload_chars": DEFAULT_CHAR_THRESHOLD,
+            "keep_recent_tool_batches": DEFAULT_KEEP_RECENT_BATCHES,
+        },
+        # The two mode-aware built-ins, so the UI can say what a Coding
+        # session falls back to instead of reporting Work's value for both.
+        "coding_defaults": {
+            "keep_recent_turns": CODING_KEEP_LAST_ASSISTANTS,
+            "keep_recent_tool_batches": CODING_KEEP_RECENT_BATCHES,
+        },
+        "ignored": [],
+        "max_tokens": MAX_PROMPT_TOKEN_THRESHOLD,
+        "context_ratio": PROMPT_TOKEN_THRESHOLD_CONTEXT_RATIO,
+    }
+    # GET must not write the file.
+    assert not isolated_runtime_settings.exists()
+
+
+def test_put_context_persists_the_override(
+    isolated_runtime_settings: Path,
+) -> None:
+    client = TestClient(_make_app())
+    response = client.put(
+        "/api/settings/context", json=_overrides(summary_trigger_tokens=150_000)
+    )
+    assert response.status_code == 200
+    assert response.json()["summary_trigger_tokens"] == 150_000
+    assert isolated_runtime_settings.exists()
+
+    assert (
+        client.get("/api/settings/context").json()["summary_trigger_tokens"] == 150_000
+    )
+
+
+def test_put_context_null_restores_the_cost_optimal_default(
+    isolated_runtime_settings: Path,
+) -> None:
+    client = TestClient(_make_app())
+    client.put("/api/settings/context", json=_overrides(summary_trigger_tokens=150_000))
+    response = client.put("/api/settings/context", json=_overrides())
+    assert response.status_code == 200
+    assert response.json()["summary_trigger_tokens"] is None
+
+
+def test_put_context_rejects_a_threshold_below_the_floor(
+    isolated_runtime_settings: Path,
+) -> None:
+    client = TestClient(_make_app())
+    response = client.put(
+        "/api/settings/context", json=_overrides(summary_trigger_tokens=5_000)
+    )
+    assert response.status_code == 422
+
+
+def test_put_context_persists_every_override(
+    isolated_runtime_settings: Path,
+) -> None:
+    client = TestClient(_make_app())
+    body = _overrides(
+        summary_trigger_tokens=120_000,
+        summary_max_tokens=8_000,
+        keep_recent_turns=0,
+        tool_result_offload_chars=5_000,
+        keep_recent_tool_batches=1,
+    )
+    response = client.put("/api/settings/context", json=body)
+    assert response.status_code == 200
+    saved = client.get("/api/settings/context").json()
+    for field, expected in body.items():
+        assert saved[field] == expected
+
+
+def test_context_overrides_reach_the_hooks(isolated_runtime_settings: Path) -> None:
+    """The point of the endpoint: a saved value changes how hooks are built."""
+    from unittest.mock import MagicMock
+
+    from app.agent.hooks.summarization import build_summarization_hook
+    from app.agent.hooks.tool_context_projection import (
+        build_tool_context_projection_hook,
+    )
+    from app.agent.hooks.tool_result_offload import build_tool_result_offload_hook
+
+    client = TestClient(_make_app())
+    client.put(
+        "/api/settings/context",
+        json=_overrides(
+            summary_trigger_tokens=120_000,
+            summary_max_tokens=8_000,
+            keep_recent_turns=0,
+            tool_result_offload_chars=5_000,
+            keep_recent_tool_batches=1,
+        ),
+    )
+
+    hook = build_summarization_hook(
+        MagicMock(), mode="coding", model_id="anthropic:claude-opus-4-7"
+    )
+    assert hook is not None
+    assert hook._prompt_token_threshold == 120_000
+    assert hook._max_token_length == 8_000
+    assert hook._keep_last_assistants == 0
+    assert build_tool_result_offload_hook()._char_threshold == 5_000
+    assert build_tool_context_projection_hook("chat")._keep_recent_batches == 1
+
+
+def test_put_context_rejects_an_out_of_range_tool_batch_window(
+    isolated_runtime_settings: Path,
+) -> None:
+    client = TestClient(_make_app())
+    response = client.put(
+        "/api/settings/context", json=_overrides(keep_recent_tool_batches=99)
+    )
+    assert response.status_code == 422
+
+
+def test_get_context_reports_a_hand_edited_value_it_had_to_ignore(
+    isolated_runtime_settings: Path,
+) -> None:
+    """An out-of-range value in settings.yaml degrades instead of 422-ing.
+
+    Regression: it used to reach every settings endpoint as an exception, so
+    the page could not load *and* the PUT that would repair the file failed
+    the same way — the file was only fixable by hand.
+    """
+    isolated_runtime_settings.write_text(
+        "context:\n  summary_trigger_tokens: 10\n  summary_max_tokens: 15000\n",
+        encoding="utf-8",
+    )
+    client = TestClient(_make_app())
+    response = client.get("/api/settings/context")
+
+    assert response.status_code == 200
+    body = response.json()
+    # The bad value is gone, the good one beside it survives.
+    assert body["summary_trigger_tokens"] is None
+    assert body["summary_max_tokens"] == 15_000
+    assert [item["field"] for item in body["ignored"]] == ["summary_trigger_tokens"]
+    assert "20000" in body["ignored"][0]["message"]
+
+
+def test_put_context_repairs_a_file_with_an_invalid_value(
+    isolated_runtime_settings: Path,
+) -> None:
+    isolated_runtime_settings.write_text(
+        "context:\n  summary_trigger_tokens: 10\n", encoding="utf-8"
+    )
+    client = TestClient(_make_app())
+    response = client.put(
+        "/api/settings/context", json=_overrides(summary_trigger_tokens=150_000)
+    )
+
+    assert response.status_code == 200
+    assert response.json()["summary_trigger_tokens"] == 150_000
+    assert response.json()["ignored"] == []
+    assert "150000" in isolated_runtime_settings.read_text(encoding="utf-8")
+
+
+def test_an_unrelated_section_survives_a_bad_context_value(
+    isolated_runtime_settings: Path,
+) -> None:
+    """The crash this guards: one bad value took unrelated endpoints down."""
+    isolated_runtime_settings.write_text(
+        "context:\n  summary_trigger_tokens: 10\n"
+        "providers:\n  openai:\n    visible_models:\n      - gpt-4o\n",
+        encoding="utf-8",
+    )
+    from app.core.runtime_settings import provider_visible_models
+
+    assert provider_visible_models("openai") == ["gpt-4o"]

@@ -24,8 +24,17 @@ class _UsageTotals:
     tool_use: int = 0
     calls: int = 0
     models: set[str] = field(default_factory=set)
+    #: USD by cost component, summed per call. A turn is priced call by
+    #: call because rates are per model, and a turn that escalated from a
+    #: cheap model to an expensive one cannot be priced from its totals.
+    cost: dict[str, float] = field(default_factory=dict)
 
-    def add(self, usage: Mapping[str, int], model_id: str | None) -> None:
+    def add(
+        self,
+        usage: Mapping[str, int],
+        model_id: str | None,
+        cost: Mapping[str, float] | None = None,
+    ) -> None:
         self.input += usage["input"]
         self.output += usage["output"]
         self.cache += usage["cache"]
@@ -35,6 +44,9 @@ class _UsageTotals:
         self.calls += 1
         if model_id:
             self.models.add(model_id)
+        if cost:
+            for component, amount in cost.items():
+                self.cost[component] = self.cost.get(component, 0.0) + amount
 
     def snapshot(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -50,6 +62,10 @@ class _UsageTotals:
             result["tool_use"] = self.tool_use
         if self.models:
             result["models"] = sorted(self.models)
+        if self.cost:
+            result["cost"] = {
+                component: round(amount, 6) for component, amount in self.cost.items()
+            }
         return result
 
 
@@ -73,8 +89,18 @@ class TurnUsageTracker:
         normalized = _normalize_usage(usage)
         if normalized is None:
             return None
-        self.total.add(normalized, model_id)
-        self.phases.setdefault(phase, _UsageTotals()).add(normalized, model_id)
+        from app.agent.usage import estimate_cost
+
+        cost = estimate_cost(
+            model_id,
+            input_tokens=normalized["input"],
+            output_tokens=normalized["output"],
+            cached_tokens=normalized["cache"],
+            cache_write_tokens=normalized["cache_write"],
+            thoughts_tokens=normalized["thoughts"],
+        )
+        self.total.add(normalized, model_id, cost)
+        self.phases.setdefault(phase, _UsageTotals()).add(normalized, model_id, cost)
         return self.snapshot()
 
     def snapshot(self) -> dict[str, Any]:
@@ -152,6 +178,7 @@ async def record_turn_usage(
                         "phases": snapshot["phases"],
                         "models": snapshot.get("models"),
                     },
+                    cost=snapshot.get("cost"),
                 )
             ),
         )

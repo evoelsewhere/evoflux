@@ -12,6 +12,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket
 from pydantic import BaseModel, Field
 
+from app.core.desktop_auth import websocket_authorized
+
 router = APIRouter()
 
 
@@ -20,6 +22,8 @@ async def direct_browser_agent_bridge(ws: WebSocket, session_id: str) -> None:
     """Attach the user-visible browser to agent ``browser_use`` calls."""
     from app.services.direct_browser_bridge import direct_browser_bridge
 
+    if not await websocket_authorized(ws):
+        return
     await ws.accept()
     await direct_browser_bridge.attach(session_id, ws)
 
@@ -29,6 +33,8 @@ async def direct_browser_presence(ws: WebSocket, session_id: str) -> None:
     """Register a desktop chat that can mount its Browser panel on demand."""
     from app.services.direct_browser_bridge import direct_browser_bridge
 
+    if not await websocket_authorized(ws):
+        return
     await ws.accept()
     await direct_browser_bridge.attach_presence(session_id, ws)
 

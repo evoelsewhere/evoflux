@@ -1,0 +1,6 @@
+interface:
+  display_name: "Python Toolchain"
+  short_description: "Set up uv, Ruff, and Pyright for a Python project"
+  default_prompt: "Use $modern-python-toolchain to set this project's Python toolchain up correctly."
+policy:
+  allow_implicit_invocation: true

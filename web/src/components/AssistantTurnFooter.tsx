@@ -7,12 +7,20 @@
  * view. Each view passes its own `renderBlock` so the per-view block visuals
  * (e.g. compact vs roomy `UserBubble`) stay independent.
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { Copy, Check, Play } from 'lucide-react'
-import { formatTime, lastTurnText } from '@/utils/format'
+import { lastTurnText } from '@/utils/format'
+import {
+  costTooltip,
+  formatTurnCost,
+  formatTurnDuration,
+  formatTurnTokens,
+  shortModelName,
+} from '@/utils/turn-meta'
+import { cn } from '@/lib/utils'
 import { AssistantTurnContent } from './AssistantTurnContent'
 import { easdToolReviewTarget } from './easd/easdToolReviewTarget'
-import type { ContentBlock } from '@/api/types'
+import type { ContentBlock, TurnUsage } from '@/api/types'
 
 export interface AssistantTurnFooterProps {
   /** Blocks belonging to a single assistant turn (no user blocks inside). */
@@ -23,19 +31,17 @@ export interface AssistantTurnFooterProps {
   onContinue?: () => void
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`
-
-  const totalSeconds = Math.round(ms / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}m ${seconds}s`
-}
-
-function shortModelName(modelId: string | null | undefined): string | null {
-  if (!modelId) return null
-  return modelId.split(':').at(-1)?.split('/').at(-1) || modelId
+function usageTooltip(usage: TurnUsage): string {
+  const newline = String.fromCharCode(10)
+  const lines = [`Input ${usage.input.toLocaleString()}`]
+  if (usage.cache) lines.push(`  of which cached ${usage.cache.toLocaleString()}`)
+  if (usage.cache_write) {
+    lines.push(`  cache written ${usage.cache_write.toLocaleString()}`)
+  }
+  lines.push(`Output ${usage.output.toLocaleString()}`)
+  if (usage.thoughts) lines.push(`  of which thinking ${usage.thoughts.toLocaleString()}`)
+  if (usage.calls && usage.calls > 1) lines.push(`${usage.calls} model calls`)
+  return lines.join(newline)
 }
 
 export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }: AssistantTurnFooterProps) {
@@ -43,9 +49,9 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
   const footerData = useMemo(() => {
     // Me lastTurnText walks back to the previous user block; pass the turn directly
     const textContent = lastTurnText(turnBlocks)
-    const lastBlock = turnBlocks[turnBlocks.length - 1]
     let responseDurationMs: number | undefined
     let modelId: string | undefined
+    let turnUsage: TurnUsage | undefined
     let hasTool = false
     let hasEasdReviewAction = false
     for (let i = turnBlocks.length - 1; i >= 0; i--) {
@@ -54,26 +60,60 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
         ? block.responseDurationMs
         : undefined
       modelId ??= typeof block.extra?.model === 'string' ? block.extra.model : undefined
+      turnUsage ??= block.turnUsage
       hasTool ||= block.type === 'tool'
       hasEasdReviewAction ||= block.type === 'tool' && Boolean(
         easdToolReviewTarget(block.toolName, block.toolArgs, block.toolResult),
       )
-      if (responseDurationMs !== undefined && modelId !== undefined && hasTool && hasEasdReviewAction) break
+      if (
+        responseDurationMs !== undefined
+        && modelId !== undefined
+        && turnUsage !== undefined
+        && hasTool
+        && hasEasdReviewAction
+      ) break
     }
     return {
       textContent,
-      timestamp: lastBlock?.timestamp,
       responseDurationMs,
       modelId,
       modelName: shortModelName(modelId),
+      turnUsage,
       hasTool,
       hasEasdReviewAction,
     }
   }, [turnBlocks])
-  const { textContent, timestamp, responseDurationMs, modelId, modelName, hasTool, hasEasdReviewAction } = footerData
+  const {
+    textContent, responseDurationMs, modelId, modelName, turnUsage,
+    hasTool, hasEasdReviewAction,
+  } = footerData
   const canContinue = Boolean(onContinue && (textContent || hasTool) && !hasEasdReviewAction)
+  const totalTokens = turnUsage ? turnUsage.input + turnUsage.output : 0
+  // `input` is summed across every model call in the turn, so a prompt that
+  // was read from cache is counted once per call. Measured on a three-call
+  // turn: 58,798 input tokens of which 38,592 were cache reads — so the
+  // headline read as 59k next to a cost of $0.003, and anyone multiplying
+  // the two got three times the real spend.
+  //
+  // Both cache classes are part of `input` and neither bills at the input
+  // rate, so both break that multiplication — in opposite directions. Reads
+  // are a fraction of the rate and make a turn look dearer than it was;
+  // writes cost more than plain input and make it look cheaper. Naming the
+  // shares is what lets the volume and the price agree.
+  const inputShares = turnUsage && turnUsage.input > 0
+    ? ([
+        ['cached', turnUsage.cache ?? 0],
+        ['written', turnUsage.cache_write ?? 0],
+      ] as const)
+        .map(([name, tokens]) => ({
+          name,
+          percent: Math.round((tokens / turnUsage.input) * 100),
+        }))
+        // Under a twentieth of the prompt explains nothing about the price.
+        .filter((share) => share.percent >= 5)
+    : []
+  const cost = turnUsage?.cost
 
-  if (!textContent && !timestamp && !canContinue && responseDurationMs === undefined && !modelName) return null
 
   const handleCopy = async () => {
     try {
@@ -83,11 +123,48 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
     } catch { /* ignore */ }
   }
 
-  const wrapperClass = size === 'roomy' ? 'mt-1 flex items-center gap-1.5' : 'mt-0.5 flex items-center gap-1'
   const iconSize = size === 'roomy' ? 11 : 10
+  // One run of facts, middot-separated, in a single monospaced size. Five
+  // values sat side by side with only whitespace between them read as one
+  // ambiguous string — the separators are what make `8.6s 137k` two facts
+  // instead of a number nobody can parse.
+  const meta: { key: string; label: string; title?: string }[] = []
+  if (modelName) meta.push({ key: 'model', label: modelName, title: modelId })
+  if (responseDurationMs !== undefined) {
+    meta.push({
+      key: 'duration',
+      label: formatTurnDuration(responseDurationMs),
+      title: 'Response duration',
+    })
+  }
+  if (turnUsage && totalTokens > 0) {
+    meta.push({
+      key: 'tokens',
+      label: inputShares.length
+        ? `${formatTurnTokens(totalTokens)} tokens · ${inputShares
+            .map((share) => `${share.percent}% ${share.name}`)
+            .join(', ')}`
+        : `${formatTurnTokens(totalTokens)} tokens`,
+      title: usageTooltip(turnUsage),
+    })
+  }
+  if (cost && cost.estimated_usd > 0) {
+    meta.push({
+      key: 'cost',
+      label: formatTurnCost(cost.estimated_usd),
+      title: costTooltip(cost),
+    })
+  }
+
+  if (!textContent && !canContinue && meta.length === 0) return null
 
   return (
-    <div className={wrapperClass}>
+    <div
+      className={cn(
+        'flex min-w-0 flex-wrap items-center',
+        size === 'roomy' ? 'mt-1 gap-x-1.5 gap-y-0.5' : 'mt-0.5 gap-x-1 gap-y-0.5',
+      )}
+    >
       {textContent && (
         <button
           onClick={handleCopy}
@@ -110,17 +187,24 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
           <Play size={iconSize} />
         </button>
       )}
-      {modelName && (
-        <span className="font-mono text-(--color-text-subtle) text-xs" title={modelId ?? undefined}>
-          {modelName}
-        </span>
-      )}
-      {timestamp && <span className="text-(--color-text-subtle) text-xs">{formatTime(timestamp)}</span>}
-      {responseDurationMs !== undefined && (
-        <span className="font-mono text-(--color-text-subtle) text-xs" title="Response duration">
-          {formatDuration(responseDurationMs)}
-        </span>
-      )}
+      {meta.map((item, index) => (
+        <Fragment key={item.key}>
+          {index > 0 && (
+            <span
+              aria-hidden="true"
+              className="select-none text-(--color-text-subtle) text-xs"
+            >
+              ·
+            </span>
+          )}
+          <span
+            className="truncate font-mono text-(--color-text-subtle) text-xs"
+            title={item.title}
+          >
+            {item.label}
+          </span>
+        </Fragment>
+      ))}
     </div>
   )
 }

@@ -10,14 +10,15 @@ import { createSSEHandler } from './sse-reducer'
 import { useToastStore } from '@/stores/useToastStore'
 import { isTransientNetworkError } from '@/utils/errors'
 import { createStreamScheduler } from '@/api/stream-scheduler'
-import type { AgentStream, TeamStore } from './types'
-import type { ContentBlock, MessageResponse, TeamHistoryResponse } from '@/api/types'
+import type { AgentStream, TeamStore, TeamStoreState } from './types'
+import type { ContentBlock, MessageResponse, PermissionMode, TeamHistoryResponse } from '@/api/types'
 
 function resetTurnUsage(stream: AgentStream) {
   stream.usage.turnPromptTokens = 0
   stream.usage.turnCompletionTokens = 0
   stream.usage.turnTotalTokens = 0
   stream.usage.turnCachedTokens = 0
+  stream.usage.turnCacheWriteTokens = 0
   stream.usage.turnCalls = 0
   stream.usage.turnPhases = {}
 }
@@ -235,6 +236,114 @@ function hasVisibleBlocks(stream: AgentStream | undefined): boolean {
   return [...stream.blocks, ...stream.currentBlocks].some((block) => block.type !== 'compaction')
 }
 
+/**
+ * State that belongs to one session rather than to the app.
+ *
+ * The store keeps a single session's fields flat, which is what every
+ * selector reads. Switching therefore had to wipe them and refetch the
+ * whole transcript — 368 KB and ~280 ms for a long session, every time,
+ * with a loading skeleton in between. Putting the outgoing session's
+ * fields aside and restoring them on return means the chat paints
+ * instantly; the refetch still happens, but behind content instead of a
+ * blank screen.
+ */
+const SESSION_OWNED_KEYS = [
+  'agentStreams',
+  'activeAgent',
+  'leadName',
+  'agentNames',
+  'liveAgentNames',
+  'projectId',
+  'sessionTitle',
+  'sessionTags',
+  'sessionPermissionMode',
+  'sessionModel',
+  'sessionThinkingLevel',
+  'sessionFastMode',
+  'isTeamWorking',
+  'isContinuing',
+  'error',
+  'activeGoal',
+  'activeWorkflowExecution',
+  'setupRequired',
+  'browserSession',
+  'planApproval',
+  'turnChanges',
+  'turnChangesOpen',
+  'permissionRequest',
+  'askUserQuestion',
+  'hasMore',
+  'nextCursor',
+  'activityLog',
+  '_pendingMessages',
+  '_leadRevertTime',
+  '_workspace',
+] as const satisfies readonly (keyof TeamStoreState)[]
+
+type SessionSnapshot = Pick<TeamStoreState, (typeof SESSION_OWNED_KEYS)[number]>
+
+/**
+ * Recently visited sessions, newest last.
+ *
+ * Bounded because a snapshot holds a whole transcript; past this many the
+ * oldest is dropped and that session pays the original full-load cost
+ * once.
+ */
+const SESSION_SNAPSHOT_LIMIT = 6
+const sessionSnapshots = new Map<string, SessionSnapshot>()
+
+function stashSession(state: TeamStore): void {
+  const sessionId = state.sessionId
+  if (!sessionId) return
+  const snapshot = {} as Record<string, unknown>
+  for (const key of SESSION_OWNED_KEYS) snapshot[key] = state[key]
+  sessionSnapshots.delete(sessionId)
+  sessionSnapshots.set(sessionId, snapshot as SessionSnapshot)
+  while (sessionSnapshots.size > SESSION_SNAPSHOT_LIMIT) {
+    const oldest = sessionSnapshots.keys().next().value
+    if (oldest === undefined) break
+    sessionSnapshots.delete(oldest)
+  }
+}
+
+function restoreSession(state: TeamStore, sessionId: string): boolean {
+  const snapshot = sessionSnapshots.get(sessionId)
+  if (!snapshot) return false
+  Object.assign(state, snapshot)
+  // Mark it as most recently used.
+  sessionSnapshots.delete(sessionId)
+  sessionSnapshots.set(sessionId, snapshot)
+  return true
+}
+
+/** Forget a session's cached view — it no longer exists, or was reset. */
+export function forgetSessionSnapshot(sessionId: string): void {
+  sessionSnapshots.delete(sessionId)
+}
+
+/**
+ * Settings to send with a message that may be the one creating the session.
+ * Only a draft has any: once ``sessionId`` exists the row owns its folder,
+ * project and permission mode, and the backend ignores these fields anyway.
+ *
+ * The permission mode rides along because there is nothing to PATCH it to
+ * until the row exists. Left out, the pick was silently dropped and the first
+ * turn ran under the column default — approving everything for a user who
+ * had just asked to be asked.
+ */
+function draftPlacement(state: TeamStore): {
+  folderId: string | null
+  projectId: string | null
+  permissionMode: PermissionMode
+} | undefined {
+  if (state.sessionId) return undefined
+  return {
+    folderId: state.newChatDraft?.folderId ?? null,
+    projectId: state.projectId,
+    permissionMode: state.sessionPermissionMode,
+  }
+}
+
 function resetSessionState(
   state: TeamStore,
   options: {
@@ -244,11 +353,23 @@ function resetSessionState(
     fastMode?: boolean
     mode?: string
     workspace?: string | null
+    projectId?: string | null
+    folderId?: string | null
   },
 ) {
   const leadName = state.leadName ?? state.agentNames[0] ?? null
   state.sessionId = options.sessionId
-  state.projectId = null
+  state.projectId = options.projectId ?? null
+  // Beginning a session-less session is the user asking for a blank chat;
+  // a resolved one clears the mark and owns its folder on the row. A Work
+  // draft carries its chosen folder here rather than in `_workspace`, which
+  // stays coding-only.
+  state.newChatDraft = options.sessionId
+    ? null
+    : {
+      folderId: options.folderId ?? null,
+      workspace: options.mode === 'coding' ? null : (options.workspace ?? null),
+    }
   state.sessionTitle = null
   state.sessionTags = []
   state.sessionPermissionMode = 'auto'
@@ -280,6 +401,7 @@ function resetSessionState(
   state._workspace =
     options.mode === 'coding' ? (options.workspace ?? null) : null
   state._loadingOlder = false
+  state._restoredFromCache = false
   state._resolvedSessionReadyId = null
   state.agentNames = leadName ? [leadName] : []
   state.liveAgentNames = leadName ? [leadName] : null
@@ -365,6 +487,7 @@ export const useTeamStore = create<TeamStore>()(
     sidebarOpen: false,
     sessionId: null,
     projectId: null,
+    newChatDraft: null,
     sessionTitle: null,
     sessionTags: [],
     sessionPermissionMode: 'auto',
@@ -395,6 +518,7 @@ export const useTeamStore = create<TeamStore>()(
     _leadRevertTime: null,
     _workspace: null,
     _loadingOlder: false,
+    _restoredFromCache: false,
     _resolvedSessionReadyId: null,
     _unloading: false,
     activityLog: [],
@@ -407,9 +531,20 @@ export const useTeamStore = create<TeamStore>()(
       })
     },
 
+    setDraftWorkspace: (workspace: string | null) => {
+      set((state) => {
+        if (state.sessionId || !state.newChatDraft) return
+        state.newChatDraft.workspace = workspace
+      })
+    },
+
     beginResolvedSession: (sessionId, options) => {
       get()._abortController?.abort()
       abortSessionLoads()
+      // Snapshot outside `set`: values read from an immer draft are backed
+      // by proxies that are revoked once `produce` returns, so anything
+      // stashed from inside would throw the moment it was restored.
+      stashSession(get())
       set((state) => {
         resetSessionState(state, {
           sessionId,
@@ -418,14 +553,27 @@ export const useTeamStore = create<TeamStore>()(
           fastMode: options?.fastMode,
           mode: options?.mode,
           workspace: options?.workspace,
+          projectId: options?.projectId,
+          folderId: options?.folderId,
         })
+        // Restoring is for paint only. `loadSession` still runs and is
+        // still authoritative: a turn can have finished while we were
+        // away, and the stream's replay covers only the current turn. The
+        // difference is that it reconciles behind visible content rather
+        // than behind a loading skeleton.
+        if (sessionId && restoreSession(state, sessionId)) {
+          state._restoredFromCache = true
+        }
         if (options?.skipInitialRestore) state._resolvedSessionReadyId = sessionId
       })
     },
 
     isEmptyIdleSession: () => {
       const state = get()
-      if (!state.sessionId || state.isTeamWorking) return false
+      if (state.isTeamWorking) return false
+      // A draft has no session row yet, which is as new as a chat gets —
+      // "New chat" on top of one should do nothing rather than reset it.
+      if (!state.sessionId) return true
       return state.agentNames.every((name) => !hasVisibleBlocks(state.agentStreams[name]))
     },
 
@@ -446,7 +594,7 @@ export const useTeamStore = create<TeamStore>()(
       return true
     },
 
-    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean }) => {
+    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean; webBridgeExtensionId?: string | null }) => {
       let resolvedOptions = options
       const current = get()
       if (current.sessionId) {
@@ -519,6 +667,7 @@ export const useTeamStore = create<TeamStore>()(
             resolvedOptions?.shell ?? false,
             resolvedOptions?.fastMode ?? get().sessionFastMode,
             resolvedOptions?.webBridgeEnabled,
+            resolvedOptions?.webBridgeExtensionId,
           )
           if (result.status === 'queued' && !result.message_id) {
             throw new Error('Backend did not return a queued message id')
@@ -599,15 +748,21 @@ export const useTeamStore = create<TeamStore>()(
           resolvedOptions?.shell ?? false,
           resolvedOptions?.fastMode ?? get().sessionFastMode,
           resolvedOptions?.webBridgeEnabled,
+          resolvedOptions?.webBridgeExtensionId,
+          draftPlacement(get()),
         )
         set((draft) => {
           draft.sessionId = result.session_id
+          draft.newChatDraft = null
           draft.sessionModel = resolvedOptions?.model ?? get().sessionModel
           draft.sessionThinkingLevel = resolvedOptions?.thinkingLevel ?? get().sessionThinkingLevel
           draft._pendingMessages.forEach((msg) => {
             if (msg.sessionId === null || msg.sessionId === undefined) msg.sessionId = result.session_id
           })
-          if (resolvedOptions?.workspace) {
+          // `_workspace` is the Coding repo binding; a Work chat's folder
+          // lives on the session row and is read back through the workspace
+          // query, so sending one must not populate this.
+          if (resolvedOptions?.workspace && resolvedOptions?.mode === 'coding') {
             draft._workspace = resolvedOptions.workspace
           }
         })
@@ -880,10 +1035,14 @@ export const useTeamStore = create<TeamStore>()(
           options?.thinkingLevel ?? get().sessionThinkingLevel,
           false,
           options?.fastMode ?? get().sessionFastMode,
+          undefined,
+          undefined,
+          draftPlacement(get()),
         )
         const goal = await getTeamGoal(result.session_id)
         set((draft) => {
           draft.sessionId = result.session_id
+          draft.newChatDraft = null
           draft.sessionModel = options?.model ?? get().sessionModel
           draft.sessionThinkingLevel = options?.thinkingLevel ?? get().sessionThinkingLevel
           draft.activeGoal = goal

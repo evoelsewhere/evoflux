@@ -13,3 +13,5 @@ class Router9Provider(ChatCompletionsOnlyProvider):
     even when ``thinking_level`` or ``responses_api`` is set by session or
     agent config.
     """
+
+    default_provider_id = "router9"

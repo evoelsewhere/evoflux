@@ -1,5 +1,5 @@
 import { forwardRef, useRef, useImperativeHandle } from 'react'
-import { InputBar, type FileRef, type InputBarHandle, type SlashCommand, type SnippetCommand } from './InputBar'
+import { InputBar, type ComposerSkill, type FileRef, type InputBarHandle, type SlashCommand, type SnippetCommand } from './InputBar'
 import { RevertNotice } from './RevertNotice'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useVisualKeyboardInset } from '@/hooks/use-visual-keyboard-inset'
@@ -14,6 +14,7 @@ interface FloatingInputBarProps {
   onSnippetCommand?: (id: string) => Promise<string | null> | string | null
   slashCommands?: SlashCommand[]
   snippetCommands?: SnippetCommand[]
+  skills?: ComposerSkill[]
   fileRefs?: FileRef[]
   onFileRefsNeeded?: () => void
   isStreaming?: boolean
@@ -42,6 +43,8 @@ interface FloatingInputBarProps {
   onActivity?: () => void
   activityActive?: boolean
   workspaceSelector?: React.ReactNode
+  // Forwarded to InputBar through the rest spread below, like the other
+  // composer props — declared here so the call site stays type-checked.
   permissionMode?: import('@/api/types').PermissionMode
   onPermissionModeChange?: (mode: import('@/api/types').PermissionMode) => void
   goal?: GoalResponse | null

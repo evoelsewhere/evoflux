@@ -1,0 +1,6 @@
+interface:
+  display_name: "Sales Workflows"
+  short_description: "Meeting prep, accounts, deals, forecasts, and CRM"
+  default_prompt: "Use $sales to run the right sales workflow for this account or meeting."
+policy:
+  allow_implicit_invocation: true

@@ -172,6 +172,13 @@ class ObservabilitySummary:
     cache_by_step: list[dict]
     by_tool: list[dict]  # [{"tool": "read", "calls": 12, "errors": 0}]
 
+    #: ``by_model`` crossed with ``time_series``: one row per bucket per model,
+    #: carrying the cache split. ``by_model`` alone cannot say *when* a model
+    #: ran, and ``time_series`` alone cannot say which model or how much of its
+    #: input the provider served from cache — the two questions the token
+    #: chart is asked. Sparse: a bucket a model did not run in has no row.
+    tokens_by_model: list[dict]
+
     def to_dict(self) -> dict:
         return {
             "window_start": self.window_start.isoformat(),
@@ -210,6 +217,7 @@ class ObservabilitySummary:
             "by_model": self.by_model,
             "cache_by_step": self.cache_by_step,
             "by_tool": self.by_tool,
+            "tokens_by_model": self.tokens_by_model,
         }
 
 
@@ -265,6 +273,7 @@ def _empty_summary(
         by_model=[],
         cache_by_step=[],
         by_tool=[],
+        tokens_by_model=[],
     )
 
 
@@ -287,6 +296,20 @@ def _percent(part: int | float, total: int | float) -> float:
     if total <= 0:
         return 0.0
     return round(float(part) / float(total) * 100, 1)
+
+
+def _usd_per_mtok(cost_usd: float, total_tokens: int) -> float:
+    """Blended cost per million tokens of traffic.
+
+    The comparable number across models: two on the same headline price
+    diverge here entirely on how much of their input came from cache, which
+    is the efficiency lever a caller controls. Zero when there was no
+    traffic — an average over nothing is not zero cost, but reporting it as
+    absent would need a nullable column for no gain.
+    """
+    if total_tokens <= 0:
+        return 0.0
+    return round(cost_usd / (total_tokens / 1_000_000), 6)
 
 
 def _cache_percent(cached: int | float, total_input: int | float) -> float:
@@ -395,8 +418,12 @@ def _run_queries(
           (SELECT count(*) FROM turn_spans) AS turns,
           (SELECT count(*) FROM llm_spans) AS llm_calls,
           (SELECT count(*) FROM tool_spans) AS tool_calls,
-          (SELECT count_if(status = 'ERROR') FROM turn_spans) AS failed_turns,
-          (SELECT count_if(status = 'ERROR') FROM spans_window_map) AS error_spans,
+          -- ``count_if`` returns NULL over zero rows, unlike ``count(*)``. A
+          -- window holding LLM spans but no turn span — retention trimmed the
+          -- parent, or the only traffic was title generation — would otherwise
+          -- crash the whole summary on ``int(None)``.
+          (SELECT coalesce(count_if(status = 'ERROR'), 0) FROM turn_spans) AS failed_turns,
+          (SELECT coalesce(count_if(status = 'ERROR'), 0) FROM spans_window_map) AS error_spans,
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT)), 0) FROM llm_spans) AS input_tokens,
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT)), 0) FROM llm_spans) AS output_tokens,
           (SELECT coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) FROM llm_spans) AS cached_tokens,
@@ -520,6 +547,58 @@ def _run_queries(
         sparse_series, window_start, window_end, bucket_size=bucket_size
     )
 
+    # ``by_model`` crossed with the bucket grid. Reads ``llm_spans`` — the same
+    # view the totals and ``by_model`` read, and the same predicate the series
+    # query inlines — so a bucket's rows sum back to that bucket's
+    # ``input_tokens`` and the stack can be trusted against the line.
+    tokens_by_model_rows = con.execute(
+        f"""
+        SELECT
+          strftime(date_trunc('{bucket_unit}', make_timestamp(end_time // 1000)), '{bucket_format}') AS bucket_start,
+          coalesce(attributes['gen_ai.provider.name'], 'unknown') AS provider,
+          coalesce(attributes['gen_ai.request.model'], 'unknown') AS model,
+          coalesce(sum(try_cast(attributes['gen_ai.usage.input_tokens'] AS BIGINT)), 0) AS input_tokens,
+          coalesce(sum(try_cast(attributes['gen_ai.usage.output_tokens'] AS BIGINT)), 0) AS output_tokens,
+          coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
+          coalesce(sum(try_cast(attributes['gen_ai.usage.cache_write.input_tokens'] AS BIGINT)), 0) AS cache_write_tokens,
+          count(*) AS calls
+        FROM llm_spans
+        GROUP BY bucket_start, provider, model
+        HAVING input_tokens > 0 OR output_tokens > 0
+        ORDER BY bucket_start, provider, model
+        """
+    ).fetchall()
+    tokens_by_model = [
+        {
+            "bucket_start": str(bucket),
+            "provider": provider,
+            "model": model,
+            "provider_model": f"{provider}:{model}",
+            "input_tokens": int(input_tokens),
+            "output_tokens": int(output_tokens),
+            "cached_tokens": int(cached_tokens),
+            "cache_write_tokens": int(cache_write_tokens),
+            # What the provider actually charged full price for. Clamped
+            # because a malformed span can report more cache than input, and a
+            # negative segment would draw a bar upside down.
+            "fresh_input_tokens": max(
+                int(input_tokens) - int(cached_tokens) - int(cache_write_tokens), 0
+            ),
+            "cache_percent": _cache_percent(int(cached_tokens), int(input_tokens)),
+            "calls": int(calls),
+        }
+        for (
+            bucket,
+            provider,
+            model,
+            input_tokens,
+            output_tokens,
+            cached_tokens,
+            cache_write_tokens,
+            calls,
+        ) in tokens_by_model_rows
+    ]
+
     model_rows = con.execute(
         """
         SELECT
@@ -531,6 +610,11 @@ def _run_queries(
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_read.input_tokens'] AS BIGINT)), 0) AS cached_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.cache_write.input_tokens'] AS BIGINT)), 0) AS cache_write_tokens,
             coalesce(sum(try_cast(attributes['gen_ai.usage.estimated_cost_usd'] AS DOUBLE)), 0.0) AS estimated_cost_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cost.input_usd'] AS DOUBLE)), 0.0) AS input_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cost.output_usd'] AS DOUBLE)), 0.0) AS output_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cost.cache_read_usd'] AS DOUBLE)), 0.0) AS cache_read_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.cost.cache_write_usd'] AS DOUBLE)), 0.0) AS cache_write_usd,
+            coalesce(sum(try_cast(attributes['gen_ai.usage.reasoning_tokens'] AS BIGINT)), 0) AS reasoning_tokens,
             count_if(status = 'ERROR') AS errors,
             coalesce(avg(duration_ms), 0.0) AS avg_ms,
             coalesce(quantile_cont(duration_ms, 0.5), 0.0) AS p50_ms,
@@ -550,15 +634,43 @@ def _run_queries(
             "output_tokens": int(ot),
             "cached_tokens": int(ct),
             "cache_write_tokens": int(cwt),
+            "reasoning_tokens": int(rt),
             "cache_percent": _cache_percent(int(ct), int(it)),
             "estimated_cost_usd": round(float(cost), 8),
+            "input_usd": round(float(in_usd), 8),
+            "output_usd": round(float(out_usd), 8),
+            "cache_read_usd": round(float(cr_usd), 8),
+            "cache_write_usd": round(float(cw_usd), 8),
+            # Blended rate: what this model actually cost per million tokens
+            # of traffic, cache included. Two models on the same headline
+            # price diverge here entirely on how well their prefix cached,
+            # which is the efficiency signal a headline price cannot show.
+            "usd_per_mtok": _usd_per_mtok(float(cost), int(it) + int(ot)),
             "errors": int(errors),
             "error_rate": _percent(int(errors), int(c)),
             "avg_ms": round(float(avg_ms), 1),
             "p50_ms": round(float(p50), 1),
             "p95_ms": round(float(p95), 1),
         }
-        for provider, m, c, it, ot, ct, cwt, cost, errors, avg_ms, p50, p95 in model_rows
+        for (
+            provider,
+            m,
+            c,
+            it,
+            ot,
+            ct,
+            cwt,
+            cost,
+            in_usd,
+            out_usd,
+            cr_usd,
+            cw_usd,
+            rt,
+            errors,
+            avg_ms,
+            p50,
+            p95,
+        ) in model_rows
     ]
 
     cache_step_rows = con.execute(
@@ -670,6 +782,7 @@ def _run_queries(
         by_model=by_model,
         cache_by_step=cache_by_step,
         by_tool=by_tool,
+        tokens_by_model=tokens_by_model,
     )
 
 

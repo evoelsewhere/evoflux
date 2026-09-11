@@ -16,7 +16,7 @@
  * this module owns only the chrome (collapse, copy, motion).
  */
 
-import { lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronRight,
@@ -36,7 +36,7 @@ import { DiffView } from './DiffView'
 import { ReadView } from './ReadView'
 import { getDiffStats } from './diffUtils'
 import { panelTransition, useMotionPreset } from '@/lib/motion'
-import { useUIStore } from '@/stores/useUIStore'
+import { sessionHasWorkbenchTool, useUIStore } from '@/stores/useUIStore'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { DelegationTaskCards } from '@/components/DelegationTaskCards'
 import { ImageAttachment } from '@/components/ImageAttachment'
@@ -48,6 +48,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { resolveApiUrl } from '@/api/client'
+import { saveWorkspaceFileFromUrl } from '@/lib/workspace-file-save'
+import { useToastStore } from '@/stores/useToastStore'
+import { errorMessage } from '@/utils/errors'
 import type { MessageAttachment, WorkspaceFileInfo } from '@/api/types'
 import {
   isWorkspaceDocumentKind,
@@ -55,50 +58,13 @@ import {
 } from '@/lib/workspace-file-kind'
 import type { ToolCallState } from './types'
 
+import { useLiveClock } from './liveClock'
+
 const DocumentPreview = lazy(() =>
   import('../workspace-document-preview').then((module) => ({
     default: module.WorkspaceDocumentPreview,
   })),
 )
-
-// ── Shared live clock ─────────────────────────────────────────────────────────
-// A single 1 s interval drives *all* ToolCall elapsed timers so React can
-// batch every subscriber update into one render.  The clock auto-starts on
-// first subscription, pauses when the document is hidden, and tears down
-// when no subscribers remain.
-let _clockInterval: ReturnType<typeof setInterval> | null = null
-const _clockListeners = new Set<(now: number) => void>()
-
-function subscribeClock(listener: (now: number) => void) {
-  _clockListeners.add(listener)
-  if (_clockInterval === null && typeof window !== 'undefined') {
-    const tick = () => {
-      if (typeof document === 'undefined' || !document.hidden) {
-        const t = Date.now()
-        _clockListeners.forEach((fn) => fn(t))
-      }
-    }
-    _clockInterval = setInterval(tick, 1000)
-    document.addEventListener('visibilitychange', tick)
-  }
-  return () => {
-    _clockListeners.delete(listener)
-    if (_clockListeners.size === 0 && _clockInterval !== null) {
-      clearInterval(_clockInterval)
-      _clockInterval = null
-    }
-  }
-}
-
-/** Subscribe to a 1-second clock that pauses in background tabs. */
-function useLiveClock(enabled: boolean): number {
-  const [now, setNow] = useState(Date.now)
-  useLayoutEffect(() => {
-    if (!enabled) return undefined
-    return subscribeClock(setNow)
-  }, [enabled, setNow])
-  return now
-}
 
 interface AttachmentDocumentPreview {
   file: WorkspaceFileInfo
@@ -146,6 +112,20 @@ export function ToolAttachments({
 }) {
   const [documentPreview, setDocumentPreview] =
     useState<AttachmentDocumentPreview | null>(null)
+  const pushToast = useToastStore((state) => state.push)
+
+  const saveAttachment = async (url: string, filename: string) => {
+    try {
+      await saveWorkspaceFileFromUrl(url, filename)
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: `Could not save ${filename}`,
+        description: errorMessage(error),
+      })
+    }
+  }
+
   if (!attachments || attachments.length === 0) return null
   const visible = limit ? attachments.slice(0, limit) : attachments
   const remaining = attachments.length - visible.length
@@ -179,6 +159,10 @@ export function ToolAttachments({
             )
           }
           const inAppPreview = attachmentDocumentPreview(attachment)
+          const saveName = attachment.original_name || attachment.filename || 'file'
+          // ``download_url`` is an optional server hint; the plain media URL
+          // is what every workspace attachment actually carries.
+          const saveUrl = resolveApiUrl(attachment.download_url || attachment.url)
           return (
             <FileCard
               key={`${attachment.url ?? attachment.filename ?? index}`}
@@ -187,7 +171,7 @@ export function ToolAttachments({
               url={resolveApiUrl(attachment.preview_url || attachment.url)}
               clickable={Boolean(attachment.preview_url || attachment.url)}
               onOpen={inAppPreview ? () => setDocumentPreview(inAppPreview) : undefined}
-              downloadUrl={resolveApiUrl(attachment.download_url)}
+              onDownload={saveUrl ? () => void saveAttachment(saveUrl, saveName) : undefined}
             />
           )
         })}
@@ -655,9 +639,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
 
 function SeeBrowserButton() {
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
-  const browserOpen = useUIStore((s) =>
-    s.workbenchTabs.some((tab) => tab.tool === 'browser'),
-  )
+  const browserOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'browser'))
   const browserActive = useTeamStore((s) => s.browserSession?.active ?? false)
 
   return (

@@ -1796,3 +1796,119 @@ def test_note_deduped_with_other_injected_tools():
     agent = _build_agent(cfg, {}, factory)
     assert list(agent._tools.keys()).count("note") == 1
     assert list(agent._tools.keys()).count("todo_manage") == 1
+
+
+# ---------------------------------------------------------------------------
+# Placeholder models: seeded-before-a-provider workspaces
+# ---------------------------------------------------------------------------
+
+
+def test_member_without_a_model_is_named_not_just_dropped(tmp_path):
+    """An empty roster has to say why, or it cannot be acted on.
+
+    A member carrying the seed placeholder is not spawnable, and used to
+    disappear with no trace — leaving the lead to fail against
+    ``Available: []`` it could neither explain nor fix.
+    """
+    from app.agent.config import PROVIDER_MODEL_TOKEN
+    from app.agent.loader import load_team_from_dir
+
+    d = _make_agents_dir(
+        tmp_path,
+        [
+            {"name": "lead", "role": "lead", "model": "zai:glm-5-turbo"},
+            {"name": "ready", "role": "member", "model": "zai:glm-5-turbo"},
+            {"name": "unset", "role": "member", "model": PROVIDER_MODEL_TOKEN},
+        ],
+    )
+    factory, _ = _make_provider_factory()
+
+    team = load_team_from_dir(d, provider_factory=factory)
+
+    assert team is not None
+    assert set(team.blueprints) == {"ready"}
+    assert team.unconfigured_members == ["unset"]
+    message = team._unknown_blueprint_message("unset")
+    assert "unset" in message
+    assert "Settings > Agents" in message
+
+
+def test_unknown_blueprint_message_stays_plain_when_all_are_configured(tmp_path):
+    from app.agent.loader import load_team_from_dir
+
+    d = _make_agents_dir(
+        tmp_path,
+        [
+            {"name": "lead", "role": "lead", "model": "zai:glm-5-turbo"},
+            {"name": "ready", "role": "member", "model": "zai:glm-5-turbo"},
+        ],
+    )
+    factory, _ = _make_provider_factory()
+
+    team = load_team_from_dir(d, provider_factory=factory)
+
+    assert team is not None
+    message = team._unknown_blueprint_message("nope")
+    assert message == "Unknown blueprint 'nope'. Available: ['ready']."
+
+
+def test_backfill_adopts_the_lead_model_for_placeholders(tmp_path):
+    from app.agent.config import PROVIDER_MODEL_TOKEN
+    from app.agent.loader import backfill_placeholder_agent_models, parse_agent_md
+
+    d = _make_agents_dir(
+        tmp_path,
+        [
+            {"name": "lead", "role": "lead", "model": "zai:glm-5-turbo"},
+            {"name": "unset", "role": "member", "model": PROVIDER_MODEL_TOKEN},
+            {"name": "chosen", "role": "member", "model": "xiaomi:mimo-v2.5"},
+        ],
+    )
+
+    written = backfill_placeholder_agent_models(d)
+
+    assert written == ["unset.md"]
+    assert parse_agent_md(d / "unset.md").model == "zai:glm-5-turbo"
+    # An explicit choice is never overwritten.
+    assert parse_agent_md(d / "chosen.md").model == "xiaomi:mimo-v2.5"
+
+
+def test_backfill_falls_back_to_the_other_mode_lead(tmp_path):
+    """Work-mode agents adopt the coding lead's model when their own has none."""
+    from app.agent.config import PROVIDER_MODEL_TOKEN
+    from app.agent.loader import backfill_placeholder_agent_models, parse_agent_md
+
+    work = _make_agents_dir(
+        tmp_path,
+        [
+            {"name": "lead", "role": "lead", "model": PROVIDER_MODEL_TOKEN},
+            {"name": "unset", "role": "member", "model": PROVIDER_MODEL_TOKEN},
+        ],
+    )
+    coding = work / "coding"
+    coding.mkdir()
+    _write_agent_md(
+        coding / "lead.md",
+        {"name": "lead", "role": "lead", "model": "zai:glm-5-turbo"},
+    )
+
+    backfill_placeholder_agent_models(work, coding)
+
+    assert parse_agent_md(work / "unset.md").model == "zai:glm-5-turbo"
+    assert parse_agent_md(work / "lead.md").model == "zai:glm-5-turbo"
+
+
+def test_backfill_writes_nothing_when_no_model_is_known(tmp_path):
+    from app.agent.config import PROVIDER_MODEL_TOKEN
+    from app.agent.loader import backfill_placeholder_agent_models, parse_agent_md
+
+    d = _make_agents_dir(
+        tmp_path,
+        [
+            {"name": "lead", "role": "lead", "model": PROVIDER_MODEL_TOKEN},
+            {"name": "unset", "role": "member", "model": PROVIDER_MODEL_TOKEN},
+        ],
+    )
+
+    assert backfill_placeholder_agent_models(d) == []
+    assert parse_agent_md(d / "unset.md").model == PROVIDER_MODEL_TOKEN

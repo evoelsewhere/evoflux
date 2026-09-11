@@ -3,7 +3,7 @@
 Covers:
 - XiaomiProvider.__init__: inherits ChatCompletionsOnlyProvider
 - _make_default_provider_factory: xiaomi branch reads XIAOMI_API_KEY, passes base_url
-- thinking_level -> MiMo's `thinking` toggle (never `reasoning_effort`)
+- thinking_level -> MiMo's `thinking` object with budget_tokens (MiMo-Code wire format)
 - reasoning_content echoed back on tool-call assistant messages (400 Param Incorrect fix)
 """
 
@@ -16,7 +16,7 @@ import pytest
 from app.agent.providers.openai import ChatCompletionsOnlyProvider
 from app.agent.providers.xiaomi import XiaomiProvider
 
-XIAOMI_API_BASE = "https://api.xiaomi.com/v1"
+XIAOMI_API_BASE = "https://api.xiaomimimo.com/v1"
 
 
 # ============================================================================
@@ -135,16 +135,22 @@ class TestXiaomiProviderFactory:
 
 
 # ============================================================================
-# thinking_level -> MiMo's `reasoning_effort` parameter
+# thinking_level -> MiMo's `thinking` + `reasoning_effort` wire format
 # ============================================================================
 
 
 class TestXiaomiThinking:
-    """MiMo supports `reasoning_effort` with values: none, low, medium, high.
+    """MiMo thinking wire format (aligned with MiMo-Code).
 
     When thinking_level is 'none' or 'off', thinking is disabled via the
-    thinking toggle. For low/medium/high, reasoning_effort is passed to
-    control the reasoning intensity.
+    ``thinking`` object.  For low/medium/high, *both* the ``thinking``
+    object (with a concrete ``budget_tokens`` cap) and the backward-compat
+    ``reasoning_effort`` field are sent.
+
+    Budgets come from ``app.agent.providers.thinking.thinking_budget``: a
+    per-level share of the model's output allowance, capped by the absolute
+    per-level ceiling. mimo-v2.5 advertises a 131,072-token output limit, so
+    every level here lands on its ceiling rather than on the share.
     """
 
     def _build_body(self, thinking_level: str | None = None) -> dict:
@@ -166,20 +172,39 @@ class TestXiaomiThinking:
             merged=p._merged_kwargs(),
         )
 
-    def test_reasoning_effort_sent_when_thinking_level_high(self):
+    def test_legacy_effort_is_clamped_to_the_enum_it_belongs_to(self):
+        """``xhigh``/``max`` are budgets, not efforts.
+
+        MiMo takes both a ``thinking`` budget and the older OpenAI-shaped
+        ``reasoning_effort`` enum. The budget is a number, so every EvoFlux
+        level maps to one; the enum stops at ``high``, and sending ``max``
+        there failed the whole request with HTTP 400 "Invalid request
+        parameters" — budget and all. The budget must still reach its full
+        range while the enum is clamped.
+        """
+        for level, budget in (("xhigh", 24_576), ("max", 31_999)):
+            body = self._build_body(level)
+            assert body["thinking"]["budget_tokens"] == budget
+            assert body["reasoning_effort"] == "high"
+
+    def test_legacy_effort_passes_through_inside_the_enum(self):
+        for level in ("minimal", "low", "medium", "high"):
+            assert self._build_body(level)["reasoning_effort"] == level
+
+    def test_thinking_enabled_with_budget_when_thinking_level_high(self):
         body = self._build_body("high")
         assert body.get("reasoning_effort") == "high"
-        assert "thinking" not in body
+        assert body["thinking"] == {"type": "enabled", "budget_tokens": 16_000}
 
-    def test_reasoning_effort_sent_when_thinking_level_medium(self):
+    def test_thinking_enabled_with_budget_when_thinking_level_medium(self):
         body = self._build_body("medium")
         assert body.get("reasoning_effort") == "medium"
-        assert "thinking" not in body
+        assert body["thinking"] == {"type": "enabled", "budget_tokens": 8_192}
 
-    def test_reasoning_effort_sent_when_thinking_level_low(self):
+    def test_thinking_enabled_with_budget_when_thinking_level_low(self):
         body = self._build_body("low")
         assert body.get("reasoning_effort") == "low"
-        assert "thinking" not in body
+        assert body["thinking"] == {"type": "enabled", "budget_tokens": 4_096}
 
     def test_reasoning_effort_never_sent_when_thinking_level_absent(self):
         body = self._build_body()
@@ -195,6 +220,35 @@ class TestXiaomiThinking:
         body = self._build_body("off")
         assert body.get("thinking") == {"type": "disabled"}
         assert "reasoning_effort" not in body
+
+    def test_thinking_disabled_strips_residual_reasoning_effort(self):
+        """When thinking is turned off, any residual reasoning_effort from a
+        prior call must not leak into the body."""
+        from app.agent.schemas.chat import HumanMessage
+
+        p = XiaomiProvider(
+            api_key="xiaomi-test-key",
+            model="mimo-v2.5",
+            base_url=XIAOMI_API_BASE,
+            model_kwargs={"thinking_level": "high"},
+        )
+        # First call with high thinking.
+        body_high = p._completions.build_request(
+            [HumanMessage(content="hi")],
+            None,
+            stream=False,
+            merged=p._merged_kwargs(thinking_level="high"),
+        )
+        assert body_high.get("reasoning_effort") == "high"
+        # Second call with thinking off.
+        body_off = p._completions.build_request(
+            [HumanMessage(content="hi")],
+            None,
+            stream=False,
+            merged=p._merged_kwargs(thinking_level="off"),
+        )
+        assert body_off.get("thinking") == {"type": "disabled"}
+        assert "reasoning_effort" not in body_off
 
 
 # ============================================================================

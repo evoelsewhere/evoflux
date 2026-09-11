@@ -12,6 +12,7 @@ from app.agent.schemas.chat import (
     FunctionCall,
     HumanMessage,
     ToolCall,
+    ToolMessage,
 )
 from app.agent.state import AgentState, ModelRequest, RunContext
 from app.core.wiki_seed import seed_wiki
@@ -171,12 +172,21 @@ async def test_memory_search_failure_does_not_block_model_call(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_memory_context_skips_followup_tool_call_iterations():
+async def test_memory_block_is_identical_across_a_turns_tool_calls():
+    """The block must not appear and vanish between calls in one turn.
+
+    It sits in the system prompt, so dropping it once a tool has run rewrites
+    the front of the prompt and costs the cached history behind it.
+    """
     write_file(
         "topics/response-style.md",
         _memory_page("Hoang prefers direct fact-based answers."),
     )
-    request = ModelRequest(
+    first_call = ModelRequest(
+        messages=(HumanMessage(content="How should you answer Hoang?"),),
+        system_prompt="Base.",
+    )
+    after_tool = ModelRequest(
         messages=(
             HumanMessage(content="How should you answer Hoang?"),
             AssistantMessage(
@@ -188,10 +198,10 @@ async def test_memory_context_skips_followup_tool_call_iterations():
                     )
                 ],
             ),
+            ToolMessage(tool_call_id="call_1", content="{}"),
         ),
         system_prompt="Base.",
     )
 
-    result = await _invoke(MemoryContextHook(), request)
-
-    assert result == "Base."
+    hook = MemoryContextHook()
+    assert await _invoke(hook, after_tool) == await _invoke(hook, first_call)

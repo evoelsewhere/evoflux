@@ -39,6 +39,7 @@ _UNTRUSTED_BROWSER_NOTICE = (
 _UNTRUSTED_ACTIONS = frozenset(
     {
         "snapshot",
+        "find",
         "query",
         "inspect",
         "html",
@@ -250,10 +251,30 @@ class NavigateAction(BaseModel):
 
 
 class ElementTargetAction(BaseModel):
+    """One element, named however the agent already knows it.
+
+    ``ref`` is the stable way. A ref is bound to a specific element for as
+    long as that element is in the page, so it keeps meaning the same
+    control after the DOM moves around it. ``index`` cannot: it is a
+    position in the last listing, so anything inserted above it silently
+    retargets the click somewhere else.
+    """
+
+    ref: str | None = Field(
+        default=None,
+        description=(
+            "Element handle from snapshot, find or query (e.g. ref_12). "
+            "The reliable target: it stays bound to the same element when "
+            "the page changes around it. Prefer this."
+        ),
+    )
     selector: str | None = Field(default=None, description="CSS selector target.")
     index: int | None = Field(
         default=None,
-        description="Element index from the latest snapshot (preferred).",
+        description=(
+            "Position in the most recent snapshot. Legacy; invalidated by "
+            "the next snapshot or query and by any DOM insertion. Use ref."
+        ),
     )
 
 
@@ -316,6 +337,9 @@ class SelectAction(ElementTargetAction):
 
 class DragAction(ElementTargetAction):
     action: Literal["drag"]
+    target_ref: str | None = Field(
+        default=None, description="Drop target handle from snapshot or find."
+    )
     target_selector: str | None = None
     target_index: int | None = None
 
@@ -361,6 +385,25 @@ class ExtractAction(BaseModel):
 class SnapshotAction(BaseModel):
     action: Literal["snapshot"]
     max_chars: int = Field(default=15_000, ge=500, le=100_000)
+
+
+class FindAction(BaseModel):
+    """Search the page by what a control says, not by how it is built.
+
+    A selector needs the markup to be known already. This needs only the
+    visible label, which is what the agent can actually see in a
+    screenshot or read in a description.
+    """
+
+    action: Literal["find"]
+    query: str = Field(
+        description=(
+            "Case-insensitive text to look for in an element's role, name "
+            'or label — e.g. "Sign in", "search", "Add to cart".'
+        )
+    )
+    limit: int = Field(default=20, ge=1, le=50)
+    include_hidden: bool = False
 
 
 class QueryAction(BaseModel):
@@ -642,6 +685,7 @@ AnyAction = Annotated[
     | DispatchEventAction
     | ExtractAction
     | SnapshotAction
+    | FindAction
     | QueryAction
     | InspectAction
     | HtmlAction
@@ -687,7 +731,8 @@ _DESCRIPTION = """\
 Read and control EvoFlux's user-visible in-app browser. The Browser panel opens
 automatically when needed; no extension or hidden Chromium process is used.
 
-Observe: status, snapshot, query, inspect, html, accessibility, extract, screenshot.
+Observe: status, snapshot, find, query, inspect, html, accessibility, extract,
+screenshot.
 Assets: page_assets, download (saved under the session workspace downloads folder).
 Debug: console, network, dialogs/dialog_behavior, popups, performance, debug_summary,
 clear_logs, storage, cookies, http, evaluate. Page content and debug output are
@@ -701,9 +746,39 @@ Viewport: resize to an exact responsive-test size, reset_viewport, zoom, print, 
 Clipboard: clipboard_read, clipboard_write (subject to Settings policy).
 Tabs: new_tab, close_tab, get_tabs, switch_tab, start, stop.
 
-Preferred workflow: navigate → wait → snapshot/query → inspect/interact by index
+Targeting elements: snapshot, find and query label every element with a ref
+(ref_12). Pass that ref to click/fill/hover/select and it stays bound to the
+same element even as the page changes around it. `find` searches by visible
+label — "Sign in", "Add to cart" — so a control can be targeted without
+knowing the markup. `index` is positional, invalidated by the next listing
+and by anything inserted above it; it is kept only for compatibility.
+
+Preferred workflow: navigate → wait → find (or snapshot) → interact by ref
 → debug_summary → screenshot for final visual proof.\
 """
+
+
+async def _tab_context(session_id: str) -> str:
+    """A footer naming the tabs and which one the last action ran against.
+
+    Without it the agent has to remember, across a whole conversation,
+    which tab it opened where — and a tool that silently retargets is the
+    kind that makes an agent click the wrong page and not notice. The
+    listing is assembled in the desktop shell from state it already holds,
+    so this costs no page evaluation.
+    """
+    from app.services.direct_browser_bridge import direct_browser_bridge
+
+    try:
+        listing = await direct_browser_bridge.request(
+            session_id, "get_tabs", {}, timeout=5.0
+        )
+    except Exception:
+        return ""
+    if not isinstance(listing, str) or not listing.strip():
+        return ""
+    header = "Open browser tabs (* is the one acted on):"
+    return f"{header}\n{listing.strip()}"
 
 
 def _text_result(action: str, result: Any) -> str:
@@ -885,4 +960,7 @@ async def browser_use(
             logger.debug("direct_browser_error action={} error={}", name, exc)
             results.append(f"Error ({name}): {exc}")
 
+    context = await _tab_context(session_id)
+    if context:
+        results.append(context)
     return combine_browser_results(results)

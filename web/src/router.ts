@@ -2,6 +2,7 @@ import { lazy } from 'react'
 import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router'
 import { Root, NotFound } from './routes/__root'
 import { restoreLastRouteBeforeRouterMount } from '@/lib/mode-route'
+import { TelemetryRedirect } from './routes/telemetry'
 
 restoreLastRouteBeforeRouterMount()
 
@@ -10,9 +11,6 @@ const TeamLayout = lazy(() =>
 )
 const CodingLayout = lazy(() =>
   import('./routes/work').then((module) => ({ default: module.CodingLayout })),
-)
-const TelemetryPage = lazy(() =>
-  import('./routes/telemetry').then((module) => ({ default: module.TelemetryPage })),
 )
 const SchedulerPage = lazy(() =>
   import('./routes/scheduler').then((module) => ({ default: module.SchedulerPage })),
@@ -75,11 +73,16 @@ const codingFocusSessionRoute = createRoute({
   component: () => null,
 })
 
-// /telemetry — standalone observability page (span aggregates & latency)
+// /telemetry — kept only so existing links and bookmarks land somewhere.
+//
+// Telemetry lives in Settings now. It used to be both: a standalone page
+// with its own sidebar carrying Models and Tools, and a Settings page with
+// only Overview and Traces. The standalone one was linked from nowhere, so
+// half the monitoring views were reachable by URL alone.
 const telemetryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/telemetry',
-  component: TelemetryPage,
+  component: TelemetryRedirect,
 })
 
 // /scheduler — standalone scheduler page (manage scheduled tasks)

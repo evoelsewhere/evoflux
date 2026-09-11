@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,6 +37,48 @@ def _create_folder(client: TestClient, name: str = "Q3 launch", **body) -> dict:
     resp = client.post("/api/team/session-folders", json={"name": name, **body})
     assert resp.status_code == 201, resp.text
     return resp.json()
+
+
+def _stub_team(monkeypatch):
+    """A team whose provider is never reached, bound as the session's team."""
+    from app.agent.agent_loop import Agent
+    from app.agent.mode.team.member import TeamLead
+    from app.agent.mode.team.team import AgentTeam
+    from app.agent.providers.base import LLMProviderBase
+
+    class _SilentProvider(LLMProviderBase):
+        model = "mock"
+
+        def stream(self, messages, tools=None, **kwargs):
+            raise AssertionError("the team never runs in these tests")
+
+        async def chat(self, messages, tools=None, **kwargs):
+            raise AssertionError("the team never runs in these tests")
+
+    team = AgentTeam(
+        lead=TeamLead(
+            Agent(name="lead", llm_provider=_SilentProvider(), system_prompt="Lead")
+        )
+    )
+
+    async def fake_team(_session_id: str, **_kwargs):
+        return team
+
+    monkeypatch.setattr(
+        "app.api.routes.team.chat.team_manager.get_or_start_team_for_session",
+        fake_team,
+    )
+    return team
+
+
+def _patch_dispatch(monkeypatch) -> AsyncMock:
+    """Stub the team and its ingress so a chat POST reaches only the route."""
+    _stub_team(monkeypatch)
+    dispatch = AsyncMock(return_value=(str(uuid.uuid7()), 0))
+    monkeypatch.setattr(
+        "app.api.routes.team.chat.agent_service.dispatch_user_message", dispatch
+    )
+    return dispatch
 
 
 class TestFolderCrud:
@@ -247,3 +290,141 @@ class TestResolveInFolder:
             json={"mode": "work", "create": True, "folder_id": coding_folder["id"]},
         )
         assert resp.status_code == 422
+
+
+class TestDraftChatPlacement:
+    """A new chat is a draft until its first message; the folder rides along.
+
+    Nothing is created while the user is still deciding, so the two halves are
+    tested apart: ``existing_only`` looks without writing, and POST /team/chat
+    carries the folder into the session that message brings into being.
+    """
+
+    def test_existing_only_returns_null_instead_of_creating(self, client):
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "work", "existing_only": True},
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json() is None
+        listed = client.get("/api/team/sessions").json()
+        assert listed["data"] == []
+
+    def test_existing_only_returns_the_session_already_in_the_folder(self, client):
+        folder = _create_folder(client)
+        created = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "work", "create": True, "folder_id": folder["id"]},
+        ).json()
+
+        found = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "work", "existing_only": True, "folder_id": folder["id"]},
+        ).json()
+
+        assert found["id"] == created["id"]
+        assert found["created"] is False
+
+    def test_existing_only_is_folder_scoped(self, client):
+        folder = _create_folder(client)
+        client.post("/api/team/sessions/resolve", json={"mode": "work", "create": True})
+
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "work", "existing_only": True, "folder_id": folder["id"]},
+        )
+
+        assert resp.json() is None
+
+    def test_existing_only_and_create_are_mutually_exclusive(self, client):
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "work", "create": True, "existing_only": True},
+        )
+        assert resp.status_code == 422
+
+    def test_chat_files_the_session_it_creates_into_the_folder(
+        self, client, monkeypatch
+    ):
+        folder = _create_folder(client)
+        dispatched = _patch_dispatch(monkeypatch)
+
+        resp = client.post(
+            "/api/team/chat",
+            data={"message": "first words", "folder_id": folder["id"]},
+        )
+
+        assert resp.status_code == 202, resp.text
+        assert str(dispatched.await_args.kwargs["folder_id"]) == folder["id"]
+
+    def test_chat_ignores_a_folder_for_a_session_that_already_exists(
+        self, client, monkeypatch
+    ):
+        import asyncio
+
+        folder = _create_folder(client)
+        session_id = uuid.uuid7()
+        asyncio.run(_create_session(session_id, agent_name="lead"))
+        dispatched = _patch_dispatch(monkeypatch)
+
+        resp = client.post(
+            "/api/team/chat",
+            data={
+                "message": "more words",
+                "session_id": str(session_id),
+                "folder_id": folder["id"],
+            },
+        )
+
+        assert resp.status_code == 202, resp.text
+        assert dispatched.await_args.kwargs["folder_id"] is None
+
+    def test_chat_rejects_an_unknown_folder(self, client, monkeypatch):
+        _patch_dispatch(monkeypatch)
+
+        resp = client.post(
+            "/api/team/chat",
+            data={"message": "hello", "folder_id": str(uuid.uuid7())},
+        )
+
+        assert resp.status_code == 404
+
+    def test_chat_rejects_a_folder_from_another_mode(self, client, monkeypatch):
+        coding_folder = _create_folder(client, "Coding", mode="coding")
+        _patch_dispatch(monkeypatch)
+
+        resp = client.post(
+            "/api/team/chat",
+            data={"message": "hello", "folder_id": coding_folder["id"]},
+        )
+
+        assert resp.status_code == 422
+
+    def test_prepare_user_session_files_the_new_row_in_the_folder(
+        self, client, monkeypatch
+    ):
+        """The end of the road: the row the first message creates lands filed.
+
+        The route only forwards the folder; ``prepare_user_session`` is what
+        writes it, so this covers the half a stubbed dispatch cannot.
+        """
+        import asyncio
+
+        folder = _create_folder(client)
+        session_id = uuid.uuid7()
+        team = _stub_team(monkeypatch)
+
+        asyncio.run(
+            team.prepare_user_session(
+                content="first words",
+                session_id=str(session_id),
+                mode="work",
+                folder_id=uuid.UUID(folder["id"]),
+            )
+        )
+
+        row = asyncio.run(_session_row(session_id))
+        assert row is not None
+        assert str(row.folder_id) == folder["id"]
+        assert row.title == "first words"

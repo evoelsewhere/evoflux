@@ -55,6 +55,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 from sse_starlette.sse import EventSourceResponse
 
+from app.agent.providers.thinking import accepts_thinking_level
+from app.api.routes.team._helpers import _fast_tier
 from app.api.deps import DbSession, WriteDbSession
 from app.api.schemas.commands import CommandRenderRequest, CommandRenderResponse
 from app.api.schemas.snippets import SnippetRenderResponse
@@ -65,9 +67,10 @@ from app.webbridge_tags import (
     WEBBRIDGE_SESSION_TAG,
 )
 from app.core.desktop_auth import (
-    _QS_TOKEN_PARAM,
     desktop_token_matches,
     expected_desktop_token,
+    trusted_local_origin as _trusted_local_origin,
+    websocket_authorized,
 )
 from app.core.paths import session_workspace_dir
 from app.models.chat import ChatSession, SessionMessage
@@ -151,22 +154,6 @@ def _pairing_revocation_event(pairing_id: str) -> asyncio.Event:
     return _pairing_revocation_events.setdefault(pairing_id, asyncio.Event())
 
 
-def _trusted_local_origin(value: str | None) -> bool:
-    """Accept non-browser local clients and explicit local web Origins."""
-    if not value:
-        return True
-    try:
-        parsed = urlsplit(value)
-    except ValueError:
-        return False
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        return False
-    try:
-        return ipaddress.ip_address(parsed.hostname).is_loopback
-    except ValueError:
-        return parsed.hostname.casefold() == "localhost"
-
-
 def _webbridge_extension_origin(value: str | None) -> bool:
     """Accept only the stable ID baked into the bundled WebBridge extension."""
     if not value:
@@ -188,23 +175,12 @@ def _webbridge_extension_origin(value: str | None) -> bool:
 async def _agent_ws_authorized(ws: WebSocket) -> bool:
     """Enforce desktop/access-key auth on the external agent WebSocket.
 
-    Mirrors :class:`app.core.desktop_auth.DesktopTokenMiddleware` for WS
-    endpoints: open when no token is configured; otherwise the ``?_token=``
-    query param must match. On failure the socket is closed with code 4401
-    *before* accept so no handler logic runs.
+    This route was the only WebSocket in the app that authenticated. The
+    check now lives in :mod:`app.core.desktop_auth` beside the HTTP
+    middleware it mirrors, so the browser bridge and the terminal use the
+    same one rather than each route deciding for itself.
     """
-    expected = expected_desktop_token()
-    if not expected:
-        if _trusted_local_origin(ws.headers.get("origin")):
-            return True
-        logger.warning("webbridge_ws_origin_rejected path={}", ws.url.path)
-        await ws.close(code=4401)
-        return False
-    if desktop_token_matches(ws.query_params.get(_QS_TOKEN_PARAM), expected):
-        return True
-    logger.warning("webbridge_ws_rejected path={}", ws.url.path)
-    await ws.close(code=4401)
-    return False
+    return await websocket_authorized(ws)
 
 
 async def _consume_extension_ticket(ws: WebSocket) -> str | None:
@@ -928,9 +904,12 @@ async def update_browser_session_model(
             raise HTTPException(
                 status_code=422, detail="Choose a model from the registry."
             )
-        if (
-            body.thinking_level is not None
-            and body.thinking_level not in selected.thinking_levels
+        # The registry row carries the *offered* levels, which is narrower
+        # than what the wire honours; validate against the wider set so a
+        # frontmatter or API client asking for a level the picker hides is
+        # not refused a request the provider would serve.
+        if body.thinking_level is not None and not accepts_thinking_level(
+            body.model, body.thinking_level
         ):
             raise HTTPException(
                 status_code=422,
@@ -1731,6 +1710,28 @@ def _browser_panel_tool_display_arguments(
     return {"actions": safe_actions} if safe_actions else None
 
 
+def _resolve_turn_usage(extra: dict[str, Any]) -> dict[str, Any] | None:
+    """The turn's spend, from whichever usage record has it.
+
+    ``turn_usage`` totals the whole activation; ``usage`` is the last model
+    call alone. The footer summarises a turn, so the total wins — but turns
+    persisted before the tracker priced itself carry a total with no cost.
+    Their per-call record does have one, and for a single-call turn that
+    price *is* the turn's price. For a multi-call turn it is only the last
+    call, so it is left out rather than shown as the turn's total.
+    """
+    total = extra.get("turn_usage")
+    last_call = extra.get("usage")
+    if not isinstance(total, dict):
+        return last_call if isinstance(last_call, dict) else None
+    if total.get("cost") or not isinstance(last_call, dict):
+        return total
+    cost = last_call.get("cost")
+    if cost and total.get("calls", 1) == 1:
+        return {**total, "cost": cost}
+    return total
+
+
 def _browser_panel_blocks(
     row: Any,
     *,
@@ -1763,6 +1764,9 @@ def _browser_panel_blocks(
             text_block["model"] = extra["model"]
         if isinstance(extra.get("duration_ms"), int | float):
             text_block["response_duration_ms"] = max(0, round(extra["duration_ms"]))
+        turn_usage = _resolve_turn_usage(extra)
+        if turn_usage is not None:
+            text_block["turn_usage"] = turn_usage
         blocks.append(text_block)
 
     for index, tool_call in enumerate(row.tool_calls or []):
@@ -2692,11 +2696,7 @@ async def _dispatch_browser_panel_shell(
             model_provided=session.model is not None,
             thinking_level=session.thinking_level,
             thinking_level_provided=session.thinking_level is not None,
-            service_tier=(
-                "fast"
-                if body.fast_mode and (session.model or "").startswith("codex:")
-                else None
-            ),
+            service_tier=_fast_tier(session.model, body.fast_mode),
         )
     except (NoTeamConfigured, ValueError) as exc:
         interaction.status = "rejected"
@@ -3046,11 +3046,7 @@ async def _dispatch_browser_panel_message(
             attachments=attachments,
             source_key=source_key,
             source_request_hash=request_hash,
-            service_tier=(
-                "fast"
-                if body.fast_mode and (session.model or "").startswith("codex:")
-                else None
-            ),
+            service_tier=_fast_tier(session.model, body.fast_mode),
         )
     except InteractiveMessageConflict as exc:
         raise HTTPException(

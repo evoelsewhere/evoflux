@@ -22,7 +22,7 @@
     "near_miss": "MCP configuration is not a portable Agent Skill bundle."
   },
   {
-    "query": "Use the existing work-research skill for this market brief.",
+    "query": "Use the existing deep-research skill for this market brief.",
     "should_trigger": false,
     "near_miss": "Invoking an installed skill is not installing or authoring one."
   }

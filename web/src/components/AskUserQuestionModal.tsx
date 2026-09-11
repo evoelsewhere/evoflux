@@ -74,6 +74,15 @@ const AskUserQuestionForm = forwardRef<
   const q = questions[step]
   if (!q) return null
 
+  // Defend against a duplicated choice reaching the UI: two identical buttons
+  // are one answer, selecting either lights both, and a two-way question whose
+  // branches read the same leaves the second reachable only by free text.
+  const options = q.options.filter(
+    (option, index, all) =>
+      option.trim().length > 0 &&
+      all.findIndex((other) => other.trim().toLowerCase() === option.trim().toLowerCase()) === index,
+  )
+
   const spawnSpec = q.kind === 'agent_spawn' ? q.agentSpawn ?? null : null
   const isAgentSpawn = spawnSpec !== null
   const allowsFreeText = !q.strict
@@ -277,11 +286,11 @@ const AskUserQuestionForm = forwardRef<
                   </div>
                 </div>
               </div>
-            ) : q.options.length > 0 && (
+            ) : options.length > 0 && (
               <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggested answers">
-                {q.options.map((option, oi) => (
+                {options.map((option) => (
                   <button
-                    key={oi}
+                    key={option}
                     type="button"
                     disabled={replying}
                     onClick={() => setAnswer(option)}
@@ -310,7 +319,7 @@ const AskUserQuestionForm = forwardRef<
                 else goToStep(step + 1)
               }}
               disabled={replying}
-              placeholder={q.options.length > 0 ? 'Or type your own answer…' : 'Type your answer…'}
+              placeholder={options.length > 0 ? 'Or type your own answer…' : 'Type your answer…'}
               aria-label={q.question}
               className="h-8 w-full rounded-md border border-(--color-border) bg-(--bg-card) px-2.5 text-xs text-(--color-text) outline-none focus:border-(--color-primary)"
               autoFocus

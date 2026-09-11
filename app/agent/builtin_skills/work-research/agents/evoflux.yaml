@@ -1,6 +1,0 @@
-interface:
-  display_name: "Research Work Topics"
-  short_description: "Synthesize current sources with explicit confidence"
-  default_prompt: "Use $work-research to investigate this question and produce a source-governed synthesis."
-policy:
-  allow_implicit_invocation: true

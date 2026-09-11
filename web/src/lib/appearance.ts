@@ -9,7 +9,11 @@
 
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 
-export type AccentColor = 'default' | 'blue' | 'green' | 'orange' | 'pink' | 'purple' | 'red'
+export type AccentColor =
+  | 'default'
+  | 'clay' | 'red' | 'orange' | 'amber' | 'lime' | 'green' | 'teal'
+  | 'cyan' | 'blue' | 'indigo' | 'purple' | 'pink' | 'rose' | 'slate'
+  | 'custom'
 export type FontFamily = 'inter' | 'system' | 'mono' | 'geist' | 'anthropic-sans'
 /** Legacy stored value migrated to anthropic-sans. */
 type LegacyFontFamily = 'source-sans'
@@ -18,6 +22,8 @@ export type MotionIntensity = 'reduced' | 'subtle' | 'standard' | 'expressive' |
 
 export interface AppearanceSettings {
   accent: AccentColor
+  /** Hex used when `accent` is 'custom'. Ignored otherwise. */
+  accentCustom: string
   fontFamily: FontFamily
   fontScale: FontScale
   motionIntensity: MotionIntensity
@@ -25,7 +31,63 @@ export interface AppearanceSettings {
 
 export const APPEARANCE_STORAGE_KEY = STORAGE_KEYS.appearance
 
-export const ACCENT_COLORS: readonly AccentColor[] = ['default', 'blue', 'green', 'orange', 'pink', 'purple', 'red']
+export const ACCENT_COLORS: readonly AccentColor[] = [
+  'default',
+  'clay', 'red', 'orange', 'amber', 'lime', 'green', 'teal',
+  'cyan', 'blue', 'indigo', 'purple', 'pink', 'rose', 'slate',
+  'custom',
+]
+
+/** The default accent, as a hex — the seed for a custom colour. */
+export const DEFAULT_ACCENT_HEX = '#D97757'
+
+const HEX_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i
+
+export function normalizeAccentHex(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  const candidate = trimmed.startsWith('#') ? trimmed : `#${trimmed}`
+  if (!HEX_PATTERN.test(candidate)) return null
+  if (candidate.length === 4) {
+    const [, r, g, b] = candidate
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase()
+  }
+  return candidate.toLowerCase()
+}
+
+/** WCAG relative luminance of an already-normalized `#rrggbb`. */
+export function accentLuminance(hex: string): number {
+  const channel = (pair: string) => {
+    const value = parseInt(pair, 16) / 255
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  }
+  const r = channel(hex.slice(1, 3))
+  const g = channel(hex.slice(3, 5))
+  const b = channel(hex.slice(5, 7))
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+export function contrastRatio(hex: string, againstLuminance: number): number {
+  const lum = accentLuminance(hex)
+  const [light, dark] = lum > againstLuminance ? [lum, againstLuminance] : [againstLuminance, lum]
+  return (light + 0.05) / (dark + 0.05)
+}
+
+/**
+ * Label colour for text sitting on `hex`, and how legible that pairing is.
+ *
+ * A preset is tuned per theme, so it can rely on the theme's own
+ * `--color-text-on-accent`. A colour someone typed cannot: pick whichever of
+ * near-black or white reads better on it, and report the ratio so the UI can
+ * say when the choice is too faint to use.
+ */
+export function accentContrast(hex: string): { onAccent: string; ratio: number } {
+  const onDark = contrastRatio(hex, accentLuminance('#211a16'))
+  const onWhite = contrastRatio(hex, accentLuminance('#ffffff'))
+  return onDark >= onWhite
+    ? { onAccent: '#211A16', ratio: onDark }
+    : { onAccent: '#FFFFFF', ratio: onWhite }
+}
 export const FONT_FAMILIES: readonly FontFamily[] = ['inter', 'system', 'mono', 'geist', 'anthropic-sans']
 export const FONT_SCALES: readonly FontScale[] = [0.9, 0.95, 1, 1.05, 1.1, 1.15, 1.2]
 export const MOTION_INTENSITIES: readonly MotionIntensity[] = [
@@ -56,6 +118,7 @@ const BASE_FONT_SIZE_PX = 16
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {
   accent: 'default',
+  accentCustom: DEFAULT_ACCENT_HEX,
   fontFamily: 'system',
   fontScale: 1,
   motionIntensity: 'standard',
@@ -90,7 +153,10 @@ export function readStoredAppearance(): AppearanceSettings {
     if (!raw) return DEFAULT_APPEARANCE
     const parsed = JSON.parse(raw) as Partial<AppearanceSettings & { fontFamily: FontFamily | LegacyFontFamily }> | null
     return {
-      accent: ACCENT_COLORS.includes(parsed?.accent as AccentColor) ? (parsed!.accent as AccentColor) : DEFAULT_APPEARANCE.accent,
+      accent: ACCENT_COLORS.includes(parsed?.accent as AccentColor)
+        ? (parsed!.accent as AccentColor)
+        : DEFAULT_APPEARANCE.accent,
+      accentCustom: normalizeAccentHex(parsed?.accentCustom) ?? DEFAULT_ACCENT_HEX,
       fontFamily: normalizeFontFamily(parsed?.fontFamily),
       fontScale: nearestFontScale(parsed?.fontScale),
       motionIntensity: MOTION_INTENSITIES.includes(parsed?.motionIntensity as MotionIntensity)
@@ -108,10 +174,19 @@ export function applyAppearance(settings: AppearanceSettings): void {
   if (settings.accent === 'default') {
     root.style.removeProperty('--focus-ring')
     root.style.removeProperty('--color-accent')
+    root.style.removeProperty('--color-text-on-accent')
+  } else if (settings.accent === 'custom') {
+    // A typed colour cannot lean on the theme's label colour, which is
+    // picked for the theme's own accent. Derive one that actually reads.
+    const hex = normalizeAccentHex(settings.accentCustom) ?? DEFAULT_ACCENT_HEX
+    root.style.setProperty('--focus-ring', hex)
+    root.style.setProperty('--color-accent', hex)
+    root.style.setProperty('--color-text-on-accent', accentContrast(hex).onAccent)
   } else {
-    const ref = `var(--accent-${settings.accent})`
+    const ref = `var(--ui-accent-${settings.accent})`
     root.style.setProperty('--focus-ring', ref)
     root.style.setProperty('--color-accent', ref)
+    root.style.removeProperty('--color-text-on-accent')
   }
 
   root.dataset.font = settings.fontFamily

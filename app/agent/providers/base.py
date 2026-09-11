@@ -34,6 +34,18 @@ class LLMProviderBase(ABC):
     """
 
     model: str
+
+    #: Registry ID this class serves when nothing else says otherwise.
+    #:
+    #: The factory calls :meth:`bind_provider_name` with the ID the user
+    #: actually selected, which is what one class serving two registry
+    #: entries needs (``ZAIProvider`` answers for both ``zai`` and
+    #: ``zhipuai``). But a provider constructed directly — in a test, or by
+    #: a caller that already knows which class it wants — still needs an
+    #: identity, because reasoning translation and model metadata are both
+    #: keyed by ``provider:model``. Subclasses set this to their own ID.
+    default_provider_id: str | None = None
+
     provider_name: str | None = None
 
     def __init__(
@@ -48,6 +60,8 @@ class LLMProviderBase(ABC):
         self.top_p = top_p
         self.max_tokens = max_tokens
         self.model_kwargs = model_kwargs or {}
+        if self.provider_name is None:
+            self.provider_name = type(self).default_provider_id
 
     def _merged_kwargs(self, **call_kwargs: Any) -> dict[str, Any]:
         """Merge provider-level defaults with per-call overrides.

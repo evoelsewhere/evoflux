@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Query the session database and tell me which tool failed most often across the last month.",
+    "should_trigger": true
+  },
+  {
+    "query": "Run SQL against the local database to reconstruct the full execution chain for that session.",
+    "should_trigger": true
+  },
+  {
+    "query": "Check the database directly to see whether that remembered claim matches what the session actually did.",
+    "should_trigger": true
+  },
+  {
+    "query": "What did we decide about the caching approach last week?",
+    "should_trigger": false,
+    "near_miss": "Ordinary recall belongs to the memory tools."
+  },
+  {
+    "query": "Delete the old sessions from the database.",
+    "should_trigger": false,
+    "near_miss": "This workflow is read-only."
+  },
+  {
+    "query": "Search the codebase for where the retry logic lives.",
+    "should_trigger": false,
+    "near_miss": "Code search, not session history."
+  }
+]

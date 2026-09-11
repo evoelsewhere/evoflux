@@ -87,6 +87,71 @@ export interface BrowserRuntimeStatus {
 }
 
 const NEW_TAB_URL = '/browser-new-tab.html'
+/**
+ * Ceiling on one attempt to open a page.
+ *
+ * Creating the WebView is bounded, but the IPC calls after it — zoom,
+ * focus, waiting for the document — are not: a WebView that never answers
+ * leaves the await pending forever, and the guard that stops two creations
+ * racing is held for exactly as long. The panel then reports "still
+ * opening" for the rest of the session and never retries.
+ */
+const CREATE_TIMEOUT_MS = 20_000
+/**
+ * Ceiling on the health check that runs before a page is opened.
+ *
+ * Everything this panel does goes through Tauri IPC, and an IPC call that
+ * never answers is indistinguishable from a slow one — the panel simply
+ * reported "still opening" forever. One cheap call first turns that into
+ * a diagnosis.
+ */
+const IPC_PROBE_TIMEOUT_MS = 4_000
+/**
+ * Write one line into the desktop app's own log.
+ *
+ * A browser panel that cannot start used to leave nothing behind but a
+ * toast, which is gone by the time anyone asks what happened — and the
+ * WebView console is not somewhere a user can be walked to over chat.
+ * The log plugin already writes to stdout and the app's log directory,
+ * so a failure here is recoverable after the fact.
+ */
+const LOG_LEVELS = { info: 3, warn: 4, error: 5 } as const
+
+const logToDesktop = async (
+  level: keyof typeof LOG_LEVELS,
+  message: string,
+): Promise<void> => {
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('plugin:log|log', {
+    level: LOG_LEVELS[level],
+    message: `browser-panel: ${message}`,
+  })
+}
+
+const withTimeout = async <T,>(
+  work: Promise<T>,
+  label: string,
+  ms: number = CREATE_TIMEOUT_MS,
+): Promise<T> => {
+  let timer = 0
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_resolve, reject) => {
+        timer = window.setTimeout(
+          () => reject(new Error(`${label} did not respond within ${ms / 1000}s`)),
+          ms,
+        )
+      }),
+    ])
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+/** Retries before the panel admits defeat and says so. */
+const CREATE_MAX_ATTEMPTS = 6
+const CREATE_RETRY_BASE_MS = 250
 const BROWSER_DATA_DIRECTORY = 'browser-profile'
 const BROWSER_DATA_STORE_ID = [
   0x45, 0x76, 0x6f, 0x46, 0x6c, 0x75, 0x78, 0x42,
@@ -133,15 +198,46 @@ export function useDirectBrowserTabs({
   const seenPopupKeysRef = useRef(new Set<string>())
   const visibilityRef = useRef(new Map<string, boolean>())
   const creatingRef = useRef(false)
+  const visibleRef = useRef(visible)
+  // Creating a WebView takes up to five seconds. If the panel unmounts
+  // during that wait, cleanup has already emptied the map — and the
+  // WebView that lands afterwards is a native window with no owner,
+  // floating over the app until the process exits.
+  const disposedRef = useRef(false)
   const [tabs, setTabs] = useState<DirectBrowserTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  // Bumping this is what re-runs the auto-create effect. ``tabs.length``
+  // cannot: a failed attempt leaves it at zero, which is why one failure
+  // used to mean a permanently blank panel.
+  const [createAttempt, setCreateAttempt] = useState(0)
+  const retryCreateRef = useRef<() => void>(() => {})
+  const lastCreateErrorRef = useRef<string | null>(null)
+  const createStageRef = useRef<string>('')
+  // Bumped whenever an attempt is abandoned, so a call that was hung on
+  // the native shell and finally returns cannot register a second
+  // WebView behind the retry that replaced it.
+  const createTokenRef = useRef(0)
+  const unavailableReasonRef = useRef<() => string>(() => '')
+  retryCreateRef.current = () => setCreateAttempt((current) => current + 1)
+  unavailableReasonRef.current = () => {
+    if (!supported) return 'the in-app browser needs EvoFlux Desktop'
+    if (!enabled) return 'the browser panel is turned off in its settings'
+    if (creatingRef.current) {
+      return createStageRef.current
+        ? `still opening the page (waiting on ${createStageRef.current})`
+        : 'the page is still opening'
+    }
+    if (lastCreateErrorRef.current) return lastCreateErrorRef.current
+    return 'no page has been opened in it'
+  }
   const [agentConnected, setAgentConnected] = useState(false)
   const [pageDialog, setPageDialog] = useState<BrowserPageDialog | null>(null)
   const [pagePermission, setPagePermission] = useState<BrowserPermissionRequest | null>(null)
   const [viewportOverride, setViewportOverride] = useState<BrowserViewportOverride | null>(null)
 
   activeIdRef.current = activeTabId
+  visibleRef.current = visible
   registryActiveRef.current = bridgeEnabled
   registryActivateRef.current = onActivate
   registryCloseRef.current = onCloseSurface
@@ -266,17 +362,64 @@ export function useDirectBrowserTabs({
     if (!supported || !enabled || creatingRef.current) return
     if (singleTab && tabsRef.current.length > 0) return tabsRef.current[0]
     const viewport = viewportRef.current
-    if (!viewport) return
-    const rect = viewport.getBoundingClientRect()
-    if (rect.width < 2 || rect.height < 2) return
+    // A WebView cannot be created without somewhere to put it. Returning
+    // here used to be the end of the story: the auto-create effect only
+    // re-runs when ``tabs.length`` changes, and it had just failed to
+    // change it, so nothing ever tried again. The panel stayed blank with
+    // no error, and the agent got "Desktop browser is unavailable" for the
+    // rest of the session. Ask to be retried instead.
+    const rect = viewport?.getBoundingClientRect()
+    if (!rect || rect.width < 2 || rect.height < 2) {
+      lastCreateErrorRef.current = viewport
+        ? `the panel has no size yet (${Math.round(rect?.width ?? 0)}x${Math.round(rect?.height ?? 0)}) — the workbench may be collapsed or minimised`
+        : 'the panel is not mounted yet'
+      retryCreateRef.current?.()
+      return
+    }
 
     creatingRef.current = true
     setCreating(true)
+    createStageRef.current = 'the Tauri API modules'
+    const token = createTokenRef.current
+    createStageRef.current = 'the desktop shell to answer'
+    try {
+      await withTimeout(
+        logToDesktop('info', 'opening a page'),
+        'the desktop shell',
+        IPC_PROBE_TIMEOUT_MS,
+      )
+    } catch {
+      lastCreateErrorRef.current =
+        'the desktop shell is not answering (Tauri IPC timed out) — '
+        + 'nothing in this panel can work until it does; restart EvoFlux Desktop'
+      createStageRef.current = ''
+      creatingRef.current = false
+      setCreating(false)
+      retryCreateRef.current?.()
+      return
+    }
+    // `finally` cannot release the guard if an await never settles, and
+    // every await below crosses into the native shell. Without this, one
+    // unanswered IPC call left the panel reporting "still opening" for the
+    // rest of the session, with nothing able to try again.
+    const watchdog = window.setTimeout(() => {
+      if (!creatingRef.current || createTokenRef.current !== token) return
+      lastCreateErrorRef.current = `opening the page timed out (waiting on ${
+        createStageRef.current || 'the desktop shell'})`
+      void logToDesktop('warn', `${lastCreateErrorRef.current}; retrying`)
+        .catch(() => {})
+      createTokenRef.current += 1
+      createStageRef.current = ''
+      creatingRef.current = false
+      setCreating(false)
+      retryCreateRef.current?.()
+    }, CREATE_TIMEOUT_MS)
     try {
       const [{ Webview }, { getCurrentWindow }] = await Promise.all([
         import('@tauri-apps/api/webview'),
         import('@tauri-apps/api/window'),
       ])
+      createStageRef.current = 'hiding the previous page'
       const id = `${Date.now().toString(36)}-${counterRef.current++}`
       const safeSession = sessionId.replace(/[^a-zA-Z0-9_-]/g, '').slice(-18)
       const safeInstance = instanceId.replace(/[^a-zA-Z0-9_-]/g, '').slice(-18)
@@ -284,13 +427,14 @@ export function useDirectBrowserTabs({
       const current = webviewsRef.current.get(activeIdRef.current ?? '')
       await current?.hide().catch(() => {})
 
+      createStageRef.current = 'the WebView to be created'
       let webview = new Webview(getCurrentWindow(), label, {
         url: initialUrl,
         x: Math.round(rect.left),
         y: Math.round(rect.top),
         width: Math.max(1, Math.round(rect.width)),
         height: Math.max(1, Math.round(rect.height)),
-        focus: true,
+        focus: visibleRef.current,
         incognito: profileMode === 'incognito',
         dataDirectory: profileMode === 'session'
           ? `${BROWSER_DATA_DIRECTORY}/${safeSession || 'default'}`
@@ -304,15 +448,18 @@ export function useDirectBrowserTabs({
       await new Promise<void>((resolve, reject) => {
         let settled = false
         const timeout = window.setTimeout(() => {
-          void Webview.getByLabel(label).then((existing) => {
-            if (settled) return
-            if (existing) {
-              webview = existing
-              finish(resolve)
-            } else {
-              finish(() => reject(new Error('Timed out creating browser WebView')))
-            }
-          })
+          void Webview.getByLabel(label).then(
+            (existing) => {
+              if (settled) return
+              if (existing) {
+                webview = existing
+                finish(resolve)
+              } else {
+                finish(() => reject(new Error('Timed out creating browser WebView')))
+              }
+            },
+            () => finish(() => reject(new Error('Timed out creating browser WebView'))),
+          )
         }, 5000)
         const finish = (callback: () => void) => {
           if (settled) return
@@ -326,45 +473,89 @@ export function useDirectBrowserTabs({
         })
       })
 
+      if (disposedRef.current || createTokenRef.current !== token) {
+        await webview.close().catch(() => {})
+        return
+      }
+      createStageRef.current = 'the WebView to be positioned'
       webviewsRef.current.set(id, webview)
-      visibilityRef.current.set(id, true)
+      if (!visibleRef.current) await webview.hide().catch(() => {})
+      visibilityRef.current.set(id, visibleRef.current)
       boundsRef.current = null
+      lastCreateErrorRef.current = null
       const tab = { id, label, url: initialUrl }
       tabsRef.current = [...tabsRef.current, tab]
       setTabs(tabsRef.current)
       activeIdRef.current = id
       setActiveTabId(id)
-      await webview.setZoom(zoom / 100)
-      await webview.setFocus()
-      await waitForPageReady(label)
+      createStageRef.current = 'the page zoom'
+      await withTimeout(webview.setZoom(zoom / 100), 'setting the page zoom')
+      if (visibleRef.current) await webview.setFocus().catch(() => {})
+      createStageRef.current = 'the page to become ready'
+      await withTimeout(waitForPageReady(label), 'the new page')
       return tab
     } catch (error) {
-      onError(error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      lastCreateErrorRef.current = `creating the WebView failed (${message})`
+      void logToDesktop(
+        'error',
+        `create failed at stage "${createStageRef.current}": ${message}`,
+      ).catch(() => {})
+      onError(message)
+      // Creation can fail for reasons that pass: the WebView runtime is
+      // still starting, the window is mid-resize. One shot and a dead
+      // panel is the wrong answer to a transient failure.
+      retryCreateRef.current?.()
     } finally {
-      creatingRef.current = false
-      setCreating(false)
+      window.clearTimeout(watchdog)
+      if (createTokenRef.current === token) {
+        createStageRef.current = ''
+        creatingRef.current = false
+        setCreating(false)
+      }
     }
   }, [devtools, enabled, instanceId, onError, profileMode, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
 
   useEffect(() => {
     if (!supported || !enabled || tabs.length > 0 || creating) return
-    void createTab(initialUrl)
-  }, [createTab, creating, enabled, initialUrl, supported, tabs.length])
+    if (createAttempt > 0 && createAttempt > CREATE_MAX_ATTEMPTS) return
+    let timer = 0
+    // The first attempt is immediate; retries back off, because the two
+    // things worth waiting for — a laid-out viewport and a ready WebView
+    // runtime — both resolve in well under a second.
+    const delay = createAttempt === 0
+      ? 0
+      : Math.min(CREATE_RETRY_BASE_MS * 2 ** (createAttempt - 1), 4_000)
+    timer = window.setTimeout(() => void createTab(initialUrl), delay)
+    return () => window.clearTimeout(timer)
+  }, [createAttempt, createTab, creating, enabled, initialUrl, supported, tabs.length])
 
+  useEffect(() => {
+    if (createAttempt <= CREATE_MAX_ATTEMPTS || tabsRef.current.length > 0) return
+    onError(
+      `The browser panel could not start: ${
+        lastCreateErrorRef.current ?? 'the desktop shell did not respond'
+      }. Close and reopen this tab, or restart EvoFlux Desktop if it keeps failing.`,
+    )
+  }, [createAttempt, onError])
+
+  // Switching tabs only records which tab is active; the viewport sync
+  // does the showing. Doing it here meant marking the incoming WebView
+  // visible *before* it had been positioned — and the sync skips
+  // positioning a view it already believes is visible at unchanged
+  // bounds, so the tab appeared wherever that WebView happened to sit
+  // last. Hiding the outgoing one directly is safe and avoids a frame of
+  // two visible tabs stacked on each other.
   const selectTab = useCallback(async (id: string) => {
     if (id === activeIdRef.current) return
-    const previous = webviewsRef.current.get(activeIdRef.current ?? '')
-    const next = webviewsRef.current.get(id)
+    const previousId = activeIdRef.current ?? ''
+    const previous = webviewsRef.current.get(previousId)
     await previous?.hide().catch(() => {})
-    visibilityRef.current.set(activeIdRef.current ?? '', false)
+    visibilityRef.current.set(previousId, false)
     activeIdRef.current = id
     setActiveTabId(id)
-    if (visible && next) {
-      await next.show()
-      await next.setFocus()
-      visibilityRef.current.set(id, true)
-    }
-  }, [visible])
+    await webviewsRef.current.get(id)?.setFocus().catch(() => {})
+  }, [])
 
   const closeTab = useCallback(async (id: string) => {
     const closingIndex = tabs.findIndex((tab) => tab.id === id)
@@ -381,17 +572,14 @@ export function useDirectBrowserTabs({
       activeIdRef.current = replacement?.id ?? null
       setActiveTabId(replacement?.id ?? null)
       if (replacement) {
-        const next = webviewsRef.current.get(replacement.id)
-        if (visible && next) {
-          await next.show()
-          await next.setFocus()
-          visibilityRef.current.set(replacement.id, true)
-        }
+        // Same as selectTab: let the viewport sync position it before it
+        // is shown, rather than showing it at stale bounds.
+        await webviewsRef.current.get(replacement.id)?.setFocus().catch(() => {})
       } else if (enabled && !singleTab) {
         queueMicrotask(() => void createTab())
       }
     }
-  }, [createTab, enabled, singleTab, tabs, visible])
+  }, [createTab, enabled, singleTab, tabs])
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
 
@@ -753,6 +941,7 @@ export function useDirectBrowserTabs({
     }
     if ([
       'snapshot',
+      'find',
       'query',
       'inspect',
       'html',
@@ -848,6 +1037,7 @@ export function useDirectBrowserTabs({
         order: registryOrderRef.current,
         isActive: () => registryActiveRef.current,
         getTab: () => tabsRef.current.find((tab) => tab.id === activeIdRef.current) ?? null,
+        unavailableReason: () => unavailableReasonRef.current(),
         execute: (action, params) => agentHandlerRef.current(action, params),
         activate: () => registryActivateRef.current?.(),
         close: () => registryCloseRef.current?.(),
@@ -932,72 +1122,134 @@ export function useDirectBrowserTabs({
     setPagePermission(null)
   }, [invokeFor, pagePermission])
 
+  /**
+   * Keep the native child WebView on top of its placeholder element.
+   *
+   * The WebView is an OS-level window, not a DOM node, so nothing lays it
+   * out for us: its position, size and visibility have to be pushed over
+   * IPC whenever the element it shadows moves.
+   *
+   * This used to run as an unconditional 60fps ``requestAnimationFrame``
+   * loop, forcing a layout read every frame for the whole life of the
+   * panel — while the browser was closed, while another workbench tab was
+   * in front, one loop per open browser tab. It now syncs when something
+   * actually moves: a resize of the placeholder, a scroll or resize of the
+   * window, or a React state change that alters what should be shown.
+   */
   useEffect(() => {
     if (!supported) return
+    const viewport = viewportRef.current
+    if (!viewport) return
+
     let disposed = false
     let syncing = false
+    let pendingSync = false
     let frame = 0
 
-    const loop = async () => {
+    const sync = async () => {
       if (disposed) return
-      const viewport = viewportRef.current
-      if (!syncing && viewport) {
-        syncing = true
-        try {
-          const rect = viewport.getBoundingClientRect()
-          const cssVisible = getComputedStyle(viewport).visibility !== 'hidden'
-          const shouldShow = visible && cssVisible && rect.width >= 2 && rect.height >= 2
-          const layout = browserViewportLayout({
-            x: rect.left,
-            y: rect.top,
-            width: rect.width,
-            height: rect.height,
-          }, viewportOverrideRef.current)
-          viewportScaleRef.current = layout.scale
-          const bounds = {
-            x: layout.x,
-            y: layout.y,
-            width: layout.width,
-            height: layout.height,
-          }
-          const changed = !sameBounds(boundsRef.current, bounds)
+      if (syncing) {
+        // Coalesce: one more pass after the in-flight one, never a queue.
+        pendingSync = true
+        return
+      }
+      syncing = true
+      try {
+        const rect = viewport.getBoundingClientRect()
+        const cssVisible = getComputedStyle(viewport).visibility !== 'hidden'
+        const shouldShow = visible && cssVisible && rect.width >= 2 && rect.height >= 2
+        const layout = browserViewportLayout({
+          x: rect.left,
+          y: rect.top,
+          width: rect.width,
+          height: rect.height,
+        }, viewportOverrideRef.current)
+        viewportScaleRef.current = layout.scale
+        const bounds = {
+          x: layout.x,
+          y: layout.y,
+          width: layout.width,
+          height: layout.height,
+        }
+        const changed = !sameBounds(boundsRef.current, bounds)
 
-          for (const [id, webview] of webviewsRef.current) {
-            const isActive = id === activeIdRef.current
-            const show = shouldShow && isActive && !pageDialog && !pagePermission
-            const currentlyVisible = visibilityRef.current.get(id) === true
-            if (show && (changed || !currentlyVisible)) {
-              const { LogicalPosition, LogicalSize } = await import('@tauri-apps/api/dpi')
-              await Promise.all([
-                webview.setPosition(new LogicalPosition(bounds.x, bounds.y)),
-                webview.setSize(new LogicalSize(bounds.width, bounds.height)),
-                webview.setZoom(viewportOverrideRef.current ? layout.scale : zoom / 100),
-              ])
-            }
-            if (visibilityRef.current.get(id) !== show) {
-              await (show ? webview.show() : webview.hide())
-              visibilityRef.current.set(id, show)
-            }
+        for (const [id, webview] of webviewsRef.current) {
+          const isActive = id === activeIdRef.current
+          const show = shouldShow && isActive && !pageDialog && !pagePermission
+          const currentlyVisible = visibilityRef.current.get(id) === true
+          if (show && (changed || !currentlyVisible)) {
+            const { LogicalPosition, LogicalSize } = await import('@tauri-apps/api/dpi')
+            await Promise.all([
+              webview.setPosition(new LogicalPosition(bounds.x, bounds.y)),
+              webview.setSize(new LogicalSize(bounds.width, bounds.height)),
+              webview.setZoom(viewportOverrideRef.current ? layout.scale : zoom / 100),
+            ])
           }
-          if (changed) boundsRef.current = bounds
-        } catch {
-          // The next animation frame retries bounds/visibility synchronization.
-        } finally {
-          syncing = false
+          if (visibilityRef.current.get(id) !== show) {
+            await (show ? webview.show() : webview.hide())
+            visibilityRef.current.set(id, show)
+          }
+        }
+        if (changed) boundsRef.current = bounds
+      } catch (error) {
+        // A native WebView left in the wrong place is the most visible way
+        // this panel breaks, and the old loop swallowed every failure on
+        // the theory that the next frame would fix it. Say so, then retry
+        // once on the next frame rather than spinning.
+        if (!disposed) {
+          console.warn('[browser] viewport sync failed', error)
+          pendingSync = true
+        }
+      } finally {
+        syncing = false
+        if (pendingSync && !disposed) {
+          pendingSync = false
+          frame = requestAnimationFrame(() => void sync())
         }
       }
-      frame = requestAnimationFrame(() => void loop())
     }
 
-    frame = requestAnimationFrame(() => void loop())
+    const schedule = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => void sync())
+    }
+
+    schedule()
+    const observer = new ResizeObserver(schedule)
+    observer.observe(viewport)
+    // The placeholder can move without resizing — the window scrolls, a
+    // sibling panel collapses — and only its own box is observed, so watch
+    // the frame it lives in too.
+    window.addEventListener('resize', schedule)
+    window.addEventListener('scroll', schedule, true)
     return () => {
       disposed = true
       cancelAnimationFrame(frame)
+      observer.disconnect()
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('scroll', schedule, true)
     }
-  }, [pageDialog, pagePermission, supported, viewportRef, visible, zoom])
+    // Every input the sync reads through a ref has to appear here, or the
+    // WebView keeps the position it had when the effect last ran: `tabs`
+    // for a newly created view, `activeTabId` for a switch between them,
+    // `viewportOverride` for a device-size emulation.
+  }, [
+    activeTabId,
+    pageDialog,
+    pagePermission,
+    supported,
+    tabs,
+    viewportOverride,
+    viewportRef,
+    visible,
+    zoom,
+  ])
 
+  // Poll the address bar only for a panel someone is looking at. This ran
+  // for every open browser tab regardless, so three background tabs cost
+  // six IPC round trips a second to keep URLs nobody could see up to date.
   useEffect(() => {
-    if (!supported || !activeTab) return
+    if (!supported || !activeTab || !visible) return
     const timer = window.setInterval(() => {
       void invokeFor<string>('app_browser_webview_url', activeTab.label)
         .then((url) => {
@@ -1008,13 +1260,29 @@ export function useDirectBrowserTabs({
         .catch(() => {})
     }, 500)
     return () => window.clearInterval(timer)
-  }, [activeTab, invokeFor, supported])
+  }, [activeTab, invokeFor, supported, visible])
 
-  useEffect(() => () => {
-    for (const webview of webviewsRef.current.values()) {
-      void webview.close().catch(() => {})
+  useEffect(() => {
+    // React invokes an effect, tears it down, and invokes it again on mount
+    // in development. Without this reset the teardown latched `disposed`
+    // on for the instance's whole life, so every WebView it created was
+    // closed on the next line and the panel retried forever — which is
+    // exactly what "the browser can't start" looked like.
+    disposedRef.current = false
+    // The refs hold Maps whose identity never changes, only their
+    // contents, so aliasing them here is the same object cleanup would
+    // read later — and it keeps the exhaustive-deps rule from mistaking
+    // them for DOM nodes captured too early.
+    const webviews = webviewsRef.current
+    const visibilities = visibilityRef.current
+    return () => {
+      disposedRef.current = true
+      for (const webview of webviews.values()) {
+        void webview.close().catch(() => {})
+      }
+      webviews.clear()
+      visibilities.clear()
     }
-    webviewsRef.current.clear()
   }, [])
 
   return {

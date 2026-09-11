@@ -288,15 +288,20 @@ export function SidebarSearchTrigger({
       type="button"
       onClick={onClick}
       className={cn(
-        'focus-ring-control group flex w-full items-center border border-transparent bg-(--bg-key)/40 text-left text-(--color-text-muted) transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-(--bg-key)/70 hover:text-(--color-text-2)',
+        // No transparent border: it shifted this row's icon and label a
+        // pixel off the nav rows below for nothing — focus is a box-shadow.
+        'focus-ring-control group flex w-full items-center bg-(--bg-key)/40 text-left text-(--color-text-muted) transition-[background-color,color,box-shadow] duration-(--motion-fast) hover:bg-(--bg-key)/70 hover:text-(--color-text-2)',
+        // Compact geometry is SidebarItem's, to the pixel: this row sits
+        // directly above the nav rows and any difference in the icon or
+        // label column reads as crooked rather than as a distinct control.
         compact
-          ? 'h-8 gap-1.5 rounded-lg px-2 text-[11px]'
+          ? 'h-8 gap-2 rounded-lg px-2.5 text-[11px]'
           : 'h-9 gap-2 rounded-xl px-2.5 text-xs',
       )}
       aria-label="Open command palette"
       title={`Open command palette (${shortcut})`}
     >
-      <Search size={compact ? 12 : 13} className="text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)" aria-hidden="true" />
+      <Search size={compact ? 14 : 13} className="shrink-0 text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)" aria-hidden="true" />
       <span className="flex-1">Search…</span>
       <kbd
         className={cn(

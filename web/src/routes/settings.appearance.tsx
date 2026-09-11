@@ -1,4 +1,5 @@
-import { Check, Languages, Palette } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, Languages, Palette, Pipette } from 'lucide-react'
 
 import { useAppearance } from '@/hooks/useAppearance'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -9,8 +10,11 @@ import { SelectControl } from '@/components/ui/select'
 import { useI18n, type AppLocale } from '@/i18n'
 import { cn } from '@/lib/utils'
 import {
+  DEFAULT_ACCENT_HEX,
   FONT_SCALES,
   MOTION_INTENSITIES,
+  accentContrast,
+  normalizeAccentHex,
   type AccentColor,
   type FontFamily,
   type FontScale,
@@ -18,14 +22,24 @@ import {
 } from '@/lib/appearance'
 
 const ACCENT_OPTIONS: ReadonlyArray<{ value: AccentColor; label: string }> = [
-  { value: 'default', label: 'Default' },
-  { value: 'blue', label: 'Blue' },
-  { value: 'green', label: 'Green' },
-  { value: 'orange', label: 'Orange' },
-  { value: 'pink', label: 'Pink' },
-  { value: 'purple', label: 'Purple' },
+  { value: 'default', label: 'Default (clay)' },
   { value: 'red', label: 'Red' },
+  { value: 'orange', label: 'Orange' },
+  { value: 'amber', label: 'Amber' },
+  { value: 'lime', label: 'Lime' },
+  { value: 'green', label: 'Green' },
+  { value: 'teal', label: 'Teal' },
+  { value: 'cyan', label: 'Cyan' },
+  { value: 'blue', label: 'Blue' },
+  { value: 'indigo', label: 'Indigo' },
+  { value: 'purple', label: 'Purple' },
+  { value: 'pink', label: 'Pink' },
+  { value: 'rose', label: 'Rose' },
+  { value: 'slate', label: 'Slate' },
 ]
+
+/** Below this, white or near-black label text on the accent is unreadable. */
+const MIN_ACCENT_CONTRAST = 4.5
 
 const FONT_OPTIONS: ReadonlyArray<{ value: FontFamily; label: string; description: string; family: string }> = [
   { value: 'system', label: 'System UI', description: 'Native to your operating system', family: "-apple-system, 'Segoe UI', system-ui, sans-serif" },
@@ -65,6 +79,13 @@ const MOTION_OPTIONS: ReadonlyArray<{ value: MotionIntensity; label: string; des
 
 export function AppearanceSettingsPage() {
   const { settings, update } = useAppearance()
+  const customHex = normalizeAccentHex(settings.accentCustom) ?? DEFAULT_ACCENT_HEX
+  const customContrast = accentContrast(customHex)
+  // The text field holds what is being typed, which is invalid for most of
+  // the keystrokes that build a hex. The applied colour only follows a value
+  // that parses, so the UI never flashes through half-typed colours.
+  const [hexDraft, setHexDraft] = useState(customHex)
+  useEffect(() => { setHexDraft(customHex) }, [customHex])
   const { locale, setLocale } = useI18n()
   const scaleIndex = Math.max(0, FONT_SCALES.indexOf(settings.fontScale))
   const motionIndex = Math.max(0, MOTION_INTENSITIES.indexOf(settings.motionIntensity))
@@ -136,7 +157,9 @@ export function AppearanceSettingsPage() {
                       className="flex size-5 items-center justify-center rounded-full ring-1 ring-inset ring-black/15"
                       style={{
                         background:
-                          opt.value === 'default' ? 'var(--color-accent)' : `var(--accent-${opt.value})`,
+                          opt.value === 'default'
+                            ? 'var(--ui-accent-clay)'
+                            : `var(--ui-accent-${opt.value})`,
                       }}
                       aria-hidden="true"
                     >
@@ -145,9 +168,95 @@ export function AppearanceSettingsPage() {
                   </button>
                 )
               })}
+
+              <button
+                type="button"
+                role="radio"
+                aria-checked={settings.accent === 'custom'}
+                aria-label="Custom colour"
+                title="Custom colour"
+                onClick={() => update({ accent: 'custom' })}
+                className={cn(
+                  'flex size-11 items-center justify-center rounded-md border transition-colors md:size-9',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)/35',
+                  settings.accent === 'custom'
+                    ? 'border-(--color-border-strong) bg-(--bg-key)'
+                    : 'border-transparent hover:bg-(--bg-key)',
+                )}
+              >
+                <span
+                  className="flex size-5 items-center justify-center rounded-full ring-1 ring-inset ring-black/15"
+                  style={{
+                    background: settings.accent === 'custom'
+                      ? customHex
+                      : 'conic-gradient(from 0deg, #F87171, #D9A441, #A3C563, #4FA8A0, #60A5FA, #A78BFA, #F472B6, #F87171)',
+                  }}
+                  aria-hidden="true"
+                >
+                  {settings.accent === 'custom'
+                    ? <Check size={12} strokeWidth={3} className="text-(--bg-page)" />
+                    : <Pipette size={11} className="text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.55)]" />}
+                </span>
+              </button>
             </div>
           }
         />
+        {settings.accent === 'custom' && (
+          <SettingsRow
+            label="Custom colour"
+            description="Any hex value. Buttons and chips place text on this colour, so it has to stay legible."
+            stacked
+            control={
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="color"
+                  value={customHex}
+                  onChange={(event) => update({ accentCustom: event.target.value })}
+                  aria-label="Pick a custom accent colour"
+                  className="size-9 cursor-pointer rounded-md border border-(--color-border) bg-transparent p-1"
+                />
+                <input
+                  type="text"
+                  value={hexDraft}
+                  onChange={(event) => {
+                    setHexDraft(event.target.value)
+                    const normalized = normalizeAccentHex(event.target.value)
+                    if (normalized) update({ accentCustom: normalized })
+                  }}
+                  onBlur={() => setHexDraft(customHex)}
+                  spellCheck={false}
+                  aria-label="Custom accent hex"
+                  aria-invalid={normalizeAccentHex(hexDraft) === null}
+                  className={cn(
+                    'w-28 rounded-md border bg-(--bg-card) px-2 py-1.5 font-mono text-xs',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)/35',
+                    normalizeAccentHex(hexDraft) === null
+                      ? 'border-(--color-error)'
+                      : 'border-(--color-border)',
+                  )}
+                />
+                <span
+                  className="rounded-md px-2.5 py-1.5 text-xs font-medium"
+                  style={{ background: customHex, color: customContrast.onAccent }}
+                >
+                  Sample
+                </span>
+                <span
+                  className={cn(
+                    'text-xs',
+                    customContrast.ratio < MIN_ACCENT_CONTRAST
+                      ? 'text-(--color-error)'
+                      : 'text-(--color-text-muted)',
+                  )}
+                >
+                  {customContrast.ratio < MIN_ACCENT_CONTRAST
+                    ? `Contrast ${customContrast.ratio.toFixed(1)}:1 — label text on this colour is hard to read`
+                    : `Contrast ${customContrast.ratio.toFixed(1)}:1`}
+                </span>
+              </div>
+            }
+          />
+        )}
       </SettingsGroup>
 
       <SettingsGroup title="Typography">

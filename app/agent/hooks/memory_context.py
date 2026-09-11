@@ -10,7 +10,7 @@ from uuid import UUID
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
-from app.agent.schemas.chat import AssistantMessage, HumanMessage, ToolMessage
+from app.agent.schemas.chat import AssistantMessage, HumanMessage
 from app.services.memory import MemorySearchResult
 from app.services.memory import search_curated_memory
 from app.core.db import DbFactory, resolve_db_factory
@@ -100,6 +100,15 @@ class MemoryContextHook(BaseAgentHook):
         if len(block) > MAX_MEMORY_CONTEXT_CHARS:
             block = block[:MAX_MEMORY_CONTEXT_CHARS].rstrip() + "\n[truncated]"
 
+        # Back in the system prompt, deliberately.
+        #
+        # Attaching it to the newest user message is worse, not better: that
+        # message is history next turn and no longer carries the block, so
+        # the turn we replay differs from the one the provider cached — the
+        # probe caught exactly that, `012:user` losing its block. Making it
+        # cache-safe needs an append-only home (a message of its own, kept in
+        # history), which is a persistence change rather than a placement
+        # one.
         new_prompt = (
             f"{request.system_prompt}\n\n{block}" if request.system_prompt else block
         )
@@ -139,14 +148,19 @@ class MemoryContextHook(BaseAgentHook):
         ]
 
     def _latest_user_text(self, request: "ModelRequest") -> str:
+        """The request this turn is serving, whatever has happened since.
+
+        Scans past the turn's own tool traffic to the user message that
+        started it. Stopping at the first tool result instead meant the block
+        was built on the turn's first model call and absent from every call
+        after a tool ran — and since the block rides on that user message,
+        adding and removing it mid-turn rewrote history the provider had
+        already cached.
+        """
         for message in reversed(request.messages):
             if isinstance(message, HumanMessage):
                 content = message.text_content() or ""
                 return " ".join(content.split())[:MAX_MEMORY_QUERY_CHARS]
-            if isinstance(message, AssistantMessage) and message.tool_calls:
-                return ""
-            if isinstance(message, ToolMessage):
-                return ""
         return ""
 
 

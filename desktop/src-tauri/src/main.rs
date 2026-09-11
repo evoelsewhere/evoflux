@@ -443,18 +443,45 @@ async fn save_workspace_file(
     let path = target
         .into_path()
         .map_err(|_| "Selected destination is not a local file path".to_string())?;
-    let bytes = reqwest::get(&request.url)
+
+    // Copied chunk by chunk: workspace artifacts can be arbitrarily large
+    // (datasets, videos, model files), and buffering the whole body before
+    // writing would hold a second full copy in memory.
+    match copy_url_to_path(&request.url, &path).await {
+        Ok(()) => Ok(true),
+        Err(error) => {
+            // Never leave a half-written file at the destination the user
+            // picked — it would look like a complete save.
+            let _ = tokio::fs::remove_file(&path).await;
+            Err(error)
+        }
+    }
+}
+
+async fn copy_url_to_path(url: &str, path: &Path) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut response = reqwest::get(url)
         .await
         .map_err(|e| format!("Download file: {e}"))?
         .error_for_status()
-        .map_err(|e| format!("Download file: {e}"))?
-        .bytes()
+        .map_err(|e| format!("Download file: {e}"))?;
+    let mut file = tokio::fs::File::create(path)
         .await
-        .map_err(|e| format!("Read downloaded file: {e}"))?;
-    tokio::fs::write(&path, bytes)
+        .map_err(|e| format!("Create {}: {e}", path.display()))?;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| format!("Read downloaded file: {e}"))?
+    {
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("Write {}: {e}", path.display()))?;
+    }
+    file.flush()
         .await
         .map_err(|e| format!("Write {}: {e}", path.display()))?;
-    Ok(true)
+    Ok(())
 }
 
 #[tauri::command]
@@ -1514,147 +1541,6 @@ fn browser_observability_init_script() -> &'static str {
     "#
 }
 
-fn browser_agent_cursor_runtime_script() -> &'static str {
-    r##"
-        (() => {
-            if (globalThis.__evofluxEnsureAgentCursor) return;
-            const HOST_ID = '__evoflux-agent-cursor';
-            const TIP_X = 4;
-            const TIP_Y = 2.7;
-            let pulseTimer = null;
-            const controller = {
-                host: null,
-                cursor: null,
-                cursorPulse: null,
-                enabled: false,
-                suspended: false,
-                lastX: null,
-                lastY: null,
-                mount() {
-                    if (this.host?.isConnected) return;
-                    this.host = document.getElementById(HOST_ID);
-                    if (this.host) {
-                        this.cursor = this.host.shadowRoot?.querySelector('.cursor') || null;
-                        this.cursorPulse = this.host.shadowRoot?.querySelector('.cursor-pulse') || null;
-                        return;
-                    }
-                    this.host = document.createElement('div');
-                    this.host.id = HOST_ID;
-                    this.host.setAttribute('aria-hidden', 'true');
-                    this.host.style.cssText = 'all:initial;position:fixed;inset:0;pointer-events:none;z-index:2147483647;contain:layout style;';
-                    const root = this.host.attachShadow({ mode: 'open' });
-                    root.innerHTML = `
-                        <style>
-                            :host { all: initial; }
-                            .layer { position: fixed; inset: 0; overflow: hidden; pointer-events: none; }
-                            .cursor {
-                                position: absolute; left: 0; top: 0; width: 24px; height: 27px;
-                                transform: translate3d(var(--cursor-x, 72vw), var(--cursor-y, 34vh), 0);
-                                transform-origin: 4px 2.7px; transition: transform 28ms linear;
-                                will-change: transform;
-                            }
-                            .cursor-aura {
-                                position: absolute; left: -7px; top: -7px; width: 25px; height: 25px;
-                                border-radius: 50%; opacity: .46;
-                                background: radial-gradient(circle, rgba(255,255,255,.34) 0 8%, rgba(119,92,255,.24) 32%, rgba(67,210,255,.11) 54%, transparent 74%);
-                                filter: blur(3px);
-                            }
-                            .cursor svg {
-                                position: relative; display: block; width: 100%; height: 100%; overflow: visible;
-                                filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)) drop-shadow(0 0 4px rgba(126,93,255,.58)) drop-shadow(0 0 8px rgba(67,210,255,.22));
-                            }
-                            .cursor-glow { fill: none; stroke: rgba(123,91,255,.68); stroke-width: 5.5; stroke-linejoin: round; stroke-linecap: round; opacity: .42; filter: blur(2px); }
-                            .cursor-outline { fill: none; stroke: rgba(255,255,255,.99); stroke-width: 3.8; stroke-linejoin: round; stroke-linecap: round; }
-                            .cursor-core { fill: url(#evoflux-cursor-fill); stroke: #030407; stroke-width: .9; stroke-linejoin: round; stroke-linecap: round; }
-                            .cursor-pulse {
-                                position: absolute; left: -5px; top: -5px; width: 17px; height: 17px;
-                                border: 2px solid rgba(126,102,255,.86); box-shadow: 0 0 8px rgba(70,211,255,.72); border-radius: 50%;
-                                opacity: 0; transform: scale(.25);
-                            }
-                            .cursor.pressed { transform: translate3d(var(--cursor-x), var(--cursor-y), 0) scale(.9); transition-duration: 55ms; }
-                            .cursor.pressed .cursor-aura { opacity: .7; filter: blur(1.5px); }
-                            .cursor.pulsing .cursor-pulse { animation: evoflux-click .42s ease-out; }
-                            @keyframes evoflux-click { 0% { opacity: 1; transform: scale(.25); } 100% { opacity: 0; transform: scale(2.2); } }
-                            @media (prefers-reduced-motion: reduce) { .cursor { transition-duration: 0ms; } }
-                        </style>
-                        <div class="layer">
-                            <div class="cursor">
-                                <span class="cursor-aura"></span>
-                                <span class="cursor-pulse"></span>
-                                <svg viewBox="0 0 24 27" aria-hidden="true">
-                                    <defs>
-                                        <linearGradient id="evoflux-cursor-fill" x1="5" y1="2" x2="15" y2="24" gradientUnits="userSpaceOnUse">
-                                            <stop offset="0" stop-color="#111319"/>
-                                            <stop offset=".58" stop-color="#050609"/>
-                                            <stop offset="1" stop-color="#010102"/>
-                                        </linearGradient>
-                                    </defs>
-                                    <path class="cursor-glow" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
-                                    <path class="cursor-outline" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
-                                    <path class="cursor-core" d="M4 2.7v18.5c0 2.6 3.2 3.8 4.9 1.8l4.35-5.2h5.95c2.55 0 3.7-3.2 1.75-4.82L7.75 1.35C6.25.1 4 1.17 4 2.7Z"/>
-                                </svg>
-                            </div>
-                        </div>`;
-                    this.cursor = root.querySelector('.cursor');
-                    this.cursorPulse = root.querySelector('.cursor-pulse');
-                    if (this.lastX == null || this.lastY == null) {
-                        this.lastX = Math.max(0, Math.min(innerWidth - 1, innerWidth * .72));
-                        this.lastY = Math.max(0, Math.min(innerHeight - 1, innerHeight * .34));
-                    }
-                    this.cursor.style.setProperty('--cursor-x', `${this.lastX - TIP_X}px`);
-                    this.cursor.style.setProperty('--cursor-y', `${this.lastY - TIP_Y}px`);
-                    (document.documentElement || document).appendChild(this.host);
-                    this.host.style.visibility = this.suspended ? 'hidden' : 'visible';
-                },
-                move(x, y, phase = 'move') {
-                    if (!this.cursor || !Number.isFinite(x) || !Number.isFinite(y)) return;
-                    this.lastX = Math.max(0, Math.min(innerWidth - 1, x));
-                    this.lastY = Math.max(0, Math.min(innerHeight - 1, y));
-                    this.cursor.style.setProperty('--cursor-x', `${this.lastX - TIP_X}px`);
-                    this.cursor.style.setProperty('--cursor-y', `${this.lastY - TIP_Y}px`);
-                    this.cursor.classList.toggle('pressed', phase === 'press' || phase === 'drag');
-                    if (phase !== 'release' && phase !== 'click') return;
-                    this.cursor.classList.remove('pressed');
-                    this.cursor.classList.remove('pulsing');
-                    void this.cursorPulse?.offsetWidth;
-                    this.cursor.classList.add('pulsing');
-                    clearTimeout(pulseTimer);
-                    pulseTimer = setTimeout(() => this.cursor?.classList.remove('pulsing'), 460);
-                },
-                moveToElement(element, phase = 'move') {
-                    const rect = element?.getBoundingClientRect?.();
-                    if (!rect) return;
-                    this.move(rect.left + rect.width / 2, rect.top + rect.height / 2, phase);
-                },
-                setEnabled(nextEnabled) {
-                    this.enabled = Boolean(nextEnabled);
-                    if (!this.enabled) {
-                        clearTimeout(pulseTimer);
-                        pulseTimer = null;
-                        this.host?.remove();
-                        this.host = null;
-                        this.cursor = null;
-                        this.cursorPulse = null;
-                        return;
-                    }
-                    this.mount();
-                },
-                setSuspended(nextSuspended) {
-                    this.suspended = Boolean(nextSuspended);
-                    if (!this.host) return;
-                    this.host.style.visibility = this.suspended ? 'hidden' : 'visible';
-                    void this.host.offsetHeight;
-                },
-            };
-            globalThis.__evofluxAgentCursor = controller;
-            globalThis.__evofluxEnsureAgentCursor = () => {
-                controller.setEnabled(true);
-                return controller;
-            };
-        })();
-    "##
-}
-
 #[tauri::command]
 async fn app_browser_webview_agent_action(
     app: AppHandle,
@@ -1666,25 +1552,7 @@ async fn app_browser_webview_agent_action(
         return Err("Agent browser actions require a browser WebView".into());
     }
     if action == "screenshot" {
-        let suspended = eval_browser_webview_action_once(
-            &app,
-            &label,
-            "cursor_control",
-            &serde_json::json!({ "suspended": true }),
-        )
-        .await
-        .is_ok();
-        let result = capture_browser_webview(&app, &label, &params).await;
-        if suspended {
-            let _ = eval_browser_webview_action_once(
-                &app,
-                &label,
-                "cursor_control",
-                &serde_json::json!({ "suspended": false }),
-            )
-            .await;
-        }
-        return result;
+        return capture_browser_webview(&app, &label, &params).await;
     }
     if action == "save_pdf" {
         let bytes = capture_browser_pdf(&app, &label).await?;
@@ -2691,6 +2559,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
     const SUPPORTED: &[&str] = &[
         "instrument",
         "snapshot",
+        "find",
         "click",
         "dblclick",
         "hover",
@@ -2740,7 +2609,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "exists",
         "probe",
         "status",
-        "cursor_control",
         "set_emulation",
         "reset_emulation",
     ];
@@ -2751,10 +2619,8 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         .map_err(|error| format!("Could not encode browser action: {error}"))?;
     let params_json = serde_json::to_string(params)
         .map_err(|error| format!("Could not encode browser parameters: {error}"))?;
-    let cursor_runtime = browser_agent_cursor_runtime_script();
     Ok(format!(
         r#"() => {{
-                    {cursor_runtime}
                     const action = {action_json};
                     const params = {params_json};
                     const visible = (element) => {{
@@ -2762,16 +2628,93 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const style = element.ownerDocument.defaultView.getComputedStyle(element);
                         return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
                     }};
-                    const resolveElement = () => {{
-                        if (Number.isInteger(params.index)) {{
-                            const indexed = globalThis.__evofluxAgentElements?.[params.index];
+                    const INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY', 'DETAILS']);
+                    const INTERACTIVE_ROLES = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option', 'textbox', 'combobox', 'slider', 'spinbutton', 'treeitem', 'gridcell']);
+                    const interactive = (element) => (
+                        INTERACTIVE_TAGS.has(element.tagName)
+                        || INTERACTIVE_ROLES.has(element.getAttribute('role'))
+                        || element.isContentEditable
+                        || element.tabIndex >= 0
+                        || typeof element.onclick === 'function'
+                    );
+                    const refStore = () => (globalThis.__evofluxAgentRefs ||= {{ byRef: new Map(), byElement: new WeakMap(), labels: new Map(), next: 1 }});
+                    const refFor = (element) => {{
+                        const store = refStore();
+                        let ref = store.byElement.get(element);
+                        if (!ref) {{
+                            ref = `ref_${{store.next++}}`;
+                            store.byElement.set(element, ref);
+                        }}
+                        store.byRef.set(ref, element);
+                        return ref;
+                    }};
+                    const rememberRef = (element) => {{
+                        const ref = refFor(element);
+                        try {{ refStore().labels.set(ref, describe(element).slice(0, 80)); }} catch {{}}
+                        return ref;
+                    }};
+                    const refLabel = (ref) => {{
+                        const label = refStore().labels.get(String(ref));
+                        return label ? ` (${{label}})` : '';
+                    }};
+                    // A named target that cannot be resolved throws here rather
+                    // than returning null, so the agent is told which of the
+                    // three failure modes it hit — unknown ref, detached
+                    // element, no such selector — instead of one generic
+                    // "Element not found" for all of them. Null is reserved for
+                    // "no target was named", which callers read as "use the
+                    // focused element".
+                    // A drop target deserves the same vocabulary as a drag
+                    // source: a ref that survives the page moving, then the
+                    // legacy index, then a selector.
+                    const resolveTarget = () => {{
+                        if (typeof params.target_ref === 'string' && params.target_ref) {{
+                            const element = refStore().byRef.get(params.target_ref);
+                            if (!element) throw new Error(`Unknown drop target ${{params.target_ref}}. Run snapshot again to get current refs.`);
+                            if (!element.isConnected) throw new Error(`Drop target ${{params.target_ref}}${{refLabel(params.target_ref)}} is no longer in the page.`);
+                            return element;
+                        }}
+                        if (Number.isInteger(params.target_index)) {{
+                            const indexed = globalThis.__evofluxAgentElements?.[params.target_index];
                             if (indexed?.isConnected) return indexed;
-                            return deepElements().find((element) => element.getAttribute('data-evoflux-agent-index') === String(params.index)) || null;
+                            throw new Error(`No drop target at index ${{params.target_index}}. Prefer target_ref.`);
+                        }}
+                        const selector = String(params.target_selector || '');
+                        const matched = selector
+                            ? deepElements().find((element) => {{ try {{ return element.matches(selector); }} catch {{ return false; }} }})
+                            : null;
+                        if (!matched) throw new Error(`No drop target matches ${{JSON.stringify(selector)}}.`);
+                        return matched;
+                    }};
+                    const resolveElement = () => {{
+                        if (typeof params.ref === 'string' && params.ref) {{
+                            const store = refStore();
+                            const element = store.byRef.get(params.ref);
+                            if (!element) {{
+                                throw new Error(`Unknown element ${{params.ref}}. Refs come from snapshot, query and find, and are dropped when the page navigates — run snapshot again to get current ones.`);
+                            }}
+                            if (!element.isConnected) {{
+                                store.byRef.delete(params.ref);
+                                throw new Error(`${{params.ref}}${{refLabel(params.ref)}} is no longer in the page — the DOM changed since it was listed. Run snapshot again.`);
+                            }}
+                            return element;
+                        }}
+                        if (Number.isInteger(params.index)) {{
+                            const listed = globalThis.__evofluxAgentElements || [];
+                            const indexed = listed[params.index];
+                            if (indexed?.isConnected) return indexed;
+                            const stamped = deepElements().find((element) => element.getAttribute('data-evoflux-agent-index') === String(params.index));
+                            if (stamped) return stamped;
+                            throw new Error(`No element at index ${{params.index}}; the last snapshot listed ${{listed.length}}. Indexes are positional and are invalidated by the next snapshot or query — prefer a ref.`);
                         }}
                         if (typeof params.selector !== 'string') return null;
-                        return deepElements().find((element) => {{
+                        const matched = deepElements().find((element) => {{
                             try {{ return element.matches(params.selector); }} catch {{ return false; }}
-                        }}) || null;
+                        }});
+                        if (!matched) {{
+                            throw new Error(`No element matches selector ${{JSON.stringify(params.selector)}}. Run snapshot to see what is on the page, or find to search it by name.`);
+                        }}
+                        return matched;
                     }};
                     const deepElements = (root = document) => {{
                         const output = [];
@@ -2799,7 +2742,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const text = String(element.innerText || element.value || element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 180);
                         const state = [
                             element.disabled ? 'disabled' : '',
-                            'checked' in element ? `checked=${{Boolean(element.checked)}}` : '',
+                            ('checked' in element && /^(checkbox|radio)$/i.test(element.type || '')) ? `checked=${{Boolean(element.checked)}}` : '',
                             element.getAttribute('aria-expanded') != null ? `expanded=${{element.getAttribute('aria-expanded')}}` : '',
                         ].filter(Boolean).join(' ');
                         const box = element.getBoundingClientRect();
@@ -2824,7 +2767,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             ? labelledBy.split(/\s+/).map((id) => element.ownerDocument.getElementById(id)?.innerText || '').join(' ').trim()
                             : '';
                         const explicit = element.id ? element.ownerDocument.querySelector(`label[for="${{CSS.escape(element.id)}}"]`)?.innerText : '';
-                        return String(element.getAttribute('aria-label') || labelled || explicit || element.getAttribute('alt') || element.getAttribute('title') || element.getAttribute('placeholder') || element.innerText || element.value || '').trim().replace(/\s+/g, ' ').slice(0, 300);
+                        return String(element.getAttribute('aria-label') || labelled || explicit || element.getAttribute('alt') || element.getAttribute('title') || element.getAttribute('placeholder') || element.innerText || element.value || element.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 300);
                     }};
                     const serializable = (value) => {{
                         if (value === undefined) return '(no return value)';
@@ -2842,6 +2785,17 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'instrument') {{
                         if (!globalThis.__evofluxBrowserRuntime) {{
+                            // Reaching here means a document with no runtime —
+                            // a fresh page. Refs name elements in the document
+                            // that listed them, so they are dropped here rather
+                            // than letting a stale one resolve to whatever
+                            // occupies that slot next. It has to be inside this
+                            // guard: instrument is idempotent and is invoked
+                            // before *every* action, so clearing on each call
+                            // emptied the store between a snapshot and the
+                            // click that used it.
+                            globalThis.__evofluxAgentRefs = undefined;
+                            globalThis.__evofluxAgentElements = [];
                             const runtime = {{ documentId: `${{Date.now().toString(36)}}-${{Math.random().toString(36).slice(2)}}`, console: [], network: [], dialogs: [], popups: [], permissions: [], permissionResolvers: new Map(), nextDialogId: 1, nextPopupId: 1, nextPermissionId: 1, dialogBehavior: {{ behavior: 'dismiss', promptText: null }} }};
                             const keep = (items, value, max) => {{ items.push(value); if (items.length > max) items.splice(0, items.length - max); }};
                             const queuePopup = (value) => {{
@@ -2932,14 +2886,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             }};
                             globalThis.__evofluxBrowserRuntime = runtime;
                         }}
-                        globalThis.__evofluxEnsureAgentCursor();
                         return {{ ready: true }};
-                    }}
-
-                    if (action === 'cursor_control') {{
-                        const cursor = globalThis.__evofluxAgentCursor;
-                        if (cursor && typeof params.suspended === 'boolean') cursor.setSuspended(params.suspended);
-                        return {{ active: Boolean(cursor?.enabled), suspended: Boolean(cursor?.suspended) }};
                     }}
 
                     if (action === 'set_emulation') {{
@@ -2981,19 +2928,13 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'snapshot') {{
                         document.querySelectorAll('[data-evoflux-agent-index]').forEach((element) => element.removeAttribute('data-evoflux-agent-index'));
-                        const interactiveTags = new Set(['A', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY', 'DETAILS']);
-                        const interactiveRoles = new Set(['button', 'link', 'checkbox', 'radio', 'switch', 'tab', 'menuitem', 'option', 'textbox', 'combobox', 'slider', 'spinbutton', 'treeitem', 'gridcell']);
-                        const elements = deepElements().filter((element) => visible(element) && (
-                            interactiveTags.has(element.tagName)
-                            || interactiveRoles.has(element.getAttribute('role'))
-                            || element.isContentEditable
-                            || element.tabIndex >= 0
-                            || typeof element.onclick === 'function'
-                        )).slice(0, 750);
+                        const elements = deepElements()
+                            .filter((element) => visible(element) && interactive(element))
+                            .slice(0, 750);
                         globalThis.__evofluxAgentElements = elements;
                         const lines = elements.map((element, index) => {{
                             try {{ element.setAttribute('data-evoflux-agent-index', String(index)); }} catch {{}}
-                            return `[${{index}}] ${{describe(element)}}`;
+                            return `[${{rememberRef(element)}}] ${{describe(element)}}`;
                         }});
                         const maxChars = Math.max(500, Math.min(100000, Number(params.max_chars) || 15000));
                         const textParts = [String(document.body?.innerText || '').trim()];
@@ -3001,7 +2942,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             try {{ if (frame.contentDocument?.body) textParts.push(String(frame.contentDocument.body.innerText || '').trim()); }} catch {{}}
                         }}
                         const pageText = textParts.filter(Boolean).join('\n\n[Same-origin frame]\n').slice(0, Math.floor(maxChars * 0.45));
-                        const output = `URL: ${{location.href}}\nTitle: ${{document.title}}\n\nPage text:\n${{pageText}}\n\nInteractive elements (use [index] with click/fill):\n${{lines.join('\n')}}`;
+                        const output = `URL: ${{location.href}}\nTitle: ${{document.title}}\n\nPage text:\n${{pageText}}\n\nInteractive elements (pass the ref to click/fill/hover):\n${{lines.join('\n')}}`;
                         return output.slice(0, maxChars);
                     }}
 
@@ -3023,7 +2964,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             x = rect.left + rect.width / 2;
                             y = rect.top + rect.height / 2;
                         }}
-                        globalThis.__evofluxEnsureAgentCursor().move(x, y, action === 'hover' ? 'move' : 'release');
                         return {{ x, y, viewport_width: innerWidth, viewport_height: innerHeight, description: describe(element) }};
                     }}
 
@@ -3054,9 +2994,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'native_drag_targets') {{
                         const source = resolveElement();
-                        const target = Number.isInteger(params.target_index)
-                            ? globalThis.__evofluxAgentElements?.[params.target_index]
-                            : deepElements().find((element) => {{ try {{ return element.matches(String(params.target_selector || '')); }} catch {{ return false; }} }});
+                        const target = resolveTarget();
                         if (!source || !target) throw new Error('Native drag source or target not found');
                         source.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
                         target.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
@@ -3065,9 +3003,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const point = (element, rect) => ({{ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, description: describe(element) }});
                         const sourcePoint = point(source, sourceRect);
                         const targetPoint = point(target, targetRect);
-                        const cursor = globalThis.__evofluxEnsureAgentCursor();
-                        cursor.move(sourcePoint.x, sourcePoint.y, 'press');
-                        setTimeout(() => cursor.move(targetPoint.x, targetPoint.y, 'release'), 120);
                         return {{ source: sourcePoint, target: targetPoint, viewport_width: innerWidth, viewport_height: innerHeight }};
                     }}
 
@@ -3075,7 +3010,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const element = resolveElement();
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         element.scrollIntoView({{ block: 'center', inline: 'center' }});
-                        globalThis.__evofluxEnsureAgentCursor().moveToElement(element, 'release');
                         element.focus?.();
                         element.click();
                         return `Clicked ${{describe(element)}}`;
@@ -3085,7 +3019,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const element = resolveElement();
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         element.scrollIntoView({{ block: 'center', inline: 'center' }});
-                        globalThis.__evofluxEnsureAgentCursor().moveToElement(element, 'release');
                         element.focus?.();
                         element.dispatchEvent(new MouseEvent('dblclick', {{ bubbles: true, cancelable: true, view: window, detail: 2 }}));
                         return `Double-clicked ${{describe(element)}}`;
@@ -3095,7 +3028,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const element = resolveElement();
                         if (!element) throw new Error('Element not found; run snapshot again or provide a selector');
                         element.scrollIntoView({{ block: 'center', inline: 'center' }});
-                        globalThis.__evofluxEnsureAgentCursor().moveToElement(element);
                         for (const type of ['pointerover', 'mouseover', 'pointerenter', 'mouseenter', 'pointermove', 'mousemove']) element.dispatchEvent(new MouseEvent(type, {{ bubbles: !type.endsWith('enter'), cancelable: true, view: window }}));
                         return `Hovered ${{describe(element)}}`;
                     }}
@@ -3231,20 +3163,15 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'drag') {{
                         const source = resolveElement();
-                        const target = Number.isInteger(params.target_index)
-                            ? globalThis.__evofluxAgentElements?.[params.target_index]
-                            : deepElements().find((element) => {{ try {{ return element.matches(String(params.target_selector || '')); }} catch {{ return false; }} }});
+                        const target = resolveTarget();
                         if (!source || !target) throw new Error('Drag source or target not found');
                         source.scrollIntoView({{ block: 'center', inline: 'center' }});
                         target.scrollIntoView({{ block: 'center', inline: 'center' }});
-                        const cursor = globalThis.__evofluxEnsureAgentCursor();
-                        cursor.moveToElement(source, 'press');
                         const transfer = new DataTransfer();
                         for (const type of ['dragstart', 'drag', 'dragenter', 'dragover', 'drop', 'dragend']) {{
                             const recipient = ['dragstart', 'drag', 'dragend'].includes(type) ? source : target;
                             recipient.dispatchEvent(new DragEvent(type, {{ bubbles: true, cancelable: true, dataTransfer: transfer }}));
                         }}
-                        cursor.moveToElement(target, 'release');
                         return `Dragged ${{describe(source)}} to ${{describe(target)}}`;
                     }}
 
@@ -3265,7 +3192,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const button = params.button === 'middle' ? 1 : params.button === 'right' ? 2 : 0;
                         const buttons = button === 0 ? 1 : button === 1 ? 4 : 2;
                         const init = {{ bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button, buttons }};
-                        globalThis.__evofluxEnsureAgentCursor().move(x, y, 'release');
                         element.focus?.();
                         for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) element.dispatchEvent(new MouseEvent(type, init));
                         return `Clicked at ${{x}},${{y}} on ${{describe(element)}}`;
@@ -3292,9 +3218,34 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         return matches.length
                             ? matches.map((element, index) => {{
                                 try {{ element.setAttribute('data-evoflux-agent-index', String(index)); }} catch {{}}
-                                return `[${{index}}] ${{describe(element)}}`;
+                                return `[${{rememberRef(element)}}] ${{describe(element)}}`;
                             }}).join('\n')
                             : '(no matching elements)';
+                    }}
+
+                    // Search the page the way a person reads it — by what a
+                    // control says — rather than by CSS structure. A selector
+                    // needs the agent to already know the markup; this needs
+                    // only the visible label, which is what it can see in a
+                    // screenshot or a description.
+                    if (action === 'find') {{
+                        const needle = String(params.query || '').trim().toLowerCase();
+                        if (!needle) throw new Error('find requires a query');
+                        const limit = Math.max(1, Math.min(50, Number(params.limit) || 20));
+                        const includeHidden = params.include_hidden === true;
+                        const matches = [];
+                        for (const element of deepElements()) {{
+                            if (!includeHidden && !visible(element)) continue;
+                            if (!interactive(element) && element.childElementCount > 0) continue;
+                            let haystack = '';
+                            try {{ haystack = `${{element.tagName}} ${{element.getAttribute('role') || ''}} ${{accessibleName(element)}}`.toLowerCase(); }} catch {{ continue; }}
+                            if (!haystack.includes(needle)) continue;
+                            matches.push(element);
+                            if (matches.length >= limit) break;
+                        }}
+                        return matches.length
+                            ? matches.map((element) => `[${{rememberRef(element)}}] ${{describe(element)}}`).join(String.fromCharCode(10))
+                            : `No element matches ${{JSON.stringify(params.query)}}. Try a shorter fragment of the visible label, or snapshot to list what is on the page.`;
                     }}
 
                     if (action === 'inspect') {{
@@ -3347,7 +3298,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                                     const ref = refs.length;
                                     refs.push(element);
                                     const states = [
-                                        'checked' in element ? `checked=${{Boolean(element.checked)}}` : '',
+                                        ('checked' in element && /^(checkbox|radio)$/i.test(element.type || '')) ? `checked=${{Boolean(element.checked)}}` : '',
                                         'disabled' in element ? `disabled=${{Boolean(element.disabled)}}` : '',
                                         'selected' in element ? `selected=${{Boolean(element.selected)}}` : '',
                                         ...['expanded', 'pressed', 'required', 'invalid', 'current', 'busy', 'live']
@@ -5752,7 +5703,6 @@ mod tests {
             "exists",
             "probe",
             "status",
-            "cursor_control",
             "set_emulation",
             "reset_emulation",
         ] {
@@ -5871,27 +5821,6 @@ mod tests {
         assert!(script.contains("target || '').toLowerCase() !== '_blank'"));
         assert!(script.contains("response: accepted ? 'accepted' : 'dismissed'"));
         assert!(script.contains("globalThis.__evofluxBrowserRuntime = runtime"));
-    }
-
-    #[test]
-    fn browser_agent_cursor_is_classic_glowing_and_tracks_pointer_actions() {
-        let cursor = browser_agent_cursor_runtime_script();
-        let click = browser_agent_action_script("click", &serde_json::json!({ "index": 2 }))
-            .expect("click action should compile");
-        let hover = browser_agent_action_script("hover", &serde_json::json!({ "index": 2 }))
-            .expect("hover action should compile");
-        let click_at =
-            browser_agent_action_script("click_at", &serde_json::json!({ "x": 24, "y": 36 }))
-                .expect("coordinate click should compile");
-
-        assert!(cursor.contains("width: 24px; height: 27px"));
-        assert!(cursor.contains("stroke-linejoin: round; stroke-linecap: round"));
-        assert!(cursor.contains("M4 2.7v18.5c0 2.6"));
-        assert!(cursor.contains("class=\"cursor-glow\""));
-        assert!(cursor.contains("drop-shadow(0 0 4px rgba(126,93,255,.58))"));
-        assert!(click.contains("moveToElement(element, 'release')"));
-        assert!(hover.contains("moveToElement(element)"));
-        assert!(click_at.contains("move(x, y, 'release')"));
     }
 
     #[test]

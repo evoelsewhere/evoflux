@@ -40,8 +40,6 @@ import {
   Edit2,
   RotateCcw,
   FolderOpen,
-  Trash2,
-  Pencil,
   FolderUp,
   MoreHorizontal,
   LocateFixed,
@@ -52,7 +50,16 @@ import {
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
-import { workspaceMediaUrl, updateSessionWorkspace, uploadWorkspaceFiles, moveWorkspaceFile, deleteWorkspaceFile, browseWorkspaces } from '@/api/client'
+import {
+  workspaceMediaUrl,
+  updateSessionWorkspace,
+  uploadWorkspaceFiles,
+  createWorkspaceEntry,
+  copyWorkspaceFile,
+  moveWorkspaceFile,
+  deleteWorkspaceFile,
+  browseWorkspaces,
+} from '@/api/client'
 import {
   decodeBase64Utf8,
   isTauriAvailable,
@@ -67,7 +74,6 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useSessionFilesWatcher } from '@/hooks/useSessionFilesWatcher'
 import { usePlatform } from '@/hooks/use-platform'
 import { languageForExt, useMonacoTheme, useSafeMonaco } from '@/hooks/useMonacoTheme'
-import { mediumHapticFeedback } from '@/lib/haptics'
 import { formatBytes } from '@/utils/format'
 import { errorMessage } from '@/utils/errors'
 import { MarkdownBlock } from '@/utils/markdown'
@@ -75,6 +81,11 @@ import { SidePanel } from './shell/SidePanel'
 import { useUIStore } from '@/stores/useUIStore'
 import { getWorkspacePanelLayout } from '@/lib/workspace-panel-layout'
 import { ImageLightbox } from './ImageLightbox'
+import {
+  FileExplorerContextMenu,
+  type FileExplorerEntry,
+  type FileExplorerMenuActions,
+} from './FileExplorerContextMenu'
 import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
 import {
   DropdownMenu,
@@ -83,13 +94,14 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu'
 import { openExternalUrl } from '@/lib/open-external'
+import { downloadWorkspaceFile } from '@/lib/workspace-download'
 import {
   isWorkspaceCodeExtension,
   isWorkspaceDocumentKind,
   workspaceFileExtension,
   workspaceFileKind,
 } from '@/lib/workspace-file-kind'
-import type { WorkspaceFileInfo } from '@/api/types'
+import type { WorkspaceFileInfo, WorkspaceFilesResponse } from '@/api/types'
 import { buildTree, sortTreeNodeChildren, type TreeNode } from '@/utils/workspaceFileTree'
 import { WorkspaceHtmlPreview } from './workspace-html-preview'
 
@@ -99,9 +111,24 @@ const DocumentPreview = lazy(() =>
 
 // ── File-type helpers ─────────────────────────────────────────────────────────
 
-// Extensions we preview as plain text. Other formats open in their desktop app.
-const FILE_LONG_PRESS_MS = 520
-const FILE_LONG_PRESS_MOVE_TOLERANCE = 10
+/**
+ * Read a workspace file as text, natively on desktop and over HTTP on web.
+ *
+ * Shared by the text preview, the "copy contents" button and the explorer's
+ * context menu so all three agree on where a file's bytes come from.
+ */
+async function readWorkspaceFileText(
+  sessionId: string,
+  workspaceRoot: string | null | undefined,
+  path: string,
+): Promise<string> {
+  if (isTauriAvailable() && workspaceRoot) {
+    return decodeBase64Utf8(await tauriReadWorkspaceFile(workspaceRoot, path))
+  }
+  const response = await fetch(workspaceMediaUrl(sessionId, path))
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  return response.text()
+}
 
 // ── Resize constants ─────────────────────────────────────────────────────────
 
@@ -169,40 +196,21 @@ function TreeNodeView({
   node,
   depth,
   selectedPath,
-  workspaceRoot,
   onSelect,
-  onOpen,
-  onReveal,
-  onRename,
-  onDelete,
+  menuActions,
   visiblePaths,
   defaultOpen,
 }: {
   node: TreeNode
   depth: number
   selectedPath: string | null
-  workspaceRoot: string | null
   onSelect: (file: WorkspaceFileInfo) => void
-  onOpen: (file: WorkspaceFileInfo) => void
-  onReveal: (file: WorkspaceFileInfo) => void
-  onRename: (file: WorkspaceFileInfo, newPath: string) => Promise<void>
-  onDelete: (file: WorkspaceFileInfo) => Promise<void>
+  menuActions: FileExplorerMenuActions
   visiblePaths: Set<string> | null
   defaultOpen: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const isDir = node.children.size > 0 && !node.file
-  const isMobile = useIsMobile()
-  const { isTauri, os } = usePlatform()
-  const isTauriMobile = isTauri && (os === 'ios' || os === 'android')
-  const [actionsPoint, setActionsPoint] = useState<{ x: number; y: number } | null>(null)
-  const longPressTimerRef = useRef<number | null>(null)
-  const longPressStartRef = useRef<{ x: number; y: number } | null>(null)
-  const [isRenaming, setIsRenaming] = useState(false)
-  const [renameValue, setRenameValue] = useState('')
-  const [isBusyRename, setIsBusyRename] = useState(false)
-  const [isBusyDelete, setIsBusyDelete] = useState(false)
-  const renameInputRef = useRef<HTMLInputElement>(null)
 
   // Keep folders open when a search filter is active so results are visible.
   const effectiveOpen = visiblePaths ? true : open
@@ -216,20 +224,6 @@ function TreeNodeView({
     ? children.filter((child) => visiblePaths.has(child.path))
     : children
 
-  const clearLongPress = () => {
-    if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current)
-    longPressTimerRef.current = null
-    longPressStartRef.current = null
-  }
-
-  const copyPath = async () => {
-    const relativePath = node.file!.path
-    const fullPath = workspaceRoot
-      ? `${workspaceRoot.replace(/[\\/]+$/, '')}/${relativePath}`
-      : relativePath
-    await navigator.clipboard.writeText(fullPath)
-  }
-
   // If filtering and nothing matches under this node, hide the whole subtree.
   if (visiblePaths && !visiblePaths.has(node.path) && filteredChildren.length === 0) {
     return null
@@ -237,79 +231,16 @@ function TreeNodeView({
 
   if (!isDir && node.file) {
     // ── File leaf ──────────────────────────────────────────────────────────
-    const isSelected = node.file.path === selectedPath
-
-    const commitRename = async () => {
-      const trimmed = renameValue.trim()
-      if (!trimmed || trimmed === node.name) { setIsRenaming(false); return }
-      const dir = node.file!.path.includes('/')
-        ? node.file!.path.slice(0, node.file!.path.lastIndexOf('/') + 1)
-        : ''
-      const newPath = dir + trimmed
-      setIsBusyRename(true)
-      try {
-        await onRename(node.file!, newPath)
-      } finally {
-        setIsBusyRename(false)
-        setIsRenaming(false)
-      }
-    }
+    const file = node.file
+    const isSelected = file.path === selectedPath
+    const entry: FileExplorerEntry = { path: file.path, name: file.name, isDirectory: false }
 
     return (
-      <>
-        {isRenaming ? (
-          <div
-            className="flex items-center gap-1.5 rounded px-2 py-1"
-            style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT + TREE_DISCLOSURE_SLOT }}
-          >
-            <FileTypeIcon name={node.file!.name} mime={node.file!.mime} />
-            <input
-              ref={renameInputRef}
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void commitRename()
-                if (e.key === 'Escape') setIsRenaming(false)
-              }}
-              onBlur={() => void commitRename()}
-              disabled={isBusyRename}
-              className="flex-1 rounded border border-(--color-border) bg-(--color-surface) px-1 py-0 font-mono text-xs text-(--color-text) outline-none focus:border-(--focus-ring)"
-              autoFocus
-            />
-            {isBusyRename && <Loader2 size={11} className="animate-spin shrink-0 text-(--color-text-muted)" />}
-          </div>
-        ) : (
+      <FileExplorerContextMenu entry={entry} actions={menuActions}>
         <button
-          onClick={() => onSelect(node.file!)}
-          onDoubleClick={() => onOpen(node.file!)}
-          onContextMenu={(event) => {
-            if (isTauriMobile) return
-            event.preventDefault()
-            setActionsPoint({ x: event.clientX, y: event.clientY })
-          }}
-          onPointerDown={(event) => {
-            if (!isMobile || !isTauriMobile || event.pointerType === 'mouse') return
-            longPressStartRef.current = { x: event.clientX, y: event.clientY }
-            longPressTimerRef.current = window.setTimeout(() => {
-              longPressTimerRef.current = null
-              longPressStartRef.current = null
-              mediumHapticFeedback()
-              setActionsPoint({ x: event.clientX, y: event.clientY })
-            }, FILE_LONG_PRESS_MS)
-          }}
-          onPointerMove={(event) => {
-            const start = longPressStartRef.current
-            if (!start) return
-            if (
-              Math.abs(event.clientX - start.x) > FILE_LONG_PRESS_MOVE_TOLERANCE ||
-              Math.abs(event.clientY - start.y) > FILE_LONG_PRESS_MOVE_TOLERANCE
-            ) {
-              clearLongPress()
-            }
-          }}
-          onPointerUp={clearLongPress}
-          onPointerCancel={clearLongPress}
-          onPointerLeave={clearLongPress}
+          type="button"
+          onClick={() => onSelect(file)}
+          onDoubleClick={() => void menuActions.onOpenExternally?.(entry)}
           className={cn(
             'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs transition-colors',
             isSelected
@@ -317,179 +248,60 @@ function TreeNodeView({
               : 'text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)',
           )}
           style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT + TREE_DISCLOSURE_SLOT }}
-          title={node.file.path}
+          title={file.path}
         >
-          <FileTypeIcon name={node.file.name} mime={node.file.mime} size={16} />
+          <FileTypeIcon name={file.name} mime={file.mime} size={16} />
           <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
           <span className="shrink-0 text-xs text-(--color-text-subtle)">
-            {formatBytes(node.file.size)}
+            {formatBytes(file.size)}
           </span>
         </button>
-        )}
-        {actionsPoint && (
-          <div
-            className="fixed inset-0 z-(--z-lightbox)"
-            onClick={() => setActionsPoint(null)}
-            onContextMenu={(event) => {
-              event.preventDefault()
-              setActionsPoint(null)
-            }}
-          >
-            <div
-              role="menu"
-              aria-label={`Actions for ${node.file!.name}`}
-              className="fixed min-w-44 rounded-lg border border-(--color-border) bg-(--bg-card) p-1 text-sm text-(--color-text) shadow-xl"
-              style={{ left: actionsPoint.x, top: actionsPoint.y }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-                onClick={() => {
-                  setActionsPoint(null)
-                  onOpen(node.file!)
-                }}
-              >
-                <ExternalLink size={14} aria-hidden="true" />
-                Open in default app
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-                onClick={() => {
-                  setActionsPoint(null)
-                  onSelect(node.file!)
-                }}
-              >
-                <FileText size={14} aria-hidden="true" />
-                Preview
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-                onClick={() => {
-                  setActionsPoint(null)
-                  void copyPath()
-                }}
-              >
-                <Copy size={14} aria-hidden="true" />
-                Copy full path
-              </button>
-              {isTauri && workspaceRoot && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-                  onClick={() => {
-                    setActionsPoint(null)
-                    onReveal(node.file!)
-                  }}
-                >
-                  <LocateFixed size={14} aria-hidden="true" />
-                  {os === 'macos'
-                    ? 'Reveal in Finder'
-                    : os === 'windows'
-                      ? 'Show in File Explorer'
-                      : 'Show in folder'}
-                </button>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-                onClick={() => {
-                  setActionsPoint(null)
-                  setRenameValue(node.file!.name)
-                  setIsRenaming(true)
-                }}
-              >
-                <Pencil size={14} aria-hidden="true" />
-                Rename
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={isBusyDelete}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-(--color-error) hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none disabled:opacity-50"
-                onClick={() => {
-                  setActionsPoint(null)
-                  setIsBusyDelete(true)
-                  void onDelete(node.file!).finally(() => setIsBusyDelete(false))
-                }}
-              >
-                {isBusyDelete ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} aria-hidden="true" />}
-                Delete
-              </button>
-            </div>
-          </div>
-        )}
-      </>
+      </FileExplorerContextMenu>
     )
   }
 
   // ── Folder node ─────────────────────────────────────────────────────────
+  const childRows = filteredChildren.map((child) => (
+    <TreeNodeView
+      key={child.path}
+      node={child}
+      depth={node.path ? depth + 1 : 0}
+      selectedPath={selectedPath}
+      onSelect={onSelect}
+      menuActions={menuActions}
+      visiblePaths={visiblePaths}
+      defaultOpen={node.path ? false : defaultOpen}
+    />
+  ))
+
   if (!node.path) {
     // Root — render children directly without a folder row.
-    return (
-      <>
-        {filteredChildren.map((child) => (
-          <TreeNodeView
-            key={child.path}
-            node={child}
-            depth={0}
-            selectedPath={selectedPath}
-            workspaceRoot={workspaceRoot}
-            onSelect={onSelect}
-            onOpen={onOpen}
-            onReveal={onReveal}
-            onRename={onRename}
-            onDelete={onDelete}
-            visiblePaths={visiblePaths}
-            defaultOpen={defaultOpen}
-          />
-        ))}
-      </>
-    )
+    return <>{childRows}</>
   }
+
+  const folderEntry: FileExplorerEntry = { path: node.path, name: node.name, isDirectory: true }
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-(--bg-key)',
-          effectiveOpen ? 'text-(--color-text)' : 'text-(--color-text-2)',
-        )}
-        style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT }}
-      >
-        <ChevronRight
-          size={12}
-          className={cn('shrink-0 transition-transform', effectiveOpen && 'rotate-90')}
-        />
-        <FolderTypeIcon open={effectiveOpen} size={16} />
-        <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
-      </button>
-      {effectiveOpen &&
-        filteredChildren.map((child) => (
-          <TreeNodeView
-            key={child.path}
-            node={child}
-            depth={depth + 1}
-            selectedPath={selectedPath}
-            workspaceRoot={workspaceRoot}
-            onSelect={onSelect}
-            onOpen={onOpen}
-            onReveal={onReveal}
-            onRename={onRename}
-            onDelete={onDelete}
-            visiblePaths={visiblePaths}
-            defaultOpen={false}
+      <FileExplorerContextMenu entry={folderEntry} actions={menuActions}>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className={cn(
+            'flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-xs hover:bg-(--bg-key)',
+            effectiveOpen ? 'text-(--color-text)' : 'text-(--color-text-2)',
+          )}
+          style={{ paddingLeft: 8 + depth * TREE_DEPTH_INDENT }}
+        >
+          <ChevronRight
+            size={12}
+            className={cn('shrink-0 transition-transform', effectiveOpen && 'rotate-90')}
           />
-        ))}
+          <FolderTypeIcon open={effectiveOpen} size={16} />
+          <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
+        </button>
+      </FileExplorerContextMenu>
+      {effectiveOpen && childRows}
     </div>
   )
 }
@@ -541,17 +353,7 @@ function TextPreview({ sessionId, file, workspaceRoot }: { sessionId: string; fi
 
     async function loadFile() {
       try {
-        let text: string
-        // Native Rust path — no HTTP round-trip.
-        if (isTauriAvailable() && workspaceRoot) {
-          const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
-          text = decodeBase64Utf8(b64)
-        } else {
-          // HTTP API fallback.
-          const res = await fetch(workspaceMediaUrl(sessionId, file.path))
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          text = await res.text()
-        }
+        const text = await readWorkspaceFileText(sessionId, workspaceRoot, file.path)
         if (!cancelled) {
           setContent(text)
           setLoading(false)
@@ -698,16 +500,7 @@ export function CopyContentsButton({
     if (busy || tooLarge) return
     setBusy(true)
     try {
-      let text: string
-      // Native Rust path — no HTTP round-trip.
-      if (isTauriAvailable() && workspaceRoot) {
-        const b64 = await tauriReadWorkspaceFile(workspaceRoot, file.path)
-        text = decodeBase64Utf8(b64)
-      } else {
-        const res = await fetch(workspaceMediaUrl(sessionId, file.path))
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        text = await res.text()
-      }
+      const text = await readWorkspaceFileText(sessionId, workspaceRoot, file.path)
       await navigator.clipboard.writeText(text)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
@@ -873,7 +666,12 @@ function PreviewArea({
         ) : kind === 'image' ? (
           <ImagePreview sessionId={sessionId} file={file} />
         ) : kind === 'text' ? (
-          <TextPreview sessionId={sessionId} file={file} workspaceRoot={workspaceRoot} />
+          <TextPreview
+            key={`${file.path}:${file.mtime}`}
+            sessionId={sessionId}
+            file={file}
+            workspaceRoot={workspaceRoot}
+          />
         ) : isWorkspaceDocumentKind(kind) ? (
           <Suspense fallback={<RichPreviewLoading label="document" />}>
             <DocumentPreview key={`${file.path}:${file.mtime}`} sessionId={sessionId} file={file} />
@@ -1197,28 +995,58 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
     if (files.length) void handleUpload(files)
   }
 
-  // ── Rename / delete ─────────────────────────────────────────────────────────
+  // ── Explorer context-menu actions ───────────────────────────────────────────
+  //
+  // Built once for the whole tree: every row's menu takes the clicked entry as
+  // an argument, so the callbacks stay path-based and the memo never has to
+  // change as the selection moves. Failures surface as toasts from the menu.
 
-  const handleRenameFile = useCallback(async (file: WorkspaceFileInfo, newPath: string) => {
-    if (!sessionId) return
-    try {
-      const result = await moveWorkspaceFile(sessionId, file.path, newPath)
+  const menuActions = useMemo<FileExplorerMenuActions>(() => {
+    if (!sessionId) return {}
+    const applyListing = (result: WorkspaceFilesResponse) => {
       queryClient.setQueryData(queryKeys.team.files(sessionId), result)
-    } catch (err) {
-      setUploadError((err as Error).message ?? 'Rename failed')
     }
-  }, [sessionId, queryClient])
-
-  const handleDeleteFile = useCallback(async (file: WorkspaceFileInfo) => {
-    if (!sessionId) return
-    try {
-      const result = await deleteWorkspaceFile(sessionId, file.path)
-      queryClient.setQueryData(queryKeys.team.files(sessionId), result)
-      if (selectedPath === file.path) setSelectedPath(null)
-    } catch (err) {
-      setUploadError((err as Error).message ?? 'Delete failed')
+    const childPath = (parentDir: string, name: string) => (
+      parentDir ? `${parentDir}/${name}` : name
+    )
+    const siblingPath = (path: string, name: string) => {
+      const index = path.lastIndexOf('/')
+      return index < 0 ? name : `${path.slice(0, index + 1)}${name}`
     }
-  }, [sessionId, queryClient, selectedPath])
+    return {
+      root: workspaceRoot,
+      onPreview: (entry) => {
+        setSelectedPath(entry.path)
+        setMobilePane('preview')
+      },
+      onOpenExternally: async (entry) => {
+        if (isTauri && workspaceRoot) {
+          await tauriOpenWorkspaceFile(workspaceRoot, entry.path)
+          return
+        }
+        await openExternalUrl(workspaceMediaUrl(sessionId, entry.path))
+      },
+      onReveal: isTauri && workspaceRoot
+        ? (entry) => tauriRevealWorkspacePath(workspaceRoot, entry.path)
+        : undefined,
+      readText: (entry) => readWorkspaceFileText(sessionId, workspaceRoot, entry.path),
+      onDownload: (entry) => downloadWorkspaceFile(sessionId, entry),
+      onCreate: async (parentDir, name, kind) => {
+        applyListing(await createWorkspaceEntry(sessionId, childPath(parentDir, name), kind))
+      },
+      onRename: async (entry, name) => {
+        applyListing(await moveWorkspaceFile(sessionId, entry.path, siblingPath(entry.path, name)))
+      },
+      onDuplicate: async (entry, name) => {
+        applyListing(await copyWorkspaceFile(sessionId, entry.path, siblingPath(entry.path, name)))
+      },
+      onDelete: async (entry) => {
+        applyListing(await deleteWorkspaceFile(sessionId, entry.path, {
+          recursive: entry.isDirectory,
+        }))
+      },
+    }
+  }, [isTauri, queryClient, sessionId, workspaceRoot])
 
   // ── Folder import ───────────────────────────────────────────────────────────
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -1736,12 +1564,8 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
                   node={tree}
                   depth={0}
                   selectedPath={selectedPath}
-                  workspaceRoot={workspaceRoot}
                   onSelect={handleSelectFile}
-                  onOpen={(file) => void handleOpenFile(file)}
-                  onReveal={(file) => void handleRevealFile(file)}
-                  onRename={handleRenameFile}
-                  onDelete={handleDeleteFile}
+                  menuActions={menuActions}
                   visiblePaths={visiblePaths}
                   defaultOpen
                 />

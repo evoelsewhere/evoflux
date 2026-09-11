@@ -46,6 +46,8 @@ async def dispatch_shell_command(
     session_id: str,
     mode: str = "work",
     workspace: str | None = None,
+    project_id: UUID | None = None,
+    folder_id: UUID | None = None,
     model: str | None = None,
     model_provided: bool = False,
     thinking_level: str | None = None,
@@ -74,6 +76,8 @@ async def dispatch_shell_command(
             title=f"!{command}"[:100],
             mode=team.mode,
             workspace=team.workspace,
+            project_id=project_id,
+            folder_id=folder_id,
         )
         for bp in team.blueprints.values():
             bp.counter_reconciled_for = None

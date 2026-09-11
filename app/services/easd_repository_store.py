@@ -9,6 +9,7 @@ import re
 import tempfile
 import time
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
@@ -127,6 +128,19 @@ def spec_catalog_directory(title: str, run_id: str | UUID) -> str:
 
     normalized = str(UUID(str(run_id)))
     return f"specs/{_slug(title)}--{normalized}"
+
+
+def run_directory_name(title: str, run_id: str | UUID) -> str:
+    """Return the runtime directory name for one Run.
+
+    Runtime directories are named ``<title-slug>--<run_id>``, so a run id alone
+    is not addressable on disk. Agents that are handed only the id waste calls
+    probing the bare-id path before falling back to listing the parent, so the
+    injected contract states this name explicitly.
+    """
+
+    normalized = str(UUID(str(run_id)))
+    return f"{_slug(title)}--{normalized}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -618,6 +632,10 @@ class EasdRepositoryStore:
         with self._lock(f"run-{UUID(str(run_id))}-events"):
             sequence = len(list(events.glob("*.yaml"))) + 1
             event_id = str(payload.get("id") or uuid4())
+            # Stamp here rather than in each caller: an untimed entry breaks the
+            # ledger's ordering guarantee, and the genesis event is written by a
+            # path that has no timestamp of its own to pass down.
+            recorded_at = payload.get("created_at") or datetime.now(UTC).isoformat()
             return self._write_document(
                 events / f"{sequence:06d}-{event_id}.yaml",
                 {
@@ -625,6 +643,7 @@ class EasdRepositoryStore:
                     "run_id": str(UUID(str(run_id))),
                     "sequence": sequence,
                     **payload,
+                    "created_at": recorded_at,
                 },
                 create_only=True,
             )
@@ -791,5 +810,6 @@ __all__ = [
     "EasdStoredRun",
     "document_hash",
     "registered_run_root",
+    "run_directory_name",
     "spec_catalog_directory",
 ]

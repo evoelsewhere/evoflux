@@ -57,6 +57,33 @@ the dirty-worktree baseline so user/peer changes are not claimed as this output.
    AC result. A task checkbox, handoff, or agent confidence is progress—not
    trusted evidence—and must not be presented as convergence.
 
+## Code graph navigation
+
+Implementation uses `code_context` to check a change before and after making it,
+inside the accepted Impact targets.
+
+- Before altering a signature, run `action="callers"` on it. Every call site is
+  either inside the accepted targets or a deviation you must report.
+- Before changing behavior a function relies on, run `action="callees"` to see
+  what you are actually depending on.
+- After each edit run the next query with `refresh=true`; use `refresh=false`
+  only for an immediate follow-up that intentionally reuses the same index
+  version.
+- Before handoff, run `action="references"` on every symbol you touched and
+  confirm nothing outside the accepted targets moved. This is the cheapest way
+  to catch silent scope expansion while it is still fixable.
+- `code_context` is never the evidence. It tells you where to look; the
+  CompletionContract from a real verification command is what proves the work.
+
+Read `references/code-context-contract.md` for full action selection and
+interpretation rules. It is normative here. In short: call `code_context`
+with one `action="search"` to expose a declared identifier, then skip
+further search and call the exact-symbol action on that identifier; start
+at depth 1 unless the question is explicitly transitive; and never bulk
+scan. Keep `refresh=true` for the first indexed query and after any edit,
+and use `refresh=false` only for an immediate follow-up that intentionally
+reuses the returned index version. Do not repeat an unchanged query.
+
 ## Handoff contract
 
 For a final delegated result, use `team_handoff` and cover every owned AC exactly

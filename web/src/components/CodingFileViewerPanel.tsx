@@ -11,11 +11,13 @@ import { openExternalUrl } from '@/lib/open-external'
 import { cn } from '@/lib/utils'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { isWorkspaceDocumentKind, workspaceFileKind, type WorkspaceFileKind } from '@/lib/workspace-file-kind'
+import { saveCopyLabel } from '@/lib/workspace-openers'
 import { formatBytes } from '@/utils/format'
 import { MarkdownBlock } from '@/utils/markdown'
 import { useMonacoTheme, languageForExt, useSafeMonaco } from '@/hooks/useMonacoTheme'
 import { queryKeys } from '@/queries'
 import { SidePanel } from './shell/SidePanel'
+import { WorkspaceHtmlPreview } from './workspace-html-preview'
 import { EditorAiActionDialog } from './EditorAiActionDialog'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -64,6 +66,7 @@ function RichFilePreviewLoading({ label }: { label: string }) {
 function CopyButton({ workspace, file }: { workspace: string; file: WorkspaceFileInfo }) {
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
+  const pushToast = useToastStore((state) => state.push)
   const tooLarge = file.size > MAX_TEXT_PREVIEW_BYTES
 
   const handleCopy = async () => {
@@ -75,8 +78,12 @@ function CopyButton({ workspace, file }: { workspace: string; file: WorkspaceFil
       await navigator.clipboard.writeText(await res.text())
       setCopied(true)
       window.setTimeout(() => setCopied(false), 1500)
-    } catch {
-      // Best-effort copy. The user can still download/open the file.
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: 'Could not copy file contents',
+        description: error instanceof Error ? error.message : String(error),
+      })
     } finally {
       setBusy(false)
     }
@@ -145,8 +152,13 @@ function TextPreview({
   const isDirty = modified !== null && modified !== content
   const diagnosticContent = modified ?? content
 
+  // Re-reads when the file changes on disk (mtime), so an agent's write shows
+  // up instead of leaving a stale buffer on screen. Unsaved edits win: while
+  // the editor is dirty the buffer is left alone rather than silently
+  // replaced under the user.
+  const isEdited = modified !== null
   useEffect(() => {
-    if (tooLarge) return
+    if (tooLarge || isEdited) return
     let cancelled = false
     fetch(codingWorkspaceFileUrl(workspace, file.path))
       .then(async (res) => {
@@ -156,7 +168,7 @@ function TextPreview({
       .then((text) => {
         if (!cancelled) {
           setContent(text)
-          setModified(null)
+          setError(null)
           setLoading(false)
         }
       })
@@ -167,7 +179,7 @@ function TextPreview({
         }
       })
     return () => { cancelled = true }
-  }, [workspace, file.path, tooLarge])
+  }, [workspace, file.path, file.mtime, isEdited, tooLarge])
 
   // Keep the LSP in sync with the Monaco buffer, including unsaved edits.
   // Debouncing avoids starting a request for every keystroke while keeping
@@ -469,13 +481,20 @@ function TextPreview({
     try {
       await writeCodingWorkspaceFile(workspace, file.path, modified)
       setContent(modified)
+      setModified(null)
       onSaved?.()
-    } catch {
-      // Error silently — user can retry
+    } catch (error) {
+      // A silent failure reads as a successful save — the buffer keeps the
+      // edits either way, so say what happened and let the user retry.
+      pushToast({
+        tone: 'error',
+        title: `Could not save ${file.name}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
     } finally {
       setSaving(false)
     }
-  }, [isDirty, saving, modified, workspace, file.path, onSaved])
+  }, [isDirty, saving, modified, workspace, file.path, file.name, onSaved, pushToast])
 
   const handleDiscard = useCallback(() => {
     setModified(null)
@@ -781,7 +800,39 @@ function DrawioPreview({ workspace, file }: { workspace: string; file: Workspace
 }
 
 function BinaryPreview({ workspace, file }: { workspace: string; file: WorkspaceFileInfo }) {
-  const url = codingWorkspaceFileUrl(workspace, file.path)
+  const pushToast = useToastStore((state) => state.push)
+  const isDesktop = isTauriAvailable()
+
+  // Goes through the same host handoff as the header's Open action. A plain
+  // `<a target="_blank">` to the file URL would hand a token-bearing
+  // workspace URL to whatever the WebView does with new tabs.
+  const openExternally = async () => {
+    try {
+      if (isDesktop) {
+        await tauriOpenWorkspaceFile(workspace, file.path)
+        return
+      }
+      await openExternalUrl(codingWorkspaceFileUrl(workspace, file.path))
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: `Could not open ${file.name}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  const saveCopy = async () => {
+    try {
+      await downloadCodingWorkspaceFile(workspace, file)
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: `Could not save ${file.name}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
       <FileText size={28} className="text-(--color-text-subtle)" />
@@ -790,11 +841,11 @@ function BinaryPreview({ workspace, file }: { workspace: string; file: Workspace
         <p className="mt-0.5 text-xs text-(--color-text-subtle)">{file.mime} · {formatBytes(file.size)}</p>
       </div>
       <div className="flex items-center gap-2">
-        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-3 py-1.5 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key)">
-          <ExternalLink size={12} /> Open in new tab
-        </a>
-        <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} className="flex items-center gap-1.5 rounded-md border border-(--color-border) px-3 py-1.5 text-xs text-(--color-text-2) transition-colors hover:border-(--color-border-strong)">
-          <Download size={12} /> Download
+        <button type="button" onClick={() => void openExternally()} className="flex items-center gap-1.5 rounded-md bg-(--bg-key) px-3 py-1.5 text-xs text-(--color-accent) transition-colors hover:bg-(--bg-key)">
+          <ExternalLink size={12} /> {isDesktop ? 'Open in default app' : 'Open in new tab'}
+        </button>
+        <button type="button" onClick={() => void saveCopy()} className="flex items-center gap-1.5 rounded-md border border-(--color-border) px-3 py-1.5 text-xs text-(--color-text-2) transition-colors hover:border-(--color-border-strong)">
+          <Download size={12} /> {saveCopyLabel(isDesktop)}
         </button>
       </div>
     </div>
@@ -861,133 +912,16 @@ function codingMarkdownMediaUrl(workspace: string, markdownPath: string, src: st
   return codingWorkspaceFileUrl(workspace, resolvedParts.join('/'))
 }
 
-function dirname(path: string): string {
-  const index = path.lastIndexOf('/')
-  return index < 0 ? '' : path.slice(0, index)
-}
-
-function resolveRelativePath(baseFilePath: string, reference: string): string | null {
-  const trimmed = reference.trim()
-  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('//') || /^[a-z][a-z\d+.-]*:/i.test(trimmed)) {
-    return null
-  }
-  let pathname = trimmed
-  try { pathname = decodeURIComponent(trimmed) } catch { /* keep as-is */ }
-  const queryIndex = pathname.indexOf('?')
-  const hashIndex = pathname.indexOf('#')
-  const suffixIndex = [queryIndex, hashIndex].filter((i) => i >= 0).sort((a, b) => a - b)[0]
-  const cleanPath = suffixIndex === undefined ? pathname : pathname.slice(0, suffixIndex)
-  const suffix = suffixIndex === undefined ? '' : pathname.slice(suffixIndex)
-  const parts = cleanPath.startsWith('/') ? [] : dirname(baseFilePath).split('/').filter(Boolean)
-  for (const part of cleanPath.split('/')) {
-    if (!part || part === '.') continue
-    if (part === '..') { if (parts.length === 0) return null; parts.pop(); continue }
-    parts.push(part)
-  }
-  if (parts.length === 0) return null
-  return parts.join('/') + suffix
-}
-
-function resolveCodingRef(workspace: string, baseFilePath: string, reference: string): string | null {
-  const resolved = resolveRelativePath(baseFilePath, reference)
-  if (!resolved) return null
-  const pathOnly = resolved.split('?')[0].split('#')[0]
-  return codingWorkspaceFileUrl(workspace, pathOnly)
-}
-
-function rewriteCssUrlsForCoding(css: string, workspace: string, baseFilePath: string): string {
-  const rewrite = (ref: string) => resolveCodingRef(workspace, baseFilePath, ref) ?? ref
-  return css
-    .replace(/url\(\s*(['"]?)([^'")]+)\1\s*\)/gi, (_m, _q, ref) => `url("${rewrite(ref)}")`)
-    .replace(/@import\s+(['"])([^'"]+)\1/gi, (_m, q, ref) => `@import ${q}${rewrite(ref)}${q}`)
-}
-
-async function prepareHtmlForCoding(workspace: string, file: WorkspaceFileInfo, source: string): Promise<string> {
-  const doc = new DOMParser().parseFromString(source, 'text/html')
-
-  // Inline external stylesheets
-  const links = Array.from(doc.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"][href]'))
-  await Promise.all(links.map(async (link) => {
-    const href = link.getAttribute('href') ?? ''
-    const resolved = resolveRelativePath(file.path, href)
-    if (!resolved) return
-    try {
-      const res = await fetch(codingWorkspaceFileUrl(workspace, resolved))
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const css = await res.text()
-      const style = doc.createElement('style')
-      style.textContent = rewriteCssUrlsForCoding(css, workspace, resolved)
-      style.dataset.workspacePreviewResolved = 'true'
-      link.replaceWith(style)
-    } catch {
-      const rewritten = resolveCodingRef(workspace, file.path, href)
-      if (rewritten) link.setAttribute('href', rewritten)
-    }
-  }))
-
-  // Inline external scripts
-  const scripts = Array.from(doc.querySelectorAll<HTMLScriptElement>('script[src]'))
-  await Promise.all(scripts.map(async (script) => {
-    const src = script.getAttribute('src') ?? ''
-    const resolved = resolveRelativePath(file.path, src)
-    if (!resolved) return
-    try {
-      const res = await fetch(codingWorkspaceFileUrl(workspace, resolved))
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const js = await res.text()
-      const inline = doc.createElement('script')
-      inline.textContent = js
-      for (const attr of script.attributes) {
-        if (attr.name !== 'src') inline.setAttribute(attr.name, attr.value)
-      }
-      script.replaceWith(inline)
-    } catch {
-      const rewritten = resolveCodingRef(workspace, file.path, src)
-      if (rewritten) script.setAttribute('src', rewritten)
-    }
-  }))
-
-  // Rewrite remaining src/href/poster/data attributes
-  doc.querySelectorAll<HTMLElement>('[src], [href], [poster], [data]').forEach((el) => {
-    for (const attr of ['src', 'href', 'poster', 'data']) {
-      const val = el.getAttribute(attr)
-      if (!val) continue
-      const rewritten = resolveCodingRef(workspace, file.path, val)
-      if (rewritten) el.setAttribute(attr, rewritten)
-    }
-  })
-
-  // Rewrite srcset
-  doc.querySelectorAll<HTMLElement>('[srcset]').forEach((el) => {
-    const val = el.getAttribute('srcset')
-    if (!val) return
-    el.setAttribute('srcset', val.split(',').map((c) => {
-      const m = /^(\s*)(\S+)(.*)$/.exec(c)
-      if (!m) return c
-      const r = resolveCodingRef(workspace, file.path, m[2])
-      return r ? `${m[1]}${r}${m[3]}` : c
-    }).join(','))
-  })
-
-  // Rewrite CSS url() in inline styles
-  doc.querySelectorAll<HTMLStyleElement>('style:not([data-workspace-preview-resolved])').forEach((s) => {
-    s.textContent = rewriteCssUrlsForCoding(s.textContent ?? '', workspace, file.path)
-  })
-  doc.querySelectorAll<HTMLElement>('[style]').forEach((el) => {
-    const val = el.getAttribute('style')
-    if (val) el.setAttribute('style', rewriteCssUrlsForCoding(val, workspace, file.path))
-  })
-
-  return `<!doctype html>${doc.documentElement.outerHTML}`
-}
-
 /* -------------------------------------------------------------------------
- * RichPreview component for HTML and Markdown rendering
+ * Rendered Markdown preview (HTML goes through WorkspaceHtmlPreview)
  * ------------------------------------------------------------------------- */
-function RichPreview({ workspace, file, isHtml }: { workspace: string; file: WorkspaceFileInfo; isHtml: boolean }) {
-  const [content, setContent] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+function MarkdownPreview({ workspace, file }: { workspace: string; file: WorkspaceFileInfo }) {
+  // One state object stamped with the file it belongs to: separate
+  // content/error/loading flags kept showing the previous file's error (or
+  // its text) while the newly selected file was still loading.
+  const requestKey = `${file.path}:${file.mtime}`
+  const [result, setResult] = useState<{ key: string; content?: string; error?: string } | null>(null)
+  const current = result?.key === requestKey ? result : null
   const transformImageSrc = useCallback(
     (src: string) => codingMarkdownMediaUrl(workspace, file.path, src),
     [workspace, file.path],
@@ -1000,42 +934,25 @@ function RichPreview({ workspace, file, isHtml }: { workspace: string; file: Wor
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         return res.text()
       })
-      .then(async (text) => {
-        if (cancelled) return
-        if (isHtml) {
-          const prepared = await prepareHtmlForCoding(workspace, file, text)
-          if (!cancelled) { setContent(prepared); setLoading(false) }
-        } else {
-          if (!cancelled) { setContent(text); setLoading(false) }
-        }
+      .then((text) => {
+        if (!cancelled) setResult({ key: requestKey, content: text })
       })
       .catch((e) => {
-        if (!cancelled) { setError(e instanceof Error ? e.message : String(e)); setLoading(false) }
+        if (!cancelled) {
+          setResult({ key: requestKey, error: e instanceof Error ? e.message : String(e) })
+        }
       })
     return () => { cancelled = true }
-  }, [workspace, file, isHtml])
+  }, [workspace, file.path, requestKey])
 
-  if (loading) return <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
-  if (error) return <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load: {error}</div>
-  if (content === null) return null
-
-  if (isHtml) {
-    return (
-      <div className="flex h-full min-h-0 flex-col bg-white">
-        <iframe
-          srcDoc={content}
-          title={file.name}
-          className="h-full w-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-popups"
-        />
-      </div>
-    )
-  }
+  if (current === null) return <div className="flex h-full items-center justify-center"><Loader2 size={16} className="animate-spin text-(--color-text-subtle)" /></div>
+  if (current.error) return <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-error)">Failed to load: {current.error}</div>
+  if (current.content === undefined) return null
 
   return (
     <div className="h-full min-h-0 overflow-auto bg-(--bg-page)">
       <div className="p-6">
-        <MarkdownBlock content={content} transformImageSrc={transformImageSrc} />
+        <MarkdownBlock content={current.content} transformImageSrc={transformImageSrc} />
       </div>
     </div>
   )
@@ -1089,6 +1006,8 @@ export function CodingFileViewerPanel({
 }) {
   const [viewMode, setViewMode] = useState<'file' | 'diff' | 'preview'>(initialViewMode)
   const [editing, setEditing] = useState(false)
+  const pushToast = useToastStore((state) => state.push)
+  const isDesktop = isTauriAvailable()
 
   const scopedDiff = useQuery({
     queryKey: [...queryKeys.coding.diff(workspace), file?.path ?? null] as const,
@@ -1115,8 +1034,25 @@ export function CodingFileViewerPanel({
         return
       }
       await openExternalUrl(codingWorkspaceFileUrl(workspace, file.path))
-    } catch {
-      // Download remains available if the OS/browser rejects opening the file.
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: `Could not open ${file.name}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  const handleSaveCopy = async () => {
+    if (!file) return
+    try {
+      await downloadCodingWorkspaceFile(workspace, file)
+    } catch (error) {
+      pushToast({
+        tone: 'error',
+        title: `Could not save ${file.name}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
     }
   }
 
@@ -1190,7 +1126,7 @@ export function CodingFileViewerPanel({
           >
             <ExternalLink size={13} />
           </button>
-          <button type="button" onClick={() => void downloadCodingWorkspaceFile(workspace, file)} title="Download" aria-label="Download file" className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)">
+          <button type="button" onClick={() => void handleSaveCopy()} title={saveCopyLabel(isDesktop)} aria-label={saveCopyLabel(isDesktop)} className="flex h-7 w-7 items-center justify-center rounded text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)">
             <Download size={13} />
           </button>
           {(kind === 'text' || kind === 'drawio') && <CopyButton workspace={workspace} file={file} />}
@@ -1223,8 +1159,14 @@ export function CodingFileViewerPanel({
                   : !scopedDiff.data.diff ? <div className="flex h-full items-center justify-center px-4 text-center text-xs text-(--color-text-subtle)">No diff for this file</div>
                     : <DiffPreview diff={scopedDiff.data.diff} />}
           </div>
-        ) : effectiveViewMode === 'preview' && canRichPreview ? (
-          <RichPreview workspace={workspace} file={file} isHtml={isHtml} />
+        ) : effectiveViewMode === 'preview' && isHtml ? (
+          <WorkspaceHtmlPreview
+            key={`${file.path}:${file.mtime}`}
+            workspace={workspace}
+            file={file}
+          />
+        ) : effectiveViewMode === 'preview' && isMarkdown ? (
+          <MarkdownPreview workspace={workspace} file={file} />
         ) : kind === 'image' ? (
           <ImagePreview workspace={workspace} file={file} />
         ) : kind === 'drawio' ? (

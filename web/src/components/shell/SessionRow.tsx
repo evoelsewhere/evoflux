@@ -87,7 +87,24 @@ export function SessionRow({
 
   const row = (
     <div
-      className="group relative"
+      // The sidebar's rows dominate this app's layout cost: with them
+      // hidden a forced layout measured 9.4ms against 28.4ms with them,
+      // and the list grows without bound as sessions accumulate.
+      // `content-visibility: auto` lets the browser skip layout and paint
+      // for rows scrolled out of view, which took the same forced layout
+      // from 26.4ms to 12.6ms. `contain: layout style` was tried first and
+      // did nothing (29.7ms).
+      //
+      // The `auto` in `contain-intrinsic-size` is what keeps the scrollbar
+      // honest: the browser remembers each row's real rendered height and
+      // reuses it, so the placeholder size is only a guess for rows that
+      // have never been on screen.
+      className={cn(
+        'group relative [content-visibility:auto]',
+        compact
+          ? '[contain-intrinsic-size:auto_28px]'
+          : '[contain-intrinsic-size:auto_44px]',
+      )}
       draggable={draggable || undefined}
       onDragStart={draggable ? (event) => onDragStart?.(session, event) : undefined}
       onDragEnd={draggable ? (event) => onDragEnd?.(session, event) : undefined}

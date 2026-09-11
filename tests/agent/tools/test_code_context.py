@@ -33,10 +33,16 @@ def test_code_context_owns_discovery_and_graph_navigation() -> None:
         "neighborhood",
     ]
     assert parameters["properties"]["refresh"]["default"] is True
-    assert (
-        "do not default to the primary"
-        in parameters["properties"]["repository"]["description"]
-    )
+    # Both halves of the scoping contract. Omitting the repository searches
+    # every authorized index, and the index that does *not* contain the
+    # symbol is the expensive one because it reads itself in full to say so:
+    # measured, one identifier lookup spent 6.4s inside a 73k-chunk index
+    # that had nothing to do with the question. So the description has to
+    # ask for a scope when the question already carries one, while still
+    # warning against guessing the primary when the owner is unknown.
+    repository_description = parameters["properties"]["repository"]["description"]
+    assert "Pass it whenever the question already" in repository_description
+    assert "guessing the primary would hide it" in repository_description
     assert "guessed language" in parameters["properties"]["languages"]["description"]
 
 

@@ -27,6 +27,8 @@ class VertexAIProvider(GeminiProviderBase):
       Requires the model to be enabled in your GCP project.
     """
 
+    default_provider_id = "vertexai"
+
     def __init__(
         self,
         api_key: str | SecretStr,

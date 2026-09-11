@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.agent import usage as usage_module
 from app.agent.providers.model_metadata import ModelCost
 from app.agent.schemas.chat import Usage
@@ -81,9 +83,17 @@ def test_usage_to_dict_omits_cost_when_registry_has_no_prices(monkeypatch) -> No
     assert result == {"input": 1_000, "output": 200}
 
 
-def test_usage_to_dict_does_not_invent_token_spend_for_subscription_provider(
+def test_usage_to_dict_prices_a_subscription_provider_from_the_catalog(
     monkeypatch,
 ) -> None:
+    """Subscription providers are priced like any other once rates exist.
+
+    The figure is what these tokens would cost at API rates, not money
+    leaving an account — the provider bills a flat fee — so a bill-shaped
+    total that sums it reads high. Surfacing it is the deliberate choice:
+    an operator asking what a turn consumed gets a number rather than a
+    blank.
+    """
     monkeypatch.setattr(
         usage_module,
         "get_model_cost",
@@ -100,4 +110,10 @@ def test_usage_to_dict_does_not_invent_token_spend_for_subscription_provider(
         "copilot:claude-sonnet-4.6",
     )
 
-    assert result == {"input": 1_000, "output": 200, "cache": 250}
+    assert result["input"] == 1_000
+    assert result["output"] == 200
+    assert result["cache"] == 250
+    # 750 uncached in at $10/MTok, 250 cached at $1, 200 out at $50.
+    assert result["cost"]["input_usd"] == pytest.approx(0.0075)
+    assert result["cost"]["cache_read_usd"] == pytest.approx(0.00025)
+    assert result["cost"]["output_usd"] == pytest.approx(0.01)

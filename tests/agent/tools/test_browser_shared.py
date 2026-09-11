@@ -94,7 +94,7 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     from app.agent.tools.builtin.webbridge_tool import webbridge
 
     assert _definition_digest(browser_use) == (
-        "80acd06cc8ca8e003a537ebfe6e12c2815e5fbcdb44af1fbccf3de7b444d51bf"
+        "ff0bd9eb42e302299cd5ed2142a7a72474ee7fae3f902282f94db0b47fb1f94a"
     )
     assert _definition_digest(webbridge) == (
         "db5eb677a1e17daed4613edc1661dbf45736e2181837953ceeb83cedbcd4aa2a"

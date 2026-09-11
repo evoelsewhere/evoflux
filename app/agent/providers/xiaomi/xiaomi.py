@@ -5,7 +5,7 @@ request quirks. Base URL is configurable (``XIAOMI_BASE_URL``) since MiMo
 is also commonly reached through self-hosted or third-party gateways in
 addition to Xiaomi's own Token Plan API.
 
-Endpoint:  https://api.xiaomi.com/v1 (override via ``XIAOMI_BASE_URL``)
+Endpoint:  https://api.xiaomimimo.com/v1 (override via ``XIAOMI_BASE_URL``)
 Auth:      Bearer {XIAOMI_API_KEY}
 Docs:      https://mimo.mi.com/docs/en-US/api/chat/openai-api
 
@@ -56,10 +56,22 @@ from app.agent.schemas.chat import (
     ToolMessage,
 )
 
-from .schemas import XiaomiChatRequest, XiaomiMessage, XiaomiThinking
+from app.agent.providers.registry import (
+    clamp_thinking_level,
+    ACTIVE_THINKING_LEVELS,
+    normalize_thinking_level,
+)
 
-_NO_THINKING = frozenset({"none", "off"})
-_THINKING_LEVELS = frozenset({"low", "medium", "high"})
+from .schemas import XiaomiChatRequest, XiaomiMessage
+
+
+#: Values MiMo's legacy ``reasoning_effort`` field accepts.
+#:
+#: The OpenAI-shaped enum, which tops out at ``high``. EvoFlux's own
+#: vocabulary goes two steps further (``xhigh``, ``max``) because
+#: ``budget_tokens`` is a number and can express them; this field cannot, and
+#: rejects the whole request rather than clamping.
+_LEGACY_EFFORT_LEVELS: tuple[str, ...] = ("minimal", "low", "medium", "high")
 
 
 class _XiaomiCompletionsHandler(CompletionsHandler):
@@ -71,11 +83,20 @@ class _XiaomiCompletionsHandler(CompletionsHandler):
        ``reasoning_content`` on assistant messages is a proper schema
        field and survives ``model_dump``.
     2. ``build_request`` uses ``XiaomiChatRequest``, which carries the
-       ``thinking`` field instead of ``reasoning_effort``.
-    3. ``customize_thinking`` sends ``thinking: {type: disabled}`` only
-       when thinking is explicitly turned off; MiMo reasons by default
-       and does not accept ``reasoning_effort``.
+       ``thinking`` object (``type`` + ``budget_tokens``) instead of
+       OpenAI's ``reasoning_effort``.
+    3. Thinking translation is inherited from the shared dialect table
+       (``thinking: {type, budget_tokens}``, never OpenAI's
+       ``reasoning_effort``); this handler only adds the legacy
+       ``reasoning_effort`` field for proxies that drop the ``thinking``
+       object, and strips it again when thinking is disabled.
+    4. Streaming inherits the base handler — ``reasoning_content``
+       deltas arrive interleaved with content/tool-call deltas and
+       are forwarded directly to the ``on_model_delta`` hook for
+       realtime UI rendering.
     """
+
+    default_provider_id = "xiaomi"
 
     def _convert_messages_xiaomi(
         self, messages: list[ChatMessage]
@@ -222,18 +243,38 @@ class _XiaomiCompletionsHandler(CompletionsHandler):
         return body
 
     def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
-        """Map ``thinking_level`` to MiMo's ``reasoning_effort`` parameter.
+        """Add MiMo's legacy ``reasoning_effort`` alongside ``thinking``.
 
-        MiMo supports ``reasoning_effort`` with values: none, low, medium, high.
-        When thinking_level is in _NO_THINKING, disable thinking entirely.
-        Otherwise, pass reasoning_effort to control the reasoning intensity.
+        The ``thinking`` object itself comes from the inherited translation
+        (MiMo's ``budget_tokens`` dialect, registered in
+        :mod:`app.agent.providers.thinking`). This override adds one thing
+        on top: the older ``reasoning_effort`` field, for gateway proxies
+        that pass MiMo traffic through but drop the unrecognized
+        ``thinking`` object. Sending both costs nothing on MiMo's own
+        endpoint, which ignores the legacy field.
+
+        The legacy field takes a *narrower* vocabulary than the budget does.
+        ``budget_tokens`` is a number, so every EvoFlux level maps to one;
+        ``reasoning_effort`` is the OpenAI-shaped enum, which stops at
+        ``high``. Sending ``xhigh`` or ``max`` there is rejected outright
+        with "Invalid request parameters" — the whole request fails, budget
+        and all — so the level is clamped to what the enum accepts.
+
+        When thinking is disabled, any residual ``reasoning_effort`` is
+        stripped — leaving it set alongside ``thinking: {type: disabled}``
+        is contradictory, and some proxies honour the wrong one.
         """
-        thinking_level = merged.get("thinking_level")
-        if thinking_level in _NO_THINKING:
-            body["thinking"] = XiaomiThinking(type="disabled").model_dump()
-        elif thinking_level in _THINKING_LEVELS:
-            # Pass reasoning_effort for low/medium/high levels
-            body["reasoning_effort"] = thinking_level
+        super().customize_thinking(merged, body)
+
+        thinking = body.get("thinking")
+        if isinstance(thinking, dict) and thinking.get("type") == "enabled":
+            level = normalize_thinking_level(merged.get("thinking_level"))
+            if level in ACTIVE_THINKING_LEVELS:
+                effort = clamp_thinking_level(level, _LEGACY_EFFORT_LEVELS)
+                if effort:
+                    body["reasoning_effort"] = effort
+        else:
+            body.pop("reasoning_effort", None)
 
 
 class XiaomiProvider(ChatCompletionsOnlyProvider):
@@ -249,6 +290,8 @@ class XiaomiProvider(ChatCompletionsOnlyProvider):
         max_tokens: Hard cap on completion tokens.
         model_kwargs: Extra request body fields passed as-is.
     """
+
+    default_provider_id = "xiaomi"
 
     def _make_completions_handler(
         self, model: str, base_url: str, headers: dict[str, str]

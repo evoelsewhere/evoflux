@@ -54,8 +54,18 @@ export interface ObservabilitySummary {
     output_tokens: number
     cached_tokens: number
     cache_write_tokens: number
+    reasoning_tokens: number
     cache_percent: number
     estimated_cost_usd: number
+    /** Where the money went. A total alone cannot show that most of a
+     *  model's spend was cache traffic, which is the actionable half. */
+    input_usd: number
+    output_usd: number
+    cache_read_usd: number
+    cache_write_usd: number
+    /** Blended cost per million tokens of traffic — the number that
+     *  compares two models fairly, since it folds in cache efficiency. */
+    usd_per_mtok: number
     errors: number
     error_rate: number
     avg_ms: number
@@ -75,6 +85,29 @@ export interface ObservabilitySummary {
     ordinary_input_tokens: number
     cache_percent: number
     estimated_cost_usd: number
+  }>
+  /**
+   * `by_model` crossed with `time_series`: one row per bucket per model,
+   * carrying the cache split. Sparse — a bucket a model did not run in has no
+   * row — and the three input segments are disjoint, so they stack.
+   *
+   * Optional because the desktop app can be pointed at an externally managed
+   * backend, and one built before this field existed would omit it. The
+   * telemetry page must degrade, not crash.
+   */
+  tokens_by_model?: Array<{
+    bucket_start: string
+    provider: string
+    model: string
+    provider_model: string
+    input_tokens: number
+    output_tokens: number
+    cached_tokens: number
+    cache_write_tokens: number
+    /** Input the provider charged full price for: input − cache read − cache write. */
+    fresh_input_tokens: number
+    cache_percent: number
+    calls: number
   }>
   by_tool: Array<{
     tool: string

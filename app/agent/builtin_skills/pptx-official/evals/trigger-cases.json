@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Build a twelve-slide board readout as a pptx, one idea per slide, with speaker notes.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fill our corporate .potx template with this quarter's numbers without changing its master.",
+    "should_trigger": true
+  },
+  {
+    "query": "Reorder the slides in this deck, drop the two duplicates, and export it to PDF for review.",
+    "should_trigger": true
+  },
+  {
+    "query": "Summarize what the attached deck argues in three paragraphs.",
+    "should_trigger": false,
+    "near_miss": "Prose summary; no deck is produced."
+  },
+  {
+    "query": "Write the quarterly report as a Word document.",
+    "should_trigger": false,
+    "near_miss": "Document deliverable belongs to the Word workflow."
+  },
+  {
+    "query": "Design a landing page hero for the launch.",
+    "should_trigger": false,
+    "near_miss": "Web interface work, not a presentation file."
+  }
+]

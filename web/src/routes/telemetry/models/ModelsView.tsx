@@ -46,26 +46,79 @@ export function ModelsView({ data }: { data: ObservabilitySummary }) {
         </ChartCard>
       </div>
 
-      <section>
+      <section className="min-w-0">
+        <SectionHeader>Burn report</SectionHeader>
+        <p className="mb-3 text-xs text-(--color-text-muted)">
+          Tokens billed and where the money went, per model. The blended
+          rate folds in cache efficiency, so it compares two models fairly
+          where a headline price cannot.
+        </p>
+        {models.length === 0 ? (
+          <EmptyTable label="No LLM calls recorded in this window." />
+        ) : (
+          <Table
+            ariaLabel="Tokens and cost by provider and model"
+            headers={[
+              'Provider:model',
+              'Input',
+              'Output',
+              'Cache rd',
+              'Cache wr',
+              '$ input',
+              '$ output',
+              '$ cache rd',
+              '$ cache wr',
+              'Total',
+              '$ / 1M',
+            ]}
+            rows={models.map((model) => [
+              model.provider_model,
+              formatCompact(model.input_tokens),
+              formatCompact(model.output_tokens),
+              formatCompact(model.cached_tokens),
+              formatCompact(model.cache_write_tokens),
+              formatUsd(model.input_usd),
+              formatUsd(model.output_usd),
+              formatUsd(model.cache_read_usd),
+              formatUsd(model.cache_write_usd),
+              formatUsd(model.estimated_cost_usd),
+              formatUsd(model.usd_per_mtok),
+            ])}
+            align={[
+              'left',
+              'right',
+              'right',
+              'right',
+              'right',
+              'right',
+              'right',
+              'right',
+              'right',
+              'right',
+              'right',
+            ]}
+          />
+        )}
+      </section>
+
+      <section className="min-w-0">
         <SectionHeader>Model performance</SectionHeader>
         {models.length === 0 ? (
           <EmptyTable label="No LLM calls recorded in this window." />
         ) : (
           <Table
             ariaLabel="Performance by provider and model"
-            headers={['Provider:model', 'Calls', 'Errors', 'p50', 'p95', 'Input', 'Output', 'Cache', 'Cost']}
+            headers={['Provider:model', 'Calls', 'Errors', 'p50', 'p95', 'Cache hit', 'Reasoning']}
             rows={models.map((model) => [
               model.provider_model,
               formatInt(model.calls),
               formatPercent(model.error_rate),
               formatMs(model.p50_ms),
               formatMs(model.p95_ms),
-              formatCompact(model.input_tokens),
-              formatCompact(model.output_tokens),
               formatPercent(model.cache_percent),
-              formatUsd(model.estimated_cost_usd),
+              formatCompact(model.reasoning_tokens),
             ])}
-            align={['left', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right']}
+            align={['left', 'right', 'right', 'right', 'right', 'right', 'right']}
           />
         )}
       </section>

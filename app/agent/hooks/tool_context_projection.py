@@ -61,6 +61,30 @@ def _receipt(message: ToolMessage) -> str:
     return "\n".join(lines)
 
 
+def _projected_batch_count(total_batches: int, keep_recent: int) -> int:
+    """How many leading tool batches to compact, advancing in whole steps.
+
+    Compacting "everything but the last N batches" recomputed per call means
+    the boundary slides forward by one on every batch, and each slide rewrites
+    a message the provider had already cached — discarding the cache for the
+    entire tail from that point on. Measured on MiMo in a long investigation
+    turn, two consecutive calls that differed only by such a slide were served
+    at 34% and 25% cache hit on 59k- and 82k-token prompts.
+
+    Advancing the boundary in steps of ``keep_recent`` instead makes it a pure
+    function of how many batches exist, so it is unchanged between calls *and*
+    between turns, and moves only once every ``keep_recent`` batches. The cost
+    is that the verbatim window breathes between ``keep_recent`` and
+    ``2 * keep_recent - 1`` batches; those extra carried tokens are billed at
+    the cache-read rate, which is where they belong, rather than being re-read
+    at full price after every slide.
+    """
+    step = max(1, keep_recent)
+    if total_batches <= keep_recent:
+        return 0
+    return ((total_batches - keep_recent) // step) * step
+
+
 class ToolContextProjectionHook(BaseAgentHook):
     """Bound replay cost while preserving the recent working set verbatim."""
 
@@ -79,12 +103,15 @@ class ToolContextProjectionHook(BaseAgentHook):
             for message in request.messages
             if isinstance(message, AssistantMessage) and message.tool_calls
         ]
-        if len(batches) <= self._keep_recent_batches:
+        compacted_batches = _projected_batch_count(
+            len(batches), self._keep_recent_batches
+        )
+        if compacted_batches <= 0:
             return await handler(request)
 
         keep_call_ids = {
             call.id
-            for message in batches[-self._keep_recent_batches :]
+            for message in batches[compacted_batches:]
             for call in message.tool_calls or []
         }
         projected = []
@@ -127,7 +154,25 @@ class ToolContextProjectionHook(BaseAgentHook):
         return await handler(request)
 
 
+#: Tool-call batches kept verbatim at the provider boundary. Coding keeps one
+#: fewer: its results are far larger, so the same window costs much more.
+#: Named rather than inline because the Settings API reports them as the
+#: built-in default this hook actually falls back to.
+DEFAULT_KEEP_RECENT_BATCHES = 4
+CODING_KEEP_RECENT_BATCHES = 3
+
+
+def keep_recent_batches_for_mode(mode: str | None) -> int:
+    """Batches kept for *mode*, with the operator override taking precedence."""
+    from app.agent.hooks.context_settings import resolve
+
+    return resolve(
+        "keep_recent_tool_batches",
+        CODING_KEEP_RECENT_BATCHES if mode == "coding" else DEFAULT_KEEP_RECENT_BATCHES,
+    )
+
+
 def build_tool_context_projection_hook(mode: str) -> ToolContextProjectionHook:
     return ToolContextProjectionHook(
-        keep_recent_batches=3 if mode == "coding" else 4,
+        keep_recent_batches=keep_recent_batches_for_mode(mode),
     )

@@ -1,14 +1,41 @@
 import { useRef, useEffect, useLayoutEffect, useState } from 'react'
 import { Outlet, useParams, useNavigate } from '@tanstack/react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { TeamChatView } from '@/components/TeamChatView'
-import { getTeamSessionMetadata, resolveTeamSession } from '@/api/client'
+import { findTeamSession, getProject, getTeamSessionMetadata } from '@/api/client'
+import type { CodingWorkspaceTreeResponse } from '@/api/types'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { patchSessionTitle, scheduleCacheInvalidations } from '@/stores/cache-invalidation-bridge'
 import { queryKeys } from '@/queries'
-import { clearLastCodingFocus, codingFocusId, isProjectFocusId, isWorkspaceUnavailableError, saveLastCodingFocus, saveLastCodingWorkspace, workspaceFromSession } from '@/utils/workspace'
+import { clearLastCodingFocus, codingFocusId, isProjectFocusId, isWorkspaceUnavailableError, saveLastCodingFocus, workspaceFromSession } from '@/utils/workspace'
+
+/**
+ * A project's primary repo — the same first entry the backend derives when a
+ * session names only the project. Served from the sidebar's cached tree when
+ * it is there, fetched once when the URL was opened cold.
+ */
+async function projectPrimaryWorkspace(
+  queryClient: QueryClient,
+  projectId: string,
+): Promise<string | null> {
+  const cached = queryClient
+    .getQueryData<CodingWorkspaceTreeResponse>(queryKeys.codingOverview())
+    ?.projects.find((project) => project.id === projectId)
+  if (cached) return cached.workspaces[0]?.path ?? null
+  try {
+    const project = await queryClient.fetchQuery({
+      queryKey: queryKeys.projects.detail(projectId),
+      queryFn: () => getProject(projectId),
+      staleTime: 60_000,
+    })
+    return project.workspaces[0]?.path ?? null
+  } catch {
+    // The panels can live without it; the send still names the project.
+    return null
+  }
+}
 
 /**
  * Layout route for /, /coding, and their session routes.
@@ -37,9 +64,39 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
     enabled: mode === 'coding' && Boolean(sessionId) && !cachedSession?.workspace,
     staleTime: 30_000,
   })
-  const workspace = workspaceFromSession(mode, sessionId, cachedSession?.workspace ?? sessionQuery.data?.workspace)
-  const projectId = mode === 'coding' && sessionId
-    ? (cachedSession?.project_id ?? sessionQuery.data?.project_id ?? null)
+  // A Coding draft has no session row to read a workspace from, but it does
+  // know the repo (and project) it was opened on. Without this fallback the
+  // chat view sees a null workspace and renders the "open a repository" empty
+  // state — which has no composer, so the message that would create the
+  // session can never be typed.
+  //
+  // It has to outlive the draft itself. The first message sets the store's
+  // session id immediately, while the row's own workspace only arrives with
+  // the metadata fetch that id triggers — roughly half a second later. Trust
+  // the store across that gap and the repo simply stays; drop it the moment
+  // the draft ends and the coding view blanks and refills, re-fetching the
+  // roster, skills and workspace tree once without a repo and once with it.
+  //
+  // The condition is "the store is on the session the URL names", so a switch
+  // to another session — where the URL moves first and the store still holds
+  // the previous one — falls through to the loading state instead of flashing
+  // the old repo.
+  const isDraftSession = useTeamStore((s) => s.sessionId === null && s.newChatDraft !== null)
+  const storeOwnsUrlSession = useTeamStore(
+    (s) => (sessionId ? s.sessionId === sessionId : s.newChatDraft !== null || s.sessionId !== null),
+  )
+  const draftWorkspace = useTeamStore((s) => s._workspace)
+  const draftProjectId = useTeamStore((s) => s.projectId)
+  // Kept separate from `workspace` below: the layout effect that clears a
+  // stale focus on bare `/coding` depends on this value, and feeding it the
+  // draft's workspace would make a just-opened draft re-run that effect one
+  // render before the route catches up — wiping the draft it was opening.
+  const sessionWorkspace = workspaceFromSession(mode, sessionId, cachedSession?.workspace ?? sessionQuery.data?.workspace)
+  const workspace = sessionWorkspace
+    ?? (mode === 'coding' && storeOwnsUrlSession ? draftWorkspace : null)
+  const projectId = mode === 'coding'
+    ? ((sessionId ? (cachedSession?.project_id ?? sessionQuery.data?.project_id) : null)
+      ?? (storeOwnsUrlSession ? draftProjectId : null))
     : null
 
   useEffect(() => {
@@ -62,23 +119,53 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
   // legacy session id and upgrade the URL to the real focus once known.
   useEffect(() => {
     if (mode !== 'coding' || sessionId || !focusId) return
+    // A "+" already put us in a fresh draft on this very focus — leave it
+    // alone rather than pulling the user back into an older session.
+    const drafting = useTeamStore.getState()
+    if (
+      !drafting.sessionId &&
+      drafting.newChatDraft &&
+      (isProjectFocusId(focusId)
+        ? drafting.projectId === focusId
+        : drafting._workspace === focusId)
+    ) return
     let cancelled = false
     const controller = new AbortController()
     ;(async () => {
       const current = useTeamStore.getState()
       try {
-        const session = await resolveTeamSession({
+        const session = await findTeamSession({
           mode: 'coding',
           ...(isProjectFocusId(focusId)
             ? { project_id: focusId }
             : { workspace: focusId }),
-          model: current.sessionModel,
-          thinkingLevel: current.sessionThinkingLevel,
         })
         if (cancelled || sessionIdRef.current) return
+        if (!session) {
+          // Nothing has been said in this repo/project yet. Open a draft on
+          // it and let the first message create the session — no empty row
+          // for a chat the user may never write in.
+          const isProject = isProjectFocusId(focusId)
+          // A project draft still needs its primary repo: the panels read it,
+          // and letting it arrive later would look like a workspace switch
+          // mid-turn and reset the chat the first message just started.
+          const draftWorkspace = isProject
+            ? (await projectPrimaryWorkspace(queryClient, focusId))
+            : focusId
+          if (cancelled || sessionIdRef.current) return
+          current.beginResolvedSession(null, {
+            mode: 'coding',
+            workspace: draftWorkspace,
+            projectId: isProject ? focusId : null,
+            model: current.sessionId ? current.sessionModel : null,
+            thinkingLevel: current.sessionId ? current.sessionThinkingLevel : null,
+          })
+          return
+        }
         current.beginResolvedSession(session.id, {
           mode: 'coding',
           workspace: session.workspace ?? (isProjectFocusId(focusId) ? null : focusId),
+          projectId: session.project_id ?? null,
           model: session.model ?? current.sessionModel,
           thinkingLevel: session.thinking_level ?? current.sessionThinkingLevel,
         })
@@ -164,7 +251,22 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
     }
     useTeamStore.setState((state) => {
       if (mode === 'coding') {
-        state._workspace = workspace ?? null
+        // A draft on a focus owns its own workspace/project — they were set
+        // when it opened and there is no session to derive them from, so
+        // priming from the (null) session values here would erase them.
+        if (!sessionId) return
+        // Same for the session a draft has just become: its row is not in
+        // any cache yet, so both values below read null for as long as the
+        // metadata fetch takes. Writing them would erase the repo the chat
+        // was started in and blank the coding view mid-turn. Priming is for
+        // a session we know something about; when we know nothing and the
+        // store is already on this session, leave it alone.
+        if (
+          useTeamStore.getState().sessionId === sessionId
+          && sessionWorkspace === null
+          && cachedProjectId === null
+        ) return
+        state._workspace = sessionWorkspace ?? null
         state.projectId = cachedProjectId ?? null
       } else {
         // Proactively clear a stale project binding when a non-coding route
@@ -172,39 +274,34 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
         state.projectId = null
       }
     })
-  }, [mode, workspace, cachedProjectId, sessionId, focusId])
+  }, [mode, sessionWorkspace, cachedProjectId, sessionId, focusId])
 
+  // Bare ``/`` — reopen the newest Work chat, or settle into a draft.
+  //
+  // Nothing is created here any more. A chat the user deliberately started
+  // (New chat, or a folder's +) has already marked itself a draft and is left
+  // exactly as it is; a cold landing looks for a session to reopen and, when
+  // there is none, opens a draft of its own. Either way the first message is
+  // what brings a session into being.
   useEffect(() => {
-    if (sessionId) return
-    if (mode === 'coding' && !workspace) return
+    if (sessionId || mode === 'coding') return
+    if (useTeamStore.getState().newChatDraft) return
     let cancelled = false
     ;(async () => {
-      const current = useTeamStore.getState()
-      // Use undefined (not null) when no model is known, so resolveTeamSession
-      // omits the field and the backend applies its default instead of
-      // rejecting with "Choose a model from the registry". This also avoids
-      // carrying a null model from a different mode's stale session into the
-      // new session.
-      const model = (current.sessionId && current.sessionModel) ? current.sessionModel : undefined
-      const thinkingLevel = (current.sessionId && current.sessionThinkingLevel) ? current.sessionThinkingLevel : undefined
       try {
-        const session = await resolveTeamSession({
-          mode,
-          workspace: mode === 'coding' ? workspace : null,
-          model,
-          thinkingLevel,
-        })
+        const session = await findTeamSession({ mode: 'work', workspace: null })
         if (cancelled || sessionIdRef.current) return
-        useTeamStore.getState().beginResolvedSession(session.id, {
-          mode,
-          workspace: session.workspace ?? workspace,
-          model: session.model ?? model,
-          thinkingLevel: session.thinking_level ?? thinkingLevel,
-        })
-        void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
-        if (mode === 'coding' && workspace) {
-          saveLastCodingWorkspace(workspace)
+        const current = useTeamStore.getState()
+        if (current.newChatDraft) return
+        if (!session) {
+          current.beginResolvedSession(null, { mode: 'work' })
+          return
         }
+        current.beginResolvedSession(session.id, {
+          mode: 'work',
+          model: session.model,
+          thinkingLevel: session.thinking_level,
+        })
         navigate({
           to: '/$sessionId',
           params: { sessionId: session.id },
@@ -221,13 +318,17 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
       cancelled = true
     }
     // retryKey is intentionally included so the retry button can re-trigger this effect.
-  }, [mode, navigate, queryClient, sessionId, workspace, retryKey])
+  }, [mode, navigate, sessionId, retryKey])
 
   // When team store gets a new sessionId, navigate to the matching session route.
   useEffect(() => {
     return useTeamStore.subscribe((state, prev) => {
       if (state.sessionId && state.sessionId !== prev.sessionId && !sessionIdRef.current) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
+        // A draft's first message may have just filed a brand-new session
+        // into a folder — the folder lists carry their own sessions and
+        // counts, so they need the same nudge.
+        void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessionFoldersAll() })
         if (modeRef.current === 'coding') {
           const workspace = workspaceRef.current
           if (workspace) saveLastCodingFocus({ project_id: state.projectId, workspace })
@@ -274,7 +375,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
         codingSessionLoading={
           mode === 'coding' &&
           ((Boolean(sessionId) && !workspace && sessionQuery.isLoading) ||
-            (Boolean(focusId) && !sessionId))
+            (Boolean(focusId) && !sessionId && !isDraftSession))
         }
       />
       <Outlet />

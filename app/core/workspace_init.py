@@ -42,12 +42,19 @@ def ensure_workspace_initialized() -> None:
 
     # Bootstrap owns all filesystem materialisation. Loaders, validation, and
     # GET endpoints stay pure and can therefore be used without side effects.
-    from app.agent.loader import ensure_builtin_agent_blueprints
+    from app.agent.loader import (
+        backfill_placeholder_agent_models,
+        ensure_builtin_agent_blueprints,
+    )
 
     default_written = ensure_builtin_agent_blueprints(agents_dir, mode="work")
     coding_written = ensure_builtin_agent_blueprints(
         agents_dir / "coding", mode="coding"
     )
+    # Self-heal a workspace seeded before any provider was configured: its
+    # agents still hold the placeholder, and every member holding one is
+    # dropped from the roster.
+    backfill_placeholder_agent_models(agents_dir, agents_dir / "coding")
     if seed_result is not None:
         logger.info(
             "workspace_seed_installed agents={} skills={} configs={} source={} builtin_agents={} builtin_coding_agents={}",

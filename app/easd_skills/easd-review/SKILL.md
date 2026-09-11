@@ -54,6 +54,34 @@ snapshot; do not patch an old verdict forward.
    run, uncertainty, and required remediation. After fixes, review the new diff
    afresh rather than assuming the prior finding was resolved.
 
+## Code graph navigation
+
+Review challenges the integrated revision, not the handoff prose, and
+`code_context` is how a claim becomes checkable.
+
+- For every claim in the handoff, resolve the named symbol with
+  `action="definition"` at the integrated revision and read what is actually
+  there. A summary that matches the diff can still be wrong about the tree.
+- Run `action="references"` and `action="impact"` on each changed symbol to
+  find call sites the implementation missed. An unhandled inbound edge is a
+  blocking finding, not a nitpick.
+- Compare the final test contract against the seed contract. A removed
+  assertion or a narrowed fixture makes a suite pass while the behavior is
+  gone; this escapes both a green suite and a summary that reads well.
+- Anchor every per-AC verdict to a repository path and a resolved relationship.
+  "Inspected and looks correct" is not review evidence.
+- Keep repository identity on cross-repository hits. Stripping it to a
+  primary-relative path invents a location that does not exist.
+
+Read `references/code-context-contract.md` for full action selection and
+interpretation rules. It is normative here. In short: call `code_context`
+with one `action="search"` to expose a declared identifier, then skip
+further search and call the exact-symbol action on that identifier; start
+at depth 1 unless the question is explicitly transitive; and never bulk
+scan. Keep `refresh=true` for the first indexed query and after any edit,
+and use `refresh=false` only for an immediate follow-up that intentionally
+reuses the returned index version. Do not repeat an unchanged query.
+
 ## Review handoff
 
 When this is a delegated review, use `team_handoff` with one `criteria_results`

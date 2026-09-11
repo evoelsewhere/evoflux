@@ -30,14 +30,17 @@ def _mark_message_cache_control(message: dict[str, Any]) -> None:
 
 
 class _OpenRouterCompletionsHandler(CompletionsHandler):
-    """Translate EvoFlux levels to OpenRouter's ``reasoning`` object."""
+    """OpenRouter request shaping.
 
-    def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
-        thinking_level = merged.get("thinking_level")
-        if thinking_level == "none":
-            body["reasoning"] = {"enabled": False}
-        elif thinking_level:
-            body["reasoning"] = {"effort": thinking_level}
+    Reasoning translation is inherited: OpenRouter normalizes every
+    upstream vendor onto its own ``reasoning`` object, registered as the
+    ``openrouter_reasoning`` dialect in :mod:`app.agent.providers.thinking`.
+    What is genuinely OpenRouter-specific — and stays here — is prompt
+    caching, which it forwards to Anthropic models only when
+    ``cache_control`` appears on a content block.
+    """
+
+    default_provider_id = "openrouter"
 
     def build_request(
         self,
@@ -59,6 +62,15 @@ class _OpenRouterCompletionsHandler(CompletionsHandler):
 
 
 class OpenRouterProvider(ChatCompletionsOnlyProvider):
+    """OpenRouter provider — one key, every upstream vendor.
+
+    Chat Completions with two OpenRouter-specific behaviours: a normalized
+    ``reasoning`` object (handled by the shared dialect table) and
+    block-level ``cache_control`` for Anthropic-backed models.
+    """
+
+    default_provider_id = "openrouter"
+
     def __init__(
         self,
         api_key: str | SecretStr,

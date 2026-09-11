@@ -8,6 +8,7 @@ import {
   buildThinkingOptions,
   reconcileThinkingLevel,
   shortModelName,
+  fastModePriceHint,
   supportsFastMode,
   thinkingColor,
   type ThinkingOption,
@@ -132,7 +133,10 @@ function AdvancedComposerControl({
     thinkingOptions.findIndex((option) => option.value === currentThinkingLevel),
   )
   const currentOption = thinkingOptions[currentIndex] ?? thinkingOptions[0]
-  const fastAvailable = supportsFastMode(effectiveModel)
+  const fastAvailable = supportsFastMode(model)
+  // A tier that bills at a multiple of the standard rate says so before it
+  // is switched on, not after the invoice arrives.
+  const fastPrice = fastModePriceHint(model)
   const effectiveFastMode = fastAvailable && sessionFastMode
   const thinkingTone = thinkingColor(currentOption.value)
 
@@ -211,7 +215,11 @@ function AdvancedComposerControl({
                 currentThinkingLevel,
                 nextModel,
               )
-              onChange?.(modelId, nextThinking, supportsFastMode(modelId) && sessionFastMode)
+              onChange?.(
+                modelId,
+                nextThinking,
+                supportsFastMode(nextModel) && sessionFastMode,
+              )
             }}
           />
         </div>
@@ -235,8 +243,17 @@ function AdvancedComposerControl({
         <div className="border-t border-(--color-border-subtle) px-2.5 py-2">
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="text-[11px] font-medium text-(--color-text-2)">Speed</span>
-            {!fastAvailable && (
+            {!fastAvailable ? (
               <span className="text-[10px] text-(--color-text-subtle)">Fast unavailable</span>
+            ) : (
+              fastPrice && (
+                <span
+                  className="text-[10px] text-(--color-warning)"
+                  title={`Fast responses bill at ${fastPrice} the standard output rate`}
+                >
+                  Fast costs {fastPrice}
+                </span>
+              )
             )}
           </div>
           <SegmentedControl

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Skill Authoring"
+  short_description: "Design a skill's content, triggers, and structure"
+  default_prompt: "Use $skill-creator to design this skill's use cases, description, and structure."
+policy:
+  allow_implicit_invocation: true

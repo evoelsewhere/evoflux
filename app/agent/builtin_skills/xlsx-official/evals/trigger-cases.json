@@ -1,0 +1,29 @@
+[
+  {
+    "query": "Build a three-year operating model in xlsx with editable input cells and every total as a formula.",
+    "should_trigger": true
+  },
+  {
+    "query": "Add a margin column and fix the cells returning #REF! after last week's row deletion.",
+    "should_trigger": true
+  },
+  {
+    "query": "This spreadsheet is a mess — headers buried mid-file, mixed types. Clean it into a proper xlsx.",
+    "should_trigger": true
+  },
+  {
+    "query": "What does the revenue trend in this data say about the pricing decision?",
+    "should_trigger": false,
+    "near_miss": "The deliverable is a finding, not a workbook."
+  },
+  {
+    "query": "Write the nightly job that loads this CSV into the warehouse.",
+    "should_trigger": false,
+    "near_miss": "The spreadsheet is pipeline input."
+  },
+  {
+    "query": "Summarize the attached quarterly numbers in an email to the board.",
+    "should_trigger": false,
+    "near_miss": "Prose deliverable; no workbook changes."
+  }
+]

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Extend the Platform"
+  short_description: "Route a repeated need to the right extension surface"
+  default_prompt: "Use $evolve to decide which extension surface should own this and hand off to its workflow."
+policy:
+  allow_implicit_invocation: false

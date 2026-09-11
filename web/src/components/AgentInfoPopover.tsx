@@ -256,6 +256,7 @@ export function AgentInfoPopover({
     return ordered.length > 0 ? ordered : allAgents
   })()
 
+  const unconfiguredMembers = data?.unconfigured_members ?? []
   const leadFromApi = allAgents.find((a) => a.is_lead)
   const leadName = display.length > 1 ? (leadFromApi?.name ?? display[0]?.name ?? null) : null
   const leadAgent = (leadName ? byName.get(leadName) : null) ?? display[0]
@@ -362,6 +363,18 @@ export function AgentInfoPopover({
                         )
                       })}
                     </div>
+                  </div>
+                )}
+
+                {/* Members the loader left out: they exist on disk but have
+                    no model, so the lead has no one to delegate to and no
+                    way to say why. */}
+                {unconfiguredMembers.length > 0 && (
+                  <div className="mb-2 rounded-md border border-(--color-warning)/25 bg-(--color-warning-subtle) px-2 py-1.5">
+                    <p className="text-[11px] leading-relaxed text-(--color-warning)">
+                      Not on the roster: {unconfiguredMembers.join(', ')} — no model set.
+                      Give each one a model in Settings → Agents.
+                    </p>
                   </div>
                 )}
 

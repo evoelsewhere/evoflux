@@ -57,6 +57,36 @@ class GitSettings(BaseModel):
     allow_force_push: bool = False
 
 
+class ContextSettings(BaseModel):
+    """Context-window tuning shared by every session.
+
+    Every field is an operator override: ``None`` means "use the built-in
+    default", which for the trigger is the cost-optimal threshold derived in
+    :mod:`app.agent.hooks.summarization` and for the rest is that module's
+    ``DEFAULT_*`` constant. The hooks read these when they are built, once
+    per run, so a change takes effect on the next turn without a restart.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    #: Prompt size that triggers compaction. The per-model safety ceiling
+    #: still applies, so a small-context model never gets a threshold its
+    #: window cannot reach.
+    summary_trigger_tokens: int | None = Field(default=None, ge=20_000, le=2_000_000)
+    #: Ceiling on the summary the summariser is asked to produce.
+    summary_max_tokens: int | None = Field(default=None, ge=2_000, le=120_000)
+    #: Assistant turns kept verbatim after a compaction. 0 summarises
+    #: everything; a small window preserves the exact text of the last diff
+    #: or error, which a summary cannot reproduce byte-for-byte.
+    keep_recent_turns: int | None = Field(default=None, ge=0, le=10)
+    #: Tool results longer than this are written to a session artifact and
+    #: replaced in context by a short receipt.
+    tool_result_offload_chars: int | None = Field(default=None, ge=2_000, le=500_000)
+    #: Tool-call batches kept verbatim at the provider boundary. Older
+    #: results outside this window are replaced by deterministic receipts.
+    keep_recent_tool_batches: int | None = Field(default=None, ge=1, le=12)
+
+
 class CodeReviewSettings(BaseModel):
     """Provider-neutral PR/MR API reliability and mutation guardrails."""
 
@@ -225,6 +255,7 @@ class RuntimeSettings(BaseModel):
     server: ServerSettings = Field(default_factory=ServerSettings)
     providers: dict[str, ProviderUiSettings] = Field(default_factory=dict)
     git: GitSettings = Field(default_factory=GitSettings)
+    context: ContextSettings = Field(default_factory=ContextSettings)
     code_reviews: CodeReviewSettings = Field(default_factory=CodeReviewSettings)
     browser: BuiltInBrowserSettings = Field(default_factory=BuiltInBrowserSettings)
     webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)
@@ -253,17 +284,114 @@ def runtime_settings_path() -> Path:
     return Path(settings.EVOFLUX_CONFIG_DIR) / "settings.yaml"
 
 
-def load_runtime_settings(path: Path | None = None) -> RuntimeSettings:
+class IgnoredSetting(BaseModel):
+    """One hand-edited value that failed validation and was dropped."""
+
+    model_config = ConfigDict(frozen=True)
+
+    #: Dotted path into ``settings.yaml``, e.g. ``context.summary_trigger_tokens``.
+    field: str
+    #: Why it was rejected, in the validator's own words.
+    message: str
+
+
+#: Give up after this many prune-and-revalidate rounds. Each round drops every
+#: field the current error set names, so a handful covers any real file; the
+#: cap only stops a pathological one from looping.
+_MAX_PRUNE_ROUNDS = 8
+
+_MISSING = object()
+
+#: Settings are re-read on nearly every request, so the warning is emitted only
+#: when the set of rejected fields changes rather than once per read.
+_last_ignored_signature: tuple[str, ...] | None = None
+
+
+def _drop_path(raw: dict, loc: tuple) -> bool:
+    """Remove the value at *loc* from *raw*. True if something was removed."""
+    node = raw
+    for key in loc[:-1]:
+        if not isinstance(node, dict) or key not in node:
+            return False
+        node = node[key]
+    return isinstance(node, dict) and node.pop(loc[-1], _MISSING) is not _MISSING
+
+
+def _log_ignored_once(ignored: tuple[IgnoredSetting, ...], usable: bool) -> None:
+    global _last_ignored_signature
+    signature = tuple(item.field for item in ignored)
+    if signature == _last_ignored_signature:
+        return
+    _last_ignored_signature = signature
+    if not signature:
+        return
+    from loguru import logger
+
+    logger.warning(
+        "runtime_settings_ignored_fields fields={} usable={}", list(signature), usable
+    )
+
+
+def load_runtime_settings_report(
+    path: Path | None = None,
+) -> tuple[RuntimeSettings, tuple[IgnoredSetting, ...]]:
+    """Load ``settings.yaml``, dropping values that fail validation.
+
+    A hand-edited file is the one input here nobody reviews, and a single
+    out-of-range number used to reach every caller as an exception: the
+    Settings API answered 422 for unrelated sections, the PUT that would have
+    repaired the file failed the same way — leaving no way out from the UI —
+    and an endpoint that did not expect it took the sidecar down with it.
+
+    So an invalid *value* is discarded rather than fatal: the rest of the file
+    still applies, the field falls back to its built-in default, and what was
+    dropped is returned so a caller can say so instead of pretending the file
+    was obeyed. A file that will not parse as YAML at all still raises — there
+    is nothing to salvage and nothing to merge into.
+    """
+    from pydantic import ValidationError
+
     resolved = path or runtime_settings_path()
     if not resolved.exists():
-        return RuntimeSettings()
+        return RuntimeSettings(), ()
     try:
         raw = yaml.safe_load(resolved.read_text(encoding="utf-8")) or {}
     except yaml.YAMLError as exc:
         raise ValueError(f"settings.yaml YAML parse error: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError("settings.yaml must contain a YAML mapping.")
-    return RuntimeSettings.model_validate(raw)
+
+    ignored: list[IgnoredSetting] = []
+    for _ in range(_MAX_PRUNE_ROUNDS):
+        try:
+            loaded = RuntimeSettings.model_validate(raw)
+        except ValidationError as exc:
+            dropped_any = False
+            for error in exc.errors():
+                loc = tuple(error["loc"])
+                if not loc or not _drop_path(raw, loc):
+                    continue
+                dropped_any = True
+                ignored.append(
+                    IgnoredSetting(
+                        field=".".join(str(part) for part in loc),
+                        message=error["msg"],
+                    )
+                )
+            if not dropped_any:
+                break
+        else:
+            _log_ignored_once(tuple(ignored), usable=True)
+            return loaded, tuple(ignored)
+
+    # Nothing could be pruned into a valid shape — the whole file is unusable,
+    # but the process still has to run.
+    _log_ignored_once(tuple(ignored), usable=False)
+    return RuntimeSettings(), tuple(ignored)
+
+
+def load_runtime_settings(path: Path | None = None) -> RuntimeSettings:
+    return load_runtime_settings_report(path)[0]
 
 
 def save_runtime_settings(cfg: RuntimeSettings, path: Path | None = None) -> Path:

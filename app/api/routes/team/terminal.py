@@ -29,6 +29,7 @@ from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from loguru import logger
 
+from app.core.desktop_auth import websocket_authorized
 from app.core.paths import session_workspace_dir
 from app.services.terminal_service import DEFAULT_TERMINAL_ID, terminal_manager
 
@@ -80,6 +81,10 @@ async def _resolve_cwd_and_env(session_id: str) -> tuple[str, dict[str, str]]:
 
 @router.websocket("/{session_id}/terminal")
 async def terminal_ws(ws: WebSocket, session_id: str) -> None:
+    # This socket spawns a PTY and writes raw bytes to it, and replays the
+    # session's scrollback on connect. Authenticate before either happens.
+    if not await websocket_authorized(ws):
+        return
     await ws.accept()
     tid = ws.query_params.get("tid") or DEFAULT_TERMINAL_ID
     cols, rows = _int_param(ws, "cols", 80), _int_param(ws, "rows", 24)

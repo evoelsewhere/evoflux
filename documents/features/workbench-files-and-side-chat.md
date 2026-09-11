@@ -34,6 +34,35 @@ Filesystem watchers publish bounded server-sent events. The frontend invalidates
 file queries instead of treating watcher payloads as a complete filesystem
 snapshot.
 
+## Explorer context menu
+
+Both modes' file trees share one right-click menu (touch: long press). Work
+mode, Coding's repository tree and the native desktop tree pass the
+capabilities they can honour; an action with no handler is omitted rather than
+shown disabled.
+
+| Action | Behaviour |
+|---|---|
+| Attach as context | Inserts `@path` into the chat composer |
+| Preview | Selects the entry in the panel's viewer |
+| Open in default app | Hands the file to the OS handler |
+| Open in ▸ | Opens that entry (not the workspace root) in a detected editor, terminal or file manager |
+| Copy ▸ | Name, workspace-relative path, absolute path, or file contents |
+| Save a copy | Writes the file somewhere else; labelled "Download" only in the browser build, where it actually is one |
+| New file / New folder | Creates inside the clicked folder, or beside the clicked file |
+| Rename / Duplicate / Delete | Mutates the entry; deletes confirm first, and folders require an explicit recursive flag |
+
+App detection reuses the topbar's opener catalog, so the menu lists exactly the
+applications the native shell found installed. "Save a copy" opens the OS save
+dialog and the native side streams the bytes to the chosen path, so large
+artifacts are not buffered in memory and no workspace URL (which carries the
+desktop token) is handed to another application. Mutations go through the same
+traversal and containment guards as reads: relative paths only, no `..`, no
+escaping the workspace root, and an existing destination is refused instead of
+overwritten. Session workspaces are addressed by session id
+(`/api/team/{sid}/files/...`), coding workspaces by absolute root
+(`/api/team/workspace/files/...`).
+
 ## Preview contract
 
 - Images, audio, Markdown and supported text are rendered directly.

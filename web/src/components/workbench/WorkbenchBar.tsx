@@ -59,6 +59,8 @@ interface WorkbenchBarProps {
   /** Controls whether the active session can use the connected browser. */
   webBridgeEnabled: boolean
   onWebBridgeEnabledChange: (enabled: boolean) => void
+  selectedExtensionId?: string | null
+  onSelectedExtensionChange?: (extensionId: string) => void
   webBridgePopoverOpen: boolean
   onWebBridgePopoverOpenChange: (open: boolean) => void
   dragHandlers?: {
@@ -230,6 +232,8 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           onOpenChange={props.onWebBridgePopoverOpenChange}
           enabled={props.webBridgeEnabled}
           onEnabledChange={props.onWebBridgeEnabledChange}
+          selectedExtensionId={props.selectedExtensionId ?? null}
+          onSelectedExtensionChange={props.onSelectedExtensionChange ?? (() => {})}
           policyEnabled={webBridgePolicyEnabled}
         />
 
@@ -284,12 +288,16 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             compact
             used={activeUsage.promptTokens}
             max={contextMax}
+            contextLength={contextMax}
             input={activeUsage.promptTokens}
             cached={activeUsage.cachedTokens}
+            cacheWrite={activeUsage.cacheWriteTokens}
             turnInput={activeUsage.turnPromptTokens}
             turnOutput={activeUsage.turnCompletionTokens}
             turnCached={activeUsage.turnCachedTokens}
+            turnCacheWrite={activeUsage.turnCacheWriteTokens}
             turnCalls={activeUsage.turnCalls}
+            cost={activeUsage.turnCost}
             trigger={summaryTrigger}
             onCompact={canCompactContext ? compactTeam : undefined}
             compactDisabled={isTeamWorking}

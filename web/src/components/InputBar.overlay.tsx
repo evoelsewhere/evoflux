@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 
 import { findCommittedMentions, type FileRef } from './InputBar.mentions'
-import { findSkillDirectives } from './InputBar.skills'
+import { findCommandDirectives, findSkillDirectives } from './InputBar.skills'
 
 interface MentionOverlayProps {
   /** Current textarea value. */
@@ -39,6 +39,11 @@ interface MentionOverlayProps {
   fileRefs: readonly FileRef[]
   /** Valid skill names in composer notation (flat or ``parent:sub``). */
   skillNames?: ReadonlySet<string>
+  /**
+   * Slash-command ids currently offered by the picker. Only these light up,
+   * so a half-typed or misspelled command reads as inert text.
+   */
+  commandNames?: ReadonlySet<string>
   /** When true, hide the overlay so the native IME candidate UI is unobstructed. */
   hidden?: boolean
 }
@@ -49,17 +54,20 @@ export function MentionOverlay({
   textareaRef,
   fileRefs,
   skillNames,
+  commandNames,
   hidden = false,
 }: MentionOverlayProps) {
   const mirrorRef = useRef<HTMLDivElement>(null)
   const mentionRanges = findCommittedMentions(value, activeRange, fileRefs)
   const skillRanges = findSkillDirectives(value, skillNames)
+  const commandRanges = findCommandDirectives(value, commandNames)
   const ranges = useMemo(
     () => [
       ...mentionRanges.map((range) => ({ ...range, kind: 'mention' as const })),
       ...skillRanges.map((range) => ({ ...range, kind: 'skill' as const })),
+      ...commandRanges.map((range) => ({ ...range, kind: 'command' as const })),
     ].sort((a, b) => a.start - b.start),
-    [mentionRanges, skillRanges],
+    [mentionRanges, skillRanges, commandRanges],
   )
 
   // Build a token → kind lookup so each committed mention can pick its
@@ -115,11 +123,11 @@ export function MentionOverlay({
   for (const r of ranges) {
     if (r.start > cursor) segments.push(value.slice(cursor, r.start))
     const token = value.slice(r.start, r.end)
-    if (r.kind === 'skill') {
+    if (r.kind === 'skill' || r.kind === 'command') {
       segments.push(
         <span
-          key={`skill-${r.start}`}
-          data-testid="skill-chip"
+          key={`${r.kind}-${r.start}`}
+          data-testid={r.kind === 'skill' ? 'skill-chip' : 'command-chip'}
           className="bg-(--color-accent)/15 text-(--color-accent)"
         >
           {token}
