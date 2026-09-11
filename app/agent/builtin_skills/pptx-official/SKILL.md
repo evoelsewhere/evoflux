@@ -16,13 +16,14 @@ commercial projects without restriction.
 ## Pipeline
 
 ```
-Phase 0  Read the source and the workspace
-Phase 1  Confirm two things            ← theme and imagery, unless delegated
-Phase 2  Outline with action titles    ← ghost deck test; approval when it matters
-Phase 3  Prepare assets
-Phase 4  Build
-Phase 5  Verify and repair             ← loop until acceptance passes
-Phase 6  Hand off
+Phase 0   Read the source and the workspace
+Phase 1   Confirm two things            ← theme and imagery, unless delegated
+Phase 2   Outline with action titles    ← ghost deck test; approval when it matters
+Phase 2.5 Visual preview (optional)     ← theme picker + slide grid via show_widget
+Phase 3   Prepare assets
+Phase 4   Build
+Phase 5   Verify and repair             ← loop until acceptance passes
+Phase 6   Hand off
 ```
 
 **Phase 0 — Read.** Read the source, and look for a template, an earlier deck,
@@ -53,6 +54,13 @@ slides, when the material is complex or contested, when it goes to a board,
 customer, regulator, or public audience, or when the user has already
 corrected the direction once. Otherwise show the outline and keep going.
 
+**Phase 2.5 — Visual preview (optional).** When `show_widget` is available
+and the conditions in [`preview.md`](preview.md) are met, render theme cards
+and a slide grid as HTML widgets before building. The user selects a theme
+and confirms the slide layout visually. When `show_widget` is unavailable,
+or the user skips preview, proceed directly to Phase 3. This phase never
+blocks the pipeline.
+
 **Phase 3 — Prepare assets.** Resolve images, chart data, and diagrams before
 building. Anything unresolved here becomes a placeholder in the deck.
 
@@ -78,6 +86,7 @@ Within Phase 3 and 4, the situation picks the technique:
 | Only need the text / speaker notes / structure out of a `.pptx` | Extraction pipeline | [`read.md`](read.md) |
 | Turn a deck into PDF or PNG images | `scripts/render_pdf.py` / `scripts/render_slides.py` via LibreOffice | see *QA* below |
 | Grid of slide thumbnails for previewing a template | `scripts/contact_sheet.py` (Pillow) | [`read.md`](read.md) → *Thumbnails* |
+| Preview themes and slide layouts before building | `show_widget` HTML widgets | [`preview.md`](preview.md) |
 
 An extraction-only request needs neither gate: read the file and answer.
 
