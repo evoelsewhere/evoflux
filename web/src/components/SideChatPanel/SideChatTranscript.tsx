@@ -72,6 +72,7 @@ export function SideChatTranscript({
   )
   const {
     contentRef,
+    runwayRef,
     scrollRef,
     scrollToBottom,
     sentinelRef,
@@ -158,6 +159,15 @@ export function SideChatTranscript({
             )}
           </div>
         )}
+        {/* Sized by `usePinnedTranscript` to exactly the space the newest
+            prompt needs to reach the top of the viewport — see `syncRunway`.
+            It must sit between the prompt and the sentinel, which is what
+            the measurement spans. */}
+        <div
+          ref={runwayRef}
+          aria-hidden="true"
+          className="oa-transcript-runway [overflow-anchor:none]"
+        />
         {/* Outside the isEmpty branch on purpose: the observer that reads
             this must keep its registration when the transcript empties. */}
         <div
