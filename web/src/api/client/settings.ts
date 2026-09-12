@@ -155,6 +155,30 @@ export async function updateTeamSpawnSettings(
   return res.json()
 }
 
+// Follow-up behavior (what a message sent to a working lead does by default)
+
+export type FollowUpSettings = {
+  delivery: 'steer' | 'queue'
+}
+
+export async function getFollowUpSettings(): Promise<FollowUpSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/follow-up`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/follow-up')
+  return res.json()
+}
+
+export async function updateFollowUpSettings(
+  body: FollowUpSettings,
+): Promise<FollowUpSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/follow-up`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/follow-up')
+  return res.json()
+}
+
 export type ConductorSettings = {
   enabled: boolean
   url: string
@@ -166,7 +190,7 @@ export type ConductorSettings = {
 }
 
 export type ConductorManagedResource = ManagedResourceProvider & {
-  kind: 'agent' | 'skill' | 'plugin'
+  kind: 'agent_team' | 'skill' | 'plugin'
   slug: string
   state?: string
   message?: string | null
@@ -187,7 +211,7 @@ export type LegacyConductorResource = {
   applied_version_id?: string | null
   applied_version?: string | null
   release_channel?: 'beta' | 'published' | null
-  kind: 'agent' | 'skill' | 'mcp' | 'plugin'
+  kind: 'agent_team' | 'skill' | 'mcp' | 'plugin'
   slug: string
   state: string
   observed_state?: string

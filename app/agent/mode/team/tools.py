@@ -227,7 +227,7 @@ def _recipient_error(
         names = ", ".join(team.unconfigured_members)
         message += (
             f" Left off the roster for want of a model: {names}."
-            " Give each one a model in Settings > Agents"
-            " (or set the lead's model, which they adopt)."
+            " Give each one a model in Settings > Agents — a member does"
+            " not inherit the lead's."
         )
     return message

@@ -27,6 +27,8 @@ from app.core.runtime_settings import load_runtime_settings, save_runtime_settin
 from app.plugin_platform.models import PLUGIN_SCHEMA_ID
 from app.plugin_platform.registry import get_installation
 
+LF = chr(10)
+
 
 @pytest.fixture
 def governed_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -80,12 +82,12 @@ def test_inventory_pairs_digest_with_the_applied_version_only(
     reconciler = GovernedResourceReconciler(store)
     record = ManagedResourceRecord(
         project_id="project-1",
-        resource_id="agent-1",
+        resource_id="agent_team-1",
         version_id="desired-version-2",
         version="2.0.0",
         applied_version_id="applied-version-1",
         applied_version="1.0.0",
-        kind="agent",
+        kind="agent_team",
         slug="managed-agent",
         content_sha256="d" * 64,
         applied_content_sha256="a" * 64,
@@ -115,12 +117,12 @@ def test_legacy_inventory_omits_an_unverified_applied_digest(
                 "resources": [
                     {
                         "project_id": "project-1",
-                        "resource_id": "agent-1",
+                        "resource_id": "agent_team-1",
                         "version_id": "desired-version-2",
                         "version": "2.0.0",
                         "applied_version_id": "applied-version-1",
                         "applied_version": "1.0.0",
-                        "kind": "agent",
+                        "kind": "agent_team",
                         "slug": "managed-agent",
                         "content_sha256": "d" * 64,
                         "observed_state": "update_pending",
@@ -138,14 +140,48 @@ def test_legacy_inventory_omits_an_unverified_applied_digest(
     assert item["content_sha256"] is None
 
 
+TEAM_LEAD = "managed-agent"
+
+
+def _team_payload(
+    lead_markdown: str,
+    *,
+    lead: str = TEAM_LEAD,
+    members: dict[str, str] | None = None,
+    extra_files: list[dict[str, str]] | None = None,
+) -> dict:
+    """A Team release in the layout the reconciler requires.
+
+    A Team is a directory of Agent files plus a manifest, not one ``.md`` —
+    building it here keeps every test honest about the shape EvoFlux receives.
+    """
+    members = members or {}
+    files = [
+        {
+            "path": "team.json",
+            "content": json.dumps({"lead": lead, "members": sorted(members)}),
+        },
+        {"path": f"agents/{lead}.md", "content": lead_markdown},
+    ]
+    files.extend(
+        {"path": f"agents/{name}.md", "content": markdown}
+        for name, markdown in sorted(members.items())
+    )
+    files.extend(extra_files or [])
+    return {"files": files}
+
+
 def _change(kind: str, sha256: str, size: int) -> ResourceChange:
+    # A Team's slug is its lead's Agent name; the reconciler rejects a release
+    # whose lead does not match it.
+    slug = TEAM_LEAD if kind == "agent_team" else f"managed-{kind}"
     return ResourceChange.model_validate(
         {
             "project_id": "project-1",
             "resource_id": f"{kind}-1",
             "version_id": f"{kind}-version-1",
             "kind": kind,
-            "slug": f"managed-{kind}",
+            "slug": slug,
             "version": "0.1.0",
             "release_channel": "published",
             "sha256": sha256,
@@ -169,16 +205,11 @@ def _page(change: ResourceChange) -> ResourceChangePage:
 async def test_report_mode_records_update_without_touching_local_files(
     governed_dirs: Path,
 ) -> None:
-    payload = {
-        "files": [
-            {
-                "path": "managed-agent.md",
-                "content": "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n",
-            }
-        ]
-    }
+    payload = _team_payload(
+        "---\nname: managed-agent\nrole: lead\ndescription: Test\n---\nPrompt\n"
+    )
     digest = hashlib.sha256(json.dumps(payload).encode()).hexdigest()
-    change = _change("agent", digest, len(json.dumps(payload)))
+    change = _change("agent_team", digest, len(json.dumps(payload)))
     version = EffectiveResourceVersion.model_validate(
         {
             **change.model_dump(exclude={"tombstone", "trust_required"}),
@@ -206,10 +237,12 @@ async def test_report_mode_records_update_without_touching_local_files(
 async def test_enforce_applies_agent_by_project_resource_identity(
     governed_dirs: Path,
 ) -> None:
-    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
-    payload = {"files": [{"path": "managed-agent.md", "content": content}]}
+    content = (
+        "---\nname: managed-agent\nrole: lead\ndescription: Test\n---\nPrompt\n"
+    )
+    payload = _team_payload(content)
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
     version = EffectiveResourceVersion.model_validate(
         {
             **change.model_dump(exclude={"tombstone", "trust_required"}),
@@ -226,7 +259,7 @@ async def test_enforce_applies_agent_by_project_resource_identity(
         enforcement_mode="enforce",
     )
     assert results[0].observed_state == "applied"
-    assert results[0].resource_id == "agent-1"
+    assert results[0].resource_id == "agent_team-1"
     assert (
         governed_dirs / "config" / "agents" / "managed-agent.md"
     ).read_text() == content
@@ -235,10 +268,10 @@ async def test_enforce_applies_agent_by_project_resource_identity(
     runtime.conductor.project_name = "platform-core"
     runtime.conductor.project_display_name = "Platform Core"
     save_runtime_settings(runtime)
-    provider = managed_resource_provider("agent", "managed-agent")
+    provider = managed_resource_provider("agent_team", "managed-agent")
     assert provider is not None
     assert provider.project_name == "Platform Core"
-    assert provider.resource_id == "agent-1"
+    assert provider.resource_id == "agent_team-1"
     assert provider.version == "0.1.0"
 
 
@@ -246,18 +279,20 @@ async def test_enforce_applies_agent_by_project_resource_identity(
 async def test_enforce_mounts_agent_only_in_selected_evoflux_mode(
     governed_dirs: Path,
 ) -> None:
-    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
-    payload = {
-        "files": [
-            {"path": "managed-agent.md", "content": content},
+    content = (
+        "---\nname: managed-agent\nrole: lead\ndescription: Test\n---\nPrompt\n"
+    )
+    payload = _team_payload(
+        content,
+        extra_files=[
             {
                 "path": ".evoflux.json",
                 "content": json.dumps({"modes": ["coding"]}),
-            },
-        ]
-    }
+            }
+        ],
+    )
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
     version = EffectiveResourceVersion.model_validate(
         {
             **change.model_dump(exclude={"tombstone", "trust_required"}),
@@ -287,10 +322,12 @@ async def test_enforce_mounts_agent_only_in_selected_evoflux_mode(
 async def test_same_version_backfills_a_missing_agent_mode_copy(
     governed_dirs: Path,
 ) -> None:
-    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
-    payload = {"files": [{"path": "managed-agent.md", "content": content}]}
+    content = (
+        "---\nname: managed-agent\nrole: lead\ndescription: Test\n---\nPrompt\n"
+    )
+    payload = _team_payload(content)
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
     version = EffectiveResourceVersion.model_validate(
         {
             **change.model_dump(exclude={"tombstone", "trust_required"}),
@@ -328,11 +365,13 @@ async def test_same_version_backfills_a_missing_agent_mode_copy(
 async def test_new_agent_version_waits_for_explicit_pull_before_replacing_source(
     governed_dirs: Path,
 ) -> None:
-    first_content = "---\nname: managed-agent\ndescription: First\n---\nFirst prompt\n"
-    first_payload = {"files": [{"path": "managed-agent.md", "content": first_content}]}
+    first_content = (
+        "---\nname: managed-agent\nrole: lead\ndescription: First\n---\nFirst prompt\n"
+    )
+    first_payload = _team_payload(first_content)
     first_raw = json.dumps(first_payload, separators=(",", ":")).encode()
     first_change = _change(
-        "agent", hashlib.sha256(first_raw).hexdigest(), len(first_raw)
+        "agent_team", hashlib.sha256(first_raw).hexdigest(), len(first_raw)
     )
     first_version = EffectiveResourceVersion.model_validate(
         {
@@ -352,21 +391,19 @@ async def test_new_agent_version_waits_for_explicit_pull_before_replacing_source
     )
 
     second_content = (
-        "---\nname: managed-agent\ndescription: Second\n---\nSecond prompt\n"
+        "---\nname: managed-agent\nrole: lead\ndescription: Second\n---\nSecond prompt\n"
     )
-    second_payload = {
-        "files": [{"path": "managed-agent.md", "content": second_content}]
-    }
+    second_payload = _team_payload(second_content)
     second_raw = json.dumps(second_payload, separators=(",", ":")).encode()
     second_change = first_change.model_copy(
         update={
-            "version_id": "agent-version-2",
+            "version_id": "agent_team-version-2",
             "version": "1.0.0",
             "description": "Managed release analyst",
             "changelog": "Adds breaking release policy checks.",
             "version_history": [
                 ResourceVersionNotice(
-                    version_id="agent-version-1",
+                    version_id="agent_team-version-1",
                     version="0.1.0",
                     status="deprecated",
                     release_channel="published",
@@ -374,7 +411,7 @@ async def test_new_agent_version_waits_for_explicit_pull_before_replacing_source
                     deprecation_reason="Known policy bypass.",
                 ),
                 ResourceVersionNotice(
-                    version_id="agent-version-2",
+                    version_id="agent_team-version-2",
                     version="1.0.0",
                     status="published",
                     release_channel="published",
@@ -433,7 +470,7 @@ async def test_new_agent_version_waits_for_explicit_pull_before_replacing_source
     assert enforce_replay[0].observed_state == "update_pending"
     assert target.read_text() == first_content
 
-    applied = await reconciler.pull(FakeClient(second_version), "project-1", "agent-1")
+    applied = await reconciler.pull(FakeClient(second_version), "project-1", "agent_team-1")
     assert applied.observed_state == "applied"
     assert applied.version == "1.0.0"
     assert applied.applied_version == "1.0.0"
@@ -444,10 +481,13 @@ async def test_new_agent_version_waits_for_explicit_pull_before_replacing_source
 async def test_enforce_rejects_agent_payload_that_is_not_evoflux_native(
     governed_dirs: Path,
 ) -> None:
-    content = "---\nname: another-agent\ndescription: Wrong identity\n---\nPrompt\n"
-    payload = {"files": [{"path": "managed-agent.md", "content": content}]}
+    # The lead file carries a different identity than the Team's slug.
+    content = (
+        "---\nname: managed-agent\nrole: member\nlead: someone-else\ndescription: Wrong identity\n---\nPrompt\n"
+    )
+    payload = _team_payload(content)
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
     version = EffectiveResourceVersion.model_validate(
         {
             **change.model_dump(exclude={"tombstone", "trust_required"}),
@@ -576,10 +616,12 @@ async def test_plugin_is_installed_disabled_until_explicit_local_approval(
 async def test_failed_resource_does_not_advance_cursor_and_retries(
     governed_dirs: Path,
 ) -> None:
-    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
-    payload = {"files": [{"path": "managed-agent.md", "content": content}]}
+    content = (
+        "---\nname: managed-agent\nrole: lead\ndescription: Test\n---\nPrompt\n"
+    )
+    payload = _team_payload(content)
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
     version = EffectiveResourceVersion.model_validate(
         {
             **change.model_dump(exclude={"tombstone", "trust_required"}),
@@ -614,10 +656,12 @@ async def test_failed_resource_does_not_advance_cursor_and_retries(
 async def test_minimum_client_version_blocks_incompatible_release(
     governed_dirs: Path,
 ) -> None:
-    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
-    payload = {"files": [{"path": "managed-agent.md", "content": content}]}
+    content = (
+        "---\nname: managed-agent\nrole: lead\ndescription: Test\n---\nPrompt\n"
+    )
+    payload = _team_payload(content)
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw)).model_copy(
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw)).model_copy(
         update={"minimum_evoflux_version": "999.0.0"}
     )
     version = EffectiveResourceVersion.model_validate(
@@ -644,10 +688,12 @@ async def test_minimum_client_version_blocks_incompatible_release(
 async def test_tombstone_removes_unmodified_managed_agent(
     governed_dirs: Path,
 ) -> None:
-    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
-    payload = {"files": [{"path": "managed-agent.md", "content": content}]}
+    content = (
+        "---\nname: managed-agent\nrole: lead\ndescription: Test\n---\nPrompt\n"
+    )
+    payload = _team_payload(content)
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
     version = EffectiveResourceVersion.model_validate(
         {
             **change.model_dump(exclude={"tombstone", "trust_required"}),
@@ -697,10 +743,12 @@ async def test_tombstone_removes_unmodified_managed_agent(
 async def test_tombstone_keeps_locally_modified_managed_agent(
     governed_dirs: Path,
 ) -> None:
-    content = "---\nname: managed-agent\ndescription: Test\n---\nPrompt\n"
-    payload = {"files": [{"path": "managed-agent.md", "content": content}]}
+    content = (
+        "---\nname: managed-agent\nrole: lead\ndescription: Test\n---\nPrompt\n"
+    )
+    payload = _team_payload(content)
     raw = json.dumps(payload, separators=(",", ":")).encode()
-    change = _change("agent", hashlib.sha256(raw).hexdigest(), len(raw))
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
     version = EffectiveResourceVersion.model_validate(
         {
             **change.model_dump(exclude={"tombstone", "trust_required"}),
@@ -780,3 +828,333 @@ def test_mode_order_follows_the_client_contract_not_the_file() -> None:
     assert _resource_modes(
         [(RESOURCE_MODE_SCOPE_FILENAME, '{"modes": ["coding", "work"]}')]
     ) == [ResourceTargetMode.WORK, ResourceTargetMode.CODING]
+
+
+def _applied_team_record(**overrides) -> ManagedResourceRecord:
+    base = dict(
+        project_id="project-1",
+        resource_id="agent_team-1",
+        version_id="agent_team-version-1",
+        version="0.1.0",
+        applied_version_id="agent_team-version-1",
+        applied_version="0.1.0",
+        kind="agent_team",
+        slug="managed-agent",
+        modes=["work"],
+        observed_state="applied",
+        observed_at=datetime.now(UTC),
+    )
+    base.update(overrides)
+    return ManagedResourceRecord(**base)
+
+
+def _materialized_team_record(**overrides) -> ManagedResourceRecord:
+    """An applied record whose stored digest matches what is on disk."""
+    from app.conductor.governed_reconciler import _team_material
+    from app.services import agent_fs
+
+    agent_fs.write_agent("managed-agent", "---\nname: managed-agent\nrole: lead\n---\n\nLead.\n", create=True)
+    targets = ["managed-agent"]
+    return _applied_team_record(
+        local_agent_targets=targets,
+        local_content_sha256=_team_material(targets),
+        **overrides,
+    )
+
+
+def test_a_team_without_declared_capabilities_stays_applied() -> None:
+    from app.conductor.governed_reconciler import observed_state_now
+
+    assert observed_state_now(_applied_team_record()) == "applied"
+
+
+def test_an_unresolvable_mcp_server_is_not_reported_as_applied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: ["other"])
+    record = _applied_team_record(declared_mcp=["github"])
+
+    assert module.unresolved_capabilities(record) == {"mcp": ["github"]}
+    assert module.observed_state_now(record) == "dependency_missing"
+
+
+def test_an_unresolvable_skill_is_not_reported_as_applied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent.tools.builtin import skill as skill_tool
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
+    monkeypatch.setattr(
+        skill_tool, "discover_skill_records_runtime", lambda mode: {"other"}
+    )
+    record = _applied_team_record(declared_skills=["release-audit"])
+
+    assert module.unresolved_capabilities(record) == {"skills": ["release-audit"]}
+    assert module.observed_state_now(record) == "dependency_missing"
+
+
+def test_a_resolvable_mcp_server_keeps_the_applied_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: ["github"])
+    record = _applied_team_record(declared_mcp=["github"])
+
+    assert module.unresolved_capabilities(record) == {}
+    assert module.observed_state_now(record) == "applied"
+
+
+def test_a_state_other_than_applied_is_reported_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
+    record = _applied_team_record(
+        observed_state="ownership_conflict", declared_mcp=["github"]
+    )
+
+    assert module.observed_state_now(record) == "ownership_conflict"
+
+
+def test_the_inventory_names_what_could_not_be_resolved(
+    governed_dirs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Conductor's installation table shows this string, so it has to name
+    the capability rather than repeat the state."""
+    from app.agent.tools.builtin import skill as skill_tool
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
+    monkeypatch.setattr(
+        skill_tool, "discover_skill_records_runtime", lambda mode: set()
+    )
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    store.upsert(
+        _applied_team_record(declared_skills=["release-audit"], declared_mcp=["github"])
+    )
+
+    [item] = GovernedResourceReconciler(store).inventory()
+
+    assert item["observed_state"] == "dependency_missing"
+    assert "release-audit" in item["error_category"]
+    assert "github" in item["error_category"]
+
+
+def test_a_healthy_resource_reports_no_dependency_detail(
+    governed_dirs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.agent.tools.builtin import skill as skill_tool
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
+    monkeypatch.setattr(
+        skill_tool, "discover_skill_records_runtime", lambda mode: set()
+    )
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    store.upsert(_applied_team_record())
+
+    [item] = GovernedResourceReconciler(store).inventory()
+
+    assert item["observed_state"] == "applied"
+    assert module.describe_unresolved({}) is None
+
+
+def test_an_unchanged_managed_team_copy_keeps_the_applied_state(
+    governed_dirs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The digest check must not accuse an untouched installation."""
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
+    record = _materialized_team_record()
+
+    assert module.observed_state_now(record) == "applied"
+    assert module.describe_local_divergence(record) is None
+
+
+def test_a_locally_edited_managed_team_is_reported_not_silently_applied(
+    governed_dirs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under ``report`` enforcement nothing re-reconciles an applied resource,
+    so an edited managed copy used to stay invisible forever."""
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+    from app.services import agent_fs
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
+    record = _materialized_team_record()
+    agent_fs.write_agent("managed-agent", "---\nname: managed-agent\nrole: lead\n---\n\nEdited locally.\n", create=False)
+
+    assert module.observed_state_now(record) == "ownership_conflict"
+    detail = module.describe_local_divergence(record)
+    assert detail is not None
+    assert "edited locally" in detail
+
+
+def test_a_record_without_a_stored_digest_is_not_accused_of_drifting(
+    governed_dirs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
+    record = _applied_team_record(local_agent_targets=["managed-agent"])
+
+    assert module.observed_state_now(record) == "applied"
+    assert module.describe_local_divergence(record) is None
+
+
+def test_local_divergence_outranks_an_unresolved_capability(
+    governed_dirs: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+    from app.services import agent_fs
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
+    record = _materialized_team_record(declared_mcp=["github"])
+    agent_fs.write_agent("managed-agent", "---\nname: managed-agent\nrole: lead\n---\n\nEdited locally.\n", create=False)
+
+    assert module.unresolved_capabilities(record) == {"mcp": ["github"]}
+    assert module.observed_state_now(record) == "ownership_conflict"
+
+
+@pytest.mark.asyncio
+async def test_an_ownership_conflict_can_be_pulled_again_once_resolved(
+    governed_dirs: Path,
+) -> None:
+    """A conflict used to be a dead end: ``pull`` refused the state, so the
+    only way back was to wipe the enrolment."""
+    content = (
+        "---" + chr(10) + "name: managed-agent" + chr(10) + "role: lead" + chr(10)
+        + "description: Test" + chr(10) + "---" + chr(10) + "Prompt" + chr(10)
+    )
+    payload = _team_payload(content)
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": payload,
+            "artifact_key": None,
+        }
+    )
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    reconciler = GovernedResourceReconciler(store)
+
+    # A user-owned Agent already holds the lead's name.
+    target = governed_dirs / "config" / "agents" / "managed-agent.md"
+    target.write_text("---" + chr(10) + "name: managed-agent" + chr(10) + "---" + chr(10) + "Mine" + chr(10))
+
+    conflicted = await reconciler.reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+    assert conflicted[0].observed_state == "ownership_conflict"
+
+    target.unlink()
+    recovered = await reconciler.pull(
+        FakeClient(version), "project-1", "agent_team-1"
+    )
+
+    assert recovered.observed_state == "applied"
+    assert target.read_text() == content
+
+
+@pytest.mark.asyncio
+async def test_report_mode_names_a_local_edit_instead_of_a_phantom_update(
+    governed_dirs: Path,
+) -> None:
+    """Same version, edited copy. Falling through reported "a managed update
+    is available", which names the wrong problem and offers the wrong fix."""
+    content = (
+        "---" + LF + "name: managed-agent" + LF + "role: lead" + LF
+        + "description: Test" + LF + "---" + LF + "Prompt" + LF
+    )
+    payload = _team_payload(content)
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": payload,
+            "artifact_key": None,
+        }
+    )
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    reconciler = GovernedResourceReconciler(store)
+    await reconciler.reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+    target = governed_dirs / "config" / "agents" / "managed-agent.md"
+    target.write_text(content + "Local change" + LF)
+
+    [reported] = await reconciler.reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="report",
+    )
+
+    assert reported.observed_state == "ownership_conflict"
+    assert "edited locally" in (reported.message or "")
+    # Report mode never writes: the edit is still there to inspect.
+    assert target.read_text().endswith("Local change" + LF)
+
+
+@pytest.mark.asyncio
+async def test_report_mode_still_offers_a_real_update_after_an_untouched_apply(
+    governed_dirs: Path,
+) -> None:
+    """The drift branch must not swallow the ordinary same-version path."""
+    content = (
+        "---" + LF + "name: managed-agent" + LF + "role: lead" + LF
+        + "description: Test" + LF + "---" + LF + "Prompt" + LF
+    )
+    payload = _team_payload(content)
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    change = _change("agent_team", hashlib.sha256(raw).hexdigest(), len(raw))
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": payload,
+            "artifact_key": None,
+        }
+    )
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    reconciler = GovernedResourceReconciler(store)
+    await reconciler.reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+
+    [unchanged] = await reconciler.reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="report",
+    )
+
+    assert unchanged.observed_state == "in_sync"

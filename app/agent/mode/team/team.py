@@ -2605,8 +2605,8 @@ class AgentTeam:
             names = ", ".join(self.unconfigured_members)
             message += (
                 f" Left off the roster for want of a model: {names}."
-                " Give each one a model in Settings > Agents"
-                " (or set the lead's model, which they adopt)."
+                " Give each one a model in Settings > Agents — a member does"
+                " not inherit the lead's."
             )
         elif not available:
             message += " This lead owns no members."
@@ -2722,8 +2722,14 @@ class AgentTeam:
         from app.agent.ask_user import get_active_ask_user_service
         from app.agent.config import parse_agent_md
         from app.agent.tools.builtin.ask_user import AgentSpawnSpec, QuestionSpec
+        from app.conductor.agent_runtime import apply_managed_agent_runtime_model
 
-        cfg = parse_agent_md(bp.source_path)
+        # A managed member carries no ``model:`` of its own — the installation
+        # picks one. Reading the file raw makes every governed Team look
+        # unspawnable no matter what the user selected.
+        cfg = apply_managed_agent_runtime_model(
+            parse_agent_md(bp.source_path), source_path=bp.source_path
+        )
         default_model = cfg.model
         if not default_model:
             raise ValueError(f"Member blueprint '{blueprint}' has no model configured.")

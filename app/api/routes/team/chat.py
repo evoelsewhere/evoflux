@@ -10,8 +10,9 @@ from uuid import uuid7  # ty: ignore[unresolved-import]
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from loguru import logger
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.api.deps import (
@@ -91,8 +92,10 @@ from app.services.chat_service import (
     get_latest_top_level_session,
     list_sessions_page,
     save_queued_user_message,
+    update_queued_user_message,
     update_session_title,
 )
+from app.core.runtime_settings import follow_up_delivery_default
 from app.services.commands import parse_slash_invocation
 from app.services.session_folder_service import get_folder
 
@@ -272,6 +275,42 @@ def _validate_workspace_or_422(workspace: str) -> str:
         return team_manager.validate_workspace(workspace)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+async def _register_session_workspace(db: AsyncSession, workspace: str) -> None:
+    """Record *workspace* in the registry the coding sidebar is rendered from.
+
+    The sidebar lists ``coding_workspaces`` rows only — a repository with a
+    session but no row is invisible in both sections, and stays invisible
+    across restarts. Every route that binds a coding session to a repository
+    therefore has to call this, not just ``/sessions/resolve``: a folder the
+    user picks (or clones) is first seen by an ``existing_only`` lookup that
+    finds nothing, so the row it would have created never happens and the
+    first message is what actually brings the session into being.
+
+    A managed worktree registers its source repository too, so the sidebar can
+    nest it under the repo it belongs to instead of listing it standalone.
+
+    Caller owns the transaction.
+    """
+    managed_source = find_managed_worktree_source(Path(workspace))
+    if managed_source:
+        await upsert_coding_workspace(
+            db,
+            path=managed_source,
+            kind="repo",
+            hidden=False,
+        )
+        await upsert_coding_workspace(
+            db,
+            path=workspace,
+            kind="worktree",
+            source_path=managed_source,
+            managed=True,
+            hidden=False,
+        )
+        return
+    await upsert_coding_workspace(db, path=workspace, kind="repo", hidden=False)
 
 
 async def _project_paths_for_session(
@@ -585,6 +624,22 @@ async def team_chat(
             workspace = _normalize_work_workspace_or_422(workspace)
         team_obj.workspace = workspace
 
+    async def register_workspace_for_created_session() -> None:
+        """Put this repository in the sidebar registry, if it isn't already.
+
+        A coding chat the user starts from the folder picker (or straight
+        after a clone) reaches the backend as a draft: the sidebar's lookup
+        ran with ``existing_only`` and created nothing, so this message is
+        what brings both the session and — without this — nothing else into
+        being. Called from the dispatch sites rather than up here so a
+        rejected or interrupt-only request registers nothing.
+        """
+        if existing is not None or mode != "coding" or not workspace:
+            return
+        async with write_db_factory() as write_db:
+            async with write_db.begin():
+                await _register_session_workspace(write_db, workspace)
+
     # Restore persisted session settings so the in-memory team reflects the
     # user's selection even after a server restart or a cold team boot.
     team_obj.session_tags = frozenset(session_tags)
@@ -659,6 +714,7 @@ async def team_chat(
             command = command[1:].strip()
         if not command:
             raise HTTPException(status_code=422, detail="Shell command is required.")
+        await register_workspace_for_created_session()
         sid = await agent_service.dispatch_user_shell_command(
             team_obj,
             command=command,
@@ -714,25 +770,22 @@ async def team_chat(
             and team_obj.has_active_user_turn()
             and goal_command is None
         ):
-            # Explicit uploads still 409 — they need the live capability check
-            # + persistence pipeline that only runs on the dispatch path. But
-            # mentions are derived from workspace files the agent will see
-            # anyway, so we persist them onto the queued row so the dequeue
-            # path rehydrates the same context the user typed.
-            if explicit_attachment_count > 0:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Cannot queue messages with attachments while the agent is working.",
-                )
+            # Uploads and ``@path`` mentions both ride the queued row. They
+            # go through the same validate + persist pipeline a dispatched
+            # turn uses, and the resulting metas are stored under
+            # ``extra["attachments"]`` so both drain paths see the files:
+            # the post-turn path rebuilds multimodal parts when it reloads
+            # history from the database, and the mid-turn injection hook
+            # rebuilds them from the same metas.
             queued_attachment_metas: list[dict] = []
-            if mention_attachments:
+            if attachments:
                 try:
                     (
                         _,
                         queued_attachment_metas,
                     ) = await agent_service.validate_and_persist_attachments(
                         team_obj,
-                        mention_attachments,
+                        attachments,
                         session_id,
                         model_override=effective_request_model,
                     )
@@ -742,7 +795,12 @@ async def team_chat(
                     ) from exc
             async with write_db_factory() as write_db:
                 async with write_db.begin():
-                    queued_extra: dict[str, object] = {}
+                    # An unspecified lane follows Settings -> Follow-up
+                    # behavior, so a client that predates lanes (or the
+                    # browser channel) honours the user's choice too.
+                    queued_extra: dict[str, object] = {
+                        "delivery": body.delivery or follow_up_delivery_default()
+                    }
                     effective_model = model or team_obj.lead.agent.model_id
                     if effective_model:
                         queued_extra["model"] = effective_model
@@ -775,10 +833,13 @@ async def team_chat(
                         extra=queued_extra,
                     )
             logger.info(
-                "team_chat_queued session_id={} message_id={} mentions={}",
+                "team_chat_queued session_id={} message_id={} delivery={} "
+                "attachments={} uploads={}",
                 session_id,
                 queued.id,
+                queued_extra["delivery"],
                 len(queued_attachment_metas),
+                explicit_attachment_count,
             )
             if not team_obj.has_active_user_turn():
                 await team_obj._activate_queued_user_messages(session_id)
@@ -788,6 +849,7 @@ async def team_chat(
                 "message_id": str(queued.id),
             }
 
+        await register_workspace_for_created_session()
         try:
             sid, n_attachments = await agent_service.dispatch_user_message(
                 team_obj,
@@ -822,6 +884,57 @@ async def team_chat(
             n_attachments,
         )
         return {"status": "accepted", "session_id": sid}
+
+
+class QueuedMessagePatch(BaseModel):
+    """Body for editing a queued message: its lane, its text, or both."""
+
+    delivery: Literal["steer", "queue"] | None = None
+    content: str | None = None
+
+    @model_validator(mode="after")
+    def _require_a_change(self) -> "QueuedMessagePatch":
+        if self.delivery is None and self.content is None:
+            raise ValueError("Provide delivery, content, or both.")
+        if self.content is not None and not self.content.strip():
+            raise ValueError("content must not be blank.")
+        return self
+
+
+@router.patch(
+    "/sessions/{session_id}/queued-messages/{message_id}",
+    status_code=200,
+)
+async def patch_queued_message(
+    db: DbSession,
+    session_id: UUID,
+    message_id: UUID,
+    body: QueuedMessagePatch,
+) -> dict:
+    """Edit a queued message in place — its lane, its text, or both.
+
+    The row keeps its place in the queue. 404 means the turn boundary already
+    claimed it — the message is being delivered either way, so the client
+    should drop its chip rather than surface a failure.
+    """
+    async with db.begin():
+        changed = await update_queued_user_message(
+            db,
+            session_id,
+            message_id,
+            delivery=body.delivery,
+            content=body.content,
+        )
+    if not changed:
+        raise HTTPException(
+            status_code=404,
+            detail="Queued message not found — it has already been delivered.",
+        )
+    return {
+        "status": "updated",
+        "delivery": body.delivery,
+        "content": body.content,
+    }
 
 
 @router.delete("/sessions/{session_id}/queued-messages/{message_id}", status_code=204)
@@ -1397,26 +1510,7 @@ async def resolve_team_session(
             session.agent_name = default_lead
             db.add(session)
         if body.mode == "coding" and workspace:
-            managed_source = find_managed_worktree_source(Path(workspace))
-            if managed_source:
-                await upsert_coding_workspace(
-                    db,
-                    path=managed_source,
-                    kind="repo",
-                    hidden=False,
-                )
-                await upsert_coding_workspace(
-                    db,
-                    path=workspace,
-                    kind="worktree",
-                    source_path=managed_source,
-                    managed=True,
-                    hidden=False,
-                )
-            else:
-                await upsert_coding_workspace(
-                    db, path=workspace, kind="repo", hidden=False
-                )
+            await _register_session_workspace(db, workspace)
         await db.flush()
         await db.refresh(session)
 

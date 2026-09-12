@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.runtime_settings import follow_up_delivery_default
 from app.models.chat import ChatSession, SessionMessage
 from app.services import agent_service, team_manager
 from app.services.agent_service import NoTeamConfigured, RawAttachment
@@ -23,10 +24,6 @@ class InteractiveMessageResult:
 
 class InteractiveMessageConflict(ValueError):
     """One channel action key was reused with a different request payload."""
-
-
-class InteractiveMessageAttachmentsBusy(ValueError):
-    """Explicit attachments cannot be queued behind an active user turn."""
 
 
 async def find_interactive_message_by_source(
@@ -173,11 +170,25 @@ async def submit_persisted_interactive_message(
                 )
 
         if team.has_active_user_turn():
-            if attachments:
-                raise InteractiveMessageAttachmentsBusy(
-                    "Cannot queue messages with attachments while the agent is working."
-                )
             queued_extra: dict[str, object] = dict(message_extra or {})
+            queued_extra.setdefault("delivery", follow_up_delivery_default())
+            if attachments:
+                # Persist uploads onto the queued row rather than refusing
+                # them. Both drain paths rebuild multimodal parts from these
+                # metas, so a capture sent from the browser reaches the model
+                # whether it is spliced into the running turn or starts the
+                # next one.
+                # ``persisted_message`` is always None here: a row that
+                # already exists returns "pending" above rather than
+                # reaching this branch.
+                _, queued_metas = await agent_service.validate_and_persist_attachments(
+                    team,
+                    attachments,
+                    session_id,
+                    model_override=session.model,
+                )
+                if queued_metas:
+                    queued_extra["attachments"] = queued_metas
             effective_model = session.model or team.lead.agent.model_id
             if effective_model:
                 queued_extra["model"] = effective_model
@@ -241,7 +252,6 @@ async def submit_persisted_interactive_message(
 
 
 __all__ = [
-    "InteractiveMessageAttachmentsBusy",
     "InteractiveMessageConflict",
     "InteractiveMessageResult",
     "NoTeamConfigured",

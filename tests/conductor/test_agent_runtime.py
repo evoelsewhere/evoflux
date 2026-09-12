@@ -44,7 +44,9 @@ def test_managed_agent_runtime_layer_is_additive(
         mcp=["managed-browser"],
     )
 
-    effective = apply_managed_agent_runtime_model(managed, provider=provider)
+    effective = apply_managed_agent_runtime_model(
+        managed, provider=provider, agent="reviewer"
+    )
 
     assert effective.model == "anthropic:claude-sonnet-5"
     assert effective.tools == ["read", "web_search"]
@@ -53,3 +55,39 @@ def test_managed_agent_runtime_layer_is_additive(
     assert managed.tools == ["read"]
     assert managed.skills == ["managed-skill"]
     assert managed.mcp == ["managed-browser"]
+
+
+def test_managed_team_agents_keep_separate_runtime_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Team's Agents share a resource_id but not a runtime record."""
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    provider = ManagedResourceProvider(
+        project_id="project-1",
+        project_name="Platform Core",
+        resource_id="team-1",
+        version_id="version-1",
+        version="1.0.0",
+        release_channel="published",
+        observed_state="in_sync",
+    )
+    for agent, model in (
+        ("release-review", "anthropic:claude-opus-5"),
+        ("reviewer", "xiaomi:mimo-v2.5"),
+    ):
+        write_agent_runtime_settings(
+            project_id=provider.project_id,
+            resource_id=provider.resource_id,
+            name=agent,
+            model=model,
+        )
+
+    def effective(agent: str) -> str | None:
+        config = AgentConfig(name=agent, role="member", system_prompt="x")
+        return apply_managed_agent_runtime_model(
+            config, provider=provider, agent=agent
+        ).model
+
+    assert effective("release-review") == "anthropic:claude-opus-5"
+    assert effective("reviewer") == "xiaomi:mimo-v2.5"

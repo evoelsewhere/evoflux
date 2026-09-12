@@ -24,7 +24,6 @@ import { ChevronDown } from 'lucide-react'
 import { BlockRenderer } from './BlockRenderer'
 import { AssistantTurnFooter } from './AssistantTurnFooter'
 import { AssistantTurnContent } from './AssistantTurnContent'
-import { PendingMessageQueue } from './PendingMessageQueue'
 import { appendLiveTurnItems, getVisibleTurnWindow, partitionTurns } from '@/utils/turns'
 import { latestDirectUserBlockId } from '@/utils/blocks'
 import { buildUserMessageNavigationItems } from '@/utils/user-message-navigation'
@@ -476,7 +475,6 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                 <TurnStatusLine blocks={currentBlocks} className="pl-0.5" />
               )}
             </AnimatePresence>
-            <PendingMessageQueue />
 
             {isError && lastError && (
              <div className="mt-3 rounded-lg border border-(--color-error) bg-(--color-error-subtle) px-3 py-2">

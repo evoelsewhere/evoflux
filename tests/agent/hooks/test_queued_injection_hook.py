@@ -177,6 +177,94 @@ async def test_queued_webbridge_source_is_marked_delivered_after_injection(db_fa
 
 
 @pytest.mark.asyncio
+async def test_queue_lane_rows_are_left_for_the_post_turn_drain(db_factory):
+    """``delivery="queue"`` means "after this turn" — the hook must not take it."""
+    async with db_factory() as db:
+        chat = await create_chat_session(db, title="t")
+        await save_queued_user_message(
+            db, chat.id, "steer me now", extra={"delivery": "steer"}
+        )
+        held = await save_queued_user_message(
+            db, chat.id, "run me next turn", extra={"delivery": "queue"}
+        )
+        await save_queued_user_message(db, chat.id, "legacy row with no lane")
+        await db.commit()
+
+    hook = QueuedMessageInjectionHook(
+        session_id=str(chat.id), agent_name="lead", db_factory=db_factory
+    )
+    state = _state()
+    with patch("app.services.memory_stream_store.push_event", new_callable=AsyncMock):
+        await hook.before_model(_ctx(str(chat.id)), state, _request())
+
+    # The legacy row predates the lane and keeps the old splice behaviour.
+    assert [m.content for m in state.messages] == [
+        "steer me now",
+        "legacy row with no lane",
+    ]
+
+    async with db_factory() as db:
+        still_queued = await db.get(type(held), held.id)
+    assert still_queued is not None
+    assert still_queued.extra["queue_status"] == "queued"
+    assert still_queued.exclude_from_context is True
+
+
+@pytest.mark.asyncio
+async def test_queued_attachments_are_rebuilt_into_parts(db_factory):
+    """A file sent mid-turn reaches the model in that same turn."""
+    async with db_factory() as db:
+        chat = await create_chat_session(db, title="t")
+        await save_queued_user_message(
+            db,
+            chat.id,
+            "what does this log say?",
+            extra={
+                "attachments": [
+                    {
+                        "original_name": "server.log",
+                        "category": "text",
+                        "converted_text": "ERROR connection refused",
+                    }
+                ]
+            },
+        )
+        await db.commit()
+
+    hook = QueuedMessageInjectionHook(
+        session_id=str(chat.id), agent_name="lead", db_factory=db_factory
+    )
+    state = _state()
+    with patch("app.services.memory_stream_store.push_event", new_callable=AsyncMock):
+        await hook.before_model(_ctx(str(chat.id)), state, _request())
+
+    injected = state.messages[-1]
+    assert injected.content == "what does this log say?"
+    assert injected.parts is not None
+    texts = [getattr(part, "text", "") for part in injected.parts]
+    assert any("ERROR connection refused" in text for text in texts)
+    # Context first, the user's question last.
+    assert texts[-1] == "what does this log say?"
+
+
+@pytest.mark.asyncio
+async def test_queued_message_without_attachments_has_no_parts(db_factory):
+    async with db_factory() as db:
+        chat = await create_chat_session(db, title="t")
+        await save_queued_user_message(db, chat.id, "plain text only")
+        await db.commit()
+
+    hook = QueuedMessageInjectionHook(
+        session_id=str(chat.id), agent_name="lead", db_factory=db_factory
+    )
+    state = _state()
+    with patch("app.services.memory_stream_store.push_event", new_callable=AsyncMock):
+        await hook.before_model(_ctx(str(chat.id)), state, _request())
+
+    assert state.messages[-1].parts is None
+
+
+@pytest.mark.asyncio
 async def test_sse_failure_does_not_break_injection(db_factory):
     """If the SSE push raises, the messages are still injected into state."""
     async with db_factory() as db:

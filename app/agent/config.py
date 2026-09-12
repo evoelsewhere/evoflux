@@ -190,9 +190,18 @@ def list_agent_rosters(
 ) -> tuple[str | None, list[tuple[AgentConfig, Path, list[tuple[AgentConfig, Path]]]]]:
     """Return every lead and its exact member configs for one mode directory."""
 
+    from app.conductor.agent_runtime import apply_managed_agent_runtime_model
+
     if not agents_dir.exists():
         return None, []
-    entries = [(parse_agent_md(path), path) for path in sorted(agents_dir.glob("*.md"))]
+    # Overlay the installation-owned runtime model, exactly as
+    # ``load_team_from_dir`` does. Without it a Conductor-managed Team reads
+    # back as "no model" here even once the installation has chosen one, and
+    # the lead picker shows a roster it cannot explain.
+    entries = [
+        (apply_managed_agent_runtime_model(parse_agent_md(path), source_path=path), path)
+        for path in sorted(agents_dir.glob("*.md"))
+    ]
     if not entries:
         return None, []
     _lead, _members, default_lead = resolve_agent_roster(entries)

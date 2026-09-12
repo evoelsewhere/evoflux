@@ -1,5 +1,6 @@
 import { forwardRef, useRef, useImperativeHandle } from 'react'
 import { InputBar, type ComposerSkill, type FileRef, type InputBarHandle, type SlashCommand, type SnippetCommand } from './InputBar'
+import { PendingMessageQueue } from './PendingMessageQueue'
 import { RevertNotice } from './RevertNotice'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useVisualKeyboardInset } from '@/hooks/use-visual-keyboard-inset'
@@ -8,7 +9,11 @@ import type { AgentCapabilities, GoalResponse, TodoItem } from '@/api/types'
 
 interface FloatingInputBarProps {
   boundsRef: React.RefObject<HTMLElement | null>
-  onSubmit: (message: string, files?: File[]) => boolean | void | Promise<boolean | void>
+  onSubmit: (
+    message: string,
+    files?: File[],
+    delivery?: 'steer' | 'queue',
+  ) => boolean | void | Promise<boolean | void>
   onStop?: () => void
   onSlashCommand?: (id: string) => void
   onSnippetCommand?: (id: string) => Promise<string | null> | string | null
@@ -18,6 +23,7 @@ interface FloatingInputBarProps {
   fileRefs?: FileRef[]
   onFileRefsNeeded?: () => void
   isStreaming?: boolean
+  followUpLane?: 'steer' | 'queue' | null
   disabled?: boolean
   placeholder?: string
   autoFocus?: boolean
@@ -84,7 +90,13 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
         >
           {goal && onGoalCommand && <GoalProgressRow goal={goal} onCommand={onGoalCommand} />}
           <RevertNotice count={revertedCount ?? 0} messages={revertedMessages ?? []} onRedo={onRedo} />
-          <InputBar ref={innerRef} floating filesBelow={false} {...inputBarProps} />
+          <InputBar
+            ref={innerRef}
+            floating
+            filesBelow={false}
+            pendingSlot={<PendingMessageQueue />}
+            {...inputBarProps}
+          />
         </div>
       )
     }
@@ -102,7 +114,11 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
             <RevertNotice count={revertedCount ?? 0} messages={revertedMessages ?? []} onRedo={onRedo} />
           </div>
         )}
-        <InputBar ref={innerRef} {...inputBarProps} />
+        <InputBar
+          ref={innerRef}
+          pendingSlot={<PendingMessageQueue />}
+          {...inputBarProps}
+        />
       </div>
     )
   },

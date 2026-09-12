@@ -1,18 +1,16 @@
-"""Stable Evo Conductor V1 API contract paths."""
+"""Stable Evo Conductor API contract paths."""
 
 from __future__ import annotations
 
-V1_RESOURCE_KINDS = frozenset({"agent", "skill", "mcp"})
-V1_SUBSCRIBE_PATH = "/api/v1/subscribe/resources"
-V1_REGISTER_PATH = "/api/v1/client/register"
-V1_HEARTBEAT_PATH = "/api/v1/client/heartbeat"
-V1_TELEMETRY_PATH = "/api/v1/telemetry/batch"
-V1_RESOURCE_USAGE_PATH = "/api/v1/usage/resources"
-V1_REALTIME_EVENTS_PATH = "/api/v1/realtime/events"
-V2_CHANGES_PATH = "/api/v1/resources/changes"
-V2_INVENTORY_PATH = "/api/v1/client/inventory"
+REGISTER_PATH = "/api/v1/client/register"
+HEARTBEAT_PATH = "/api/v1/client/heartbeat"
+TELEMETRY_PATH = "/api/v1/telemetry/batch"
+RESOURCE_USAGE_PATH = "/api/v1/usage/resources"
+REALTIME_EVENTS_PATH = "/api/v1/realtime/events"
+CHANGES_PATH = "/api/v1/resources/changes"
+INVENTORY_PATH = "/api/v1/client/inventory"
 
-V2_CHANGE_PAGE_LIMIT = 100
+CHANGE_PAGE_LIMIT = 100
 
 CONDUCTOR_TOKEN_PREFIX = "evc_"
 API_TEXT_FIELD_MAX_LENGTH = 256

@@ -88,7 +88,17 @@ export interface ComposerSkill {
 
 interface InputBarProps {
   /** Return false to reject the send and preserve the current draft. */
-  onSubmit: (message: string, files?: File[]) => boolean | void | Promise<boolean | void>
+  /**
+   * Deliver the composed message. ``delivery`` says what to do when the
+   * agent is already working: ``steer`` splices the message into the running
+   * turn, ``queue`` holds it for the next one. Return ``false`` to reject the
+   * send — the composer then restores the draft and its attachments.
+   */
+  onSubmit: (
+    message: string,
+    files?: File[],
+    delivery?: 'steer' | 'queue',
+  ) => boolean | void | Promise<boolean | void>
   onStop?: () => void
   onSlashCommand?: (id: string) => void
   onSnippetCommand?: (id: string) => Promise<string | null> | string | null
@@ -104,9 +114,21 @@ interface InputBarProps {
   fileRefs?: FileRef[]
   onFileRefsNeeded?: () => void
   isStreaming?: boolean
+  /**
+   * The lane the primary key (Enter) uses while the agent is working; Tab
+   * takes the other one. Leave unset on composers whose `onSubmit` does not
+   * honour `delivery` — Tab then keeps moving focus, as it always did.
+   */
+  followUpLane?: 'steer' | 'queue' | null
   disabled?: boolean
   /** Whether this composer can submit file attachments. Defaults to true. */
   attachmentsEnabled?: boolean
+  /**
+   * Rendered flush above the composer card, inside its width. Used for the
+   * pending-message tray: input the user has committed but the agent has not
+   * read yet, which belongs with the composer rather than the transcript.
+   */
+  pendingSlot?: React.ReactNode
   placeholder?: string
   autoFocus?: boolean
   capabilities?: AgentCapabilities
@@ -236,8 +258,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   fileRefs = [],
   onFileRefsNeeded,
   isStreaming = false,
+  followUpLane = null,
   disabled,
   attachmentsEnabled = true,
+  pendingSlot,
   placeholder = 'Ask anything',
   autoFocus,
   floating = false,
@@ -528,7 +552,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     ? value.slice(1).toLowerCase()
     : null
 
-  const submit = useCallback(async () => {
+  // Enter uses the configured lane; Tab uses the other one. A composer with
+  // no lane configured keeps the historical behaviour (splice into the turn).
+  const primaryLane: 'steer' | 'queue' = followUpLane ?? 'steer'
+  const secondaryLane: 'steer' | 'queue' = primaryLane === 'steer' ? 'queue' : 'steer'
+
+  const submit = useCallback(async (delivery: 'steer' | 'queue' = primaryLane) => {
     const trimmed = value.trim()
     const context = quoteContext?.trim() ?? ''
     if (
@@ -580,6 +609,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       const accepted = await onSubmit(
         submitted,
         submittedFiles.length > 0 ? submittedFiles : undefined,
+        delivery,
       )
       if (accepted === false) {
         restoreDraft()
@@ -600,6 +630,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       )
     }
   }, [
+    primaryLane,
     value,
     quoteContext,
     disabled,
@@ -1144,9 +1175,28 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       }
     }
 
+    // Tab takes the lane Enter is not using, so both stay one keystroke
+    // away whichever way Settings -> Follow-up behavior is set. Every picker
+    // that owns Tab has already returned by this point, so the key is free.
+    // With nothing composed, Tab keeps moving focus.
+    if (
+      e.key === 'Tab'
+      && followUpLane
+      && isStreaming
+      && !e.shiftKey
+      && !e.altKey
+      && !e.ctrlKey
+      && !e.metaKey
+      && (value.trim().length > 0 || files.length > 0 || Boolean(quoteContext?.trim()))
+    ) {
+      e.preventDefault()
+      void submit(secondaryLane)
+      return
+    }
+
     if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
       e.preventDefault()
-      void submit()
+      void submit(primaryLane)
     }
   }
 
@@ -1305,7 +1355,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     : disabled
       ? 'Waiting for response…'
       : isStreaming
-        ? 'Working… type to queue a follow-up or interrupt'
+        ? (primaryLane === 'queue'
+            ? (isMobile
+                ? 'Working… send to queue for the next turn'
+                : 'Working… send to queue it, then Steer to deliver it now')
+            : (isMobile
+                ? 'Working… send to steer this turn'
+                : 'Working… Enter steers this turn, Tab queues the next one'))
         : composerHints.length > 0
           // Drop the caller's trailing ellipsis so the hint list reads as one
           // sentence: "Ask anything — @ tag files/folders, / for commands".
@@ -1772,6 +1828,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
             {/* ── Expanded: Gemini-style vertical card ── */}
             {!minimized && (
               <>
+                {/* Pending input lives inside the card, above the textarea:
+                    it is part of what you are composing, not a separate
+                    panel floating over the transcript. */}
+                {pendingSlot}
                 {/* Textarea area */}
                 <div className={cn('px-4 pt-3', isMobile ? 'pb-1' : 'pb-2')}>
                   {shellMode && (

@@ -663,10 +663,11 @@ target session; extension không được truyền hoặc nâng các quyền nà
 đang có active turn:
 
 - Prompt không attachment giữ queue semantics hiện có.
-- Prompt có browser artifact trả outcome rõ
-  `rejected/session_busy_with_attachment` trong v1, tương ứng guard 409 hiện có;
-  UI cho retry, tạo session mới hoặc giữ interaction ở trạng thái draft.
-- Không tự chèn artifact vào turn đang chạy và không tự resume run khác.
+- Prompt có browser artifact cũng đi đường queue: artifact được persist lên
+  queued row (`extra["attachments"]`) và cả hai drain path dựng lại multimodal
+  parts. Outcome `rejected/session_busy_with_attachment` của v1 đã bị gỡ cùng
+  guard 409 tương ứng.
+- Không tự resume run khác.
 
 `status` của ACK vì vậy là union `accepted | queued | draft | rejected`, kèm
 `error_code` ổn định để extension không parse message text.

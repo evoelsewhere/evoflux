@@ -129,7 +129,7 @@ export function SettingsHubPage() {
     conductorQ.data?.project_display_name ?? conductorQ.data?.project_name
   const enterpriseNotifications = enterpriseAttentionCount(conductorQ.data)
   const resourceUpdates = conductorQ.data?.resources.filter(resourceHasUpdate) ?? []
-  const agentUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'agent').length
+  const agentUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'agent_team').length
   const skillUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'skill').length
   const desktopUpdaterAvailable =
     platform.isTauri

@@ -54,7 +54,13 @@ export function McpListPage() {
           ? `${srv.plugin_name ?? 'plugin'} / ${srv.plugin_server_name ?? srv.name}`
           : srv.name,
         badge: srv.source === 'plugin' ? 'plugin' : srv.enabled ? undefined : 'disabled',
-        description: `${srv.transport === 'stdio' ? 'Local stdio process' : 'HTTP server'} · ${srv.tool_names.length} ${srv.tool_names.length === 1 ? 'tool' : 'tools'}${srv.source === 'plugin' ? ` · runtime ${srv.name}` : ''}`,
+        // A failed server and a healthy one contributing nothing both read
+        // "0 tools". Say which it is here rather than only in a tooltip.
+        description: `${srv.transport === 'stdio' ? 'Local stdio process' : 'HTTP server'} · ${
+          srv.state === 'error'
+            ? 'failed to start'
+            : `${srv.tool_names.length} ${srv.tool_names.length === 1 ? 'tool' : 'tools'}`
+        }${srv.source === 'plugin' ? ` · runtime ${srv.name}` : ''}`,
         trailing: (
           <div className="flex items-center gap-2">
             <StatusDot server={srv} />

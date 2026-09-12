@@ -1051,9 +1051,27 @@ class TeamMemberBase(abc.ABC):
 
         if isinstance(exc, UnconfiguredProviderError | ProviderAuthenticationError):
             from app.agent.schemas.events import AgentNotConfiguredEvent
+            from app.conductor.agent_runtime import managed_agent_setup_action
             from app.services import memory_stream_store as stream_store
             from app.services.stream_envelope import StreamEnvelope
 
+            # A managed Agent with no model is not a provider problem: the
+            # provider is configured and working, the bundle simply leaves the
+            # model to the installation. Send the user to the control that
+            # fixes it instead of to Settings → Providers.
+            action = (
+                managed_agent_setup_action(self.agent.source_path)
+                if isinstance(exc, UnconfiguredProviderError)
+                else None
+            )
+            message = str(exc)
+            if action is not None:
+                message = (
+                    f"'{self.name}' is published by "
+                    f"{action.get('project') or 'Conductor'} without a model — "
+                    "each installation chooses its own. Pick one on the agent's "
+                    "page to run this team."
+                )
             try:
                 await stream_store.push_event(
                     self._team.lead.session_id
@@ -1062,7 +1080,13 @@ class TeamMemberBase(abc.ABC):
                     StreamEnvelope.from_event(
                         AgentNotConfiguredEvent(
                             agent=self.name,
-                            message=str(exc),
+                            message=message,
+                            action=action,
+                        )
+                        if action
+                        else AgentNotConfiguredEvent(
+                            agent=self.name,
+                            message=message,
                         )
                     ),
                 )

@@ -150,12 +150,12 @@ async def test_managed_agent_exposes_provider_and_blocks_local_mutation(
     monkeypatch.setattr(
         agents_routes,
         "managed_resource_providers",
-        lambda: {("agent", "lead"): provider},
+        lambda: {("agent_team", "lead"): provider},
     )
     monkeypatch.setattr(
         agents_routes,
         "managed_resource_provider",
-        lambda kind, slug: provider if (kind, slug) == ("agent", "lead") else None,
+        lambda kind, slug: provider if (kind, slug) == ("agent_team", "lead") else None,
     )
 
     listed = await client.get("/api/agents")
@@ -175,15 +175,81 @@ async def test_managed_agent_exposes_provider_and_blocks_local_mutation(
         "/api/agents/lead", json={"name": "lead", "content": LEAD_MD}
     )
     deleted = await client.delete("/api/agents/lead")
+
+    assert updated.status_code == 403
+    assert deleted.status_code == 403
+    assert (agents_dir / "lead.md").read_text() == LEAD_MD
+
+
+@pytest.mark.asyncio
+async def test_bulk_model_sets_a_managed_agent_without_touching_its_file(
+    fs_dirs, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """Bulk used to refuse managed Agents outright, which left a governed
+    Team's models reachable only one request per Agent per mode."""
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+    provider = _managed_provider()
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_providers",
+        lambda: {("agent_team", "lead"): provider},
+    )
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_provider",
+        lambda kind, slug: provider if (kind, slug) == ("agent_team", "lead") else None,
+    )
+    monkeypatch.setattr(
+        agents_routes, "is_registered_model_id", AsyncMock(return_value=True)
+    )
+
     bulk = await client.patch(
         "/api/agents/model",
         json={"names": ["lead"], "model": "anthropic:claude-sonnet-5"},
     )
 
-    assert updated.status_code == 403
-    assert deleted.status_code == 403
-    assert bulk.json()["results"][0]["ok"] is False
+    assert bulk.json()["results"][0]["ok"] is True
+    # The bundle stays byte-identical; the choice lives in the runtime store.
     assert (agents_dir / "lead.md").read_text() == LEAD_MD
+    detail = await client.get("/api/agents/lead")
+    assert detail.json()["model_override"] == "anthropic:claude-sonnet-5"
+    assert detail.json()["bundle_model"] == "zai:glm-5-turbo"
+
+
+@pytest.mark.asyncio
+async def test_bulk_model_rejects_an_unselectable_model_for_a_managed_agent(
+    fs_dirs, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """The runtime store has no file to validate against, so the registry
+    check the single-Agent route performs has to happen here too."""
+    agents_dir, _ = fs_dirs
+    _seed_files(agents_dir)
+    provider = _managed_provider()
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_providers",
+        lambda: {("agent_team", "lead"): provider},
+    )
+    monkeypatch.setattr(
+        agents_routes,
+        "managed_resource_provider",
+        lambda kind, slug: provider if (kind, slug) == ("agent_team", "lead") else None,
+    )
+    monkeypatch.setattr(
+        agents_routes, "is_registered_model_id", AsyncMock(return_value=False)
+    )
+
+    bulk = await client.patch(
+        "/api/agents/model",
+        json={"names": ["lead"], "model": "vendor:not-configured"},
+    )
+
+    [result] = bulk.json()["results"]
+    assert result["ok"] is False
+    assert "not configured" in result["error"]
+    detail = await client.get("/api/agents/lead")
+    assert detail.json()["model_override"] is None
 
 
 @pytest.mark.asyncio
@@ -196,12 +262,12 @@ async def test_managed_agent_model_override_is_local_and_resettable(
     monkeypatch.setattr(
         agents_routes,
         "managed_resource_providers",
-        lambda: {("agent", "lead"): provider},
+        lambda: {("agent_team", "lead"): provider},
     )
     monkeypatch.setattr(
         agents_routes,
         "managed_resource_provider",
-        lambda kind, slug: provider if (kind, slug) == ("agent", "lead") else None,
+        lambda kind, slug: provider if (kind, slug) == ("agent_team", "lead") else None,
     )
     monkeypatch.setattr(
         agents_routes,
@@ -243,12 +309,12 @@ async def test_managed_agent_runtime_settings_only_add_capabilities(
     monkeypatch.setattr(
         agents_routes,
         "managed_resource_providers",
-        lambda: {("agent", "lead"): provider},
+        lambda: {("agent_team", "lead"): provider},
     )
     monkeypatch.setattr(
         agents_routes,
         "managed_resource_provider",
-        lambda kind, slug: provider if (kind, slug) == ("agent", "lead") else None,
+        lambda kind, slug: provider if (kind, slug) == ("agent_team", "lead") else None,
     )
     monkeypatch.setattr(
         agents_routes,

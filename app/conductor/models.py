@@ -15,8 +15,8 @@ from app.conductor.constants.resource import (
     ResourceVersionStatus,
 )
 
-ResourceKind = Literal["agent", "skill", "mcp", "plugin"]
-GovernedResourceKind = Literal["agent", "skill", "plugin"]
+ResourceKind = Literal["agent_team", "skill", "mcp", "plugin"]
+GovernedResourceKind = Literal["agent_team", "skill", "plugin"]
 ReleaseChannel = Literal["beta", "published"]
 ObservedResourceState = Literal[
     "pending",
@@ -28,20 +28,11 @@ ObservedResourceState = Literal[
     "declined",
     "incompatible",
     "ownership_conflict",
+    "dependency_missing",
     "project_scope_mismatch",
     "error",
     "removed",
 ]
-DriftCategory = Literal[
-    "missing",
-    "modified",
-    "unexpected",
-    "wrong_revision",
-    "dependency",
-    "policy",
-]
-
-_SLUG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$")
 _HASH_RE = re.compile(r"^(?:sha256:)?([0-9a-fA-F]{64})$")
 
 
@@ -50,122 +41,6 @@ def canonical_hash(value: Any) -> str:
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
-
-
-def hash_matches(expected: str, value: Any) -> bool:
-    match = _HASH_RE.fullmatch(expected)
-    return bool(match and canonical_hash(value) == match.group(1).lower())
-
-
-class ResourceDependency(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    kind: ResourceKind
-    slug: str
-    revision: str | None = None
-
-
-class ManifestResource(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    kind: ResourceKind
-    slug: str
-    revision: str = "1"
-    hash: str = ""
-    payload: dict[str, Any]
-    dependencies: list[ResourceDependency] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def _validate_resource(self) -> "ManifestResource":
-        if not _SLUG_RE.fullmatch(self.slug) or any(
-            part in {"", ".", ".."} for part in self.slug.split("/")
-        ):
-            raise ValueError(f"Unsafe resource slug: {self.slug!r}.")
-        if self.kind != "agent" and "/" in self.slug:
-            raise ValueError(f"{self.kind} resource slugs cannot contain '/'.")
-        if self.hash and not hash_matches(self.hash, self.payload):
-            raise ValueError(f"Payload hash mismatch for {self.kind}/{self.slug}.")
-        return self
-
-
-class ManifestPolicy(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    allow_local_resources: bool = True
-
-
-class Manifest(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    schema_version: Literal[1, "1", "v1"] = 1
-    revision: str
-    hash: str = ""
-    generated_at: datetime | None = None
-    resources: list[ManifestResource] = Field(default_factory=list)
-    policy: ManifestPolicy = Field(default_factory=ManifestPolicy)
-
-    @model_validator(mode="after")
-    def _validate_manifest(self) -> "Manifest":
-        keys: set[tuple[str, str]] = set()
-        revisions: dict[tuple[str, str], str] = {}
-        for resource in self.resources:
-            key = (resource.kind, resource.slug)
-            if key in keys:
-                raise ValueError(f"Duplicate manifest resource {key[0]}/{key[1]}.")
-            keys.add(key)
-            revisions[key] = resource.revision
-        for resource in self.resources:
-            for dependency in resource.dependencies:
-                key = (dependency.kind, dependency.slug)
-                if key not in keys:
-                    raise ValueError(
-                        f"Missing dependency {key[0]}/{key[1]} "
-                        f"for {resource.kind}/{resource.slug}."
-                    )
-                if (
-                    dependency.revision is not None
-                    and revisions[key] != dependency.revision
-                ):
-                    raise ValueError(
-                        f"Wrong dependency revision for {key[0]}/{key[1]}."
-                    )
-        if self.hash:
-            material = self.model_dump(mode="json", exclude={"hash"})
-            if not hash_matches(self.hash, material):
-                raise ValueError("Manifest hash mismatch.")
-        return self
-
-
-class DriftRecord(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: ResourceKind
-    slug: str
-    category: DriftCategory
-    expected_revision: str | None = None
-    actual_hash: str | None = None
-    message: str | None = None
-
-
-class ResourceResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: ResourceKind
-    slug: str
-    revision: str | None = None
-    state: Literal["applied", "in_sync", "drifted", "blocked", "error", "removed"]
-    drift: list[DriftCategory] = Field(default_factory=list)
-    message: str | None = None
-
-
-class ReconcileResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    manifest_revision: str
-    state: Literal["in_sync", "applied", "drifted", "blocked", "error"]
-    resources: list[ResourceResult] = Field(default_factory=list)
-    maintenance_required: bool = False
-    error: str | None = None
 
 
 # Requests EvoFlux builds keep ``extra="forbid"`` so a typo here fails at
@@ -323,6 +198,15 @@ class ManagedResourceRecord(BaseModel):
     content_size: int = Field(default=0, ge=0, le=500 * 1024 * 1024)
     minimum_evoflux_version: str | None = None
     local_content_sha256: str | None = None
+    # Agent names a multi-Agent resource wrote, so a later version that drops a
+    # member can still find the file it left behind. A single slug cannot
+    # describe that set, and older state files simply have none.
+    local_agent_targets: list[str] = Field(default_factory=list)
+    # Capabilities the applied release asks for. Stored as authored facts; what
+    # currently resolves is observed at report time, because a plugin MCP server
+    # may simply not have started yet when the files land.
+    declared_skills: list[str] = Field(default_factory=list)
+    declared_mcp: list[str] = Field(default_factory=list)
     plugin_installation_id: str | None = None
     previous_plugin_installation_id: str | None = None
     observed_state: ObservedResourceState = "pending"

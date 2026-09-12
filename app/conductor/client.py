@@ -13,7 +13,6 @@ import httpx
 from app.conductor.models import (
     EffectiveResourceVersion,
     HeartbeatResponse,
-    Manifest,
     RegistrationRequest,
     RegistrationResponse,
     ResourceChangePage,
@@ -31,16 +30,14 @@ from app.conductor.constants.api import (
     API_RETRYABLE_STATUS_CODES,
     API_TEXT_FIELD_MAX_LENGTH,
     CONDUCTOR_TOKEN_PREFIX,
-    V1_HEARTBEAT_PATH,
-    V1_REALTIME_EVENTS_PATH,
-    V1_REGISTER_PATH,
-    V1_RESOURCE_USAGE_PATH,
-    V1_RESOURCE_KINDS,
-    V1_SUBSCRIBE_PATH,
-    V1_TELEMETRY_PATH,
-    V2_CHANGE_PAGE_LIMIT,
-    V2_CHANGES_PATH,
-    V2_INVENTORY_PATH,
+    HEARTBEAT_PATH,
+    REALTIME_EVENTS_PATH,
+    REGISTER_PATH,
+    RESOURCE_USAGE_PATH,
+    TELEMETRY_PATH,
+    CHANGE_PAGE_LIMIT,
+    CHANGES_PATH,
+    INVENTORY_PATH,
 )
 from app.conductor.realtime import RealtimeEvent, parse_sse_events
 from app.conductor.constants.telemetry import (
@@ -256,7 +253,7 @@ class ConductorClient:
             raise ValueError("Conductor V1 connection tokens must start with evc_.")
         response = await self._request(
             "POST",
-            V1_REGISTER_PATH,
+            REGISTER_PATH,
             headers={
                 "Authorization": f"Bearer {token}",
                 "Idempotency-Key": idempotency_key,
@@ -268,25 +265,11 @@ class ConductorClient:
     async def heartbeat(self, installation_id: str) -> HeartbeatResponse:
         response = await self._request(
             "POST",
-            V1_HEARTBEAT_PATH,
+            HEARTBEAT_PATH,
             headers=self._auth_headers(),
             json={"installation_id": installation_id},
         )
         return HeartbeatResponse.model_validate(response.json())
-
-    async def fetch_manifest(
-        self, etag: str | None = None
-    ) -> tuple[Manifest | None, str | None]:
-        response = await self._request(
-            "GET",
-            V1_SUBSCRIBE_PATH,
-            headers=self._auth_headers(),
-        )
-        manifest = _manifest_from_v1_snapshot(response.json())
-        next_etag = f'"v1-{manifest.revision}"'
-        if etag == next_etag:
-            return None, next_etag
-        return manifest, next_etag
 
     async def report_observed_state(self, payload: dict[str, Any]) -> None:
         # Temporary V1 local compatibility: Conductor has no observed-state API.
@@ -297,7 +280,7 @@ class ConductorClient:
         try:
             await self._request(
                 "PUT",
-                V2_INVENTORY_PATH,
+                INVENTORY_PATH,
                 headers=self._auth_headers(),
                 json=request.model_dump(mode="json"),
                 idempotent=True,
@@ -307,13 +290,13 @@ class ConductorClient:
                 raise
 
     async def fetch_changes(self, cursor: str | None) -> ResourceChangePage:
-        query: dict[str, str | int] = {"limit": V2_CHANGE_PAGE_LIMIT}
+        query: dict[str, str | int] = {"limit": CHANGE_PAGE_LIMIT}
         if cursor:
             query["cursor"] = cursor
         params = str(httpx.QueryParams(query))
         response = await self._request(
             "GET",
-            f"{V2_CHANGES_PATH}?{params}",
+            f"{CHANGES_PATH}?{params}",
             headers=self._auth_headers(),
         )
         return ResourceChangePage.model_validate(response.json())
@@ -362,7 +345,7 @@ class ConductorClient:
             clean_events.append(clean)
         response = await self._request(
             "POST",
-            V1_TELEMETRY_PATH,
+            TELEMETRY_PATH,
             headers=self._auth_headers(),
             json={
                 TelemetryBatchField.INSTALLATION_ID: installation_id,
@@ -378,7 +361,7 @@ class ConductorClient:
             return
         await self._request(
             "POST",
-            V1_RESOURCE_USAGE_PATH,
+            RESOURCE_USAGE_PATH,
             headers=self._auth_headers(),
             json={"events": events},
             idempotent=True,
@@ -401,7 +384,7 @@ class ConductorClient:
         }
         async with self._http.stream(
             "GET",
-            V1_REALTIME_EVENTS_PATH,
+            REALTIME_EVENTS_PATH,
             headers=headers,
             timeout=httpx.Timeout(API_DEFAULT_TIMEOUT_SECONDS, read=None),
         ) as response:
@@ -492,41 +475,3 @@ def _safe_error_message(response: httpx.Response) -> str:
             return message
     return f"Conductor returned HTTP {response.status_code}."
 
-
-def _manifest_from_v1_snapshot(payload: Any) -> Manifest:
-    """Translate Conductor's V1 ManagedResource list into an EvoFlux manifest."""
-
-    if not isinstance(payload, list):
-        raise ValueError("Conductor V1 resource snapshot must be a JSON array.")
-
-    resources: list[dict[str, Any]] = []
-    for item in payload:
-        if not isinstance(item, dict):
-            raise ValueError("Conductor V1 resource entries must be JSON objects.")
-        kind = item.get("kind")
-        if kind not in V1_RESOURCE_KINDS:
-            continue
-        resource_payload = item.get("payload")
-        if not isinstance(resource_payload, dict):
-            raise ValueError(
-                f"Conductor V1 {kind} resource payload must be a JSON object."
-            )
-        dependencies = resource_payload.get("dependencies", [])
-        resources.append(
-            {
-                "kind": kind,
-                "slug": item.get("slug"),
-                "revision": item.get("version", "1"),
-                "payload": resource_payload,
-                "dependencies": dependencies,
-            }
-        )
-
-    resources.sort(key=lambda item: (str(item["kind"]), str(item["slug"])))
-    return Manifest.model_validate(
-        {
-            "schema_version": 1,
-            "revision": canonical_hash(resources),
-            "resources": resources,
-        }
-    )

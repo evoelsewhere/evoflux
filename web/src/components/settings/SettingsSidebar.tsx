@@ -204,7 +204,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
     conductorQ.data?.project_display_name ?? conductorQ.data?.project_name
   const enterpriseNotifications = enterpriseAttentionCount(conductorQ.data)
   const resourceUpdates = conductorQ.data?.resources.filter(resourceHasUpdate) ?? []
-  const agentUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'agent').length
+  const agentUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'agent_team').length
   const skillUpdateCount = resourceUpdates.filter((resource) => resource.kind === 'skill').length
 
   const sections = useMemo<SidebarSection[]>(
@@ -225,7 +225,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             matchPrefix: '/settings/agents',
             count: agentsQ.data?.agents.length ?? null,
             attention: agentUpdateCount > 0
-              ? `${agentUpdateCount} managed Agent ${agentUpdateCount === 1 ? 'update' : 'updates'} available`
+              ? `${agentUpdateCount} managed Agent team ${agentUpdateCount === 1 ? 'update' : 'updates'} available`
               : null,
           },
           {

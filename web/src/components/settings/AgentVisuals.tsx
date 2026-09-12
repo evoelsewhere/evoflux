@@ -88,8 +88,16 @@ export function AgentModelBadge({ model }: { model: string | null | undefined })
   )
 }
 
-export function AgentReadyBadge({ valid }: { valid: boolean }) {
-  return valid ? (
+/** Ready means runnable, not merely parseable — an Agent with no model is not.
+ *  Saying "Ready" next to "Model not set" is the contradiction users report. */
+export function AgentReadyBadge({
+  valid,
+  model,
+}: {
+  valid: boolean
+  model?: string | null
+}) {
+  return valid && isModelConfigured(model) ? (
     <span className="inline-flex items-center gap-1 text-[11px] text-(--color-success)">
       <CheckCircle2 size={12} aria-hidden="true" />
       Ready

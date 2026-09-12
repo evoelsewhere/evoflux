@@ -337,7 +337,11 @@ def _resource_refs_for_state(
 ) -> list[dict[str, str]]:
     references: list[dict[str, str]] = []
     for record in _managed_resources():
-        if record.kind == "agent" and record.slug == agent_name and record.version_id:
+        if (
+            record.kind == "agent_team"
+            and agent_name in record.local_agent_targets
+            and record.version_id
+        ):
             references.append(
                 _resource_ref(
                     record.resource_id,

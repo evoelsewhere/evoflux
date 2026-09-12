@@ -1,4 +1,4 @@
-import type { ContentBlock } from '@/api/types'
+import type { ContentBlock, MessageAttachment } from '@/api/types'
 import type { AgentStream } from './types'
 
 export const WIKI_MUTATING_TOOLS = new Set(['write', 'edit', 'rm'])
@@ -63,6 +63,33 @@ export function extractToolPaths(
   if (typeof p !== 'string') return null
   const trimmed = p.trim()
   return trimmed ? [trimmed] : null
+}
+
+/**
+ * Describe files picked in the composer so the transcript bubble — or the
+ * queued-message chip — can show them before the backend has persisted
+ * anything. Images get a blob URL for the thumbnail; callers own revoking
+ * it, either through {@link revokeOptimisticAttachments} when the send
+ * fails or {@link revokeBlobUrlsFromBlocks} when the block is replaced.
+ */
+export function describeOptimisticAttachments(
+  files: File[] | undefined,
+): MessageAttachment[] | undefined {
+  if (!files || files.length === 0) return undefined
+  return files.map((file) => ({
+    original_name: file.name,
+    media_type: file.type,
+    category: file.type.startsWith('image/') ? 'image' : 'document',
+    url: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+  }))
+}
+
+export function revokeOptimisticAttachments(
+  attachments: MessageAttachment[] | undefined,
+) {
+  for (const att of attachments ?? []) {
+    if (att.url?.startsWith('blob:')) URL.revokeObjectURL(att.url)
+  }
 }
 
 export function revokeBlobUrlsFromBlocks(blocks: ContentBlock[]) {

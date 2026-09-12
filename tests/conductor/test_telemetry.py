@@ -13,7 +13,7 @@ from app.agent.hooks.conductor_telemetry import ConductorTelemetryHook
 from app.agent.schemas.chat import AssistantMessage, FunctionCall, ToolCall
 from app.agent.state import AgentState, ModelRequest, RunContext
 from app.conductor.client import ConductorClient
-from app.conductor.constants.api import V1_TELEMETRY_PATH
+from app.conductor.constants.api import TELEMETRY_PATH
 from app.conductor.constants.telemetry import (
     TelemetryBatchField,
     TelemetryCollectionLevel,
@@ -251,9 +251,10 @@ async def test_hook_attributes_managed_agent_and_skill_and_closes_request(
     skill_resource_id = str(uuid.uuid4())
     skill_version_id = str(uuid.uuid4())
     store = ManagedResourceStore()
-    for kind, slug, resource_id, version_id in (
-        ("agent", "reviewer", agent_resource_id, agent_version_id),
-        ("skill", "release-check", skill_resource_id, skill_version_id),
+    for kind, slug, resource_id, version_id, agent_targets in (
+        # The executing Agent is attributed to the Team that delivered it.
+        ("agent_team", "reviewer", agent_resource_id, agent_version_id, ["reviewer"]),
+        ("skill", "release-check", skill_resource_id, skill_version_id, []),
     ):
         store.upsert(
             ManagedResourceRecord(
@@ -264,6 +265,7 @@ async def test_hook_attributes_managed_agent_and_skill_and_closes_request(
                 release_channel="published",
                 kind=kind,
                 slug=slug,
+                local_agent_targets=agent_targets,
                 observed_state="applied",
                 observed_at=datetime.now(UTC),
             )
@@ -518,7 +520,7 @@ async def test_client_posts_sanitized_batch() -> None:
     store = MemoryCredentialStore("evc_telemetry")
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == V1_TELEMETRY_PATH
+        assert request.url.path == TELEMETRY_PATH
         assert request.headers["authorization"] == "Bearer evc_telemetry"
         body = json.loads(request.content)
         assert body[TelemetryBatchField.INSTALLATION_ID] == installation_id
@@ -560,7 +562,7 @@ async def test_client_posts_empty_batch_to_refresh_delivery_summary() -> None:
     store = MemoryCredentialStore("evc_telemetry")
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == V1_TELEMETRY_PATH
+        assert request.url.path == TELEMETRY_PATH
         assert json.loads(request.content) == {
             TelemetryBatchField.INSTALLATION_ID: installation_id,
             TelemetryBatchField.EVENTS: [],

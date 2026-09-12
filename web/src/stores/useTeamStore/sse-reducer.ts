@@ -604,14 +604,28 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           if (messages.length === 0) return
           const now = Date.now()
           const stream = draft.agentStreams[agent]
+          // A steered message is already in the transcript — it was put
+          // there when it was sent, rather than left in the tray. Its row id
+          // is the block id, so the activation event must not add it twice.
+          const rendered = new Set([
+            ...stream.blocks.map((block) => block.id),
+            ...stream.currentBlocks.map((block) => block.id),
+          ])
+          const fresh = messages.filter((msg) => !rendered.has(msg.id))
+          if (fresh.length === 0) {
+            draft._pendingMessages = draft._pendingMessages.filter(
+              (msg) => !queuedIds.has(msg.id),
+            )
+            return
+          }
           stream.currentBlocks = stampOpenTextBlocks(
             stream.currentBlocks,
             now,
             stream._turnStartedAt,
           )
-          const nextTurnStartedAt = messages[0]?.submittedAt ?? now
+          const nextTurnStartedAt = fresh[0]?.submittedAt ?? now
           stream.currentBlocks.push(
-            ...messages.map((msg) => ({
+            ...fresh.map((msg) => ({
               id: msg.id,
               type: 'user' as const,
               content: msg.content,
@@ -705,8 +719,14 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           } else if (status === 'error') {
             draft.agentStreams[agent].status = 'error'
             draft.agentStreams[agent].phase = null
-            draft.agentStreams[agent].lastError =
-              (d.metadata as Record<string, unknown>)?.message as string ?? null
+            // ``agent_not_configured`` already explained this failure in the
+            // agent's own terms. The status event carries the raw exception
+            // text, which for a managed Agent points at the wrong fix — don't
+            // let it overwrite the typed message.
+            const statusMessage = (d.metadata as Record<string, unknown>)?.message as string ?? null
+            if (draft.setupRequired?.agent !== agent) {
+              draft.agentStreams[agent].lastError = statusMessage
+            }
             if (draft.liveAgentNames && !draft.liveAgentNames.includes(agent)) draft.liveAgentNames.push(agent)
             pushActivity(draft, { kind: 'status', agent, label: `${agent} encountered an error` })
           }
@@ -809,7 +829,7 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           draft.setupRequired = {
             agent,
             message: d.message as string,
-            action: (d.action as { type?: string; tab?: string } | undefined) ?? {},
+            action: (d.action as { type?: string; tab?: string; agent?: string } | undefined) ?? {},
           }
           draft.isTeamWorking = false
         })

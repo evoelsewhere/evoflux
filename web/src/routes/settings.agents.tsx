@@ -48,7 +48,9 @@ import {
   useAgentFilesQuery,
   useBulkUpdateAgentModelMutation,
   useRegistryQuery,
+  useFollowUpSettingsQuery,
   useTeamSpawnSettingsQuery,
+  useUpdateFollowUpSettingsMutation,
   useUpdateTeamSpawnSettingsMutation,
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
@@ -56,6 +58,16 @@ import { useToastStore } from '@/stores/useToastStore'
 type Tab = 'all' | AgentTeam
 
 const TEAM_ORDER: AgentTeam[] = ['work', 'coding']
+
+/** Whether this Agent's model can be set from here.
+ *
+ * A Conductor-managed Agent is not `editable` — its bundle is immutable —
+ * but its model is an installation choice held outside the bundle, so the
+ * bulk model action applies to it just the same.
+ */
+function canSetModel(agent: AgentSummary): boolean {
+  return agent.editable || agent.runtime_model_editable === true
+}
 
 export function AgentsListPage() {
   const { data, isLoading, isFetching, isError, error, refetch } = useAgentFilesQuery()
@@ -101,8 +113,8 @@ export function AgentsListPage() {
     agents: visibleAgents.filter((agent) => agentTeamFromName(agent.name) === team),
   })).filter((group) => group.agents.length > 0)
 
-  const selectedAgents = agents.filter((agent) => agent.editable && checked.has(agent.name))
-  const selectableVisibleAgents = visibleAgents.filter((agent) => agent.editable)
+  const selectedAgents = agents.filter((agent) => canSetModel(agent) && checked.has(agent.name))
+  const selectableVisibleAgents = visibleAgents.filter(canSetModel)
   const allVisibleChecked =
     selectableVisibleAgents.length > 0 &&
     selectableVisibleAgents.every((agent) => checked.has(agent.name))
@@ -130,7 +142,7 @@ export function AgentsListPage() {
   }
 
   const toggleTeam = (team: AgentTeam) => {
-    const teamAgents = teams[team].filter((agent) => agent.editable)
+    const teamAgents = teams[team].filter(canSetModel)
     if (teamAgents.length === 0) return
     const teamChecked = teamAgents.every((agent) => checked.has(agent.name))
     setChecked((previous) => {
@@ -144,12 +156,14 @@ export function AgentsListPage() {
   }
 
   const toggleAgents = (names: string[]) => {
-    const editable = agents.filter((agent) => agent.editable && names.includes(agent.name))
-    if (editable.length === 0) return
-    const allChecked = editable.every((agent) => checked.has(agent.name))
+    const settable = agents.filter(
+      (agent) => canSetModel(agent) && names.includes(agent.name),
+    )
+    if (settable.length === 0) return
+    const allChecked = settable.every((agent) => checked.has(agent.name))
     setChecked((previous) => {
       const next = new Set(previous)
-      for (const agent of editable) {
+      for (const agent of settable) {
         if (allChecked) next.delete(agent.name)
         else next.add(agent.name)
       }
@@ -203,6 +217,8 @@ export function AgentsListPage() {
         >
           <div className="space-y-5">
             <AgentRosterSummary agents={agents} teams={teams} />
+
+            <FollowUpBehaviorCard />
 
             <section className="overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-[0_16px_44px_rgba(0,0,0,0.035)]">
             <div className="flex flex-col gap-3 border-b border-(--color-border-subtle) p-3 sm:p-4">
@@ -259,7 +275,7 @@ export function AgentsListPage() {
                   <span>
                     {someVisibleChecked
                       ? `${selectedAgents.length} selected`
-                      : `Select ${selectableVisibleAgents.length} editable agent${selectableVisibleAgents.length === 1 ? '' : 's'}`}
+                      : `Select ${selectableVisibleAgents.length} agent${selectableVisibleAgents.length === 1 ? '' : 's'}`}
                   </span>
                 </label>
                 <span className="font-mono text-[11px] tabular-nums">
@@ -357,6 +373,43 @@ export function AgentsListPage() {
   )
 }
 
+/**
+ * Where a message typed while an agent is already working goes by default.
+ *
+ * Both lanes stay reachable from the composer whichever way this is set —
+ * the primary key uses this one, the secondary key the other — so this
+ * chooses which is one keystroke away, not which exists.
+ */
+function FollowUpBehaviorCard() {
+  const { data: followUp } = useFollowUpSettingsQuery()
+  const update = useUpdateFollowUpSettingsMutation()
+  const delivery = followUp?.delivery ?? 'queue'
+
+  return (
+    <section className="flex flex-col gap-3 rounded-2xl border border-(--color-border) bg-(--bg-card) p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+      <div className="min-w-0">
+        <h2 className="text-sm font-medium text-(--color-text)">Follow-up behavior</h2>
+        <p className="mt-0.5 text-[11px] text-(--color-text-muted)">
+          {delivery === 'queue'
+            ? 'A message sent while an agent works waits for the next turn — Steer it from the tray to deliver it sooner.'
+            : 'A message sent while an agent works joins the running turn at its next step.'}
+        </p>
+      </div>
+      <SegmentedControl
+        value={delivery}
+        onChange={(val) => update.mutate({ delivery: val as 'steer' | 'queue' })}
+        options={[
+          { label: 'Steer', value: 'steer' },
+          { label: 'Queue', value: 'queue' },
+        ]}
+        layoutId="follow-up-delivery"
+        ariaLabel="Default follow-up behavior while an agent is working"
+        className="shrink-0"
+      />
+    </section>
+  )
+}
+
 function AgentRosterSummary({
   agents,
   teams,
@@ -442,10 +495,10 @@ function AgentTeamGroup({
   const { data: spawnSettings } = useTeamSpawnSettingsQuery()
   const updateSpawn = useUpdateTeamSpawnSettingsMutation()
   const spawnMode = spawnSettings?.[team] ?? 'ask'
-  const editableAgents = agents.filter((agent) => agent.editable)
+  const settableAgents = agents.filter(canSetModel)
   const allChecked =
-    editableAgents.length > 0 && editableAgents.every((agent) => checked.has(agent.name))
-  const someChecked = editableAgents.some((agent) => checked.has(agent.name))
+    settableAgents.length > 0 && settableAgents.every((agent) => checked.has(agent.name))
+  const someChecked = settableAgents.some((agent) => checked.has(agent.name))
   const visibleNames = new Set(visibleAgents.map((agent) => agent.name))
   const leads = agents.filter((agent) => agent.role === 'lead').sort(sortAgents)
   const leadNames = new Set(leads.map(agentConfigName))
@@ -473,7 +526,7 @@ function AgentTeamGroup({
           checked={allChecked}
           indeterminate={!allChecked && someChecked}
           onCheckedChange={onToggleTeam}
-          disabled={editableAgents.length === 0}
+          disabled={settableAgents.length === 0}
           aria-label={`Select ${visual.label} agents`}
         />
         <AgentTeamBadge team={team} />
@@ -505,14 +558,14 @@ function AgentTeamGroup({
           const ownerName = agentConfigName(lead)
           const isCollapsed = collapsed.has(lead.name)
           const groupNames = [lead.name, ...owned.map((member) => member.name)]
-          const groupEditable = agents.filter((agent) => groupNames.includes(agent.name) && agent.editable)
+          const groupEditable = agents.filter((agent) => groupNames.includes(agent.name) && canSetModel(agent))
           const groupChecked = groupEditable.length > 0 && groupEditable.every((agent) => checked.has(agent.name))
           const groupSomeChecked = groupEditable.some((agent) => checked.has(agent.name))
           return (
             <section key={lead.name} aria-label={`${ownerName} team`}>
               <AgentRow
                 agent={lead}
-                selected={lead.editable && checked.has(lead.name)}
+                selected={canSetModel(lead) && checked.has(lead.name)}
                 onToggle={() => onToggleAgent(lead.name)}
                 onOpen={() => onOpen(lead.name)}
                 ownership={lead.name === defaultLead?.name ? 'Default lead' : undefined}
@@ -551,7 +604,7 @@ function AgentTeamGroup({
                     <AgentRow
                       key={member.name}
                       agent={member}
-                      selected={member.editable && checked.has(member.name)}
+                      selected={canSetModel(member) && checked.has(member.name)}
                       onToggle={() => onToggleAgent(member.name)}
                       onOpen={() => onOpen(member.name)}
                       nested
@@ -572,7 +625,7 @@ function AgentTeamGroup({
               <AgentRow
                 key={member.name}
                 agent={member}
-                selected={member.editable && checked.has(member.name)}
+                selected={canSetModel(member) && checked.has(member.name)}
                 onToggle={() => onToggleAgent(member.name)}
                 onOpen={() => onOpen(member.name)}
                 ownership="Choose an owning lead"
@@ -610,7 +663,7 @@ function AgentRow({
 }) {
   return (
     <div className={cn('group flex min-w-0 items-stretch transition-colors hover:bg-(--bg-key)/35', nested && 'not-last:border-b not-last:border-(--color-border-subtle)', selected && 'bg-(--color-accent-soft)/45')}>
-      {agent.editable ? (
+      {canSetModel(agent) ? (
         <label className={cn('flex shrink-0 cursor-pointer items-center', nested ? 'min-h-14 pl-3' : 'min-h-16 pl-3 sm:pl-4')}>
           <Checkbox checked={selected} onCheckedChange={onToggle} aria-label={`Select ${agent.name}`} />
         </label>

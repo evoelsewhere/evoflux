@@ -67,7 +67,7 @@ describe('Enterprise view model', () => {
     value.telemetry.pending_events = 8_500
     value.telemetry.utilization_percent = 85
     value.resources = [
-      { kind: 'agent', slug: 'reviewer', state: 'update_pending' },
+      { kind: 'agent_team', slug: 'reviewer', state: 'update_pending' },
     ]
 
     expect(buildEnterpriseNotices(value).map((notice) => notice.id)).toEqual([
@@ -139,7 +139,7 @@ describe('Enterprise view model · a resource that failed to apply', () => {
 
 describe('Enterprise view model · resourceIsLocal', () => {
   it('is true only once the resource exists on this machine', () => {
-    for (const state of ['applied', 'in_sync', 'drifted']) {
+    for (const state of ['applied', 'in_sync', 'drifted', 'dependency_missing']) {
       expect(
         resourceIsLocal({ kind: 'skill', slug: 's', state, observed_state: state }),
       ).toBe(true)
@@ -152,6 +152,18 @@ describe('Enterprise view model · resourceIsLocal', () => {
     }
   })
 
+  it('is true for an update_pending resource that already has a version applied', () => {
+    expect(
+      resourceIsLocal({
+        kind: 'agent_team',
+        slug: 'release-review',
+        state: 'update_pending',
+        observed_state: 'update_pending',
+        applied_version: '0.1.3',
+      }),
+    ).toBe(true)
+  })
+
   it('treats a failed resource as retryable', () => {
     const record = (observed: string) => ({
       kind: 'skill' as const,
@@ -162,5 +174,38 @@ describe('Enterprise view model · resourceIsLocal', () => {
     expect(resourceFailed(record('error'))).toBe(true)
     expect(resourceFailed(record('incompatible'))).toBe(true)
     expect(resourceFailed(record('applied'))).toBe(false)
+  })
+})
+
+describe('Enterprise view model · a resource whose dependencies did not resolve', () => {
+  const withUnresolved = (): ConductorStatus => ({
+    ...status(),
+    resources: [
+      {
+        kind: 'agent_team',
+        slug: 'release-review',
+        state: 'dependency_missing',
+        observed_state: 'dependency_missing',
+        applied_version: '0.1.3',
+        message: 'Published capabilities are not available — missing skills: release-audit.',
+      },
+    ],
+  })
+
+  it('never reports the workspace as synchronized', () => {
+    const ids = buildEnterpriseNotices(withUnresolved()).map((notice) => notice.id)
+    expect(ids).toContain('resource-dependencies')
+    expect(ids).not.toContain('healthy')
+  })
+
+  it('names what did not resolve', () => {
+    const notice = buildEnterpriseNotices(withUnresolved()).find(
+      (item) => item.id === 'resource-dependencies',
+    )
+    expect(notice?.detail).toContain('release-audit')
+  })
+
+  it('counts towards the attention badge', () => {
+    expect(enterpriseAttentionCount(withUnresolved())).toBe(1)
   })
 })

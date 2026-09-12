@@ -88,9 +88,20 @@ class GovernedResourceReconciler:
         if document.project_id != project_id:
             return False
         return any(
-            item.observed_state in {"applied", "in_sync"}
-            and item.kind in {"agent", "skill"}
-            and not _local_materialization_is_current(item)
+            item.kind in {"agent_team", "skill"}
+            and (
+                (
+                    item.observed_state in {"applied", "in_sync"}
+                    and not _local_materialization_is_current(item)
+                )
+                # A record that already drifted into another state still needs
+                # the replay: nothing else re-evaluates an applied resource, so
+                # without this it keeps whatever label it happened to land on.
+                or (
+                    _applied_version_id(item) == item.version_id
+                    and _local_copy_diverged(item)
+                )
+            )
             for item in document.resources
         )
 
@@ -113,6 +124,24 @@ class GovernedResourceReconciler:
                 previous=previous,
             )
         if previous and previous.version_id == change.version_id:
+            # A copy that is present but different from what was applied is
+            # drift, whatever the record last said. Deciding it before the
+            # state branches keeps a record that already drifted into
+            # ``update_pending`` from staying mislabelled — an update is not
+            # what is pending, and pulling one is not what fixes it.
+            if _applied_version_id(previous) == change.version_id and _local_copy_diverged(
+                previous
+            ):
+                if enforcement_mode == "enforce":
+                    # ``_apply_*`` re-checks ownership and reports the conflict
+                    # itself rather than overwriting the edit.
+                    return await self._apply_change(client, change, previous)
+                return self._record(
+                    change,
+                    state="ownership_conflict",
+                    message=describe_local_divergence(previous),
+                    previous=previous,
+                )
             if previous.observed_state in {
                 "applied",
                 "in_sync",
@@ -176,8 +205,17 @@ class GovernedResourceReconciler:
         # `error` is retryable on purpose: a pull re-fetches the version and
         # re-applies it, so a resource that failed once — a transient fetch,
         # or a release since corrected — had no way back without wiping the
-        # whole enrolment.
-        if previous.observed_state not in {"update_pending", "incompatible", "error"}:
+        # whole enrolment. `ownership_conflict` is retryable for the same
+        # reason: once the user has removed or restored the local copy, the
+        # apply path re-checks ownership itself, so refusing here only left
+        # the resource stuck forever.
+        if previous.observed_state not in {
+            "update_pending",
+            "incompatible",
+            "error",
+            "ownership_conflict",
+            "dependency_missing",
+        }:
             raise ValueError(
                 "Managed resource is not waiting for a version pull "
                 f"(state: {previous.observed_state})."
@@ -237,8 +275,8 @@ class GovernedResourceReconciler:
                     )
             if version.kind == "plugin":
                 return await self._stage_plugin(client, change, version, previous)
-            if version.kind == "agent":
-                return self._apply_agent(change, version, previous)
+            if version.kind == "agent_team":
+                return self._apply_team(change, version, previous)
             return self._apply_skill(change, version, previous)
         except Exception as exc:
             # The reason matters: these messages name the file or field that
@@ -283,26 +321,19 @@ class GovernedResourceReconciler:
                 installation = get_installation(installation_id)
                 if installation is not None and installation.enabled:
                     set_enabled(installation.id, False)
-        elif previous.kind == "agent" and previous.local_content_sha256:
-            targets = _agent_targets(previous.slug, previous.modes)
-            for target in targets:
-                try:
-                    current = agent_fs.read_agent(target).content
-                except agent_fs.AgentFsNotFoundError:
-                    continue
-                if (
-                    hashlib.sha256(current.encode("utf-8")).hexdigest()
-                    != previous.local_content_sha256
-                ):
-                    return self._record(
-                        change,
-                        state="ownership_conflict",
-                        message=(
-                            "Conductor removed this Agent, but a locally edited "
-                            "mode copy was kept."
-                        ),
-                        previous=previous,
-                    )
+        elif previous.kind == "agent_team" and previous.local_content_sha256:
+            targets = list(previous.local_agent_targets)
+            actual = _team_material(targets)
+            if actual is not None and actual != previous.local_content_sha256:
+                return self._record(
+                    change,
+                    state="ownership_conflict",
+                    message=(
+                        "Conductor removed this Team, but its locally edited "
+                        "Agent copies were kept."
+                    ),
+                    previous=previous,
+                )
             for target in targets:
                 try:
                     agent_fs.delete_agent(target)
@@ -399,38 +430,35 @@ class GovernedResourceReconciler:
             ),
         )
 
-    def _apply_agent(
+    def _apply_team(
         self,
         change: ResourceChange,
         version: EffectiveResourceVersion,
         previous: ManagedResourceRecord | None,
     ) -> ManagedResourceRecord:
+        """Materialize a lead and its members as one unit.
+
+        A team is applied all-or-nothing: every Agent is checked for ownership
+        before any is written, so a single conflicting member leaves the whole
+        team untouched rather than installing a lead whose members are missing.
+        """
+
         files = _files(version.payload)
         modes = _resource_modes(files)
-        definition_files = [
-            item for item in files if item[0] != RESOURCE_MODE_SCOPE_FILENAME
-        ]
-        expected_path = f"{change.slug}.md"
-        if len(definition_files) != 1 or definition_files[0][0] != expected_path:
+        definitions = _team_definitions(files)
+        lead_name = _team_lead_name(definitions)
+        if lead_name != change.slug:
             raise ValueError(
-                f"Agent release must contain one root '{expected_path}' definition."
+                f"Managed Team lead '{lead_name}' does not match resource slug "
+                f"'{change.slug}'."
             )
-        markdown = definition_files[0][1]
-        config = parse_agent_definition(
-            markdown,
-            default_name=change.slug,
-            source_label=f"Managed Agent '{change.slug}'",
-        )
-        if config.name != change.slug:
-            raise ValueError(
-                f"Managed Agent frontmatter name '{config.name}' does not match "
-                f"resource slug '{change.slug}'."
-            )
-        local_hash = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
-        targets = _agent_targets(change.slug, modes)
-        previous_targets = (
-            set(_agent_targets(change.slug, previous.modes)) if previous else set()
-        )
+
+        targets: dict[str, str] = {}
+        for name, markdown in definitions.items():
+            for target in _agent_targets(name, modes):
+                targets[target] = markdown
+
+        previous_targets = list(previous.local_agent_targets) if previous else []
         existing = set(agent_fs.list_agents())
         for target in targets:
             if target in existing and target not in previous_targets:
@@ -438,43 +466,46 @@ class GovernedResourceReconciler:
                     change,
                     state="ownership_conflict",
                     message=(
-                        f"A user-owned Agent already uses '{target}'; it was not overwritten."
+                        f"A user-owned Agent already uses '{target}'; this Team was not applied."
                     ),
                     previous=previous,
                 )
-            if (
-                target in existing
-                and target in previous_targets
-                and previous is not None
-                and previous.local_content_sha256
-            ):
-                actual = hashlib.sha256(
-                    agent_fs.read_agent(target).content.encode("utf-8")
-                ).hexdigest()
-                if actual != previous.local_content_sha256:
-                    return self._record(
-                        change,
-                        state="ownership_conflict",
-                        message=f"The managed Agent copy '{target}' was edited locally.",
-                        previous=previous,
-                    )
-        for target in targets:
+        if previous is not None and previous.local_content_sha256:
+            actual = _team_material(previous_targets)
+            if actual is not None and actual != previous.local_content_sha256:
+                return self._record(
+                    change,
+                    state="ownership_conflict",
+                    message="The managed Team copy was edited locally.",
+                    previous=previous,
+                )
+
+        for target, markdown in targets.items():
             agent_fs.write_agent(target, markdown, create=target not in existing)
-        for target in previous_targets - set(targets):
+        for target in set(previous_targets) - set(targets):
             try:
-                current = agent_fs.read_agent(target).content
-            except agent_fs.AgentFsNotFoundError:
-                continue
-            if (
-                previous
-                and hashlib.sha256(current.encode("utf-8")).hexdigest()
-                == previous.local_content_sha256
-            ):
                 agent_fs.delete_agent(target)
+            except agent_fs.AgentFsNotFoundError:
+                pass
+
+        applied_targets = sorted(targets)
+        skills: set[str] = set()
+        servers: set[str] = set()
+        for name, markdown in definitions.items():
+            config = parse_agent_definition(
+                markdown,
+                default_name=name,
+                source_label=f"Managed Team Agent '{name}'",
+            )
+            skills.update(config.skills)
+            servers.update(config.mcp)
         return self._record(
             change,
             state="applied",
-            local_content_sha256=local_hash,
+            local_content_sha256=_team_material(applied_targets),
+            local_agent_targets=applied_targets,
+            declared_skills=sorted(skills),
+            declared_mcp=sorted(servers),
             modes=modes,
         )
 
@@ -589,7 +620,12 @@ class GovernedResourceReconciler:
 
     def inventory(self) -> list[dict[str, Any]]:
         return [
-            {
+            self._inventory_item(item) for item in self.store.load().resources
+        ]
+
+    def _inventory_item(self, item: ManagedResourceRecord) -> dict[str, Any]:
+        state = observed_state_now(item)
+        return {
                 "resource_id": item.resource_id,
                 "desired_version_id": item.version_id,
                 "applied_version_id": (
@@ -603,12 +639,19 @@ class GovernedResourceReconciler:
                 "release_channel": item.release_channel,
                 "content_sha256": item.applied_content_sha256,
                 "plugin_installation_id": item.plugin_installation_id,
-                "observed_state": item.observed_state,
-                "error_category": item.error_category,
+                "observed_state": state,
+                # Conductor shows this under the state badge, and a bare
+                # "dependency missing" or "ownership conflict" is not something
+                # an operator can act on.
+                "error_category": (
+                    describe_unresolved(unresolved_capabilities(item))
+                    if state == "dependency_missing"
+                    else describe_local_divergence(item) or item.error_category
+                    if state == "ownership_conflict"
+                    else item.error_category
+                ),
                 "observed_at": item.observed_at.isoformat(),
-            }
-            for item in self.store.load().resources
-        ]
+        }
 
     def deactivate_project(self, project_id: str) -> None:
         """Unmount one managed namespace without deleting cached packages or data."""
@@ -622,17 +665,14 @@ class GovernedResourceReconciler:
                 installation = get_installation(record.plugin_installation_id)
                 if installation is not None and installation.enabled:
                     set_enabled(installation.id, False)
-            elif record.kind == "agent" and record.local_content_sha256:
-                for target in _agent_targets(record.slug, record.modes):
-                    try:
-                        current = agent_fs.read_agent(target).content
-                        if (
-                            hashlib.sha256(current.encode()).hexdigest()
-                            == record.local_content_sha256
-                        ):
+            elif record.kind == "agent_team" and record.local_content_sha256:
+                targets = list(record.local_agent_targets)
+                if _team_material(targets) == record.local_content_sha256:
+                    for target in targets:
+                        try:
                             agent_fs.delete_agent(target)
-                    except agent_fs.AgentFsNotFoundError:
-                        pass
+                        except agent_fs.AgentFsNotFoundError:
+                            pass
             elif record.kind == "skill" and record.local_content_sha256:
                 material = _skill_material(record.slug)
                 if hashlib.sha256(material).hexdigest() == record.local_content_sha256:
@@ -654,6 +694,9 @@ class GovernedResourceReconciler:
         plugin_installation_id: str | None = None,
         previous_plugin_installation_id: str | None = None,
         local_content_sha256: str | None = None,
+        local_agent_targets: list[str] | None = None,
+        declared_skills: list[str] | None = None,
+        declared_mcp: list[str] | None = None,
         trust_review: dict[str, Any] | None = None,
         modes: list[ResourceTargetMode] | None = None,
         previous: ManagedResourceRecord | None = None,
@@ -667,6 +710,12 @@ class GovernedResourceReconciler:
                 )
             if local_content_sha256 is None:
                 local_content_sha256 = previous.local_content_sha256
+            if local_agent_targets is None:
+                local_agent_targets = previous.local_agent_targets
+            if declared_skills is None:
+                declared_skills = previous.declared_skills
+            if declared_mcp is None:
+                declared_mcp = previous.declared_mcp
             if modes is None:
                 modes = previous.modes
         applied_version_id = None
@@ -707,6 +756,9 @@ class GovernedResourceReconciler:
             content_size=change.size,
             minimum_evoflux_version=change.minimum_evoflux_version,
             local_content_sha256=local_content_sha256,
+            local_agent_targets=list(local_agent_targets or []),
+            declared_skills=list(declared_skills or []),
+            declared_mcp=list(declared_mcp or []),
             plugin_installation_id=plugin_installation_id,
             previous_plugin_installation_id=previous_plugin_installation_id,
             observed_state=state,
@@ -863,6 +915,224 @@ def _agent_targets(
     return targets
 
 
+TEAM_AGENT_DIR = "agents/"
+TEAM_MANIFEST_FILENAME = "team.json"
+
+
+def _team_definitions(files: list[tuple[str, str]]) -> dict[str, str]:
+    """Return `{agent name: markdown}` for a Team release, validating layout."""
+
+    definitions: dict[str, str] = {}
+    for path, content in files:
+        if path in {TEAM_MANIFEST_FILENAME, RESOURCE_MODE_SCOPE_FILENAME}:
+            continue
+        if not path.startswith(TEAM_AGENT_DIR) or not path.endswith(".md"):
+            raise ValueError(f"Managed Team contains an unexpected file '{path}'.")
+        name = path[len(TEAM_AGENT_DIR) : -len(".md")]
+        if not name or "/" in name:
+            raise ValueError(f"Managed Team Agent path '{path}' is not a flat name.")
+        config = parse_agent_definition(
+            content,
+            default_name=name,
+            source_label=f"Managed Team Agent '{name}'",
+        )
+        if config.name != name:
+            raise ValueError(
+                f"Managed Team Agent frontmatter name '{config.name}' does not "
+                f"match its filename '{name}'."
+            )
+        definitions[name] = content
+    if not definitions:
+        raise ValueError("Managed Team release contains no Agent definitions.")
+    return definitions
+
+
+def _team_lead_name(definitions: dict[str, str]) -> str:
+    """Identify the single lead, and refuse a team EvoFlux would misassemble.
+
+    A member without an explicit ``lead`` silently joins this installation's
+    default lead instead of the team it shipped with, so the release is
+    rejected rather than applied into the wrong roster.
+    """
+
+    leads: list[str] = []
+    members: dict[str, str | None] = {}
+    for name, markdown in definitions.items():
+        config = parse_agent_definition(
+            markdown,
+            default_name=name,
+            source_label=f"Managed Team Agent '{name}'",
+        )
+        if config.role == "lead":
+            leads.append(name)
+        else:
+            members[name] = config.lead
+    if len(leads) != 1:
+        raise ValueError(
+            f"Managed Team must define exactly one lead Agent; found {len(leads)}."
+        )
+    lead_name = leads[0]
+    for name, declared in members.items():
+        if not declared:
+            raise ValueError(
+                f"Managed Team member '{name}' does not declare its lead."
+            )
+        if declared != lead_name:
+            raise ValueError(
+                f"Managed Team member '{name}' declares lead '{declared}', "
+                f"but this Team's lead is '{lead_name}'."
+            )
+    return lead_name
+
+
+def unresolved_capabilities(record: ManagedResourceRecord) -> dict[str, list[str]]:
+    """Name the Skills and MCP servers a managed release asks for but cannot get.
+
+    EvoFlux only warns and carries on when an Agent names a Skill or MCP server
+    it cannot find, so a team can look applied while running without the
+    capabilities it was published with. Resolving here — at report time, against
+    the catalogs as they stand now — keeps that from being reported as success,
+    and lets a plugin that starts late clear itself without a re-apply.
+    """
+
+    if not record.declared_skills and not record.declared_mcp:
+        return {}
+    missing: dict[str, list[str]] = {}
+    if record.declared_skills:
+        available: set[str] = set()
+        try:
+            from app.agent.tools.builtin.skill import discover_skill_records_runtime
+
+            for mode in record.modes:
+                available.update(discover_skill_records_runtime(mode=mode.value))
+        except Exception:  # discovery is best-effort; absence is not proof
+            return {}
+        absent = [name for name in record.declared_skills if name not in available]
+        if absent:
+            missing["skills"] = absent
+    if record.declared_mcp:
+        from app.plugin_platform.runtime import all_mcp_server_names
+
+        try:
+            servers = set(all_mcp_server_names())
+        except Exception:
+            return missing
+        absent = [name for name in record.declared_mcp if name not in servers]
+        if absent:
+            missing["mcp"] = absent
+    return missing
+
+
+def describe_unresolved(missing: dict[str, list[str]]) -> str | None:
+    """Name what could not be resolved, short enough for a table cell."""
+
+    if not missing:
+        return None
+    labels = {"skills": "skills", "mcp": "MCP servers"}
+    parts = [
+        f"missing {labels.get(key, key)}: {', '.join(sorted(names))}"
+        for key, names in sorted(missing.items())
+        if names
+    ]
+    summary = "; ".join(parts)
+    return summary[:197] + "..." if len(summary) > 200 else summary
+
+
+def observed_state_now(record: ManagedResourceRecord) -> ObservedResourceState:
+    """Report an applied release honestly rather than trusting the last apply.
+
+    Two conditions turn a clean apply into something the operator has to know
+    about, and neither of them changes the stored record:
+
+    * the local copy no longer matches what was applied — under ``report``
+      enforcement nothing re-reconciles an applied resource, so this was the
+      one state that stayed silent forever;
+    * a declared Skill or MCP server does not resolve on this installation.
+    """
+
+    if record.observed_state not in {"applied", "in_sync"}:
+        return record.observed_state
+    if _local_copy_diverged(record):
+        return "ownership_conflict"
+    return "dependency_missing" if unresolved_capabilities(record) else record.observed_state
+
+
+def _local_copy_diverged(record: ManagedResourceRecord) -> bool:
+    """Whether the local copy provably differs from what was applied.
+
+    Deliberately narrower than :func:`_local_materialization_is_current`, which
+    also answers "not current" when nothing is known. A record with no stored
+    digest — written before digests were recorded — has not been shown to
+    differ, and must not be accused of it.
+    """
+
+    if record.kind == "plugin" or not record.local_content_sha256:
+        return False
+    if record.kind == "agent_team":
+        if not record.local_agent_targets:
+            return False
+        actual = _team_material(record.local_agent_targets)
+        return actual is not None and actual != record.local_content_sha256
+    try:
+        material = _skill_material(record.slug)
+    except (OSError, UnicodeError):
+        return False
+    return hashlib.sha256(material).hexdigest() != record.local_content_sha256
+
+
+def describe_local_divergence(record: ManagedResourceRecord) -> str | None:
+    """Explain a locally-edited managed copy, in the terms the apply path uses.
+
+    Deliberately independent of ``observed_state``: whether the copy on disk
+    matches what was applied is a fact about the files, and the callers that
+    need this are the ones whose stored state has already moved on.
+    """
+
+    if not _local_copy_diverged(record):
+        return None
+    label = "Team" if record.kind == "agent_team" else record.kind.capitalize()
+    version = record.version or "the applied release"
+    # Say what to do, not just what happened. EvoFlux never overwrites a local
+    # edit — the apply path refuses the write — so "pull it again" on its own
+    # describes an action that cannot succeed until the file is put back.
+    where = _diverged_location(record)
+    return (
+        f"The managed {label} copy was edited locally, so it no longer matches "
+        f"{version}. EvoFlux will not overwrite your edit: revert your changes "
+        f"under {where}, then retry to restore the published copy."
+    )
+
+
+def _diverged_location(record: ManagedResourceRecord) -> str:
+    """Point at where the edited copy lives, so the fix does not need a hunt.
+
+    Only the set digest is stored, not per-file digests, so this names the
+    directory the resource owns rather than claiming which file changed.
+    """
+
+    if record.kind == "agent_team":
+        return f"{agent_fs.agents_dir()} (this Team's Agent files)"
+    return str(agent_fs.skills_dir() / record.slug)
+
+
+def _team_material(targets: list[str]) -> str | None:
+    """Digest every Agent file a Team owns, as one value.
+
+    A team spans several files, so local edits are detected across the set
+    rather than per file; a missing file yields ``None`` so the caller can tell
+    "not materialized" apart from "changed".
+    """
+
+    material: list[tuple[str, str]] = []
+    for target in sorted(targets):
+        try:
+            material.append((target, agent_fs.read_agent(target).content))
+        except (agent_fs.AgentFsNotFoundError, OSError):
+            return None
+    encoded = json.dumps(material, ensure_ascii=False, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _skill_material(slug: str) -> bytes:
     root = (agent_fs.skills_dir() / slug).resolve()
     if not root.is_relative_to(agent_fs.skills_dir()) or not root.is_dir():
@@ -889,18 +1159,10 @@ def _local_materialization_is_current(record: ManagedResourceRecord) -> bool:
         return True
     if not record.local_content_sha256:
         return False
-    if record.kind == "agent":
-        for target in _agent_targets(record.slug, record.modes):
-            try:
-                content = agent_fs.read_agent(target).content
-            except (agent_fs.AgentFsNotFoundError, OSError):
-                return False
-            if (
-                hashlib.sha256(content.encode("utf-8")).hexdigest()
-                != record.local_content_sha256
-            ):
-                return False
-        return True
+    if record.kind == "agent_team":
+        if not record.local_agent_targets:
+            return False
+        return _team_material(record.local_agent_targets) == record.local_content_sha256
     try:
         material = _skill_material(record.slug)
     except (OSError, UnicodeError):
@@ -908,4 +1170,10 @@ def _local_materialization_is_current(record: ManagedResourceRecord) -> bool:
     return hashlib.sha256(material).hexdigest() == record.local_content_sha256
 
 
-__all__ = ["GovernedResourceReconciler"]
+__all__ = [
+    "GovernedResourceReconciler",
+    "describe_local_divergence",
+    "describe_unresolved",
+    "observed_state_now",
+    "unresolved_capabilities",
+]

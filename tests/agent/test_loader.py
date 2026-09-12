@@ -1410,7 +1410,7 @@ def test_managed_agent_runtime_model_makes_placeholder_spawnable(
         agent_runtime,
         "managed_resource_provider",
         lambda kind, slug: (
-            provider if (kind, slug) == ("agent", "placeholder") else None
+            provider if (kind, slug) == ("agent_team", "placeholder") else None
         ),
     )
     selected = "anthropic:claude-sonnet-5"

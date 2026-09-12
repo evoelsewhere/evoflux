@@ -50,6 +50,7 @@ from app.api.schemas.settings import (
     ProviderTestResponse,
     ProviderUsageResponse,
     ProviderVisibleModelsRequest,
+    FollowUpSettingsBody,
     TeamSpawnSettingsBody,
     ProviderVisibleModelsResponse,
     ProvidersListBody,
@@ -611,6 +612,23 @@ async def save_team_spawn_settings(body: TeamSpawnSettingsBody) -> dict[str, str
     cfg.team_spawn.coding = body.coding
     save_runtime_settings(cfg)
     return _team_spawn_settings_body()
+
+
+@router.get("/follow-up")
+async def get_follow_up_settings() -> FollowUpSettingsBody:
+    cfg = load_runtime_settings()
+    return FollowUpSettingsBody(delivery=cfg.follow_up.delivery)
+
+
+@router.put("/follow-up")
+async def save_follow_up_settings(body: FollowUpSettingsBody) -> FollowUpSettingsBody:
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.follow_up.delivery = body.delivery
+    save_runtime_settings(cfg)
+    return FollowUpSettingsBody(delivery=cfg.follow_up.delivery)
 
 
 # Providers (Settings -> Providers tab)

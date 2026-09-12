@@ -54,13 +54,29 @@ export function resourceHasUpdate(
 export function resourceIsLocal(
   resource: ConductorManagedResource | LegacyConductorResource,
 ): boolean {
-  return ['applied', 'in_sync', 'drifted'].includes(resourceState(resource))
+  // "Is a version of this on disk right now?" — which is what decides whether
+  // a local settings page exists to open. ``dependency_missing`` is applied
+  // (its capabilities just did not resolve) and ``update_pending`` still has
+  // the previous version applied, so neither belongs on the not-local side.
+  if (
+    ['applied', 'in_sync', 'drifted', 'dependency_missing'].includes(
+      resourceState(resource),
+    )
+  ) {
+    return true
+  }
+  return Boolean('applied_version' in resource && resource.applied_version)
 }
 
 export function resourceFailed(
   resource: ConductorManagedResource | LegacyConductorResource,
 ): boolean {
-  return ['error', 'incompatible'].includes(resourceState(resource))
+  // ``ownership_conflict`` belongs here: the release is not running as
+  // published, and a pull is exactly the documented way back — the backend
+  // accepts one for this state, so the card has to offer it.
+  return ['error', 'incompatible', 'ownership_conflict'].includes(
+    resourceState(resource),
+  )
 }
 
 export function buildEnterpriseNotices(status: ConductorStatus): EnterpriseNotice[] {
@@ -97,6 +113,25 @@ export function buildEnterpriseNotices(status: ConductorStatus): EnterpriseNotic
           .find((message): message is string => Boolean(message)) ??
         'Open the resource for the reason it was rejected.',
       tab: 'updates',
+    })
+  }
+  // An applied release whose Skills or MCP servers did not resolve is running
+  // differently from what the project published. It is not "synchronized", and
+  // the summary said exactly that until this notice existed.
+  const unresolved = status.resources.filter(
+    (resource) => resourceState(resource) === 'dependency_missing',
+  )
+  if (unresolved.length > 0) {
+    notices.push({
+      id: 'resource-dependencies',
+      tone: 'warning',
+      title: `${unresolved.length} managed ${unresolved.length === 1 ? 'resource is' : 'resources are'} missing a dependency`,
+      detail:
+        unresolved
+          .map((resource) => resource.message)
+          .find((message): message is string => Boolean(message)) ??
+        'Open the resource to see which Skill or MCP server did not resolve.',
+      tab: 'library',
     })
   }
   const updates = status.resources.filter(resourceHasUpdate).length

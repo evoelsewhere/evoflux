@@ -39,13 +39,17 @@ from app.conductor.constants.telemetry import (
 )
 from app.conductor.models import (
     ManagedResourceRecord,
-    ReconcileResult,
     RegistrationRequest,
     TelemetryDeliverySummary,
 )
 from app.conductor.provenance import managed_resource_provider_from_record
-from app.conductor.governed_reconciler import GovernedResourceReconciler
-from app.conductor.reconciler import ResourceReconciler
+from app.conductor.governed_reconciler import (
+    GovernedResourceReconciler,
+    describe_local_divergence,
+    describe_unresolved,
+    observed_state_now,
+    unresolved_capabilities,
+)
 from app.conductor.telemetry import (
     TelemetryOutbox,
     clear_usage,
@@ -162,7 +166,6 @@ class ConductorService:
         self._usage_flush_lock = asyncio.Lock()
         self._client: ConductorClient | None = None
         self._credential_store = credential_store
-        self._reconciler = ResourceReconciler()
         self._governed_reconciler = GovernedResourceReconciler()
         self._telemetry_store = telemetry_store or telemetry_outbox
 
@@ -248,6 +251,14 @@ class ConductorService:
         if not self.status.enrolled:
             self.status.state = "disconnected"
             return
+        # Publish what is already installed before the first sync lands. The
+        # resource list used to start empty and stay empty while the control
+        # plane was unreachable, so an offline installation showed no governed
+        # resources at all — the opposite of "local work continues".
+        try:
+            self._refresh_governed_status()
+        except Exception:  # never let a status read block the connection loop
+            logger.warning("conductor_local_resource_snapshot_failed", exc_info=True)
         self._stop.clear()
         self._task = asyncio.create_task(self._run(), name="conductor-connection")
 
@@ -469,34 +480,14 @@ class ConductorService:
             resource_lane.error = None
             await self._flush_usage_queues()
             try:
-                if await self._sync_governed(config):
-                    self.status.etag = None
-                    self.status.offline = False
-                    self.status.error = None
-                    self.status.last_success_at = datetime.now(UTC)
-                    resource_lane.state = "healthy"
-                    resource_lane.last_success_at = self.status.last_success_at
-                    return self.status
-                manifest, etag = await self._client.fetch_manifest(self.status.etag)
-                if manifest is None:
-                    manifest = self._reconciler.load_last_good_manifest()
-                result = (
-                    await self._reconciler.reconcile(
-                        manifest, enforcement_mode=config.enforcement_mode
-                    )
-                    if manifest is not None
-                    else None
-                )
-                if manifest is not None:
-                    self._reconciler.save_last_good_manifest(manifest)
-                await self._report(result)
-                self.status.etag = etag
+                await self._sync_governed(config)
+                self.status.etag = None
                 self.status.offline = False
                 self.status.error = None
                 self.status.last_success_at = datetime.now(UTC)
                 resource_lane.state = "healthy"
                 resource_lane.last_success_at = self.status.last_success_at
-                self._set_result(result)
+                return self.status
             except ConductorRequestError as exc:
                 resource_lane.state = "error"
                 resource_lane.error = str(exc)
@@ -507,16 +498,12 @@ class ConductorService:
                 self.status.error = f"Conductor is unreachable ({type(exc).__name__})."
                 resource_lane.state = "offline"
                 resource_lane.error = self.status.error
-                cached = self._reconciler.load_last_good_manifest()
-                if cached is not None:
-                    result = await self._reconciler.reconcile(
-                        cached, enforcement_mode=config.enforcement_mode
-                    )
-                    self._set_result(result, preserve_state=True)
+                # Applied resources stay mounted on disk; there is nothing to
+                # replay locally, so the next reachable sync resumes from the
+                # committed cursor.
                 logger.warning(
-                    "conductor_sync_offline error_type={} cached_manifest={}",
+                    "conductor_sync_offline error_type={}",
                     type(exc).__name__,
-                    cached is not None,
                 )
             except Exception as exc:
                 self.status.state = "error"
@@ -529,15 +516,15 @@ class ConductorService:
                 )
             return self.status
 
-    async def _sync_governed(self, config: ConductorSettings) -> bool:
-        """Prefer schema-v2 changes; return False only for a V1-only server/client."""
+    async def _sync_governed(self, config: ConductorSettings) -> None:
+        """Reconcile the project's governed resources from the change feed."""
 
-        if self._client is None or not hasattr(self._client, "fetch_changes"):
-            return False
+        if self._client is None:
+            return
         project_id = config.project_id
         installation_id = config.installation_id
         if not project_id or not installation_id:
-            return False
+            return
         document = self._governed_reconciler.store.replace_project(project_id)
         cursor = document.committed_cursor
         if cursor is not None and self._governed_reconciler.needs_change_replay(
@@ -552,8 +539,6 @@ class ConductorService:
             try:
                 page = await self._client.fetch_changes(cursor)
             except ConductorRequestError as exc:
-                if exc.status_code == 404:
-                    return False
                 if (
                     cursor is not None
                     and exc.status_code == httpx.codes.BAD_REQUEST
@@ -668,10 +653,34 @@ class ConductorService:
             or record.project_id
         )
         provider = managed_resource_provider_from_record(record, project_name)
-        return {
+        missing = unresolved_capabilities(record)
+        divergence = describe_local_divergence(record)
+        payload = {
             **record.model_dump(mode="json"),
             **provider.model_dump(mode="json"),
+            # One source of truth with the inventory Conductor receives: a team
+            # whose Skills or MCP servers do not resolve is not running as
+            # published, and must not read as a clean apply anywhere.
+            "observed_state": observed_state_now(record),
+            "unresolved_capabilities": missing,
         }
+        # A locally-edited copy outranks the capability report and whatever
+        # message the last reconcile left behind: until it is restored,
+        # nothing else about the resource is trustworthy.
+        if divergence:
+            payload["message"] = divergence
+            return payload
+        # "Dependency missing" with nothing named is a dead end for the person
+        # reading it here — say which Skill or MCP server did not resolve.
+        if missing and not payload.get("message"):
+            summary = describe_unresolved(missing)
+            if summary:
+                payload["message"] = (
+                    f"Published capabilities are not available on this "
+                    f"installation — {summary}. Ask your project to publish "
+                    f"them, or install them locally."
+                )
+        return payload
 
     def _refresh_governed_status(
         self, resources: list[ManagedResourceRecord] | None = None
@@ -882,39 +891,6 @@ class ConductorService:
             except TimeoutError:
                 pass
 
-    async def _report(self, result: ReconcileResult | None) -> None:
-        if self._client is None:
-            return
-        observed = {
-            "reported_at": datetime.now(UTC).isoformat(),
-            "manifest_revision": result.manifest_revision if result else None,
-            "state": result.state if result else "unknown",
-            "maintenance_required": result.maintenance_required if result else False,
-            "resources": (
-                [item.model_dump(mode="json") for item in result.resources]
-                if result
-                else []
-            ),
-        }
-        await self._client.report_observed_state(observed)
-        config = self._config()
-        if config.installation_id:
-            inventory_lane = self.status.sync.inventory
-            inventory_lane.state = "syncing"
-            inventory_lane.last_attempt_at = datetime.now(UTC)
-            try:
-                await self._client.report_inventory(
-                    {"installation_id": config.installation_id, "items": []}
-                )
-            except Exception as exc:
-                inventory_lane.state = "error"
-                inventory_lane.error = _safe_sync_error(exc)
-                raise
-            inventory_lane.state = "healthy"
-            inventory_lane.error = None
-            inventory_lane.last_success_at = datetime.now(UTC)
-        await self._flush_usage_queues()
-
     async def _flush_usage_queues(self) -> None:
         async with self._usage_flush_lock:
             await self._flush_telemetry_unlocked()
@@ -1041,21 +1017,6 @@ class ConductorService:
             "mcp_count": len(load_config().servers),
             "last_heartbeat_at": datetime.now(UTC).isoformat(),
         }
-
-    def _set_result(
-        self, result: ReconcileResult | None, *, preserve_state: bool = False
-    ) -> None:
-        if result is None:
-            if not preserve_state:
-                self.status.state = "idle"
-            return
-        self.status.manifest_revision = result.manifest_revision
-        self.status.maintenance_required = result.maintenance_required
-        self.status.resources = [
-            item.model_dump(mode="json") for item in result.resources
-        ]
-        if not preserve_state:
-            self.status.state = result.state
 
     def status_payload(self) -> dict[str, Any]:
         config = self._config()

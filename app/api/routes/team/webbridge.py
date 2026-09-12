@@ -97,7 +97,6 @@ from app.services.agent_service import (
     interrupt_team,
 )
 from app.services.interactive_message_service import (
-    InteractiveMessageAttachmentsBusy,
     InteractiveMessageConflict,
     find_interactive_message_by_source,
     resolve_team_for_session,
@@ -3050,22 +3049,6 @@ async def _dispatch_browser_panel_message(
         raise HTTPException(
             status_code=409,
             detail={"code": "idempotency_conflict", "message": str(exc)},
-        ) from exc
-    except InteractiveMessageAttachmentsBusy as exc:
-        webbridge_manager.record_interaction_audit(
-            session_id=str(session_id),
-            extension_id=str(pairing.id),
-            action=audit_action,
-            url=source_scope,
-            success=False,
-            error=str(exc),
-        )
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "session_busy_with_attachment",
-                "message": str(exc),
-            },
         ) from exc
     except AttachmentError as exc:
         raise HTTPException(

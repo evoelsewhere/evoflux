@@ -384,6 +384,9 @@ class PluginMCPRuntime:
     def server_names(self) -> list[str]:
         return self._manager.server_names()
 
+    def descriptors(self) -> list[PluginMCPServerDescriptor]:
+        return list(self._descriptors)
+
     def get_tools_for_server(self, name: str) -> list[Tool] | None:
         return self._manager.get_tools_for_server(name)
 
@@ -438,19 +441,66 @@ class PluginMCPRuntime:
 plugin_mcp_runtime = PluginMCPRuntime()
 
 
+def resolve_plugin_server_name(name: str) -> str | None:
+    """Map a plugin's declared MCP server name onto its local runtime name.
+
+    A plugin server is registered under a name that embeds this machine's
+    installation id, so it cannot be written down anywhere portable. An Agent —
+    especially one published by Conductor, which has never seen this machine —
+    can only name the server the way its plugin declares it, so that spelling
+    has to resolve here or a governed MCP grant could never work at all.
+    """
+
+    matches = sorted(
+        (item for item in plugin_mcp_runtime.descriptors() if item.server_name == name),
+        key=lambda item: item.installation_id,
+    )
+    if not matches:
+        return None
+    if len(matches) > 1:
+        # Deterministic rather than arbitrary, and said out loud: the grant is
+        # honoured, but which plugin supplied it is genuinely ambiguous.
+        logger.warning(
+            "plugin_mcp_server_name_ambiguous server={} plugins={}",
+            name,
+            [item.plugin_name for item in matches],
+        )
+    return matches[0].runtime_name
+
+
 def get_mcp_tools_for_server(name: str) -> list[Tool] | None:
     """Resolve an agent MCP grant across global and plugin runtimes."""
 
     from app.agent.mcp import mcp_manager
 
     tools = mcp_manager.get_tools_for_server(name)
-    return plugin_mcp_runtime.get_tools_for_server(name) if tools is None else tools
+    if tools is not None:
+        return tools
+    tools = plugin_mcp_runtime.get_tools_for_server(name)
+    if tools is not None:
+        return tools
+    runtime_name = resolve_plugin_server_name(name)
+    return (
+        plugin_mcp_runtime.get_tools_for_server(runtime_name)
+        if runtime_name is not None
+        else None
+    )
 
 
 def all_mcp_server_names() -> list[str]:
+    """Every spelling an Agent may legitimately use to name a server."""
+
     from app.agent.mcp import mcp_manager
 
-    return sorted({*mcp_manager.server_names(), *plugin_mcp_runtime.server_names()})
+    return sorted(
+        {
+            *mcp_manager.server_names(),
+            *plugin_mcp_runtime.server_names(),
+            # The portable spelling, which is the only one a published Agent can
+            # carry; without it a governed grant would read as unresolvable.
+            *(item.server_name for item in plugin_mcp_runtime.descriptors()),
+        }
+    )
 
 
 __all__ = [
@@ -459,5 +509,6 @@ __all__ = [
     "all_mcp_server_names",
     "build_plugin_mcp_config",
     "get_mcp_tools_for_server",
+    "resolve_plugin_server_name",
     "plugin_mcp_runtime",
 ]

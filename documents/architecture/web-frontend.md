@@ -45,6 +45,16 @@ cache rather than maintaining a second durable truth in component state.
 - a lazy workbench dock for files, editor, Git, graph, Problems, terminal,
   browser, wiki, scheduler, plugins, processes and Side Chat.
 
+While the lead works, a sent message joins the composer's pending tray, drawn
+inside the input card rather than in the transcript: it has not been delivered,
+so it is not conversation. Each row can be edited in place, promoted with
+**Steer**, or cancelled. A message sent explicitly as a steer skips the tray and
+renders in the transcript at once — it is already on its way, and the
+activation event de-duplicates on row id so it is not added twice.
+`onSubmit` returning false is how a rejected send restores the draft and its
+files — the composer clears them optimistically, so a handler that always
+reports success loses what the user typed.
+
 Large panels are lazy-loaded. Logic is split into hooks for SSE, slash-command
 registry, commands, auto-layout, responsive overlays and mobile gestures.
 Shared shell primitives in `components/shell/` own sidebars, panels, rows,

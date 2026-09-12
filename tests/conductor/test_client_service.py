@@ -20,7 +20,6 @@ from app.conductor.client import (
 from app.conductor.models import (
     EffectiveResourceVersion,
     ManagedResourceRecord,
-    Manifest,
     RegistrationRequest,
     ResourceChangePage,
     TelemetryBatchResponse,
@@ -54,6 +53,14 @@ class MemoryCredentialStore:
 
     def delete(self) -> None:
         self.value = None
+
+
+def _team_material_digest(targets: list[tuple[str, str]]) -> str:
+    """Mirror the reconciler's composite digest over every Agent a Team owns."""
+
+    material = sorted(targets)
+    encoded = json.dumps(material, ensure_ascii=False, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def registration_payload() -> dict[str, object]:
@@ -225,55 +232,6 @@ async def test_heartbeat_uses_stored_token() -> None:
 
 
 @pytest.mark.asyncio
-async def test_v1_snapshot_is_adapted_to_manifest() -> None:
-    store = MemoryCredentialStore("evc_local_secret")
-    snapshot = [
-        {
-            "id": "resource-1",
-            "kind": "agent",
-            "slug": "reviewer",
-            "version": "1.2.0",
-            "payload": {
-                "frontmatter": {"name": "Reviewer"},
-                "system_prompt": "Review the proposed change.",
-            },
-        },
-        {
-            "id": "resource-2",
-            "kind": "workflow",
-            "slug": "release",
-            "version": "1",
-            "payload": {},
-        },
-    ]
-
-    async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.method == "GET"
-        assert request.url.path == "/api/v1/subscribe/resources"
-        assert request.headers["authorization"] == "Bearer evc_local_secret"
-        return httpx.Response(200, json=snapshot)
-
-    client = ConductorClient(
-        "https://conductor.example",
-        store,
-        transport=httpx.MockTransport(handler),
-    )
-    try:
-        manifest, etag = await client.fetch_manifest()
-        unchanged, repeated_etag = await client.fetch_manifest(etag)
-    finally:
-        await client.close()
-
-    assert manifest is not None
-    assert [(item.kind, item.slug, item.revision) for item in manifest.resources] == [
-        ("agent", "reviewer", "1.2.0")
-    ]
-    assert etag == f'"v1-{manifest.revision}"'
-    assert unchanged is None
-    assert repeated_etag == etag
-
-
-@pytest.mark.asyncio
 async def test_governed_text_resource_verifies_canonical_payload_digest() -> None:
     store = MemoryCredentialStore("evc_local_secret")
     payload = {
@@ -296,7 +254,7 @@ async def test_governed_text_resource_verifies_canonical_payload_digest() -> Non
                 "project_id": "project-1",
                 "resource_id": "resource-1",
                 "version_id": "version-1",
-                "kind": "agent",
+                "kind": "agent_team",
                 "slug": "reviewer",
                 "version": "0.1.0",
                 "release_channel": "published",
@@ -607,54 +565,6 @@ async def test_stale_installation_requires_registration_and_clears_bootstrap(
 
 
 @pytest.mark.asyncio
-async def test_offline_sync_uses_last_known_good(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    config_dir = tmp_path / "config"
-    state_dir = tmp_path / "state"
-    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(config_dir))
-    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(state_dir))
-    monkeypatch.setattr(settings, "AGENTS_DIR", str(config_dir / "agents"))
-    monkeypatch.setattr(settings, "SKILLS_DIR", str(config_dir / "skills"))
-    (config_dir / "agents").mkdir(parents=True)
-    (config_dir / "skills").mkdir(parents=True)
-    store = MemoryCredentialStore("evc_local_secret")
-
-    service = ConductorService(store)
-    manifest = Manifest.model_validate(
-        {"schema_version": 1, "revision": "cached", "resources": []}
-    )
-    service._reconciler.save_last_good_manifest(manifest)
-    config = ConductorSettings(
-        enabled=True,
-        url="https://offline.example",
-        installation_key=str(uuid.uuid4()),
-        installation_id=str(uuid.uuid4()),
-        enforcement_mode="report",
-    )
-    monkeypatch.setattr(service, "_config", lambda: config)
-
-    class OfflineClient:
-        base_url = config.url
-        credentials = store
-
-        async def fetch_manifest(self, _etag):
-            request = httpx.Request("GET", f"{config.url}/api/v1/subscribe/resources")
-            raise httpx.ConnectError("offline", request=request)
-
-    service._client = cast(ConductorClient, OfflineClient())
-    status = await service.sync_now()
-
-    assert status.state == "offline"
-    assert status.offline is True
-    assert status.manifest_revision == "cached"
-    assert (
-        json.loads(service._reconciler.last_good_path.read_text())["revision"]
-        == "cached"
-    )
-
-
-@pytest.mark.asyncio
 async def test_governed_sync_recovers_from_a_rejected_persisted_cursor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -749,10 +659,13 @@ async def test_governed_sync_replays_feed_to_backfill_missing_mode_copy(
             applied_version_id="agent-version-1",
             applied_version="0.1.0",
             release_channel="published",
-            kind="agent",
+            kind="agent_team",
             slug="managed-agent",
             modes=["work", "coding"],
-            local_content_sha256=hashlib.sha256(content.encode()).hexdigest(),
+            local_agent_targets=["coding/managed-agent", "managed-agent"],
+            local_content_sha256=_team_material_digest(
+                [("coding/managed-agent", content), ("managed-agent", content)]
+            ),
             observed_state="in_sync",
             observed_at=datetime.now(UTC),
         )
