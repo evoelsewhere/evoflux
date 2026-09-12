@@ -49,7 +49,20 @@ def agent_settings_path() -> Path:
     return Path(settings.EVOFLUX_CONFIG_DIR) / AGENT_SETTINGS_FILENAME
 
 
-def agent_settings_id(*, project_id: str, resource_id: str) -> str:
+def agent_settings_id(*, project_id: str, resource_id: str, agent: str) -> str:
+    """Identity of one Agent's installation-owned runtime record.
+
+    A Conductor Team publishes many Agents under a single ``resource_id``,
+    so the Agent target ("reviewer", "coding/reviewer") is part of the key —
+    without it every Agent on a Team shares one record and the last write
+    silently retargets the whole roster.
+    """
+    material = f"{project_id}\0{resource_id}\0{agent}".encode("utf-8")
+    return f"agent_{hashlib.sha256(material).hexdigest()[:32]}"
+
+
+def legacy_agent_settings_id(*, project_id: str, resource_id: str) -> str:
+    """Pre-Team identity, keyed by resource alone. Read-only compatibility."""
     material = f"{project_id}\0{resource_id}".encode("utf-8")
     return f"agent_{hashlib.sha256(material).hexdigest()[:32]}"
 
@@ -164,21 +177,31 @@ def _read_cached(
     return _parse_settings(_read_payload(Path(path_string), strict=False))
 
 
-def read_agent_runtime_model(*, project_id: str, resource_id: str) -> str | None:
+def read_agent_runtime_model(
+    *, project_id: str, resource_id: str, agent: str
+) -> str | None:
     return read_agent_runtime_settings(
         project_id=project_id,
         resource_id=resource_id,
+        agent=agent,
     ).model
 
 
 def read_agent_runtime_settings(
-    *, project_id: str, resource_id: str
+    *, project_id: str, resource_id: str, agent: str
 ) -> AgentRuntimeSettings:
     path = agent_settings_path()
     records = _read_cached(str(path), agent_settings_signature(path))
     record = records.get(
-        agent_settings_id(project_id=project_id, resource_id=resource_id)
+        agent_settings_id(project_id=project_id, resource_id=resource_id, agent=agent)
     )
+    if record is None:
+        # Installations written before the record was keyed per Agent hold a
+        # single entry for the whole resource. Honour it until this Agent is
+        # saved, which shadows the legacy entry for that Agent only.
+        record = records.get(
+            legacy_agent_settings_id(project_id=project_id, resource_id=resource_id)
+        )
     return record or AgentRuntimeSettings()
 
 
@@ -228,6 +251,7 @@ def write_agent_runtime_model(
     current = read_agent_runtime_settings(
         project_id=project_id,
         resource_id=resource_id,
+        agent=name,
     )
     return write_agent_runtime_settings(
         project_id=project_id,
@@ -258,7 +282,9 @@ def write_agent_runtime_settings(
     normalized_skills = _validate_additions("extra_skills", extra_skills)
     normalized_mcp = _validate_additions("extra_mcp", extra_mcp)
     path = agent_settings_path()
-    settings_id = agent_settings_id(project_id=project_id, resource_id=resource_id)
+    settings_id = agent_settings_id(
+        project_id=project_id, resource_id=resource_id, agent=name
+    )
     with _settings_write_lock(path):
         payload = _read_payload(path, strict=True)
         records = payload["agents"]
@@ -312,9 +338,13 @@ def _validate_additions(
     return tuple(normalized)
 
 
-def delete_agent_runtime_model(*, project_id: str, resource_id: str) -> bool:
+def delete_agent_runtime_model(
+    *, project_id: str, resource_id: str, agent: str
+) -> bool:
     path = agent_settings_path()
-    settings_id = agent_settings_id(project_id=project_id, resource_id=resource_id)
+    settings_id = agent_settings_id(
+        project_id=project_id, resource_id=resource_id, agent=agent
+    )
     with _settings_write_lock(path):
         payload = _read_payload(path, strict=True)
         records = payload["agents"]
@@ -341,6 +371,7 @@ __all__ = [
     "AgentRuntimeSettings",
     "AgentSettingsError",
     "agent_settings_id",
+    "legacy_agent_settings_id",
     "agent_settings_path",
     "agent_settings_signature",
     "delete_agent_runtime_model",

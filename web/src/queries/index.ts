@@ -166,3 +166,7 @@ export {
   useTeamSpawnSettingsQuery,
   useUpdateTeamSpawnSettingsMutation,
 } from './useTeamSpawnSettingsQuery'
+export {
+  useFollowUpSettingsQuery,
+  useUpdateFollowUpSettingsMutation,
+} from './useFollowUpSettingsQuery'

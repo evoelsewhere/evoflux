@@ -57,7 +57,6 @@ from app.services.webbridge_pairing_service import (
 )
 from app.services.webbridge_service import WebBridgeManager
 from app.services.interactive_message_service import (
-    InteractiveMessageAttachmentsBusy,
     InteractiveMessageResult,
     submit_persisted_interactive_message,
 )
@@ -2458,9 +2457,17 @@ async def test_prepared_interactive_message_queues_when_session_is_busy():
         assert team.permission_mode == "accept-edits"
 
 
-async def test_prepared_interactive_message_rejects_attachment_when_session_is_busy():
+async def test_prepared_interactive_message_queues_attachment_when_session_is_busy(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A capture sent while the lead works rides the queued row, not a 409.
+
+    Both drain paths rebuild multimodal parts from ``extra["attachments"]``,
+    so persisting the metas is all the queue needs to carry the file.
+    """
     from app.core import db as db_module
-    from app.models.chat import ChatSession
+    from app.models.chat import ChatSession, SessionMessage
+    from app.services import interactive_message_service
     from app.services.agent_service import RawAttachment
 
     team = SimpleNamespace(
@@ -2469,26 +2476,40 @@ async def test_prepared_interactive_message_rejects_attachment_when_session_is_b
         user_message_lock=asyncio.Lock(),
         has_active_user_turn=lambda: True,
         lead=SimpleNamespace(agent=SimpleNamespace(model_id="test-model")),
+        _activate_queued_user_messages=AsyncMock(return_value=False),
+    )
+    metas = [{"original_name": "capture.png", "category": "image", "path": "/tmp/c.png"}]
+    persist = AsyncMock(return_value=("session-id", metas))
+    monkeypatch.setattr(
+        interactive_message_service.agent_service,
+        "validate_and_persist_attachments",
+        persist,
     )
     async with db_module.async_session_factory() as db:
         session = ChatSession(title="Busy attachment", tags=["webbridge"])
         db.add(session)
         await db.commit()
 
-        with pytest.raises(InteractiveMessageAttachmentsBusy):
-            await submit_persisted_interactive_message(
-                db,
-                session=session,
-                team=team,
-                content="Inspect this capture",
-                attachments=[
-                    RawAttachment(
-                        filename="capture.png",
-                        content_type="image/png",
-                        data=b"\x89PNG\r\n\x1a\n",
-                    )
-                ],
-            )
+        result = await submit_persisted_interactive_message(
+            db,
+            session=session,
+            team=team,
+            content="Inspect this capture",
+            attachments=[
+                RawAttachment(
+                    filename="capture.png",
+                    content_type="image/png",
+                    data=b"\x89PNG\r\n\x1a\n",
+                )
+            ],
+        )
+        queued = await db.get(SessionMessage, result.message_id)
+
+        assert result.status == "queued"
+        assert queued is not None
+        assert queued.extra["queue_status"] == "queued"
+        assert queued.extra["attachments"] == metas
+        assert persist.await_count == 1
 
 
 async def test_prepared_interactive_message_dispatches_when_idle(

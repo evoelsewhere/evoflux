@@ -567,8 +567,15 @@ class Agent(Generic[TContext]):
             if self.source_path is not None:
                 try:
                     from app.agent.config import parse_agent_md
+                    from app.conductor.agent_runtime import (
+                        apply_managed_agent_runtime_model,
+                    )
 
-                    live_config = parse_agent_md(self.source_path)
+                    # Re-reading the file drops the installation's additive
+                    # MCP layer for a managed Agent; union it back on.
+                    live_config = apply_managed_agent_runtime_model(
+                        parse_agent_md(self.source_path), source_path=self.source_path
+                    )
                     if live_config.role == "member":
                         return
                     configured_servers = live_config.mcp

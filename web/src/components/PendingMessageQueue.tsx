@@ -1,43 +1,146 @@
-import { useState } from 'react'
-import { ChevronDown, ChevronUp, X } from 'lucide-react'
+/**
+ * PendingMessageQueue — what you have typed that the agent has not read yet.
+ *
+ * It belongs to the composer, not the transcript: these messages have not
+ * happened in the conversation, they are still pending input. Codex draws the
+ * same thing as a preview strip directly above its composer, and putting it
+ * anywhere else invites reading a queued line as something the agent replied
+ * to.
+ *
+ * Each row shows its lane, and can be moved between lanes, edited in place
+ * (keeping its position in the queue) or cancelled, until the moment a turn
+ * boundary claims it.
+ */
+
+import { useEffect, useRef, useState } from 'react'
+import { Clock, Paperclip, X, Zap } from 'lucide-react'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { cn } from '@/lib/utils'
+import type { MessageAttachment } from '@/api/types'
 
-const QUEUED_COLLAPSE_LINES = 10
-const QUEUED_COLLAPSE_CHARS = 700
+const ROW_ACTION_CLASS =
+  'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-6 md:w-6'
 
-function QueuedMessageContent({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false)
-  const lines = content.split('\n')
-  const needsCollapse = lines.length > QUEUED_COLLAPSE_LINES || content.length > QUEUED_COLLAPSE_CHARS
-  const visibleContent = needsCollapse && !expanded
-    ? lines.length > QUEUED_COLLAPSE_LINES
-      ? lines.slice(0, QUEUED_COLLAPSE_LINES).join('\n')
-      : `${content.slice(0, QUEUED_COLLAPSE_CHARS).trimEnd()}...`
-    : content
+function attachmentLabel(attachments: MessageAttachment[]): string {
+  if (attachments.length === 1) {
+    return attachments[0].original_name || attachments[0].filename || '1 file'
+  }
+  return `${attachments.length} files`
+}
+
+function QueuedRow({
+  id,
+  content,
+  delivery,
+  attachments,
+}: {
+  id: string
+  content: string
+  delivery: 'steer' | 'queue'
+  attachments?: MessageAttachment[]
+}) {
+  const setPendingMessageDelivery = useTeamStore((s) => s.setPendingMessageDelivery)
+  const editPendingMessage = useTeamStore((s) => s.editPendingMessage)
+  const removePendingMessage = useTeamStore((s) => s.removePendingMessage)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(content)
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // Seeded on entry rather than synced by effect, so text that changes
+  // underneath an open editor cannot clobber what is being typed.
+  const startEditing = () => {
+    setDraft(content)
+    setEditing(true)
+  }
+
+  useEffect(() => {
+    if (!editing) return
+    const el = inputRef.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [editing])
+
+  const commit = () => {
+    const next = draft.trim()
+    setEditing(false)
+    if (!next || next === content) {
+      setDraft(content)
+      return
+    }
+    editPendingMessage(id, next)
+  }
+
+  const steering = delivery === 'steer'
+  const LaneIcon = steering ? Clock : Zap
+  const laneAction = steering ? 'Hold for the next turn instead' : 'Steer this turn'
 
   return (
-    <div className="relative overflow-hidden rounded-sm border border-(--color-border) bg-(--color-surface) px-4 py-3 text-sm leading-relaxed text-(--color-text) opacity-75 shadow-sm">
-      {needsCollapse && (
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          title={expanded ? 'Collapse' : 'Expand'}
-          className="absolute top-1.5 right-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-(--bg-key) text-(--color-text-2) transition-[opacity,background-color,color,transform] duration-(--motion-fast) hover:text-(--color-text) active:scale-90 md:h-5 md:w-5"
-        >
-          {expanded ? <ChevronUp size={14} className="md:h-3 md:w-3" /> : <ChevronDown size={14} className="md:h-3 md:w-3" />}
-        </button>
-      )}
-      <p className="min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere]">{visibleContent}</p>
-      {needsCollapse && !expanded && (
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 backdrop-blur-[1px]"
-          style={{
-            height: '2.4rem',
-            background: 'linear-gradient(to bottom, transparent 0%, var(--color-surface) 90%)',
-          }}
-        />
-      )}
-    </div>
+    <li className="group/row flex items-center gap-1 rounded-md px-1.5 py-0.5 transition-colors hover:bg-(--bg-key)">
+      <div className="min-w-0 flex-1">
+        {editing ? (
+          <textarea
+            ref={inputRef}
+            value={draft}
+            rows={Math.min(6, draft.split('\n').length || 1)}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                commit()
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                setDraft(content)
+                setEditing(false)
+              }
+            }}
+            aria-label="Edit queued message"
+            className="w-full resize-none rounded-sm border border-(--color-accent) bg-(--color-surface) px-2 py-1 text-sm leading-relaxed text-(--color-text) outline-none"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={startEditing}
+            title="Edit queued message"
+            className="block w-full truncate text-left text-sm leading-relaxed text-(--color-text-2) hover:text-(--color-text)"
+          >
+            {content}
+          </button>
+        )}
+        {attachments && attachments.length > 0 && (
+          <span className="mt-0.5 flex items-center gap-1 text-[11px] text-(--color-text-subtle)">
+            <Paperclip size={11} aria-hidden="true" />
+            {attachmentLabel(attachments)}
+          </span>
+        )}
+      </div>
+      {/* Deliver it now instead of at the turn boundary. This is the whole
+          reason the tray is interactive: the default is to wait, and one
+          click is how an urgent correction jumps the queue. */}
+      <button
+        onClick={() => setPendingMessageDelivery(id, steering ? 'queue' : 'steer')}
+        aria-label={laneAction}
+        title={laneAction}
+        className={cn(
+          'flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors md:h-6',
+          steering
+            ? 'bg-(--color-accent)/12 text-(--color-accent) hover:bg-(--color-accent)/20'
+            : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+        )}
+      >
+        <LaneIcon size={13} aria-hidden="true" />
+        {steering ? 'Steering' : 'Steer'}
+      </button>
+      <button
+        onClick={() => removePendingMessage(id)}
+        aria-label="Cancel queued message"
+        title="Cancel queued message"
+        className={ROW_ACTION_CLASS}
+      >
+        <X size={13} aria-hidden="true" />
+      </button>
+    </li>
   )
 }
 
@@ -45,42 +148,28 @@ export function PendingMessageQueue() {
   const allMessages = useTeamStore((s) => s._pendingMessages)
   const sessionId = useTeamStore((s) => s.sessionId)
   const messages = allMessages.filter((msg) => (msg.sessionId ?? null) === sessionId)
-  const removePendingMessage = useTeamStore((s) => s.removePendingMessage)
 
   if (messages.length === 0) return null
 
-  const handleRemove = (id: string, content: string) => {
-    // Move the queued text back into the composer so the user can edit
-    // or resend it instead of losing what they typed. Mirrors the
-    // restore-on-/undo flow in TeamChatView. The CustomEvent matches
-    // the existing `focus-chat-input` pattern and decouples this
-    // component from the chat view's inputRef.
-    window.dispatchEvent(
-      new CustomEvent('queue:restore-draft', { detail: { content } }),
-    )
-    removePendingMessage(id)
-  }
-
   return (
-    <div className="flex flex-col gap-3">
-      {messages.map((msg) => (
-        <div key={msg.id} className="group flex justify-end">
-          <div className="flex max-w-full flex-col items-end gap-1.5 md:max-w-[78%]">
-            <div className="flex max-w-full items-start gap-2">
-              <QueuedMessageContent content={msg.content} />
-              <button
-                onClick={() => handleRemove(msg.id, msg.content)}
-                aria-label="Edit queued message"
-                title="Edit queued message"
-                className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-(--color-text-muted) opacity-100 transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-6 md:w-6 md:opacity-70 md:group-hover:opacity-100"
-              >
-                <X size={14} className="md:h-[13px] md:w-[13px]" />
-              </button>
-            </div>
-            <span className="pr-8 text-xs text-(--color-text-subtle)">Queued</span>
-          </div>
-        </div>
-      ))}
+    <div
+      // Inside the composer card: a hairline is the only separation, so the
+      // tray reads as the top of the input rather than a panel above it.
+      className="w-full border-b border-(--color-border-subtle) px-2 pb-1 pt-1"
+      role="group"
+      aria-label={`${messages.length} message${messages.length === 1 ? '' : 's'} waiting to be delivered`}
+    >
+      <ul className="max-h-40 space-y-0.5 overflow-y-auto">
+        {messages.map((msg) => (
+          <QueuedRow
+            key={msg.id}
+            id={msg.id}
+            content={msg.content}
+            delivery={msg.delivery === 'queue' ? 'queue' : 'steer'}
+            attachments={msg.attachments}
+          />
+        ))}
+      </ul>
     </div>
   )
 }

@@ -1,10 +1,18 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse, PermissionMode } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse, PermissionMode, MessageAttachment } from '@/api/types'
 
 export interface PendingMessage {
   id: string
   sessionId?: string | null
   content: string
   submittedAt?: number
+  /** Files that ride this message when it is delivered. */
+  attachments?: MessageAttachment[]
+  /**
+   * `steer` is spliced into the running turn at the next model boundary;
+   * `queue` waits for that turn to finish. Absent on rows queued before the
+   * lane existed, which behave as `steer`.
+   */
+  delivery?: 'steer' | 'queue'
 }
 
 export type ActivityKind = 'spawn' | 'dismiss' | 'inbox' | 'handoff' | 'status' | 'done' | 'delegation'
@@ -35,7 +43,7 @@ export type CacheInvalidation =
 export interface SetupRequiredNotice {
   agent: string
   message: string
-  action: { type?: string; tab?: string }
+  action: { type?: string; tab?: string; agent?: string }
 }
 
 export interface AgentStream {
@@ -151,7 +159,8 @@ export interface TeamStoreState {
 }
 
 export interface TeamStoreActions {
-  sendMessage: (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean; webBridgeExtensionId?: string | null }) => Promise<void>
+  /** Resolves false when the send was rejected, so the composer can restore the draft. */
+  sendMessage: (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean; webBridgeExtensionId?: string | null; delivery?: 'steer' | 'queue' }) => Promise<boolean>
   setSessionModelSettings: (model: string | null, thinkingLevel: string | null, fastMode?: boolean) => void
   continueTeam: () => Promise<void>
   compactTeam: () => Promise<void>
@@ -189,6 +198,15 @@ export interface TeamStoreActions {
    */
   setDraftWorkspace: (workspace: string | null) => void
   removePendingMessage: (id: string) => void
+  /** Edit a queued message in place, keeping its place in the queue. */
+  patchPendingMessage: (
+    id: string,
+    patch: { delivery?: 'steer' | 'queue'; content?: string },
+  ) => void
+  /** Move a queued message between the `steer` and `queue` lanes. */
+  setPendingMessageDelivery: (id: string, delivery: 'steer' | 'queue') => void
+  /** Replace a queued message's text without losing its queue position. */
+  editPendingMessage: (id: string, content: string) => void
   _handleSSEEvent: (type: string, data: unknown) => void
   _drainCacheInvalidations: () => CacheInvalidation[]
   _abortController: AbortController | null

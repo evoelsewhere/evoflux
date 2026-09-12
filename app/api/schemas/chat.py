@@ -80,6 +80,17 @@ class ChatForm(BaseModel):
             "PATCH /team/sessions/{id}/permission-mode."
         ),
     )
+    delivery: str | None = Field(
+        None,
+        description=(
+            "How this message reaches a lead that is already working. "
+            "'steer' splices it into the running turn at the next model "
+            "boundary; 'queue' holds it until that turn completes and then "
+            "starts a new one. Omit to use the configured default from "
+            "Settings -> Follow-up behavior. Ignored when the lead is idle — "
+            "the message starts a turn either way."
+        ),
+    )
 
     @classmethod
     def as_form(
@@ -98,6 +109,7 @@ class ChatForm(BaseModel):
         folder_id: str | None = Form(None),
         project_id: str | None = Form(None),
         permission_mode: str | None = Form(None),
+        delivery: str | None = Form(None),
     ) -> "ChatForm":
         try:
             return cls(
@@ -115,6 +127,7 @@ class ChatForm(BaseModel):
                 folder_id=folder_id,
                 project_id=project_id,
                 permission_mode=permission_mode,
+                delivery=delivery,
             )
         except ValidationError as exc:
             raise HTTPException(
@@ -131,6 +144,10 @@ class ChatForm(BaseModel):
             raise ValueError("message is required when interrupt=false.")
         if self.message is not None and len(self.message.strip()) == 0:
             raise ValueError("message must not be blank.")
+        if self.delivery is not None:
+            self.delivery = self.delivery.strip().lower()
+            if self.delivery not in {"steer", "queue"}:
+                raise ValueError("delivery must be 'steer' or 'queue'.")
         self.mode = normalize_mode(self.mode)
         if self.mode not in {"work", "coding"}:
             raise ValueError("mode must be 'work' or 'coding'.")

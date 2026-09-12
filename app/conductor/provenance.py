@@ -37,11 +37,12 @@ def managed_resource_providers() -> dict[tuple[str, str], ManagedResourceProvide
         if record.observed_state == MANAGED_RESOURCE_REMOVED_STATE:
             continue
         provider = managed_resource_provider_from_record(record, project_name)
-        if record.kind == "agent":
-            if ResourceTargetMode.WORK in record.modes:
-                providers[(record.kind, record.slug)] = provider
-            if ResourceTargetMode.CODING in record.modes:
-                providers[(record.kind, f"coding/{record.slug}")] = provider
+        if record.kind == "agent_team":
+            # A Team owns every Agent file it wrote, so each one is looked up by
+            # its own name. Keying only by the team slug would leave its members
+            # reported as user-owned.
+            for target in record.local_agent_targets:
+                providers[(record.kind, target)] = provider
         else:
             providers[(record.kind, record.slug)] = provider
     return providers
@@ -75,6 +76,10 @@ def managed_resource_provider_by_id(
 def managed_resource_provider_from_record(
     record: ManagedResourceRecord, project_name: str
 ) -> ManagedResourceProvider:
+    # Imported lazily: the reconciler pulls in the plugin platform and the
+    # agent loader, both of which reach back here.
+    from app.conductor.governed_reconciler import observed_state_now
+
     applied_version_id = record.applied_version_id or (
         record.version_id if record.observed_state in {"applied", "in_sync"} else None
     )
@@ -121,7 +126,10 @@ def managed_resource_provider_from_record(
             else None
         ),
         release_channel=record.release_channel,
-        observed_state=record.observed_state,
+        # The same honesty the Enterprise library applies: a release whose
+        # Skills or MCP servers did not resolve must not read "Applied" on the
+        # Agent's own page while the library calls it dependency_missing.
+        observed_state=observed_state_now(record),
     )
 
 

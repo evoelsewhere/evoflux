@@ -874,6 +874,100 @@ class TestResolveTeamSession:
         assert tree.json()["repositories"] == []
 
 
+class TestChatRegistersItsWorkspace:
+    """A Coding chat started from a draft must register its repository.
+
+    The sidebar looks a freshly picked (or freshly cloned) folder up with
+    ``existing_only``, which finds no session and creates no registry row, so
+    ``POST /team/chat`` is the call that brings both into being. When it
+    skipped the registry the repository was invisible in the sidebar — across
+    restarts too — until the user opened the same folder a second time.
+    """
+
+    @pytest.fixture
+    def dispatched(self, app_with_team, test_team, monkeypatch):
+        from unittest.mock import AsyncMock
+
+        async def fake_coding_team(*_args, **_kwargs):
+            return test_team
+
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.team_manager.get_or_start_coding_team",
+            fake_coding_team,
+        )
+        dispatch = AsyncMock(return_value=(str(uuid.uuid7()), 0))
+        monkeypatch.setattr(
+            "app.api.routes.team.chat.agent_service.dispatch_user_message", dispatch
+        )
+        return dispatch
+
+    def test_first_message_registers_the_workspace(
+        self, app_with_team, dispatched, tmp_path
+    ):
+        repo = tmp_path / "cloned-repo"
+        repo.mkdir()
+        client = TestClient(app_with_team)
+
+        resp = client.post(
+            "/api/team/chat",
+            data={"message": "hello", "mode": "coding", "workspace": str(repo)},
+        )
+
+        assert resp.status_code == 202, resp.text
+        tree = client.get("/api/team/workspace/tree")
+        assert [r["path"] for r in tree.json()["repositories"]] == [str(repo.resolve())]
+        assert [r["name"] for r in tree.json()["repositories"]] == ["cloned-repo"]
+
+    def test_rejected_message_registers_nothing(
+        self, app_with_team, dispatched, tmp_path
+    ):
+        """A request that never creates a session leaves the sidebar alone."""
+        repo = tmp_path / "untouched"
+        repo.mkdir()
+        client = TestClient(app_with_team)
+
+        resp = client.post(
+            "/api/team/chat",
+            data={"message": "/loop go", "mode": "coding", "workspace": str(repo)},
+        )
+
+        assert resp.status_code == 410, resp.text
+        assert client.get("/api/team/workspace/tree").json()["repositories"] == []
+
+    @pytest.mark.asyncio
+    async def test_chatting_in_a_hidden_workspace_reopens_it(
+        self, app_with_team, dispatched, tmp_path
+    ):
+        """Same rule ``/sessions/resolve`` applies: opening a repository makes
+        it visible, so both ways into a session agree on what the sidebar shows.
+        """
+        import app.core.db as _db
+
+        repo = tmp_path / "hidden"
+        repo.mkdir()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                db.add(
+                    CodingWorkspace(
+                        path=str(repo.resolve()),
+                        kind="repo",
+                        name="hidden",
+                        hidden=True,
+                    )
+                )
+        client = TestClient(app_with_team)
+        assert client.get("/api/team/workspace/tree").json()["repositories"] == []
+
+        resp = client.post(
+            "/api/team/chat",
+            data={"message": "hello", "mode": "coding", "workspace": str(repo)},
+        )
+
+        assert resp.status_code == 202, resp.text
+        tree = client.get("/api/team/workspace/tree").json()
+        assert [r["path"] for r in tree["repositories"]] == [str(repo.resolve())]
+
+
 # ---------------------------------------------------------------------------
 # DELETE /team/sessions/{session_id}
 # ---------------------------------------------------------------------------

@@ -92,6 +92,13 @@ export async function postTeamChat(
     projectId?: string | null
     permissionMode?: string | null
   },
+  /**
+   * How this message reaches a lead that is already working. `steer` splices
+   * it into the running turn at the next model boundary; `queue` holds it
+   * until that turn finishes and then starts a new one. Ignored when the
+   * lead is idle — the message starts a turn either way.
+   */
+  delivery: 'steer' | 'queue' = 'steer',
 ): Promise<{ status: string; session_id: string; message_id?: string }> {
   const formData = new FormData()
   if (message) {
@@ -135,6 +142,9 @@ export async function postTeamChat(
   }
   if (placement?.permissionMode) {
     formData.append('permission_mode', placement.permissionMode)
+  }
+  if (delivery !== 'steer') {
+    formData.append('delivery', delivery)
   }
   if (files && files.length > 0) {
     for (const file of files) {
@@ -197,6 +207,33 @@ export async function cancelQueuedTeamMessage(sessionId: string, messageId: stri
     const body = await res.json().catch(() => null)
     throw new Error(body?.detail || `DELETE queued message failed: ${res.status}`)
   }
+}
+
+/**
+ * Edit a queued message in place — its lane, its text, or both. The row keeps
+ * its place in the queue. Resolves false when the row is already gone: the
+ * turn boundary claimed it, so it is being delivered anyway and the caller
+ * should just drop its chip.
+ */
+export async function patchQueuedTeamMessage(
+  sessionId: string,
+  messageId: string,
+  patch: { delivery?: 'steer' | 'queue'; content?: string },
+): Promise<boolean> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/queued-messages/${encodeURIComponent(messageId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    },
+  )
+  if (res.status === 404) return false
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail || `PATCH queued message failed: ${res.status}`)
+  }
+  return true
 }
 
 export async function replyPermissionRequest(

@@ -630,6 +630,29 @@ export function CodingSidebar({
       setPendingWorkspace(null);
   }, [pendingWorkspace, workspace]);
 
+  // Put a repository the user just opened into the sidebar registry.
+  //
+  // The chat stays a draft until the first message, but the repository is not
+  // a draft: opening (or cloning) one is the user's explicit act, and the
+  // sidebar renders the server-side registry only. Without this a freshly
+  // picked folder is missing from Workspaces — and gone entirely on the next
+  // launch — for as long as the chat goes unsent.
+  const registerOpenedWorkspace = useCallback(
+    async (path: string) => {
+      try {
+        await setCodingWorkspaceVisibility(path, false);
+        await refreshWorkspaceTree();
+      } catch (err) {
+        useToastStore.getState().push({
+          tone: "error",
+          title: "Couldn't add this repository to the sidebar",
+          description: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    [refreshWorkspaceTree],
+  );
+
   const selectWorkspace = async (
     path: string,
     opts: { create?: boolean } = {},
@@ -670,7 +693,9 @@ export function CodingSidebar({
       const session = await findTeamSession({ mode: "coding", workspace: path });
       if (!session) {
         // First time in this repo — stay on the draft opened above and let
-        // the first message create the session.
+        // the first message create the session, but register the repository
+        // itself right away so it shows up under Workspaces either way.
+        void registerOpenedWorkspace(path);
         setPendingWorkspace(null);
         saveLastCodingWorkspace(path);
         navigate({ to: "/coding/$focusId", params: { focusId: path } });

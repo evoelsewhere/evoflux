@@ -58,6 +58,25 @@ class TeamSpawnModeSettings(BaseModel):
     coding: Literal["ask", "auto"] = "ask"
 
 
+class FollowUpSettings(BaseModel):
+    """What a message sent to an already-working lead does by default.
+
+    ``"queue"`` (default) holds it until the current turn completes;
+    ``"steer"`` splices it into that turn at the next model boundary. Queue
+    is the default because it is the non-destructive one: it cannot redirect
+    work the agent is part-way through. A queued message can still be
+    promoted to the running turn afterwards, so nothing is lost by waiting.
+
+    The composer's primary key uses this lane and its secondary key uses the
+    other, so both stay reachable whichever way this is set. A client that
+    names the lane explicitly overrides it for that message.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    delivery: Literal["steer", "queue"] = "queue"
+
+
 class GitSettings(BaseModel):
     """Operational and safety defaults for local/remote Git commands."""
 
@@ -274,6 +293,20 @@ class RuntimeSettings(BaseModel):
     webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
     team_spawn: TeamSpawnModeSettings = Field(default_factory=TeamSpawnModeSettings)
+    follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)
+
+
+def follow_up_delivery_default() -> str:
+    """Configured lane for a follow-up that does not name one.
+
+    Falls back to ``"queue"`` when the settings file cannot be read: holding
+    a message never redirects work in progress, so it is the safe answer when
+    the configured one is unavailable.
+    """
+    try:
+        return load_runtime_settings().follow_up.delivery
+    except Exception:  # noqa: BLE001 - ingress must not fail on settings
+        return "queue"
 
 
 def provider_visible_models(provider_id: str) -> list[str]:

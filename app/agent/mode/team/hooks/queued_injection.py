@@ -6,15 +6,24 @@ are saved as queued ``SessionMessage`` rows (``queue_status="queued"``,
 the current turn finished — :meth:`AgentTeam._activate_queued_user_messages`
 would pop them and start a new turn.
 
-This hook runs ``before_model`` and pops any pending queued rows on every
+This hook runs ``before_model`` and pops pending queued rows on every
 iteration boundary, appending them to ``state.messages`` so the next LLM call
 sees them in the same turn.  Mid-tool-call splicing is impossible by
 construction: ``before_model`` only fires between LLM steps, never during one.
 
+Only the ``steer`` lane is drained here.  A message the user deliberately
+held back (``delivery="queue"``) stays queued until the turn completes and
+:meth:`AgentTeam._activate_queued_user_messages` starts a fresh turn for it.
+
+Attachments persisted on the queued row are rebuilt into multimodal parts so
+an image or document sent mid-turn reaches the model in that same turn.
+
 Out of scope (same as the existing post-turn drain path):
 - ``model`` / ``thinking_level`` / ``service_tier`` stored on the queued row's ``extra`` are not
-  applied — the current turn keeps its originally-selected model.
-- Attachments stored on the queued row are not forwarded.
+  applied — the current turn keeps its originally-selected model.  An image
+  therefore reaches whatever model the turn started with; delivery strategy
+  was chosen at queue time, and falls back to a workspace path reference
+  when the file cannot be sent natively.
 """
 
 from __future__ import annotations
@@ -27,6 +36,7 @@ from loguru import logger
 from app.agent.hooks.base import BaseAgentHook
 from app.agent.schemas.chat import HumanMessage
 from app.core.db import DbFactory, resolve_db_factory
+from app.services.chat_service import build_attachment_parts
 from app.services.chat_service import pop_queued_user_messages
 from app.services.chat_service import mark_channel_source_delivered
 
@@ -61,16 +71,26 @@ class QueuedMessageInjectionHook(BaseAgentHook):
 
         db_factory = resolve_db_factory(self._db_factory)
         async with db_factory() as db:
-            queued = await pop_queued_user_messages(db, session_uuid)
+            queued = await pop_queued_user_messages(
+                db, session_uuid, delivery="steer"
+            )
             if not queued:
                 await db.commit()
                 return None
             await db.commit()
 
         for row in queued:
-            state.messages.append(
-                HumanMessage(content=row.content or "", extra=row.extra)
+            content = row.content or ""
+            attachments = (row.extra or {}).get("attachments")
+            parts = (
+                build_attachment_parts(content, attachments)
+                if isinstance(attachments, list) and attachments
+                else None
             )
+            message = HumanMessage(content=content, extra=row.extra)
+            if parts:
+                message.parts = parts
+            state.messages.append(message)
 
         # The rows are now part of the next model request. Mark source-keyed
         # browser messages delivered so a lost HTTP ACK cannot inject them a

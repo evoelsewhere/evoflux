@@ -72,7 +72,11 @@ describe('InputBar skill directives', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     await waitFor(() => {
-      expect(onSubmit).toHaveBeenCalledWith('$work-writing Draft the report', undefined)
+      expect(onSubmit).toHaveBeenCalledWith(
+        '$work-writing Draft the report',
+        undefined,
+        'steer',
+      )
     })
   })
 

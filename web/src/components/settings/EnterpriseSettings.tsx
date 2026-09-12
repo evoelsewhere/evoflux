@@ -22,6 +22,7 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Users,
   Star,
   Wrench,
   type LucideIcon,
@@ -66,7 +67,22 @@ import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { formatCompact, formatUsd } from '@/utils/telemetryFormat'
 
 type ManagedResource = ConductorManagedResource | LegacyConductorResource
-type ResourceKindFilter = 'all' | 'agent' | 'skill' | 'plugin'
+type ResourceKindFilter = 'all' | 'agent_team' | 'skill' | 'plugin'
+
+const RESOURCE_KIND_LABEL: Record<ResourceKindFilter, string> = {
+  all: 'All',
+  agent_team: 'Agent teams',
+  skill: 'Skills',
+  plugin: 'Plugins',
+}
+
+/** Singular, human-readable form. The wire enum ("agent_team") must never
+ *  reach a sentence the user reads. */
+const RESOURCE_KIND_NOUN: Record<string, string> = {
+  agent_team: 'Agent team',
+  skill: 'Skill',
+  plugin: 'Plugin',
+}
 
 const TAB_LABELS: Array<{
   value: EnterpriseTab
@@ -148,7 +164,8 @@ export function EnterpriseSettingsPage() {
       setSearch({ tab: 'updates' })
       return
     }
-    if (resource.kind === 'agent') {
+    if (resource.kind === 'agent_team') {
+      // A team's slug is its lead's Agent name, which is the page that exists.
       navigateSettings('/settings/agents/$name', {
         params: { name: resource.slug },
       })
@@ -381,9 +398,9 @@ function OverviewPanel({
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
         <section className="min-w-0 rounded-xl border border-(--color-border) bg-(--bg-card)">
-          <SectionTitle title="Managed intelligence" description="Agents, Skills, and Plugins supplied by your project." action="Open library" onAction={() => onNavigate('library')} />
+          <SectionTitle title="Managed intelligence" description="Agent teams, Skills, and Plugins supplied by your project." action="Open library" onAction={() => onNavigate('library')} />
           <div className="grid gap-px border-t border-(--color-border-subtle) bg-(--color-border-subtle) sm:grid-cols-3">
-            <ResourceKindSummary kind="agent" resources={resources} />
+            <ResourceKindSummary kind="agent_team" resources={resources} />
             <ResourceKindSummary kind="skill" resources={resources} />
             <ResourceKindSummary kind="plugin" resources={resources} />
           </div>
@@ -448,9 +465,9 @@ function LibraryPanel({
     <div className="space-y-4">
       <PageIntro title="Project library" description="Project-managed intelligence available to this EvoFlux installation. Managed resources remain read-only locally." />
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter project resources">
-        {(['all', 'agent', 'skill', 'plugin'] as const).map((kind) => (
+        {(['all', 'agent_team', 'skill', 'plugin'] as const).map((kind) => (
           <Button key={kind} size="sm" variant={filter === kind ? 'secondary' : 'ghost'} onClick={() => onFilter(kind)}>
-            {kind === 'all' ? 'All' : `${kind[0]!.toUpperCase()}${kind.slice(1)}s`}
+            {RESOURCE_KIND_LABEL[kind]}
             <span className="font-mono text-[10px] text-(--color-text-muted)">{kind === 'all' ? resources.length : resources.filter((resource) => resource.kind === kind).length}</span>
           </Button>
         ))}
@@ -689,10 +706,10 @@ function ResourceListRow({
   const description =
     'description' in resource && resource.description
       ? resource.description
-      : `Managed ${resource.kind} supplied by the connected project.`
+      : `Managed ${RESOURCE_KIND_NOUN[resource.kind] ?? resource.kind} supplied by the connected project.`
   const settingsLabel =
-    resource.kind === 'agent'
-      ? 'Open Agent settings'
+    resource.kind === 'agent_team'
+      ? 'Open Agent team settings'
       : resource.kind === 'skill'
         ? 'Open Skill settings'
         : 'Open Plugin settings'
@@ -869,12 +886,12 @@ function CompactResourceRow({ resource, favorite, onFavorite, onOpenSettings }: 
   )
 }
 
-function ResourceKindSummary({ kind, resources }: { kind: 'agent' | 'skill' | 'plugin'; resources: ManagedResource[] }) {
+function ResourceKindSummary({ kind, resources }: { kind: 'agent_team' | 'skill' | 'plugin'; resources: ManagedResource[] }) {
   const rows = resources.filter((resource) => resource.kind === kind)
-  const Icon = kind === 'agent' ? Bot : kind === 'skill' ? Sparkles : PlugZap
+  const Icon = kind === 'agent_team' ? Users : kind === 'skill' ? Sparkles : PlugZap
   return (
     <div className="bg-(--bg-card) px-4 py-4">
-      <div className="flex items-center gap-2 text-(--color-text-muted)"><Icon className="size-4" /><span className="text-xs font-medium capitalize">{kind}s</span></div>
+      <div className="flex items-center gap-2 text-(--color-text-muted)"><Icon className="size-4" /><span className="text-xs font-medium">{RESOURCE_KIND_LABEL[kind]}</span></div>
       <p className="mt-2 text-2xl font-semibold tabular-nums text-(--color-text)">{rows.length}</p>
       <p className="mt-0.5 text-[11px] text-(--color-text-subtle)">{rows.filter(resourceHasUpdate).length} awaiting review</p>
     </div>
@@ -915,7 +932,7 @@ function Metric({ icon: Icon, label, value, hint, tone }: { icon: LucideIcon; la
 }
 
 function ResourceIcon({ kind, compact = false }: { kind: string; compact?: boolean }) {
-  const Icon = kind === 'agent' ? Bot : kind === 'skill' ? Sparkles : PlugZap
+  const Icon = kind === 'agent_team' ? Users : kind === 'skill' ? Sparkles : PlugZap
   return <span className={`flex shrink-0 items-center justify-center rounded-lg bg-(--color-accent-soft) text-(--color-accent) ${compact ? 'size-8' : 'size-10'}`}><Icon className={compact ? 'size-3.5' : 'size-4'} /></span>
 }
 

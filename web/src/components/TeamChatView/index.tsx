@@ -50,7 +50,7 @@ import type { Command } from '@/components/CommandPalette'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { useTodosQuery } from '@/queries/useTodosQuery'
-import { useRegistryQuery, useTriggerDreamMutation, useWebBridgeSettingsQuery } from '@/queries'
+import { useFollowUpSettingsQuery, useRegistryQuery, useTriggerDreamMutation, useWebBridgeSettingsQuery } from '@/queries'
 import { getSessionWorkspaceRoot, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, searchEverywhere, setSessionPermissionMode } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { useShallow } from 'zustand/react/shallow'
@@ -98,7 +98,12 @@ import { VIEW_MODES, type ViewMode } from './types'
 import { shouldStartAutomaticSplit } from './auto-layout'
 import { AutomaticSplitTransition } from './AutomaticSplitTransition'
 import { useAdaptiveSidebarOverlay } from './useAdaptiveSidebarOverlay'
-import { codingFocusId, saveLastCodingWorkspace, workspaceLabel } from '@/utils/workspace'
+import {
+  codingFocusId,
+  notifyCodingWorkspacesChanged,
+  saveLastCodingWorkspace,
+  workspaceLabel,
+} from '@/utils/workspace'
 import {
   shouldClearFilesEditor,
   shouldShowStandaloneEditor,
@@ -413,6 +418,25 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const setActiveAgent   = useTeamStore((s) => s.setActiveAgent)
   const setSessionModelSettings = useTeamStore((s) => s.setSessionModelSettings)
   const setupRequired = useTeamStore((s) => s.setupRequired)
+  // A managed Agent that ships without a model is not a provider failure:
+  // the backend says so via ``action.type``, and the fix lives on that
+  // Agent's runtime-model control, not on Settings → Providers.
+  const setupCta = useMemo(() => {
+    const action = setupRequired?.action
+    if (action?.type === 'open_agent_settings' && action.agent) {
+      const agent = action.agent
+      return {
+        title: 'Assign a model to this agent',
+        label: 'Open Agent',
+        onClick: () => useUIStore.getState().openSettings(`agents/${agent}`),
+      }
+    }
+    return {
+      title: 'Configure a provider to start chatting',
+      label: 'Open Providers',
+      onClick: () => useUIStore.getState().openSettings('providers'),
+    }
+  }, [setupRequired])
   const dismissSetupRequired = useTeamStore((s) => s.dismissSetupRequired)
   const turnChanges = useTeamStore((s) => s.turnChanges)
 
@@ -654,6 +678,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     [sessionTags],
   )
   const webBridgeSettings = useWebBridgeSettingsQuery()
+  // Which lane the composer's primary key uses while an agent is working.
+  // Settings -> Agents -> Follow-up behavior owns it; Tab takes the other.
+  const followUpLane = useFollowUpSettingsQuery().data?.delivery ?? 'queue'
   const webBridgePolicyEnabled = webBridgeSettings.data?.enabled !== false
   // Whether WebBridge is *wanted*, which is a pure function of policy, the
   // session's tag and the new-chat default. ``null`` means the tags have not
@@ -1923,7 +1950,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       )}
     </>
   )
-  const handleComposerSubmit = useCallback(async (content: string, files?: File[]) => {
+  const handleComposerSubmit = useCallback(async (
+    content: string,
+    files?: File[],
+    delivery: 'steer' | 'queue' = followUpLane,
+  ) => {
     if (webBridgeEnabled) {
       try {
         const status = await getWebBridgeStatus()
@@ -1990,7 +2021,16 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       ? `!${body.slice(1).trim()}`
       : await expandUserCommand(content)
     const current = useTeamStore.getState()
-    await sendMessage(expanded, files, {
+    // A Coding draft's first message is what registers its repository with
+    // the backend, so the sidebar's snapshot is stale the moment it lands:
+    // without the refresh below, a freshly picked (or freshly cloned) folder
+    // stays missing from Workspaces until the query happens to go stale.
+    const registersWorkspace =
+      mode === 'coding' && !!workspace && current.sessionId === null
+    // The composer clears its draft optimistically, so a rejected send has
+    // to say so — returning true regardless dropped the user's text and
+    // their attachments on the floor.
+    const sent = await sendMessage(expanded, files, {
       mode,
       // In Work, a folder is only ever sent for a draft: it is the one thing
       // the session cannot be told afterwards without the opening turn
@@ -2008,8 +2048,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       shell,
       webBridgeEnabled,
       webBridgeExtensionId,
+      delivery,
     })
-    return true
+    if (sent && registersWorkspace) notifyCodingWorkspacesChanged()
+    return sent
   }, [
     expandUserCommand,
     mode,
@@ -2100,22 +2142,19 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             <div className="flex min-w-0 gap-3">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-(--accent-blue)" aria-hidden="true" />
               <div className="min-w-0">
-                <p className="font-medium">Configure a provider to start chatting</p>
+                <p className="font-medium">{setupCta.title}</p>
                 <p className="mt-0.5 text-xs text-(--color-text-muted)">{setupRequired.message}</p>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2 self-start sm:self-center">
-              <Button
-                size="sm"
-                onClick={() => useUIStore.getState().openSettings('providers')}
-              >
-                Open Providers
+              <Button size="sm" onClick={setupCta.onClick}>
+                {setupCta.label}
               </Button>
               <button
                 type="button"
                 className="flex h-9 w-9 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) md:h-8 md:w-8"
                 onClick={dismissSetupRequired}
-                aria-label="Dismiss provider setup notice"
+                aria-label="Dismiss setup notice"
               >
                 <X size={14} aria-hidden="true" />
               </button>
@@ -2296,6 +2335,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             ref={inputRef}
             boundsRef={mainColumnRef}
             onSubmit={handleComposerSubmit}
+            followUpLane={followUpLane}
             onStop={() => useTeamStore.getState().stopTeam()}
             goal={activeGoal}
             onGoalCommand={(command) => { void runGoalCommand(command) }}

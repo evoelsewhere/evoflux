@@ -16,6 +16,14 @@ class TeamSpawnSettingsBody(BaseModel):
     coding: Literal["ask", "auto"] = "ask"
 
 
+class FollowUpSettingsBody(BaseModel):
+    """Default lane for a message sent while the lead is already working."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    delivery: Literal["steer", "queue"] = "queue"
+
+
 class SandboxSettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

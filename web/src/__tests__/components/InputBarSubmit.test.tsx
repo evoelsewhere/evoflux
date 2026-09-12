@@ -33,11 +33,69 @@ describe('InputBar submit lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     expect(input).toHaveValue('')
-    expect(onSubmit).toHaveBeenCalledWith('Ship this change', undefined)
+    expect(onSubmit).toHaveBeenCalledWith('Ship this change', undefined, 'steer')
 
     await act(async () => {
       accept()
     })
+  })
+
+  it('queues on Tab while the agent works, and steers on Enter', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<InputBar onSubmit={onSubmit} isStreaming followUpLane="steer" />)
+
+    const input = screen.getByRole('textbox', { name: 'Message input' })
+    fireEvent.change(input, { target: { value: 'after this finishes' } })
+    fireEvent.keyDown(input, { key: 'Tab' })
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith('after this finishes', undefined, 'queue')
+    })
+
+    fireEvent.change(input, { target: { value: 'do this now instead' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith('do this now instead', undefined, 'steer')
+    })
+  })
+
+  it('swaps the two lanes when the configured default is queue', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    render(<InputBar onSubmit={onSubmit} isStreaming followUpLane="queue" />)
+
+    const input = screen.getByRole('textbox', { name: 'Message input' })
+    expect(input).toHaveAttribute(
+      'placeholder',
+      'Working… send to queue it, then Steer to deliver it now',
+    )
+
+    fireEvent.change(input, { target: { value: 'hold this one' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith('hold this one', undefined, 'queue')
+    })
+
+    fireEvent.change(input, { target: { value: 'no, now' } })
+    fireEvent.keyDown(input, { key: 'Tab' })
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledWith('no, now', undefined, 'steer')
+    })
+  })
+
+  it('leaves Tab alone when the composer is empty or the lane is off', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+    const { rerender } = render(<InputBar onSubmit={onSubmit} isStreaming followUpLane="steer" />)
+
+    const input = screen.getByRole('textbox', { name: 'Message input' })
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(onSubmit).not.toHaveBeenCalled()
+
+    // A composer that does not opt in keeps Tab as a focus key.
+    rerender(<InputBar onSubmit={onSubmit} isStreaming />)
+    fireEvent.change(input, { target: { value: 'typed while working' } })
+    fireEvent.keyDown(input, { key: 'Tab' })
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 
   it('restores the draft when the parent rejects the send', async () => {
@@ -72,6 +130,7 @@ describe('InputBar submit lifecycle', () => {
       expect(onSubmit).toHaveBeenCalledWith(
         'Please inspect the attached file.',
         [file],
+        'steer',
       )
     })
   })

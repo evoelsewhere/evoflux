@@ -135,9 +135,11 @@ def _parse_summary(
             error=str(exc),
         )
     mode = _mode_for_agent_path(name)
-    effective = _effective_config(cfg, mode=mode, provider=provider)
-    model_override = agent_model_override(provider) if provider is not None else None
-    additions = _runtime_additions(provider)
+    effective = _effective_config(cfg, name=name, mode=mode, provider=provider)
+    model_override = (
+        agent_model_override(provider, name) if provider is not None else None
+    )
+    additions = _runtime_additions(provider, name)
     return AgentSummary(
         name=name,
         role=effective.role,
@@ -160,12 +162,14 @@ def _parse_summary(
 
 def _runtime_additions(
     provider: ManagedResourceProvider | None,
+    name: str,
 ) -> dict[str, list[str]]:
     if provider is None:
         return {"extra_tools": [], "extra_skills": [], "extra_mcp": []}
     local = read_agent_runtime_settings(
         project_id=provider.project_id,
         resource_id=provider.resource_id,
+        agent=name,
     )
     return {
         "extra_tools": list(local.extra_tools),
@@ -184,6 +188,7 @@ def _mode_for_agent_path(name: str) -> Literal["work", "coding"]:
 def _effective_config(
     cfg: AgentConfig,
     *,
+    name: str,
     mode: str,
     provider: ManagedResourceProvider | None = None,
 ) -> AgentConfig:
@@ -193,7 +198,9 @@ def _effective_config(
     from app.agent.loader import _default_tool_registry
 
     registry = _default_tool_registry()
-    runtime_config = apply_managed_agent_runtime_model(cfg, provider=provider)
+    runtime_config = apply_managed_agent_runtime_model(
+        cfg, provider=provider, agent=name
+    )
     data = compile_agent_config(runtime_config, mode=mode, tool_registry=registry)
     if data.role != "lead":
         data.tools = [
@@ -283,7 +290,7 @@ async def list_agents() -> AgentListResponse:
     rows: list[AgentSummary] = []
     providers = managed_resource_providers()
     for name in agent_fs.list_agents():
-        provider = providers.get(("agent", name))
+        provider = providers.get(("agent_team", name))
         try:
             record = agent_fs.read_agent(name)
         except Exception as exc:
@@ -572,19 +579,45 @@ async def bulk_update_model(body: AgentBulkModelRequest) -> AgentBulkModelRespon
     from app.agent.config import _FRONTMATTER_RE
 
     results: list[AgentBulkModelResult] = []
+    managed_model_checked: bool | None = None
     for name in body.names:
-        provider = managed_resource_provider("agent", name)
+        provider = managed_resource_provider("agent_team", name)
         if provider is not None:
-            results.append(
-                AgentBulkModelResult(
-                    name=name,
-                    ok=False,
-                    error=(
-                        f"Agent '{name}' is managed by Conductor project "
-                        f"'{provider.project_name}'."
-                    ),
+            # A managed bundle is immutable, but the model is an installation
+            # choice that lives outside it. Refusing here left the only route
+            # to a governed Team's models as one request per Agent per mode —
+            # six round trips for a three-Agent Team.
+            #
+            # The runtime store holds a model id with no file to validate it,
+            # so check the registry the way the single-Agent route does. One
+            # check covers the whole request; the id is the same for every name.
+            if managed_model_checked is None:
+                managed_model_checked = await is_registered_model_id(body.model)
+            if not managed_model_checked:
+                results.append(
+                    AgentBulkModelResult(
+                        name=name,
+                        ok=False,
+                        error=(
+                            f"Model '{body.model}' is not configured "
+                            "or selectable."
+                        ),
+                    )
                 )
-            )
+                continue
+            try:
+                write_agent_runtime_model(
+                    project_id=provider.project_id,
+                    resource_id=provider.resource_id,
+                    name=name,
+                    model=body.model,
+                )
+            except AgentSettingsError as exc:
+                results.append(
+                    AgentBulkModelResult(name=name, ok=False, error=str(exc))
+                )
+            else:
+                results.append(AgentBulkModelResult(name=name, ok=True))
             continue
         try:
             previous = agent_fs.read_agent(name)
@@ -670,7 +703,7 @@ async def update_agent_runtime_model(
     except AgentFsNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    provider = managed_resource_provider("agent", name)
+    provider = managed_resource_provider("agent_team", name)
     if provider is None:
         raise HTTPException(
             status_code=409,
@@ -686,6 +719,7 @@ async def update_agent_runtime_model(
             delete_agent_runtime_model(
                 project_id=provider.project_id,
                 resource_id=provider.resource_id,
+                agent=name,
             )
         else:
             write_agent_runtime_model(
@@ -711,7 +745,7 @@ async def update_agent_runtime_settings(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except AgentFsNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    provider = managed_resource_provider("agent", name)
+    provider = managed_resource_provider("agent_team", name)
     if provider is None:
         raise HTTPException(
             status_code=409,
@@ -762,7 +796,7 @@ def _read_agent_detail(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     owner = (
-        provider if provider is not None else managed_resource_provider("agent", name)
+        provider if provider is not None else managed_resource_provider("agent_team", name)
     )
     config: dict[str, Any] | None = None
     bundle_model: str | None = None
@@ -772,13 +806,14 @@ def _read_agent_detail(
         bundle_model = cfg.model if owner is not None else None
         config = _effective_config(
             cfg,
+            name=name,
             mode=_mode_for_agent_path(name),
             provider=owner,
         ).model_dump(exclude_none=True)
     except ValueError as exc:
         error = str(exc)
 
-    additions = _runtime_additions(owner)
+    additions = _runtime_additions(owner, name)
     return AgentDetail(
         name=record.name,
         path=record.path,
@@ -789,7 +824,9 @@ def _read_agent_detail(
         provider=owner,
         runtime_model_editable=owner is not None,
         bundle_model=bundle_model,
-        model_override=agent_model_override(owner) if owner is not None else None,
+        model_override=(
+            agent_model_override(owner, name) if owner is not None else None
+        ),
         extra_tools=additions["extra_tools"],
         extra_skills=additions["extra_skills"],
         extra_mcp=additions["extra_mcp"],
@@ -844,7 +881,7 @@ async def update_agent(name: str, body: AgentWriteRequest) -> AgentDetail:
             detail=f"URL name '{name}' does not match body name '{body.name}'.",
         )
 
-    provider = managed_resource_provider("agent", name)
+    provider = managed_resource_provider("agent_team", name)
     if provider is not None:
         raise HTTPException(
             status_code=403,
@@ -889,7 +926,7 @@ async def update_agent(name: str, body: AgentWriteRequest) -> AgentDetail:
 @router.delete("/{name:path}")
 async def delete_agent(name: str) -> AgentDeleteResponse:
     """422 if removal would leave the team without a lead."""
-    provider = managed_resource_provider("agent", name)
+    provider = managed_resource_provider("agent_team", name)
     if provider is not None:
         raise HTTPException(
             status_code=403,

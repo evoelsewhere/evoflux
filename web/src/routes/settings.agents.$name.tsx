@@ -324,7 +324,7 @@ function AgentDetailOverview({
           <div className="flex flex-wrap items-center gap-2">
             <AgentTeamBadge team={team} />
             <AgentRoleBadge role={role} />
-            <AgentReadyBadge valid={valid} />
+            <AgentReadyBadge valid={valid} model={model} />
             {builtIn && (
               <span className="inline-flex items-center gap-1 text-[11px] text-(--color-text-muted)">
                 <ShieldCheck size={12} aria-hidden="true" /> Built-in

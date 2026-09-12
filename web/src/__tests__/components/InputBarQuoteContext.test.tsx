@@ -35,6 +35,7 @@ describe('InputBar selected-chat context', () => {
       expect(onSubmit).toHaveBeenCalledWith(
         '> Quy định lao động quan trọng',
         undefined,
+        'steer',
       )
     })
   })

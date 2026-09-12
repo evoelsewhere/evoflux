@@ -166,6 +166,28 @@ def ensure_builtin_agent_blueprints(agents_dir: Path, *, mode: str) -> list[str]
     return written
 
 
+def _agent_target_name(path: Path, agents_dir: Path) -> str:
+    """Spell an Agent file the way provenance keys it: `name` or `coding/name`."""
+
+    stem = path.stem
+    return f"coding/{stem}" if agents_dir.name == "coding" else stem
+
+
+def _conductor_managed_agent_targets() -> set[str]:
+    try:
+        from app.conductor.provenance import managed_resource_providers
+
+        return {
+            target
+            for (kind, target) in managed_resource_providers()
+            if kind == "agent_team"
+        }
+    except Exception:
+        # Provenance is advisory here; failing to read it must not stop a
+        # workspace from adopting a model for its own agents.
+        return set()
+
+
 def backfill_placeholder_agent_models(*agents_dirs: Path) -> list[str]:
     """Adopt a real model for agents still carrying the seed placeholder.
 
@@ -181,12 +203,18 @@ def backfill_placeholder_agent_models(*agents_dirs: Path) -> list[str]:
     fallback = next(
         (model for d in agents_dirs if (model := _lead_model_for_dir(d))), None
     )
+    managed = _conductor_managed_agent_targets()
     written: list[str] = []
     for agents_dir in agents_dirs:
         model = _lead_model_for_dir(agents_dir) or fallback
         if not member_model_is_configured(model) or not agents_dir.exists():
             continue
         for path in sorted(agents_dir.glob("*.md")):
+            # A Conductor-managed copy must stay byte-identical to the release
+            # it came from: rewriting it here makes the next sync read the file
+            # as locally edited and stop updating the whole resource.
+            if _agent_target_name(path, agents_dir) in managed:
+                continue
             try:
                 text = path.read_text(encoding="utf-8")
             except OSError:
@@ -209,7 +237,9 @@ def _lead_model_for_dir(agents_dir: Path) -> str | None:
         return None
     for path in sorted(agents_dir.glob("*.md")):
         try:
-            cfg = parse_agent_md(path)
+            cfg = apply_managed_agent_runtime_model(
+                parse_agent_md(path), source_path=path
+            )
         except Exception:
             continue
         if cfg.role == "lead" and member_model_is_configured(cfg.model):

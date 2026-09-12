@@ -1,16 +1,21 @@
 import { create } from 'zustand'
 import { immer } from 'zustand/middleware/immer'
-import { cancelQueuedTeamMessage, getRegistry, getTeamGoal, listTeamAgents, postTeamChat, postTeamCommand, teamStream, teamHistory } from '@/api/client'
+import { cancelQueuedTeamMessage, getRegistry, getTeamGoal, listTeamAgents, patchQueuedTeamMessage, postTeamChat, postTeamCommand, teamStream, teamHistory } from '@/api/client'
 import { queryClient } from '@/lib/query-client'
 import { queryKeys } from '@/queries/keys'
 import { parseTeamBlocks, sumUsageFromMessages } from '@/utils/messages'
 import { createDefaultAgentStream } from './defaults'
-import { applyRevertBoundary, revokeBlobUrlsFromBlocks } from './helpers'
+import {
+  applyRevertBoundary,
+  describeOptimisticAttachments,
+  revokeBlobUrlsFromBlocks,
+  revokeOptimisticAttachments,
+} from './helpers'
 import { createSSEHandler } from './sse-reducer'
 import { useToastStore } from '@/stores/useToastStore'
 import { isTransientNetworkError } from '@/utils/errors'
 import { createStreamScheduler } from '@/api/stream-scheduler'
-import type { AgentStream, TeamStore, TeamStoreState } from './types'
+import type { AgentStream, PendingMessage, TeamStore, TeamStoreState } from './types'
 import type { ContentBlock, MessageResponse, PermissionMode, TeamHistoryResponse } from '@/api/types'
 
 function resetTurnUsage(stream: AgentStream) {
@@ -179,15 +184,25 @@ async function loadHistoryThroughTurnBoundary(
   return trimHistoryToTurnBoundaries(history)
 }
 
-function queuedMessagesFromHistory(sessionId: string, messages: MessageResponse[]) {
+function queuedMessagesFromHistory(
+  sessionId: string,
+  messages: MessageResponse[],
+): PendingMessage[] {
   return messages
     .filter((msg) => msg.role === 'user' && msg.extra?.queue_status === 'queued')
-    .map((msg) => ({
-      id: msg.id,
-      sessionId,
-      content: msg.content ?? '',
-      submittedAt: msg.created_at ? new Date(msg.created_at).getTime() : undefined,
-    }))
+    .map((msg) => {
+      const attachments = msg.extra?.attachments
+      const delivery = msg.extra?.delivery
+      return {
+        id: msg.id,
+        sessionId,
+        content: msg.content ?? '',
+        submittedAt: msg.created_at ? new Date(msg.created_at).getTime() : undefined,
+        attachments: Array.isArray(attachments) ? attachments : undefined,
+        // Rows queued before the lane existed always spliced into the turn.
+        delivery: delivery === 'queue' ? 'queue' : 'steer',
+      }
+    })
 }
 
 function fastModeFromMessages(messages: MessageResponse[]): boolean {
@@ -594,8 +609,12 @@ export const useTeamStore = create<TeamStore>()(
       return true
     },
 
-    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean; webBridgeExtensionId?: string | null }) => {
+    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean; webBridgeExtensionId?: string | null; delivery?: 'steer' | 'queue' }) => {
       let resolvedOptions = options
+      // Queue unless the caller names a lane: holding a follow-up never
+      // redirects work the agent is part-way through, and the tray's Steer
+      // button promotes it the moment the user wants it sooner.
+      const delivery = options?.delivery ?? 'queue'
       const current = get()
       if (current.sessionId) {
         const registry = await availableModelRegistry()
@@ -617,10 +636,16 @@ export const useTeamStore = create<TeamStore>()(
                 action: { type: 'open_settings', tab: 'providers' },
               }
             })
-            return
+            return false
           }
 
-          if (!currentModelAvailable) {
+          // Only rescue a model that *was* chosen and has since gone away.
+          // A lead with no model at all is a deliberate state — a
+          // Conductor-managed Team leaves the model to the installation —
+          // and silently pinning an arbitrary registry entry hides that.
+          // Let the turn run so the backend answers with the typed
+          // ``agent_not_configured`` event and its fix-it CTA.
+          if (!currentModelAvailable && currentModel) {
             resolvedOptions = {
               ...options,
               model: fallbackModel,
@@ -636,9 +661,7 @@ export const useTeamStore = create<TeamStore>()(
             useToastStore.getState().push({
               tone: 'info',
               title: 'Session model changed',
-              description: currentModel
-                ? `${currentModel} is no longer available. Using ${fallbackModel}.`
-                : `Using ${fallbackModel}.`,
+              description: `${currentModel} is no longer available. Using ${fallbackModel}.`,
             })
           }
         }
@@ -648,12 +671,9 @@ export const useTeamStore = create<TeamStore>()(
       const leadWorking = leadName ? agentStreams[leadName]?.status === 'working' : false
 
       if (leadWorking) {
-        if (files && files.length > 0) {
-          set((draft) => {
-            draft.error = 'Files cannot be queued yet. Wait for this response to finish, then send the attachment.'
-          })
-          return
-        }
+        // Attachments ride the queued row like any other message: the
+        // backend persists them and both drain paths rebuild the parts.
+        const queuedAttachments = describeOptimisticAttachments(files)
         try {
           const result = await postTeamChat(
             content,
@@ -668,40 +688,60 @@ export const useTeamStore = create<TeamStore>()(
             resolvedOptions?.fastMode ?? get().sessionFastMode,
             resolvedOptions?.webBridgeEnabled,
             resolvedOptions?.webBridgeExtensionId,
+            undefined,
+            delivery,
           )
           if (result.status === 'queued' && !result.message_id) {
             throw new Error('Backend did not return a queued message id')
           }
+          const submittedAt = Date.now()
           set((draft) => {
             draft.sessionId = result.session_id
             draft.sessionModel = resolvedOptions?.model ?? get().sessionModel
             draft.sessionThinkingLevel = resolvedOptions?.thinkingLevel ?? get().sessionThinkingLevel
+            draft.error = null
+            // A steer is sent — it joins the running turn at the next model
+            // boundary, which can be a while off. Showing it in the
+            // transcript straight away is what the user just did; leaving it
+            // in the tray until the agent finishes its current answer reads
+            // as if the message had not gone through. The tray keeps only
+            // what is genuinely waiting for the *next* turn.
+            if (delivery === 'steer' && leadName && draft.agentStreams[leadName]) {
+              draft.agentStreams[leadName].currentBlocks.push({
+                id: result.message_id ?? `user-${submittedAt}`,
+                type: 'user',
+                content,
+                timestamp: new Date(submittedAt),
+                attachments: queuedAttachments,
+                extra: { delivery },
+              })
+              return
+            }
             draft._pendingMessages.push({
               id: result.message_id ?? '',
               sessionId: result.session_id,
               content,
-              submittedAt: Date.now(),
+              submittedAt,
+              attachments: queuedAttachments,
+              delivery,
             })
-            draft.error = null
           })
         } catch (err) {
+          revokeOptimisticAttachments(queuedAttachments)
           set((draft) => {
             draft.error = err instanceof Error ? err.message : 'Failed to queue message'
           })
+          return false
         }
-        return
+        return true
       }
 
       get()._abortController?.abort()
 
-      const optimisticAttachments = files?.map((f) => ({
-        original_name: f.name,
-        media_type: f.type,
-        category: (f.type.startsWith('image/') ? 'image' : 'document') as 'image' | 'document' | 'text',
-        url: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined,
-      }))
+      const optimisticAttachments = describeOptimisticAttachments(files)
 
       const submittedAt = Date.now()
+      const optimisticBlockId = `user-${submittedAt}`
       set((draft) => {
           draft.isTeamWorking = true
           draft.isContinuing = false
@@ -720,7 +760,7 @@ export const useTeamStore = create<TeamStore>()(
           const effectiveModel = effectiveLeadModel(draft, leadName, resolvedOptions?.model)
           const effectiveThinkingLevel = resolvedOptions?.thinkingLevel ?? draft.sessionThinkingLevel
           draft.agentStreams[leadName].currentBlocks.push({
-            id: `user-${Date.now()}`,
+            id: optimisticBlockId,
             type: 'user',
             content,
             timestamp: new Date(submittedAt),
@@ -750,6 +790,7 @@ export const useTeamStore = create<TeamStore>()(
           resolvedOptions?.webBridgeEnabled,
           resolvedOptions?.webBridgeExtensionId,
           draftPlacement(get()),
+          delivery,
         )
         set((draft) => {
           draft.sessionId = result.session_id
@@ -774,9 +815,14 @@ export const useTeamStore = create<TeamStore>()(
           if (leadName && draft.agentStreams[leadName]) {
             draft.agentStreams[leadName].status = 'idle'
             draft.agentStreams[leadName]._turnStartedAt = null
+            draft.agentStreams[leadName].currentBlocks = draft.agentStreams[leadName].currentBlocks
+              .filter((block) => block.id !== optimisticBlockId)
           }
         })
+        revokeOptimisticAttachments(optimisticAttachments)
+        return false
       }
+      return true
     },
 
     setSessionModelSettings: (model: string | null, thinkingLevel: string | null, fastMode?: boolean) => {
@@ -1062,6 +1108,46 @@ export const useTeamStore = create<TeamStore>()(
           }
         })
       }
+    },
+
+    /**
+     * Edit a queued message in place. Applied optimistically, then sent; the
+     * row keeps its place in the queue. A 404 means the turn boundary already
+     * claimed it, so the chip goes away rather than showing an error — the
+     * message is on its way either way.
+     */
+    patchPendingMessage: (id, patch) => {
+      const pending = get()._pendingMessages.find((m) => m.id === id)
+      if (!pending?.sessionId) return
+      set((draft) => {
+        const target = draft._pendingMessages.find((m) => m.id === id)
+        if (target) Object.assign(target, patch)
+      })
+      void patchQueuedTeamMessage(pending.sessionId, id, patch)
+        .then((changed) => {
+          if (changed) return
+          set((draft) => {
+            draft._pendingMessages = draft._pendingMessages.filter((m) => m.id !== id)
+          })
+        })
+        .catch((err) => {
+          set((draft) => {
+            const target = draft._pendingMessages.find((m) => m.id === id)
+            if (target) {
+              target.delivery = pending.delivery
+              target.content = pending.content
+            }
+            draft.error = err instanceof Error ? err.message : 'Failed to update queued message'
+          })
+        })
+    },
+
+    setPendingMessageDelivery: (id: string, delivery: 'steer' | 'queue') => {
+      get().patchPendingMessage(id, { delivery })
+    },
+
+    editPendingMessage: (id: string, content: string) => {
+      get().patchPendingMessage(id, { content })
     },
 
     removePendingMessage: (id: string) => {

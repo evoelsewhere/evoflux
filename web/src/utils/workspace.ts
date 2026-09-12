@@ -70,6 +70,17 @@ export function loadCodingWorkspaceEntries(): CodingWorkspaceEntry[] {
   }
 }
 
+/**
+ * Ask the coding sidebar to re-read its Projects + Workspaces snapshot.
+ *
+ * The sidebar listens for this instead of being invalidated directly so a
+ * caller does not need a QueryClient, and so the refresh still happens while
+ * route navigation has briefly made the sidebar's own query inactive.
+ */
+export function notifyCodingWorkspacesChanged(): void {
+  window.dispatchEvent(new CustomEvent('coding-workspaces-changed'))
+}
+
 export function saveCodingWorkspace(workspace: string): CodingWorkspaceEntry {
   const entries = loadCodingWorkspaceEntries()
   const existing = entries.find((item) => item.path === workspace)
@@ -78,7 +89,7 @@ export function saveCodingWorkspace(workspace: string): CodingWorkspaceEntry {
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
   try {
     localStorage.setItem(CODING_WORKSPACES_KEY, JSON.stringify(next))
-    window.dispatchEvent(new CustomEvent('coding-workspaces-changed'))
+    notifyCodingWorkspacesChanged()
   } catch {
     // ignore storage failures
   }
@@ -99,7 +110,7 @@ export function removeCodingWorkspace(workspace: string): void {
     if (lastId && !entries.some((entry) => entry.id === lastId)) {
       localStorage.removeItem(LAST_CODING_WORKSPACE_KEY)
     }
-    window.dispatchEvent(new CustomEvent('coding-workspaces-changed'))
+    notifyCodingWorkspacesChanged()
   } catch {
     // ignore storage failures
   }

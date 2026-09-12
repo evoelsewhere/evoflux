@@ -783,3 +783,80 @@ def test_plugin_skills_precede_builtins_but_not_project_skills(
         .alternates[0]
         .source.startswith("plugin:")
     )
+
+
+def test_a_plugin_server_resolves_by_the_name_its_package_declares(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A published Agent can only know the declared name, never the local one."""
+
+    from app.plugin_platform import runtime as runtime_module
+
+    descriptor = runtime_module.PluginMCPServerDescriptor(
+        installation_id="inst-1234abcd",
+        plugin_name="review-tools",
+        server_name="review-linter",
+        runtime_name="plugin_inst1234_review-linter_deadbeef",
+        transport="stdio",
+    )
+    monkeypatch.setattr(
+        runtime_module.plugin_mcp_runtime, "descriptors", lambda: [descriptor]
+    )
+
+    assert (
+        runtime_module.resolve_plugin_server_name("review-linter")
+        == "plugin_inst1234_review-linter_deadbeef"
+    )
+    assert runtime_module.resolve_plugin_server_name("absent") is None
+
+
+def test_the_declared_name_counts_as_a_resolvable_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.agent.mcp import mcp_manager
+    from app.plugin_platform import runtime as runtime_module
+
+    descriptor = runtime_module.PluginMCPServerDescriptor(
+        installation_id="inst-1234abcd",
+        plugin_name="review-tools",
+        server_name="review-linter",
+        runtime_name="plugin_inst1234_review-linter_deadbeef",
+        transport="stdio",
+    )
+    monkeypatch.setattr(
+        runtime_module.plugin_mcp_runtime, "descriptors", lambda: [descriptor]
+    )
+    monkeypatch.setattr(
+        runtime_module.plugin_mcp_runtime,
+        "server_names",
+        lambda: [descriptor.runtime_name],
+    )
+    monkeypatch.setattr(mcp_manager, "server_names", lambda: [])
+
+    names = runtime_module.all_mcp_server_names()
+
+    assert "review-linter" in names
+    assert descriptor.runtime_name in names
+
+
+def test_an_ambiguous_declared_name_resolves_deterministically(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.plugin_platform import runtime as runtime_module
+
+    def make(installation_id: str, runtime_name: str):
+        return runtime_module.PluginMCPServerDescriptor(
+            installation_id=installation_id,
+            plugin_name=f"pack-{installation_id}",
+            server_name="shared",
+            runtime_name=runtime_name,
+            transport="stdio",
+        )
+
+    monkeypatch.setattr(
+        runtime_module.plugin_mcp_runtime,
+        "descriptors",
+        lambda: [make("bbb", "runtime-b"), make("aaa", "runtime-a")],
+    )
+
+    assert runtime_module.resolve_plugin_server_name("shared") == "runtime-a"

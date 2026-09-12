@@ -73,7 +73,7 @@ vi.mock('@/queries', () => ({
           release_channel: 'published',
           observed_state: 'update_pending',
           update_available: true,
-          kind: 'agent',
+          kind: 'agent_team',
           slug: 'support-agent',
         },
         {
@@ -243,7 +243,7 @@ describe('Enterprise settings', () => {
 
     const item = screen.getByRole('button', { name: /Enterprise.*Evolint/ })
     expect(item).toHaveAttribute('aria-current', 'page')
-    expect(screen.getByText('1 managed Agent update available')).toBeInTheDocument()
+    expect(screen.getByText('1 managed Agent team update available')).toBeInTheDocument()
     expect(screen.getByText('1 managed Skill update available')).toBeInTheDocument()
     expect(screen.getByText('2 Enterprise notifications')).toBeInTheDocument()
     expect(screen.queryByRole('tab', { name: 'Enterprise' })).not.toBeInTheDocument()
@@ -262,7 +262,7 @@ describe('Enterprise settings', () => {
     expect(agentRow).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('Applied version')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open Agent settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Agent team settings' }))
     expect(useUIStore.getState().settingsPath).toBe('agents/support-agent')
 
     const pluginRow = screen.getByText('release-toolkit').closest('button')

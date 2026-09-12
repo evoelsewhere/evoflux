@@ -14,6 +14,7 @@ from app.agent.agent_loop import Agent
 from app.agent.providers.base import LLMProviderBase
 from app.agent.mode.team.member import TeamLead, TeamMember
 from app.agent.mode.team.team import AgentTeam
+from app.api.routes.team import chat as chat_routes
 from app.api.routes.team._helpers import _message_response
 from app.api.routes.team.chat import _resolve_effective_request_model
 from app.models.chat import SessionMessage
@@ -573,6 +574,89 @@ class TestTeamChatRoute:
         assert response.json()["status"] == "queued"
         test_team._activate_queued_user_messages.assert_awaited_once_with(session_id)
 
+    def test_team_chat_queues_uploads_instead_of_refusing_them(
+        self, app_with_team, test_team
+    ):
+        """An attachment sent mid-turn rides the queued row.
+
+        It used to 409. Both drain paths rebuild multimodal parts from
+        ``extra["attachments"]``, so persisting the metas is all the queue
+        needs to carry the file.
+        """
+        session_id = str(uuid.uuid7())
+        test_team.lead.state = "working"
+        test_team._activate_queued_user_messages = AsyncMock(return_value=False)
+        metas = [{"original_name": "shot.png", "category": "image", "path": "/t/s.png"}]
+        saved: dict = {}
+
+        async def save_queue(_db, _session_id, message, *, extra=None):
+            saved["message"] = message
+            saved["extra"] = extra
+            queued = AsyncMock()
+            queued.id = uuid.uuid7()
+            return queued
+
+        client = TestClient(app_with_team)
+        with (
+            patch("app.api.routes.team.chat.save_queued_user_message", save_queue),
+            patch.object(
+                chat_routes.agent_service,
+                "validate_and_persist_attachments",
+                AsyncMock(return_value=(session_id, metas)),
+            ) as persist,
+        ):
+            response = client.post(
+                "/api/team/chat",
+                data={
+                    "message": "what is in this screenshot?",
+                    "session_id": session_id,
+                    "delivery": "queue",
+                },
+                files={"files": ("shot.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+            )
+
+        assert response.status_code == 202
+        assert response.json()["status"] == "queued"
+        persist.assert_awaited_once()
+        assert saved["extra"]["attachments"] == metas
+        assert saved["extra"]["delivery"] == "queue"
+
+    def test_team_chat_queued_delivery_follows_the_configured_default(
+        self, app_with_team, test_team, monkeypatch
+    ):
+        """An unnamed lane follows Settings -> Follow-up behavior."""
+        monkeypatch.setattr(
+            chat_routes, "follow_up_delivery_default", lambda: "queue"
+        )
+        session_id = str(uuid.uuid7())
+        test_team.lead.state = "working"
+        test_team._activate_queued_user_messages = AsyncMock(return_value=False)
+        saved: dict = {}
+
+        async def save_queue(_db, _session_id, _message, *, extra=None):
+            saved["extra"] = extra
+            queued = AsyncMock()
+            queued.id = uuid.uuid7()
+            return queued
+
+        client = TestClient(app_with_team)
+        with patch("app.api.routes.team.chat.save_queued_user_message", save_queue):
+            response = client.post(
+                "/api/team/chat",
+                data={"message": "keep going", "session_id": session_id},
+            )
+
+        assert response.status_code == 202
+        assert saved["extra"]["delivery"] == "queue"
+
+    def test_team_chat_rejects_unknown_delivery_lane(self, app_with_team, test_team):
+        client = TestClient(app_with_team)
+        response = client.post(
+            "/api/team/chat",
+            data={"message": "hi", "delivery": "whenever"},
+        )
+        assert response.status_code == 422
+
     def test_team_chat_queues_when_turn_active_before_lead_state_flips(
         self, app_with_team, test_team
     ):
@@ -748,20 +832,28 @@ class TestTeamChatRoute:
         assert atts[0]["original_name"] == "note.txt"
         assert atts[0]["converted_text"] == "hi"
 
-    def test_team_chat_queue_still_409s_on_explicit_uploads(
+    def test_team_chat_queue_accepts_paperclip_uploads(
         self, app_with_team, test_team
     ):
-        """Paperclip uploads keep the 409; only mentions get the queue path."""
+        """Paperclip uploads take the queue path like ``@path`` mentions do."""
         session_id = str(uuid.uuid7())
         test_team.lead.state = "working"
+        test_team._activate_queued_user_messages = AsyncMock(return_value=False)
+
+        async def save_queue(_db, _session_id, _message, *, extra=None):
+            queued = AsyncMock()
+            queued.id = uuid.uuid7()
+            return queued
+
         client = TestClient(app_with_team)
-        response = client.post(
-            "/api/team/chat",
-            data={"message": "msg", "session_id": session_id},
-            files={"files": ("a.txt", b"hi", "text/plain")},
-        )
-        assert response.status_code == 409
-        assert "while the agent is working" in response.json()["detail"]
+        with patch("app.api.routes.team.chat.save_queued_user_message", save_queue):
+            response = client.post(
+                "/api/team/chat",
+                data={"message": "msg", "session_id": session_id},
+                files={"files": ("a.txt", b"hi", "text/plain")},
+            )
+        assert response.status_code == 202
+        assert response.json()["status"] == "queued"
 
     def test_team_chat_message_validation_empty_raises(self, app_with_team):
         client = TestClient(app_with_team)

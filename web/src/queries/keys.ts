@@ -202,5 +202,6 @@ export const queryKeys = {
     providerUsage: (providerId: string) => ['settings', 'providers', providerId, 'usage'] as const,
     conductorStatus: () => ['settings', 'conductor', 'status'] as const,
     teamSpawn: () => ['settings', 'team-spawn'] as const,
+    followUp: () => ['settings', 'follow-up'] as const,
   },
 }

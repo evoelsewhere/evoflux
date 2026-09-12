@@ -72,6 +72,40 @@ The lead verifies handoffs before synthesizing the user-facing result. The
 Monitor view exposes member state, activity and transcript without merging all
 specialist context into the lead's model request.
 
+## Follow-up messages while a turn runs
+
+A message sent to a lead that is already working is persisted as a queued row
+rather than refused, and lands in one of two lanes:
+
+- **queue** (default) — held until the turn completes, then starts a new one;
+- **steer** — spliced into the running turn at the next model boundary, never
+  mid-tool-call.
+
+Queue is the default because it cannot redirect work the agent is part-way
+through. The queued row appears in the composer's pending tray, where **Steer**
+promotes it to the running turn — that is the ordinary way to steer, not a
+second send. `Settings → Agents → Follow-up behavior` chooses which lane the
+composer's primary key uses; the secondary key (`Tab`) takes the other, so both
+stay reachable. A client that names `delivery` explicitly overrides the setting
+for that message.
+
+Both lanes carry attachments. Uploads and `@path` mentions go through the same
+validate-and-persist pipeline a dispatched turn uses, and the metas stored on
+the queued row rebuild multimodal parts on either drain path. The running
+turn's model is unchanged by a queued row, so a file queued against a
+different selection still falls back to a workspace path reference rather than
+failing.
+
+A queued message can be edited in place, moved between lanes, or cancelled
+until the moment it is activated. Editing keeps its place in the queue —
+`created_at` is what orders the queue and is left untouched. Once a turn
+boundary claims the row, all three report that it is already on its way. Rows
+queued before lanes existed are treated as `steer`. Queued rows are durable:
+they survive a restart and are restored in queue order.
+
+Suppressed while a workflow drives the session — queued messages then land at
+node boundaries only.
+
 ## Concurrency and lifecycle
 
 One member executes one turn at a time. Safe model-emitted tool calls may run in

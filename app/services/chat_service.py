@@ -825,10 +825,30 @@ async def release_queued_user_messages(
     return queued
 
 
+def queued_delivery(row: SessionMessage) -> str:
+    """Delivery lane of a queued row: ``"steer"`` (default) or ``"queue"``.
+
+    Rows written before the lane existed carry no ``delivery`` key. They
+    predate the distinction and were always spliced into the running turn,
+    so they keep that behaviour.
+    """
+    value = (row.extra or {}).get("delivery")
+    return value if value in {"steer", "queue"} else "steer"
+
+
 async def pop_queued_user_messages(
     db: AsyncSession,
     session_id: UUID,
+    *,
+    delivery: str | None = None,
 ) -> list[SessionMessage]:
+    """Activate queued user rows and return them in queue order.
+
+    ``delivery`` restricts the pop to one lane. The mid-turn injection hook
+    passes ``"steer"`` so a message the user explicitly held back stays
+    queued; the post-turn drain passes nothing and takes whatever is left,
+    because a turn boundary releases both lanes.
+    """
     rows = await db.exec(
         select(SessionMessage)
         .where(col(SessionMessage.session_id) == session_id)
@@ -841,6 +861,11 @@ async def pop_queued_user_messages(
         )
     )
     queued = list(rows.all())
+    if delivery is not None:
+        # Filtered in Python rather than SQL: the key is absent on rows
+        # written before the lane existed, and JSON null handling differs
+        # across backends.
+        queued = [row for row in queued if queued_delivery(row) == delivery]
     activated_at = datetime.now(timezone.utc)
     for i, row in enumerate(queued):
         extra = dict(row.extra or {})
@@ -851,6 +876,48 @@ async def pop_queued_user_messages(
         db.add(row)
     await db.flush()
     return queued
+
+
+async def update_queued_user_message(
+    db: AsyncSession,
+    session_id: UUID,
+    message_id: UUID,
+    *,
+    delivery: str | None = None,
+    content: str | None = None,
+) -> bool:
+    """Edit a still-queued row in place, keeping its place in the queue.
+
+    ``created_at`` is deliberately untouched: it is what orders the queue, so
+    rewriting the text or moving the row between lanes must not send it to
+    the back. Returns False when the row is gone or already activated — the
+    turn boundary won the race and the message is on its way regardless, so
+    callers should treat that as "nothing left to edit", not an error.
+    """
+    if delivery is not None and delivery not in {"steer", "queue"}:
+        raise ValueError("delivery must be 'steer' or 'queue'.")
+    if content is not None and not content.strip():
+        raise ValueError("content must not be blank.")
+    row = await db.get(SessionMessage, message_id)
+    if (
+        row is None
+        or row.session_id != session_id
+        or not row.extra
+        or row.extra.get("queue_status") != "queued"
+    ):
+        return False
+    if delivery is not None:
+        extra = dict(row.extra)
+        extra["delivery"] = delivery
+        row.extra = extra
+    if content is not None:
+        row.content = content
+        # Mention attachments were resolved from the old text. Dropping them
+        # here would silently lose files the user still refers to, so they
+        # ride the edit; the composer is where attachments are changed.
+    db.add(row)
+    await db.flush()
+    return True
 
 
 async def cancel_queued_user_message(
@@ -1597,7 +1664,7 @@ def _deserialize_messages(
             if isinstance(msg, HumanMessage) and m.extra:
                 attachments = m.extra.get("attachments")
                 if attachments and isinstance(attachments, list):
-                    parts = _build_parts(msg.content or "", attachments)
+                    parts = build_attachment_parts(msg.content or "", attachments)
                     if parts:
                         msg.parts = parts
 
@@ -1752,7 +1819,7 @@ def _sanitize_tool_message_pairs(
     return result
 
 
-def _build_parts(text: str, attachments: list[dict]) -> list | None:
+def build_attachment_parts(text: str, attachments: list[dict]) -> list | None:
     """Build LLM content parts from persisted attachment metadata.
 
     Uses ``build_parts_from_metas`` (fast path: ``converted_text`` in meta,

@@ -29,6 +29,7 @@ from app.services.chat_service import (
     redo_session_messages,
     pop_queued_user_messages,
     save_queued_user_message,
+    update_queued_user_message,
     undo_session_messages,
     save_message,
 )
@@ -538,6 +539,104 @@ async def test_queued_user_messages_are_hidden_until_popped(session):
     assert popped[0].extra and isinstance(popped[0].extra.get("queued_at"), str)
     visible = await get_messages(session, chat_session.id)
     assert [msg.content for msg in visible] == ["current response", "next"]
+
+
+async def test_pop_filters_by_delivery_lane(session):
+    chat_session = await create_chat_session(session, "Queue")
+    steered = await save_queued_user_message(
+        session, chat_session.id, "now", extra={"delivery": "steer"}
+    )
+    held = await save_queued_user_message(
+        session, chat_session.id, "later", extra={"delivery": "queue"}
+    )
+    legacy = await save_queued_user_message(session, chat_session.id, "no lane")
+    await session.commit()
+
+    # The mid-turn hook takes the steer lane, and rows written before the
+    # lane existed, which always spliced into the running turn.
+    popped = await pop_queued_user_messages(session, chat_session.id, delivery="steer")
+    await session.commit()
+    assert [row.id for row in popped] == [steered.id, legacy.id]
+
+    # The turn boundary takes whatever is left, lane regardless.
+    drained = await pop_queued_user_messages(session, chat_session.id)
+    await session.commit()
+    assert [row.id for row in drained] == [held.id]
+
+
+async def test_set_queued_delivery_moves_a_row_between_lanes(session):
+    chat_session = await create_chat_session(session, "Queue")
+    queued = await save_queued_user_message(
+        session, chat_session.id, "later", extra={"delivery": "queue"}
+    )
+    await session.commit()
+
+    assert await update_queued_user_message(
+        session, chat_session.id, queued.id, delivery="steer"
+    )
+    await session.commit()
+
+    popped = await pop_queued_user_messages(session, chat_session.id, delivery="steer")
+    await session.commit()
+    assert [row.id for row in popped] == [queued.id]
+
+    # Already activated: the turn boundary won the race, nothing to move.
+    assert not await update_queued_user_message(
+        session, chat_session.id, queued.id, delivery="queue"
+    )
+
+
+async def test_editing_a_queued_message_keeps_its_queue_position(session):
+    """The whole point of editing in place: it must not go to the back."""
+    chat_session = await create_chat_session(session, "Queue")
+    first = await save_queued_user_message(session, chat_session.id, "first")
+    middle = await save_queued_user_message(session, chat_session.id, "middle")
+    last = await save_queued_user_message(session, chat_session.id, "last")
+    await session.commit()
+    created_before = middle.created_at
+
+    assert await update_queued_user_message(
+        session, chat_session.id, middle.id, content="middle, revised"
+    )
+    await session.commit()
+
+    # ``created_at`` is what orders the queue, so the edit must not touch it.
+    # (The pop below rewrites it on activation, which is why this is asserted
+    # before draining.)
+    assert middle.created_at == created_before
+
+    popped = await pop_queued_user_messages(session, chat_session.id)
+    await session.commit()
+    assert [row.id for row in popped] == [first.id, middle.id, last.id]
+    assert [row.content for row in popped] == ["first", "middle, revised", "last"]
+
+
+async def test_editing_a_queued_message_keeps_its_attachments(session):
+    chat_session = await create_chat_session(session, "Queue")
+    metas = [{"original_name": "shot.png", "category": "image"}]
+    queued = await save_queued_user_message(
+        session, chat_session.id, "look", extra={"attachments": metas}
+    )
+    await session.commit()
+
+    assert await update_queued_user_message(
+        session, chat_session.id, queued.id, content="look again"
+    )
+    await session.commit()
+
+    assert queued.content == "look again"
+    assert queued.extra["attachments"] == metas
+
+
+async def test_editing_a_queued_message_rejects_blank_text(session):
+    chat_session = await create_chat_session(session, "Queue")
+    queued = await save_queued_user_message(session, chat_session.id, "keep me")
+    await session.commit()
+
+    with pytest.raises(ValueError):
+        await update_queued_user_message(
+            session, chat_session.id, queued.id, content="   "
+        )
 
 
 async def test_queued_user_message_preserves_model_metadata_when_popped(session):
