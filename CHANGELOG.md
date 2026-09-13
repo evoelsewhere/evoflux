@@ -2,6 +2,79 @@
 
 All notable changes to EvoFlux are documented in this file.
 
+## [2.0.0] - 2026-09-14
+
+EvoFlux 2.0.0 is a major workbench, provider, browser, telemetry, and
+organization-governance release built on the first stable baseline.
+
+### Highlights
+
+- Added the Evo Conductor client foundation: authenticated realtime resource
+  updates, resilient reconciliation, credential recovery, delivery notices,
+  registry integration, inventory, and privacy-safe telemetry fields.
+- Rebuilt multi-session workbench behavior so terminals, browsers, files, and
+  docked tools survive session switches while background work remains visible.
+- Introduced a declarative provider and model-capability layer with runtime
+  catalog refresh, accurate thinking-level validation, subscription pricing,
+  Xiaomi MiMo support, and more cache-efficient Codex request continuity.
+- Expanded browser automation with authenticated WebSocket routes, stable
+  element references, selected-browser routing, safer reconnect ownership, and
+  workspace development-server launch controls.
+- Added measurable context-window controls, per-turn token and cost reporting,
+  cache-state telemetry, model-stacked consumption charts, and service-tier
+  reporting.
+- Refined Evo Agent Specs with portable session rebinding, execution options,
+  code-context contracts, measured verification commands, and more reliable
+  single-agent convergence.
+
+### Added
+
+- Per-team `ask` or `auto` spawn policy and clearer streaming activity phases.
+- Document and HTML preview improvements, including JavaScript execution for
+  trusted local previews and direct access to newly generated artifacts.
+- Self-healing diagnostics, broader managed language-server availability, and
+  richer file explorer actions.
+- A unified appearance system with a real accent palette and the new Clay
+  default theme.
+
+### Changed
+
+- Reworked transcript scrolling around browser-native anchoring and retained
+  recently visited sessions for faster switching.
+- Consolidated telemetry under Settings and aligned Conductor payloads with the
+  fields the control plane actually persists.
+- Replaced duplicated provider configuration and capability logic with one
+  shared declarative registry.
+- Reduced prompt churn and skill-catalog overhead to improve prefix-cache reuse.
+- Changed sandbox out-of-scope handling from an unconditional hard block to a
+  visible audit warning while retaining explicit permission boundaries.
+
+### Fixed
+
+- Hardened browser bridge authentication, reconnect recovery, panel ownership,
+  element lifetime, selected-browser routing, and Linux/Windows edge cases.
+- Fixed empty-window telemetry crashes, request pricing, context-limit
+  discovery, model availability, and provider turn ordering after compaction.
+- Repaired widget sizing and lost-delta recovery, document reopening, CJK IME
+  visibility, background process polling, and multi-session tab cleanup.
+- Improved EASD portability, verification trust, migration reconciliation,
+  session rebinding, and stale-state recovery.
+- Strengthened web-fetch DNS-rebinding protection and private-network guards.
+
+### Upgrade notes
+
+- Product, Python, web, Rust, Tauri, and lockfile versions are synchronized at
+  `2.0.0`.
+- Existing application databases continue through the normal Alembic migration
+  path; back up important workspaces before upgrading a production install.
+- This release changes provider, workbench, browser, and Conductor integration
+  internals. Validate organization-managed resources and browser workflows
+  after upgrading.
+- Linux direct browser input continues to require X11/XWayland.
+
+For the curated release overview, see
+[`documents/releases/v2.0.0.md`](documents/releases/v2.0.0.md).
+
 ## [1.0.0] - 2026-08-27
 
 EvoFlux 1.0.0 is the first stable release.
@@ -50,4 +123,5 @@ EvoFlux 1.0.0 is the first stable release.
 For the curated release overview, see
 [`documents/releases/v1.0.0.md`](documents/releases/v1.0.0.md).
 
+[2.0.0]: https://github.com/evoelsewhere/evoflux/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/evoelsewhere/evoflux/compare/v0.0.8...v1.0.0
