@@ -2893,8 +2893,19 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const runtime = globalThis.__evofluxBrowserRuntime;
                         if (!runtime) throw new Error('Browser observability is not initialized');
                         runtime.emulation ||= {{}};
+                        // Remember what we are shadowing. `devicePixelRatio` and
+                        // friends are own properties of the real window, so the
+                        // reset below cannot simply delete them: that removes the
+                        // genuine accessor for the rest of the document's life and
+                        // every later `devicePixelRatio` read throws.
+                        runtime.emulationOriginals ||= [];
                         const define = (target, key, value) => {{
-                            try {{ Object.defineProperty(target, key, {{ configurable: true, get: () => value }}); }} catch {{}}
+                            try {{
+                                if (!runtime.emulationOriginals.some((entry) => entry.target === target && entry.key === key)) {{
+                                    runtime.emulationOriginals.push({{ target, key, descriptor: Object.getOwnPropertyDescriptor(target, key) || null }});
+                                }}
+                                Object.defineProperty(target, key, {{ configurable: true, get: () => value }});
+                            }} catch {{}}
                         }};
                         const width = Math.max(1, Number(params.width) || innerWidth);
                         const height = Math.max(1, Number(params.height) || innerHeight);
@@ -2917,9 +2928,13 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'reset_emulation') {{
                         const runtime = globalThis.__evofluxBrowserRuntime;
-                        for (const [target, keys] of [[globalThis, ['devicePixelRatio']], [screen, ['width', 'height', 'availWidth', 'availHeight']], [navigator, ['maxTouchPoints', 'userAgent']]]) {{
-                            for (const key of keys) {{ try {{ delete target[key]; }} catch {{}} }}
+                        for (const entry of (runtime && runtime.emulationOriginals) || []) {{
+                            try {{
+                                if (entry.descriptor) Object.defineProperty(entry.target, entry.key, entry.descriptor);
+                                else delete entry.target[entry.key];
+                            }} catch {{}}
                         }}
+                        if (runtime) runtime.emulationOriginals = [];
                         document.documentElement.style.colorScheme = '';
                         if (runtime) runtime.emulation = null;
                         dispatchEvent(new Event('resize'));
