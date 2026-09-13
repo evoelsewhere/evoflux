@@ -16,6 +16,7 @@ import { immer } from 'zustand/middleware/immer'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 
 const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
+const WORKBENCH_MAXIMIZED_KEY = STORAGE_KEYS.panels.workbenchMaximized
 
 export type WorkbenchTool =
   | 'overview'
@@ -317,6 +318,22 @@ function persistSidebarWidth(width: number): void {
   }
 }
 
+function loadWorkbenchMaximized(): boolean {
+  try {
+    return localStorage.getItem(WORKBENCH_MAXIMIZED_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function persistWorkbenchMaximized(maximized: boolean): void {
+  try {
+    localStorage.setItem(WORKBENCH_MAXIMIZED_KEY, String(maximized))
+  } catch {
+    // ignore storage failures
+  }
+}
+
 function loadSidebarCollapsed(): boolean {
   try {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
@@ -422,7 +439,7 @@ export const useUIStore = create<UIStore>()(
     _activeTabBySession: {},
     activeWorkbenchTool: null,
     workbenchOpen: false,
-    workbenchMaximized: false,
+    workbenchMaximized: loadWorkbenchMaximized(),
     pullRequestsScope: 'session',
     gitWorkspaceView: 'changes',
     createWorkbenchTab: (tool, options = {}) => set((state) => {
@@ -658,3 +675,15 @@ export const useUIStore = create<UIStore>()(
     }),
   }))
 )
+
+// Maximize is a working posture, not a transient toggle: someone who runs the
+// browser full-width wants it full-width again next launch. Persisting here
+// rather than inside the action catches the paths that clear it too (last tab
+// closed, workbench closed, session switched), so storage never disagrees with
+// what is on screen.
+let persistedWorkbenchMaximized = useUIStore.getState().workbenchMaximized
+useUIStore.subscribe((state) => {
+  if (state.workbenchMaximized === persistedWorkbenchMaximized) return
+  persistedWorkbenchMaximized = state.workbenchMaximized
+  persistWorkbenchMaximized(persistedWorkbenchMaximized)
+})

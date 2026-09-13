@@ -10,7 +10,10 @@ import {
   Globe2,
   Loader2,
   LockKeyhole,
+  Maximize2,
   Menu,
+  Minimize2,
+  Monitor,
   Plus,
   Printer,
   RefreshCw,
@@ -29,6 +32,7 @@ import { cn } from '@/lib/utils'
 import { useToastStore } from '@/stores/useToastStore'
 import { useUIStore } from '@/stores/useUIStore'
 import {
+  FIT_DESKTOP_WIDTH,
   loadBrowserPreferences,
   saveBrowserPreferences,
   subscribeBrowserPreferences,
@@ -94,6 +98,8 @@ export function DirectBrowserShell({
   const [onNewTabPage, setOnNewTabPage] = useState(true)
   const preset = useMotionPreset()
   const pushToast = useToastStore((state) => state.push)
+  const maximized = useUIStore((state) => state.workbenchMaximized)
+  const toggleMaximized = useUIStore((state) => state.toggleWorkbenchMaximized)
 
   useEffect(() => subscribeBrowserPreferences((next) => {
     setPreferences(next)
@@ -123,6 +129,7 @@ export function DirectBrowserShell({
     initialUrl,
     singleTab: true,
     zoom: preferences.defaultZoom,
+    fitWidth: preferences.fitDesktopWidth ? FIT_DESKTOP_WIDTH : null,
     devtools: preferences.developerTools,
     profileMode: preferences.profileMode,
     onError: reportError,
@@ -179,16 +186,40 @@ export function DirectBrowserShell({
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 't') {
         event.preventDefault()
         onNewTab?.()
+      } else if (
+        (event.metaKey || event.ctrlKey)
+        && event.shiftKey
+        && event.key.toLowerCase() === 'enter'
+      ) {
+        event.preventDefault()
+        if (embedded) toggleMaximized()
       } else if (event.key === 'Escape') {
         if (findOpen) setFindOpen(false)
         else if (menuOpen) setMenuOpen(false)
         else if (settingsOpen) setSettingsOpen(false)
+        // Leaving full width is what Escape means in every other full-screen
+        // surface; closing the tab from here would be a surprising way to lose
+        // a page you were reading.
+        else if (embedded && maximized) toggleMaximized()
         else onClose()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [browser, findOpen, hasPage, menuOpen, onClose, onNewTab, open, settingsOpen, visible])
+  }, [
+    browser,
+    embedded,
+    findOpen,
+    hasPage,
+    maximized,
+    menuOpen,
+    onClose,
+    onNewTab,
+    open,
+    settingsOpen,
+    toggleMaximized,
+    visible,
+  ])
 
   const updatePreferences = useCallback((next: BrowserPreferences) => {
     setPreferences(next)
@@ -362,6 +393,15 @@ export function DirectBrowserShell({
               </form>
             )}
 
+            {embedded && (
+              <ToolbarButton
+                label={maximized ? 'Restore panel width' : 'Fill the window'}
+                onClick={toggleMaximized}
+              >
+                {maximized ? <Minimize2 /> : <Maximize2 />}
+              </ToolbarButton>
+            )}
+
             <button
               type="button"
               onClick={() => setMenuOpen((current) => !current)}
@@ -453,7 +493,12 @@ export function DirectBrowserShell({
                   active={hasPage}
                   currentUrl={currentUrl}
                   zoom={preferences.defaultZoom}
+                  fitDesktopWidth={preferences.fitDesktopWidth}
                   devToolsEnabled={preferences.developerTools}
+                  onToggleFitDesktopWidth={() => updatePreferences({
+                    ...preferences,
+                    fitDesktopWidth: !preferences.fitDesktopWidth,
+                  })}
                   onClose={() => setMenuOpen(false)}
                   onNewTab={() => onNewTab?.()}
                   onFind={() => setFindOpen(true)}
@@ -588,7 +633,9 @@ function DirectBrowserMenuPanel({
   active,
   currentUrl,
   zoom,
+  fitDesktopWidth,
   devToolsEnabled,
+  onToggleFitDesktopWidth,
   onClose,
   onNewTab,
   onFind,
@@ -603,7 +650,9 @@ function DirectBrowserMenuPanel({
   active: boolean
   currentUrl: string
   zoom: number
+  fitDesktopWidth: boolean
   devToolsEnabled: boolean
+  onToggleFitDesktopWidth: () => void
   onClose: () => void
   onNewTab: () => void
   onFind: () => void
@@ -665,6 +714,31 @@ function DirectBrowserMenuPanel({
             <Button type="button" variant="ghost" size="icon-xs" disabled={zoom >= ZOOM_LEVELS[ZOOM_LEVELS.length - 1]} onClick={() => onZoomChange(zoomIn)} aria-label="Zoom in">+</Button>
           </div>
         </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={fitDesktopWidth}
+          onClick={onToggleFitDesktopWidth}
+          className="flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-(--color-text) transition-colors hover:bg-(--bg-key) [&_svg]:size-4 [&_svg]:shrink-0"
+        >
+          <Monitor />
+          <span>
+            Desktop layout
+            <span className="block text-[10px] leading-4 text-(--color-text-subtle)">
+              Render pages at {FIT_DESKTOP_WIDTH}px and scale to fit
+            </span>
+          </span>
+          <span
+            className={cn(
+              'ml-auto rounded-full border px-1.5 py-0.5 text-[10px] font-medium',
+              fitDesktopWidth
+                ? 'border-(--color-accent)/40 bg-(--color-accent)/12 text-(--color-accent)'
+                : 'border-(--color-border) text-(--color-text-subtle)',
+            )}
+          >
+            {fitDesktopWidth ? 'On' : 'Off'}
+          </span>
+        </button>
         <BrowserMenuAction disabled={!active} onClick={() => runAndClose(onClearData)}>
           <Trash2 />
           Clear browsing data

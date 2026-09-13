@@ -4,18 +4,28 @@ export interface BrowserPreferences {
   /** Whether the built-in workspace browser is available. */
   enabled: boolean
   defaultZoom: number
+  /**
+   * Lay pages out at {@link FIT_DESKTOP_WIDTH} and scale them down while the
+   * panel is narrower, so a docked browser shows a site's desktop layout
+   * rather than the tablet one its own width would trigger.
+   */
+  fitDesktopWidth: boolean
   developerTools: boolean
   profileMode: 'shared' | 'session' | 'incognito'
 }
 
+/** The layout width a fitted page is rendered at. */
+export const FIT_DESKTOP_WIDTH = 1280
+
 const DEFAULT_BROWSER_PREFERENCES: BrowserPreferences = {
   enabled: true,
   defaultZoom: 100,
+  fitDesktopWidth: true,
   developerTools: false,
   profileMode: 'shared',
 }
 
-const BROWSER_PREFERENCES_VERSION = 5
+const BROWSER_PREFERENCES_VERSION = 6
 const BROWSER_PREFERENCES_CHANGED = 'oa-browser-preferences-changed'
 
 export function loadBrowserPreferences(): BrowserPreferences {
@@ -29,6 +39,7 @@ export function loadBrowserPreferences(): BrowserPreferences {
         typeof value.defaultZoom === 'number'
           ? Math.max(50, Math.min(200, value.defaultZoom))
           : DEFAULT_BROWSER_PREFERENCES.defaultZoom,
+      fitDesktopWidth: value.fitDesktopWidth !== false,
       developerTools: value.developerTools === true,
       profileMode: value.profileMode === 'session' || value.profileMode === 'incognito'
         ? value.profileMode

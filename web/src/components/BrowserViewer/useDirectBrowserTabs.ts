@@ -51,6 +51,13 @@ interface UseDirectBrowserTabsOptions {
   initialUrl?: string
   singleTab?: boolean
   zoom: number
+  /**
+   * CSS width to lay pages out at while the panel is narrower than it —
+   * the page is rendered at this width and scaled down to fill the panel,
+   * so a docked browser shows a site's desktop layout instead of its
+   * tablet one. Null keeps the page at the panel's own width.
+   */
+  fitWidth?: number | null
   devtools: boolean
   profileMode: 'shared' | 'session' | 'incognito'
   onError: (message: string) => void
@@ -152,6 +159,9 @@ const withTimeout = async <T,>(
 /** Retries before the panel admits defeat and says so. */
 const CREATE_MAX_ATTEMPTS = 6
 const CREATE_RETRY_BASE_MS = 250
+/** Smallest fit-width scale worth applying — below it, text stops being readable. */
+export const MIN_FIT_SCALE = 0.6
+
 const BROWSER_DATA_DIRECTORY = 'browser-profile'
 const BROWSER_DATA_STORE_ID = [
   0x45, 0x76, 0x6f, 0x46, 0x6c, 0x75, 0x78, 0x42,
@@ -168,6 +178,7 @@ export function useDirectBrowserTabs({
   initialUrl = NEW_TAB_URL,
   singleTab = false,
   zoom,
+  fitWidth = null,
   devtools,
   profileMode,
   onError,
@@ -194,6 +205,10 @@ export function useDirectBrowserTabs({
   const boundsRef = useRef<NativeBounds | null>(null)
   const viewportOverrideRef = useRef<BrowserViewportOverride | null>(null)
   const viewportScaleRef = useRef(1)
+  // Read inside callbacks that must not be rebuilt when the preference
+  // changes; the effects that need to re-run list `fitWidth` themselves.
+  const fitWidthRef = useRef(fitWidth)
+  fitWidthRef.current = fitWidth
   const lastDialogKeyRef = useRef('')
   const seenPopupKeysRef = useRef(new Set<string>())
   const visibilityRef = useRef(new Map<string, boolean>())
@@ -651,17 +666,17 @@ export function useDirectBrowserTabs({
     const webview = webviewsRef.current.get(tabId)
     if (!viewport || !webview) throw new Error('Desktop browser is unavailable')
     const rect = viewport.getBoundingClientRect()
-    const layout = browserViewportLayout({
+    const { layout, zoomFactor } = browserViewportPlan({
       x: rect.left,
       y: rect.top,
       width: rect.width,
       height: rect.height,
-    }, viewportOverrideRef.current)
+    }, viewportOverrideRef.current, fitWidthRef.current, zoom)
     const { LogicalPosition, LogicalSize } = await import('@tauri-apps/api/dpi')
     await Promise.all([
       webview.setPosition(new LogicalPosition(layout.x, layout.y)),
       webview.setSize(new LogicalSize(layout.width, layout.height)),
-      webview.setZoom(viewportOverrideRef.current ? layout.scale : zoom / 100),
+      webview.setZoom(zoomFactor),
     ])
     viewportScaleRef.current = layout.scale
     boundsRef.current = {
@@ -889,8 +904,9 @@ export function useDirectBrowserTabs({
       if (!Number.isFinite(percent)) throw new Error('zoom requires a percent')
       const webview = webviewsRef.current.get(tab.id)
       if (!webview) throw new Error('Desktop browser is unavailable')
-      const scale = viewportOverrideRef.current ? viewportScaleRef.current : 1
-      await webview.setZoom((percent / 100) * scale)
+      // Already 1 when nothing is scaling the view, so this covers an agent
+      // device viewport and a fit-width one without asking which is in force.
+      await webview.setZoom((percent / 100) * viewportScaleRef.current)
       return `Set in-app browser zoom to ${Math.round(percent)}%`
     }
     if (action === 'print') {
@@ -1046,12 +1062,27 @@ export function useDirectBrowserTabs({
     )
   }, [enabled, instanceId, sessionId, supported])
 
+  // Zoom and fit-width both change only the zoom factor, never the bounds, so
+  // the geometry synchronizer below sees nothing to do — this is where those
+  // two settings actually reach the view.
   useEffect(() => {
     const webview = webviewsRef.current.get(activeTabId ?? '')
-    const scale = viewportOverrideRef.current ? viewportScaleRef.current : 1
-    const effectiveZoom = viewportOverrideRef.current ? scale : zoom / 100
-    if (webview) void webview.setZoom(effectiveZoom).catch(() => {})
-  }, [activeTabId, zoom])
+    if (!webview) return
+    const element = viewportRef.current
+    const rect = element?.getBoundingClientRect()
+    const container = rect
+      ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+      : boundsRef.current
+    if (!container) return
+    const { layout, zoomFactor } = browserViewportPlan(
+      container,
+      viewportOverrideRef.current,
+      fitWidth,
+      zoom,
+    )
+    viewportScaleRef.current = layout.scale
+    void webview.setZoom(zoomFactor).catch(() => {})
+  }, [activeTabId, fitWidth, viewportRef, zoom])
 
   useEffect(() => {
     if (!supported || !activeTab || !visible) return
@@ -1158,12 +1189,12 @@ export function useDirectBrowserTabs({
         const rect = viewport.getBoundingClientRect()
         const cssVisible = getComputedStyle(viewport).visibility !== 'hidden'
         const shouldShow = visible && cssVisible && rect.width >= 2 && rect.height >= 2
-        const layout = browserViewportLayout({
+        const { layout, zoomFactor } = browserViewportPlan({
           x: rect.left,
           y: rect.top,
           width: rect.width,
           height: rect.height,
-        }, viewportOverrideRef.current)
+        }, viewportOverrideRef.current, fitWidthRef.current, zoom)
         viewportScaleRef.current = layout.scale
         const bounds = {
           x: layout.x,
@@ -1182,7 +1213,7 @@ export function useDirectBrowserTabs({
             await Promise.all([
               webview.setPosition(new LogicalPosition(bounds.x, bounds.y)),
               webview.setSize(new LogicalSize(bounds.width, bounds.height)),
-              webview.setZoom(viewportOverrideRef.current ? layout.scale : zoom / 100),
+              webview.setZoom(zoomFactor),
             ])
           }
           if (visibilityRef.current.get(id) !== show) {
@@ -1235,6 +1266,7 @@ export function useDirectBrowserTabs({
     // `viewportOverride` for a device-size emulation.
   }, [
     activeTabId,
+    fitWidth,
     pageDialog,
     pagePermission,
     supported,
@@ -1305,6 +1337,73 @@ export function useDirectBrowserTabs({
     find,
     clearBrowsingData,
     closeAll,
+  }
+}
+
+/**
+ * The viewport a narrow panel should pretend to be.
+ *
+ * A docked browser is routinely 600–900px wide, which is a tablet to every
+ * responsive site — so what the user verifies is not the layout they ship.
+ * Laying the page out at ``targetWidth`` and scaling the whole view down to
+ * the panel's width restores the desktop layout at a readable-if-small size.
+ *
+ * The height is derived from the same scale rather than fixed, so the scaled
+ * view covers the panel exactly: no letterboxing, and no page area hidden
+ * outside the panel.
+ */
+export function browserFitOverride(
+  container: Pick<NativeBounds, 'width' | 'height'>,
+  targetWidth: number | null,
+): BrowserViewportOverride | null {
+  if (!targetWidth || !Number.isFinite(targetWidth) || targetWidth <= 0) return null
+  const width = Math.max(1, container.width)
+  const height = Math.max(1, container.height)
+  // Wide enough already — a real 1:1 viewport beats a scaled one.
+  if (width >= targetWidth) return null
+  const scale = width / targetWidth
+  // Past this the desktop layout is technically correct and practically
+  // unreadable, so a genuinely narrow panel keeps the layout it earns.
+  if (scale < MIN_FIT_SCALE) return null
+  return {
+    width: Math.round(targetWidth),
+    height: Math.max(1, Math.round(height / scale)),
+  }
+}
+
+export interface BrowserViewportPlan {
+  layout: BrowserViewportLayout
+  /** The viewport actually in force — an agent's, ours, or none. */
+  override: BrowserViewportOverride | null
+  /** Zoom factor (1 = 100%) that realizes `layout` in the native view. */
+  zoomFactor: number
+}
+
+/**
+ * Resolve the one native geometry both callers must agree on: the animation
+ * -frame synchronizer and the agent's own viewport commands. They used to
+ * compute it separately, which is how the two could disagree about scale.
+ */
+export function browserViewportPlan(
+  container: NativeBounds,
+  agentOverride: BrowserViewportOverride | null,
+  fitWidth: number | null,
+  zoomPercent: number,
+): BrowserViewportPlan {
+  const override = agentOverride ?? browserFitOverride(container, fitWidth)
+  const layout = browserViewportLayout(container, override)
+  const zoomFraction = zoomPercent / 100
+  return {
+    layout,
+    override,
+    // An agent's device viewport *is* an emulation: its scale owns the zoom,
+    // and a user zoom on top would silently change the width being tested.
+    // Fit-width is our own framing, so the zoom control still applies to it.
+    zoomFactor: agentOverride
+      ? layout.scale
+      : override
+        ? layout.scale * zoomFraction
+        : zoomFraction,
   }
 }
 

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import { getResponsiveSidePanelLayout } from '@/lib/side-panel-layout'
+import {
+  getResponsiveSidePanelLayout,
+  SIDE_PANEL_LAYOUT,
+} from '@/lib/side-panel-layout'
 
 const base = {
   sidebarWidth: 280,
@@ -21,6 +24,23 @@ describe('getResponsiveSidePanelLayout', () => {
   it('shrinks the panel to preserve the primary content column', () => {
     expect(getResponsiveSidePanelLayout({ ...base, viewportWidth: 1200 }))
       .toEqual({ overlay: false, maxWidth: 408 })
+  })
+
+  it('gives a content surface a larger share of the same window', () => {
+    // 1920 × 0.42 = 806 for tool chrome; the browser earns 0.62 up to the
+    // width the primary column can spare.
+    expect(getResponsiveSidePanelLayout({
+      ...base,
+      viewportWidth: 1920,
+      maxWidth: 1600,
+    })).toEqual({ overlay: false, maxWidth: 806 })
+
+    expect(getResponsiveSidePanelLayout({
+      ...base,
+      viewportWidth: 1920,
+      maxWidth: 1600,
+      viewportRatio: SIDE_PANEL_LAYOUT.contentViewportRatio,
+    })).toEqual({ overlay: false, maxWidth: 1128 })
   })
 
   it('does not reserve space for a sidebar already rendered as an overlay', () => {
