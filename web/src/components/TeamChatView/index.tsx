@@ -1778,7 +1778,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               initialUrl={tab.initialUrl}
               open
               visible={active}
-              embedded
               onNewTab={(url) => createWorkbenchTab('browser', {
                 initialUrl: url,
                 title: 'New tab',

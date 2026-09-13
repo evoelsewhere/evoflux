@@ -41,6 +41,18 @@ export interface BrowserViewportOverride {
   height: number
 }
 
+export type BrowserViewportPreset = 'mobile' | 'tablet' | 'desktop'
+
+/** The device sizes the panel's own picker offers, mirrored by `resize`. */
+export const BROWSER_VIEWPORT_PRESETS: Record<
+  BrowserViewportPreset,
+  { width: number; height: number }
+> = {
+  mobile: { width: 375, height: 812 },
+  tablet: { width: 768, height: 1024 },
+  desktop: { width: 1280, height: 800 },
+}
+
 interface UseDirectBrowserTabsOptions {
   sessionId: string
   instanceId?: string
@@ -278,6 +290,9 @@ export function useDirectBrowserTabs({
           action: 'instrument',
           params: {},
         })
+        // The page owns the keyboard once it has focus, so the panel's own
+        // shortcuts only exist if the shell hands them back. Idempotent.
+        await invokeFor('app_browser_webview_bind_shortcuts', label).catch(() => {})
         return
       } catch (error) {
         lastError = error
@@ -640,6 +655,26 @@ export function useDirectBrowserTabs({
     })
   }, [activeTab, invokeFor])
 
+  /**
+   * Device emulation from the panel's own chrome.
+   *
+   * Deliberately the agent's code path rather than a parallel one: what a
+   * person selects here and what an agent asks for have to mean the same
+   * thing, or a screenshot taken after either would be of a different page.
+   */
+  const setViewportPreset = useCallback(async (
+    preset: BrowserViewportPreset | null,
+  ) => {
+    try {
+      await agentHandlerRef.current(
+        preset ? 'resize' : 'reset_viewport',
+        preset ? { preset } : {},
+      )
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error))
+    }
+  }, [onError])
+
   const find = useCallback(async (query: string, backwards = false) => {
     if (!activeTab || !query) return
     await invokeFor('app_browser_webview_command', activeTab.label, {
@@ -846,14 +881,11 @@ export function useDirectBrowserTabs({
       throw new Error(`Timeout waiting for browser condition${selector ? `: ${selector}` : ''}`)
     }
     if (action === 'resize') {
-      const presets: Record<string, [number, number]> = {
-        mobile: [375, 812],
-        tablet: [768, 1024],
-        desktop: [1280, 800],
-      }
-      const preset = typeof params.preset === 'string' ? presets[params.preset] : undefined
-      let width = preset?.[0] ?? Number(params.width)
-      let height = preset?.[1] ?? Number(params.height)
+      const preset = typeof params.preset === 'string'
+        ? BROWSER_VIEWPORT_PRESETS[params.preset as BrowserViewportPreset]
+        : undefined
+      let width = preset?.width ?? Number(params.width)
+      let height = preset?.height ?? Number(params.height)
       if (!Number.isFinite(width) || !Number.isFinite(height)) {
         throw new Error('resize requires a preset or width and height')
       }
@@ -1334,6 +1366,7 @@ export function useDirectBrowserTabs({
     pagePermission,
     resolvePagePermission,
     viewportOverride,
+    setViewportPreset,
     dismissPageDialog: () => setPageDialog(null),
     createTab,
     selectTab,
