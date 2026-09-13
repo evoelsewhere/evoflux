@@ -9,7 +9,7 @@ mod workspace;
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -48,6 +48,9 @@ struct AppState {
     tray_status: Arc<Mutex<Option<MenuItem<Wry>>>>,
     tray_session: Arc<Mutex<Option<MenuItem<Wry>>>>,
     active_window_label: Arc<Mutex<String>>,
+    /// Browser webviews whose keyboard shortcuts are already forwarded.
+    /// Registering twice would deliver every shortcut twice.
+    browser_shortcut_labels: Arc<Mutex<HashSet<String>>>,
     /// Current webview zoom factor, mutated by the View > Zoom menu
     /// items. Session-only — not persisted across restarts.
     zoom: Arc<Mutex<f64>>,
@@ -1405,6 +1408,128 @@ async fn app_browser_webview_command(
         _ => return Err(format!("Unsupported browser command: {action}")),
     }
     .map_err(|error| format!("Browser command failed: {error}"))
+}
+
+/// Browser chrome shortcuts, and what the app should do with each.
+///
+/// A child WebView owns the keyboard while a page has focus: it consumes
+/// these combinations and never lets them reach the window, so the panel's
+/// own handlers — and the app's menu accelerators — simply never ran while
+/// someone was reading a page. The platform has to hand them back.
+#[cfg(target_os = "windows")]
+fn browser_shortcut_for(virtual_key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<&'static str> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        VK_F, VK_L, VK_LEFT, VK_R, VK_RETURN, VK_RIGHT, VK_T, VK_W,
+    };
+
+    if alt {
+        return match virtual_key {
+            key if key == VK_LEFT.0 as u32 => Some("back"),
+            key if key == VK_RIGHT.0 as u32 => Some("forward"),
+            _ => None,
+        };
+    }
+    if !ctrl {
+        return None;
+    }
+    match virtual_key {
+        key if key == VK_L.0 as u32 && !shift => Some("address-bar"),
+        key if key == VK_F.0 as u32 && !shift => Some("find"),
+        key if key == VK_T.0 as u32 && !shift => Some("new-tab"),
+        key if key == VK_W.0 as u32 && !shift => Some("close-tab"),
+        key if key == VK_R.0 as u32 && !shift => Some("reload"),
+        key if key == VK_RETURN.0 as u32 && shift => Some("toggle-maximized"),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Serialize)]
+struct BrowserShortcutEvent {
+    label: String,
+    shortcut: String,
+}
+
+/// Forward browser chrome shortcuts pressed inside `label` back to the app UI.
+///
+/// Idempotent: the frontend calls it whenever it (re)instruments a tab, and a
+/// second registration would deliver every key twice.
+#[tauri::command]
+async fn app_browser_webview_bind_shortcuts(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    label: String,
+) -> Result<(), String> {
+    {
+        let mut bound = state.browser_shortcut_labels.lock().await;
+        if !bound.insert(label.clone()) {
+            return Ok(());
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use webview2_com::AcceleratorKeyPressedEventHandler;
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
+        };
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT,
+        };
+
+        let webview = app_browser_webview(&app, &label)?;
+        let handler_app = app.clone();
+        let handler_label = label.clone();
+        webview
+            .with_webview(move |platform| {
+                let controller = platform.controller();
+                let mut token = 0;
+                let handler = AcceleratorKeyPressedEventHandler::create(Box::new(
+                    move |_sender, args| {
+                        let Some(args) = args else { return Ok(()) };
+                        let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
+                        if unsafe { args.KeyEventKind(&mut kind) }.is_err()
+                            || kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+                        {
+                            return Ok(());
+                        }
+                        let mut virtual_key = 0u32;
+                        if unsafe { args.VirtualKey(&mut virtual_key) }.is_err() {
+                            return Ok(());
+                        }
+                        // The high bit is "currently down"; the low bit is the
+                        // toggle state, which would make Caps Lock look like Ctrl.
+                        let down = |key| unsafe { GetKeyState(key) } < 0;
+                        let Some(shortcut) = browser_shortcut_for(
+                            virtual_key,
+                            down(VK_CONTROL.0 as i32),
+                            down(VK_SHIFT.0 as i32),
+                            down(VK_MENU.0 as i32),
+                        ) else {
+                            return Ok(());
+                        };
+                        // Claim it so the page does not also act on it — a
+                        // browser owns these combinations, not the site.
+                        let _ = unsafe { args.SetHandled(true) };
+                        let _ = handler_app.emit(
+                            "browser-shortcut",
+                            BrowserShortcutEvent {
+                                label: handler_label.clone(),
+                                shortcut: shortcut.to_string(),
+                            },
+                        );
+                        Ok(())
+                    },
+                ));
+                let _ = unsafe { controller.add_AcceleratorKeyPressed(&handler, &mut token) };
+            })
+            .map_err(|error| format!("Could not bind browser shortcuts: {error}"))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Nothing to bind: the app's menu accelerators are handled by the
+        // platform before the focused web view sees them.
+        let _ = &app;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -5484,6 +5609,7 @@ fn main() {
         tray_status: Arc::new(Mutex::new(None)),
         tray_session: Arc::new(Mutex::new(None)),
         active_window_label: Arc::new(Mutex::new(MAIN_WINDOW.to_string())),
+        browser_shortcut_labels: Arc::new(Mutex::new(HashSet::new())),
         zoom: Arc::new(Mutex::new(ZOOM_DEFAULT)),
     };
 
@@ -5535,6 +5661,7 @@ fn main() {
             app_browser_webview_command,
             app_browser_webview_url,
             app_browser_webview_agent_action,
+            app_browser_webview_bind_shortcuts,
             set_tray_session,
             workspace::list_workspace_files,
             workspace::read_workspace_file,

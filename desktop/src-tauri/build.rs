@@ -22,6 +22,7 @@ fn main() {
             "app_browser_webview_command",
             "app_browser_webview_url",
             "app_browser_webview_agent_action",
+            "app_browser_webview_bind_shortcuts",
             "set_tray_session",
             "list_workspace_files",
             "read_workspace_file",
