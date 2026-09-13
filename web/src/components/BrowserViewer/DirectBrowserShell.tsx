@@ -17,6 +17,7 @@ import {
   Plus,
   Printer,
   RefreshCw,
+  Ruler,
   Search,
   Settings2,
   Trash2,
@@ -41,17 +42,35 @@ import {
 import { BrowserLauncher } from './BrowserLauncher'
 import { DirectBrowserSettingsView } from './DirectBrowserSettingsView'
 import {
+  BROWSER_VIEWPORT_PRESETS,
   type BrowserPageDialog,
   type BrowserPermissionRequest,
+  type BrowserViewportOverride,
+  type BrowserViewportPreset,
   isBrowserNewTab,
   useDirectBrowserTabs,
 } from './useDirectBrowserTabs'
 
-const MIN_WIDTH = 420
-const MAX_WIDTH = 1400
-const DEFAULT_WIDTH = 720
 const ZOOM_LEVELS = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200]
 
+/** Browser chrome actions reachable by keyboard, named by the shell too. */
+type BrowserShortcut =
+  | 'address-bar'
+  | 'find'
+  | 'new-tab'
+  | 'close-tab'
+  | 'reload'
+  | 'back'
+  | 'forward'
+  | 'toggle-maximized'
+
+/**
+ * The browser fills a workbench surface, which owns its width. The shell used
+ * to carry a second, self-resizing mode for a standalone right-hand drawer —
+ * its own drag handle, width state and mobile overlay — that nothing has
+ * mounted since the workbench took over, so it only made this file look like
+ * two components.
+ */
 interface DirectBrowserShellProps {
   sessionId: string | null
   /** Coding workspace whose launch.json backs the new-tab launcher. */
@@ -64,7 +83,6 @@ interface DirectBrowserShellProps {
   onNewTab?: (url?: string) => void
   onTitleChange?: (title: string) => void
   className?: string
-  embedded?: boolean
 }
 
 export function DirectBrowserShell({
@@ -78,20 +96,17 @@ export function DirectBrowserShell({
   onNewTab,
   onTitleChange,
   className,
-  embedded = false,
 }: DirectBrowserShellProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const urlInputRef = useRef<HTMLInputElement>(null)
   const onTitleChangeRef = useRef(onTitleChange)
   const urlFocusedRef = useRef(false)
-  const resizingRef = useRef(false)
   const [enabled, setEnabled] = useState(() => loadBrowserPreferences().enabled)
   const [findOpen, setFindOpen] = useState(false)
   const [findQuery, setFindQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [preferences, setPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
-  const [width, setWidth] = useState(DEFAULT_WIDTH)
   // Starts true: the first tab opens on the new-tab page anyway, and
   // assuming that keeps the native view hidden from the first frame instead
   // of flashing the static page before the launcher takes over.
@@ -174,25 +189,86 @@ export function DirectBrowserShell({
     onTitleChangeRef.current?.(tabTitle(currentUrl))
   }, [currentUrl])
 
+  /**
+   * One implementation for both ways a shortcut can arrive: from this
+   * document, when the app's own UI has focus, and from the shell, when the
+   * page has it and the native view handed the key back.
+   */
+  const runShortcut = useCallback(async (shortcut: BrowserShortcut) => {
+    switch (shortcut) {
+      case 'address-bar': {
+        // Focus lives in the child WebView, which is an OS window of its own:
+        // the app has to take it back before any DOM focus call means anything.
+        const { getCurrentWindow } = await import('@tauri-apps/api/window')
+        await getCurrentWindow().setFocus().catch(() => {})
+        urlInputRef.current?.focus()
+        urlInputRef.current?.select()
+        break
+      }
+      case 'find':
+        if (hasPage) setFindOpen(true)
+        break
+      case 'new-tab':
+        onNewTab?.()
+        break
+      case 'close-tab':
+        onClose()
+        break
+      case 'reload':
+      case 'back':
+      case 'forward':
+        if (hasPage) void browser.command(shortcut)
+        break
+      case 'toggle-maximized':
+        toggleMaximized()
+        break
+    }
+  }, [browser, hasPage, onClose, onNewTab, toggleMaximized])
+
+  // Shortcuts the shell intercepted before the page could swallow them.
+  useEffect(() => {
+    if (!open || !visible || !browser.supported) return
+    const label = browser.activeTab?.label
+    if (!label) return
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event')
+      const stop = await listen<{ label: string; shortcut: BrowserShortcut }>(
+        'browser-shortcut',
+        (event) => {
+          if (event.payload.label !== label) return
+          void runShortcut(event.payload.shortcut)
+        },
+      )
+      if (disposed) stop()
+      else unlisten = stop
+    })()
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [browser.activeTab?.label, browser.supported, open, runShortcut, visible])
+
   useEffect(() => {
     if (!open || !visible) return
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'f') {
         event.preventDefault()
-        if (hasPage) setFindOpen(true)
+        void runShortcut('find')
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'l') {
         event.preventDefault()
-        urlInputRef.current?.focus()
+        void runShortcut('address-bar')
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 't') {
         event.preventDefault()
-        onNewTab?.()
+        void runShortcut('new-tab')
       } else if (
         (event.metaKey || event.ctrlKey)
         && event.shiftKey
         && event.key.toLowerCase() === 'enter'
       ) {
         event.preventDefault()
-        if (embedded) toggleMaximized()
+        void runShortcut('toggle-maximized')
       } else if (event.key === 'Escape') {
         if (findOpen) setFindOpen(false)
         else if (menuOpen) setMenuOpen(false)
@@ -200,22 +276,19 @@ export function DirectBrowserShell({
         // Leaving full width is what Escape means in every other full-screen
         // surface; closing the tab from here would be a surprising way to lose
         // a page you were reading.
-        else if (embedded && maximized) toggleMaximized()
+        else if (maximized) toggleMaximized()
         else onClose()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [
-    browser,
-    embedded,
     findOpen,
-    hasPage,
     maximized,
     menuOpen,
     onClose,
-    onNewTab,
     open,
+    runShortcut,
     settingsOpen,
     toggleMaximized,
     visible,
@@ -253,71 +326,23 @@ export function DirectBrowserShell({
     }
   }, [browser, pushToast, reportError])
 
-  const handleResizeStart = useCallback((event: React.MouseEvent) => {
-    event.preventDefault()
-    resizingRef.current = true
-    const startX = event.clientX
-    const startWidth = width
-    const handleMove = (moveEvent: MouseEvent) => {
-      if (!resizingRef.current) return
-      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + startX - moveEvent.clientX)))
-    }
-    const handleUp = () => {
-      resizingRef.current = false
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }, [width])
-
   if (!open || !sessionId) return null
 
   return (
     <AnimatePresence>
       <>
-        {!embedded && (
-          <motion.button
-            type="button"
-            aria-label="Close browser"
-            className="fixed inset-0 z-(--z-overlay) bg-(--color-overlay) backdrop-blur-sm sm:hidden"
-            onClick={onClose}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={preset.transition}
-          />
-        )}
         <motion.section
           aria-label="Built-in browser"
           className={cn(
-            'flex min-w-0 flex-col overflow-hidden border-l border-(--color-border-strong) bg-(--bg-page)',
-            embedded
-              ? 'relative h-full min-h-0 w-full'
-              : 'fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) sm:relative sm:inset-auto sm:h-full sm:min-h-0 sm:shrink-0 sm:w-[var(--browser-viewer-width)]',
+            'relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden',
+            'border-l border-(--color-border-strong) bg-(--bg-page)',
             className,
           )}
-          style={embedded ? undefined : { '--browser-viewer-width': `${width}px` } as React.CSSProperties}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={preset.transition}
         >
-          {!embedded && (
-            <div
-              className="group/handle absolute bottom-0 left-0 top-0 z-(--z-panel) hidden w-2 cursor-col-resize sm:block"
-              onMouseDown={handleResizeStart}
-              onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
-              title="Resize browser"
-            >
-              <div className="absolute bottom-0 left-0 top-0 w-px bg-(--color-border-strong) group-hover/handle:bg-(--color-accent)" />
-            </div>
-          )}
-
           <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-(--color-border) bg-(--bg-page) px-2">
             <ToolbarButton label="Back" disabled={!hasPage} onClick={() => void browser.command('back')}>
               <ArrowLeft />
@@ -393,14 +418,25 @@ export function DirectBrowserShell({
               </form>
             )}
 
-            {embedded && (
-              <ToolbarButton
-                label={maximized ? 'Restore panel width' : 'Fill the window'}
-                onClick={toggleMaximized}
+            {browser.viewportOverride && (
+              <button
+                type="button"
+                onClick={() => void browser.setViewportPreset(null)}
+                title="Back to the panel size"
+                className="flex h-7 shrink-0 items-center gap-1 rounded-full border border-(--color-accent)/40 bg-(--color-accent)/12 px-2 font-mono text-[10px] tabular-nums text-(--color-accent) transition-colors hover:bg-(--color-accent)/20"
               >
-                {maximized ? <Minimize2 /> : <Maximize2 />}
-              </ToolbarButton>
+                {browser.viewportOverride.width}×{browser.viewportOverride.height}
+                <X size={11} aria-hidden />
+                <span className="sr-only">Back to the panel size</span>
+              </button>
             )}
+
+            <ToolbarButton
+              label={maximized ? 'Restore panel width' : 'Fill the window'}
+              onClick={toggleMaximized}
+            >
+              {maximized ? <Minimize2 /> : <Maximize2 />}
+            </ToolbarButton>
 
             <button
               type="button"
@@ -430,6 +466,9 @@ export function DirectBrowserShell({
               {browser.viewportOverride && (
                 <>
                   <div className="pointer-events-none absolute inset-3 rounded-lg border border-white/12 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.35)]" />
+                  {/* Non-interactive on purpose: a tall device fills the panel
+                      and the native view covers this spot. The toolbar chip is
+                      the one that can always be clicked. */}
                   <div className="pointer-events-none absolute bottom-2 left-1/2 z-(--z-panel) -translate-x-1/2 rounded-full border border-white/15 bg-black/65 px-2.5 py-1 font-mono text-[10px] tabular-nums text-white/80 shadow-lg backdrop-blur-md">
                     {browser.viewportOverride.width} × {browser.viewportOverride.height}
                   </div>
@@ -495,6 +534,8 @@ export function DirectBrowserShell({
                   zoom={preferences.defaultZoom}
                   fitDesktopWidth={preferences.fitDesktopWidth}
                   devToolsEnabled={preferences.developerTools}
+                  viewportOverride={browser.viewportOverride}
+                  onViewportPreset={(preset) => void browser.setViewportPreset(preset)}
                   onToggleFitDesktopWidth={() => updatePreferences({
                     ...preferences,
                     fitDesktopWidth: !preferences.fitDesktopWidth,
@@ -635,6 +676,8 @@ function DirectBrowserMenuPanel({
   zoom,
   fitDesktopWidth,
   devToolsEnabled,
+  viewportOverride,
+  onViewportPreset,
   onToggleFitDesktopWidth,
   onClose,
   onNewTab,
@@ -652,6 +695,8 @@ function DirectBrowserMenuPanel({
   zoom: number
   fitDesktopWidth: boolean
   devToolsEnabled: boolean
+  viewportOverride: BrowserViewportOverride | null
+  onViewportPreset: (preset: BrowserViewportPreset | null) => void
   onToggleFitDesktopWidth: () => void
   onClose: () => void
   onNewTab: () => void
@@ -703,6 +748,42 @@ function DirectBrowserMenuPanel({
         <BrowserMenuAction disabled={!/^https?:/i.test(currentUrl)} onClick={() => runAndClose(onOpenExternal)}>
           <ExternalLink />
           Open in default browser
+        </BrowserMenuAction>
+        <div className="my-1 h-px bg-(--color-border)" />
+        <div className="px-2 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
+          Device
+        </div>
+        <div className="flex items-center gap-1 px-1.5 pb-1">
+          {(['mobile', 'tablet', 'desktop'] as const).map((preset) => {
+            const size = BROWSER_VIEWPORT_PRESETS[preset]
+            const selected = viewportOverride?.width === size.width
+              && viewportOverride?.height === size.height
+            return (
+              <button
+                key={preset}
+                type="button"
+                disabled={!active}
+                aria-pressed={selected}
+                title={`${size.width} × ${size.height}`}
+                onClick={() => onViewportPreset(selected ? null : preset)}
+                className={cn(
+                  'flex-1 rounded-md border px-1.5 py-1 text-xs capitalize transition-colors disabled:pointer-events-none disabled:opacity-40',
+                  selected
+                    ? 'border-(--color-accent)/45 bg-(--color-accent)/12 text-(--color-accent)'
+                    : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                )}
+              >
+                {preset}
+              </button>
+            )
+          })}
+        </div>
+        <BrowserMenuAction
+          disabled={!active || !viewportOverride}
+          onClick={() => onViewportPreset(null)}
+        >
+          <Ruler />
+          Fit to panel
         </BrowserMenuAction>
         <div className="my-1 h-px bg-(--color-border)" />
         <div className="flex h-9 items-center gap-2 rounded-md px-2 text-sm text-(--color-text)">
