@@ -857,9 +857,15 @@ export function useDirectBrowserTabs({
       if (!Number.isFinite(width) || !Number.isFinite(height)) {
         throw new Error('resize requires a preset or width and height')
       }
-      const orientation = params.orientation === 'landscape' ? 'landscape' : 'portrait'
-      if (orientation === 'landscape' && height > width) [width, height] = [height, width]
-      if (orientation === 'portrait' && width > height) [width, height] = [height, width]
+      // Only rotate when an orientation was actually asked for. Treating the
+      // absence of one as "portrait" turned every landscape size on its side,
+      // so the desktop preset came back as an 800x1280 window.
+      const requested = params.orientation === 'landscape' || params.orientation === 'portrait'
+        ? params.orientation
+        : null
+      if (requested === 'landscape' && height > width) [width, height] = [height, width]
+      if (requested === 'portrait' && width > height) [width, height] = [height, width]
+      const orientation = requested ?? (width >= height ? 'landscape' : 'portrait')
       const presetMobile = params.preset === 'mobile' || params.preset === 'tablet'
       const mobile = typeof params.mobile === 'boolean' ? params.mobile : presetMobile
       const touch = typeof params.touch === 'boolean' ? params.touch : presetMobile

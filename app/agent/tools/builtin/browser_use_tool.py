@@ -569,7 +569,11 @@ class ResizeAction(BaseModel):
     device_scale_factor: float = Field(default=1.0, ge=0.5, le=4.0)
     mobile: bool | None = None
     touch: bool | None = None
-    orientation: Literal["portrait", "landscape"] = "portrait"
+    # Defaulting this to "portrait" made every landscape request portrait:
+    # the surface enforces the orientation it is given, so asking for the
+    # desktop preset returned an 800x1280 window. Unset means "whichever
+    # orientation the requested size already describes".
+    orientation: Literal["portrait", "landscape"] | None = None
     user_agent: str | None = Field(default=None, max_length=1000)
 
 
