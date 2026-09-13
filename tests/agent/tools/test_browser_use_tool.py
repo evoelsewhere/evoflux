@@ -386,10 +386,12 @@ async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> 
         "await_promise": True,
         "timeout_ms": 15_000,
     }
+    # No orientation is sent unless one was asked for: the surface rotates the
+    # viewport to match whatever it receives, so a default here turned every
+    # landscape request — the desktop preset included — on its side.
     assert requests[8][1] == {
         "preset": "mobile",
         "color_scheme": "dark",
         "device_scale_factor": 1.0,
-        "orientation": "portrait",
     }
     assert requests[9][1] == {}
