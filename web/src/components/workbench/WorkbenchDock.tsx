@@ -11,7 +11,10 @@ import { EASINGS, staggerDelay, useMotionPreset } from '@/lib/motion'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
 import { formatShortcutLabel } from '@/lib/keyboard-shortcuts'
-import { getResponsiveSidePanelLayout } from '@/lib/side-panel-layout'
+import {
+  getResponsiveSidePanelLayout,
+  SIDE_PANEL_LAYOUT,
+} from '@/lib/side-panel-layout'
 import {
   loadBrowserPreferences,
   subscribeBrowserPreferences,
@@ -29,6 +32,11 @@ import {
   WORKBENCH_TOOLS,
   type WorkbenchContext,
 } from './tools'
+
+/** Docked ceiling for panels that render our own chrome. */
+const TOOL_MAX_WIDTH = 1080
+/** Docked ceiling for the browser: enough for a desktop page at 1:1. */
+const CONTENT_MAX_WIDTH = 1600
 
 interface WorkbenchDockProps extends WorkbenchContext {
   children: ReactNode
@@ -78,13 +86,20 @@ export function WorkbenchDock({
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [])
+  // The browser renders third-party pages at whatever width we give it, so a
+  // chat-sized share is a product decision about how every site looks. It gets
+  // the wider content budget; tool chrome keeps the original one.
+  const contentTool = activeTool === 'browser'
   const responsiveLayout = getResponsiveSidePanelLayout({
     viewportWidth,
     sidebarWidth,
     sidebarCollapsed,
     sidebarOverlay,
     minWidth: 360,
-    maxWidth: 1080,
+    maxWidth: contentTool ? CONTENT_MAX_WIDTH : TOOL_MAX_WIDTH,
+    viewportRatio: contentTool
+      ? SIDE_PANEL_LAYOUT.contentViewportRatio
+      : SIDE_PANEL_LAYOUT.maxViewportRatio,
     canOverlay: false,
     inFlow: !maximized && !isMobile,
   })

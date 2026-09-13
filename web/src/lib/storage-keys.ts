@@ -46,6 +46,7 @@ export const STORAGE_KEYS = {
     codingWorkspaceTree: 'oa.codingWorkspace.treeWidth',
     sideChat: 'oa.sideChatPanel.width',
     workbench: 'oa.workbenchPanel.width',
+    workbenchMaximized: 'oa.workbenchPanel.maximized',
   },
 
   workspaceFiles: {

@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  browserFitOverride,
   browserScreenshotPoint,
   browserNavigationCommitted,
   browserDataStoreIdentifier,
   browserViewportLayout,
+  browserViewportPlan,
   browserWaitConditionSatisfied,
+  MIN_FIT_SCALE,
 } from '@/components/BrowserViewer/useDirectBrowserTabs'
 
 const baseExpected = {
@@ -84,6 +87,56 @@ describe('direct browser responsive viewport layout', () => {
       { width: 640, height: 400 },
       { width: 1280, height: 800 },
     )).toEqual({ x: 640, y: 400 })
+  })
+})
+
+describe('direct browser desktop fit', () => {
+  it('lays a narrow panel out at the target width and fills it exactly', () => {
+    const container = { x: 0, y: 0, width: 800, height: 600 }
+    const override = browserFitOverride(container, 1280)
+    expect(override).toEqual({ width: 1280, height: 960 })
+
+    // The scaled view must cover the panel: a letterbox here would be the
+    // dark bars the device-emulation path deliberately shows.
+    const layout = browserViewportLayout(container, override)
+    expect(layout.width).toBe(800)
+    expect(layout.height).toBe(600)
+    expect(layout.scale).toBeCloseTo(0.625, 5)
+  })
+
+  it('leaves a panel that is already wide enough at its native width', () => {
+    expect(browserFitOverride({ width: 1400, height: 900 }, 1280)).toBeNull()
+  })
+
+  it('gives up rather than rendering text too small to read', () => {
+    const width = Math.floor(1280 * MIN_FIT_SCALE) - 1
+    expect(browserFitOverride({ width, height: 600 }, 1280)).toBeNull()
+  })
+
+  it('is off when no target width is configured', () => {
+    expect(browserFitOverride({ width: 800, height: 600 }, null)).toBeNull()
+  })
+})
+
+describe('direct browser viewport plan', () => {
+  const container = { x: 0, y: 0, width: 800, height: 600 }
+
+  it('applies the user zoom when nothing is scaling the view', () => {
+    const plan = browserViewportPlan(container, null, null, 125)
+    expect(plan.override).toBeNull()
+    expect(plan.zoomFactor).toBeCloseTo(1.25, 5)
+  })
+
+  it('multiplies fit scale by the user zoom so the zoom control still works', () => {
+    const plan = browserViewportPlan(container, null, 1280, 150)
+    expect(plan.override).toEqual({ width: 1280, height: 960 })
+    expect(plan.zoomFactor).toBeCloseTo(0.625 * 1.5, 5)
+  })
+
+  it("lets an agent's device viewport own the zoom, so the tested width is exact", () => {
+    const plan = browserViewportPlan(container, { width: 1280, height: 800 }, 1280, 150)
+    expect(plan.override).toEqual({ width: 1280, height: 800 })
+    expect(plan.zoomFactor).toBeCloseTo(plan.layout.scale, 5)
   })
 })
 
