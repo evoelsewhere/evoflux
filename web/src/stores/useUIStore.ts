@@ -197,6 +197,12 @@ export function sessionWorkbenchTabs(state: {
 function activateTab(state: WorkbenchState, tab: WorkbenchTab | undefined): void {
   state.activeWorkbenchTabId = tab?.id ?? null
   state.activeWorkbenchTool = tab?.tool ?? null
+  // Maximize is a posture someone chose, not per-tab state. The dock drops it
+  // whenever it has nothing to show — including at startup, where the
+  // workbench is empty — so the remembered choice has to be re-applied the
+  // moment it has something to show again, or a full-width browser never
+  // comes back after a restart.
+  state.workbenchMaximized = tab ? storedWorkbenchMaximized : false
 }
 
 function lastTabForTool(
@@ -317,6 +323,9 @@ function persistSidebarWidth(width: number): void {
     // ignore storage failures
   }
 }
+
+/** The last posture the user chose explicitly, not the dock's current one. */
+let storedWorkbenchMaximized = loadWorkbenchMaximized()
 
 function loadWorkbenchMaximized(): boolean {
   try {
@@ -439,7 +448,9 @@ export const useUIStore = create<UIStore>()(
     _activeTabBySession: {},
     activeWorkbenchTool: null,
     workbenchOpen: false,
-    workbenchMaximized: loadWorkbenchMaximized(),
+    // Starts cleared because the workbench starts empty; `activateTab`
+    // re-applies the remembered posture as soon as there is a tab.
+    workbenchMaximized: false,
     pullRequestsScope: 'session',
     gitWorkspaceView: 'changes',
     createWorkbenchTab: (tool, options = {}) => set((state) => {
@@ -557,9 +568,13 @@ export const useUIStore = create<UIStore>()(
       state.workbenchMaximized = false
     }),
     toggleWorkbenchMaximized: () => set((state) => {
-      if (state.activeWorkbenchTabId) {
-        state.workbenchMaximized = !state.workbenchMaximized
-      }
+      if (!state.activeWorkbenchTabId) return
+      state.workbenchMaximized = !state.workbenchMaximized
+      // Only an explicit toggle updates what is remembered. The automatic
+      // clears — workbench closed, last tab gone — are about having nothing
+      // to show, and must not erase the choice for the next launch.
+      storedWorkbenchMaximized = state.workbenchMaximized
+      persistWorkbenchMaximized(storedWorkbenchMaximized)
     }),
     // Compatibility entry points used by desktop commands, sidebar actions,
     // and streamed tool calls. They now all target the shared workbench.
@@ -675,15 +690,3 @@ export const useUIStore = create<UIStore>()(
     }),
   }))
 )
-
-// Maximize is a working posture, not a transient toggle: someone who runs the
-// browser full-width wants it full-width again next launch. Persisting here
-// rather than inside the action catches the paths that clear it too (last tab
-// closed, workbench closed, session switched), so storage never disagrees with
-// what is on screen.
-let persistedWorkbenchMaximized = useUIStore.getState().workbenchMaximized
-useUIStore.subscribe((state) => {
-  if (state.workbenchMaximized === persistedWorkbenchMaximized) return
-  persistedWorkbenchMaximized = state.workbenchMaximized
-  persistWorkbenchMaximized(persistedWorkbenchMaximized)
-})
