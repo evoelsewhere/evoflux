@@ -15,8 +15,6 @@ import {
   Menu,
   Minimize2,
   Monitor,
-  PictureInPicture,
-  PictureInPicture2,
   Plus,
   Printer,
   RefreshCw,
@@ -235,26 +233,6 @@ export function DirectBrowserShell({
     const next = recordRecentBrowserSite(currentUrl)
     if (next) setRecentSites(next)
   }, [currentUrl])
-
-  /**
-   * A page in its own window still asks its questions here, because the panel
-   * is the only part of the browser made of our own UI. Asking behind another
-   * window is the same as not asking, so the app comes forward for it.
-   */
-  useEffect(() => {
-    if (!browser.detached || (!browser.pageDialog && !browser.pagePermission)) return
-    useUIStore.getState().selectWorkbenchTab(tabId)
-    void (async () => {
-      const { getCurrentWindow, UserAttentionType } = await import('@tauri-apps/api/window')
-      const appWindow = getCurrentWindow()
-      // Focus first, but do not depend on it: the platform may refuse to
-      // raise a window over the one the user is actually looking at. Asking
-      // for attention is the part that always lands — the app's taskbar entry
-      // flags itself instead of silently holding a question.
-      await appWindow.setFocus().catch(() => {})
-      await appWindow.requestUserAttention(UserAttentionType.Informational).catch(() => {})
-    })()
-  }, [browser.detached, browser.pageDialog, browser.pagePermission, tabId])
 
   /**
    * One implementation for both ways a shortcut can arrive: from this
@@ -557,23 +535,7 @@ export function DirectBrowserShell({
             )}
 
             <ToolbarButton
-              label={browser.detached ? 'Bring the page back here' : 'Open in its own window'}
-              disabled={!hasPage}
-              onClick={() => void (browser.detached ? browser.attachTab() : browser.detachTab())}
-            >
-              {browser.detached ? <PictureInPicture2 /> : <PictureInPicture />}
-            </ToolbarButton>
-
-            {/* Kept in place while detached rather than hidden: a toolbar
-                that reshuffles its buttons moves the next one under a cursor
-                already on its way to it. */}
-            <ToolbarButton
-              label={
-                browser.detached
-                  ? 'Panel width — the page is in its own window'
-                  : maximized ? 'Restore panel width' : 'Fill the window'
-              }
-              disabled={browser.detached}
+              label={maximized ? 'Restore panel width' : 'Fill the window'}
               onClick={toggleMaximized}
             >
               {maximized ? <Minimize2 /> : <Maximize2 />}
@@ -650,31 +612,6 @@ export function DirectBrowserShell({
                 <div className="absolute inset-0 flex items-center justify-center bg-(--bg-page)">
                   <Loader2 size={26} className="animate-spin text-(--color-accent)" />
                 </div>
-              ) : browser.detached ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-(--bg-page) px-6 text-center">
-                  <div className="max-w-sm">
-                    <PictureInPicture2
-                      size={30}
-                      className="mx-auto mb-3 text-(--color-text-muted)"
-                      aria-hidden
-                    />
-                    <p className="text-sm font-medium text-(--color-text)">
-                      This page is in its own window
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-(--color-text-muted)">
-                      The toolbar here still drives it. Closing that window brings
-                      the page back to this panel.
-                    </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="mt-4"
-                      onClick={() => void browser.attachTab()}
-                    >
-                      Bring it back
-                    </Button>
-                  </div>
-                </div>
               ) : browser.pageError ? (
                 <BrowserPageErrorView
                   error={browser.pageError}
@@ -698,14 +635,12 @@ export function DirectBrowserShell({
               {browser.pageDialog && !settingsOpen && (
                 <BrowserPageDialogPrompt
                   dialog={browser.pageDialog}
-                  detachedHost={browser.detached ? connection.host || 'its own window' : null}
                   onContinue={browser.dismissPageDialog}
                 />
               )}
               {browser.pagePermission && !settingsOpen && (
                 <BrowserPermissionPrompt
                   permission={browser.pagePermission}
-                  detachedHost={browser.detached ? connection.host || 'its own window' : null}
                   onDecision={browser.resolvePagePermission}
                 />
               )}
@@ -1047,12 +982,9 @@ function BrowserPageErrorView({
 
 function BrowserPermissionPrompt({
   permission,
-  detachedHost,
   onDecision,
 }: {
   permission: BrowserPermissionRequest
-  /** Set when the page that asked is in a window of its own. */
-  detachedHost: string | null
   onDecision: (allow: boolean) => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
@@ -1092,11 +1024,6 @@ function BrowserPermissionPrompt({
           <p id={descriptionId} className="text-sm leading-5 text-(--color-text)">
             This page wants access to <strong>{permission.kind}</strong>.
           </p>
-          {detachedHost && (
-            <p className="text-xs leading-5 text-(--color-text-muted)">
-              Asked by {detachedHost}, which is open in its own window.
-            </p>
-          )}
           {detail && (
             <code className="block max-h-24 overflow-auto rounded-md bg-(--bg-key) p-2 text-[11px] text-(--color-text-muted)">
               {detail}
@@ -1119,12 +1046,9 @@ function BrowserPermissionPrompt({
 
 function BrowserPageDialogPrompt({
   dialog,
-  detachedHost,
   onContinue,
 }: {
   dialog: BrowserPageDialog
-  /** Set when the page that asked is in a window of its own. */
-  detachedHost: string | null
   onContinue: () => void
 }) {
   const safelyDismissed = dialog.response === 'dismissed'
@@ -1150,11 +1074,6 @@ function BrowserPageDialogPrompt({
           <p id={messageId} className="whitespace-pre-wrap break-words text-sm leading-5 text-(--color-text)">
             {dialog.message || '(This page opened an empty dialog.)'}
           </p>
-          {detachedHost && (
-            <p className="text-xs leading-5 text-(--color-text-muted)">
-              From {detachedHost}, which is open in its own window.
-            </p>
-          )}
           {safelyDismissed && (
             <p className="text-xs leading-5 text-(--color-text-muted)">
               EvoFlux safely dismissed this blocking dialog so the browser and agent can continue.
