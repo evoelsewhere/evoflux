@@ -87,10 +87,12 @@ export function ProblemsPanel({
   const decision = useProblemDecisionMutation(workspace)
   const setChangeSet = useChangeSetStore((state) => state.setActive)
   const pushToast = useToastStore((state) => state.push)
+  const all = useMemo(() => query.data?.problems ?? [], [query.data?.problems])
   const rows = useMemo(
-    () => (query.data?.problems ?? []).filter((problem) => source === 'all' || problem.source === source),
-    [query.data?.problems, source],
+    () => all.filter((problem) => source === 'all' || problem.source === source),
+    [all, source],
   )
+  const totalOpen = all.length
 
   const stageFix = async (problem: CodingProblem) => {
     if (!problem.fix) return
@@ -174,8 +176,27 @@ export function ProblemsPanel({
         ) : rows.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <CheckCircle2 size={22} className="text-(--color-success)" />
-            <p className="text-sm text-(--color-text)">No open problems</p>
-            <p className="text-xs text-(--color-text-muted)">A clean panel does not replace behavioral verification.</p>
+            {/* A filter hiding every row is not a clean repository, and
+                saying so sent people away believing work was finished. */}
+            <p className="text-sm text-(--color-text)">
+              {source === 'all'
+                ? 'No open problems'
+                : `No ${SOURCE_LABELS[source]} problems`}
+            </p>
+            <p className="text-xs text-(--color-text-muted)">
+              {source === 'all'
+                ? 'A clean panel does not replace behavioral verification.'
+                : `${totalOpen} open in other sources.`}
+            </p>
+            {source !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSource('all')}
+                className="mt-1 rounded-md bg-(--bg-key) px-2.5 py-1.5 text-xs text-(--color-text-2) hover:bg-(--color-border)"
+              >
+                Show all sources
+              </button>
+            )}
           </div>
         ) : (
           <ul className="divide-y divide-(--color-border-subtle)">
