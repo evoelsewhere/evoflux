@@ -319,6 +319,7 @@ class RemoteRuntime:
             adapter=adapter,
             status_provider=lambda: self.status(connection.id),
         )
+        self._actions.set_projection(projection)
 
         from app.services.memory_stream_store import register_observer
 

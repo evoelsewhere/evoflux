@@ -19,6 +19,7 @@ from app.remote.contracts import (
     RemoteInboundActionKind,
     RemotePrincipal,
 )
+from app.remote.outbound import RemoteProjection
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -223,6 +224,67 @@ class TestSlashCommands:
             result = await service.dispatch_command(mock_db, action)
         assert result.status == "ok"
         assert "unpair" in result.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_unpair_clears_the_active_pairing_cache(
+        self, service: RemoteActionService
+    ) -> None:
+        """AC-10 (immediate revocation): /unpair must stop all communication
+        to the former principal right away — including notifications routed
+        through the projection's active-pairing cache, not just callback and
+        menu tokens."""
+        projection = RemoteProjection()
+        connection_id = uuid4()
+        projection.set_active_pairing(
+            connection_id=str(connection_id),
+            destination_id="chat-1",
+            notify_scope="all",
+            principal_id="user-1",
+        )
+        service.set_projection(projection)
+        action = _make_action(text="/unpair", connection_id=connection_id)
+        mock_db = MagicMock()
+
+        with patch.object(service._pairing_service, "unpair", return_value=True):
+            await service.dispatch_command(mock_db, action)
+
+        assert projection.active_pairing() is None
+
+    @pytest.mark.asyncio
+    async def test_unpair_with_no_projection_bound_does_not_raise(
+        self, service: RemoteActionService
+    ) -> None:
+        """set_projection defaults to None — /unpair must stay safe before
+        the runtime ever binds a projection."""
+        action = _make_action(text="/unpair")
+        mock_db = MagicMock()
+
+        with patch.object(service._pairing_service, "unpair", return_value=True):
+            result = await service.dispatch_command(mock_db, action)
+
+        assert result.status == "ok"
+
+    @pytest.mark.asyncio
+    async def test_unpair_with_no_existing_pairing_leaves_cache_untouched(
+        self, service: RemoteActionService
+    ) -> None:
+        """A no-op unpair (nothing to remove) must not clear an unrelated
+        active pairing."""
+        projection = RemoteProjection()
+        projection.set_active_pairing(
+            connection_id=str(uuid4()),
+            destination_id="chat-1",
+            notify_scope="all",
+            principal_id="user-1",
+        )
+        service.set_projection(projection)
+        action = _make_action(text="/unpair")
+        mock_db = MagicMock()
+
+        with patch.object(service._pairing_service, "unpair", return_value=False):
+            await service.dispatch_command(mock_db, action)
+
+        assert projection.active_pairing() is not None
 
 
 # ── Callback handling ─────────────────────────────────────────────────────────

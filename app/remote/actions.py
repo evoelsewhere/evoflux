@@ -35,6 +35,7 @@ from app.remote.pairing import PairingService
 
 if TYPE_CHECKING:
     from app.remote.contracts import RemoteAdapterStatus
+    from app.remote.outbound import RemoteProjection
 
 __all__ = ["RemoteActionResult", "RemoteActionService", "RemoteMenuItem"]
 
@@ -115,6 +116,7 @@ class RemoteActionService:
         self._status_provider = status_provider
         self._capabilities: dict[str, _ActionCapability] = {}
         self._pending_by_token: dict[str, str] = {}
+        self._projection: "RemoteProjection | None" = None
 
     def set_adapter(self, adapter: RemoteAdapter | None) -> None:
         self._adapter = adapter
@@ -123,6 +125,12 @@ class RemoteActionService:
         self, provider: "Callable[[], RemoteAdapterStatus]"
     ) -> None:
         self._status_provider = provider
+
+    def set_projection(self, projection: "RemoteProjection | None") -> None:
+        """Bind the outbound projection so ``/unpair`` can immediately clear
+        its active-pairing cache (AC-10: unpair revokes access right away,
+        not just callback/menu tokens)."""
+        self._projection = projection
 
     # ── Command dispatch ──────────────────────────────────────────────────
 
@@ -264,6 +272,8 @@ class RemoteActionService:
     ) -> RemoteActionResult:
         removed = await self._pairing_service.unpair(db, action.connection_id)
         if removed:
+            if self._projection is not None:
+                self._projection.clear_active_pairing()
             return RemoteActionResult(
                 status="ok", text="Phone unpaired. Send /start to pair again."
             )
