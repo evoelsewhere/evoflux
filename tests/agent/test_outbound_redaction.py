@@ -397,3 +397,37 @@ def test_nested_external_object_keys_are_protected() -> None:
     assert secret_key not in protected
     assert "abcdefghijklmnop" not in str(protected)
     assert report.secret_matches == 1
+
+
+def test_remote_channel_is_an_explicit_outbound_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC-23: every remote-bound field passes through the ``remote``
+    channel's own policy, selected explicitly by the caller rather than
+    read from the ambient sandbox state the other channels fall back on."""
+    secret = "unusual-remote-credential-value"
+    monkeypatch.setenv("SAMPLE_API_KEY", secret)
+
+    context = OutboundContext(channel="remote", destination="telegram")
+    assert context.label == "remote:telegram"
+
+    protected, report = protect_outbound_text(
+        f"Tool ran with {secret}",
+        policy="redact",
+        pii_policy="standard",
+        context=context,
+    )
+
+    assert secret not in protected
+    assert "[REDACTED:configured-secret]" in protected
+    assert report.context is context
+
+
+def test_remote_channel_block_policy_reports_the_remote_destination() -> None:
+    with pytest.raises(OutboundSensitiveDataError, match="remote:telegram"):
+        protect_outbound_text(
+            "token: abcdefghijklmnop",
+            policy="block",
+            pii_policy="off",
+            context=OutboundContext(channel="remote", destination="telegram"),
+        )
