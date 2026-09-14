@@ -251,7 +251,14 @@ class TelegramAdapter:
             TelegramTransportError,
             TelegramMalformedResponseError,
         ):
-            pass
+            # Debug, not warning: this fires repeatedly per turn, so
+            # warning-level logging here would be spam rather than a
+            # signal (contrast _register_commands, a one-shot startup
+            # call where a warning is appropriate).
+            logger.debug(
+                "telegram_indicate_typing_failed connection_id={}",
+                self._connection_id,
+            )
 
     def _record_delivery_failure(self, exc: TelegramApiError) -> None:
         if exc.error_code == 403:

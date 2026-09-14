@@ -674,10 +674,28 @@ class TestIndicateTyping:
         assert payload == {"chat_id": "chat-1", "action": "typing"}
 
     @pytest.mark.asyncio
-    async def test_indicate_typing_failure_is_a_safe_noop(self):
+    async def test_indicate_typing_api_error_is_a_safe_noop(self):
         transport = ScriptedTransport()
         transport.queue(
             "sendChatAction", _err(403, 403, "Forbidden: bot was blocked by the user")
+        )
+        adapter = _make_adapter(transport)
+
+        await adapter.indicate_typing("chat-1")  # must not raise
+
+    @pytest.mark.asyncio
+    async def test_indicate_typing_transport_error_is_a_safe_noop(self):
+        transport = ScriptedTransport()
+        transport.queue("sendChatAction", httpx.ConnectError("boom"))
+        adapter = _make_adapter(transport)
+
+        await adapter.indicate_typing("chat-1")  # must not raise
+
+    @pytest.mark.asyncio
+    async def test_indicate_typing_malformed_response_is_a_safe_noop(self):
+        transport = ScriptedTransport()
+        transport.queue(
+            "sendChatAction", httpx.Response(200, content=b"not json at all")
         )
         adapter = _make_adapter(transport)
 
