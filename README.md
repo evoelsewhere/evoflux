@@ -119,14 +119,14 @@ Language servers provide semantic feedback in the active project. Sandbox contro
 
 ## Download
 
-Current stable release: **[EvoFlux v2.0.0](https://github.com/evoelsewhere/evoflux/releases/tag/v2.0.0)** — a major workbench, provider, browser, telemetry, and Conductor integration release.
+Current stable release: **[EvoFlux v2.0.1](https://github.com/evoelsewhere/evoflux/releases/tag/v2.0.1)** — browser, Problems, and EASD maintenance improvements on the 2.0 baseline.
 
 | Platform | Package | SHA-256 |
 |---|---|---|
-| macOS · Apple Silicon | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.0/EvoFlux_2.0.0_aarch64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.0/evoflux-macos-apple-silicon-SHA256SUMS.txt) |
-| macOS · Intel | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.0/EvoFlux_2.0.0_x64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.0/evoflux-macos-intel-SHA256SUMS.txt) |
-| Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.0/EvoFlux_2.0.0_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.0/evoflux-windows-x64-SHA256SUMS.txt) |
-| Linux · x64 | [Download DEB](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.0/EvoFlux_2.0.0_amd64.deb) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.0/evoflux-linux-x64-SHA256SUMS.txt) |
+| macOS · Apple Silicon | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.1/EvoFlux_2.0.1_aarch64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.1/evoflux-macos-apple-silicon-SHA256SUMS.txt) |
+| macOS · Intel | [Download DMG](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.1/EvoFlux_2.0.1_x64.dmg) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.1/evoflux-macos-intel-SHA256SUMS.txt) |
+| Windows · x64 | [Download installer](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.1/EvoFlux_2.0.1_x64-setup.exe) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.1/evoflux-windows-x64-SHA256SUMS.txt) |
+| Linux · x64 | [Download DEB](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.1/EvoFlux_2.0.1_amd64.deb) | [Checksum](https://github.com/evoelsewhere/evoflux/releases/download/v2.0.1/evoflux-linux-x64-SHA256SUMS.txt) |
 
 Install the Linux package with `sudo apt install ./EvoFlux_*_amd64.deb`.
 Linux updates use the same package-managed flow instead of replacing
