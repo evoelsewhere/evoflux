@@ -237,6 +237,26 @@ export function DirectBrowserShell({
   }, [currentUrl])
 
   /**
+   * A page in its own window still asks its questions here, because the panel
+   * is the only part of the browser made of our own UI. Asking behind another
+   * window is the same as not asking, so the app comes forward for it.
+   */
+  useEffect(() => {
+    if (!browser.detached || (!browser.pageDialog && !browser.pagePermission)) return
+    useUIStore.getState().selectWorkbenchTab(tabId)
+    void (async () => {
+      const { getCurrentWindow, UserAttentionType } = await import('@tauri-apps/api/window')
+      const appWindow = getCurrentWindow()
+      // Focus first, but do not depend on it: the platform may refuse to
+      // raise a window over the one the user is actually looking at. Asking
+      // for attention is the part that always lands — the app's taskbar entry
+      // flags itself instead of silently holding a question.
+      await appWindow.setFocus().catch(() => {})
+      await appWindow.requestUserAttention(UserAttentionType.Informational).catch(() => {})
+    })()
+  }, [browser.detached, browser.pageDialog, browser.pagePermission, tabId])
+
+  /**
    * One implementation for both ways a shortcut can arrive: from this
    * document, when the app's own UI has focus, and from the shell, when the
    * page has it and the native view handed the key back.
@@ -678,12 +698,14 @@ export function DirectBrowserShell({
               {browser.pageDialog && !settingsOpen && (
                 <BrowserPageDialogPrompt
                   dialog={browser.pageDialog}
+                  detachedHost={browser.detached ? connection.host || 'its own window' : null}
                   onContinue={browser.dismissPageDialog}
                 />
               )}
               {browser.pagePermission && !settingsOpen && (
                 <BrowserPermissionPrompt
                   permission={browser.pagePermission}
+                  detachedHost={browser.detached ? connection.host || 'its own window' : null}
                   onDecision={browser.resolvePagePermission}
                 />
               )}
@@ -1025,9 +1047,12 @@ function BrowserPageErrorView({
 
 function BrowserPermissionPrompt({
   permission,
+  detachedHost,
   onDecision,
 }: {
   permission: BrowserPermissionRequest
+  /** Set when the page that asked is in a window of its own. */
+  detachedHost: string | null
   onDecision: (allow: boolean) => Promise<void>
 }) {
   const [busy, setBusy] = useState(false)
@@ -1067,6 +1092,11 @@ function BrowserPermissionPrompt({
           <p id={descriptionId} className="text-sm leading-5 text-(--color-text)">
             This page wants access to <strong>{permission.kind}</strong>.
           </p>
+          {detachedHost && (
+            <p className="text-xs leading-5 text-(--color-text-muted)">
+              Asked by {detachedHost}, which is open in its own window.
+            </p>
+          )}
           {detail && (
             <code className="block max-h-24 overflow-auto rounded-md bg-(--bg-key) p-2 text-[11px] text-(--color-text-muted)">
               {detail}
@@ -1089,9 +1119,12 @@ function BrowserPermissionPrompt({
 
 function BrowserPageDialogPrompt({
   dialog,
+  detachedHost,
   onContinue,
 }: {
   dialog: BrowserPageDialog
+  /** Set when the page that asked is in a window of its own. */
+  detachedHost: string | null
   onContinue: () => void
 }) {
   const safelyDismissed = dialog.response === 'dismissed'
@@ -1117,6 +1150,11 @@ function BrowserPageDialogPrompt({
           <p id={messageId} className="whitespace-pre-wrap break-words text-sm leading-5 text-(--color-text)">
             {dialog.message || '(This page opened an empty dialog.)'}
           </p>
+          {detachedHost && (
+            <p className="text-xs leading-5 text-(--color-text-muted)">
+              From {detachedHost}, which is open in its own window.
+            </p>
+          )}
           {safelyDismissed && (
             <p className="text-xs leading-5 text-(--color-text-muted)">
               EvoFlux safely dismissed this blocking dialog so the browser and agent can continue.
