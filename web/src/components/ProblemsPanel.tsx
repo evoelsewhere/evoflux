@@ -228,8 +228,11 @@ export function ProblemsPanel({
                       <button type="button" onClick={() => onSendToAgent(problemPrompt(problem, 'Investigate and fix'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><Send size={10} /> Send to agent</button>
                     </>
                   )}
-                  <button type="button" onClick={() => decision.mutate({ id: problem.id, action: 'dismiss' })} className="rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)">Dismiss</button>
-                  <button type="button" onClick={() => decision.mutate({ id: problem.id, action: 'suppress' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><Ban size={10} /> Suppress</button>
+                  {/* One decision at a time: the row stays on screen until
+                      the refetch lands, so an eager second click used to
+                      fire a second request against it. */}
+                  <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'dismiss' })} className="rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50">Dismiss</button>
+                  <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'suppress' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50"><Ban size={10} /> Suppress</button>
                 </div>
               </li>
             ))}

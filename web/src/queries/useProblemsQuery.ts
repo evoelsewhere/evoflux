@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { dismissProblem, getProblems, suppressProblem } from '@/api/client'
+import { useToastStore } from '@/stores/useToastStore'
 import { queryKeys } from './keys'
 
 export function useProblemsQuery(
@@ -19,11 +20,19 @@ export function useProblemsQuery(
 
 export function useProblemDecisionMutation(workspace: string) {
   const queryClient = useQueryClient()
+  const pushToast = useToastStore((state) => state.push)
   return useMutation({
     mutationFn: ({ id, action }: { id: string; action: 'dismiss' | 'suppress' }) =>
       action === 'dismiss' ? dismissProblem(workspace, id) : suppressProblem(workspace, id),
     onSuccess: () => queryClient.invalidateQueries({
       queryKey: ['coding-workspace-problems', workspace],
+    }),
+    // A decision that did not take used to fail in silence: the row stayed,
+    // the poll put it back, and the user pressed the button again.
+    onError: (error, { action }) => pushToast({
+      tone: 'error',
+      title: action === 'dismiss' ? 'Could not dismiss' : 'Could not suppress',
+      description: error instanceof Error ? error.message : undefined,
     }),
   })
 }
