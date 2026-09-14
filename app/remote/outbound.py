@@ -123,6 +123,21 @@ class RemoteProjection:
     #: unused by this task beyond being cleared alongside the other queues
     #: when no adapter is bound.
     _unaddressed_pending: list[object] = field(default_factory=list, repr=False)
+    #: Serializes the whole of :meth:`drain_pending` so two concurrently
+    #: scheduled drains (e.g. a status-card send and a same-turn done-card
+    #: edit, each fired by its own ``_schedule_drain``) can never interleave
+    #: — same precedent as ``PairingService._consume_lock`` in
+    #: ``app/remote/pairing.py`` for an identical check-then-act race.
+    _drain_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
+    #: Correlation ids whose message has been *confirmed* sent (the
+    #: ``adapter.send`` call for it returned without raising) — as opposed
+    #: to merely enqueued. An adapter's ``edit`` silently no-ops when it has
+    #: no record of the original send (e.g.
+    #: :class:`~app.remote.telegram.adapter.TelegramAdapter` keys its
+    #: ``_sent_messages`` cache by correlation id and only populates it on
+    #: success), so ``_finalize_turn`` checks this before choosing to edit
+    #: rather than send, to avoid silently losing a turn's final card.
+    _sent_correlations: set[str] = field(default_factory=set, repr=False)
     #: Caches the single v1 pairing's routing info so ``observe`` can reach
     #: sessions it was never explicitly ``register_session``-ed for (e.g.
     #: work started from the desktop, not the phone) — this app supports
@@ -139,8 +154,18 @@ class RemoteProjection:
     )
 
     def set_adapter(self, adapter: RemoteAdapter | None) -> None:
-        """Bind or unbind the live adapter. Called by the runtime on start/stop."""
+        """Bind or unbind the live adapter. Called by the runtime on start/stop.
+
+        Unbinding (``adapter=None``) stops every turn's typing-indicator
+        task — otherwise a turn whose ``done``/``error`` event never arrives
+        (the runtime stopped mid-turn) would leave its loop calling
+        ``indicate_typing`` on a now-stale adapter reference every 4s
+        forever.
+        """
         self._adapter = adapter
+        if adapter is None:
+            for turn in self._turns.values():
+                self._stop_typing(turn)
 
     def set_bridge(self, bridge: "RemoteGateBridge | None") -> None:
         """Bind or unbind the gate bridge. Called by the runtime on start/stop."""
@@ -211,8 +236,31 @@ class RemoteProjection:
         """Create the one status message a phone-admitted turn owns, and
         start the native typing indicator alongside it. Called by
         runtime.py right after ``register_session`` for a text-triggered
-        admission."""
-        correlation_id = f"status:{session_id}:{uuid.uuid4().hex[:8]}"
+        admission.
+
+        Reachable more than once for the same session — a follow-up
+        message sent to the phone while the first turn is still running
+        (``status="queued"``) triggers another admission, and thus another
+        call here, before the first turn's ``done``/``error`` arrives.
+        Rather than start a second status message and orphan the first
+        turn's typing task, this reuses the still-unresolved turn's
+        message: stop its typing task and carry its
+        ``lifecycle_correlation_id`` forward so the *same* message is
+        edited with the new status text. A fresh message is only sent when
+        there is no unresolved turn to reuse, or its original status card
+        was never confirmed sent (nothing to edit).
+        """
+        existing = self._turns.get(session_id)
+        reuse_correlation_id: str | None = None
+        if existing is not None and not existing.completion_sent:
+            self._stop_typing(existing)
+            if (
+                existing.lifecycle_correlation_id is not None
+                and existing.lifecycle_correlation_id in self._sent_correlations
+            ):
+                reuse_correlation_id = existing.lifecycle_correlation_id
+
+        correlation_id = reuse_correlation_id or f"status:{session_id}:{uuid.uuid4().hex[:8]}"
         turn = _TurnDeliveryState(
             session_id=session_id,
             connection_id=connection_id,
@@ -224,23 +272,52 @@ class RemoteProjection:
         )
         self._turns[session_id] = turn
         text, buttons = render_status_card(title=title, status=status)
-        self._enqueue_send(
-            destination_id=destination_id,
-            text=text,
-            buttons=buttons,
-            priority=RemoteOutboundPriority.HIGH,
-            correlation_id=correlation_id,
-        )
+        if reuse_correlation_id is not None:
+            self._enqueue_edit(
+                destination_id=destination_id,
+                text=text,
+                buttons=buttons,
+                correlation_id=reuse_correlation_id,
+            )
+        else:
+            self._enqueue_send(
+                destination_id=destination_id,
+                text=text,
+                buttons=buttons,
+                priority=RemoteOutboundPriority.HIGH,
+                correlation_id=correlation_id,
+            )
         if self._adapter is not None:
-            turn.typing_task = asyncio.create_task(self._run_typing_loop(turn))
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                turn.typing_task = loop.create_task(self._run_typing_loop(turn))
 
     async def _run_typing_loop(self, turn: _TurnDeliveryState) -> None:
-        adapter = self._adapter
-        if adapter is None:
-            return
+        """Call ``indicate_typing`` every 4s until cancelled.
+
+        Re-checks ``self._adapter`` on every iteration (rather than a
+        one-time snapshot) so unbinding the adapter mid-turn stops calls
+        going to a stale reference, and isolates each ``indicate_typing``
+        call in its own ``try/except`` so one transport failure logs and
+        retries on the next tick instead of silently killing the loop (and
+        the typing indicator) for the rest of the turn.
+        """
         try:
             while True:
-                await adapter.indicate_typing(turn.destination_id)
+                adapter = self._adapter
+                if adapter is None:
+                    return
+                try:
+                    await adapter.indicate_typing(turn.destination_id)
+                except Exception as exc:
+                    logger.warning(
+                        "remote_typing_indicator_failed destination_id={} error={}",
+                        turn.destination_id,
+                        exc,
+                    )
                 await asyncio.sleep(4.0)
         except asyncio.CancelledError:
             pass
@@ -276,10 +353,15 @@ class RemoteProjection:
 
         turn = self._turns.get(session_id)
         if turn is None:
+            # No begin_phone_turn was ever called for this session (e.g. work
+            # started on the desktop that the phone only observes) — "Task"
+            # is a defensive fallback so the eventual done/error card never
+            # renders with a blank title; a real title isn't available here.
             turn = _TurnDeliveryState(
                 session_id=session_id,
                 connection_id=connection_id,
                 destination_id=destination_id,
+                title="Task",
             )
             self._turns[session_id] = turn
 
@@ -358,15 +440,16 @@ class RemoteProjection:
                 action_target=activity.tool_log_text,
             )
 
+        title = _redact_text(turn.title)
         if error_message is not None:
             text, buttons = render_error_card(
-                title=turn.title,
+                title=title,
                 message=_redact_text(error_message),
                 toollog_token=toollog_token,
             )
         else:
             text, buttons = render_done_card(
-                title=turn.title,
+                title=title,
                 elapsed_seconds=elapsed,
                 summary_lines=[_redact_text(line) for line in activity.summary_lines],
                 tool_call_count=activity.tool_call_count,
@@ -374,12 +457,22 @@ class RemoteProjection:
                 toollog_token=toollog_token,
             )
 
-        if turn.phone_admitted and turn.lifecycle_correlation_id is not None:
+        # Only edit when this turn's status card was actually confirmed
+        # sent — an adapter's edit silently no-ops against a correlation id
+        # it never recorded a successful send for (see
+        # TelegramAdapter.edit's ``_sent_messages`` lookup), which would
+        # otherwise lose the final card entirely.
+        correlation_id = turn.lifecycle_correlation_id
+        was_sent = correlation_id is not None and correlation_id in self._sent_correlations
+        if correlation_id is not None:
+            self._sent_correlations.discard(correlation_id)
+
+        if turn.phone_admitted and correlation_id is not None and was_sent:
             self._enqueue_edit(
                 destination_id=turn.destination_id,
                 text=text,
                 buttons=buttons,
-                correlation_id=turn.lifecycle_correlation_id,
+                correlation_id=correlation_id,
             )
         else:
             self._enqueue_send(
@@ -448,10 +541,7 @@ class RemoteProjection:
             logger.debug("remote_outbound_no_adapter destination_id={}", destination_id)
             return
 
-        connection_id = ""
-        for cid in self._session_connection_ids.values():
-            connection_id = cid
-            break
+        connection_id = self._any_connection_id()
 
         chunks = _split_text(text)
         for i, chunk in enumerate(chunks):
@@ -483,10 +573,7 @@ class RemoteProjection:
         if adapter is None:
             return
 
-        connection_id = ""
-        for cid in self._session_connection_ids.values():
-            connection_id = cid
-            break
+        connection_id = self._any_connection_id()
 
         msg = RemoteOutboundMessage(
             connection_id=UUID(connection_id) if connection_id else UUID(int=0),
@@ -498,6 +585,17 @@ class RemoteProjection:
         self._pending_edits.append(msg)
         self._schedule_drain()
 
+    def _any_connection_id(self) -> str:
+        """One connection id to stamp on an outbound message.
+
+        v1 supports exactly one Telegram pairing per installation (see the
+        ``_active_pairing`` field docstring), so any tracked session's
+        connection id is the right — and only — one to use.
+        """
+        for cid in self._session_connection_ids.values():
+            return cid
+        return ""
+
     def _schedule_drain(self) -> None:
         """Schedule an async drain of pending messages if a loop is running."""
         try:
@@ -508,38 +606,58 @@ class RemoteProjection:
 
     async def drain_pending(self) -> None:
         """Finalize completed turns, then send/edit all pending messages
-        through the adapter."""
-        adapter = self._adapter
-        if adapter is None:
-            self._pending.clear()
-            self._pending_edits.clear()
-            self._pending_finalizations.clear()
-            self._unaddressed_pending.clear()
-            return
-        while self._pending_finalizations:
-            turn, error_message = self._pending_finalizations.pop(0)
-            await self._finalize_turn(turn, error_message=error_message)
-        while self._pending:
-            msg = self._pending.pop(0)
-            try:
-                await adapter.send(msg)
-            except Exception as exc:
-                logger.warning(
-                    "remote_outbound_send_failed destination_id={} error={}",
-                    msg.destination_id,
-                    exc,
-                )
-        while self._pending_edits:
-            msg = self._pending_edits.pop(0)
-            try:
-                await adapter.edit(msg)
-            except Exception as exc:
-                logger.warning(
-                    "remote_outbound_edit_failed destination_id={} error={}",
-                    msg.destination_id,
-                    exc,
-                )
-        await self._drain_unaddressed()
+        through the adapter.
+
+        Serialized by :attr:`_drain_lock`: ``_enqueue_send``/``_enqueue_edit``/
+        ``_handle_done``/``_handle_error`` each fire-and-forget their own
+        ``_schedule_drain`` call, so without this lock two drains can run
+        concurrently — e.g. a status-card send still in flight when a
+        same-turn done-card edit's drain starts — and interleave in ways
+        that lose a message (see ``_sent_correlations`` above).
+        """
+        async with self._drain_lock:
+            adapter = self._adapter
+            if adapter is None:
+                self._pending.clear()
+                self._pending_edits.clear()
+                self._pending_finalizations.clear()
+                self._unaddressed_pending.clear()
+                self._sent_correlations.clear()
+                return
+            while self._pending_finalizations:
+                turn, error_message = self._pending_finalizations.pop(0)
+                try:
+                    await self._finalize_turn(turn, error_message=error_message)
+                except Exception as exc:
+                    logger.warning(
+                        "remote_outbound_finalize_failed session_id={} error={}",
+                        turn.session_id,
+                        exc,
+                    )
+            while self._pending:
+                msg = self._pending.pop(0)
+                try:
+                    await adapter.send(msg)
+                except Exception as exc:
+                    logger.warning(
+                        "remote_outbound_send_failed destination_id={} error={}",
+                        msg.destination_id,
+                        exc,
+                    )
+                else:
+                    if msg.correlation_id is not None:
+                        self._sent_correlations.add(msg.correlation_id)
+            while self._pending_edits:
+                msg = self._pending_edits.pop(0)
+                try:
+                    await adapter.edit(msg)
+                except Exception as exc:
+                    logger.warning(
+                        "remote_outbound_edit_failed destination_id={} error={}",
+                        msg.destination_id,
+                        exc,
+                    )
+            await self._drain_unaddressed()
 
     async def _drain_unaddressed(self) -> None:
         """Placeholder for a later task's unaddressed-delivery drain
