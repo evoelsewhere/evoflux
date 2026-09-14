@@ -65,6 +65,7 @@
     "allow-app-browser-webview-url",
     "allow-app-browser-webview-agent-action",
     "allow-app-browser-webview-bind-shortcuts",
+    "allow-app-browser-webview-is-loading",
     "allow-set-tray-session",
     "allow-list-workspace-files",
     "allow-read-workspace-file",

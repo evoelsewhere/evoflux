@@ -356,6 +356,13 @@ export function useDirectBrowserTabs({
    */
   const navigationPendingRef = useRef(false)
   const navigationPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * Whether the shell answers "is this page loading?" directly.
+   *
+   * Platforms that send navigation events answer `null` once, and are never
+   * asked again; the ones that do not are asked every poll.
+   */
+  const nativeLoadingRef = useRef(true)
   const markNavigationPending = useCallback((pending: boolean) => {
     navigationPendingRef.current = pending
     if (navigationPendingTimerRef.current) {
@@ -1358,6 +1365,16 @@ export function useDirectBrowserTabs({
     setPageError(null)
   }, [activeTabId])
 
+  // The pending-navigation guard arms a timer; a panel that closes first
+  // would otherwise leave it to fire into a component that is gone.
+  useEffect(() => () => {
+    if (navigationPendingTimerRef.current) {
+      clearTimeout(navigationPendingTimerRef.current)
+      navigationPendingTimerRef.current = null
+    }
+    navigationPendingRef.current = false
+  }, [])
+
   /**
    * Downloads the page started.
    *
@@ -1507,7 +1524,18 @@ export function useDirectBrowserTabs({
           }
           // Only the document can prove a load *started*; only we know one is
           // still outstanding, so the poll may never clear that on its own.
-          setLoading(status?.readyState === 'loading' || navigationPendingRef.current)
+          let isLoading = status?.readyState === 'loading' || navigationPendingRef.current
+          // Platforms without navigation events can still be asked directly,
+          // and their answer covers the wait the document cannot see.
+          if (nativeLoadingRef.current) {
+            const native = await invokeFor<boolean | null>(
+              'app_browser_webview_is_loading',
+              activeTab.label,
+            ).catch(() => null)
+            if (typeof native === 'boolean') isLoading = native || navigationPendingRef.current
+            else nativeLoadingRef.current = false
+          }
+          setLoading(isLoading)
         }
         for (const popup of Array.isArray(popups) ? popups : []) {
           const popupKey = `${activeTab.label}:${popup.id}:${popup.ts}`

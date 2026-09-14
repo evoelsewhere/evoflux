@@ -1468,6 +1468,130 @@ struct BrowserDownloadEvent {
     state: String,
 }
 
+/// The browser views this process knows about, by native pointer.
+///
+/// macOS has no per-webview accelerator event: keys are intercepted for the
+/// whole application, so the handler has to work out whether the key was
+/// pressed inside one of our pages before it may claim it.
+#[cfg(target_os = "macos")]
+static BROWSER_NATIVE_VIEWS: std::sync::Mutex<Vec<(usize, String)>> =
+    std::sync::Mutex::new(Vec::new());
+
+#[cfg(target_os = "macos")]
+static BROWSER_KEY_MONITOR: AtomicBool = AtomicBool::new(false);
+
+/// Which of our pages the key window's first responder sits inside.
+#[cfg(target_os = "macos")]
+fn focused_browser_view_label(mtm: objc2_foundation::MainThreadMarker) -> Option<String> {
+    use objc2::rc::Retained;
+    use objc2_app_kit::{NSApplication, NSView};
+
+    let app = NSApplication::sharedApplication(mtm);
+    let window = app.keyWindow()?;
+    let responder = window.firstResponder()?;
+    let mut view: Option<Retained<NSView>> = responder.downcast::<NSView>().ok();
+    let known = BROWSER_NATIVE_VIEWS.lock().ok()?;
+    while let Some(current) = view {
+        let address = Retained::as_ptr(&current) as usize;
+        if let Some((_, label)) = known.iter().find(|(pointer, _)| *pointer == address) {
+            return Some(label.clone());
+        }
+        view = unsafe { current.superview() };
+    }
+    None
+}
+
+/// Install the one application-wide key monitor, the first time a browser
+/// page asks for its shortcuts back.
+#[cfg(target_os = "macos")]
+fn install_browser_key_monitor(app: AppHandle, mtm: objc2_foundation::MainThreadMarker) {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags};
+    use std::ptr::NonNull;
+
+    if BROWSER_KEY_MONITOR.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+        let event: &NSEvent = unsafe { event.as_ref() };
+        let pass_through = || (event as *const NSEvent).cast_mut();
+
+        let flags = event.modifierFlags();
+        let Some(characters) = event.charactersIgnoringModifiers() else {
+            return pass_through();
+        };
+        let Some(shortcut) = browser_shortcut_for_key(
+            &characters.to_string().to_lowercase(),
+            flags.contains(NSEventModifierFlags::Command),
+            flags.contains(NSEventModifierFlags::Shift),
+            flags.contains(NSEventModifierFlags::Option),
+        ) else {
+            return pass_through();
+        };
+        let Some(label) = focused_browser_view_label(mtm) else {
+            return pass_through();
+        };
+        // A view that outlived its webview would otherwise keep claiming keys
+        // for a page that no longer exists.
+        if app.get_webview(&label).is_none() {
+            if let Ok(mut views) = BROWSER_NATIVE_VIEWS.lock() {
+                views.retain(|(_, known)| known != &label);
+            }
+            return pass_through();
+        }
+        let _ = app.emit(
+            "browser-shortcut",
+            BrowserShortcutEvent {
+                label,
+                shortcut: shortcut.to_string(),
+            },
+        );
+        // Claimed: neither the page nor the app document sees this key.
+        std::ptr::null_mut()
+    });
+    let _monitor = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &handler)
+    };
+    // The monitor is deliberately never removed: it lives as long as the app,
+    // like the browser panel's right to its own shortcuts.
+    std::mem::forget(_monitor);
+}
+
+/// The same shortcut table as Windows, keyed by what the key produces rather
+/// than by a virtual-key code.
+#[cfg(target_os = "macos")]
+fn browser_shortcut_for_key(
+    key: &str,
+    command: bool,
+    shift: bool,
+    option: bool,
+) -> Option<&'static str> {
+    // Cmd+[ / Cmd+] are the platform's own history shortcuts; Option+arrow is
+    // what a Windows user's muscle memory reaches for. Both are cheap to keep.
+    if command {
+        return match key {
+            "l" if !shift => Some("address-bar"),
+            "f" if !shift => Some("find"),
+            "t" if !shift => Some("new-tab"),
+            "w" if !shift => Some("close-tab"),
+            "r" if !shift => Some("reload"),
+            "[" if !shift => Some("back"),
+            "]" if !shift => Some("forward"),
+            "\r" if shift => Some("toggle-maximized"),
+            _ => None,
+        };
+    }
+    if option {
+        return match key {
+            // NSLeftArrowFunctionKey / NSRightArrowFunctionKey
+            "\u{f702}" => Some("back"),
+            "\u{f703}" => Some("forward"),
+            _ => None,
+        };
+    }
+    None
+}
+
 /// Downloads are identified by the panel, not by the engine: the engine's
 /// operation object is a COM pointer, which is not something an event payload
 /// can carry to a React list.
@@ -1505,8 +1629,11 @@ async fn app_browser_webview_bind_shortcuts(
     label: String,
 ) -> Result<(), String> {
     {
-        let mut bound = state.browser_shortcut_labels.lock().await;
-        if !bound.insert(label.clone()) {
+        // Read-only here on purpose. Marking it bound before the registration
+        // succeeds means a failure is permanent: the retry sees the label
+        // already present and returns without ever attaching a handler.
+        let bound = state.browser_shortcut_labels.lock().await;
+        if bound.contains(&label) {
             return Ok(());
         }
     }
@@ -1530,6 +1657,10 @@ async fn app_browser_webview_bind_shortcuts(
         let webview = app_browser_webview(&app, &label)?;
         let handler_app = app.clone();
         let handler_label = label.clone();
+        // One clone per handler: each is moved into a callback that outlives
+        // this call, and the caller still needs the label afterwards.
+        let event_app = app.clone();
+        let event_label = label.clone();
         webview
             .with_webview(move |platform| {
                 let controller = platform.controller();
@@ -1580,8 +1711,8 @@ async fn app_browser_webview_bind_shortcuts(
                 let Ok(core) = (unsafe { controller.CoreWebView2() }) else {
                     return;
                 };
-                let starting_app = app.clone();
-                let starting_label = label.clone();
+                let starting_app = event_app.clone();
+                let starting_label = event_label.clone();
                 let mut starting_token = 0i64;
                 let starting = NavigationStartingEventHandler::create(Box::new(
                     move |_sender, _args| {
@@ -1597,8 +1728,8 @@ async fn app_browser_webview_bind_shortcuts(
                 ));
                 let _ = unsafe { core.add_NavigationStarting(&starting, &mut starting_token) };
 
-                let completed_app = app.clone();
-                let completed_label = label.clone();
+                let completed_app = event_app.clone();
+                let completed_label = event_label.clone();
                 let mut completed_token = 0i64;
                 let completed = NavigationCompletedEventHandler::create(Box::new(
                     move |_sender, _args| {
@@ -1619,8 +1750,8 @@ async fn app_browser_webview_bind_shortcuts(
                 // it lands on top of the site with no way to reach it later.
                 // Claiming the event replaces it with the panel's own list.
                 if let Ok(core4) = core.cast::<ICoreWebView2_4>() {
-                    let download_app = app.clone();
-                    let download_label = label.clone();
+                    let download_app = event_app.clone();
+                    let download_label = event_label.clone();
                     let mut download_token = 0i64;
                     let downloads = DownloadStartingEventHandler::create(Box::new(
                         move |_sender, args| {
@@ -1665,6 +1796,17 @@ async fn app_browser_webview_bind_shortcuts(
                                     let _ = unsafe {
                                         state_operation.BytesReceived(&mut received)
                                     };
+                                    // The engine can rename around a clash
+                                    // after the download starts, and the old
+                                    // path would reveal nothing.
+                                    let current_path = read_webview2_string(|value| unsafe {
+                                        state_operation.ResultFilePath(value)
+                                    });
+                                    let path = if current_path.is_empty() {
+                                        state_path.clone()
+                                    } else {
+                                        current_path
+                                    };
                                     let name = match state {
                                         COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED => "completed",
                                         COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED => "interrupted",
@@ -1676,7 +1818,7 @@ async fn app_browser_webview_bind_shortcuts(
                                             label: state_label.clone(),
                                             id,
                                             url: state_url.clone(),
-                                            path: state_path.clone(),
+                                            path,
                                             total_bytes: total,
                                             received_bytes: received,
                                             state: name.to_string(),
@@ -1696,13 +1838,81 @@ async fn app_browser_webview_bind_shortcuts(
             })
             .map_err(|error| format!("Could not bind browser shortcuts: {error}"))?;
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-        // Nothing to bind: the app's menu accelerators are handled by the
-        // platform before the focused web view sees them.
+        let webview = app_browser_webview(&app, &label)?;
+        let handler_app = app.clone();
+        let handler_label = label.clone();
+        webview
+            .with_webview(move |platform| {
+                let Some(mtm) = objc2_foundation::MainThreadMarker::new() else {
+                    return;
+                };
+                let view = platform.inner() as usize;
+                if let Ok(mut views) = BROWSER_NATIVE_VIEWS.lock() {
+                    views.retain(|(pointer, _)| *pointer != view);
+                    views.push((view, handler_label.clone()));
+                }
+                install_browser_key_monitor(handler_app.clone(), mtm);
+            })
+            .map_err(|error| format!("Could not bind browser shortcuts: {error}"))?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // No platform hook here yet: the panel's shortcuts only work while
+        // the app's own UI has focus, and load state comes from polling.
         let _ = &app;
     }
+    {
+        let mut bound = state.browser_shortcut_labels.lock().await;
+        bound.insert(label.clone());
+    }
     Ok(())
+}
+
+/// Whether the engine still has a navigation in flight.
+///
+/// Windows reports this through events; macOS has no equivalent we subscribe
+/// to, so the panel asks — which is still better than the document poll,
+/// because a load that has not committed leaves the previous document in
+/// place, reporting itself complete. `None` means "this platform answers with
+/// events; stop asking".
+#[tauri::command]
+async fn app_browser_webview_is_loading(
+    app: AppHandle,
+    label: String,
+) -> Result<Option<bool>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_web_kit::WKWebView;
+
+        let webview = app_browser_webview(&app, &label)?;
+        let (sender, receiver) = oneshot::channel();
+        let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+        webview
+            .with_webview(move |platform| {
+                let loading = unsafe {
+                    let wk_webview: &WKWebView = &*platform.inner().cast();
+                    wk_webview.isLoading()
+                };
+                if let Ok(mut guard) = sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(loading);
+                    }
+                }
+            })
+            .map_err(|error| format!("Could not read the browser load state: {error}"))?;
+        let loading = tokio::time::timeout(Duration::from_secs(5), receiver)
+            .await
+            .map_err(|_| "Timed out reading the browser load state".to_string())?
+            .map_err(|_| "Browser load state channel closed".to_string())?;
+        return Ok(Some(loading));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (&app, &label);
+        Ok(None)
+    }
 }
 
 #[tauri::command]
@@ -5835,6 +6045,7 @@ fn main() {
             app_browser_webview_url,
             app_browser_webview_agent_action,
             app_browser_webview_bind_shortcuts,
+            app_browser_webview_is_loading,
             set_tray_session,
             workspace::list_workspace_files,
             workspace::read_workspace_file,
