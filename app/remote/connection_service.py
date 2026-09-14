@@ -227,6 +227,22 @@ class RemoteConnectionService:
         await session.refresh(connection)
         return connection
 
+    async def set_label(
+        self, session: AsyncSession, connection_id: UUID, *, label: str
+    ) -> RemoteConnection:
+        """Rename a connection. Purely local metadata — never touches the
+        vault, adapter identity, or pairing (mirrors :meth:`set_enabled`)."""
+        connection = await self.get(session, connection_id)
+        if connection is None:
+            raise RemoteConnectionNotFoundError(
+                f"Remote connection {connection_id} does not exist."
+            )
+        connection.label = label
+        session.add(connection)
+        await session.commit()
+        await session.refresh(connection)
+        return connection
+
     async def remove(self, session: AsyncSession, connection_id: UUID) -> None:
         """Delete the connection's vault entry, then the connection
         (cascading its pairing).
