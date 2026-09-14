@@ -558,6 +558,87 @@ class TestDeliveryIndependentOfPolling:
         assert status.phone_reachable is True
         assert status.state == RemoteConnectionState.POLLING
 
+    @pytest.mark.asyncio
+    async def test_answer_callback_failure_sets_phone_unreachable_without_crashing_poll_loop(
+        self,
+    ):
+        transport = ScriptedTransport()
+        transport.queue(
+            "getUpdates",
+            _ok(
+                [
+                    {
+                        "update_id": 1,
+                        "callback_query": {
+                            "id": "raw-cbq-id-99",
+                            "from": {"id": 200, "is_bot": False},
+                            "message": {
+                                "message_id": 1,
+                                "date": 1,
+                                "chat": {"id": 100, "type": "private"},
+                            },
+                            "data": "opaque-token-99",
+                        },
+                    }
+                ]
+            ),
+        )
+        transport.queue(
+            "answerCallbackQuery",
+            _err(403, 403, "Forbidden: bot was blocked by the user"),
+        )
+        adapter = _make_adapter(transport)
+
+        await adapter.start()
+        await asyncio.sleep(0.05)  # let the poll loop classify the callback
+
+        from app.remote.telegram.client import TelegramApiError
+
+        with pytest.raises(TelegramApiError):
+            await adapter.answer_callback("opaque-token-99")
+
+        status = adapter.status()
+        await adapter.stop()
+
+        assert status.phone_reachable is False
+        assert status.last_error_class == RemoteErrorClass.PHONE_UNREACHABLE
+        # Inbound polling is unaffected — still healthy.
+        assert status.state == RemoteConnectionState.PHONE_UNREACHABLE
+
+    @pytest.mark.asyncio
+    async def test_successful_answer_callback_marks_phone_reachable(self):
+        transport = ScriptedTransport()
+        transport.queue(
+            "getUpdates",
+            _ok(
+                [
+                    {
+                        "update_id": 1,
+                        "callback_query": {
+                            "id": "raw-cbq-id-100",
+                            "from": {"id": 200, "is_bot": False},
+                            "message": {
+                                "message_id": 1,
+                                "date": 1,
+                                "chat": {"id": 100, "type": "private"},
+                            },
+                            "data": "opaque-token-100",
+                        },
+                    }
+                ]
+            ),
+        )
+        adapter = _make_adapter(transport)
+        await adapter.start()
+        await asyncio.sleep(0.05)
+
+        await adapter.answer_callback("opaque-token-100")
+        status = adapter.status()
+        await adapter.stop()
+
+        assert status.phone_reachable is True
+        assert status.state == RemoteConnectionState.POLLING
+
 
 # ---------------------------------------------------------------------------
 # Prompt shutdown (AC-13)

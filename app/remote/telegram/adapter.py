@@ -229,7 +229,12 @@ class TelegramAdapter:
             # (a later task) is responsible for telling the user their
             # action expired.
             return
-        await self._client.answer_callback(raw_id)
+        try:
+            await self._client.answer_callback(raw_id)
+        except TelegramApiError as exc:
+            self._record_delivery_failure(exc)
+            raise
+        self._record_delivery_success()
 
     def _record_delivery_failure(self, exc: TelegramApiError) -> None:
         if exc.error_code == 403:
