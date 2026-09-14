@@ -849,6 +849,21 @@ def _image_result(result: dict[str, Any]) -> str | ToolResult:
     )
 
 
+def _needs_surface(actions: list[AnyAction]) -> bool:
+    """Whether this batch needs a browser on screen to answer.
+
+    A batch of nothing but questions does not: ``status`` and ``get_tabs``
+    are what a caller polls with, and mounting for them opens a browser the
+    user never asked for — over whatever they were reading.
+    """
+    from app.services.direct_browser_bridge import SURFACE_FREE_ACTIONS
+
+    return any(
+        str(getattr(action, "action", "")) not in SURFACE_FREE_ACTIONS
+        for action in actions
+    )
+
+
 async def _ensure_browser(session_id: str) -> bool:
     from app.services.direct_browser_bridge import direct_browser_bridge
 
@@ -880,13 +895,19 @@ async def browser_use(
 ) -> str | ToolResult:
     """Run actions against the current chat's in-app desktop browser."""
     session_id = _get_sid(_state)
-    if not await _ensure_browser(session_id):
+    # Only work that drives a page is worth opening a browser the user did
+    # not ask for; a batch of questions is answered without one.
+    if _needs_surface(actions) and not await _ensure_browser(session_id):
         return (
             "EvoFlux in-app browser is unavailable for this chat. "
             "Open this task in EvoFlux Desktop and retry."
         )
 
-    from app.services.direct_browser_bridge import direct_browser_bridge
+    from app.services.direct_browser_bridge import (
+        SURFACE_FREE_ACTIONS,
+        direct_browser_bridge,
+        offline_action_result,
+    )
     from app.core.runtime_settings import BuiltInBrowserSettings, load_runtime_settings
 
     try:
@@ -923,6 +944,11 @@ async def browser_use(
             except (OSError, ValueError) as exc:
                 results.append(f"Error (set_files): {exc}")
                 continue
+        if name in SURFACE_FREE_ACTIONS and not direct_browser_bridge.is_connected(
+            session_id
+        ):
+            results.append(_text_result(name, offline_action_result(name)))
+            continue
         try:
             value = await direct_browser_bridge.request(session_id, name, params)
             if name in {"download", "save_pdf"} and isinstance(value, dict):

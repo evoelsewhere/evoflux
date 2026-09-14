@@ -18,6 +18,28 @@ from loguru import logger
 _WS_DISPLACED = 4409
 
 
+# Actions that ask *about* the browser rather than drive a page, and so have
+# a truthful answer when nothing is open: "nothing is open".
+#
+# Mounting a surface to serve one of these is how an idle poll ends up
+# opening a browser card over the user's chat. They are also exactly the
+# actions a poller calls, so the cost of getting this wrong is a preview
+# that reappears every few seconds without the user touching anything.
+SURFACE_FREE_ACTIONS = frozenset({"status", "get_tabs"})
+
+
+def offline_action_result(action: str) -> Any:
+    """What a surface-free action answers while no browser is connected.
+
+    Shaped to match what the panel itself returns in the same situation, so
+    a caller cannot tell "no browser" from "a browser with no tabs" by the
+    shape of the reply alone — only by reading it.
+    """
+    if action == "get_tabs":
+        return "No tabs open."
+    return {"connected": False, "tabs": []}
+
+
 class DirectBrowserUnavailable(RuntimeError):
     """Raised when no desktop browser panel is connected for a session."""
 
