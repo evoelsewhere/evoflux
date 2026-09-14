@@ -21,6 +21,7 @@ from app.services.problems_service import (
     restore_problem,
     serialize_problem,
     suppress_problem,
+    suppression_blast_radius,
 )
 
 router = APIRouter(prefix="/workspace/problems")
@@ -43,7 +44,13 @@ def _response(workspace: Path, *, include_resolved: bool) -> ProblemsResponse:
         counts["total"] += 1
     return ProblemsResponse(
         problems=[
-            ProblemResponse.model_validate(serialize_problem(row)) for row in rows
+            ProblemResponse.model_validate(
+                {
+                    **serialize_problem(row),
+                    "suppression_count": suppression_blast_radius(workspace, row.id),
+                }
+            )
+            for row in rows
         ],
         counts=counts,
     )

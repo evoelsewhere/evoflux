@@ -94,6 +94,8 @@ export function ProblemsPanel({
   // what had been hidden, so a mistaken click was unrecoverable and
   // invisible at once.
   const [showResolved, setShowResolved] = useState(false)
+  /** Row whose Suppress button is waiting for a second, informed click. */
+  const [confirmSuppress, setConfirmSuppress] = useState<string | null>(null)
   const query = useProblemsQuery(workspace, active, showResolved)
   const decision = useProblemDecisionMutation(workspace)
   const setChangeSet = useChangeSetStore((state) => state.setActive)
@@ -260,7 +262,33 @@ export function ProblemsPanel({
                   {problem.status === 'open' ? (
                     <>
                       <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'dismiss' })} className="rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50">Dismiss</button>
-                      <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'suppress' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50"><Ban size={10} /> Suppress</button>
+                      {/* Suppression is keyed by rule, not by row, so one
+                          click can silence a code across the whole
+                          repository. Say the number, then ask again. */}
+                      <button
+                        type="button"
+                        disabled={decision.isPending}
+                        title={`Hides every ${problem.code ?? problem.source} problem in this workspace`}
+                        onClick={() => {
+                          if (problem.suppression_count > 1 && confirmSuppress !== problem.id) {
+                            setConfirmSuppress(problem.id)
+                            return
+                          }
+                          setConfirmSuppress(null)
+                          decision.mutate({ id: problem.id, action: 'suppress' })
+                        }}
+                        className={cn(
+                          'flex items-center gap-1 rounded-md px-2 py-1 text-[10px] hover:bg-(--bg-key) disabled:opacity-50',
+                          confirmSuppress === problem.id
+                            ? 'bg-(--color-warning)/15 text-(--color-warning)'
+                            : 'text-(--color-text-muted)',
+                        )}
+                      >
+                        <Ban size={10} />
+                        {confirmSuppress === problem.id
+                          ? `Hide all ${problem.suppression_count}?`
+                          : 'Suppress'}
+                      </button>
                     </>
                   ) : (
                     <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'restore' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-accent) hover:bg-(--bg-key) disabled:opacity-50"><Undo2 size={10} /> Restore</button>
