@@ -544,14 +544,20 @@ export function DirectBrowserShell({
               {browser.detached ? <PictureInPicture2 /> : <PictureInPicture />}
             </ToolbarButton>
 
-            {!browser.detached && (
-              <ToolbarButton
-                label={maximized ? 'Restore panel width' : 'Fill the window'}
-                onClick={toggleMaximized}
-              >
-                {maximized ? <Minimize2 /> : <Maximize2 />}
-              </ToolbarButton>
-            )}
+            {/* Kept in place while detached rather than hidden: a toolbar
+                that reshuffles its buttons moves the next one under a cursor
+                already on its way to it. */}
+            <ToolbarButton
+              label={
+                browser.detached
+                  ? 'Panel width — the page is in its own window'
+                  : maximized ? 'Restore panel width' : 'Fill the window'
+              }
+              disabled={browser.detached}
+              onClick={toggleMaximized}
+            >
+              {maximized ? <Minimize2 /> : <Maximize2 />}
+            </ToolbarButton>
 
             <button
               type="button"

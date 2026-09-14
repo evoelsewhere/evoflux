@@ -44,6 +44,8 @@ export interface BrowserViewportOverride {
 interface DetachedBrowserWindow {
   label: string
   host: import('@tauri-apps/api/window').Window
+  /** Re-fit the page to its own window; the panel's geometry means nothing now. */
+  fill: () => Promise<void>
   stopResize?: () => void
   stopClose?: () => void
 }
@@ -295,6 +297,8 @@ export function useDirectBrowserTabs({
   // changes; the effects that need to re-run list `fitWidth` themselves.
   const fitWidthRef = useRef(fitWidth)
   fitWidthRef.current = fitWidth
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
   const lastDialogKeyRef = useRef('')
   const seenPopupKeysRef = useRef(new Set<string>())
   const visibilityRef = useRef(new Map<string, boolean>())
@@ -829,15 +833,19 @@ export function useDirectBrowserTabs({
         setTimeout(() => reject(new Error('Timed out opening the browser window')), 8_000)
       })
       await webview.reparent(host)
-      detachedRef.current = { label, host }
-      setDetached(true)
-
       const fill = async () => {
         const [size, scale] = await Promise.all([host.innerSize(), host.scaleFactor()])
         const logical = size.toLogical(scale)
         await webview.setPosition(new LogicalPosition(0, 0))
         await webview.setSize(new LogicalSize(logical.width, logical.height))
+        // The panel's scale was a way of fitting a page into a space too
+        // small for it. A window has no such problem, so the page goes back
+        // to the size it asks for at the user's own zoom — otherwise it
+        // arrives in its new window still shrunk to fit the old one.
+        await webview.setZoom(zoomRef.current / 100)
       }
+      detachedRef.current = { label, host, fill }
+      setDetached(true)
       await fill()
       await webview.show().catch(() => {})
       const stopResize = await host.onResized(() => void fill().catch(() => {}))
@@ -847,7 +855,7 @@ export function useDirectBrowserTabs({
         event.preventDefault()
         void attachTabRef.current()
       })
-      detachedRef.current = { label, host, stopResize, stopClose }
+      detachedRef.current = { label, host, fill, stopResize, stopClose }
     } catch (error) {
       detachedRef.current = null
       setDetached(false)
@@ -950,6 +958,12 @@ export function useDirectBrowserTabs({
     const viewport = viewportRef.current
     const webview = webviewsRef.current.get(tabId)
     if (!viewport || !webview) throw new Error('Desktop browser is unavailable')
+    // A detached page is laid out by its own window. Applying the panel's
+    // rectangle here would shrink the page to panel size inside that window.
+    if (detachedRef.current) {
+      await detachedRef.current.fill()
+      return
+    }
     const rect = viewport.getBoundingClientRect()
     const { layout, zoomFactor } = browserViewportPlan({
       x: rect.left,
@@ -1452,6 +1466,12 @@ export function useDirectBrowserTabs({
   useEffect(() => {
     const webview = webviewsRef.current.get(activeTabId ?? '')
     if (!webview) return
+    // A detached page is measured by its own window, so the panel's geometry
+    // says nothing about it: zoom is the user's figure and nothing else.
+    if (detachedRef.current) {
+      void webview.setZoom(zoom / 100).catch(() => {})
+      return
+    }
     const element = viewportRef.current
     const rect = element?.getBoundingClientRect()
     const container = rect
