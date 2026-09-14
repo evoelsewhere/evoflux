@@ -346,6 +346,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const [codingFileViewer, setCodingFileViewer] = useState<WorkspaceFileInfo | null>(null)
   const [codingFileViewerHost, setCodingFileViewerHost] = useState<CodingFileViewerHost>(null)
   const [codingFileViewerMode, setCodingFileViewerMode] = useState<'file' | 'diff' | 'preview'>('file')
+  /** Line to reveal when the viewer opens from something that knows one. */
+  const [codingFileViewerLine, setCodingFileViewerLine] = useState<number | null>(null)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
   const [showActivity, setShowActivity] = useState(false)
@@ -1876,7 +1878,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 <ProblemsPanel
                   workspace={workspace}
                   active={active}
-                  onOpenFile={(path) => {
+                  onOpenFile={(path, line) => {
                     setCodingFileViewer({
                       path,
                       name: path.split('/').pop() ?? path,
@@ -1884,6 +1886,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                       mtime: 0,
                       mime: 'text/plain',
                     })
+                    setCodingFileViewerLine(line ?? null)
                     setCodingFileViewerHost('standalone')
                     setCodingFileViewerMode('file')
                     openWorkbenchTool('files')
@@ -1954,6 +1957,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             mobile={false}
             desktopOverlay={false}
             initialViewMode={codingFileViewerMode}
+            initialLine={codingFileViewerLine}
             onAddComment={handleAddFileComment}
             onSendToChat={handleSendToChat}
             onAddCodeToChat={handleAddCodeToChat}
