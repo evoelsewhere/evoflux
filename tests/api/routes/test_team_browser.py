@@ -69,3 +69,47 @@ async def test_command_mounts_browser_before_dispatch(monkeypatch) -> None:
     )
 
     assert response.result == {"action": "extract", "params": {"selector": "main"}}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("action", "expected"),
+    [("get_tabs", "No tabs open."), ("status", {"connected": False, "tabs": []})],
+)
+async def test_query_does_not_mount_a_browser(monkeypatch, action, expected) -> None:
+    """Asking whether a page is open must not open one.
+
+    Anything polling this endpoint used to re-mount the preview over
+    whatever the user was reading.
+    """
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: False)
+
+    async def request_mount(_sid: str) -> bool:
+        raise AssertionError(f"{action} asked the desktop to mount a browser")
+
+    monkeypatch.setattr(direct_browser_bridge, "request_mount", request_mount)
+
+    response = await browser_route.run_direct_browser_agent_command(
+        "session-1",
+        browser_route.DirectBrowserCommandRequest(action=action),
+    )
+
+    assert response.result == expected
+
+
+@pytest.mark.asyncio
+async def test_query_still_reaches_a_live_browser(monkeypatch) -> None:
+    """The offline answer is a fallback, not a replacement for a real one."""
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: True)
+
+    async def request(_sid: str, action: str, params: dict):
+        return f"[0]* https://example.com ({action})"
+
+    monkeypatch.setattr(direct_browser_bridge, "request", request)
+
+    response = await browser_route.run_direct_browser_agent_command(
+        "session-1",
+        browser_route.DirectBrowserCommandRequest(action="get_tabs"),
+    )
+
+    assert response.result == "[0]* https://example.com (get_tabs)"
