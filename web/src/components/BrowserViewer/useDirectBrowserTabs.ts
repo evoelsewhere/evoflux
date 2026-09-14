@@ -41,6 +41,27 @@ export interface BrowserViewportOverride {
   height: number
 }
 
+interface DetachedBrowserWindow {
+  label: string
+  host: import('@tauri-apps/api/window').Window
+  stopResize?: () => void
+  stopClose?: () => void
+}
+
+/** Window labels are per-app and must be reusable after a close. */
+function detachedWindowSuffix(webviewLabel: string): string {
+  return webviewLabel.replace(/[^a-zA-Z0-9\-/:_]/g, '-')
+}
+
+/** The window title for a page, same rule the workbench tab uses. */
+function tabTitleFor(url: string): string {
+  try {
+    return new URL(url).host || 'Browser'
+  } catch {
+    return 'Browser'
+  }
+}
+
 export interface BrowserSitePermission {
   name: string
   state: 'granted' | 'denied' | 'prompt'
@@ -318,6 +339,9 @@ export function useDirectBrowserTabs({
   // A native WebView paints when it is ready and says nothing until then, so
   // a slow page looked identical to a frozen panel.
   const [loading, setLoading] = useState(false)
+  const [detached, setDetached] = useState(false)
+  const detachedRef = useRef<DetachedBrowserWindow | null>(null)
+  const attachTabRef = useRef<() => Promise<void>>(async () => {})
   const [downloads, setDownloads] = useState<BrowserDownload[]>([])
   /** Which webviews are ours, so another panel's downloads stay its own. */
   const labelsRef = useRef(new Set<string>())
@@ -766,6 +790,87 @@ export function useDirectBrowserTabs({
       backwards: null,
     })
   }, [activeTab, invokeFor])
+
+  /**
+   * Move the page into a window of its own, and back.
+   *
+   * The panel's width is bounded by the app's layout, which is the right
+   * answer for a tool and the wrong one for a page. A window has no such
+   * bound — and reparenting the existing view keeps the page exactly as it
+   * was: same document, same scroll, same session, no reload.
+   */
+  const detachTab = useCallback(async () => {
+    const tab = tabsRef.current.find((item) => item.id === activeIdRef.current)
+    const webview = tab ? webviewsRef.current.get(tab.id) : undefined
+    if (!tab || !webview || detachedRef.current) return
+    try {
+      const [{ Window }, { LogicalPosition, LogicalSize }] = await Promise.all([
+        import('@tauri-apps/api/window'),
+        import('@tauri-apps/api/dpi'),
+      ])
+      const label = `browser-window-${detachedWindowSuffix(tab.label)}`
+      const host = new Window(label, {
+        title: tabTitleFor(tab.url),
+        width: 1280,
+        height: 860,
+        resizable: true,
+        focus: true,
+      })
+      await new Promise<void>((resolve, reject) => {
+        void host.once('tauri://created', () => resolve())
+        void host.once<string>('tauri://error', (event) => reject(new Error(String(event.payload))))
+        setTimeout(() => reject(new Error('Timed out opening the browser window')), 8_000)
+      })
+      await webview.reparent(host)
+      detachedRef.current = { label, host }
+      setDetached(true)
+
+      const fill = async () => {
+        const [size, scale] = await Promise.all([host.innerSize(), host.scaleFactor()])
+        const logical = size.toLogical(scale)
+        await webview.setPosition(new LogicalPosition(0, 0))
+        await webview.setSize(new LogicalSize(logical.width, logical.height))
+      }
+      await fill()
+      await webview.show().catch(() => {})
+      const stopResize = await host.onResized(() => void fill().catch(() => {}))
+      const stopClose = await host.onCloseRequested((event) => {
+        // Closing the window must not close the page: it goes back to the
+        // panel it came from, which is where its tab still is.
+        event.preventDefault()
+        void attachTabRef.current()
+      })
+      detachedRef.current = { label, host, stopResize, stopClose }
+    } catch (error) {
+      detachedRef.current = null
+      setDetached(false)
+      onError(error instanceof Error ? error.message : String(error))
+    }
+  }, [onError])
+
+  const attachTab = useCallback(async () => {
+    const detachedWindow = detachedRef.current
+    const tab = tabsRef.current.find((item) => item.id === activeIdRef.current)
+    const webview = tab ? webviewsRef.current.get(tab.id) : undefined
+    if (!detachedWindow) return
+    try {
+      const { getCurrentWindow } = await import('@tauri-apps/api/window')
+      if (webview) await webview.reparent(getCurrentWindow())
+      detachedWindow.stopResize?.()
+      detachedWindow.stopClose?.()
+      await detachedWindow.host.destroy().catch(() => {})
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error))
+    } finally {
+      detachedRef.current = null
+      setDetached(false)
+      // The synchronizer compares against the last bounds it pushed, which
+      // were for a different window; clearing them forces a fresh placement.
+      boundsRef.current = null
+    }
+  }, [onError])
+
+  attachTabRef.current = attachTab
 
   /**
    * What the page itself says it has been granted.
@@ -1474,6 +1579,9 @@ export function useDirectBrowserTabs({
 
     const sync = async () => {
       if (disposed) return
+      // A detached page is laid out by its own window. Pushing panel
+      // coordinates at it would park it wherever the panel happens to be.
+      if (detachedRef.current) return
       if (syncing) {
         // Coalesce: one more pass after the in-flight one, never a queue.
         pendingSync = true
@@ -1610,6 +1718,15 @@ export function useDirectBrowserTabs({
     const visibilities = visibilityRef.current
     return () => {
       disposedRef.current = true
+      // A window hosting a page we are about to close would otherwise be
+      // left behind with nothing in it.
+      const detachedWindow = detachedRef.current
+      if (detachedWindow) {
+        detachedWindow.stopResize?.()
+        detachedWindow.stopClose?.()
+        void detachedWindow.host.destroy().catch(() => {})
+        detachedRef.current = null
+      }
       for (const webview of webviews.values()) {
         void webview.close().catch(() => {})
       }
@@ -1631,6 +1748,9 @@ export function useDirectBrowserTabs({
     viewportOverride,
     setViewportPreset,
     readSitePermissions,
+    detached,
+    detachTab,
+    attachTab,
     loading,
     downloads,
     clearDownloads: () => setDownloads([]),
