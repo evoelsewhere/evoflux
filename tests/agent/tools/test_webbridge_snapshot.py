@@ -528,3 +528,51 @@ async def test_an_older_extension_still_gets_one_command_at_a_time(monkeypatch) 
     )
 
     assert sent == ["click_selector", "fill"]
+
+
+# ── Reaching past a shadow boundary ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_scraping_searches_shadow_roots_unless_told_not_to(monkeypatch) -> None:
+    """A list rendered by web components returned nothing at all before."""
+    seen: list[dict] = []
+
+    async def send_command(_sid: str, action: str, params=None, **_kw):
+        assert action == "extract_elements"
+        seen.append(params or {})
+        return {"success": True, "data": {"records": [{"text": "one"}]}}
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "extract_elements", "selector": "article.card"}],
+    )
+    assert seen[0]["deep"] is True
+
+    await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "extract_elements", "selector": "article.card", "deep": False}
+        ],
+    )
+    assert seen[1].get("deep") is False
+
+
+@pytest.mark.asyncio
+async def test_a_list_that_scrolls_in_a_pane_can_say_so(monkeypatch) -> None:
+    """Scrolling the window does nothing for a chat log in its own box."""
+    seen: list[dict] = []
+
+    async def send_command(_sid: str, action: str, params=None, **_kw):
+        assert action == "scroll_to_bottom"
+        seen.append(params or {})
+        return {"success": True, "data": {"scrolls": 3, "final_height": 900}}
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "scroll_to_bottom", "ref": "e42"}],
+    )
+
+    assert seen[0]["ref"] == "e42"
