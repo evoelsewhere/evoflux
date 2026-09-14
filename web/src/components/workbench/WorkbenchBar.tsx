@@ -154,17 +154,26 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         </motion.button>
       )}
 
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      {/* `overflow-hidden` is load-bearing: this side shrinks to nothing when
+          the conversation column is narrow, and without it a child that
+          refuses to shrink is painted straight over the controls to the
+          right rather than being clipped or truncated. */}
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
         <DropdownMenu>
           <DropdownMenuTrigger
-            className="group flex h-7 w-8 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-card)/55 px-0 text-xs font-medium text-(--color-text) outline-none transition-colors hover:bg-(--bg-key) data-[popup-open]:bg-(--bg-key) disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:max-w-56 sm:justify-start sm:px-2"
+            // Shrinks down to its icon rather than holding its width: this
+            // is the widest thing on this side and the one that used to
+            // overrun the bar.
+            className="group flex h-7 w-8 min-w-8 items-center justify-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-card)/55 px-0 text-xs font-medium text-(--color-text) outline-none transition-colors hover:bg-(--bg-key) data-[popup-open]:bg-(--bg-key) disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:max-w-56 sm:justify-start sm:px-2"
             aria-label="Select lead agent"
             disabled={isTeamWorking || props.leadChanging || props.leadOptions.length === 0}
             title={isTeamWorking ? 'Finish or stop the active turn before changing lead' : 'Select lead agent and owned team'}
             data-no-drag
           >
             <UsersRound data-lead-icon size={14} className="shrink-0 text-(--color-accent)" />
-            <span className="hidden truncate sm:inline">{props.leadName ?? 'Choose lead'}</span>
+            <span className="workbench-identity-label hidden truncate sm:inline">
+              {props.leadName ?? 'Choose lead'}
+            </span>
             <ChevronDown size={11} className="hidden shrink-0 text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180 sm:block" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-[min(18rem,calc(100vw-1rem))]">
@@ -203,13 +212,13 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.96 }}
             transition={motionPreset.spring}
-            className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-(--color-accent)/30 bg-(--color-accent)/8 px-2 text-[11px] font-medium text-(--color-accent) transition-colors hover:border-(--color-accent)/40 hover:bg-(--color-accent)/12"
+            className="flex h-7 min-w-0 items-center gap-1.5 rounded-lg border border-(--color-accent)/30 bg-(--color-accent)/8 px-2 text-[11px] font-medium text-(--color-accent) transition-colors hover:border-(--color-accent)/40 hover:bg-(--color-accent)/12"
             aria-label={`Open linked review #${props.reviewContext.number}`}
             title="Open linked PR/MR"
             data-no-drag
           >
-            <GitPullRequest size={13} />
-            <span>Review #{props.reviewContext.number}</span>
+            <GitPullRequest size={13} className="shrink-0" />
+            <span className="truncate">Review #{props.reviewContext.number}</span>
           </motion.button>
         )}
       </div>

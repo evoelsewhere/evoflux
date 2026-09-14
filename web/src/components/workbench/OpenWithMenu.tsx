@@ -56,8 +56,8 @@ export function OpenWithMenu({ workspace, onChooseWorkspace }: OpenWithMenuProps
         aria-label="Choose a workspace folder"
         title="Choose a workspace folder"
       >
-        <FolderOpen size={14} />
-        <span>Open folder</span>
+        <FolderOpen size={14} className="shrink-0" />
+        <span className="workbench-openwith-label">Open folder</span>
       </button>
     )
   }
@@ -69,8 +69,10 @@ export function OpenWithMenu({ workspace, onChooseWorkspace }: OpenWithMenuProps
         aria-label="Open workspace in a desktop app"
         title="Open workspace in…"
       >
-        <AppWindow size={14} />
-        <span>Open in</span>
+        <AppWindow size={14} className="shrink-0" />
+        {/* Drops to the icon alone when the bar is narrow; the name stays in
+            the accessible name and the tooltip. */}
+        <span className="workbench-openwith-label">Open in</span>
         <ChevronDown
           size={11}
           className="text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180"

@@ -1222,6 +1222,23 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
   container-type: inline-size;
 }
 
+/* The bar drops labels as its own width runs out, widest control first. A
+ * window-width breakpoint is the wrong measure here: the window can be wide
+ * while this bar is narrow, because the workbench takes its space from the
+ * conversation column, not from the window. Everything hidden keeps its
+ * accessible name through aria-label/title. */
+@container workbench-topbar (max-width: 620px) {
+  .workbench-openwith-label {
+    display: none;
+  }
+}
+
+@container workbench-topbar (max-width: 560px) {
+  .workbench-bridge-label {
+    display: none;
+  }
+}
+
 @container workbench-topbar (max-width: 480px) {
   .workbench-view-label {
     display: none;
