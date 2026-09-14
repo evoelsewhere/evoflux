@@ -100,6 +100,27 @@ describe('ProblemsPanel', () => {
     expect(send).toHaveBeenCalledWith(expect.stringContaining('Investigate and fix'))
   })
 
+  it('separates drafting a message from sending one', () => {
+    const send = vi.fn()
+    const draft = vi.fn()
+    render(
+      <ProblemsPanel
+        workspace="/repo"
+        active
+        onSendToAgent={send}
+        onAddToComposer={draft}
+      />,
+    )
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Add to plan/ })[0]!)
+    expect(draft).toHaveBeenCalledWith(expect.stringContaining('implementation plan'))
+    expect(send).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Send to agent/ })[0]!)
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(draft).toHaveBeenCalledTimes(1)
+  })
+
   it('stages a structured fix as a guarded ChangeSet', async () => {
     const staged = {
       id: 'change-1',
