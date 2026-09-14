@@ -4,7 +4,10 @@ import {
   AlertTriangle,
   Ban,
   CheckCircle2,
+  Eye,
+  EyeOff,
   Info,
+  Undo2,
   Loader2,
   MessageSquarePlus,
   RefreshCw,
@@ -87,7 +90,11 @@ export function ProblemsPanel({
   onSendToAgent?: (prompt: string) => void
 }) {
   const [source, setSource] = useState<ProblemSource | 'all'>('all')
-  const query = useProblemsQuery(workspace, active)
+  // Dismissing and suppressing used to be one-way trips with no view of
+  // what had been hidden, so a mistaken click was unrecoverable and
+  // invisible at once.
+  const [showResolved, setShowResolved] = useState(false)
+  const query = useProblemsQuery(workspace, active, showResolved)
   const decision = useProblemDecisionMutation(workspace)
   const setChangeSet = useChangeSetStore((state) => state.setActive)
   const pushToast = useToastStore((state) => state.push)
@@ -96,7 +103,8 @@ export function ProblemsPanel({
     () => all.filter((problem) => source === 'all' || problem.source === source),
     [all, source],
   )
-  const totalOpen = all.length
+  const totalOpen = all.filter((problem) => problem.status === 'open').length
+  const hiddenCount = rows.length - rows.filter((problem) => problem.status === 'open').length
 
   const stageFix = async (problem: CodingProblem) => {
     if (!problem.fix) return
@@ -129,9 +137,22 @@ export function ProblemsPanel({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-(--color-text)">Problems</p>
           <p className="text-[11px] text-(--color-text-muted)">
-            {countLabel(rows)}
+            {countLabel(rows.filter((problem) => problem.status === 'open'))}
+            {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowResolved((current) => !current)}
+          aria-pressed={showResolved}
+          title={showResolved ? 'Hide dismissed and suppressed' : 'Show dismissed and suppressed'}
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-lg hover:bg-(--bg-key)',
+            showResolved ? 'text-(--color-accent)' : 'text-(--color-text-muted)',
+          )}
+        >
+          {showResolved ? <Eye size={13} /> : <EyeOff size={13} />}
+        </button>
         <button
           type="button"
           onClick={() => { void query.refetch() }}
@@ -205,7 +226,7 @@ export function ProblemsPanel({
         ) : (
           <ul className="divide-y divide-(--color-border-subtle)">
             {rows.map((problem) => (
-              <li key={problem.id} className="group px-3 py-2.5 hover:bg-(--bg-key)/45">
+              <li key={problem.id} className={cn('group px-3 py-2.5 hover:bg-(--bg-key)/45', problem.status !== 'open' && 'opacity-60')}>
                 <div className="flex items-start gap-2">
                   <span className="mt-0.5"><SeverityIcon severity={problem.severity} /></span>
                   <button
@@ -219,6 +240,7 @@ export function ProblemsPanel({
                     <span className="mt-1 block truncate font-mono text-[10px] text-(--color-text-subtle)">
                       {problem.path ?? problem.scope}{problem.line ? `:${problem.line}:${problem.column ?? 1}` : ''}
                       {' · '}{SOURCE_LABELS[problem.source]}{problem.code ? ` · ${problem.code}` : ''}
+                      {problem.status !== 'open' ? ` · ${problem.status}` : ''}
                     </span>
                   </button>
                 </div>
@@ -235,8 +257,14 @@ export function ProblemsPanel({
                   {/* One decision at a time: the row stays on screen until
                       the refetch lands, so an eager second click used to
                       fire a second request against it. */}
-                  <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'dismiss' })} className="rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50">Dismiss</button>
-                  <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'suppress' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50"><Ban size={10} /> Suppress</button>
+                  {problem.status === 'open' ? (
+                    <>
+                      <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'dismiss' })} className="rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50">Dismiss</button>
+                      <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'suppress' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50"><Ban size={10} /> Suppress</button>
+                    </>
+                  ) : (
+                    <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'restore' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-accent) hover:bg-(--bg-key) disabled:opacity-50"><Undo2 size={10} /> Restore</button>
+                  )}
                 </div>
               </li>
             ))}

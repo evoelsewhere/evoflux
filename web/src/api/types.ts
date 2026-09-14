@@ -393,6 +393,9 @@ export interface ProblemsResponse {
   counts: Record<'error' | 'warning' | 'info' | 'hint' | 'total', number>
 }
 
+/** What a user can decide about a problem. `restore` undoes the other two. */
+export type ProblemDecision = 'dismiss' | 'suppress' | 'restore'
+
 export type EditorAiAction =
   | 'explain_code'
   | 'fix_diagnostic'
