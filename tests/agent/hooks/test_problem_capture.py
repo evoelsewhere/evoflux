@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agent.hooks.problem_capture import ProblemCaptureHook
+from app.agent.hooks.problem_capture import ProblemCaptureHook, publish_command_output
 from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.schemas.chat import FunctionCall, ToolCall
 from app.services.problems_service import clear_problems, list_problems
@@ -83,3 +83,24 @@ async def test_unrelated_shell_command_is_ignored(sandbox):
 
     await hook.wrap_tool_call(None, state, _call("git status"), handler)
     assert list_problems(sandbox) == []
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("app/a.py:7: note: see here", "info"),
+        ("app/a.py:7: DeprecationWarning: utcnow() is deprecated", "warning"),
+        ("app/a.py:7: warning: shadowed name", "warning"),
+        ("app/a.py:7: error: incompatible types", "error"),
+        ("tests/test_a.py:42: AssertionError", "error"),
+    ],
+)
+def test_line_severity_is_read_not_assumed(tmp_path, line, expected):
+    """An unlabelled line is not automatically an error.
+
+    mypy emits a ``note:`` for nearly every error it reports, so defaulting
+    to ``error`` turned one type failure into a pile of red rows.
+    """
+    publish_command_output(tmp_path, command="mypy app", result=line, session_id=None)
+    rows = list_problems(tmp_path)
+    assert [row.severity for row in rows] == [expected]
