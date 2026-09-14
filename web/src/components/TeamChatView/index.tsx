@@ -1679,11 +1679,17 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
   // A page an agent opened has no tab in the workbench when the preview is
   // what the user asked for, so it hangs here instead — over the
-  // conversation, for the session it belongs to.
-  const browserPipHost = browserPipSessionId && browserPipSessionId === sessionIdState
+  // conversation, as a card of its own.
+  //
+  // Deliberately not tied to the chat on screen: reading another
+  // conversation used to unmount this, and unmounting closes the WebView, so
+  // a glance at a second chat threw away the page an agent was working in
+  // and left it a blank new tab. The card floats above whatever is open
+  // until someone closes it, which is what a floating window is for.
+  const browserPipHost = browserPipSessionId
     ? (
         <Suspense fallback={null}>
-          <BrowserPipHost sessionId={browserPipSessionId} />
+          <BrowserPipHost key={browserPipSessionId} sessionId={browserPipSessionId} />
         </Suspense>
       )
     : null

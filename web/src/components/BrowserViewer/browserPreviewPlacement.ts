@@ -1,5 +1,6 @@
 /**
- * Where the corner preview sits, and the rule that keeps it reachable.
+ * Where the corner preview sits, how big it is, and the rule that keeps it
+ * reachable.
  *
  * Its own module because the card is a component and these are not: sharing
  * a file would cost the component its fast refresh, and the clamp is the one
@@ -8,33 +9,57 @@
 
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 
-/** Small enough to sit beside the conversation, big enough to read a layout. */
+/** Quick sizes for the toggle: beside the conversation, or big enough to read. */
 export const PREVIEW_SIZES = {
   small: { width: 384, height: 240 },
   large: { width: 640, height: 400 },
 } as const
 
-type PreviewSize = keyof typeof PREVIEW_SIZES
 export const HEADER_HEIGHT = 32
+/** The resize strip under the page — the only edge of the card a pointer can
+ *  take, since the page itself is a native view this document cannot see. */
+export const FOOTER_HEIGHT = 12
+export const CHROME_HEIGHT = HEADER_HEIGHT + FOOTER_HEIGHT
+
+/** Below this the page is a smudge; above it the "preview" is a window. */
+export const PREVIEW_MIN_SIZE = { width: 260, height: 160 }
+export const PREVIEW_MAX_SIZE = { width: 1600, height: 1000 }
+
 const EDGE_MARGIN = 16
 
 export interface PreviewPlacement {
-  size: PreviewSize
   /** Distance from the viewport's left and top edges, in CSS pixels. */
   x: number
   y: number
+  /** The page area, excluding the card's own chrome. */
+  width: number
+  height: number
 }
 
-export function defaultPreviewPlacement(size: PreviewSize): PreviewPlacement {
-  const { width, height } = PREVIEW_SIZES[size]
-  return {
-    size,
-    x: Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN),
-    y: Math.max(EDGE_MARGIN, window.innerHeight - height - HEADER_HEIGHT - EDGE_MARGIN),
-  }
+export function defaultPreviewPlacement(): PreviewPlacement {
+  const { width, height } = PREVIEW_SIZES.small
+  return clampPreviewPlacement({
+    width,
+    height,
+    x: window.innerWidth - width - EDGE_MARGIN,
+    y: window.innerHeight - height - CHROME_HEIGHT - EDGE_MARGIN,
+  })
 }
 
-/** Keep the card on screen, including after the window is resized smaller. */
+/** The preset a size toggle should move to from here. */
+export function nextPreviewSize(
+  placement: PreviewPlacement,
+): { width: number; height: number } {
+  return placement.width < PREVIEW_SIZES.large.width
+    ? PREVIEW_SIZES.large
+    : PREVIEW_SIZES.small
+}
+
+/**
+ * Keep the card on screen and a usable size, including after the window is
+ * resized smaller. A card whose header is off screen cannot be dragged back:
+ * the header is the only part of it a pointer can reach.
+ */
 export function clampPreviewPlacement(
   placement: PreviewPlacement,
   viewport: { width: number; height: number } = {
@@ -42,13 +67,24 @@ export function clampPreviewPlacement(
     height: window.innerHeight,
   },
 ): PreviewPlacement {
-  const { width, height } = PREVIEW_SIZES[placement.size]
-  const maxX = Math.max(0, viewport.width - width)
-  const maxY = Math.max(0, viewport.height - height - HEADER_HEIGHT)
+  const width = clamp(
+    placement.width,
+    PREVIEW_MIN_SIZE.width,
+    Math.max(PREVIEW_MIN_SIZE.width, Math.min(PREVIEW_MAX_SIZE.width, viewport.width)),
+  )
+  const height = clamp(
+    placement.height,
+    PREVIEW_MIN_SIZE.height,
+    Math.max(
+      PREVIEW_MIN_SIZE.height,
+      Math.min(PREVIEW_MAX_SIZE.height, viewport.height - CHROME_HEIGHT),
+    ),
+  )
   return {
-    size: placement.size,
-    x: Math.min(Math.max(0, placement.x), maxX),
-    y: Math.min(Math.max(0, placement.y), maxY),
+    width,
+    height,
+    x: clamp(placement.x, 0, Math.max(0, viewport.width - width)),
+    y: clamp(placement.y, 0, Math.max(0, viewport.height - height - CHROME_HEIGHT)),
   }
 }
 
@@ -56,13 +92,21 @@ export function loadPreviewPlacement(): PreviewPlacement {
   try {
     const raw = JSON.parse(
       localStorage.getItem(STORAGE_KEYS.browser.previewPlacement) ?? 'null',
-    ) as Partial<PreviewPlacement> | null
-    if (!raw) return defaultPreviewPlacement('small')
-    const size: PreviewSize = raw.size === 'large' ? 'large' : 'small'
-    if (typeof raw.x !== 'number' || typeof raw.y !== 'number') return defaultPreviewPlacement(size)
-    return clampPreviewPlacement({ size, x: raw.x, y: raw.y })
+    ) as Partial<PreviewPlacement> & { size?: string } | null
+    if (!raw || typeof raw.x !== 'number' || typeof raw.y !== 'number') {
+      return defaultPreviewPlacement()
+    }
+    // Cards saved before the preview could be resized freely stored the name
+    // of a preset instead of a size.
+    const preset = raw.size === 'large' ? PREVIEW_SIZES.large : PREVIEW_SIZES.small
+    return clampPreviewPlacement({
+      x: raw.x,
+      y: raw.y,
+      width: typeof raw.width === 'number' ? raw.width : preset.width,
+      height: typeof raw.height === 'number' ? raw.height : preset.height,
+    })
   } catch {
-    return defaultPreviewPlacement('small')
+    return defaultPreviewPlacement()
   }
 }
 
@@ -72,4 +116,9 @@ export function savePreviewPlacement(placement: PreviewPlacement): void {
   } catch {
     // Storage can be unavailable in hardened WebViews.
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min
+  return Math.round(Math.min(Math.max(value, min), max))
 }
