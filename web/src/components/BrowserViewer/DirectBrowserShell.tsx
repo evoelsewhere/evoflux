@@ -34,9 +34,12 @@ import { cn } from '@/lib/utils'
 import { useToastStore } from '@/stores/useToastStore'
 import { useUIStore } from '@/stores/useUIStore'
 import {
+  browserZoomOrigin,
   FIT_DESKTOP_WIDTH,
   loadBrowserPreferences,
+  loadBrowserZoomForOrigin,
   saveBrowserPreferences,
+  saveBrowserZoomForOrigin,
   subscribeBrowserPreferences,
   type BrowserPreferences,
 } from './browserPreferences'
@@ -111,6 +114,7 @@ export function DirectBrowserShell({
   const [downloadsOpen, setDownloadsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [preferences, setPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
+  const [zoom, setZoom] = useState(() => loadBrowserPreferences().defaultZoom)
   // Starts true: the first tab opens on the new-tab page anyway, and
   // assuming that keeps the native view hidden from the first frame instead
   // of flashing the static page before the launcher takes over.
@@ -150,7 +154,7 @@ export function DirectBrowserShell({
     bridgeEnabled: visible,
     initialUrl,
     singleTab: true,
-    zoom: preferences.defaultZoom,
+    zoom,
     fitWidth: preferences.fitDesktopWidth ? FIT_DESKTOP_WIDTH : null,
     devtools: preferences.developerTools,
     profileMode: preferences.profileMode,
@@ -202,6 +206,13 @@ export function DirectBrowserShell({
   useEffect(() => {
     onTitleChangeRef.current?.(tabTitle(currentUrl))
   }, [currentUrl])
+
+  // Follow the site: its remembered zoom, or the default for one we have
+  // never been asked to change.
+  useEffect(() => {
+    const origin = browserZoomOrigin(currentUrl)
+    setZoom(loadBrowserZoomForOrigin(origin) ?? preferences.defaultZoom)
+  }, [currentUrl, preferences.defaultZoom])
 
   /**
    * One implementation for both ways a shortcut can arrive: from this
@@ -324,12 +335,24 @@ export function DirectBrowserShell({
     void browser.navigate(target)
   }, [browser, hasPage])
 
-  const handleZoomChange = useCallback((value: number) => {
+  /** Settings edits the starting point for sites we have no record of. */
+  const handleDefaultZoomChange = useCallback((value: number) => {
     updatePreferences({
       ...preferences,
       defaultZoom: Math.max(50, Math.min(200, value)),
     })
   }, [preferences, updatePreferences])
+
+  // Zoom applies to the site in front of you and is remembered for it. The
+  // preference stays what a site with no opinion of its own starts at.
+  const handleZoomChange = useCallback((value: number) => {
+    const next = Math.max(50, Math.min(200, value))
+    setZoom(next)
+    const origin = browserZoomOrigin(currentUrl)
+    if (origin) {
+      saveBrowserZoomForOrigin(origin, next === preferences.defaultZoom ? null : next)
+    }
+  }, [currentUrl, preferences.defaultZoom])
 
   const handleClearData = useCallback(async () => {
     try {
@@ -534,7 +557,7 @@ export function DirectBrowserShell({
                     if (!next) void browser.closeAll()
                   }}
                   onPreferencesChange={updatePreferences}
-                  onZoomChange={handleZoomChange}
+                  onZoomChange={handleDefaultZoomChange}
                   onPrint={() => void browser.command('print')}
                   onClearData={() => void handleClearData()}
                   onOpenDevTools={() => void browser.command('devtools')}
@@ -599,7 +622,7 @@ export function DirectBrowserShell({
                 <DirectBrowserMenuPanel
                   active={hasPage}
                   currentUrl={currentUrl}
-                  zoom={preferences.defaultZoom}
+                  zoom={zoom}
                   fitDesktopWidth={preferences.fitDesktopWidth}
                   devToolsEnabled={preferences.developerTools}
                   viewportOverride={browser.viewportOverride}

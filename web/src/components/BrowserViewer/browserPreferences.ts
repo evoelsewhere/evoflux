@@ -75,6 +75,52 @@ export function subscribeBrowserPreferences(
   }
 }
 
+/**
+ * Zoom is remembered per site, not per app.
+ *
+ * A default zoom applied to everything is the wrong unit: one site needs
+ * 125% because its type is small, and applying that to every other site — and
+ * to the next session — is not what the person adjusting it asked for.
+ */
+const MAX_REMEMBERED_ZOOM_ORIGINS = 100
+
+export function browserZoomOrigin(url: string): string | null {
+  try {
+    const { protocol, host } = new URL(url)
+    if (!/^https?:$/.test(protocol) || !host) return null
+    return `${protocol}//${host}`
+  } catch {
+    return null
+  }
+}
+
+export function loadBrowserZoomForOrigin(origin: string | null): number | null {
+  if (!origin) return null
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(STORAGE_KEYS.browser.zoomByOrigin) ?? '{}',
+    ) as Record<string, unknown>
+    const value = raw[origin]
+    return typeof value === 'number' && value >= 25 && value <= 500 ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function saveBrowserZoomForOrigin(origin: string | null, zoom: number | null): void {
+  if (!origin) return
+  try {
+    const key = STORAGE_KEYS.browser.zoomByOrigin
+    const raw = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, number>
+    if (zoom === null) delete raw[origin]
+    else raw[origin] = zoom
+    const entries = Object.entries(raw).slice(-MAX_REMEMBERED_ZOOM_ORIGINS)
+    localStorage.setItem(key, JSON.stringify(Object.fromEntries(entries)))
+  } catch {
+    // Storage can be unavailable in hardened WebViews.
+  }
+}
+
 export function isBuiltInBrowserEnabled(): boolean {
   return loadBrowserPreferences().enabled
 }
