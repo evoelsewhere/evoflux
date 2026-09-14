@@ -508,6 +508,7 @@ export function DirectBrowserShell({
                   label="Downloads"
                   onClick={() => {
                     setMenuOpen(false)
+                    setSiteInfoOpen(false)
                     setDownloadsOpen((current) => !current)
                   }}
                 >
@@ -554,7 +555,11 @@ export function DirectBrowserShell({
 
             <button
               type="button"
-              onClick={() => setMenuOpen((current) => !current)}
+              onClick={() => {
+                setDownloadsOpen(false)
+                setSiteInfoOpen(false)
+                setMenuOpen((current) => !current)
+              }}
               className={cn(
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
                 menuOpen && 'bg-(--bg-key) text-(--color-text)',
@@ -660,6 +665,7 @@ export function DirectBrowserShell({
               ) : showStartPage ? (
                 <BrowserStartPage
                   recentSites={recentSites}
+                  focused={visible}
                   onOpen={(target) => openInPage(normalizeBrowserTarget(target))}
                 />
               ) : null}

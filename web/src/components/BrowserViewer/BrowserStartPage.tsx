@@ -15,10 +15,16 @@ import type { BrowserRecentSite } from './browserPreferences'
 
 interface BrowserStartPageProps {
   recentSites: BrowserRecentSite[]
+  /**
+   * Whether this panel is the one on screen. Workbench tabs stay mounted when
+   * they are not, and a hidden page that grabs focus takes it from whatever
+   * the user is actually typing in.
+   */
+  focused: boolean
   onOpen: (target: string) => void
 }
 
-export function BrowserStartPage({ recentSites, onOpen }: BrowserStartPageProps) {
+export function BrowserStartPage({ recentSites, focused, onOpen }: BrowserStartPageProps) {
   const [query, setQuery] = useState('')
 
   return (
@@ -38,7 +44,7 @@ export function BrowserStartPage({ recentSites, onOpen }: BrowserStartPageProps)
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-(--color-text-subtle)"
           />
           <input
-            autoFocus
+            autoFocus={focused}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search or enter a URL"
