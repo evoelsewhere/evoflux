@@ -5,7 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.agent.hooks.problem_capture import ProblemCaptureHook, publish_command_output
+from app.agent.hooks.problem_capture import (
+    ProblemCaptureHook,
+    _command_source,
+    publish_command_output,
+)
 from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.schemas.chat import FunctionCall, ToolCall
 from app.services.problems_service import clear_problems, list_problems
@@ -104,3 +108,28 @@ def test_line_severity_is_read_not_assumed(tmp_path, line, expected):
     publish_command_output(tmp_path, command="mypy app", result=line, session_id=None)
     rows = list_problems(tmp_path)
     assert [row.severity for row in rows] == [expected]
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["rm -rf build", "cd build && ls", "echo build", "cp -r build dist"],
+)
+def test_a_word_is_not_a_build_command(command):
+    """``build`` as a bare word made any command mentioning it a build."""
+    assert _command_source(command) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "npm run build",
+        "pnpm run build:prod",
+        "tsc --noEmit",
+        "cargo build",
+        "go build ./...",
+        "make -j4",
+        "mvn verify",
+    ],
+)
+def test_real_build_commands_are_still_recognized(command):
+    assert _command_source(command) == "build"
