@@ -91,7 +91,7 @@ describe('ProblemsPanel', () => {
     const send = vi.fn()
     render(<ProblemsPanel workspace="/repo" active onSendToAgent={send} />)
 
-    expect(screen.getByText('1 errors · 1 warnings')).toBeInTheDocument()
+    expect(screen.getByText('1 error · 1 warning')).toBeInTheDocument()
     expect(screen.getByText('Argument has the wrong type')).toBeInTheDocument()
     expect(screen.getByText('Plugin manifest')).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!)
