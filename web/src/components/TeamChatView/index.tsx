@@ -1892,7 +1892,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                     openWorkbenchTool('files')
                   }}
                   onSendToAgent={(prompt) => {
-                    inputRef.current?.setValue(prompt)
+                    // Appending, not replacing: this fires from a panel
+                    // beside the composer, and replacing threw away
+                    // whatever the user was part-way through typing.
+                    inputRef.current?.appendValue(prompt)
                     inputRef.current?.focus()
                   }}
                 />
