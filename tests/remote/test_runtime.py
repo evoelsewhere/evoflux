@@ -469,6 +469,116 @@ async def test_text_action_starting_with_slash_routes_to_commands_not_a_task(
     assert "/unpair" in fake_adapters[0].sent[0].text
 
 
+# ── active-pairing cache wiring ──────────────────────────────────────────
+#
+# The projection's active-pairing cache (Task 3) lets a future task notify
+# the one paired user about sessions it was never explicitly
+# register_session-ed for (e.g. work started on the desktop). The runtime
+# is responsible for keeping that cache in sync with the database pairing:
+# populating it on startup restore, on a fresh pairing, and clearing it when
+# the runtime stops.
+
+
+@pytest.mark.asyncio
+async def test_start_restores_active_pairing_from_existing_row(
+    session, fake_stores, fake_adapters
+) -> None:
+    connection = await _make_connection(session, enabled=True)
+    fake_stores[connection.id] = FakeCredentialStore("secret-token")
+    session.add(
+        RemotePairing(
+            connection_id=connection.id,
+            principal_id="12345",
+            destination_id="12345",
+            label="Test User",
+            notify_scope="all",
+        )
+    )
+    await session.commit()
+
+    await remote_runtime.start()
+
+    assert remote_runtime._projection is not None
+    assert remote_runtime._projection.active_pairing() == (
+        str(connection.id),
+        "12345",
+        "all",
+        "12345",
+    )
+
+
+@pytest.mark.asyncio
+async def test_start_leaves_active_pairing_unset_when_no_pairing_exists(
+    session, fake_stores, fake_adapters
+) -> None:
+    connection = await _make_connection(session, enabled=True)
+    fake_stores[connection.id] = FakeCredentialStore("secret-token")
+
+    await remote_runtime.start()
+
+    assert remote_runtime._projection is not None
+    assert remote_runtime._projection.active_pairing() is None
+
+
+@pytest.mark.asyncio
+async def test_handle_pairing_populates_active_pairing_cache(
+    session, fake_stores, fake_adapters
+) -> None:
+    connection = await _make_connection(session, enabled=True)
+    fake_stores[connection.id] = FakeCredentialStore("secret-token")
+    await remote_runtime.start()
+    link = pairing_service.issue_link(connection)
+    token = link.url.rsplit("start=", 1)[-1]
+
+    action = RemoteInboundAction(
+        connection_id=connection.id,
+        kind=RemoteInboundActionKind.PAIRING_START,
+        principal=RemotePrincipal(
+            connection_id=connection.id,
+            principal_id="12345",
+            destination_id="12345",
+            display="Test User",
+        ),
+        source_key=f"telegram:{connection.id}:1",
+        pairing_token=token,
+    )
+
+    await remote_runtime._handle_pairing(action)
+
+    assert remote_runtime._projection is not None
+    assert remote_runtime._projection.active_pairing() == (
+        str(connection.id),
+        "12345",
+        "all",
+        "12345",
+    )
+
+
+@pytest.mark.asyncio
+async def test_stop_clears_active_pairing_cache(
+    session, fake_stores, fake_adapters
+) -> None:
+    connection = await _make_connection(session, enabled=True)
+    fake_stores[connection.id] = FakeCredentialStore("secret-token")
+    session.add(
+        RemotePairing(
+            connection_id=connection.id,
+            principal_id="12345",
+            destination_id="12345",
+            label="Test User",
+        )
+    )
+    await session.commit()
+    await remote_runtime.start()
+    projection = remote_runtime._projection
+    assert projection is not None
+    assert projection.active_pairing() is not None
+
+    await remote_runtime.stop()
+
+    assert projection.active_pairing() is None
+
+
 # ── status() ─────────────────────────────────────────────────────────────
 
 

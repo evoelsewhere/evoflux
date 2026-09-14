@@ -246,6 +246,41 @@ async def test_plan_approval_sends_buttons() -> None:
 # ── no adapter ───────────────────────────────────────────────────────────
 
 
+def test_set_active_pairing_then_clear() -> None:
+    proj = RemoteProjection()
+    assert proj.active_pairing() is None
+
+    proj.set_active_pairing(
+        connection_id="conn-1",
+        destination_id="chat-1",
+        notify_scope="all",
+        principal_id="user-1",
+    )
+    assert proj.active_pairing() == ("conn-1", "chat-1", "all", "user-1")
+
+    proj.clear_active_pairing()
+    assert proj.active_pairing() is None
+
+
+def test_set_active_pairing_overwrites_previous_value() -> None:
+    proj = RemoteProjection()
+    proj.set_active_pairing(
+        connection_id="conn-1",
+        destination_id="chat-1",
+        notify_scope="all",
+        principal_id="user-1",
+    )
+
+    proj.set_active_pairing(
+        connection_id="conn-2",
+        destination_id="chat-2",
+        notify_scope="phone_initiated",
+        principal_id="user-2",
+    )
+
+    assert proj.active_pairing() == ("conn-2", "chat-2", "phone_initiated", "user-2")
+
+
 def test_no_adapter_does_not_raise() -> None:
     proj = RemoteProjection()
     proj.set_adapter(None)

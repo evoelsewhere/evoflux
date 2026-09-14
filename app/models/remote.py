@@ -70,6 +70,10 @@ class RemotePairing(SQLModel, table=True):
         default="",
         sa_column=Column(sa.String(120), nullable=False, server_default=""),
     )
+    notify_scope: str = Field(
+        default="all",
+        sa_column=Column(sa.String(20), nullable=False, server_default="all"),
+    )
     active_session_id: UUID | None = Field(
         default=None,
         sa_column=Column(

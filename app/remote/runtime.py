@@ -275,6 +275,31 @@ class RemoteRuntime:
         projection.set_adapter(adapter)
         self._projection = projection
 
+        # Restore the active-pairing cache so notifications for sessions
+        # started before this process restarted (or started on the desktop,
+        # never explicitly register_session-ed) can still be routed. v1
+        # permits at most one pairing per connection (AC-3), so `.first()`
+        # is always the right — and only — row to cache.
+        from sqlmodel import select
+
+        from app.models.remote import RemotePairing
+
+        async with read_session_factory() as pairing_session:
+            pairing = (
+                await pairing_session.exec(
+                    select(RemotePairing).where(
+                        RemotePairing.connection_id == connection.id
+                    )
+                )
+            ).first()
+        if pairing is not None:
+            projection.set_active_pairing(
+                connection_id=str(pairing.connection_id),
+                destination_id=pairing.destination_id,
+                notify_scope=pairing.notify_scope,
+                principal_id=pairing.principal_id,
+            )
+
         # Create the gate bridge for callback resolution.
         from app.remote.gates import RemoteGateBridge
 
@@ -312,6 +337,7 @@ class RemoteRuntime:
         if self._projection is not None:
             self._projection.set_adapter(None)
             self._projection.set_bridge(None)
+            self._projection.clear_active_pairing()
             self._projection = None
         self._bridge = None
         self._actions = None
@@ -389,6 +415,13 @@ class RemoteRuntime:
                 action.connection_id,
                 action.principal.principal_id,
             )
+            if self._projection is not None:
+                self._projection.set_active_pairing(
+                    connection_id=str(action.connection_id),
+                    destination_id=result.destination_id,
+                    notify_scope=result.notify_scope,
+                    principal_id=result.principal_id,
+                )
             # A silently-persisted pairing is indistinguishable from a
             # failed one from the phone's side — confirm it (spec: "sends
             # Connected to EvoFlux on <device label>"). Never sent on

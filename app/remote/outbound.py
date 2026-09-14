@@ -85,6 +85,20 @@ class RemoteProjection:
     _session_connection_ids: dict[str, str] = field(default_factory=dict, repr=False)
     _session_destination_ids: dict[str, str] = field(default_factory=dict, repr=False)
     _pending: list[RemoteOutboundMessage] = field(default_factory=list, repr=False)
+    #: Caches the single v1 pairing's routing info so ``observe`` can reach
+    #: sessions it was never explicitly ``register_session``-ed for (e.g.
+    #: work started from the desktop, not the phone) — this app supports
+    #: exactly one Telegram pairing per installation, so there is never more
+    #: than one tuple to cache. ``principal_id`` travels alongside
+    #: ``connection_id``/``destination_id`` because a future task mints
+    #: capability tokens for these sessions and needs a real, non-empty
+    #: owner id: since v1 has exactly one pairing per connection, that
+    #: pairing's own principal is the only valid actor for the whole
+    #: connection regardless of which surface (phone or desktop) started the
+    #: work being notified about.
+    _active_pairing: tuple[str, str, str, str] | None = field(
+        default=None, repr=False
+    )
 
     def set_adapter(self, adapter: RemoteAdapter | None) -> None:
         """Bind or unbind the live adapter. Called by the runtime on start/stop."""
@@ -93,6 +107,36 @@ class RemoteProjection:
     def set_bridge(self, bridge: "RemoteGateBridge | None") -> None:
         """Bind or unbind the gate bridge. Called by the runtime on start/stop."""
         self._bridge = bridge
+
+    def set_active_pairing(
+        self,
+        *,
+        connection_id: str,
+        destination_id: str,
+        notify_scope: str,
+        principal_id: str,
+    ) -> None:
+        """Cache the single v1 pairing's routing info.
+
+        Called by the runtime whenever the pairing changes: a pairing is
+        created, restored from the database on startup, or the runtime
+        stops (via :meth:`clear_active_pairing`).
+        """
+        self._active_pairing = (
+            connection_id,
+            destination_id,
+            notify_scope,
+            principal_id,
+        )
+
+    def clear_active_pairing(self) -> None:
+        """Drop the cached pairing. Called by the runtime on stop."""
+        self._active_pairing = None
+
+    def active_pairing(self) -> tuple[str, str, str, str] | None:
+        """Return the cached ``(connection_id, destination_id, notify_scope,
+        principal_id)`` tuple, or ``None`` if no pairing is active."""
+        return self._active_pairing
 
     def register_session(
         self,
