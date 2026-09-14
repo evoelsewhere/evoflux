@@ -85,6 +85,7 @@ export const STORAGE_KEYS = {
 
   browser: {
     preferences: 'oa.browser.preferences',
+    zoomByOrigin: 'oa.browser.zoom-by-origin',
     webBridgeDefaultEnabled: 'oa.browser.webbridge-default-enabled',
   },
 } as const
