@@ -41,6 +41,26 @@ export interface BrowserViewportOverride {
   height: number
 }
 
+export interface BrowserSitePermission {
+  name: string
+  state: 'granted' | 'denied' | 'prompt'
+}
+
+/** Asks the page what it has, in the page's own terms. */
+const SITE_PERMISSIONS_SCRIPT = `(async () => {
+  const names = ['geolocation', 'notifications', 'camera', 'microphone', 'clipboard-read']
+  const results = []
+  for (const name of names) {
+    try {
+      const status = await navigator.permissions.query({ name })
+      if (status && status.state !== 'prompt') results.push({ name, state: status.state })
+    } catch {
+      // A name this engine does not know is not a permission this site has.
+    }
+  }
+  return results
+})()`
+
 export interface BrowserDownload {
   id: number
   url: string
@@ -746,6 +766,32 @@ export function useDirectBrowserTabs({
       backwards: null,
     })
   }, [activeTab, invokeFor])
+
+  /**
+   * What the page itself says it has been granted.
+   *
+   * The engine keeps no list we can read, but the page can be asked — and
+   * its answer is the one that matters, because it is what the site sees.
+   */
+  const readSitePermissions = useCallback(async (): Promise<BrowserSitePermission[]> => {
+    const tab = tabsRef.current.find((item) => item.id === activeIdRef.current)
+    if (!tab) return []
+    const result = await invokeFor<unknown>(
+      'app_browser_webview_agent_action',
+      tab.label,
+      {
+        action: 'evaluate',
+        params: { script: SITE_PERMISSIONS_SCRIPT, await_promise: true },
+      },
+    ).catch(() => null)
+    if (!Array.isArray(result)) return []
+    return result.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return []
+      const { name, state } = entry as { name?: unknown; state?: unknown }
+      if (typeof name !== 'string' || typeof state !== 'string') return []
+      return [{ name, state: state as BrowserSitePermission['state'] }]
+    })
+  }, [invokeFor])
 
   /**
    * Device emulation from the panel's own chrome.
@@ -1584,6 +1630,7 @@ export function useDirectBrowserTabs({
     resolvePagePermission,
     viewportOverride,
     setViewportPreset,
+    readSitePermissions,
     loading,
     downloads,
     clearDownloads: () => setDownloads([]),
