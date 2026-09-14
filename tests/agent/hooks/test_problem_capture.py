@@ -133,3 +133,23 @@ def test_a_word_is_not_a_build_command(command):
 )
 def test_real_build_commands_are_still_recognized(command):
     assert _command_source(command) == "build"
+
+
+def test_truncation_says_so(tmp_path):
+    """A sample that looks like the whole list is worse than no list."""
+    output = "\n".join(f"app/f{i}.py:{i + 1}: error: boom" for i in range(260))
+    publish_command_output(tmp_path, command="mypy app", result=output, session_id=None)
+
+    rows = list_problems(tmp_path, include_resolved=True)
+    notices = [row for row in rows if row.code == "problems-truncated"]
+    assert len(notices) == 1
+    assert notices[0].severity == "info"
+    assert "first 200" in notices[0].message
+
+
+def test_output_under_the_cap_adds_no_notice(tmp_path):
+    output = "\n".join(f"app/f{i}.py:{i + 1}: error: boom" for i in range(5))
+    publish_command_output(tmp_path, command="mypy app", result=output, session_id=None)
+
+    rows = list_problems(tmp_path, include_resolved=True)
+    assert [row.code for row in rows if row.code == "problems-truncated"] == []

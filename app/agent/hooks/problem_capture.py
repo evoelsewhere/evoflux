@@ -44,6 +44,9 @@ _GENERIC = re.compile(
     r"(?:\s+(?P<code>[A-Za-z]+\d+))?[:\s-]*)?(?P<message>.+)$",
     re.IGNORECASE,
 )
+#: Upper bound on rows published from one command's output.
+_MAX_PROBLEMS = 200
+
 # Python names its warning categories ``…Warning``, and a warnings summary
 # line states the category where a compiler would state a severity.
 _WARNING_CLASS = re.compile(r"^\w*Warning\b", re.IGNORECASE)
@@ -159,7 +162,22 @@ def publish_command_output(
                 },
             )
         )
-        if len(inputs) >= 200:
+        if len(inputs) >= _MAX_PROBLEMS:
+            # Stopping here is fine; stopping silently is not. A panel that
+            # shows 200 of 900 failures while looking complete is worse than
+            # one that admits it is a sample.
+            inputs.append(
+                ProblemInput(
+                    message=(
+                        f"Only the first {_MAX_PROBLEMS} problems from "
+                        f"`{command}` are listed. Re-run it to see the rest."
+                    ),
+                    severity="info",
+                    title="Output truncated",
+                    code="problems-truncated",
+                    provenance={"producer": "verification-command", "truncated": True},
+                )
+            )
             break
     command_hash = hashlib.sha256(command.encode()).hexdigest()[:16]
     publish_problems(
