@@ -51,7 +51,8 @@ export function ProblemsPanel({
 }: {
   workspace: string
   active: boolean
-  onOpenFile?: (path: string) => void
+  /** A problem knows where it is; opening its file should land there. */
+  onOpenFile?: (path: string, line?: number) => void
   onSendToAgent?: (prompt: string) => void
 }) {
   const [source, setSource] = useState<ProblemSource | 'all'>('all')
@@ -158,7 +159,7 @@ export function ProblemsPanel({
                   <button
                     type="button"
                     disabled={!problem.path}
-                    onClick={() => problem.path && onOpenFile?.(problem.path)}
+                    onClick={() => problem.path && onOpenFile?.(problem.path, problem.line ?? undefined)}
                     className="min-w-0 flex-1 text-left disabled:cursor-default"
                   >
                     <span className="block text-xs leading-5 text-(--color-text)">{problem.title ?? problem.message}</span>
