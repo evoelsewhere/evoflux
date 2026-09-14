@@ -22,9 +22,20 @@ _TEST_COMMAND = re.compile(
     r"npm test|pnpm test|bun test)(?:\s|$)",
     re.IGNORECASE,
 )
+# ``build`` and ``compile`` used to sit here as bare words, which made
+# ``rm -rf build``, ``cd build && ls`` and ``echo build`` all count as build
+# commands whose output was then mined for problems. A build is named by the
+# tool that runs it, so name the tools.
 _BUILD_COMMAND = re.compile(
-    r"(?:^|\s)(?:build|compile|tsc|mypy|ruff|eslint|cargo check|go vet|"
-    r"mvn verify|gradle\w* check)(?:\s|$)",
+    r"(?:^|\s)(?:"
+    r"tsc|mypy|ruff|eslint|make"
+    r"|go\s+(?:build|vet)"
+    r"|cargo\s+(?:build|check|clippy)"
+    r"|(?:npm|pnpm|yarn|bun)\s+run\s+[\w:-]*build[\w:-]*"
+    r"|(?:ninja|bazel|dotnet|msbuild)\s+\S*build"
+    r"|gradle\w*\s+(?:build|check|assemble)"
+    r"|mvn\s+(?:verify|compile|package)"
+    r")(?:\s|$)",
     re.IGNORECASE,
 )
 _GENERIC = re.compile(
