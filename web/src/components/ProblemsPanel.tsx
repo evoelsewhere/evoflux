@@ -38,6 +38,12 @@ function SeverityIcon({ severity }: { severity: ProblemSeverity }) {
 
 const SEVERITY_ORDER: ProblemSeverity[] = ['error', 'warning', 'info', 'hint']
 
+/** "1 errors" read as a bug in the counter rather than a count of one. */
+function pluralize(severity: ProblemSeverity, count: number): string {
+  if (severity === 'info') return 'info'
+  return count === 1 ? severity : `${severity}s`
+}
+
 /**
  * Describe the list actually on screen.
  *
@@ -53,7 +59,7 @@ function countLabel(rows: CodingProblem[]): string {
   for (const row of rows) totals[row.severity] += 1
   return SEVERITY_ORDER
     .filter((severity) => totals[severity] > 0)
-    .map((severity) => `${totals[severity]} ${severity}s`)
+    .map((severity) => `${totals[severity]} ${pluralize(severity, totals[severity])}`)
     .join(' · ')
 }
 
