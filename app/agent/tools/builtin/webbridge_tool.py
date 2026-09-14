@@ -190,6 +190,13 @@ class ExtractAction(BaseModel):
         default="text",
         description="Output form: plain text, structure-preserving markdown (best for LLM crawling), or raw HTML.",
     )
+    ref: str | None = Field(
+        default=None,
+        description=(
+            "Scope to this element handle from a snapshot — the only way to "
+            "read content inside a shadow root, which no CSS selector reaches."
+        ),
+    )
     selector: str | None = Field(
         default=None,
         description="Scope to the first element matching this CSS selector (default: whole page).",
@@ -1320,6 +1327,7 @@ async def _handle_extract(session_id: str, act: ExtractAction) -> str:
         _tab_params(
             act,
             format=act.format,
+            ref=act.ref,
             selector=act.selector,
             max_chars=act.max_chars,
         ),
