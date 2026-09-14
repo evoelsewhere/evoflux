@@ -63,7 +63,11 @@ export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
   const [syncKey, setSyncKey] = useState(0)
   const pushToast = useToastStore((state) => state.push)
   const closePip = useUIStore((state) => state.closeBrowserPip)
-  const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
+  // A new tab every time, not the last browser tab reused: the pages this
+  // opens are a popup and a handed-over page, and both are specific pages
+  // that would be silently dropped by activating a tab already showing
+  // something else.
+  const createWorkbenchTab = useUIStore((state) => state.createWorkbenchTab)
 
   useEffect(() => subscribeBrowserPreferences(setPreferences), [])
 
@@ -98,7 +102,10 @@ export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
     }),
     // A popup is a page in its own right, and the panel is where a page
     // someone has to read belongs.
-    onRequestNewTab: (url) => openWorkbenchTool('browser', { initialUrl: url }),
+    onRequestNewTab: (popupUrl) => createWorkbenchTab('browser', {
+      initialUrl: popupUrl,
+      title: 'New tab',
+    }),
     onCloseSurface: closePip,
   })
 
@@ -123,6 +130,27 @@ export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
   // native view's visibility must flip in the same commit, or one frame
   // shows both (or neither) — the same rule the panel follows.
   if ((overlay !== null) !== pageHidden) setPageHidden(overlay !== null)
+
+  /**
+   * Move this page into the workbench — the page, not its address. The
+   * panel tab is created with an id chosen here so the WebView being let go
+   * of can be offered to that tab and no other; the panel then adopts it
+   * instead of loading the same URL into a WebView of its own, which is
+   * what used to happen and what cost the page everything it had.
+   */
+  const openInPanel = useCallback(() => {
+    const claimant = `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const moved = browser.activeTabId
+      ? browser.releaseTab(browser.activeTabId, claimant)
+      : false
+    createWorkbenchTab('browser', {
+      id: claimant,
+      // Only a fallback: an adopted page is already showing this.
+      initialUrl: url || undefined,
+      title: moved ? undefined : 'New tab',
+    })
+    closePip()
+  }, [browser, closePip, createWorkbenchTab, url])
 
   const place = useCallback((next: PreviewPlacement, persist = false) => {
     const clamped = clampPreviewPlacement(next)
@@ -228,13 +256,7 @@ export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
           <span className="min-w-0 flex-1 truncate text-[11px] text-(--color-text-muted)">
             {label}
           </span>
-          <PreviewButton
-            label="Open in the browser panel"
-            onClick={() => {
-              openWorkbenchTool('browser', { initialUrl: url || undefined })
-              closePip()
-            }}
-          >
+          <PreviewButton label="Open in the browser panel" onClick={openInPanel}>
             <PanelRight />
           </PreviewButton>
           <PreviewButton
@@ -256,14 +278,7 @@ export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
           style={{ height }}
         >
           {overlay && (
-            <PreviewOverlay
-              kind={overlay}
-              browser={browser}
-              onOpenPanel={() => {
-                openWorkbenchTool('browser', { initialUrl: url || undefined })
-                closePip()
-              }}
-            />
+            <PreviewOverlay kind={overlay} browser={browser} onOpenPanel={openInPanel} />
           )}
         </div>
         <div
