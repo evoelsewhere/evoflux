@@ -965,6 +965,13 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
   animation: shimmer 2s var(--ease-in-out) infinite;
 }
 
+/* In-app browser load indicator. A native WebView reports that it is busy but
+ * never how far along it is, so the bar sweeps rather than fills. */
+@keyframes browser-progress {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
 /* Compact panel fallback: a miniature workspace assembles while a lazy panel
  * is fetched. Animations use opacity/transform only to stay compositor-only. */
 @keyframes oa-panel-loader-enter {

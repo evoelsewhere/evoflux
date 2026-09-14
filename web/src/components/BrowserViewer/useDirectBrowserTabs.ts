@@ -41,6 +41,29 @@ export interface BrowserViewportOverride {
   height: number
 }
 
+export interface BrowserPageError {
+  /** The address that failed, as the user asked for it. */
+  url: string
+  /** The engine's own description, when the error page carries one. */
+  detail: string | null
+}
+
+/**
+ * A failed navigation leaves the tab on the engine's error page, which lives
+ * under its own scheme. That scheme is the only thing that says "this did not
+ * load" — the document itself is perfectly valid.
+ */
+export function isBrowserErrorUrl(url: string | undefined | null): boolean {
+  return typeof url === 'string' && /^chrome-error:/i.test(url)
+}
+
+/** Reads the engine's own words off its error page, in one round trip. */
+const BROWSER_ERROR_DETAIL_SCRIPT = `(() => {
+  const detail = document.querySelector('#sub-frame-error-details')?.textContent?.trim()
+  const code = document.querySelector('.error-code')?.textContent?.trim()
+  return [detail, code && code !== detail ? code : null].filter(Boolean).join(' · ').slice(0, 200)
+})()`
+
 export type BrowserViewportPreset = 'mobile' | 'tablet' | 'desktop'
 
 /** The device sizes the panel's own picker offers, mirrored by `resize`. */
@@ -262,6 +285,45 @@ export function useDirectBrowserTabs({
   const [pageDialog, setPageDialog] = useState<BrowserPageDialog | null>(null)
   const [pagePermission, setPagePermission] = useState<BrowserPermissionRequest | null>(null)
   const [viewportOverride, setViewportOverride] = useState<BrowserViewportOverride | null>(null)
+  // A native WebView paints when it is ready and says nothing until then, so
+  // a slow page looked identical to a frozen panel.
+  const [loading, setLoading] = useState(false)
+  const [pageError, setPageError] = useState<BrowserPageError | null>(null)
+  const pageErrorRef = useRef<BrowserPageError | null>(null)
+  /**
+   * A navigation we know about but the document cannot show yet.
+   *
+   * Until a load commits, the *previous* document is what a poll reads, and
+   * it reports itself complete — so the poll must not be allowed to call a
+   * load finished on its own while one of these is outstanding.
+   */
+  const navigationPendingRef = useRef(false)
+  const navigationPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const markNavigationPending = useCallback((pending: boolean) => {
+    navigationPendingRef.current = pending
+    if (navigationPendingTimerRef.current) {
+      clearTimeout(navigationPendingTimerRef.current)
+      navigationPendingTimerRef.current = null
+    }
+    if (pending) {
+      setLoading(true)
+      // A navigation that never lands — a server that accepts and then says
+      // nothing — must not leave the indicator spinning for the session.
+      navigationPendingTimerRef.current = setTimeout(() => {
+        navigationPendingRef.current = false
+        setLoading(false)
+      }, 45_000)
+    }
+  }, [])
+  // The engine's error page replaces the address that failed, so the only
+  // record of what the user actually asked for is the one we keep.
+  const requestedUrlRef = useRef(new Map<string, string>())
+  /** What to show for a tab: never the engine's internal error scheme. */
+  const displayUrlFor = useCallback((tabId: string, committed: string) => (
+    isBrowserErrorUrl(committed)
+      ? requestedUrlRef.current.get(tabId) ?? committed
+      : committed
+  ), [])
 
   activeIdRef.current = activeTabId
   visibleRef.current = visible
@@ -615,6 +677,13 @@ export function useDirectBrowserTabs({
 
   const navigate = useCallback(async (url: string) => {
     if (!activeTab) return
+    // Optimistic rather than poll-driven: the first poll after this is up to
+    // half a second away, and a click that shows nothing for half a second is
+    // the exact complaint a progress indicator exists to answer.
+    markNavigationPending(true)
+    pageErrorRef.current = null
+    setPageError(null)
+    requestedUrlRef.current.set(activeTab.id, url)
     try {
       const before = await invokeFor<BrowserRuntimeStatus>(
         'app_browser_webview_agent_action',
@@ -628,23 +697,32 @@ export function useDirectBrowserTabs({
         activeTab.url,
         before.documentId ?? null,
       )
-      tabsRef.current = tabsRef.current.map((tab) => tab.id === activeTab.id ? { ...tab, url: committedUrl } : tab)
+      const shownUrl = displayUrlFor(activeTab.id, committedUrl)
+      tabsRef.current = tabsRef.current.map((tab) => tab.id === activeTab.id ? { ...tab, url: shownUrl } : tab)
       setTabs(tabsRef.current)
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error))
+    } finally {
+      markNavigationPending(false)
+      setLoading(false)
     }
-  }, [activeTab, invokeFor, onError, waitForNavigation])
+  }, [activeTab, displayUrlFor, invokeFor, markNavigationPending, onError, waitForNavigation])
 
   const command = useCallback(async (
     action: 'back' | 'forward' | 'reload' | 'focus' | 'print' | 'devtools',
   ) => {
     if (!activeTab) return
+    if (action === 'back' || action === 'forward' || action === 'reload') {
+      markNavigationPending(true)
+      pageErrorRef.current = null
+      setPageError(null)
+    }
     try {
       await invokeFor('app_browser_webview_command', activeTab.label, { action })
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error))
     }
-  }, [activeTab, invokeFor, onError])
+  }, [activeTab, invokeFor, markNavigationPending, onError])
 
   const clearBrowsingData = useCallback(async () => {
     if (!activeTab) return
@@ -804,6 +882,12 @@ export function useDirectBrowserTabs({
     if (action === 'navigate') {
       const url = typeof params.url === 'string' ? params.url : ''
       if (!url) throw new Error('navigate requires a URL')
+      requestedUrlRef.current.set(tab.id, url)
+      if (tab.id === activeIdRef.current) {
+        markNavigationPending(true)
+        pageErrorRef.current = null
+        setPageError(null)
+      }
       const before = await invokeFor<BrowserRuntimeStatus>(
         'app_browser_webview_agent_action',
         tab.label,
@@ -817,13 +901,14 @@ export function useDirectBrowserTabs({
         before.documentId ?? null,
       )
       tabsRef.current = tabsRef.current.map((item) => item.id === tab.id
-        ? { ...item, url: committedUrl }
+        ? { ...item, url: displayUrlFor(tab.id, committedUrl) }
         : item)
       setTabs(tabsRef.current)
       await invokeFor('app_browser_webview_agent_action', tab.label, {
         action: 'instrument',
         params: {},
       })
+      if (tab.id === activeIdRef.current) markNavigationPending(false)
       return `Navigated to ${url}`
     }
     if (action === 'back' || action === 'forward' || action === 'reload') {
@@ -1078,7 +1163,7 @@ export function useDirectBrowserTabs({
     throw new Error(
       `${action} is not supported by the direct desktop browser yet`,
     )
-  }, [applyAgentViewport, closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForDocumentNavigation, waitForNavigation, waitForPossibleDocumentNavigation])
+  }, [applyAgentViewport, closeAll, closeTab, createTab, displayUrlFor, invokeFor, markNavigationPending, onRequestNewTab, selectTab, singleTab, waitForDocumentNavigation, waitForNavigation, waitForPossibleDocumentNavigation])
 
   agentHandlerRef.current = executeAgentCommand
 
@@ -1099,6 +1184,51 @@ export function useDirectBrowserTabs({
       setAgentConnected,
     )
   }, [enabled, instanceId, sessionId, supported])
+
+  // Load state belongs to the tab that was loading, not to the panel: leaving
+  // one mid-navigation must not spin a progress bar over the next one.
+  useEffect(() => {
+    setLoading(false)
+    pageErrorRef.current = null
+    setPageError(null)
+  }, [activeTabId])
+
+  /**
+   * The shell's own navigation events, where the platform provides them.
+   *
+   * Polling the document only sees a load once it has committed: while the
+   * engine is waiting for a slow server the old page is still there, still
+   * reporting "complete". These events cover that wait; the poll remains the
+   * fallback for the platforms that do not send them.
+   */
+  useEffect(() => {
+    if (!supported || !activeTab) return
+    const label = activeTab.label
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event')
+      const stop = await listen<{ label: string; loading: boolean }>(
+        'browser-navigation',
+        (event) => {
+          if (event.payload.label !== label) return
+          markNavigationPending(event.payload.loading)
+          if (event.payload.loading) {
+            pageErrorRef.current = null
+            setPageError(null)
+          } else {
+            setLoading(false)
+          }
+        },
+      )
+      if (disposed) stop()
+      else unlisten = stop
+    })()
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [activeTab, markNavigationPending, supported])
 
   // Zoom and fit-width both change only the zoom factor, never the bounds, so
   // the geometry synchronizer below sees nothing to do — this is where those
@@ -1130,7 +1260,7 @@ export function useDirectBrowserTabs({
       if (disposed || polling || pageDialog || pagePermission) return
       polling = true
       try {
-        const [dialogs, popups, permissions] = await Promise.all([
+        const [dialogs, popups, permissions, status] = await Promise.all([
           invokeFor<BrowserPageDialog[]>(
             'app_browser_webview_agent_action',
             activeTab.label,
@@ -1146,7 +1276,40 @@ export function useDirectBrowserTabs({
             activeTab.label,
             { action: 'permission_requests', params: {} },
           ),
+          invokeFor<BrowserRuntimeStatus>(
+            'app_browser_webview_agent_action',
+            activeTab.label,
+            { action: 'status', params: {} },
+          ),
         ])
+        // A page the engine could not load is a document like any other, so
+        // nothing reports it as a failure — the tab just ends up on the
+        // engine's own error page, under its own scheme.
+        if (isBrowserErrorUrl(status?.url)) {
+          if (!pageErrorRef.current) {
+            const detail = await invokeFor<unknown>(
+              'app_browser_webview_agent_action',
+              activeTab.label,
+              { action: 'evaluate', params: { script: BROWSER_ERROR_DETAIL_SCRIPT } },
+            ).catch(() => null)
+            const next = {
+              url: requestedUrlRef.current.get(activeTab.id) ?? '',
+              detail: typeof detail === 'string' && detail ? detail : null,
+            }
+            pageErrorRef.current = next
+            setPageError(next)
+          }
+          navigationPendingRef.current = false
+          setLoading(false)
+        } else {
+          if (pageErrorRef.current) {
+            pageErrorRef.current = null
+            setPageError(null)
+          }
+          // Only the document can prove a load *started*; only we know one is
+          // still outstanding, so the poll may never clear that on its own.
+          setLoading(status?.readyState === 'loading' || navigationPendingRef.current)
+        }
         for (const popup of Array.isArray(popups) ? popups : []) {
           const popupKey = `${activeTab.label}:${popup.id}:${popup.ts}`
           if (seenPopupKeysRef.current.has(popupKey)) continue
@@ -1322,7 +1485,13 @@ export function useDirectBrowserTabs({
     if (!supported || !activeTab || !visible) return
     const timer = window.setInterval(() => {
       void invokeFor<string>('app_browser_webview_url', activeTab.label)
-        .then((url) => {
+        .then((reported) => {
+          // Keep the address someone typed in the address bar. The engine
+          // replaces it with its own error scheme, which is not a page anyone
+          // asked for and not something they can edit and retry.
+          const url = isBrowserErrorUrl(reported)
+            ? requestedUrlRef.current.get(activeTab.id) ?? reported
+            : reported
           setTabs((current) => current.map((tab) => tab.id === activeTab.id && tab.url !== url
             ? { ...tab, url }
             : tab))
@@ -1367,6 +1536,8 @@ export function useDirectBrowserTabs({
     resolvePagePermission,
     viewportOverride,
     setViewportPreset,
+    loading,
+    pageError,
     dismissPageDialog: () => setPageDialog(null),
     createTab,
     selectTab,
