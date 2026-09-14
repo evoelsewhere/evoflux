@@ -2,6 +2,47 @@
 
 All notable changes to EvoFlux are documented in this file.
 
+## [2.0.1] - 2026-09-14
+
+EvoFlux 2.0.1 is a focused maintenance release for browser workflows, the
+Problems panel, and EASD portability.
+
+### Highlights
+
+- Added a complete browser viewing flow: detached pages, drag-to-resize
+  previews, device and layout controls, per-site zoom, download history,
+  explicit loading/error states, and browser shortcuts that return to the
+  panel.
+- Made Problems actionable: filters now describe their scope, counts match
+  visible results, severity is read correctly, decisions survive restarts,
+  dismissed items can return, sending to chat preserves the draft, and fixed
+  problems leave the active list.
+- Improved Evo Agent Specs import and removed stale EASD documentation
+  artifacts so repository-backed methodology stays portable and current.
+- Hardened desktop webview capability scoping and remembered workbench posture
+  across restarts.
+
+### Fixed
+
+- Browser dialogs and questions now reach the right panel, including detached
+  pages and ownership changes.
+- Landscape emulation no longer rotates to portrait, and reset restores the
+  real browser window properties.
+- Work mode has a usable starting surface and the browser preview stays within
+  its available desktop layout.
+- Problems no longer report incorrect counts, pluralization, severity, or
+  stale repository state.
+
+### Upgrade notes
+
+- Application, Python, web, Rust, Tauri, and lockfile metadata are synchronized
+  at `2.0.1`.
+- This is a backward-compatible maintenance update on the 2.0.0 baseline.
+- Existing databases continue through the normal Alembic migration path.
+
+For the curated release overview, see
+[`documents/releases/v2.0.1.md`](documents/releases/v2.0.1.md).
+
 ## [2.0.0] - 2026-09-14
 
 EvoFlux 2.0.0 is a major workbench, provider, browser, telemetry, and
