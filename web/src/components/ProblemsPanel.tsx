@@ -74,12 +74,16 @@ export function ProblemsPanel({
   workspace,
   active,
   onOpenFile,
+  onAddToComposer,
   onSendToAgent,
 }: {
   workspace: string
   active: boolean
   /** A problem knows where it is; opening its file should land there. */
   onOpenFile?: (path: string, line?: number) => void
+  /** Put a prompt in the composer for the user to review and send. */
+  onAddToComposer?: (prompt: string) => void
+  /** Send a prompt to the agent now. */
   onSendToAgent?: (prompt: string) => void
 }) {
   const [source, setSource] = useState<ProblemSource | 'all'>('all')
@@ -222,11 +226,11 @@ export function ProblemsPanel({
                   {problem.fix && (
                     <button type="button" onClick={() => { void stageFix(problem) }} className="rounded-md px-2 py-1 text-[10px] text-(--color-accent) hover:bg-(--bg-key)">Fix</button>
                   )}
+                  {onAddToComposer && (
+                    <button type="button" title="Draft a message asking the agent to plan this — you send it" onClick={() => onAddToComposer(problemPrompt(problem, 'Add to the implementation plan and address'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><MessageSquarePlus size={10} /> Add to plan</button>
+                  )}
                   {onSendToAgent && (
-                    <>
-                      <button type="button" onClick={() => onSendToAgent(problemPrompt(problem, 'Add to the implementation plan and address'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><MessageSquarePlus size={10} /> Add to plan</button>
-                      <button type="button" onClick={() => onSendToAgent(problemPrompt(problem, 'Investigate and fix'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><Send size={10} /> Send to agent</button>
-                    </>
+                    <button type="button" title="Send this to the agent now" onClick={() => onSendToAgent(problemPrompt(problem, 'Investigate and fix'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><Send size={10} /> Send to agent</button>
                   )}
                   {/* One decision at a time: the row stays on screen until
                       the refetch lands, so an eager second click used to
