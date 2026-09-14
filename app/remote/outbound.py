@@ -21,7 +21,10 @@ Design constraints (from spec):
 from __future__ import annotations
 
 import asyncio
+import time
+import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -33,8 +36,11 @@ from app.remote.contracts import (
     RemoteOutboundMessage,
     RemoteOutboundPriority,
 )
+from app.remote.formatting import render_done_card, render_error_card, render_status_card
+from app.remote.turn_activity import load_turn_activity
 
 if TYPE_CHECKING:
+    from app.remote.actions import RemoteActionService
     from app.remote.gates import RemoteGateBridge
 
 #: Telegram's maximum message length in characters.
@@ -66,6 +72,17 @@ class _TurnDeliveryState:
     lifecycle_correlation_id: str | None = None
     #: Whether a completion message has already been sent for this turn.
     completion_sent: bool = False
+    #: True for a turn that owns a single live status card — created by
+    #: ``begin_phone_turn`` — that the final done/error card must edit
+    #: in place rather than follow with a new message.
+    phone_admitted: bool = False
+    started_at: float = field(default_factory=time.monotonic)
+    turn_started_wall_clock: datetime = field(default_factory=lambda: datetime.now(UTC))
+    #: The repeating native-typing-indicator task started alongside the
+    #: status card; cancelled and cleared once the turn finalizes.
+    typing_task: "asyncio.Task[None] | None" = field(default=None, repr=False)
+    title: str = ""
+    principal_id: str = ""
 
 
 @dataclass
@@ -80,11 +97,32 @@ class RemoteProjection:
 
     _adapter: RemoteAdapter | None = field(default=None, repr=False)
     _bridge: "RemoteGateBridge | None" = field(default=None, repr=False)
+    #: Set by a later task's ``set_actions`` (Task 6) so ``_finalize_turn``
+    #: can mint "Full diff"/"Tool log" drill-down capability tokens. ``None``
+    #: until that wiring lands — every use guards on it and treats a missing
+    #: service as "no button" (``formatting.py``'s card builders already
+    #: omit a button for a ``None`` token).
+    _actions: "RemoteActionService | None" = field(default=None, repr=False)
     _turns: dict[str, _TurnDeliveryState] = field(default_factory=dict, repr=False)
     _session_tags: dict[str, frozenset[str]] = field(default_factory=dict, repr=False)
     _session_connection_ids: dict[str, str] = field(default_factory=dict, repr=False)
     _session_destination_ids: dict[str, str] = field(default_factory=dict, repr=False)
     _pending: list[RemoteOutboundMessage] = field(default_factory=list, repr=False)
+    _pending_edits: list[RemoteOutboundMessage] = field(default_factory=list, repr=False)
+    #: Turns whose ``done``/``error`` event has been observed but whose
+    #: final card hasn't been built and delivered yet — building it needs a
+    #: database query (:func:`~app.remote.turn_activity.load_turn_activity`),
+    #: which ``observe()`` itself must never do (observers are synchronous
+    #: and non-blocking, per this module's design constraints). Queued here
+    #: instead and drained by :meth:`drain_pending`, matching how ``_pending``
+    #: already defers ``adapter.send`` calls out of ``observe()``.
+    _pending_finalizations: list[tuple[_TurnDeliveryState, str | None]] = field(
+        default_factory=list, repr=False
+    )
+    #: Reserved for a later task's unaddressed-delivery drain (Task 5);
+    #: unused by this task beyond being cleared alongside the other queues
+    #: when no adapter is bound.
+    _unaddressed_pending: list[object] = field(default_factory=list, repr=False)
     #: Caches the single v1 pairing's routing info so ``observe`` can reach
     #: sessions it was never explicitly ``register_session``-ed for (e.g.
     #: work started from the desktop, not the phone) — this app supports
@@ -156,7 +194,65 @@ class RemoteProjection:
         self._session_tags.pop(session_id, None)
         self._session_connection_ids.pop(session_id, None)
         self._session_destination_ids.pop(session_id, None)
-        self._turns.pop(session_id, None)
+        turn = self._turns.pop(session_id, None)
+        if turn is not None:
+            self._stop_typing(turn)
+
+    def begin_phone_turn(
+        self,
+        session_id: str,
+        *,
+        connection_id: str,
+        destination_id: str,
+        principal_id: str,
+        title: str,
+        status: str,
+    ) -> None:
+        """Create the one status message a phone-admitted turn owns, and
+        start the native typing indicator alongside it. Called by
+        runtime.py right after ``register_session`` for a text-triggered
+        admission."""
+        correlation_id = f"status:{session_id}:{uuid.uuid4().hex[:8]}"
+        turn = _TurnDeliveryState(
+            session_id=session_id,
+            connection_id=connection_id,
+            destination_id=destination_id,
+            principal_id=principal_id,
+            lifecycle_correlation_id=correlation_id,
+            phone_admitted=True,
+            title=title,
+        )
+        self._turns[session_id] = turn
+        text, buttons = render_status_card(title=title, status=status)
+        self._enqueue_send(
+            destination_id=destination_id,
+            text=text,
+            buttons=buttons,
+            priority=RemoteOutboundPriority.HIGH,
+            correlation_id=correlation_id,
+        )
+        if self._adapter is not None:
+            turn.typing_task = asyncio.create_task(self._run_typing_loop(turn))
+
+    async def _run_typing_loop(self, turn: _TurnDeliveryState) -> None:
+        adapter = self._adapter
+        if adapter is None:
+            return
+        try:
+            while True:
+                await adapter.indicate_typing(turn.destination_id)
+                await asyncio.sleep(4.0)
+        except asyncio.CancelledError:
+            pass
+
+    def typing_task_for(self, session_id: str) -> "asyncio.Task[None] | None":
+        turn = self._turns.get(session_id)
+        return turn.typing_task if turn is not None else None
+
+    def _stop_typing(self, turn: _TurnDeliveryState) -> None:
+        if turn.typing_task is not None and not turn.typing_task.done():
+            turn.typing_task.cancel()
+        turn.typing_task = None
 
     def observe(self, session_id: str, envelope) -> None:
         """Stream observer callback — invoked synchronously after ``push_event``.
@@ -209,23 +305,89 @@ class RemoteProjection:
         if turn.completion_sent:
             return
         turn.completion_sent = True
-        text = _redact_text(
-            envelope.data.get("text", "Task completed.") or "Task completed."
-        )
-        self._enqueue_send(
-            destination_id=turn.destination_id,
-            text=text,
-            priority=RemoteOutboundPriority.HIGH,
-        )
+        self._pending_finalizations.append((turn, None))
+        self._schedule_drain()
 
     def _handle_error(self, turn: _TurnDeliveryState, envelope) -> None:
+        if turn.completion_sent:
+            return
+        turn.completion_sent = True
         message = envelope.data.get("message", "An error occurred.")
-        text = _redact_text(f"Error: {message}")
-        self._enqueue_send(
-            destination_id=turn.destination_id,
-            text=text,
-            priority=RemoteOutboundPriority.HIGH,
-        )
+        self._pending_finalizations.append((turn, message))
+        self._schedule_drain()
+
+    async def _finalize_turn(
+        self, turn: _TurnDeliveryState, *, error_message: str | None
+    ) -> None:
+        """Build the turn's final done/error card and deliver it.
+
+        Stops the typing indicator first (the turn is over regardless of
+        how delivery goes), then queries this turn's tool-call activity to
+        build the card, and either edits the status card a phone-admitted
+        turn already owns, or sends a new message for every other turn
+        (e.g. one started from the desktop that the phone is only
+        observing).
+        """
+        from app.core.db import async_session_factory
+
+        self._stop_typing(turn)
+        elapsed = time.monotonic() - turn.started_at
+        async with async_session_factory() as db:
+            activity = await load_turn_activity(
+                db, turn.session_id, since=turn.turn_started_wall_clock
+            )
+
+        diff_token: str | None = None
+        toollog_token: str | None = None
+        if self._actions is not None:
+            if activity.diff_text.strip() and activity.diff_text != "No file changes.":
+                diff_token = self._actions.register_capability(
+                    connection_id=turn.connection_id,
+                    principal_id=turn.principal_id,
+                    destination_id=turn.destination_id,
+                    session_id=turn.session_id,
+                    action_kind="diff",
+                    action_target=activity.diff_text,
+                )
+            toollog_token = self._actions.register_capability(
+                connection_id=turn.connection_id,
+                principal_id=turn.principal_id,
+                destination_id=turn.destination_id,
+                session_id=turn.session_id,
+                action_kind="toollog",
+                action_target=activity.tool_log_text,
+            )
+
+        if error_message is not None:
+            text, buttons = render_error_card(
+                title=turn.title,
+                message=_redact_text(error_message),
+                toollog_token=toollog_token,
+            )
+        else:
+            text, buttons = render_done_card(
+                title=turn.title,
+                elapsed_seconds=elapsed,
+                summary_lines=[_redact_text(line) for line in activity.summary_lines],
+                tool_call_count=activity.tool_call_count,
+                diff_token=diff_token,
+                toollog_token=toollog_token,
+            )
+
+        if turn.phone_admitted and turn.lifecycle_correlation_id is not None:
+            self._enqueue_edit(
+                destination_id=turn.destination_id,
+                text=text,
+                buttons=buttons,
+                correlation_id=turn.lifecycle_correlation_id,
+            )
+        else:
+            self._enqueue_send(
+                destination_id=turn.destination_id,
+                text=text,
+                buttons=buttons,
+                priority=RemoteOutboundPriority.HIGH,
+            )
 
     def _handle_gate(self, turn: _TurnDeliveryState, event_type: str, envelope) -> None:
         data = envelope.data
@@ -279,6 +441,7 @@ class RemoteProjection:
         text: str,
         buttons: tuple[RemoteButton, ...] = (),
         priority: RemoteOutboundPriority = RemoteOutboundPriority.INFORMATIONAL,
+        correlation_id: str | None = None,
     ) -> None:
         adapter = self._adapter
         if adapter is None:
@@ -298,9 +461,41 @@ class RemoteProjection:
                 text=chunk,
                 buttons=buttons if i == len(chunks) - 1 else (),
                 priority=priority,
+                correlation_id=correlation_id if i == len(chunks) - 1 else None,
             )
             self._pending.append(msg)
 
+        self._schedule_drain()
+
+    def _enqueue_edit(
+        self,
+        *,
+        destination_id: str,
+        text: str,
+        buttons: tuple[RemoteButton, ...],
+        correlation_id: str,
+    ) -> None:
+        """Edit-flagged delivery — a status card's final transition. Unlike
+        ``_enqueue_send``, never splits (a status/done card is always short
+        and already bounded by ``formatting.py``'s builders), so it is
+        always exactly one queued item."""
+        adapter = self._adapter
+        if adapter is None:
+            return
+
+        connection_id = ""
+        for cid in self._session_connection_ids.values():
+            connection_id = cid
+            break
+
+        msg = RemoteOutboundMessage(
+            connection_id=UUID(connection_id) if connection_id else UUID(int=0),
+            destination_id=destination_id,
+            text=text,
+            buttons=buttons,
+            correlation_id=correlation_id,
+        )
+        self._pending_edits.append(msg)
         self._schedule_drain()
 
     def _schedule_drain(self) -> None:
@@ -312,11 +507,18 @@ class RemoteProjection:
             pass
 
     async def drain_pending(self) -> None:
-        """Send all pending messages through the adapter."""
+        """Finalize completed turns, then send/edit all pending messages
+        through the adapter."""
         adapter = self._adapter
         if adapter is None:
             self._pending.clear()
+            self._pending_edits.clear()
+            self._pending_finalizations.clear()
+            self._unaddressed_pending.clear()
             return
+        while self._pending_finalizations:
+            turn, error_message = self._pending_finalizations.pop(0)
+            await self._finalize_turn(turn, error_message=error_message)
         while self._pending:
             msg = self._pending.pop(0)
             try:
@@ -327,10 +529,28 @@ class RemoteProjection:
                     msg.destination_id,
                     exc,
                 )
+        while self._pending_edits:
+            msg = self._pending_edits.pop(0)
+            try:
+                await adapter.edit(msg)
+            except Exception as exc:
+                logger.warning(
+                    "remote_outbound_edit_failed destination_id={} error={}",
+                    msg.destination_id,
+                    exc,
+                )
+        await self._drain_unaddressed()
+
+    async def _drain_unaddressed(self) -> None:
+        """Placeholder for a later task's unaddressed-delivery drain
+        (Task 5) — a no-op until that task replaces this body."""
+        return
 
     def clear_turn(self, session_id: str) -> None:
         """Clear delivery state for a completed turn."""
-        self._turns.pop(session_id, None)
+        turn = self._turns.pop(session_id, None)
+        if turn is not None:
+            self._stop_typing(turn)
 
 
 def _redact_text(text: str) -> str:

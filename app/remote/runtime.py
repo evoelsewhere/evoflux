@@ -519,5 +519,22 @@ class RemoteRuntime:
                 ),
             )
 
+        # Create the one status message this phone-admitted turn owns, with
+        # a native typing indicator running alongside it (AC-22/AC-38).
+        if result.session_id is not None and self._projection is not None:
+            from app.core.db import async_session_factory as _sf
+            from app.models.chat import ChatSession
+
+            async with _sf() as title_session:
+                session_row = await title_session.get(ChatSession, result.session_id)
+            self._projection.begin_phone_turn(
+                str(result.session_id),
+                connection_id=str(action.connection_id),
+                destination_id=action.principal.destination_id,
+                principal_id=action.principal.principal_id,
+                title=(session_row.title if session_row and session_row.title else "New task"),
+                status=result.status,
+            )
+
 
 remote_runtime = RemoteRuntime()

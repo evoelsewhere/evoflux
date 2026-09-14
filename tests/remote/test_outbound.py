@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from uuid import uuid4
 
 import pytest
@@ -21,18 +22,30 @@ def _envelope(event: str, **data: object) -> StreamEnvelope:
 
 
 class FakeAdapter:
-    """Records send calls for assertion."""
+    """Records send/edit calls for assertion.
+
+    ``calls`` tracks only ``send``/``edit`` — in delivery order — so tests
+    can assert "sent first, then edited" without the typing indicator's
+    repeating ``indicate_typing`` calls interleaving into that sequence.
+    """
 
     def __init__(self) -> None:
         self.sent: list[RemoteOutboundMessage] = []
+        self.edited: list[RemoteOutboundMessage] = []
+        self.calls: list[str] = []
 
     async def send(self, message: RemoteOutboundMessage) -> None:
+        self.calls.append("send")
         self.sent.append(message)
 
     async def edit(self, message: RemoteOutboundMessage) -> None:
-        pass
+        self.calls.append("edit")
+        self.edited.append(message)
 
     async def answer_callback(self, callback_token: str) -> None:
+        pass
+
+    async def indicate_typing(self, destination_id: str) -> None:
         pass
 
     def status(self) -> RemoteAdapterStatus:
@@ -175,6 +188,101 @@ async def test_error_sends_error_message() -> None:
 
     assert len(adapter.sent) == 1
     assert "Something went wrong" in adapter.sent[0].text
+
+
+# ── phone-admitted status lifecycle ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_begin_phone_turn_sends_status_card_then_done_edits_it() -> None:
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+
+    cid = str(uuid4())
+    projection.register_session(
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        tags=frozenset({"remote_origin"}),
+    )
+    projection.begin_phone_turn(
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
+    )
+    await asyncio.sleep(0.05)
+    assert adapter.calls[0] == "send"
+    first_correlation = adapter.sent[0].correlation_id
+
+    projection.observe("sess-1", _envelope("done", text="Done."))
+    await projection.drain_pending()
+
+    assert adapter.calls[1] == "edit"
+    assert adapter.edited[0].correlation_id == first_correlation
+    assert "Fix tests" in adapter.edited[0].text
+    assert projection.typing_task_for("sess-1") is None
+
+
+@pytest.mark.asyncio
+async def test_begin_phone_turn_error_edits_status_with_error_card() -> None:
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+
+    cid = str(uuid4())
+    projection.register_session(
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        tags=frozenset({"remote_origin"}),
+    )
+    projection.begin_phone_turn(
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
+    )
+    await asyncio.sleep(0.05)
+    first_correlation = adapter.sent[0].correlation_id
+
+    projection.observe("sess-1", _envelope("error", message="Boom"))
+    await projection.drain_pending()
+
+    assert adapter.calls[1] == "edit"
+    assert adapter.edited[0].correlation_id == first_correlation
+    assert "Boom" in adapter.edited[0].text
+    assert projection.typing_task_for("sess-1") is None
+
+
+@pytest.mark.asyncio
+async def test_begin_phone_turn_without_adapter_does_not_raise() -> None:
+    projection = RemoteProjection()
+    projection.set_adapter(None)
+
+    projection.register_session(
+        "sess-1",
+        connection_id="conn-1",
+        destination_id="chat-1",
+        tags=frozenset({"remote_origin"}),
+    )
+    projection.begin_phone_turn(
+        "sess-1",
+        connection_id="conn-1",
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
+    )
+    assert projection.typing_task_for("sess-1") is None
+
+    projection.observe("sess-1", _envelope("done", text="Done."))
+    await projection.drain_pending()
 
 
 # ── gate events ──────────────────────────────────────────────────────────
