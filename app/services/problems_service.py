@@ -199,6 +199,42 @@ def suppress_problem(workspace: str | Path, problem_id: str) -> Problem:
     return problem
 
 
+def restore_problem(workspace: str | Path, problem_id: str) -> Problem:
+    """Undo a dismissal or a suppression.
+
+    Both decisions were one-way: a suppression key, once added, stayed for
+    the life of the process, and the panel offered no way back. Suppressing
+    is workspace-wide, so restoring lifts it for every row that shares the
+    key rather than only the one the user clicked.
+    """
+    problem = _require_problem(workspace, problem_id)
+    root = str(Path(workspace).resolve())
+    now = time.time()
+    suppressed = _suppressions.setdefault(root, set())
+    if problem.suppression_key in suppressed:
+        suppressed.discard(problem.suppression_key)
+        for row in _problems.get(root, {}).values():
+            if row.suppression_key == problem.suppression_key and (
+                row.status == "suppressed"
+            ):
+                row.status = "open"
+                row.updated_at = now
+    problem.status = "open"
+    problem.updated_at = now
+    return problem
+
+
+def suppression_blast_radius(workspace: str | Path, problem_id: str) -> int:
+    """How many currently-known rows a suppression would hide."""
+    problem = _require_problem(workspace, problem_id)
+    root = str(Path(workspace).resolve())
+    return sum(
+        1
+        for row in _problems.get(root, {}).values()
+        if row.suppression_key == problem.suppression_key and row.status != "dismissed"
+    )
+
+
 def serialize_problem(problem: Problem) -> dict[str, Any]:
     return {
         "id": problem.id,
