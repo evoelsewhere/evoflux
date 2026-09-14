@@ -75,6 +75,61 @@ export function subscribeBrowserPreferences(
   }
 }
 
+export interface BrowserRecentSite {
+  origin: string
+  host: string
+  /** Last full address seen there, so a deep link comes back deep. */
+  url: string
+  visitedAt: number
+}
+
+const MAX_RECENT_SITES = 8
+
+/**
+ * A short memory of where this browser has been.
+ *
+ * The panel has no history of its own, so an empty new tab was a dead end:
+ * the only way back to a page was to type it again from memory.
+ */
+export function loadRecentBrowserSites(): BrowserRecentSite[] {
+  try {
+    const raw = JSON.parse(
+      localStorage.getItem(STORAGE_KEYS.browser.recentSites) ?? '[]',
+    ) as unknown
+    if (!Array.isArray(raw)) return []
+    return raw.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return []
+      const { origin, host, url, visitedAt } = entry as Record<string, unknown>
+      if (typeof origin !== 'string' || typeof host !== 'string' || typeof url !== 'string') {
+        return []
+      }
+      return [{
+        origin,
+        host,
+        url,
+        visitedAt: typeof visitedAt === 'number' ? visitedAt : 0,
+      }]
+    }).slice(0, MAX_RECENT_SITES)
+  } catch {
+    return []
+  }
+}
+
+export function recordRecentBrowserSite(url: string): BrowserRecentSite[] | null {
+  const origin = browserZoomOrigin(url)
+  if (!origin) return null
+  try {
+    const host = new URL(url).host
+    const existing = loadRecentBrowserSites().filter((site) => site.origin !== origin)
+    const next = [{ origin, host, url, visitedAt: Date.now() }, ...existing]
+      .slice(0, MAX_RECENT_SITES)
+    localStorage.setItem(STORAGE_KEYS.browser.recentSites, JSON.stringify(next))
+    return next
+  } catch {
+    return null
+  }
+}
+
 export interface BrowserConnectionInfo {
   /** Scheme + host, or null for a page that is not on the web. */
   origin: string | null

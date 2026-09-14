@@ -40,12 +40,15 @@ import {
   FIT_DESKTOP_WIDTH,
   loadBrowserPreferences,
   loadBrowserZoomForOrigin,
+  loadRecentBrowserSites,
+  recordRecentBrowserSite,
   saveBrowserPreferences,
   saveBrowserZoomForOrigin,
   subscribeBrowserPreferences,
   type BrowserPreferences,
 } from './browserPreferences'
 import { BrowserLauncher } from './BrowserLauncher'
+import { BrowserStartPage } from './BrowserStartPage'
 import { DirectBrowserSettingsView } from './DirectBrowserSettingsView'
 import {
   BROWSER_VIEWPORT_PRESETS,
@@ -119,6 +122,7 @@ export function DirectBrowserShell({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [preferences, setPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
   const [zoom, setZoom] = useState(() => loadBrowserPreferences().defaultZoom)
+  const [recentSites, setRecentSites] = useState(loadRecentBrowserSites)
   // Starts true: the first tab opens on the new-tab page anyway, and
   // assuming that keeps the native view hidden from the first frame instead
   // of flashing the static page before the launcher takes over.
@@ -143,8 +147,11 @@ export function DirectBrowserShell({
 
   // The launcher is React content in the viewport the native WebView covers,
   // so it can only be seen while that view is hidden — the same trick the
-  // settings view uses.
-  const showLauncher = Boolean(workspace) && onNewTabPage && enabled && !settingsOpen
+  // settings view uses. Without a workspace there is nothing to launch, so
+  // the same slot holds a start page instead of an empty view.
+  const atNewTabPage = onNewTabPage && enabled && !settingsOpen
+  const showLauncher = Boolean(workspace) && atNewTabPage
+  const showStartPage = !workspace && atNewTabPage
   // Set from the hook's own error state below; declared here because the
   // native view has to be hidden for our error card to be visible at all.
   const [pageErrorVisible, setPageErrorVisible] = useState(false)
@@ -154,7 +161,9 @@ export function DirectBrowserShell({
     instanceId: tabId,
     viewportRef,
     enabled: Boolean(open && sessionId && enabled),
-    visible: Boolean(open && visible && !settingsOpen && !showLauncher && !pageErrorVisible),
+    visible: Boolean(
+      open && visible && !settingsOpen && !showLauncher && !showStartPage && !pageErrorVisible,
+    ),
     bridgeEnabled: visible,
     initialUrl,
     singleTab: true,
@@ -219,6 +228,11 @@ export function DirectBrowserShell({
     const origin = browserZoomOrigin(currentUrl)
     setZoom(loadBrowserZoomForOrigin(origin) ?? preferences.defaultZoom)
   }, [currentUrl, preferences.defaultZoom])
+
+  useEffect(() => {
+    const next = recordRecentBrowserSite(currentUrl)
+    if (next) setRecentSites(next)
+  }, [currentUrl])
 
   /**
    * One implementation for both ways a shortcut can arrive: from this
@@ -605,6 +619,11 @@ export function DirectBrowserShell({
                   workspace={workspace}
                   paused={!visible}
                   onOpen={openInPage}
+                />
+              ) : showStartPage ? (
+                <BrowserStartPage
+                  recentSites={recentSites}
+                  onOpen={(target) => openInPage(normalizeBrowserTarget(target))}
                 />
               ) : null}
               {browser.pageDialog && !settingsOpen && (
