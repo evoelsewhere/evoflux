@@ -131,5 +131,10 @@ def publish_command_output(
         scope=f"shell:{source}:{command_hash}",
         problems=inputs,
         session_id=session_id,
+        # The latest run is the current truth for this kind of check. Without
+        # this, changing the command at all — one file instead of the suite,
+        # an added flag — stranded the previous run's findings in a scope
+        # nothing would ever publish to again.
+        supersedes_prefix=f"shell:{source}:",
     )
     return len(inputs)

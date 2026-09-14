@@ -174,6 +174,9 @@ async def run_git_ai_action(
                 scope=f"git-ai:{action}:{result['evidence_sha256'][:16]}",
                 problems=inputs,
                 session_id=session_id,
+                # A fresh run of the same review supersedes the last one;
+                # the evidence digest makes every run its own scope.
+                supersedes_prefix=f"git-ai:{action}:",
             )
             ids.extend(row.id for row in rows)
         result["findings"] = ids

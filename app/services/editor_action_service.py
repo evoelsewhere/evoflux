@@ -201,6 +201,10 @@ async def run_editor_action(
             context.workspace,
             source="ai_review",
             scope=f"editor:{action}:{context.content_sha256[:16]}",
+            # Reviewing the file again supersedes the last review of it:
+            # the digest in the scope changes with every edit, so without
+            # this every version ever reviewed kept its findings.
+            supersedes_prefix=f"editor:{action}:",
             problems=[
                 ProblemInput(
                     title=item.title,

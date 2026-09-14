@@ -78,8 +78,16 @@ def publish_problems(
     scope: str,
     problems: list[ProblemInput],
     session_id: str | None = None,
+    supersedes_prefix: str | None = None,
 ) -> list[Problem]:
-    """Replace one producer scope while preserving matching user decisions."""
+    """Replace one producer scope while preserving matching user decisions.
+
+    ``supersedes_prefix`` retires sibling scopes of the same source that
+    share the prefix. A producer whose scope carries a per-run hash — a
+    command, a content digest — otherwise never clears anything: each run
+    lands in a scope of its own and the previous run's findings stay in the
+    panel forever, including the ones the run just proved fixed.
+    """
     root = str(Path(workspace).resolve())
     workspace_store = _problems.setdefault(root, {})
     suppressed = _suppressions.setdefault(root, set())
@@ -134,8 +142,14 @@ def publish_problems(
         problem_id
         for problem_id, problem in workspace_store.items()
         if problem.source == source
-        and problem.scope == scope
         and problem_id not in incoming
+        and (
+            problem.scope == scope
+            or (
+                supersedes_prefix is not None
+                and problem.scope.startswith(supersedes_prefix)
+            )
+        )
     ]
     for problem_id in stale_ids:
         workspace_store.pop(problem_id, None)
