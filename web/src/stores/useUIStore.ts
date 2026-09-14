@@ -135,6 +135,11 @@ interface WorkbenchState {
   activeWorkbenchTool: WorkbenchTool | null
   workbenchOpen: boolean
   workbenchMaximized: boolean
+  /**
+   * Session whose agent has a page open in a floating window rather than in
+   * the workbench. Null when no such page exists.
+   */
+  browserPipSessionId: string | null
   pullRequestsScope: PullRequestsScope
   gitWorkspaceView: GitWorkspaceView
 }
@@ -407,6 +412,8 @@ interface UIStore extends WorkbenchState {
   closeWorkbench: () => void
   showWorkbenchLauncher: () => void
   toggleWorkbenchMaximized: () => void
+  openBrowserPip: (sessionId: string) => void
+  closeBrowserPip: () => void
   toggleWiki: () => void
   toggleScheduler: () => void
   togglePullRequests: () => void
@@ -451,6 +458,7 @@ export const useUIStore = create<UIStore>()(
     // Starts cleared because the workbench starts empty; `activateTab`
     // re-applies the remembered posture as soon as there is a tab.
     workbenchMaximized: false,
+    browserPipSessionId: null,
     pullRequestsScope: 'session',
     gitWorkspaceView: 'changes',
     createWorkbenchTab: (tool, options = {}) => set((state) => {
@@ -566,6 +574,12 @@ export const useUIStore = create<UIStore>()(
       state.workbenchOpen = true
       activateTab(state, undefined)
       state.workbenchMaximized = false
+    }),
+    openBrowserPip: (sessionId) => set((state) => {
+      state.browserPipSessionId = sessionId
+    }),
+    closeBrowserPip: () => set((state) => {
+      state.browserPipSessionId = null
     }),
     toggleWorkbenchMaximized: () => set((state) => {
       if (!state.activeWorkbenchTabId) return

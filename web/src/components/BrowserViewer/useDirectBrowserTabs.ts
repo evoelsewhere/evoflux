@@ -41,6 +41,15 @@ export interface BrowserViewportOverride {
   height: number
 }
 
+export interface DetachOptions {
+  width?: number
+  height?: number
+  /** A window that watches an agent work belongs above the work. */
+  alwaysOnTop?: boolean
+  /** Agent-opened windows should not steal the caret mid-sentence. */
+  focus?: boolean
+}
+
 interface DetachedBrowserWindow {
   label: string
   host: import('@tauri-apps/api/window').Window
@@ -139,6 +148,11 @@ interface UseDirectBrowserTabsOptions {
   initialUrl?: string
   singleTab?: boolean
   zoom: number
+  /**
+   * Smallest scale fit-width may apply. A preview is deliberately tiny, so
+   * it accepts a scale the panel would refuse as unreadable.
+   */
+  minFitScale?: number
   /**
    * CSS width to lay pages out at while the panel is narrower than it —
    * the page is rendered at this width and scaled down to fill the panel,
@@ -267,6 +281,7 @@ export function useDirectBrowserTabs({
   singleTab = false,
   zoom,
   fitWidth = null,
+  minFitScale = MIN_FIT_SCALE,
   devtools,
   profileMode,
   onError,
@@ -299,6 +314,8 @@ export function useDirectBrowserTabs({
   fitWidthRef.current = fitWidth
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
+  const minFitScaleRef = useRef(minFitScale)
+  minFitScaleRef.current = minFitScale
   const lastDialogKeyRef = useRef('')
   const seenPopupKeysRef = useRef(new Set<string>())
   const visibilityRef = useRef(new Map<string, boolean>())
@@ -810,7 +827,7 @@ export function useDirectBrowserTabs({
    * bound — and reparenting the existing view keeps the page exactly as it
    * was: same document, same scroll, same session, no reload.
    */
-  const detachTab = useCallback(async () => {
+  const detachTab = useCallback(async (options: DetachOptions = {}) => {
     const tab = tabsRef.current.find((item) => item.id === activeIdRef.current)
     const webview = tab ? webviewsRef.current.get(tab.id) : undefined
     if (!tab || !webview || detachedRef.current) return
@@ -822,10 +839,11 @@ export function useDirectBrowserTabs({
       const label = `browser-window-${detachedWindowSuffix(tab.label)}`
       const host = new Window(label, {
         title: tabTitleFor(tab.url),
-        width: 1280,
-        height: 860,
+        width: options.width ?? 1280,
+        height: options.height ?? 860,
         resizable: true,
-        focus: true,
+        focus: options.focus ?? true,
+        alwaysOnTop: options.alwaysOnTop ?? false,
       })
       await new Promise<void>((resolve, reject) => {
         void host.once('tauri://created', () => resolve())
@@ -886,6 +904,13 @@ export function useDirectBrowserTabs({
   }, [onError])
 
   attachTabRef.current = attachTab
+
+  /** Bring the page's own window forward, when it has one. */
+  const focusDetached = useCallback(async () => {
+    const detachedWindow = detachedRef.current
+    if (!detachedWindow) return
+    await detachedWindow.host.setFocus().catch(() => {})
+  }, [])
 
   /**
    * What the page itself says it has been granted.
@@ -970,7 +995,7 @@ export function useDirectBrowserTabs({
       y: rect.top,
       width: rect.width,
       height: rect.height,
-    }, viewportOverrideRef.current, fitWidthRef.current, zoom)
+    }, viewportOverrideRef.current, fitWidthRef.current, zoom, minFitScaleRef.current)
     const { LogicalPosition, LogicalSize } = await import('@tauri-apps/api/dpi')
     await Promise.all([
       webview.setPosition(new LogicalPosition(layout.x, layout.y)),
@@ -1483,6 +1508,7 @@ export function useDirectBrowserTabs({
       viewportOverrideRef.current,
       fitWidth,
       zoom,
+      minFitScaleRef.current,
     )
     viewportScaleRef.current = layout.scale
     void webview.setZoom(zoomFactor).catch(() => {})
@@ -1645,7 +1671,7 @@ export function useDirectBrowserTabs({
           y: rect.top,
           width: rect.width,
           height: rect.height,
-        }, viewportOverrideRef.current, fitWidthRef.current, zoom)
+        }, viewportOverrideRef.current, fitWidthRef.current, zoom, minFitScaleRef.current)
         viewportScaleRef.current = layout.scale
         const bounds = {
           x: layout.x,
@@ -1799,6 +1825,7 @@ export function useDirectBrowserTabs({
     detached,
     detachTab,
     attachTab,
+    focusDetached,
     loading,
     downloads,
     clearDownloads: () => setDownloads([]),
@@ -1830,6 +1857,7 @@ export function useDirectBrowserTabs({
 export function browserFitOverride(
   container: Pick<NativeBounds, 'width' | 'height'>,
   targetWidth: number | null,
+  minScale: number = MIN_FIT_SCALE,
 ): BrowserViewportOverride | null {
   if (!targetWidth || !Number.isFinite(targetWidth) || targetWidth <= 0) return null
   const width = Math.max(1, container.width)
@@ -1838,8 +1866,9 @@ export function browserFitOverride(
   if (width >= targetWidth) return null
   const scale = width / targetWidth
   // Past this the desktop layout is technically correct and practically
-  // unreadable, so a genuinely narrow panel keeps the layout it earns.
-  if (scale < MIN_FIT_SCALE) return null
+  // unreadable, so a genuinely narrow panel keeps the layout it earns — a
+  // preview, which is for watching rather than reading, sets this lower.
+  if (scale < minScale) return null
   return {
     width: Math.round(targetWidth),
     height: Math.max(1, Math.round(height / scale)),
@@ -1864,8 +1893,9 @@ export function browserViewportPlan(
   agentOverride: BrowserViewportOverride | null,
   fitWidth: number | null,
   zoomPercent: number,
+  minFitScale: number = MIN_FIT_SCALE,
 ): BrowserViewportPlan {
-  const override = agentOverride ?? browserFitOverride(container, fitWidth)
+  const override = agentOverride ?? browserFitOverride(container, fitWidth, minFitScale)
   const layout = browserViewportLayout(container, override)
   const zoomFraction = zoomPercent / 100
   return {

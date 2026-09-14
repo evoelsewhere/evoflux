@@ -10,6 +10,15 @@ export interface BrowserPreferences {
    * rather than the tablet one its own width would trigger.
    */
   fitDesktopWidth: boolean
+  /**
+   * Where a page an agent opens shows up.
+   *
+   * `panel` gives it the workbench, which it shares with the terminal, the
+   * editor and the rest — so the page arrives by putting away whatever was
+   * there. `preview` leaves all that alone and shows the page small, in a
+   * corner of the conversation, which is enough to watch an agent work.
+   */
+  agentBrowsingSurface: 'panel' | 'preview'
   developerTools: boolean
   profileMode: 'shared' | 'session' | 'incognito'
 }
@@ -21,11 +30,12 @@ const DEFAULT_BROWSER_PREFERENCES: BrowserPreferences = {
   enabled: true,
   defaultZoom: 100,
   fitDesktopWidth: true,
+  agentBrowsingSurface: 'panel',
   developerTools: false,
   profileMode: 'shared',
 }
 
-const BROWSER_PREFERENCES_VERSION = 6
+const BROWSER_PREFERENCES_VERSION = 7
 const BROWSER_PREFERENCES_CHANGED = 'oa-browser-preferences-changed'
 
 export function loadBrowserPreferences(): BrowserPreferences {
@@ -40,6 +50,7 @@ export function loadBrowserPreferences(): BrowserPreferences {
           ? Math.max(50, Math.min(200, value.defaultZoom))
           : DEFAULT_BROWSER_PREFERENCES.defaultZoom,
       fitDesktopWidth: value.fitDesktopWidth !== false,
+      agentBrowsingSurface: value.agentBrowsingSurface === 'preview' ? 'preview' : 'panel',
       developerTools: value.developerTools === true,
       profileMode: value.profileMode === 'session' || value.profileMode === 'incognito'
         ? value.profileMode
