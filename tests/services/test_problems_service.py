@@ -84,3 +84,46 @@ def test_problem_path_must_stay_inside_repository(tmp_path: Path):
             scope="security:scan",
             problems=[ProblemInput(message="outside", path="../outside.py")],
         )
+
+
+def test_supersedes_prefix_retires_sibling_scopes(tmp_path: Path):
+    """A per-run scope must not strand the previous run's findings.
+
+    Producers that hash a command or a content digest into the scope land
+    every run in a scope of its own, so the plain same-scope sweep never
+    reaches the run before it.
+    """
+    publish_problems(
+        tmp_path,
+        source="test",
+        scope="shell:test:aaaa",
+        problems=[ProblemInput(message="boom", path="a.py", line=1)],
+        supersedes_prefix="shell:test:",
+    )
+    assert len(list_problems(tmp_path)) == 1
+
+    publish_problems(
+        tmp_path,
+        source="test",
+        scope="shell:test:bbbb",
+        problems=[],
+        supersedes_prefix="shell:test:",
+    )
+    assert list_problems(tmp_path) == []
+
+
+def test_supersedes_prefix_leaves_other_sources_alone(tmp_path: Path):
+    publish_problems(
+        tmp_path,
+        source="lsp",
+        scope="lsp:a.py",
+        problems=[ProblemInput(message="kept", path="a.py", line=1)],
+    )
+    publish_problems(
+        tmp_path,
+        source="test",
+        scope="shell:test:bbbb",
+        problems=[],
+        supersedes_prefix="shell:test:",
+    )
+    assert [row.message for row in list_problems(tmp_path)] == ["kept"]
