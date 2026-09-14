@@ -3394,6 +3394,32 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             }};
                             globalThis.__evofluxBrowserRuntime = runtime;
                         }}
+                        // Re-asserted on every pass, not once per document. The
+                        // shell's own dialog plugin installs an `alert` of its
+                        // own at document start — after ours — so a page's
+                        // dialogs would go to the app's native dialog instead of
+                        // this panel's record, where nothing can show or answer
+                        // them. Ours has to be the last one installed.
+                        {{
+                            const runtime = globalThis.__evofluxBrowserRuntime;
+                            const note = (entry) => {{
+                                runtime.dialogs.push(entry);
+                                while (runtime.dialogs.length > 100) runtime.dialogs.shift();
+                            }};
+                            globalThis.alert = (message) => {{
+                                note({{ id: runtime.nextDialogId++, ts: Date.now(), type: 'alert', message: String(message), response: 'accepted' }});
+                            }};
+                            globalThis.confirm = (message) => {{
+                                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                                note({{ id: runtime.nextDialogId++, ts: Date.now(), type: 'confirm', message: String(message), response: accepted ? 'accepted' : 'dismissed' }});
+                                return accepted;
+                            }};
+                            globalThis.prompt = (message, defaultValue = '') => {{
+                                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                                note({{ id: runtime.nextDialogId++, ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue), response: accepted ? 'accepted' : 'dismissed' }});
+                                return accepted ? String(runtime.dialogBehavior.promptText ?? defaultValue) : null;
+                            }};
+                        }}
                         return {{ ready: true }};
                     }}
 
