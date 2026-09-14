@@ -2,6 +2,11 @@
 
 Status: proposed
 
+> **Amended by `documents/plans/remote-telegram-response-ui.md`:** AC-24 (no
+> parse mode) and the outbound-data-policy portion of Non-goals/AC-32 are
+> revised there. Read that document's amendment note before treating those
+> two items as current.
+
 ## Problem and outcome
 
 EvoFlux is a local-first desktop application. The Tauri shell starts the
