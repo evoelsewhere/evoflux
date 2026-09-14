@@ -222,6 +222,18 @@ class ExtractElementsAction(BaseModel):
         ),
     )
     limit: int = Field(default=100, ge=1, le=1000)
+    ref: str | None = Field(
+        default=None,
+        description="Search inside this element handle instead of the whole page.",
+    )
+    deep: bool = Field(
+        default=True,
+        description=(
+            "Search through shadow roots and same-origin frames, where CSS "
+            "selectors do not reach. On by default: a list rendered by web "
+            "components returns nothing without it."
+        ),
+    )
     tab_id: int | None = Field(
         default=None, description="Target tab ID (default: active tab)."
     )
@@ -235,6 +247,17 @@ class ScrollToBottomAction(BaseModel):
         ge=50,
         le=5000,
         description="Wait after each scroll for content to load.",
+    )
+    ref: str | None = Field(
+        default=None,
+        description=(
+            "Scroll this element instead of the window — a chat log, a data "
+            "grid, a drawer. Scrolling the window does nothing for a list "
+            "that scrolls inside a pane of its own."
+        ),
+    )
+    selector: str | None = Field(
+        default=None, description="The scrolling element, if no ref."
     )
     tab_id: int | None = Field(
         default=None, description="Target tab ID (default: active tab)."
@@ -826,8 +849,8 @@ Actions:
     drag_to_point   — Drag an element to x,y — sliders, canvases, maps, resize handles.
   screenshot      — Capture the viewport (or full_page) as PNG/JPEG image.
   extract         — Extract page content as text / markdown / html (optionally scoped to a selector).
-  extract_elements— Scrape many records by selector into structured JSON (with per-field sub-selectors / attributes).
-  scroll_to_bottom— Auto-scroll to load lazy / infinite-scroll content before extracting.
+  extract_elements— Scrape many records by selector into structured JSON (with per-field sub-selectors / attributes). Searches through shadow roots and frames by default.
+  scroll_to_bottom— Auto-scroll to load lazy / infinite-scroll content before extracting. Pass ref/selector when the list scrolls inside a pane rather than the window.
   crawl           — Fetch + extract many URLs at once, running concurrently across background tabs.
   get_tabs        — List all open tabs.
   switch_tab      — Switch to a tab by index or ID.
@@ -1369,6 +1392,8 @@ async def _handle_extract_elements(session_id: str, act: ExtractElementsAction) 
             selector=act.selector,
             fields=act.fields,
             limit=act.limit,
+            ref=act.ref,
+            deep=act.deep,
         ),
     )
     if not resp.get("success"):
@@ -1391,6 +1416,8 @@ async def _handle_scroll_to_bottom(session_id: str, act: ScrollToBottomAction) -
             act,
             max_scrolls=act.max_scrolls,
             delay_ms=act.delay_ms,
+            ref=act.ref,
+            selector=act.selector,
             timeout_ms=act.max_scrolls * (act.delay_ms + 400) + 2000,
         ),
     )
