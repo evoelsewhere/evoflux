@@ -343,7 +343,9 @@ export function WebBridgeStatusPopover({
         }
       >
         <Globe size={13} aria-hidden="true" />
-        <span className="hidden lg:inline">WebBridge</span>
+        {/* Collapses on the bar's own width, not the window's: the window can
+            be wide while the conversation column this sits in is narrow. */}
+        <span className="workbench-bridge-label">WebBridge</span>
         <span
           aria-hidden="true"
           className={cn(
