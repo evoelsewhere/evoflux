@@ -57,6 +57,34 @@ accepted revision changes, discard the stale plan and compile from the new hash.
    setup, or verification. Return real gaps to specification/design instead of
    hiding them in task prose.
 
+## Code graph navigation
+
+Planning converts accepted criteria into bounded ownership, and `code_context`
+is how that boundary is derived rather than guessed.
+
+- For each accepted AC, resolve the symbols named in its statement with
+  `action="definition"`, then collect `action="references"` and
+  `action="impact"` to derive that mission's `target_paths`.
+- Prove ownership is disjoint. Compare the resolved path sets across missions:
+  overlap means either one mission or a named integration owner, never two
+  concurrent writers on the same contract.
+- Use `action="neighborhood"` at depth 1 on each boundary symbol to find where
+  missions actually meet. That meeting point is what the integration mission
+  owns.
+- Trace `action="callers"` outward when deciding whether the change crosses a
+  layer. A matched planned-flow condition must point at a resolved edge.
+- Do not widen `target_paths` "just in case". A path with no resolved
+  relationship to an AC is scope you cannot justify at convergence.
+
+Read `references/code-context-contract.md` for full action selection and
+interpretation rules. It is normative here. In short: call `code_context`
+with one `action="search"` to expose a declared identifier, then skip
+further search and call the exact-symbol action on that identifier; start
+at depth 1 unless the question is explicitly transitive; and never bulk
+scan. Keep `refresh=true` for the first indexed query and after any edit,
+and use `refresh=false` only for an immediate follow-up that intentionally
+reuses the returned index version. Do not repeat an unchanged query.
+
 ## Plan output
 
 Emit one row or block per proposed mission with:
@@ -82,32 +110,3 @@ When the run is `planning`, call `easd_submit_plan` with the exact run ID, full
 typed plan, coverage/dependency summary, and honest confidence. Stop after it
 returns the persisted plan revision/hash. Never approve the plan, delegate
 implementation, or treat the agent message as plan completion.
-
-## Code graph navigation
-
-Use `code_context` to map impact targets, affected paths, and cross-layer
-dependencies during plan compilation. Start with `action="search"` to locate
-impact target symbols, then use graph actions to trace transitive risk:
-
-| Intent | `code_context` action |
-|--------|-----------------------|
-| Locate an impact target symbol | `action="search"` |
-| Exact definition of a target | `action="definition"` |
-| Inbound callers at risk from changes | `action="callers"` |
-| Outbound dependencies of a target | `action="callees"` |
-| All structural references to trace scope | `action="references"` |
-| Transitive inbound impact across layers | `action="impact"` |
-| Immediate bidirectional boundary | `action="neighborhood"` |
-
-Use `action="search"` once to reveal a declared identifier, then call the
-necessary graph action for exact-symbol traversal. After a promotable search
-result, skip another `action="search"`, `grep`, or `read` to re-derive
-the same location.
-
-Keep `refresh=true` for the first indexed query and after edits. Use
-`refresh=false` only for an immediate follow-up that intentionally reuses the
-same index version.
-
-Read [references/code-context-contract.md](references/code-context-contract.md)
-for the full indexed code-context contract, search/traversal limits, and safety
-discipline.

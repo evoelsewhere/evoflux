@@ -57,6 +57,33 @@ the dirty-worktree baseline so user/peer changes are not claimed as this output.
    AC result. A task checkbox, handoff, or agent confidence is progress—not
    trusted evidence—and must not be presented as convergence.
 
+## Code graph navigation
+
+Implementation uses `code_context` to check a change before and after making it,
+inside the accepted Impact targets.
+
+- Before altering a signature, run `action="callers"` on it. Every call site is
+  either inside the accepted targets or a deviation you must report.
+- Before changing behavior a function relies on, run `action="callees"` to see
+  what you are actually depending on.
+- After each edit run the next query with `refresh=true`; use `refresh=false`
+  only for an immediate follow-up that intentionally reuses the same index
+  version.
+- Before handoff, run `action="references"` on every symbol you touched and
+  confirm nothing outside the accepted targets moved. This is the cheapest way
+  to catch silent scope expansion while it is still fixable.
+- `code_context` is never the evidence. It tells you where to look; the
+  CompletionContract from a real verification command is what proves the work.
+
+Read `references/code-context-contract.md` for full action selection and
+interpretation rules. It is normative here. In short: call `code_context`
+with one `action="search"` to expose a declared identifier, then skip
+further search and call the exact-symbol action on that identifier; start
+at depth 1 unless the question is explicitly transitive; and never bulk
+scan. Keep `refresh=true` for the first indexed query and after any edit,
+and use `refresh=false` only for an immediate follow-up that intentionally
+reuses the returned index version. Do not repeat an unchanged query.
+
 ## Handoff contract
 
 For a final delegated result, use `team_handoff` and cover every owned AC exactly
@@ -71,33 +98,3 @@ If implementation discovery conflicts with accepted intent, crosses assigned
 scope, or requires another owner, stop that slice and report a deviation. Do not
 edit the accepted specification, broaden permissions, or claim convergence to
 make the implementation appear complete.
-
-## Code graph navigation
-
-Use `code_context` to validate caller/callee contracts before and after edits,
-and to verify symbol-level impact of changes. Start with `action="search"` to
-locate the exact symbol being modified, then trace relationships to confirm
-bounded impact:
-
-| Intent | `code_context` action |
-|--------|-----------------------|
-| Locate the symbol being edited | `action="search"` |
-| Exact definition of the edited symbol | `action="definition"` |
-| Inbound callers that may break | `action="callers"` |
-| Outbound callees that must remain valid | `action="callees"` |
-| All structural references to verify scope | `action="references"` |
-| Transitive impact of the change | `action="impact"` |
-| Immediate bidirectional boundary | `action="neighborhood"` |
-
-Use `action="search"` once to reveal a declared identifier, then call the
-necessary graph action for exact-symbol traversal. After a promotable search
-result, skip another `action="search"`, `grep`, or `read` to re-derive
-the same location.
-
-Keep `refresh=true` for the first indexed query and after edits. Use
-`refresh=false` only for an immediate follow-up that intentionally reuses the
-same index version.
-
-Read [references/code-context-contract.md](references/code-context-contract.md)
-for the full indexed code-context contract, search/traversal limits, and safety
-discipline.
