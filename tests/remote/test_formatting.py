@@ -72,3 +72,46 @@ def test_render_settings_card_never_emits_model_or_permission_buttons():
     assert not any("model" in t.lower() for t in button_texts)
     assert not any("permission" in t.lower() for t in button_texts)
     assert any("strict" in t.lower() for t in button_texts)
+
+
+def test_render_gate_card_escapes_action_labels():
+    text, buttons = formatting.render_gate_card(
+        title="Approve deploy?",
+        body="Ready for production",
+        actions=[("yes-tok", "Accept <risks>"), ("no-tok", "Reject & wait")],
+    )
+    assert len(buttons) == 2
+    assert buttons[0].text == "Accept &lt;risks&gt;"
+    assert buttons[1].text == "Reject &amp; wait"
+    assert "<risks>" not in buttons[0].text
+    assert "& wait" not in buttons[1].text
+
+
+def test_render_settings_card_escapes_toggle_names():
+    text, buttons = formatting.render_settings_card(
+        connection_label="evoflux-api",
+        model="claude-sonnet-5",
+        permission_mode="ask each time",
+        redaction_policy="standard",
+        notify_scope="all",
+        redaction_tokens={"<strict>": "r1", "off": "r2"},
+        notify_scope_tokens={"all": "n1", "remote & local": "n2"},
+    )
+    button_texts = [b.text for b in buttons]
+    assert any("&lt;strict&gt;" in t for t in button_texts)
+    assert any("remote &amp; local" in t for t in button_texts)
+
+
+def test_render_prompt_suggestions_escapes_labels():
+    text, buttons = formatting.render_prompt_suggestions(
+        project_name="<MyProject>",
+        context_line="line & context",
+        suggestions=[("sug-tok-1", "Suggest <tag>"), ("sug-tok-2", "Other & more")],
+        continue_token="cont-tok",
+    )
+    assert len(buttons) == 3  # continue + 2 suggestions
+    # First button is continue
+    assert buttons[0].text == "▶ Continue last session"
+    # Suggestion buttons should have escaped labels
+    assert buttons[1].text == "Suggest &lt;tag&gt;"
+    assert buttons[2].text == "Other &amp; more"

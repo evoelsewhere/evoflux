@@ -77,7 +77,7 @@ def render_gate_card(
     *, title: str, body: str, actions: Sequence[tuple[str, str]]
 ) -> tuple[str, tuple[RemoteButton, ...]]:
     text = f"\U0001f510 <b>{escape(title)}</b>\n{escape(body)}"
-    buttons = tuple(RemoteButton(text=label, token=token) for token, label in actions)
+    buttons = tuple(RemoteButton(text=escape(label), token=token) for token, label in actions)
     return text, buttons
 
 
@@ -100,11 +100,11 @@ def render_settings_card(
         f"<b>Outbound redaction</b>\n<code>{escape(redaction_policy)}</code>"
     )
     buttons = [
-        RemoteButton(text=f"Redaction: {name}", token=token)
+        RemoteButton(text=f"Redaction: {escape(name)}", token=token)
         for name, token in redaction_tokens.items()
     ]
     buttons += [
-        RemoteButton(text=f"Notify: {name}", token=token)
+        RemoteButton(text=f"Notify: {escape(name)}", token=token)
         for name, token in notify_scope_tokens.items()
     ]
     return text, tuple(buttons)
@@ -136,5 +136,5 @@ def render_prompt_suggestions(
     buttons: list[RemoteButton] = []
     if continue_token:
         buttons.append(RemoteButton(text="▶ Continue last session", token=continue_token))
-    buttons += [RemoteButton(text=label, token=token) for token, label in suggestions]
+    buttons += [RemoteButton(text=escape(label), token=token) for token, label in suggestions]
     return text, tuple(buttons)
