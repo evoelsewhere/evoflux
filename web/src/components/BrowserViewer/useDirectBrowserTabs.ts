@@ -41,6 +41,16 @@ export interface BrowserViewportOverride {
   height: number
 }
 
+export interface BrowserDownload {
+  id: number
+  url: string
+  /** Where the engine is writing it, which is also where to reveal it. */
+  path: string
+  totalBytes: number
+  receivedBytes: number
+  state: 'started' | 'in_progress' | 'completed' | 'interrupted'
+}
+
 export interface BrowserPageError {
   /** The address that failed, as the user asked for it. */
   url: string
@@ -288,6 +298,9 @@ export function useDirectBrowserTabs({
   // A native WebView paints when it is ready and says nothing until then, so
   // a slow page looked identical to a frozen panel.
   const [loading, setLoading] = useState(false)
+  const [downloads, setDownloads] = useState<BrowserDownload[]>([])
+  /** Which webviews are ours, so another panel's downloads stay its own. */
+  const labelsRef = useRef(new Set<string>())
   const [pageError, setPageError] = useState<BrowserPageError | null>(null)
   const pageErrorRef = useRef<BrowserPageError | null>(null)
   /**
@@ -571,6 +584,7 @@ export function useDirectBrowserTabs({
       }
       createStageRef.current = 'the WebView to be positioned'
       webviewsRef.current.set(id, webview)
+      labelsRef.current.add(label)
       if (!visibleRef.current) await webview.hide().catch(() => {})
       visibilityRef.current.set(id, visibleRef.current)
       boundsRef.current = null
@@ -1194,6 +1208,40 @@ export function useDirectBrowserTabs({
   }, [activeTabId])
 
   /**
+   * Downloads the page started.
+   *
+   * Kept per panel rather than per tab: a file keeps downloading after the
+   * tab that asked for it is gone, and losing the record with the tab is how
+   * a download becomes a file you cannot find.
+   */
+  useEffect(() => {
+    if (!supported || !enabled) return
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event')
+      const stop = await listen<BrowserDownload & { label: string }>(
+        'browser-download',
+        (event) => {
+          const { label, ...download } = event.payload
+          if (!labelsRef.current.has(label)) return
+          setDownloads((current) => {
+            const next = current.filter((item) => item.id !== download.id)
+            next.unshift(download)
+            return next.slice(0, 20)
+          })
+        },
+      )
+      if (disposed) stop()
+      else unlisten = stop
+    })()
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [enabled, supported])
+
+  /**
    * The shell's own navigation events, where the platform provides them.
    *
    * Polling the document only sees a load once it has committed: while the
@@ -1537,6 +1585,8 @@ export function useDirectBrowserTabs({
     viewportOverride,
     setViewportPreset,
     loading,
+    downloads,
+    clearDownloads: () => setDownloads([]),
     pageError,
     dismissPageDialog: () => setPageDialog(null),
     createTab,
