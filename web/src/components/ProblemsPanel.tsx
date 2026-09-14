@@ -36,6 +36,27 @@ function SeverityIcon({ severity }: { severity: ProblemSeverity }) {
   return <Info size={14} className="text-(--color-info)" />
 }
 
+const SEVERITY_ORDER: ProblemSeverity[] = ['error', 'warning', 'info', 'hint']
+
+/**
+ * Describe the list actually on screen.
+ *
+ * The header used to read the workspace-wide counts while the list below
+ * it was filtered by source, so narrowing to Plugin showed two rows under
+ * a summary counting all seventeen. It also named only errors and
+ * warnings, so a panel holding nothing but hints announced itself as
+ * empty above a list that was not.
+ */
+function countLabel(rows: CodingProblem[]): string {
+  if (rows.length === 0) return 'Nothing open'
+  const totals = { error: 0, warning: 0, info: 0, hint: 0 }
+  for (const row of rows) totals[row.severity] += 1
+  return SEVERITY_ORDER
+    .filter((severity) => totals[severity] > 0)
+    .map((severity) => `${totals[severity]} ${severity}s`)
+    .join(' · ')
+}
+
 function problemPrompt(problem: CodingProblem, verb: string): string {
   const location = problem.path
     ? `${problem.path}${problem.line ? `#L${problem.line}` : ''}`
@@ -96,7 +117,7 @@ export function ProblemsPanel({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-(--color-text)">Problems</p>
           <p className="text-[11px] text-(--color-text-muted)">
-            {query.data?.counts.error ?? 0} errors · {query.data?.counts.warning ?? 0} warnings
+            {countLabel(rows)}
           </p>
         </div>
         <button
