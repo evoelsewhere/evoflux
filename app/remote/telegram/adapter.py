@@ -239,6 +239,20 @@ class TelegramAdapter:
             raise
         self._record_delivery_success()
 
+    async def indicate_typing(self, destination_id: str) -> None:
+        """Best-effort liveliness signal (AC-38): a native "still typing"
+        indicator while a turn is unresolved. Never fails the caller — this
+        is decoration, not a delivery guarantee, so it must never surface an
+        error the way ``send``/``edit``/``answer_callback`` do."""
+        try:
+            await self._client.send_chat_action(chat_id=destination_id)
+        except (
+            TelegramApiError,
+            TelegramTransportError,
+            TelegramMalformedResponseError,
+        ):
+            pass
+
     def _record_delivery_failure(self, exc: TelegramApiError) -> None:
         if exc.error_code == 403:
             self._phone_reachable = False

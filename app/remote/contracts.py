@@ -154,10 +154,12 @@ class RemoteButton:
 class RemoteOutboundMessage:
     """One outbound message bound for a paired destination.
 
-    Plain text only — no parse mode, so model-authored text cannot
-    manufacture links, mentions, or formatting (AC-24). ``correlation_id``
-    lets the owning turn's lifecycle message be found again for editing
-    instead of appending progress (AC-22).
+    ``text`` is sent with Telegram HTML parse mode (AC-24, revised): callers
+    are expected to have rendered it through ``app/remote/formatting.py``,
+    which HTML-escapes every non-static field before interpolation, so
+    model/agent content can never manufacture links, mentions, or
+    formatting. ``correlation_id`` lets the owning turn's lifecycle message
+    be found again for editing instead of appending progress (AC-22).
     """
 
     connection_id: UUID
@@ -203,6 +205,8 @@ class RemoteAdapter(Protocol):
     async def edit(self, message: RemoteOutboundMessage) -> None: ...
 
     async def answer_callback(self, callback_token: str) -> None: ...
+
+    async def indicate_typing(self, destination_id: str) -> None: ...
 
     def status(self) -> RemoteAdapterStatus: ...
 

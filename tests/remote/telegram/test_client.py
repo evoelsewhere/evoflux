@@ -179,7 +179,7 @@ class TestGetUpdates:
 
 class TestSendEditAnswer:
     @pytest.mark.asyncio
-    async def test_send_text_never_includes_parse_mode(self):
+    async def test_send_text_sends_html_parse_mode(self):
         captured: dict[str, object] = {}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -196,7 +196,7 @@ class TestSendEditAnswer:
 
         client = _client(handler)
         message = await client.send_text(chat_id=1, text="hello <b>world</b>")
-        assert "parse_mode" not in captured["payload"]
+        assert captured["payload"]["parse_mode"] == "HTML"
         assert captured["payload"]["text"] == "hello <b>world</b>"
         assert isinstance(message, TelegramMessage)
         assert message.message_id == 5
@@ -292,7 +292,7 @@ class TestSendEditAnswer:
         assert captured["payload"]["chat_id"] == 1
         assert captured["payload"]["message_id"] == 5
         assert captured["payload"]["text"] == "updated"
-        assert "parse_mode" not in captured["payload"]
+        assert captured["payload"]["parse_mode"] == "HTML"
         await client.aclose()
 
     @pytest.mark.asyncio
@@ -310,6 +310,37 @@ class TestSendEditAnswer:
         await client.answer_callback("cbq-1")
         assert captured["payload"]["callback_query_id"] == "cbq-1"
         assert "text" not in captured["payload"]
+        await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_send_chat_action_calls_send_chat_action_endpoint(self):
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["payload"] = json.loads(request.content)
+            assert request.url.path.endswith("/sendChatAction")
+            return _ok(True)
+
+        client = _client(handler)
+        await client.send_chat_action(chat_id="1")
+        assert captured["payload"] == {"chat_id": "1", "action": "typing"}
+        await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_send_chat_action_accepts_a_custom_action(self):
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["payload"] = json.loads(request.content)
+            return _ok(True)
+
+        client = _client(handler)
+        await client.send_chat_action(chat_id="1", action="upload_document")
+        assert captured["payload"]["action"] == "upload_document"
         await client.aclose()
 
     @pytest.mark.asyncio

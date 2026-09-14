@@ -659,6 +659,32 @@ class TestDeliveryIndependentOfPolling:
 
 
 # ---------------------------------------------------------------------------
+# indicate_typing: native "still typing" liveliness signal (AC-38)
+# ---------------------------------------------------------------------------
+
+
+class TestIndicateTyping:
+    @pytest.mark.asyncio
+    async def test_indicate_typing_calls_send_chat_action(self):
+        transport = ScriptedTransport()
+        adapter = _make_adapter(transport)
+        await adapter.indicate_typing("chat-1")
+
+        _, payload = next(c for c in transport.calls if c[0] == "sendChatAction")
+        assert payload == {"chat_id": "chat-1", "action": "typing"}
+
+    @pytest.mark.asyncio
+    async def test_indicate_typing_failure_is_a_safe_noop(self):
+        transport = ScriptedTransport()
+        transport.queue(
+            "sendChatAction", _err(403, 403, "Forbidden: bot was blocked by the user")
+        )
+        adapter = _make_adapter(transport)
+
+        await adapter.indicate_typing("chat-1")  # must not raise
+
+
+# ---------------------------------------------------------------------------
 # Prompt shutdown (AC-13)
 # ---------------------------------------------------------------------------
 

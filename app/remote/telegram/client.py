@@ -252,10 +252,17 @@ class TelegramClient:
         text: str,
         buttons: Sequence[RemoteButton] = (),
     ) -> TelegramMessage:
-        # No parse_mode, ever (AC-24): model/agent text must never be
-        # interpreted as Telegram markup.
+        # Always HTML parse mode (AC-24, revised): every caller is required
+        # to pass text already rendered by app/remote/formatting.py, which
+        # HTML-escapes every non-static field before interpolation — so
+        # Telegram markup can only ever come from that trusted renderer,
+        # never from raw model/agent text.
         markup = _build_reply_markup(buttons)
-        payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+        }
         if markup is not None:
             payload["reply_markup"] = markup
         return await self._call("sendMessage", payload, result_model=TelegramMessage)
@@ -273,11 +280,21 @@ class TelegramClient:
             "chat_id": chat_id,
             "message_id": message_id,
             "text": text,
+            "parse_mode": "HTML",
         }
         if markup is not None:
             payload["reply_markup"] = markup
         return await self._call(
             "editMessageText", payload, result_model=TelegramMessage
+        )
+
+    async def send_chat_action(
+        self, *, chat_id: str | int, action: str = "typing"
+    ) -> None:
+        await self._call(
+            "sendChatAction",
+            {"chat_id": chat_id, "action": action},
+            result_model=bool,
         )
 
     async def answer_callback(
