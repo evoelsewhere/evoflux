@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.models import ChatSession, SessionMessage  # noqa: F401
 from app.models import DelegationTask, GitServerConnection  # noqa: F401
 from app.models import MemoryExtractionState, MemoryFact, MemoryFactEvidence  # noqa: F401
+from app.models import RemoteConnection, RemotePairing  # noqa: F401
 from app.models import (  # noqa: F401
     TraceDeviation,
     TraceEvidence,
