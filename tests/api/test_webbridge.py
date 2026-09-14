@@ -5292,8 +5292,13 @@ def test_open_local_ws_rejects_hostile_browser_origin(client: TestClient):
 
 
 def _stub_send(monkeypatch: pytest.MonkeyPatch, manager: WebBridgeManager, handler):
+    # Keyword-only extras the tool passes (``extension_id``, and whatever is
+    # added next) are swallowed rather than raising TypeError inside the
+    # tool's own error handling — where it became "Error (click): fake_send
+    # _command() got an unexpected keyword argument", an assertion failure
+    # that looked like a tool bug and hid every real one behind it.
     async def fake_send_command(
-        session_id: str, action: str, params: dict | None = None
+        session_id: str, action: str, params: dict | None = None, **_extras
     ):
         return handler(action, params or {})
 
@@ -5393,11 +5398,27 @@ async def test_tool_aggregates_action_errors(
         return {"success": True, "data": {}, "error": None}
 
     _stub_send(monkeypatch, manager, handler)
-    result = await webbridge(
+    # A sequence is a chain: typing into whatever the failed click left on
+    # screen is not a result worth having, so the rest is not run.
+    stopped = await webbridge(
         actions=[
             _action({"action": "click", "x": 10, "y": 20}),
             _action({"action": "type", "text": "abc"}),
         ]
+    )
+    assert isinstance(stopped, str)
+    assert "Click failed: boom" in stopped
+    assert "1 later action(s) not run" in stopped
+    assert "Typed 3 characters" not in stopped
+
+    # Unless the caller says the actions do not depend on each other, in
+    # which case every outcome is reported together as before.
+    result = await webbridge(
+        continue_on_error=True,
+        actions=[
+            _action({"action": "click", "x": 10, "y": 20}),
+            _action({"action": "type", "text": "abc"}),
+        ],
     )
     assert isinstance(result, str)
     assert "Click failed: boom" in result
@@ -5953,6 +5974,9 @@ async def test_tool_fill_submit_and_tab_id(
     assert seen[0][0] == "fill"
     assert seen[0][1] == {
         "selector": "#q",
+        # Every selector-addressed action carries which match it means now,
+        # so filling the second of two identical inputs is expressible.
+        "index": 0,
         "value": "hello",
         "clear": True,
         "submit": True,
@@ -6036,6 +6060,7 @@ async def test_tool_rich_interaction_actions_map_params(
             "select_option",
             {
                 "selector": "#country",
+                "index": 0,
                 "values": ["Vietnam"],
                 "match": "label",
                 "tab_id": 7,
@@ -6374,7 +6399,7 @@ async def test_tool_crawl_runs_pages_concurrently(
     max_concurrent = 0
 
     async def fake_send_command(
-        session_id: str, action: str, params: dict | None = None
+        session_id: str, action: str, params: dict | None = None, **_extras
     ):
         nonlocal tab_counter, concurrent, max_concurrent
         params = params or {}

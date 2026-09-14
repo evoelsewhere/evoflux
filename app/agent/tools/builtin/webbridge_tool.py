@@ -1099,8 +1099,13 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
 
 
 def _tab_params(act: Any, **extra: Any) -> dict[str, Any]:
-    """Command params with ``tab_id`` folded in only when the action set one."""
-    params = dict(extra)
+    """Command params, with anything unset left out.
+
+    The extension reads every optional parameter as "absent or falsy", so a
+    key carrying ``null`` says exactly what omitting it says — while making
+    each command larger and each assertion about one harder to read.
+    """
+    params = {key: value for key, value in extra.items() if value is not None}
     tab_id = getattr(act, "tab_id", None)
     if tab_id is not None:
         params["tab_id"] = tab_id
@@ -1295,8 +1300,10 @@ async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResu
         )
 
     # Sized from the encoding rather than by decoding it: the bytes were only
-    # ever used for this one number, and a full-page PNG is megabytes.
-    image_bytes = len(b64_image) * 3 // 4
+    # ever used for this one number, and a full-page PNG is megabytes. Four
+    # base64 characters carry three bytes, less whatever the padding stands in
+    # for — exact, not an estimate.
+    image_bytes = len(b64_image) * 3 // 4 - b64_image.count("=")
     mime = "image/jpeg" if fmt == "jpeg" else "image/png"
 
     # Viewport metadata lets the model map screenshot pixels to click coords.
@@ -1313,7 +1320,7 @@ async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResu
                 media_type=mime,
             ),
             TextBlock(
-                text=f"Screenshot captured ({scope}, {fmt}{dims}, ~{image_bytes} bytes). "
+                text=f"Screenshot captured ({scope}, {fmt}{dims}, {image_bytes} bytes). "
                 "Screenshot pixels are CSS pixels — click x,y map 1:1."
             ),
         ]
@@ -1670,9 +1677,11 @@ def _outcome(resp: dict[str, Any]) -> str:
 async def _handle_click_selector(session_id: str, act: ClickSelectorAction) -> str:
     resp = await _send_command(session_id, "click_selector", _params_target(act))
     if resp.get("success"):
-        data = resp.get("data") or {}
-        label = data.get("target") or _named(act)
-        return f"Clicked {label!r}.{_outcome(resp)}"
+        # The page's own name for what was clicked when the extension knows
+        # it, since that is what the snapshot called it too.
+        target = (resp.get("data") or {}).get("target")
+        label = repr(target) if target else _named(act)
+        return f"Clicked {label}.{_outcome(resp)}"
     return f"click_selector failed: {resp.get('error', 'unknown')}"
 
 
