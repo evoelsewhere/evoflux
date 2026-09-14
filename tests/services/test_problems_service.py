@@ -184,3 +184,44 @@ def test_suppression_blast_radius_counts_what_would_vanish(tmp_path: Path):
         ],
     )
     assert suppression_blast_radius(tmp_path, rows[0].id) == 2
+
+
+def test_decisions_survive_a_restart(tmp_path: Path):
+    """Findings are republished by producers; decisions are not."""
+    inputs = [
+        ProblemInput(message="unused", path="a.py", line=1, code="F401"),
+        ProblemInput(message="long line", path="b.py", line=3, code="E501"),
+    ]
+    rows = publish_problems(
+        tmp_path, source="static", scope="static:ruff:a.py", problems=inputs
+    )
+    dismiss_problem(tmp_path, rows[0].id)
+    suppress_problem(tmp_path, rows[1].id)
+    assert list_problems(tmp_path) == []
+
+    # A restart keeps nothing in memory; the producer publishes again.
+    clear_problems()
+    publish_problems(
+        tmp_path, source="static", scope="static:ruff:a.py", problems=inputs
+    )
+    assert list_problems(tmp_path) == []
+    statuses = {
+        row.code: row.status
+        for row in list_problems(tmp_path, include_resolved=True)
+    }
+    assert statuses == {"F401": "dismissed", "E501": "suppressed"}
+
+
+def test_restore_survives_a_restart(tmp_path: Path):
+    inputs = [ProblemInput(message="unused", path="a.py", line=1, code="F401")]
+    rows = publish_problems(
+        tmp_path, source="static", scope="static:ruff:a.py", problems=inputs
+    )
+    dismiss_problem(tmp_path, rows[0].id)
+    restore_problem(tmp_path, rows[0].id)
+
+    clear_problems()
+    publish_problems(
+        tmp_path, source="static", scope="static:ruff:a.py", problems=inputs
+    )
+    assert len(list_problems(tmp_path)) == 1
