@@ -5,7 +5,7 @@
 #     curl -LsSf https://raw.githubusercontent.com/khuonghung/evoflux/main/install.sh | sh
 #     ./install.sh                           # local checkout
 #     ./install.sh --dev                     # install from GitHub main (pre-publish)
-#     ./install.sh --version 1.0.0           # pin a specific PyPI version
+#     ./install.sh --version 2.0.0           # pin a specific PyPI version
 #
 # What it does:
 #   1. Ensure `uv` is available (bootstrap from astral.sh/uv if missing).
