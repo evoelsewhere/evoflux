@@ -6,6 +6,7 @@ import {
   nextBrowserSurfaceOrder,
   registerDirectBrowserSurface,
 } from './directBrowserAgentRegistry'
+import { claimBrowserTab, offerBrowserTab } from './browserTabHandoff'
 
 export interface DirectBrowserTab {
   id: string
@@ -507,9 +508,74 @@ export function useDirectBrowserTabs({
     return null
   }, [invokeFor, waitForDocumentNavigation])
 
+  /**
+   * Take over a WebView another surface let go of, rather than loading its
+   * address again into a new one. The page keeps everything a reload would
+   * cost: scroll position, form state, whatever it is signed into.
+   */
+  const adoptTab = useCallback(async (): Promise<DirectBrowserTab | null> => {
+    const offer = claimBrowserTab(sessionId, instanceId)
+    if (!offer) return null
+    // Hold the same guard a creation does, so a second call — React runs
+    // mount effects twice in development — cannot start building a WebView
+    // beside the one being adopted.
+    creatingRef.current = true
+    setCreating(true)
+    try {
+      const { Webview } = await import('@tauri-apps/api/webview')
+      const webview = await Webview.getByLabel(offer.label).catch(() => null)
+      // The page can be gone by now — the window closed, the surface that
+      // offered it crashed. Falling through creates a fresh one instead.
+      if (!webview) return null
+      const id = `${Date.now().toString(36)}-${counterRef.current++}`
+      webviewsRef.current.set(id, webview)
+      labelsRef.current.add(offer.label)
+      // Left marked hidden on purpose: the viewport sync only moves a view
+      // it believes is not already showing where it wants it, and this one
+      // is still sitting over the box it came from.
+      visibilityRef.current.set(id, false)
+      boundsRef.current = null
+      lastCreateErrorRef.current = null
+      const tab = { id, label: offer.label, url: offer.url }
+      tabsRef.current = [...tabsRef.current, tab]
+      setTabs(tabsRef.current)
+      activeIdRef.current = id
+      setActiveTabId(id)
+      return tab
+    } finally {
+      creatingRef.current = false
+      setCreating(false)
+    }
+  }, [instanceId, sessionId])
+
+  /**
+   * Stop managing a tab without closing its page, and offer it to the
+   * surface named by *claimant* — a workbench tab id.
+   */
+  const releaseTab = useCallback((id: string, claimant: string): boolean => {
+    const tab = tabsRef.current.find((item) => item.id === id)
+    const webview = webviewsRef.current.get(id)
+    if (!tab || !webview) return false
+    webviewsRef.current.delete(id)
+    visibilityRef.current.delete(id)
+    labelsRef.current.delete(tab.label)
+    requestedUrlRef.current.delete(id)
+    const remaining = tabsRef.current.filter((item) => item.id !== id)
+    tabsRef.current = remaining
+    setTabs(remaining)
+    if (activeIdRef.current === id) {
+      activeIdRef.current = remaining[0]?.id ?? null
+      setActiveTabId(remaining[0]?.id ?? null)
+    }
+    offerBrowserTab(sessionId, claimant, { label: tab.label, url: tab.url })
+    return true
+  }, [sessionId])
+
   const createTab = useCallback(async (initialUrl = NEW_TAB_URL) => {
     if (!supported || !enabled || creatingRef.current) return
     if (singleTab && tabsRef.current.length > 0) return tabsRef.current[0]
+    const adopted = await adoptTab()
+    if (adopted) return adopted
     const viewport = viewportRef.current
     // A WebView cannot be created without somewhere to put it. Returning
     // here used to be the end of the story: the auto-create effect only
@@ -664,7 +730,7 @@ export function useDirectBrowserTabs({
         setCreating(false)
       }
     }
-  }, [devtools, enabled, instanceId, onError, profileMode, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
+  }, [adoptTab, devtools, enabled, instanceId, onError, profileMode, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
 
   useEffect(() => {
     if (!supported || !enabled || tabs.length > 0 || creating) return
@@ -1684,6 +1750,7 @@ export function useDirectBrowserTabs({
     pageError,
     dismissPageDialog: () => setPageDialog(null),
     createTab,
+    releaseTab,
     selectTab,
     closeTab,
     navigate,
