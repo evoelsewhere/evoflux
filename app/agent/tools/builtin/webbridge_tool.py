@@ -19,10 +19,10 @@ tool to work. Check connection with ``status`` action before issuing commands.
 from __future__ import annotations
 
 import asyncio
-import base64
 from contextvars import ContextVar
 import json
 from typing import Annotated, Any, Literal, cast
+from urllib.parse import urlsplit
 
 from loguru import logger
 from pydantic import BaseModel, Field, model_validator
@@ -48,16 +48,28 @@ def _get_sid(state: Any) -> str:
     return metadata.get("webbridge_session_id") or metadata.get("session_id", "default")
 
 
+#: Set when a command comes back unsuccessful. Handlers report failure by
+#: *returning* a message rather than raising — which reads well for the model
+#: and leaves the caller with nothing but prose to inspect. This records the
+#: fact itself, so a sequence can stop without guessing from the text.
+_webbridge_command_failed: ContextVar[bool] = ContextVar(
+    "webbridge_command_failed", default=False
+)
+
+
 async def _send_command(
     session_id: str, action: str, params: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Send a command to the extension via the manager and wait for response."""
-    return await webbridge_manager.send_command(
+    response = await webbridge_manager.send_command(
         session_id,
         action,
         params,
         extension_id=_webbridge_target_id.get(),
     )
+    if not response.get("success"):
+        _webbridge_command_failed.set(True)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +341,23 @@ class WaitForNetworkIdleAction(BaseModel):
     )
 
 
+class WaitForUrlAction(BaseModel):
+    """Wait for the address to become *url*.
+
+    The one wait that works for a single-page app that changes route without
+    loading anything: no document load fires, no selector is reliably new,
+    but the address does change.
+    """
+
+    action: Literal["wait_for_url"]
+    url: str = Field(
+        description="URL to wait for. '*' matches any run of characters, "
+        "e.g. 'https://app.example.com/orders/*'.",
+    )
+    timeout_ms: int = Field(default=15000, ge=100, le=60000)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
 class ClickSelectorAction(BaseModel):
     action: Literal["click_selector"]
     selector: str = Field(description="CSS selector of the element to click.")
@@ -410,6 +439,27 @@ class DragAction(BaseModel):
         ge=2,
         le=50,
         description="Number of pointer-move steps between source and target.",
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class DragToPointAction(BaseModel):
+    """Drag an element to a coordinate rather than onto another element.
+
+    What a slider, a canvas, a map or a resize handle needs: there is no
+    element under the drop point to name.
+    """
+
+    action: Literal["drag_to_point"]
+    source_selector: str = Field(description="CSS selector of the element to drag.")
+    source_index: int = Field(default=0, ge=0)
+    target_x: float = Field(description="X coordinate to drop at, in CSS pixels.")
+    target_y: float = Field(description="Y coordinate to drop at, in CSS pixels.")
+    steps: int = Field(
+        default=30,
+        ge=2,
+        le=60,
+        description="Number of pointer-move steps along the way.",
     )
     tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
@@ -652,6 +702,8 @@ AnyAction = Annotated[
     | ExtractElementsAction
     | ScrollToBottomAction
     | WaitForNetworkIdleAction
+    | WaitForUrlAction
+    | DragToPointAction
     | CrawlAction,
     Field(discriminator="action"),
 ]
@@ -669,6 +721,16 @@ over coordinate clicks: they are robust to layout and HiDPI scaling. Use
 screenshot coordinates only when no selector works. Screenshot pixels equal
 CSS pixels (the extension normalizes device scaling), so click x,y read off a
 screenshot map directly.
+
+Put the whole sequence in one call. Actions run in order and stop at the
+first failure, so `navigate → wait_for_load → click_selector → fill →
+click_text` is one call, not five — and a step that fails does not leave the
+rest of the chain acting on a page that never opened. Pass
+`continue_on_error: true` only for actions that do not depend on each other.
+
+A snapshot lists a link's address only when the link has no label to be
+recognised by. To collect URLs, use extract_elements with an attribute field
+(e.g. {'url': 'a@href'}) rather than reading them out of a snapshot.
 
 Actions:
   status          — Check if the extension is connected.
@@ -700,6 +762,8 @@ Actions:
     wait_for_text   — Wait until text becomes visible or hidden, optionally within a selector.
   wait_for_load   — Wait until the page finishes loading.
   wait_for_network_idle — Wait until in-flight XHR/fetch requests go quiet (SPA data loads).
+    wait_for_url    — Wait until the address matches (use '*' as a wildcard) — the wait for an SPA route change that loads no document.
+    drag_to_point   — Drag an element to x,y — sliders, canvases, maps, resize handles.
   screenshot      — Capture the viewport (or full_page) as PNG/JPEG image.
   extract         — Extract page content as text / markdown / html (optionally scoped to a selector).
   extract_elements— Scrape many records by selector into structured JSON (with per-field sub-selectors / attributes).
@@ -762,6 +826,18 @@ async def webbridge(
         list[AnyAction],
         Field(description="Ordered list of browser actions to execute."),
     ],
+    continue_on_error: Annotated[
+        bool,
+        Field(
+            description=(
+                "Keep going after a failed action. Default false: a sequence "
+                "is normally a chain — clicking, filling and submitting a form "
+                "the first step never opened does nothing but hide which step "
+                "broke. Set true only for independent actions, such as "
+                "extracting from several tabs."
+            )
+        ),
+    ] = False,
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str | ToolResult:
     """Control the user's real browser via the WebBridge Chrome extension."""
@@ -772,15 +848,31 @@ async def webbridge(
     )
     results: list[str | ToolResult] = []
     try:
-        for act in actions:
+        for index, act in enumerate(actions):
+            failed_token = _webbridge_command_failed.set(False)
             try:
                 result = await _dispatch_webbridge(act, session_id)
                 if act.action in _UNTRUSTED_BROWSER_ACTIONS:
                     result = mark_untrusted_browser_result(result)
                 results.append(result)
+                # A crawl is a batch of its own and reports each URL's outcome
+                # in its result; one unreachable page is not a broken chain.
+                failed = _webbridge_command_failed.get() and act.action != "crawl"
             except Exception as e:
                 logger.debug("webbridge_error action={} error={}", act.action, e)
                 results.append(f"Error ({act.action}): {e}")
+                failed = True
+            finally:
+                _webbridge_command_failed.reset(failed_token)
+            if failed and not continue_on_error:
+                skipped = len(actions) - index - 1
+                if skipped:
+                    results.append(
+                        f"Stopped after {act.action} failed: {skipped} later "
+                        "action(s) not run. Fix the step that failed, or pass "
+                        "continue_on_error for actions that do not depend on it."
+                    )
+                break
         return combine_browser_results(results)
     finally:
         _webbridge_target_id.reset(target_token)
@@ -870,6 +962,10 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
         return await _handle_scroll_to_bottom(session_id, act)
     if action == "wait_for_network_idle":
         return await _handle_wait_for_network_idle(session_id, act)
+    if action == "wait_for_url":
+        return await _handle_wait_for_url(session_id, act)
+    if action == "drag_to_point":
+        return await _handle_drag_to_point(session_id, act)
     if action == "crawl":
         return await _handle_crawl(session_id, act)
 
@@ -1072,8 +1168,9 @@ async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResu
             parts=[TextBlock(text="Screenshot returned empty image data.")]
         )
 
-    # Decode base64 to bytes
-    image_bytes = base64.b64decode(b64_image)
+    # Sized from the encoding rather than by decoding it: the bytes were only
+    # ever used for this one number, and a full-page PNG is megabytes.
+    image_bytes = len(b64_image) * 3 // 4
     mime = "image/jpeg" if fmt == "jpeg" else "image/png"
 
     # Viewport metadata lets the model map screenshot pixels to click coords.
@@ -1090,7 +1187,7 @@ async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResu
                 media_type=mime,
             ),
             TextBlock(
-                text=f"Screenshot captured ({scope}, {fmt}{dims}, {len(image_bytes)} bytes). "
+                text=f"Screenshot captured ({scope}, {fmt}{dims}, ~{image_bytes} bytes). "
                 "Screenshot pixels are CSS pixels — click x,y map 1:1."
             ),
         ]
@@ -1320,6 +1417,38 @@ async def _handle_wait_for_network_idle(
     )
 
 
+async def _handle_wait_for_url(session_id: str, act: WaitForUrlAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "wait_for_url",
+        _tab_params(act, url=act.url, timeout_ms=act.timeout_ms),
+    )
+    if not resp.get("success"):
+        return f"wait_for_url failed: {resp.get('error', 'unknown')}"
+    return f"URL is now {(resp.get('data') or {}).get('url', act.url)}"
+
+
+async def _handle_drag_to_point(session_id: str, act: DragToPointAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "drag_to_point",
+        _tab_params(
+            act,
+            source_selector=act.source_selector,
+            source_index=act.source_index,
+            target_x=act.target_x,
+            target_y=act.target_y,
+            steps=act.steps,
+        ),
+    )
+    if not resp.get("success"):
+        return f"drag_to_point failed: {resp.get('error', 'unknown')}"
+    return (
+        f"Dragged {act.source_selector!r} to "
+        f"({int(act.target_x)},{int(act.target_y)})."
+    )
+
+
 async def _handle_click_selector(session_id: str, act: ClickSelectorAction) -> str:
     resp = await _send_command(
         session_id,
@@ -1507,30 +1636,65 @@ async def _handle_snapshot(session_id: str, act: SnapshotAction) -> str:
         label = (el.get("text") or el.get("name") or "").strip().replace("\n", " ")
         if len(label) > 80:
             label = label[:77] + "…"
-        state = el.get("state") or {}
-        state_text = ""
-        if state:
-            state_text = (
-                " ["
-                + ", ".join(
-                    f"{key}={str(value).lower()}" for key, value in state.items()
-                )
-                + "]"
-            )
-        attributes = el.get("attributes") or {}
-        attribute_text = ""
-        visible_attributes = [
-            f"{key}={value!r}"
-            for key, value in attributes.items()
-            if key in {"type", "href", "placeholder"}
-        ]
-        if visible_attributes:
-            attribute_text = " {" + ", ".join(visible_attributes) + "}"
+        state_text = _snapshot_state(el.get("state") or {})
+        attribute_text = _snapshot_attributes(el.get("attributes") or {}, label, url)
         lines.append(
             f"  {index}. [{el.get('role', 'element')}]{center}{state_text} "
             f"{label!r}{attribute_text} — {el.get('selector', '')}"
         )
     return "\n".join(lines)
+
+
+def _snapshot_state(state: dict[str, Any]) -> str:
+    """The parts of an element's state worth spending tokens on.
+
+    A page's worth of ``disabled=false`` says nothing — that is the ordinary
+    condition of every control on it. Being *unchecked* is different: it is
+    the thing the next click is about to change, so it stays even when false.
+    """
+    shown = {
+        key: value
+        for key, value in state.items()
+        if value or key in {"checked", "selected"}
+    }
+    if not shown:
+        return ""
+    return " [" + ", ".join(f"{k}={str(v).lower()}" for k, v in shown.items()) + "]"
+
+
+def _snapshot_attributes(
+    attributes: dict[str, Any], label: str, page_url: str
+) -> str:
+    """Attributes worth showing beside a labelled element.
+
+    ``href`` was half of every snapshot this tool produced — measured at 50%
+    of an 80-element listing of a Wikipedia article, because each of the 74
+    links carried its absolute URL in full. An element that already says
+    "History" does not also need to say where History lives: the model clicks
+    it by its label or its selector, and `extract_elements` is the action for
+    harvesting URLs. So a link keeps its address only when it has no label to
+    be recognised by, and then only the part that distinguishes it.
+    """
+    shown: list[str] = []
+    for key in ("type", "placeholder"):
+        if attributes.get(key):
+            shown.append(f"{key}={attributes[key]!r}")
+    href = attributes.get("href")
+    if href and not label:
+        shown.append(f"href={_short_href(str(href), page_url)!r}")
+    return " {" + ", ".join(shown) + "}" if shown else ""
+
+
+def _short_href(href: str, page_url: str) -> str:
+    """Drop what the address shares with the page it was found on."""
+    origin = ""
+    if page_url:
+        parts = urlsplit(page_url)
+        if parts.scheme and parts.netloc:
+            origin = f"{parts.scheme}://{parts.netloc}"
+    if origin and href.startswith(origin):
+        href = href[len(origin) :] or "/"
+    return href if len(href) <= 60 else href[:59] + "…"
 
 
 async def _handle_semantic(
