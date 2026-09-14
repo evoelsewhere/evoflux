@@ -44,6 +44,7 @@ import { DirectBrowserSettingsView } from './DirectBrowserSettingsView'
 import {
   BROWSER_VIEWPORT_PRESETS,
   type BrowserPageDialog,
+  type BrowserPageError,
   type BrowserPermissionRequest,
   type BrowserViewportOverride,
   type BrowserViewportPreset,
@@ -133,13 +134,16 @@ export function DirectBrowserShell({
   // so it can only be seen while that view is hidden — the same trick the
   // settings view uses.
   const showLauncher = Boolean(workspace) && onNewTabPage && enabled && !settingsOpen
+  // Set from the hook's own error state below; declared here because the
+  // native view has to be hidden for our error card to be visible at all.
+  const [pageErrorVisible, setPageErrorVisible] = useState(false)
 
   const browser = useDirectBrowserTabs({
     sessionId: sessionId ?? 'detached',
     instanceId: tabId,
     viewportRef,
     enabled: Boolean(open && sessionId && enabled),
-    visible: Boolean(open && visible && !settingsOpen && !showLauncher),
+    visible: Boolean(open && visible && !settingsOpen && !showLauncher && !pageErrorVisible),
     bridgeEnabled: visible,
     initialUrl,
     singleTab: true,
@@ -166,6 +170,9 @@ export function DirectBrowserShell({
   // shows both (or neither).
   const nextOnNewTabPage = !browser.activeTab || isBrowserNewTab(currentUrl)
   if (nextOnNewTabPage !== onNewTabPage) setOnNewTabPage(nextOnNewTabPage)
+
+  const nextPageErrorVisible = Boolean(browser.pageError)
+  if (nextPageErrorVisible !== pageErrorVisible) setPageErrorVisible(nextPageErrorVisible)
 
   const openInPage = useCallback((url: string) => {
     // No WebView to navigate (creation failed, say) — hand the URL to a fresh
@@ -343,7 +350,21 @@ export function DirectBrowserShell({
           exit={{ opacity: 0 }}
           transition={preset.transition}
         >
-          <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-(--color-border) bg-(--bg-page) px-2">
+          <div className="relative flex h-11 shrink-0 items-center gap-1.5 border-b border-(--color-border) bg-(--bg-page) px-2">
+            {browser.loading && (
+              // On the toolbar's own edge, not the viewport's: the native view
+              // is an OS window stacked above this document, so anything drawn
+              // over the page area is drawn underneath it.
+              <div
+                role="progressbar"
+                aria-label="Loading page"
+                className="pointer-events-none absolute inset-x-0 -bottom-px z-(--z-panel) h-0.5 overflow-hidden bg-(--color-accent)/15"
+              >
+                {/* Indeterminate: a native WebView reports that it is busy,
+                    never how far along it is. */}
+                <div className="h-full w-1/3 animate-[browser-progress_1.1s_ease-in-out_infinite] rounded-full bg-(--color-accent)" />
+              </div>
+            )}
             <ToolbarButton label="Back" disabled={!hasPage} onClick={() => void browser.command('back')}>
               <ArrowLeft />
             </ToolbarButton>
@@ -505,6 +526,13 @@ export function DirectBrowserShell({
                 <div className="absolute inset-0 flex items-center justify-center bg-(--bg-page)">
                   <Loader2 size={26} className="animate-spin text-(--color-accent)" />
                 </div>
+              ) : browser.pageError ? (
+                <BrowserPageErrorView
+                  error={browser.pageError}
+                  onRetry={() => browser.pageError && void browser.navigate(browser.pageError.url)}
+                  onOpenExternal={() => browser.pageError?.url
+                    && void openExternalUrl(browser.pageError.url)}
+                />
               ) : showLauncher && workspace ? (
                 <BrowserLauncher
                   workspace={workspace}
@@ -557,6 +585,65 @@ export function DirectBrowserShell({
         </motion.section>
       </>
     </AnimatePresence>
+  )
+}
+
+/**
+ * Our own page for a load that failed.
+ *
+ * The engine has one too, but it is a page inside the native view: the
+ * address bar has already been replaced by an internal scheme, and nothing
+ * there knows how to retry what the user actually asked for.
+ */
+function BrowserPageErrorView({
+  error,
+  onRetry,
+  onOpenExternal,
+}: {
+  error: BrowserPageError
+  onRetry: () => void
+  onOpenExternal: () => void
+}) {
+  let host = error.url
+  try {
+    host = new URL(error.url).host || error.url
+  } catch {
+    // Keep the raw text: an unparseable address is the likeliest reason to
+    // be looking at this page.
+  }
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-(--bg-page) px-6 text-center">
+      <div className="max-w-sm">
+        <CircleAlert size={30} className="mx-auto mb-3 text-(--color-text-muted)" aria-hidden />
+        <p className="text-sm font-medium text-(--color-text)">
+          Could not open {host || 'this page'}
+        </p>
+        {error.detail && (
+          <p className="mt-1 text-xs leading-5 text-(--color-text-muted)">{error.detail}</p>
+        )}
+        {error.url && (
+          <p className="mt-2 break-all font-mono text-[11px] leading-4 text-(--color-text-subtle)">
+            {error.url}
+          </p>
+        )}
+        <div className="mt-4 flex justify-center gap-2">
+          <Button type="button" size="sm" onClick={onRetry} disabled={!error.url}>
+            <RefreshCw />
+            Try again
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onOpenExternal}
+            disabled={!/^https?:/i.test(error.url)}
+          >
+            <ExternalLink />
+            Open externally
+          </Button>
+        </div>
+      </div>
+    </div>
   )
 }
 

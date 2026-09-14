@@ -8,6 +8,7 @@ import {
   browserViewportLayout,
   browserViewportPlan,
   browserWaitConditionSatisfied,
+  isBrowserErrorUrl,
   MIN_FIT_SCALE,
 } from '@/components/BrowserViewer/useDirectBrowserTabs'
 
@@ -87,6 +88,20 @@ describe('direct browser responsive viewport layout', () => {
       { width: 640, height: 400 },
       { width: 1280, height: 800 },
     )).toEqual({ x: 640, y: 400 })
+  })
+})
+
+describe('direct browser failed loads', () => {
+  it('recognises the engine error page by its scheme', () => {
+    expect(isBrowserErrorUrl('chrome-error://chromewebdata/')).toBe(true)
+    expect(isBrowserErrorUrl('CHROME-ERROR://chromewebdata/')).toBe(true)
+  })
+
+  it('leaves real pages alone, including ones that merely mention it', () => {
+    expect(isBrowserErrorUrl('https://example.com/chrome-error')).toBe(false)
+    expect(isBrowserErrorUrl('http://localhost:5173/')).toBe(false)
+    expect(isBrowserErrorUrl(undefined)).toBe(false)
+    expect(isBrowserErrorUrl(null)).toBe(false)
   })
 })
 

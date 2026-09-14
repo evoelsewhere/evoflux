@@ -1449,6 +1449,12 @@ struct BrowserShortcutEvent {
     shortcut: String,
 }
 
+#[derive(Clone, Serialize)]
+struct BrowserNavigationEvent {
+    label: String,
+    loading: bool,
+}
+
 /// Forward browser chrome shortcuts pressed inside `label` back to the app UI.
 ///
 /// Idempotent: the frontend calls it whenever it (re)instruments a tab, and a
@@ -1467,7 +1473,10 @@ async fn app_browser_webview_bind_shortcuts(
     }
     #[cfg(target_os = "windows")]
     {
-        use webview2_com::AcceleratorKeyPressedEventHandler;
+        use webview2_com::{
+            AcceleratorKeyPressedEventHandler, NavigationCompletedEventHandler,
+            NavigationStartingEventHandler,
+        };
         use webview2_com::Microsoft::Web::WebView2::Win32::{
             COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
         };
@@ -1520,6 +1529,47 @@ async fn app_browser_webview_bind_shortcuts(
                     },
                 ));
                 let _ = unsafe { controller.add_AcceleratorKeyPressed(&handler, &mut token) };
+
+                // Load state, from the only place that knows it. Polling the
+                // document cannot see a navigation that has not committed yet
+                // — the previous page is still there, still "complete" — which
+                // is exactly the wait a progress indicator is for.
+                let Ok(core) = (unsafe { controller.CoreWebView2() }) else {
+                    return;
+                };
+                let starting_app = app.clone();
+                let starting_label = label.clone();
+                let mut starting_token = 0i64;
+                let starting = NavigationStartingEventHandler::create(Box::new(
+                    move |_sender, _args| {
+                        let _ = starting_app.emit(
+                            "browser-navigation",
+                            BrowserNavigationEvent {
+                                label: starting_label.clone(),
+                                loading: true,
+                            },
+                        );
+                        Ok(())
+                    },
+                ));
+                let _ = unsafe { core.add_NavigationStarting(&starting, &mut starting_token) };
+
+                let completed_app = app.clone();
+                let completed_label = label.clone();
+                let mut completed_token = 0i64;
+                let completed = NavigationCompletedEventHandler::create(Box::new(
+                    move |_sender, _args| {
+                        let _ = completed_app.emit(
+                            "browser-navigation",
+                            BrowserNavigationEvent {
+                                label: completed_label.clone(),
+                                loading: false,
+                            },
+                        );
+                        Ok(())
+                    },
+                ));
+                let _ = unsafe { core.add_NavigationCompleted(&completed, &mut completed_token) };
             })
             .map_err(|error| format!("Could not bind browser shortcuts: {error}"))?;
     }
