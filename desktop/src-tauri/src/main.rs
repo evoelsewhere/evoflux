@@ -1455,6 +1455,45 @@ struct BrowserNavigationEvent {
     loading: bool,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserDownloadEvent {
+    label: String,
+    id: u64,
+    url: String,
+    path: String,
+    total_bytes: i64,
+    received_bytes: i64,
+    /// "started" | "in_progress" | "completed" | "interrupted"
+    state: String,
+}
+
+/// Downloads are identified by the panel, not by the engine: the engine's
+/// operation object is a COM pointer, which is not something an event payload
+/// can carry to a React list.
+#[cfg(target_os = "windows")]
+fn next_browser_download_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Read one of WebView2's out-parameter strings and release it.
+#[cfg(target_os = "windows")]
+fn read_webview2_string(
+    read: impl FnOnce(*mut windows::core::PWSTR) -> windows::core::Result<()>,
+) -> String {
+    use windows::Win32::System::Com::CoTaskMemFree;
+
+    let mut value = windows::core::PWSTR::null();
+    if read(&mut value).is_err() || value.is_null() {
+        return String::new();
+    }
+    let text = unsafe { value.to_string() }.unwrap_or_default();
+    unsafe { CoTaskMemFree(Some(value.as_ptr() as *const _)) };
+    text
+}
+
 /// Forward browser chrome shortcuts pressed inside `label` back to the app UI.
 ///
 /// Idempotent: the frontend calls it whenever it (re)instruments a tab, and a
@@ -1474,12 +1513,16 @@ async fn app_browser_webview_bind_shortcuts(
     #[cfg(target_os = "windows")]
     {
         use webview2_com::{
-            AcceleratorKeyPressedEventHandler, NavigationCompletedEventHandler,
-            NavigationStartingEventHandler,
+            AcceleratorKeyPressedEventHandler, DownloadStartingEventHandler,
+            NavigationCompletedEventHandler, NavigationStartingEventHandler,
+            StateChangedEventHandler,
         };
         use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2_4, COREWEBVIEW2_DOWNLOAD_STATE,
+            COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED, COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED,
             COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
         };
+        use windows::core::Interface;
         use windows::Win32::UI::Input::KeyboardAndMouse::{
             GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT,
         };
@@ -1570,6 +1613,86 @@ async fn app_browser_webview_bind_shortcuts(
                     },
                 ));
                 let _ = unsafe { core.add_NavigationCompleted(&completed, &mut completed_token) };
+
+                // Downloads. The engine's own download flyout is drawn inside
+                // the page area of a webview that has no chrome of its own, so
+                // it lands on top of the site with no way to reach it later.
+                // Claiming the event replaces it with the panel's own list.
+                if let Ok(core4) = core.cast::<ICoreWebView2_4>() {
+                    let download_app = app.clone();
+                    let download_label = label.clone();
+                    let mut download_token = 0i64;
+                    let downloads = DownloadStartingEventHandler::create(Box::new(
+                        move |_sender, args| {
+                            let Some(args) = args else { return Ok(()) };
+                            let Ok(operation) = (unsafe { args.DownloadOperation() }) else {
+                                return Ok(());
+                            };
+                            let id = next_browser_download_id();
+                            let url = read_webview2_string(|value| unsafe {
+                                operation.Uri(value)
+                            });
+                            let path = read_webview2_string(|value| unsafe {
+                                operation.ResultFilePath(value)
+                            });
+                            let mut total = 0i64;
+                            let _ = unsafe { operation.TotalBytesToReceive(&mut total) };
+                            let _ = unsafe { args.SetHandled(true) };
+                            let _ = download_app.emit(
+                                "browser-download",
+                                BrowserDownloadEvent {
+                                    label: download_label.clone(),
+                                    id,
+                                    url: url.clone(),
+                                    path: path.clone(),
+                                    total_bytes: total,
+                                    received_bytes: 0,
+                                    state: "started".to_string(),
+                                },
+                            );
+
+                            let state_app = download_app.clone();
+                            let state_label = download_label.clone();
+                            let state_url = url.clone();
+                            let state_path = path.clone();
+                            let state_operation = operation.clone();
+                            let mut state_token = 0i64;
+                            let changed = StateChangedEventHandler::create(Box::new(
+                                move |_sender, _args| {
+                                    let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
+                                    let _ = unsafe { state_operation.State(&mut state) };
+                                    let mut received = 0i64;
+                                    let _ = unsafe {
+                                        state_operation.BytesReceived(&mut received)
+                                    };
+                                    let name = match state {
+                                        COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED => "completed",
+                                        COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED => "interrupted",
+                                        _ => "in_progress",
+                                    };
+                                    let _ = state_app.emit(
+                                        "browser-download",
+                                        BrowserDownloadEvent {
+                                            label: state_label.clone(),
+                                            id,
+                                            url: state_url.clone(),
+                                            path: state_path.clone(),
+                                            total_bytes: total,
+                                            received_bytes: received,
+                                            state: name.to_string(),
+                                        },
+                                    );
+                                    Ok(())
+                                },
+                            ));
+                            let _ = unsafe {
+                                operation.add_StateChanged(&changed, &mut state_token)
+                            };
+                            Ok(())
+                        },
+                    ));
+                    let _ = unsafe { core4.add_DownloadStarting(&downloads, &mut download_token) };
+                }
             })
             .map_err(|error| format!("Could not bind browser shortcuts: {error}"))?;
     }

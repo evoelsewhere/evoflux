@@ -6,6 +6,7 @@ import {
   ArrowRight,
   ArrowUp,
   CircleAlert,
+  Download,
   ExternalLink,
   Globe2,
   Loader2,
@@ -43,6 +44,7 @@ import { BrowserLauncher } from './BrowserLauncher'
 import { DirectBrowserSettingsView } from './DirectBrowserSettingsView'
 import {
   BROWSER_VIEWPORT_PRESETS,
+  type BrowserDownload,
   type BrowserPageDialog,
   type BrowserPageError,
   type BrowserPermissionRequest,
@@ -106,6 +108,7 @@ export function DirectBrowserShell({
   const [findOpen, setFindOpen] = useState(false)
   const [findQuery, setFindQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [downloadsOpen, setDownloadsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [preferences, setPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
   // Starts true: the first tab opens on the new-tab page anyway, and
@@ -173,6 +176,10 @@ export function DirectBrowserShell({
 
   const nextPageErrorVisible = Boolean(browser.pageError)
   if (nextPageErrorVisible !== pageErrorVisible) setPageErrorVisible(nextPageErrorVisible)
+
+  const activeDownloads = browser.downloads.filter(
+    (download) => download.state === 'started' || download.state === 'in_progress',
+  ).length
 
   const openInPage = useCallback((url: string) => {
     // No WebView to navigate (creation failed, say) — hand the URL to a fresh
@@ -439,6 +446,26 @@ export function DirectBrowserShell({
               </form>
             )}
 
+            {browser.downloads.length > 0 && (
+              <div className="relative shrink-0">
+                <ToolbarButton
+                  label="Downloads"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setDownloadsOpen((current) => !current)
+                  }}
+                >
+                  <Download />
+                </ToolbarButton>
+                {activeDownloads > 0 && (
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute right-1 top-1 size-1.5 rounded-full bg-(--color-accent)"
+                  />
+                )}
+              </div>
+            )}
+
             {browser.viewportOverride && (
               <button
                 type="button"
@@ -555,6 +582,19 @@ export function DirectBrowserShell({
             </div>
 
             <AnimatePresence initial={false}>
+              {downloadsOpen && (
+                <BrowserDownloadsPanel
+                  downloads={browser.downloads}
+                  onClose={() => setDownloadsOpen(false)}
+                  onClear={() => {
+                    browser.clearDownloads()
+                    setDownloadsOpen(false)
+                  }}
+                />
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence initial={false}>
               {menuOpen && (
                 <DirectBrowserMenuPanel
                   active={hasPage}
@@ -586,6 +626,96 @@ export function DirectBrowserShell({
       </>
     </AnimatePresence>
   )
+}
+
+/** Downloads the page started, newest first. */
+function BrowserDownloadsPanel({
+  downloads,
+  onClose,
+  onClear,
+}: {
+  downloads: BrowserDownload[]
+  onClose: () => void
+  onClear: () => void
+}) {
+  const reveal = async (path: string) => {
+    if (!path) return
+    const { revealItemInDir } = await import('@tauri-apps/plugin-opener')
+    await revealItemInDir(path).catch(() => {})
+  }
+  return (
+    // A sibling of the viewport, not an overlay on it: the native view is an
+    // OS window above this document, so a popover over the page is invisible.
+    // Shrinking the viewport moves the native view out of the way instead.
+    <motion.aside
+      initial={{ opacity: 0, x: 12 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 12 }}
+      className="relative z-(--z-panel) flex h-full w-[min(18rem,75%)] shrink-0 flex-col border-l border-(--color-border) bg-(--bg-card) shadow-lg"
+      role="dialog"
+      aria-label="Downloads"
+    >
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-(--color-border) px-3">
+        <span className="text-xs font-semibold text-(--color-text)">Downloads</span>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onClear}
+            className="rounded px-1.5 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+          >
+            Clear
+          </button>
+          <Button type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close downloads">
+            <X />
+          </Button>
+        </div>
+      </div>
+      <ul className="min-h-0 flex-1 overflow-y-auto p-1">
+        {downloads.map((download) => (
+          <li key={download.id}>
+            <button
+              type="button"
+              onClick={() => void reveal(download.path)}
+              disabled={!download.path}
+              title={download.path || download.url}
+              className="flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-(--bg-key) disabled:pointer-events-none"
+            >
+              <span className="w-full truncate text-xs text-(--color-text)">
+                {downloadName(download)}
+              </span>
+              <span className="text-[10px] text-(--color-text-subtle)">
+                {downloadStatus(download)}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </motion.aside>
+  )
+}
+
+function downloadName(download: BrowserDownload): string {
+  const source = download.path || download.url
+  const name = source.split(/[\\/]/).pop()
+  return name || source
+}
+
+function downloadStatus(download: BrowserDownload): string {
+  if (download.state === 'completed') return `Saved · ${formatBytes(download.totalBytes)}`
+  if (download.state === 'interrupted') return 'Stopped'
+  if (download.totalBytes > 0) {
+    const percent = Math.min(99, Math.round((download.receivedBytes / download.totalBytes) * 100))
+    return `${percent}% of ${formatBytes(download.totalBytes)}`
+  }
+  return `Downloading · ${formatBytes(download.receivedBytes)}`
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '—'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const exponent = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
+  const value = bytes / 1024 ** exponent
+  return `${value >= 10 || exponent === 0 ? Math.round(value) : value.toFixed(1)} ${units[exponent]}`
 }
 
 /**
