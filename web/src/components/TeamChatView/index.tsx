@@ -166,6 +166,11 @@ const BrowserViewer = lazy(() =>
     default: module.BrowserViewer,
   })),
 )
+const BrowserPipHost = lazy(() =>
+  import('@/components/BrowserViewer/BrowserPipHost').then((module) => ({
+    default: module.BrowserPipHost,
+  })),
+)
 const TerminalPanel = lazy(() =>
   import('@/components/TerminalPanel').then((module) => ({
     default: module.TerminalPanel,
@@ -449,6 +454,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
   useDirectBrowserPresence(sessionIdState)
+  const browserPipSessionId = useUIStore((state) => state.browserPipSessionId)
   const projectIdState = useTeamStore((s) => s.projectId)
   // A project session isn't "in" any one repo — chat-level UI (empty state,
   // composer placeholder) must reflect the project, not the primary repo
@@ -1669,6 +1675,17 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     sessionIdState,
   ])
 
+  // A page an agent opened has no tab in the workbench when the preview is
+  // what the user asked for, so it hangs here instead — over the
+  // conversation, for the session it belongs to.
+  const browserPipHost = browserPipSessionId && browserPipSessionId === sessionIdState
+    ? (
+        <Suspense fallback={null}>
+          <BrowserPipHost sessionId={browserPipSessionId} />
+        </Suspense>
+      )
+    : null
+
   // Workbench lives in AppShell's full-height trailing column so opening it
   // constrains both the conversation canvas and the compact topbar.
   const workbenchPanel = (
@@ -1916,6 +1933,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // topbar*; mobile keeps its full-screen overlay behavior.
   const fullHeightTrailing = (
     <>
+      {browserPipHost}
       {workbenchPanel}
       {mode === 'coding'
         && workspace

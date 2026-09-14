@@ -4,6 +4,7 @@ import { apiWsBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { getPlatform } from '@/hooks/use-platform'
 import { useUIStore } from '@/stores/useUIStore'
+import { loadBrowserPreferences } from './browserPreferences'
 
 export function useDirectBrowserPresence(sessionId: string | null): void {
   useEffect(() => {
@@ -20,7 +21,14 @@ export function useDirectBrowserPresence(sessionId: string | null): void {
         try {
           const message = JSON.parse(event.data) as { action?: string }
           if (message.action === 'open') {
-            useUIStore.getState().openWorkbenchTool('browser')
+            // Where an agent's page appears is the user's call. The panel
+            // shares its space with every other tool, so opening one there
+            // puts away whatever they were using; the preview does not.
+            if (loadBrowserPreferences().agentBrowsingSurface === 'preview') {
+              useUIStore.getState().openBrowserPip(sessionId)
+            } else {
+              useUIStore.getState().openWorkbenchTool('browser')
+            }
           }
         } catch {
           // Ignore malformed bridge messages.
