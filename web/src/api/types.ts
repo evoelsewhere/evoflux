@@ -381,6 +381,8 @@ export interface CodingProblem {
   details: string | null
   fix: Record<string, unknown> | null
   suppression_key: string
+  /** How many rows suppressing this one would hide, this row included. */
+  suppression_count: number
   provenance: Record<string, unknown>
   session_id: string | null
   status: ProblemStatus

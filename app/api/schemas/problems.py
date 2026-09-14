@@ -22,6 +22,9 @@ class ProblemResponse(BaseModel):
     details: str | None
     fix: dict | None
     suppression_key: str
+    #: How many rows suppressing this one would hide. Suppression is
+    #: workspace-wide, so the button's reach is never just this row.
+    suppression_count: int = 1
     provenance: dict = Field(default_factory=dict)
     session_id: str | None
     status: Literal["open", "dismissed", "suppressed"]
