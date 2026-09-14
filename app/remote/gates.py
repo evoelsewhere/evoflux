@@ -257,11 +257,14 @@ class RemoteGateBridge:
         """Resolve a permission gate. Remote is limited to once/reject."""
         from app.agent.permission import get_service_for_session
 
-        reply_value = cap.action  # "once" or "reject"
-        if reply_value not in ("once", "reject"):
+        if cap.action == "once":
+            reply_value: Literal["once", "reject"] = "once"
+        elif cap.action == "reject":
+            reply_value = "reject"
+        else:
             logger.warning(
                 "remote_gate_invalid_permission_action action={}",
-                reply_value,
+                cap.action,
             )
             return False
 

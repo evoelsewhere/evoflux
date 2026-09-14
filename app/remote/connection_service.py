@@ -13,6 +13,7 @@ updated, with a compensating vault write if the database commit then fails.
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Callable
 from uuid import UUID
 
@@ -102,9 +103,9 @@ class RemoteConnectionService:
     def _store(self, connection_id: UUID) -> CredentialStoreProtocol:
         return self._credential_store_factory(connection_id)
 
-    async def list(self, session: AsyncSession) -> list[RemoteConnection]:
+    async def list(self, session: AsyncSession) -> builtins.list[RemoteConnection]:
         result = await session.exec(select(RemoteConnection))
-        return list(result.all())
+        return builtins.list(result.all())
 
     async def get(
         self, session: AsyncSession, connection_id: UUID
