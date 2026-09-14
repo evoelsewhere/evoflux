@@ -244,3 +244,287 @@ async def test_a_working_chain_is_unaffected(monkeypatch) -> None:
 
     assert sent == ["navigate", "wait_for_url", "click_text"]
     assert "not run" not in result
+
+
+# ── Handles ────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_handle_is_what_a_snapshot_offers(monkeypatch) -> None:
+    result = await _run(
+        monkeypatch,
+        [_element(ref="e12", role="button", text="Submit")],
+        "https://example.com/",
+    )
+
+    assert "e12 [button]" in result
+    # With a handle there is no reason to also print a path to quote back.
+    assert "div > a:nth-of-type(2)" not in result
+
+
+@pytest.mark.asyncio
+async def test_an_element_no_selector_can_reach_says_so_by_omission(monkeypatch) -> None:
+    """Inside a shadow root there is no CSS path, and pretending otherwise
+    costs an action to discover."""
+    result = await _run(
+        monkeypatch,
+        [_element(ref="e4", role="button", text="In a shadow root", selector="")],
+        "https://example.com/",
+    )
+
+    assert "e4 [button]" in result
+    assert "—" not in result
+
+
+@pytest.mark.asyncio
+async def test_an_offscreen_element_warns_about_its_coordinates(monkeypatch) -> None:
+    result = await _run(
+        monkeypatch,
+        [_element(ref="e9", text="Below the fold", offscreen=True)],
+        "https://example.com/",
+    )
+
+    assert "(offscreen)" in result
+
+
+@pytest.mark.asyncio
+async def test_a_cross_origin_frame_is_named_rather_than_hidden(monkeypatch) -> None:
+    result = await _run(
+        monkeypatch,
+        [_element(ref="e8", role="iframe", text="", cross_origin=True)],
+        "https://example.com/",
+    )
+
+    assert "cross-origin frame" in result
+
+
+@pytest.mark.asyncio
+async def test_acting_by_ref_sends_the_ref(monkeypatch) -> None:
+    sent: list[tuple[str, dict]] = []
+
+    async def send_command(_sid: str, action: str, params=None, **_kw):
+        sent.append((action, params or {}))
+        return {"success": True, "data": {"ref": "e12", "target": "Submit"}}
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "click_selector", "ref": "e12"}],
+    )
+
+    assert sent[0][1]["ref"] == "e12"
+    assert "selector" not in sent[0][1]
+
+
+@pytest.mark.asyncio
+async def test_a_target_needs_one_of_the_two_ways_to_name_it(monkeypatch) -> None:
+    with pytest.raises(Exception) as caught:
+        await webbridge_tool.webbridge.arun(
+            _injected={"_state": _state()},
+            actions=[{"action": "click_selector"}],
+        )
+    assert "ref" in str(caught.value)
+
+
+# ── What the action did ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_click_reports_what_it_changed(monkeypatch) -> None:
+    """So the caller does not spend a snapshot asking whether it worked."""
+
+    async def send_command(_sid: str, _action: str, _params=None, **_kw):
+        return {"success": True, "data": {"target": "Next", "navigated_to": "https://x/2"}}
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    result = await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "click_selector", "ref": "e1"}],
+    )
+
+    assert "Page went to https://x/2" in result
+
+
+@pytest.mark.asyncio
+async def test_a_click_that_changed_nothing_says_so(monkeypatch) -> None:
+    async def send_command(_sid: str, _action: str, _params=None, **_kw):
+        return {"success": True, "data": {"target": "Next", "dom_changes": 0}}
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    result = await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "click_selector", "ref": "e1"}],
+    )
+
+    assert "Nothing on the page changed" in result
+
+
+# ── Only what changed ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_diff_snapshot_lists_only_the_difference(monkeypatch) -> None:
+    async def send_command(_sid: str, action: str, params=None, **_kw):
+        assert action == "snapshot"
+        assert (params or {}).get("diff") is True
+        return {
+            "success": True,
+            "data": {
+                "url": "https://example.com/",
+                "title": "Quiz",
+                "diff": True,
+                "added": [_element(ref="e10", role="button", text="Submit")],
+                "changed": [
+                    _element(ref="e3", role="checkbox", text="B", state={"checked": True})
+                ],
+                "removed": ["e1"],
+                "unchanged": 57,
+            },
+        }
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    result = await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "snapshot", "diff": True}],
+    )
+
+    assert "57 unchanged" in result
+    assert "e10 [button]" in result
+    assert "[checked=true]" in result
+    assert "Gone: e1" in result
+    # The whole point: the 57 that did not change cost nothing.
+    assert len(result) < 600
+
+
+# ── One crossing instead of five ───────────────────────────────────────────
+
+
+def _extension(monkeypatch, commands: list[str]) -> None:
+    monkeypatch.setattr(
+        webbridge_manager,
+        "resolve_target",
+        lambda _sid, _ext=None: SimpleNamespace(capabilities={"commands": commands}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_run_of_simple_actions_travels_as_one_command(monkeypatch) -> None:
+    """Five fields used to be five round trips across the relay."""
+    sent: list[tuple[str, dict]] = []
+    _extension(monkeypatch, ["batch", "fill", "click_selector"])
+
+    async def send_command(_sid: str, action: str, params=None, **_kw):
+        sent.append((action, params or {}))
+        return {
+            "success": True,
+            "data": {
+                "results": [
+                    {"action": command["action"], "success": True, "data": {}}
+                    for command in (params or {}).get("commands", [])
+                ],
+                "skipped": 0,
+            },
+        }
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    result = await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "fill", "ref": "e1", "value": "Hung"},
+            {"action": "fill", "ref": "e2", "value": "hung@example.com"},
+            {"action": "set_checked", "ref": "e3", "checked": True},
+            {"action": "click_selector", "ref": "e4"},
+        ],
+    )
+
+    assert [action for action, _ in sent] == ["batch"]
+    assert len(sent[0][1]["commands"]) == 4
+    assert sent[0][1]["commands"][0]["params"]["ref"] == "e1"
+    assert result.count("ok.") == 4
+
+
+@pytest.mark.asyncio
+async def test_a_batch_stops_where_the_chain_broke(monkeypatch) -> None:
+    _extension(monkeypatch, ["batch", "fill", "click_selector"])
+
+    async def send_command(_sid: str, _action: str, params=None, **_kw):
+        return {
+            "success": True,
+            "data": {
+                "results": [
+                    {"action": "click_selector", "success": False, "error": "covered by div.modal"},
+                ],
+                "stopped_at": 0,
+                "skipped": 2,
+            },
+        }
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    result = await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "click_selector", "ref": "e1"},
+            {"action": "fill", "ref": "e2", "value": "x"},
+            {"action": "click_selector", "ref": "e3"},
+        ],
+    )
+
+    assert "covered by div.modal" in result
+    assert "not run" in result
+
+
+@pytest.mark.asyncio
+async def test_actions_that_are_not_simple_stay_on_their_own(monkeypatch) -> None:
+    """A screenshot returns an image and a wait is where the time goes; both
+    would be the wrong thing to fold into one message."""
+    sent: list[str] = []
+    _extension(monkeypatch, ["batch", "fill", "wait_for_load", "click_selector"])
+
+    async def send_command(_sid: str, action: str, params=None, **_kw):
+        sent.append(action)
+        if action == "batch":
+            return {
+                "success": True,
+                "data": {
+                    "results": [
+                        {"action": c["action"], "success": True, "data": {}}
+                        for c in (params or {}).get("commands", [])
+                    ],
+                    "skipped": 0,
+                },
+            }
+        return {"success": True, "data": {}}
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "click_selector", "ref": "e1"},
+            {"action": "fill", "ref": "e2", "value": "x"},
+            {"action": "wait_for_load"},
+            {"action": "click_selector", "ref": "e3"},
+        ],
+    )
+
+    assert sent == ["batch", "wait_for_load", "click_selector"]
+
+
+@pytest.mark.asyncio
+async def test_an_older_extension_still_gets_one_command_at_a_time(monkeypatch) -> None:
+    sent: list[str] = []
+    _extension(monkeypatch, ["fill", "click_selector"])  # no batch
+
+    async def send_command(_sid: str, action: str, _params=None, **_kw):
+        sent.append(action)
+        return {"success": True, "data": {}}
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+    await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "click_selector", "ref": "e1"},
+            {"action": "fill", "ref": "e2", "value": "x"},
+        ],
+    )
+
+    assert sent == ["click_selector", "fill"]
