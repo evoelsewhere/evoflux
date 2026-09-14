@@ -532,7 +532,11 @@ class RemoteRuntime:
                 connection_id=str(action.connection_id),
                 destination_id=action.principal.destination_id,
                 principal_id=action.principal.principal_id,
-                title=(session_row.title if session_row and session_row.title else "New task"),
+                title=(
+                    session_row.title
+                    if session_row and session_row.title
+                    else "New task"
+                ),
                 status=result.status,
             )
 

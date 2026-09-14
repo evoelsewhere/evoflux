@@ -36,7 +36,9 @@ async def chat_session(db_session):
 
 
 @pytest.mark.asyncio
-async def test_load_turn_activity_counts_tool_calls_and_builds_diff(db_session, chat_session):
+async def test_load_turn_activity_counts_tool_calls_and_builds_diff(
+    db_session, chat_session
+):
     since = datetime.now(UTC) - timedelta(seconds=1)
     db_session.add_all(
         [
@@ -86,7 +88,9 @@ async def test_load_turn_activity_with_no_tool_calls_returns_placeholders(
 
 
 @pytest.mark.asyncio
-async def test_load_turn_activity_with_non_uuid_session_id_returns_placeholders(db_session):
+async def test_load_turn_activity_with_non_uuid_session_id_returns_placeholders(
+    db_session,
+):
     """A non-UUID session id (e.g. a test double's placeholder) can never
     match a persisted row, so this returns empty activity instead of
     raising — exercised because outbound.py's ``_finalize_turn`` calls this
@@ -101,7 +105,9 @@ async def test_load_turn_activity_with_non_uuid_session_id_returns_placeholders(
 
 
 @pytest.mark.asyncio
-async def test_load_turn_activity_ignores_messages_before_since(db_session, chat_session):
+async def test_load_turn_activity_ignores_messages_before_since(
+    db_session, chat_session
+):
     since = datetime.now(UTC)
     db_session.add(
         SessionMessage(

@@ -6,7 +6,10 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 
+import app.core.db as db_module
+from app.models.chat import ChatSession
 from app.remote.contracts import (
     RemoteAdapterStatus,
     RemoteConnectionState,
@@ -64,6 +67,26 @@ class FakeAdapter:
         return RemoteAdapterStatus(
             connection_id=uuid4(), state=RemoteConnectionState.POLLING
         )
+
+
+@pytest_asyncio.fixture
+async def addressable_session() -> ChatSession:
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(title="Desktop task", mode="work", session_type="main")
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        return session
+
+
+@pytest_asyncio.fixture
+async def side_chat_session() -> ChatSession:
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(title="Private side chat", session_type="side_chat")
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        return session
 
 
 # ── session registration ─────────────────────────────────────────────────
@@ -202,6 +225,119 @@ async def test_error_sends_error_message() -> None:
     assert "Something went wrong" in adapter.sent[0].text
 
 
+# ── cross-origin completion delivery ─────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_unregistered_addressable_session_notifies_when_scope_is_all(
+    addressable_session: ChatSession,
+) -> None:
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+    connection_id = str(uuid4())
+    projection.set_active_pairing(
+        connection_id=connection_id,
+        destination_id="chat-1",
+        notify_scope="all",
+        principal_id="user-1",
+    )
+
+    projection.observe(str(addressable_session.id), _envelope("done", text="Done."))
+    await projection.drain_pending()
+
+    assert adapter.calls == ["send"]
+    assert adapter.sent[0].destination_id == "chat-1"
+    assert str(adapter.sent[0].connection_id) == connection_id
+    assert projection.typing_task_for(str(addressable_session.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_unregistered_session_is_silent_when_scope_is_remote_only(
+    addressable_session: ChatSession,
+) -> None:
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+    projection.set_active_pairing(
+        connection_id=str(uuid4()),
+        destination_id="chat-1",
+        notify_scope="remote_only",
+        principal_id="user-1",
+    )
+
+    projection.observe(str(addressable_session.id), _envelope("done", text="Done."))
+    await projection.drain_pending()
+
+    assert adapter.calls == []
+    assert projection.typing_task_for(str(addressable_session.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_non_addressable_session_never_notifies_even_with_scope_all(
+    side_chat_session: ChatSession,
+) -> None:
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+    projection.set_active_pairing(
+        connection_id=str(uuid4()),
+        destination_id="chat-1",
+        notify_scope="all",
+        principal_id="user-1",
+    )
+
+    projection.observe(str(side_chat_session.id), _envelope("done", text="Done."))
+    await projection.drain_pending()
+
+    assert adapter.calls == []
+    assert projection.typing_task_for(str(side_chat_session.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_unregistered_addressable_error_sends_one_error_card(
+    addressable_session: ChatSession,
+) -> None:
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+    projection.set_active_pairing(
+        connection_id=str(uuid4()),
+        destination_id="chat-1",
+        notify_scope="all",
+        principal_id="user-1",
+    )
+
+    projection.observe(
+        str(addressable_session.id), _envelope("error", message="Workflow failed")
+    )
+    await projection.drain_pending()
+
+    assert adapter.calls == ["send"]
+    assert "Workflow failed" in adapter.sent[0].text
+
+
+@pytest.mark.asyncio
+async def test_duplicate_unregistered_completions_send_one_card(
+    addressable_session: ChatSession,
+) -> None:
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+    projection.set_active_pairing(
+        connection_id=str(uuid4()),
+        destination_id="chat-1",
+        notify_scope="all",
+        principal_id="user-1",
+    )
+
+    projection.observe(str(addressable_session.id), _envelope("done", text="First"))
+    projection.observe(str(addressable_session.id), _envelope("done", text="Second"))
+    await projection.drain_pending()
+
+    assert adapter.calls == ["send"]
+
+
 # ── phone-admitted status lifecycle ─────────────────────────────────────
 
 
@@ -237,6 +373,39 @@ async def test_begin_phone_turn_sends_status_card_then_done_edits_it() -> None:
     assert adapter.edited[0].correlation_id == first_correlation
     assert "Fix tests" in adapter.edited[0].text
     assert projection.typing_task_for("sess-1") is None
+
+
+@pytest.mark.asyncio
+async def test_immediate_done_edits_queued_phone_status_card() -> None:
+    """A completion that races the initial delivery must not create a
+    second card: the queued status card is delivered first, then edited."""
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+
+    cid = str(uuid4())
+    projection.register_session(
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        tags=frozenset({"remote_origin"}),
+    )
+    projection.begin_phone_turn(
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
+    )
+    projection.observe("sess-1", _envelope("done", text="Done."))
+
+    await projection.drain_pending()
+
+    assert adapter.calls == ["send", "edit"]
+    assert len(adapter.sent) == 1
+    assert len(adapter.edited) == 1
+    assert adapter.edited[0].correlation_id == adapter.sent[0].correlation_id
 
 
 @pytest.mark.asyncio
@@ -309,12 +478,18 @@ async def test_begin_phone_turn_again_before_resolution_reuses_status_card() -> 
 
     cid = str(uuid4())
     projection.register_session(
-        "sess-1", connection_id=cid, destination_id="chat-1",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
         tags=frozenset({"remote_origin"}),
     )
     projection.begin_phone_turn(
-        "sess-1", connection_id=cid, destination_id="chat-1",
-        principal_id="user-1", title="Fix tests", status="accepted",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
     )
     await asyncio.sleep(0.05)
     assert adapter.calls == ["send"]
@@ -323,8 +498,12 @@ async def test_begin_phone_turn_again_before_resolution_reuses_status_card() -> 
     assert first_typing_task is not None
 
     projection.begin_phone_turn(
-        "sess-1", connection_id=cid, destination_id="chat-1",
-        principal_id="user-1", title="Fix tests", status="queued",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="queued",
     )
     await asyncio.sleep(0.05)
 
@@ -350,7 +529,47 @@ async def test_begin_phone_turn_again_before_resolution_reuses_status_card() -> 
 
 
 @pytest.mark.asyncio
-async def test_begin_phone_turn_reuse_falls_back_to_send_if_original_never_sent() -> None:
+async def test_queued_follow_up_replaces_unsent_status_card() -> None:
+    """A follow-up admitted before delivery updates the pending status card
+    instead of emitting an orphaned first status message."""
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+
+    cid = str(uuid4())
+    projection.register_session(
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        tags=frozenset({"remote_origin"}),
+    )
+    projection.begin_phone_turn(
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
+    )
+    projection.begin_phone_turn(
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="queued",
+    )
+
+    await projection.drain_pending()
+
+    assert adapter.calls == ["send"]
+    assert "queued" in adapter.sent[0].text
+
+
+@pytest.mark.asyncio
+async def test_begin_phone_turn_reuse_falls_back_to_send_if_original_never_sent() -> (
+    None
+):
     """If the first status card's send never actually succeeded (e.g. a
     transient transport failure), there is nothing for a follow-up edit to
     land on — must send a fresh message instead of silently no-op'ing."""
@@ -360,12 +579,18 @@ async def test_begin_phone_turn_reuse_falls_back_to_send_if_original_never_sent(
 
     cid = str(uuid4())
     projection.register_session(
-        "sess-1", connection_id=cid, destination_id="chat-1",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
         tags=frozenset({"remote_origin"}),
     )
     projection.begin_phone_turn(
-        "sess-1", connection_id=cid, destination_id="chat-1",
-        principal_id="user-1", title="Fix tests", status="accepted",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
     )
     # Make the very first send fail so it never lands in _sent_correlations.
     adapter.fail_send_correlations.add(
@@ -377,8 +602,12 @@ async def test_begin_phone_turn_reuse_falls_back_to_send_if_original_never_sent(
 
     adapter.fail_send_correlations.clear()
     projection.begin_phone_turn(
-        "sess-1", connection_id=cid, destination_id="chat-1",
-        principal_id="user-1", title="Fix tests", status="queued",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="queued",
     )
     await asyncio.sleep(0.05)
 
@@ -401,12 +630,18 @@ async def test_finalize_falls_back_to_send_when_status_card_was_never_sent() -> 
 
     cid = str(uuid4())
     projection.register_session(
-        "sess-1", connection_id=cid, destination_id="chat-1",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
         tags=frozenset({"remote_origin"}),
     )
     projection.begin_phone_turn(
-        "sess-1", connection_id=cid, destination_id="chat-1",
-        principal_id="user-1", title="Fix tests", status="accepted",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
     )
     adapter.fail_send_correlations.add(
         projection._turns["sess-1"].lifecycle_correlation_id
@@ -435,12 +670,18 @@ async def test_set_adapter_none_stops_all_live_typing_tasks() -> None:
 
     cid = str(uuid4())
     projection.register_session(
-        "sess-1", connection_id=cid, destination_id="chat-1",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
         tags=frozenset({"remote_origin"}),
     )
     projection.begin_phone_turn(
-        "sess-1", connection_id=cid, destination_id="chat-1",
-        principal_id="user-1", title="Fix tests", status="accepted",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
     )
     await asyncio.sleep(0.05)
     typing_task = projection.typing_task_for("sess-1")
@@ -465,12 +706,18 @@ async def test_typing_loop_survives_indicate_typing_error() -> None:
 
     cid = str(uuid4())
     projection.register_session(
-        "sess-1", connection_id=cid, destination_id="chat-1",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
         tags=frozenset({"remote_origin"}),
     )
     projection.begin_phone_turn(
-        "sess-1", connection_id=cid, destination_id="chat-1",
-        principal_id="user-1", title="Fix tests", status="accepted",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
     )
     await asyncio.sleep(0.05)
 
@@ -493,12 +740,18 @@ async def test_unregister_session_stops_typing_task() -> None:
 
     cid = str(uuid4())
     projection.register_session(
-        "sess-1", connection_id=cid, destination_id="chat-1",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
         tags=frozenset({"remote_origin"}),
     )
     projection.begin_phone_turn(
-        "sess-1", connection_id=cid, destination_id="chat-1",
-        principal_id="user-1", title="Fix tests", status="accepted",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
     )
     typing_task = projection.typing_task_for("sess-1")
     assert typing_task is not None
@@ -516,12 +769,18 @@ async def test_clear_turn_stops_typing_task() -> None:
 
     cid = str(uuid4())
     projection.register_session(
-        "sess-1", connection_id=cid, destination_id="chat-1",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
         tags=frozenset({"remote_origin"}),
     )
     projection.begin_phone_turn(
-        "sess-1", connection_id=cid, destination_id="chat-1",
-        principal_id="user-1", title="Fix tests", status="accepted",
+        "sess-1",
+        connection_id=cid,
+        destination_id="chat-1",
+        principal_id="user-1",
+        title="Fix tests",
+        status="accepted",
     )
     typing_task = projection.typing_task_for("sess-1")
     assert typing_task is not None
@@ -532,7 +791,9 @@ async def test_clear_turn_stops_typing_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_done_for_registered_but_never_begun_turn_uses_task_fallback_title() -> None:
+async def test_done_for_registered_but_never_begun_turn_uses_task_fallback_title() -> (
+    None
+):
     """A session that's register_session-ed but never begin_phone_turn-ed
     (e.g. desktop-started work the phone is only observing) has no real
     title to draw on — the card must fall back to "Task" instead of
@@ -543,7 +804,9 @@ async def test_done_for_registered_but_never_begun_turn_uses_task_fallback_title
 
     cid = str(uuid4())
     proj.register_session(
-        "sess-1", connection_id=cid, destination_id="12345",
+        "sess-1",
+        connection_id=cid,
+        destination_id="12345",
         tags=frozenset({"remote_origin"}),
     )
     proj.observe("sess-1", _envelope("done", text="Here is the result."))

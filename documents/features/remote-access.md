@@ -18,7 +18,9 @@ to continue.
 2. **Current-task text** — the bot shows what the active session is doing so the
    user can decide without opening the desktop.
 3. **Automatic gates and completion** — permission requests, questions, and plan
-   review arrive as inline-button messages; completion summaries arrive as text.
+   review arrive as inline-button messages. Phone-started turns get one live
+   status card plus a native typing indicator; their final completion or error
+   card edits that same message in place.
 4. **Safe redaction** — every outbound message passes through
    `protect_outbound_text(channel="remote")` so secrets and PII never leave the
    machine.
@@ -47,8 +49,24 @@ to continue.
 1. User sends a message to the bot on Telegram.
 2. The remote adapter polls `getUpdates`, matches the `chat_id` to a pairing,
    and forwards the text into the active session as a user message.
-3. The agent responds; the adapter projects the response text into the Telegram
-   chat.
+3. The adapter immediately sends one HTML-formatted status card and repeats
+   Telegram's native typing indicator while the phone-started turn is unresolved.
+   The status card contains only the task title and admission status.
+4. On completion or error, the adapter edits that card into a bounded final
+   summary. It never mirrors token, tool, or file-path deltas into the live
+   status text.
+
+### Desktop, Workflow, and Scheduler completion
+
+- The pairing's persisted notification scope defaults to `all`. Under that
+  scope, an addressable top-level Work or Coding session started from the
+  desktop, Workflow, or Scheduler sends the same final completion/error card
+  to the paired phone.
+- These cross-origin sessions never create a live status card or typing
+  indicator. Side Chat, child, internal, and otherwise non-addressable
+  sessions never notify the phone.
+- The `remote_only` scope keeps notifications limited to `remote_origin`
+  sessions.
 
 ### Gate flow
 
@@ -64,8 +82,12 @@ to continue.
 
 ## Requirements and acceptance criteria
 
-Requirements and acceptance criteria are defined in the implementation plan as
-AC-1 through AC-36. They cover:
+Requirements and acceptance criteria are defined in the base implementation
+plan as AC-1 through AC-36 and amended by the response-UI specification. The
+implemented response-UI additions are AC-38 (bounded phone-turn lifecycle),
+AC-42 (notification scope), and AC-43 (cross-origin completion delivery).
+The status, done, and error-card paths also implement the response-card portion
+of revised AC-24. They cover:
 
 - Connection lifecycle (create, verify, update label, replace token, delete)
 - Pairing lifecycle (link, QR, resolve, revoke)
@@ -77,6 +99,10 @@ AC-1 through AC-36. They cover:
 - Connection states (11 values covering setup through error)
 - One connection per installation (v1)
 - Migration `00000064`
+- HTML-safe Telegram cards, native typing, and one status-card lifecycle for
+  phone-started turns
+- Addressability-gated final delivery for desktop, Workflow, and Scheduler
+  sessions when notification scope is `all`
 
 ## API, event, tool, and UI contracts
 
@@ -152,6 +178,7 @@ id, connection_id, chat_id, principal_id, state, paired_at
 | `destination_id` | text | addresses the pairing |
 | `state` | enum | `pending` → `paired` → `revoked` |
 | `source_key` | text | idempotency key for `getUpdates` offset |
+| `notify_scope` | text | `all` (default) or `remote_only`; controls cross-origin final notifications |
 | `paired_at` | timestamp | |
 
 ### OS vault
@@ -167,8 +194,10 @@ a vault key reference, never the raw token.
   `always` option for remote — every remote approval is single-use.
 - **Outbound redaction**: all outbound text passes through
   `protect_outbound_text(channel="remote")` before reaching Telegram.
-- **No parse mode**: Telegram messages are sent without parse mode so model
-  output is never interpreted as markup.
+- **Safe HTML response cards**: the status, done, and error-card builders use
+  Telegram HTML parse mode only after outbound redaction. Every non-static
+  value passed to those builders is escaped by `app/remote/formatting.py`, so
+  agent or user content cannot create markup, links, or mentions.
 - **Private chats only**: the adapter only processes private (non-group) chats.
 - **Authorization model**: `principal_id` authorizes who can reply;
   `destination_id` addresses which pairing receives the message.
@@ -186,6 +215,12 @@ a vault key reference, never the raw token.
   messages.
 - **Adapter crash recovery**: on startup the adapter resumes polling from the
   last persisted offset; no messages are lost if the process restarts.
+- **Lifecycle ordering**: outbound delivery serializes queued status sends,
+  finalization, and edits. A final card falls back to a new message only when
+  its original status card could not be delivered.
+- **Cross-origin authorization**: the synchronous stream observer queues an
+  unregistered completion, then the asynchronous delivery path loads the
+  session and applies the shared addressability predicate before sending.
 
 ## Observability
 
