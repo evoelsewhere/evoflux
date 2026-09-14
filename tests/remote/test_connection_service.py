@@ -343,9 +343,14 @@ async def test_remove_unknown_connection_raises_not_found(session, service) -> N
 
 
 @pytest.mark.asyncio
-async def test_remove_reports_vault_deletion_failure(
+async def test_remove_reports_vault_deletion_failure_without_orphaning_the_row(
     session, service, credential_stores
 ) -> None:
+    """A vault-delete failure must never delete the connection row first —
+    that would strand the vault's ``connection:<id>`` secret with no
+    remaining reference anywhere in the app. The vault is deleted before the
+    row, so a failure here leaves the row intact and the operation safely
+    retryable."""
     connection = await service.create_connection(
         session, token="bot-token-1", label="Phone"
     )
@@ -356,8 +361,32 @@ async def test_remove_reports_vault_deletion_failure(
     with pytest.raises(RemoteCredentialError):
         await service.remove(session, connection.id)
 
-    # The database record is still gone even though the vault delete failed.
+    # Not orphaned: the row survives, so the vault account is still named
+    # and remove() can be retried once the vault is reachable again.
+    rows = (await session.exec(select(RemoteConnection))).all()
+    assert [row.id for row in rows] == [connection.id]
+
+
+@pytest.mark.asyncio
+async def test_remove_retried_after_vault_recovers_deletes_everything(
+    session, service, credential_stores
+) -> None:
+    connection = await service.create_connection(
+        session, token="bot-token-1", label="Phone"
+    )
+    store = credential_stores[connection.id]
+    store.delete_error = CredentialStoreError("vault unavailable")
+
+    with pytest.raises(RemoteCredentialError):
+        await service.remove(session, connection.id)
+
+    # The vault recovers (e.g. the OS keychain becomes reachable again) and
+    # the same remove() call is retried without needing any repair step.
+    store.delete_error = None
+    await service.remove(session, connection.id)
+
     assert (await session.exec(select(RemoteConnection))).all() == []
+    assert store.load() is None
 
 
 # ── list / get ───────────────────────────────────────────────────────────────

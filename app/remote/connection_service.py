@@ -228,21 +228,33 @@ class RemoteConnectionService:
         return connection
 
     async def remove(self, session: AsyncSession, connection_id: UUID) -> None:
-        """Delete the connection (cascading its pairing) and its vault entry."""
+        """Delete the connection's vault entry, then the connection
+        (cascading its pairing).
+
+        The vault entry is deleted *first*, deliberately mirroring
+        :meth:`create_connection` and :meth:`update_token`'s vault-before-
+        commit ordering. A DB row that outlives its vault entry is a safe,
+        recoverable state — the row still names the connection, so the user
+        can retry ``remove`` (or ``set_enabled(False)``) and nothing is ever
+        orphaned. The reverse order would delete the only reference to the
+        vault account (``connection:<id>``) before confirming the secret was
+        actually cleared, permanently stranding a live bot token in the OS
+        vault if the vault delete then failed.
+        """
         connection = await self.get(session, connection_id)
         if connection is None:
             raise RemoteConnectionNotFoundError(
                 f"Remote connection {connection_id} does not exist."
             )
 
-        await session.delete(connection)
-        await session.commit()
-
         store = self._store(connection_id)
         try:
             store.delete()
         except CredentialStoreError as exc:
             raise RemoteCredentialError(str(exc)) from exc
+
+        await session.delete(connection)
+        await session.commit()
 
 
 def _delete_best_effort(store: CredentialStoreProtocol) -> None:
