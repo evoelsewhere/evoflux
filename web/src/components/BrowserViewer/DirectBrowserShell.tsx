@@ -21,6 +21,7 @@ import {
   Ruler,
   Search,
   Settings2,
+  ShieldAlert,
   Trash2,
   Wrench,
   X,
@@ -34,6 +35,7 @@ import { cn } from '@/lib/utils'
 import { useToastStore } from '@/stores/useToastStore'
 import { useUIStore } from '@/stores/useUIStore'
 import {
+  browserConnectionInfo,
   browserZoomOrigin,
   FIT_DESKTOP_WIDTH,
   loadBrowserPreferences,
@@ -51,6 +53,7 @@ import {
   type BrowserPageDialog,
   type BrowserPageError,
   type BrowserPermissionRequest,
+  type BrowserSitePermission,
   type BrowserViewportOverride,
   type BrowserViewportPreset,
   isBrowserNewTab,
@@ -112,6 +115,7 @@ export function DirectBrowserShell({
   const [findQuery, setFindQuery] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [downloadsOpen, setDownloadsOpen] = useState(false)
+  const [siteInfoOpen, setSiteInfoOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [preferences, setPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
   const [zoom, setZoom] = useState(() => loadBrowserPreferences().defaultZoom)
@@ -184,6 +188,8 @@ export function DirectBrowserShell({
   const activeDownloads = browser.downloads.filter(
     (download) => download.state === 'started' || download.state === 'in_progress',
   ).length
+
+  const connection = browserConnectionInfo(currentUrl)
 
   const openInPage = useCallback((url: string) => {
     // No WebView to navigate (creation failed, say) — hand the URL to a fresh
@@ -434,9 +440,20 @@ export function DirectBrowserShell({
               </form>
             ) : (
               <form onSubmit={handleNavigate} className="relative min-w-0 flex-1">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-(--color-text-subtle)">
-                  {currentUrl.startsWith('https://') ? <LockKeyhole size={12} /> : <Globe2 size={13} />}
-                </span>
+                <button
+                  type="button"
+                  disabled={!hasPage}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setDownloadsOpen(false)
+                    setSiteInfoOpen((current) => !current)
+                  }}
+                  aria-label="Site information"
+                  title={connection.summary}
+                  className="absolute left-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-(--color-text-subtle) transition-colors hover:bg-(--bg-page) hover:text-(--color-text) disabled:pointer-events-none"
+                >
+                  {connection.encrypted ? <LockKeyhole size={12} /> : <Globe2 size={13} />}
+                </button>
                 <input
                   ref={urlInputRef}
                   data-browser-omnibox
@@ -605,6 +622,21 @@ export function DirectBrowserShell({
             </div>
 
             <AnimatePresence initial={false}>
+              {siteInfoOpen && (
+                <BrowserSiteInfoPanel
+                  connection={connection}
+                  url={currentUrl}
+                  zoom={zoom}
+                  defaultZoom={preferences.defaultZoom}
+                  readPermissions={browser.readSitePermissions}
+                  onClose={() => setSiteInfoOpen(false)}
+                  onClearData={() => void handleClearData()}
+                  onResetZoom={() => handleZoomChange(preferences.defaultZoom)}
+                />
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence initial={false}>
               {downloadsOpen && (
                 <BrowserDownloadsPanel
                   downloads={browser.downloads}
@@ -648,6 +680,129 @@ export function DirectBrowserShell({
         </motion.section>
       </>
     </AnimatePresence>
+  )
+}
+
+/**
+ * What this site is, over what kind of connection, and what it has been
+ * allowed to do — the questions the padlock implies it can answer.
+ */
+function BrowserSiteInfoPanel({
+  connection,
+  url,
+  zoom,
+  defaultZoom,
+  readPermissions,
+  onClose,
+  onClearData,
+  onResetZoom,
+}: {
+  connection: ReturnType<typeof browserConnectionInfo>
+  url: string
+  zoom: number
+  defaultZoom: number
+  readPermissions: () => Promise<BrowserSitePermission[]>
+  onClose: () => void
+  onClearData: () => void
+  onResetZoom: () => void
+}) {
+  const [permissions, setPermissions] = useState<BrowserSitePermission[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void readPermissions().then((result) => {
+      if (!cancelled) setPermissions(result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [readPermissions, url])
+
+  return (
+    <motion.aside
+      initial={{ opacity: 0, x: 12 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 12 }}
+      className="relative z-(--z-panel) flex h-full w-[min(18rem,75%)] shrink-0 flex-col border-l border-(--color-border) bg-(--bg-card) shadow-lg"
+      role="dialog"
+      aria-label="Site information"
+    >
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-(--color-border) px-3">
+        <span className="text-xs font-semibold text-(--color-text)">Site information</span>
+        <Button type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close site information">
+          <X />
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+        <div>
+          <p className="break-all text-xs font-medium text-(--color-text)">
+            {connection.host || url || 'No page loaded'}
+          </p>
+          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-(--color-text-muted)">
+            {connection.encrypted
+              ? <LockKeyhole size={11} aria-hidden />
+              : <ShieldAlert size={11} aria-hidden />}
+            {connection.summary}
+          </p>
+        </div>
+
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
+            Permissions
+          </p>
+          {permissions === null ? (
+            <p className="mt-1 text-[11px] text-(--color-text-subtle)">Checking…</p>
+          ) : permissions.length === 0 ? (
+            <p className="mt-1 text-[11px] text-(--color-text-subtle)">
+              Nothing granted or blocked.
+            </p>
+          ) : (
+            <ul className="mt-1 space-y-1">
+              {permissions.map((permission) => (
+                <li
+                  key={permission.name}
+                  className="flex items-center justify-between gap-2 text-[11px] text-(--color-text)"
+                >
+                  <span className="capitalize">{permission.name.replace(/-/g, ' ')}</span>
+                  <span
+                    className={cn(
+                      'rounded-full border px-1.5 py-0.5 text-[10px]',
+                      permission.state === 'granted'
+                        ? 'border-(--color-accent)/40 bg-(--color-accent)/12 text-(--color-accent)'
+                        : 'border-(--color-border) text-(--color-text-muted)',
+                    )}
+                  >
+                    {permission.state}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {zoom !== defaultZoom && (
+          <div className="flex items-center justify-between gap-2 rounded-md border border-(--color-border) px-2 py-1.5">
+            <span className="text-[11px] text-(--color-text)">Zoom {zoom}%</span>
+            <button
+              type="button"
+              onClick={onResetZoom}
+              className="rounded px-1.5 py-0.5 text-[11px] text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
+            >
+              Reset
+            </button>
+          </div>
+        )}
+
+        <p className="text-[11px] leading-4 text-(--color-text-subtle)">
+          Permissions and storage are cleared for every site at once — the
+          engine keeps no per-site record this panel can edit.
+        </p>
+        <Button type="button" size="sm" variant="outline" onClick={onClearData} className="w-full">
+          <Trash2 />
+          Clear browsing data
+        </Button>
+      </div>
+    </motion.aside>
   )
 }
 

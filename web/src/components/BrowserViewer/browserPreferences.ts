@@ -75,6 +75,61 @@ export function subscribeBrowserPreferences(
   }
 }
 
+export interface BrowserConnectionInfo {
+  /** Scheme + host, or null for a page that is not on the web. */
+  origin: string | null
+  scheme: string
+  host: string
+  encrypted: boolean
+  /** Plain words for the state of the connection, for the site panel. */
+  summary: string
+}
+
+/**
+ * What the padlock in the address bar is actually claiming.
+ *
+ * It used to be `url.startsWith('https://')`, which called a local page
+ * insecure and had nothing to say about anything else.
+ */
+export function browserConnectionInfo(url: string): BrowserConnectionInfo {
+  let parsed: URL | null = null
+  try {
+    parsed = new URL(url)
+  } catch {
+    parsed = null
+  }
+  if (!parsed) {
+    return { origin: null, scheme: '', host: '', encrypted: false, summary: 'No page loaded' }
+  }
+  const scheme = parsed.protocol.replace(':', '')
+  const host = parsed.host
+  if (scheme === 'https') {
+    return {
+      origin: `${parsed.protocol}//${host}`,
+      scheme,
+      host,
+      encrypted: true,
+      summary: 'Encrypted connection',
+    }
+  }
+  if (scheme === 'http') {
+    // Loopback is delivered by a process on this machine; calling that
+    // "not secure" teaches people to ignore the warning that matters.
+    const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host)
+    return {
+      origin: `${parsed.protocol}//${host}`,
+      scheme,
+      host,
+      encrypted: false,
+      summary: local ? 'Local server on this machine' : 'Not encrypted',
+    }
+  }
+  if (scheme === 'file') {
+    return { origin: null, scheme, host, encrypted: false, summary: 'File on this machine' }
+  }
+  return { origin: null, scheme, host, encrypted: false, summary: `${scheme} page` }
+}
+
 /**
  * Zoom is remembered per site, not per app.
  *
