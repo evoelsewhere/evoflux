@@ -38,8 +38,14 @@ def _ok(result) -> httpx.Response:
     return httpx.Response(200, json={"ok": True, "result": result})
 
 
-def _err(status: int, error_code: int, description: str, *, retry_after: int | None = None) -> httpx.Response:
-    body: dict[str, object] = {"ok": False, "error_code": error_code, "description": description}
+def _err(
+    status: int, error_code: int, description: str, *, retry_after: int | None = None
+) -> httpx.Response:
+    body: dict[str, object] = {
+        "ok": False,
+        "error_code": error_code,
+        "description": description,
+    }
     if retry_after is not None:
         body["parameters"] = {"retry_after": retry_after}
     return httpx.Response(status, json=body)
@@ -204,13 +210,18 @@ class TestSendEditAnswer:
             import json
 
             captured["payload"] = json.loads(request.content)
-            return _ok({"message_id": 6, "date": 1, "chat": {"id": 1, "type": "private"}})
+            return _ok(
+                {"message_id": 6, "date": 1, "chat": {"id": 1, "type": "private"}}
+            )
 
         client = _client(handler)
         await client.send_text(
             chat_id=1,
             text="Approve?",
-            buttons=[RemoteButton(text="Allow", token="tok-1"), RemoteButton(text="Deny", token="tok-2")],
+            buttons=[
+                RemoteButton(text="Allow", token="tok-1"),
+                RemoteButton(text="Deny", token="tok-2"),
+            ],
         )
         markup = captured["payload"]["reply_markup"]
         assert markup["inline_keyboard"] == [
@@ -253,7 +264,9 @@ class TestSendEditAnswer:
     @pytest.mark.asyncio
     async def test_send_text_accepts_exactly_64_byte_callback_data(self):
         def handler(request: httpx.Request) -> httpx.Response:
-            return _ok({"message_id": 1, "date": 1, "chat": {"id": 1, "type": "private"}})
+            return _ok(
+                {"message_id": 1, "date": 1, "chat": {"id": 1, "type": "private"}}
+            )
 
         client = _client(handler)
         await client.send_text(
@@ -270,7 +283,9 @@ class TestSendEditAnswer:
 
             captured["payload"] = json.loads(request.content)
             assert request.url.path.endswith("/editMessageText")
-            return _ok({"message_id": 5, "date": 1, "chat": {"id": 1, "type": "private"}})
+            return _ok(
+                {"message_id": 5, "date": 1, "chat": {"id": 1, "type": "private"}}
+            )
 
         client = _client(handler)
         await client.edit_text(chat_id=1, message_id=5, text="updated")
@@ -338,7 +353,11 @@ class TestApiErrors:
     @pytest.mark.asyncio
     async def test_conflict_409_webhook_active(self):
         def handler(request: httpx.Request) -> httpx.Response:
-            return _err(409, 409, "Conflict: can't use getUpdates method while webhook is active")
+            return _err(
+                409,
+                409,
+                "Conflict: can't use getUpdates method while webhook is active",
+            )
 
         client = _client(handler)
         with pytest.raises(TelegramApiError) as excinfo:

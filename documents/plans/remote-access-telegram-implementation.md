@@ -371,6 +371,8 @@ uv run ruff check app/remote/pairing.py tests/remote/test_pairing.py
 
 **ACs:** AC-1, AC-2, AC-3, AC-5, AC-7, AC-10, AC-12, AC-13, AC-33, AC-34
 
+**Progress:** Complete.
+
 **Files:**
 
 - Create: `app/api/schemas/remote.py`
@@ -386,11 +388,11 @@ uv run ruff check app/remote/pairing.py tests/remote/test_pairing.py
 - Produces singleton `remote_runtime.start/stop/reconcile_connection/status`.
 - Consumes connection, pairing, vault, and adapter services from Tasks 1–4.
 
-- [ ] **Step 1: Write route/auth/secret-shape tests**
+- [x] **Step 1: Write route/auth/secret-shape tests**
 
 Cover zero-or-one list, create, patch enable/label, token replacement, remove, pairing-link issue, pairing read/revoke, status, second-connection `409`, invalid UUID, missing resource, desktop auth, and OpenAPI absence of returned token fields.
 
-- [ ] **Step 2: Write disabled-lifespan and shutdown tests**
+- [x] **Step 2: Write disabled-lifespan and shutdown tests**
 
 ```python
 async def test_disabled_start_does_not_import_telegram(monkeypatch):
@@ -401,11 +403,11 @@ async def test_disabled_start_does_not_import_telegram(monkeypatch):
 
 Prove optional startup failure does not fail health readiness and shutdown stops the remote runtime after pending optional startup completes.
 
-- [ ] **Step 3: Implement thin routes and lazy runtime construction**
+- [x] **Step 3: Implement thin routes and lazy runtime construction**
 
 Routes validate HTTP shape and call services; they do not call Telegram directly. Import `app.remote.telegram.adapter` inside the enabled connection factory only. Add remote startup beside other optional services and explicit shutdown beside Conductor/Scheduler cleanup.
 
-- [ ] **Step 4: Run route and lifecycle evidence**
+- [x] **Step 4: Run route and lifecycle evidence**
 
 ```powershell
 $env:EVOFLUX_DESKTOP_TOKEN=$null
@@ -419,55 +421,59 @@ uv run ruff check app/api/routes/remote.py app/api/schemas/remote.py app/remote/
 
 **ACs:** AC-14, AC-15, AC-16, AC-17, AC-18, AC-29
 
+**Progress:** Complete.
+
 **Files:**
 
 - Create: `app/remote/inbound.py`
 - Modify: `app/services/interactive_message_service.py`
+- Modify: `app/services/chat_service.py` (channel-source delivery compatibility only)
 - Create: `tests/remote/test_inbound.py`
 - Modify: `tests/services/test_interactive_message_service.py`
+- Modify or create: `tests/services/test_chat_service.py`
 
 **Interfaces:**
 
 - Produces `RemoteInboundService.handle_text/new_task/continue_task/stop_current`.
 - Consumes `PairingService.authorize`, `create_chat_session`, `resolve_team_for_session`, `submit_persisted_interactive_message`, and existing interrupt behavior.
-- Generalizes persisted source metadata from `webbridge_source` to channel-neutral `interactive_source` while reading legacy metadata for compatibility.
+- Generalizes persisted source metadata from `webbridge_source` to channel-neutral `interactive_source` while reading legacy metadata for compatibility, including the shared delivered-state helper used by immediate and queued delivery.
 
-- [ ] **Step 1: Write channel-neutral idempotency compatibility tests**
+- [x] **Step 1: Write channel-neutral idempotency compatibility tests**
 
 Persist one `interactive_source` message and prove lookup/dedup; retain a regression that legacy `webbridge_source` rows still deduplicate WebBridge retries.
 
-- [ ] **Step 2: Write inbound behavior tests**
+- [x] **Step 2: Write inbound behavior tests**
 
 Cover first plain text creating a top-level Work session with provenance tags; subsequent text using the current session; queued/pending/accepted status; duplicate update effect-once; deleted current session recovery; **New task** clearing without deletion; **Continue this task** selecting only top-level Work/Coding; refusal of team-member, Side Chat, and internal sessions; `/stop` interrupting only the current live turn.
 
-- [ ] **Step 3: Run failures**
+- [x] **Step 3: Run failures**
 
 ```powershell
-uv run pytest --no-cov -q tests/services/test_interactive_message_service.py tests/remote/test_inbound.py
+uv run pytest --no-cov -q tests/services/test_interactive_message_service.py tests/services/test_chat_service.py tests/remote/test_inbound.py
 ```
 
-- [ ] **Step 4: Implement the channel-neutral source record**
+- [x] **Step 4: Implement the channel-neutral source record**
 
 ```python
 message_extra = {
     "interactive_source": {
         "channel": "remote",
         "adapter": "telegram",
-        "connection_id": str(connection.id),
-        "key": f"remote:telegram:{connection.id}:{update_id}",
+        "connection_id": str(action.connection_id),
+        "key": action.source_key,
         "request_hash": request_hash,
-        "state": "pending",
+        "state": "persisted",
     }
 }
 ```
 
 Do not make HTTP self-calls. Reuse existing team/session defaults and message locking.
 
-- [ ] **Step 5: Run ingress evidence**
+- [x] **Step 5: Run ingress evidence**
 
 ```powershell
-uv run pytest --no-cov -q tests/services/test_interactive_message_service.py tests/remote/test_inbound.py
-uv run ruff check app/remote/inbound.py app/services/interactive_message_service.py tests/remote/test_inbound.py
+uv run pytest --no-cov -q tests/services/test_interactive_message_service.py tests/services/test_chat_service.py tests/remote/test_inbound.py
+uv run ruff check app/remote/inbound.py app/services/interactive_message_service.py app/services/chat_service.py tests/remote/test_inbound.py
 ```
 
 ---

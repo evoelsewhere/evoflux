@@ -40,7 +40,7 @@ from app.remote.connection_service import (
     default_credential_store_factory,
 )
 from app.remote.contracts import RemoteAdapterValidationError
-from app.remote.pairing import PairingService
+from app.remote.pairing import PairingService, pairing_service as _pairing_service
 from app.remote.runtime import TelegramAdapterFactory, remote_runtime
 
 router = APIRouter()
@@ -52,8 +52,14 @@ router = APIRouter()
 # uses for its singleton. ``_credential_store_factory`` is a module-level
 # variable rather than a dependency because it is also used outside any
 # request (``_token_configured``) — tests monkeypatch it directly.
+#
+# ``_pairing_service`` is re-exported from ``app.remote.pairing`` rather than
+# constructed here: it must be the exact same process-wide instance the
+# Telegram adapter's inbound dispatch consumes tokens against
+# (``app/remote/runtime.py``), since pairing tokens live only in that
+# instance's memory. A second, locally-constructed ``PairingService()``
+# would silently never see a token this route mints.
 
-_pairing_service = PairingService()
 _credential_store_factory: CredentialStoreFactory = default_credential_store_factory
 
 
@@ -163,6 +169,8 @@ async def create_connection(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     await remote_runtime.reconcile_connection(connection.id)
+    # ``reconcile_connection`` uses the read pool internally, so it never
+    # contends with the request's write session under SQLite's pool-size-1.
     return await _connection_response(session, connection)
 
 
@@ -202,7 +210,9 @@ async def replace_token(
     ``RemoteConnectionService.update_token`` (AC-6, AC-10).
     """
     try:
-        connection = await service.update_token(session, connection_id, token=body.token)
+        connection = await service.update_token(
+            session, connection_id, token=body.token
+        )
     except RemoteConnectionNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RemoteAdapterValidationError as exc:

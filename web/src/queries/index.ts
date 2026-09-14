@@ -170,3 +170,13 @@ export {
   useFollowUpSettingsQuery,
   useUpdateFollowUpSettingsMutation,
 } from './useFollowUpSettingsQuery'
+export {
+  useConnectionsQuery,
+  useCreateConnectionMutation,
+  usePatchConnectionMutation,
+  useReplaceTokenMutation,
+  useRemoveConnectionMutation,
+  usePairingQuery,
+  useIssuePairingLinkMutation,
+  useRevokePairingMutation,
+} from './useRemoteQuery'

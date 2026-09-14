@@ -195,7 +195,10 @@ class TelegramAdapter:
             raise
         self._record_delivery_success()
         if message.correlation_id is not None:
-            self._sent_messages[message.correlation_id] = (sent.chat.id, sent.message_id)
+            self._sent_messages[message.correlation_id] = (
+                sent.chat.id,
+                sent.message_id,
+            )
 
     async def edit(self, message: RemoteOutboundMessage) -> None:
         target = (
@@ -254,6 +257,7 @@ class TelegramAdapter:
         try:
             if not await self._ensure_webhook_deleted():
                 return
+            await self._register_commands()
             self._state = RemoteConnectionState.POLLING
             offset: int | None = None
             attempt = 0
@@ -288,6 +292,27 @@ class TelegramAdapter:
             logger.error(
                 "telegram_adapter_poll_loop_crashed connection_id={}",
                 self._connection_id,
+            )
+
+    async def _register_commands(self) -> None:
+        """Advertise the slash-command set as Telegram's native "/" menu.
+
+        Best-effort: a paired user can still type any command by hand, so a
+        failure here must never block the poll loop from starting.
+        """
+        commands = [
+            ("help", "Show available commands"),
+            ("status", "Show connection and current task status"),
+            ("new", "Start a new task"),
+            ("stop", "Stop the current running task"),
+            ("unpair", "Unpair this phone from EvoFlux"),
+            ("actions", "Show more actions (Workflows, Projects, Scheduler)"),
+        ]
+        try:
+            await self._client.set_commands(commands)
+        except (TelegramApiError, TelegramTransportError, TelegramMalformedResponseError):
+            logger.warning(
+                "remote_set_commands_failed connection_id={}", self._connection_id
             )
 
     async def _ensure_webhook_deleted(self) -> bool:

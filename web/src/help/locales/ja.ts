@@ -2786,5 +2786,81 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'browser-webbridge'
 ],
     openAction: { type: 'settings', path: 'diagnostics' },
+  },
+  {
+    id: 'remote-access',
+    category: 'settings',
+    title: 'リモートアクセス',
+    summary:
+      '個人の Telegram ボットでスマホから EvoFlux を操作します。タスク更新の受信、権限承認、ゲート解決がデスクトップの前でなくても可能です。各コンピュータに専用ボットが必要です。',
+    keywords: [
+      'remote',
+      'telegram',
+      'bot',
+      'phone',
+      'mobile',
+      'pair',
+      'pairing',
+      'unpair',
+      'remote access',
+      'リモート',
+      'テレグラム',
+      'ボット',
+      'スマホ',
+      'ペアリング'
+],
+    setup:
+      'Telegram で @BotFather にボットを作成し、トークンをコピー。Settings → Remote access でトークンを貼り付け、Connect をクリック。スマホでペアリングリンクを開き、ボットチャットで Start をタップ。',
+    tricks: [
+      '各コンピュータのインストールに専用の Telegram ボットが必要 — 複数マシンで 1 つのボットを共有しない。',
+      'ボットが動作するには EvoFlux がデスクトップで稼働している必要があります。停止中のメッセージは後で実行されません。',
+      'ボットチャットはマシンの外に出ます — 送信テキストはシークレットと PII にレダクションがかかりますが、会話は Telegram サーバーに残ります。',
+      'リモートで許可できる最大権限は Allow once です。スマホから Always オプションはありません。',
+      'ボットチャットで /help で利用可能なコマンド一覧を表示。',
+      '/status でボットがどのセッションにペアリングされ、エージェントがアクティブかどうかを確認。',
+      '/new でスマホから新しいセッションを開始。',
+      '/stop で稼働中のすべてのエージェントを即時停止。',
+      '/unpair でスマホとデスクトップの接続を解除。デスクトップの Settings → Remote access からも削除可能。',
+      'ゲートメッセージ（権限、質問、プラン）はインラインボタン付き — タップで解決、入力不要。'
+],
+    blocks: [
+      {
+        type: 'p',
+        text: 'リモートアクセスは個人の Telegram ボットを通じてスマホから EvoFlux を操作できます。エージェントが入力を必要とするとき — 権限決定、質問、プランレビュー — ボットがインラインボタン付きメッセージを送ります。タップで承認または拒否するとセッションが続行されます。タスク完了はテキスト要約として届くので、確認のタイミングがわかります。',
+      },
+      {
+        type: 'p',
+        text: 'ブリッジは送信専用です: EvoFlux は Telegram への返信をポーリングしますが、受信リスナーは開きません。ボットトークンはデータベースや設定ファイルではなく OS 資格情報ボールト（キーチェーン）に保存されます。すべての送信テキストはレダクション処理され、シークレットや PII は Telegram に届きません。',
+      },
+      {
+        type: 'p',
+        text: 'セットアップ手順: (1) Telegram で @BotFather を開く。 (2) /newbot を送り、プロンプトに従う。 (3) ボットトークンをコピー。 (4) EvoFlux で Settings → Remote access を開く。 (5) トークンを貼り付け Connect をクリック。 (6) UI にペアリングリンクが表示 — スマホで開く。 (7) ボットチャットで Start をタップ。 ペアリングがアクティブになりました。',
+      },
+      {
+        type: 'tips',
+        items: [
+          'EvoFlux が動いていないとボットは応答しません。停止中のメッセージはキューに入りません。',
+          '各コンピュータに専用ボットが必要。2 台で 1 つのボットトークンを共有不可。',
+          'ボットチャットは Telegram サーバーに保存 — 外部として扱う。',
+          'リモートの最大権限は Allow once。スマホから Always は不可。',
+          'コマンド: /help、/status、/new、/stop、/unpair、/actions。',
+          'ゲートメッセージはインラインボタン — 承認・拒否にタイプ不要。'
+],
+      },
+      {
+        type: 'p',
+        text: '取り消し方法: デスクトップで Settings → Remote access → Remove。スマホでボットに /unpair を送る。両側が切断され、ペアリングトークンが無効化されます。',
+      },
+      {
+        type: 'p',
+        text: 'よくある失敗: 複数コンピュータで 1 つのボットを共有; EvoFlux を閉じたままボットにキューを期待; リモート承認で Always が設定できると思い込む; レダクション設定を確認せずにボットチャットに機微データを送信。',
+      }
+],
+    related: [
+      'settings-safety',
+      'permissions-modes',
+      'troubleshooting-connection'
+],
+    openAction: { type: 'settings', path: 'remote-access' },
   }
 ]

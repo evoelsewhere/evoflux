@@ -15,10 +15,18 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+from sqlmodel import select
 
 import app.core.db as db_module
-from app.models.remote import RemoteConnection
-from app.remote.contracts import RemoteAdapterStatus, RemoteConnectionState
+from app.models.remote import RemoteConnection, RemotePairing
+from app.remote.contracts import (
+    RemoteAdapterStatus,
+    RemoteConnectionState,
+    RemoteInboundAction,
+    RemoteInboundActionKind,
+    RemotePrincipal,
+)
+from app.remote.pairing import pairing_service
 from app.remote.runtime import remote_runtime
 
 
@@ -46,6 +54,7 @@ class FakeAdapter:
         self.token = token
         self.started = False
         self.stopped = False
+        self.sent: list = []
 
     async def start(self) -> None:
         self.started = True
@@ -53,8 +62,8 @@ class FakeAdapter:
     async def stop(self) -> None:
         self.stopped = True
 
-    async def send(self, message) -> None:  # pragma: no cover - unused here
-        raise NotImplementedError
+    async def send(self, message) -> None:
+        self.sent.append(message)
 
     async def edit(self, message) -> None:  # pragma: no cover - unused here
         raise NotImplementedError
@@ -63,8 +72,10 @@ class FakeAdapter:
         raise NotImplementedError
 
     def status(self) -> RemoteAdapterStatus:
-        state = RemoteConnectionState.POLLING if self.started and not self.stopped else (
-            RemoteConnectionState.DISABLED
+        state = (
+            RemoteConnectionState.POLLING
+            if self.started and not self.stopped
+            else (RemoteConnectionState.DISABLED)
         )
         return RemoteAdapterStatus(connection_id=self.connection_id, state=state)
 
@@ -108,7 +119,9 @@ def _patch_seams(monkeypatch, fake_stores, fake_adapters):
         fake_adapters.append(adapter)
         return adapter
 
-    monkeypatch.setattr(remote_runtime, "_credential_store_factory", credential_store_factory)
+    monkeypatch.setattr(
+        remote_runtime, "_credential_store_factory", credential_store_factory
+    )
     monkeypatch.setattr(remote_runtime, "_adapter_constructor", adapter_constructor)
 
 
@@ -143,7 +156,9 @@ async def test_disabled_start_does_not_import_telegram(monkeypatch) -> None:
     monkeypatch.setattr(
         remote_runtime, "_credential_store_factory", default_credential_store_factory
     )
-    monkeypatch.setattr(remote_runtime, "_adapter_constructor", _construct_telegram_adapter)
+    monkeypatch.setattr(
+        remote_runtime, "_adapter_constructor", _construct_telegram_adapter
+    )
 
     sys.modules.pop("app.remote.telegram.adapter", None)
     sys.modules.pop("app.remote.telegram.client", None)
@@ -185,7 +200,9 @@ async def test_start_noop_when_credential_missing(session, fake_adapters) -> Non
 
 
 @pytest.mark.asyncio
-async def test_start_constructs_and_starts_adapter(session, fake_stores, fake_adapters) -> None:
+async def test_start_constructs_and_starts_adapter(
+    session, fake_stores, fake_adapters
+) -> None:
     connection = await _make_connection(session, enabled=True)
     fake_stores[connection.id] = FakeCredentialStore("secret-token")
 
@@ -223,7 +240,9 @@ async def test_stop_is_safe_before_start_was_ever_called() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stop_stops_the_running_adapter(session, fake_stores, fake_adapters) -> None:
+async def test_stop_stops_the_running_adapter(
+    session, fake_stores, fake_adapters
+) -> None:
     connection = await _make_connection(session, enabled=True)
     fake_stores[connection.id] = FakeCredentialStore("secret-token")
     await remote_runtime.start()
@@ -321,6 +340,133 @@ async def test_reconcile_after_removal_leaves_nothing_running(
     assert fake_adapters[0].stopped is True
     assert len(fake_adapters) == 1
     assert remote_runtime.status(connection.id).state == RemoteConnectionState.DISABLED
+
+
+# ── inbound dispatch shares the same PairingService instance ──────────────
+#
+# Regression test for a real bug found by manual live testing: a token
+# minted through ``app.remote.pairing.pairing_service`` (the exact object
+# the HTTP route mints links through) must be consumable through
+# ``RemoteRuntime._handle_pairing`` — the inbound dispatch path a real
+# Telegram ``/start <token>`` message reaches. Before this fix,
+# ``_handle_pairing`` constructed its own throwaway ``PairingService()``,
+# which starts with an empty in-memory token store and can never see a
+# token minted anywhere else — pairing silently did nothing, every time.
+
+
+@pytest.mark.asyncio
+async def test_handle_pairing_consumes_a_token_minted_via_the_shared_service(
+    session, fake_stores, fake_adapters
+) -> None:
+    connection = await _make_connection(session, enabled=True)
+    fake_stores[connection.id] = FakeCredentialStore("secret-token")
+    await remote_runtime.start()
+    link = pairing_service.issue_link(connection)
+    token = link.url.rsplit("start=", 1)[-1]
+
+    action = RemoteInboundAction(
+        connection_id=connection.id,
+        kind=RemoteInboundActionKind.PAIRING_START,
+        principal=RemotePrincipal(
+            connection_id=connection.id,
+            principal_id="12345",
+            destination_id="12345",
+            display="Test User",
+        ),
+        source_key=f"telegram:{connection.id}:1",
+        pairing_token=token,
+    )
+
+    await remote_runtime._handle_pairing(action)
+
+    rows = (
+        await session.exec(
+            select(RemotePairing).where(RemotePairing.connection_id == connection.id)
+        )
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].principal_id == "12345"
+
+    # A successful pairing must be confirmed back to the user — silently
+    # persisting the row with nothing sent to Telegram is indistinguishable
+    # from pairing having failed, from the phone's point of view.
+    assert len(fake_adapters[0].sent) == 1
+    confirmation = fake_adapters[0].sent[0]
+    assert confirmation.destination_id == "12345"
+    assert "connected" in confirmation.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_handle_pairing_sends_nothing_for_a_rejected_token(
+    session, fake_stores, fake_adapters
+) -> None:
+    connection = await _make_connection(session, enabled=True)
+    fake_stores[connection.id] = FakeCredentialStore("secret-token")
+    await remote_runtime.start()
+
+    action = RemoteInboundAction(
+        connection_id=connection.id,
+        kind=RemoteInboundActionKind.PAIRING_START,
+        principal=RemotePrincipal(
+            connection_id=connection.id,
+            principal_id="12345",
+            destination_id="12345",
+            display="Test User",
+        ),
+        source_key=f"telegram:{connection.id}:1",
+        pairing_token="not-a-real-token",
+    )
+
+    await remote_runtime._handle_pairing(action)
+
+    # A refusal must reveal no connection state (AC-9) — no message at all,
+    # not even a generic failure notice, distinguishes it from a stranger
+    # probing the bot.
+    assert fake_adapters[0].sent == []
+
+
+# ── slash commands ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_text_action_starting_with_slash_routes_to_commands_not_a_task(
+    session, fake_stores, fake_adapters
+) -> None:
+    """A message that looks like a command must never reach the agent as a
+    task prompt — it goes through RemoteActionService instead."""
+    connection = await _make_connection(session, enabled=True)
+    fake_stores[connection.id] = FakeCredentialStore("secret-token")
+    await remote_runtime.start()
+
+    principal = RemotePrincipal(
+        connection_id=connection.id,
+        principal_id="12345",
+        destination_id="12345",
+        display="Test User",
+    )
+    session.add(
+        RemotePairing(
+            connection_id=connection.id,
+            principal_id="12345",
+            destination_id="12345",
+            label="Test User",
+        )
+    )
+    await session.commit()
+
+    action = RemoteInboundAction(
+        connection_id=connection.id,
+        kind=RemoteInboundActionKind.TEXT,
+        principal=principal,
+        source_key=f"telegram:{connection.id}:2",
+        text="/help",
+    )
+
+    await remote_runtime._handle_action(action)
+
+    assert len(fake_adapters[0].sent) == 1
+    assert "/status" in fake_adapters[0].sent[0].text
+    assert "/unpair" in fake_adapters[0].sent[0].text
 
 
 # ── status() ─────────────────────────────────────────────────────────────

@@ -135,7 +135,9 @@ class TelegramClient:
     and closed — by this client.
     """
 
-    def __init__(self, token: str, *, http_client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self, token: str, *, http_client: httpx.AsyncClient | None = None
+    ) -> None:
         if not token:
             raise ValueError("A Telegram bot token is required.")
         self._token = token
@@ -164,7 +166,9 @@ class TelegramClient:
                 self._url(method),
                 json=payload,
                 timeout=(
-                    httpx.Timeout(timeout) if timeout is not None else httpx.USE_CLIENT_DEFAULT
+                    httpx.Timeout(timeout)
+                    if timeout is not None
+                    else httpx.USE_CLIENT_DEFAULT
                 ),
             )
         except httpx.HTTPError as exc:
@@ -189,7 +193,9 @@ class TelegramClient:
             ) from None
 
         if not envelope.ok:
-            retry_after = envelope.parameters.retry_after if envelope.parameters else None
+            retry_after = (
+                envelope.parameters.retry_after if envelope.parameters else None
+            )
             raise TelegramApiError(
                 error_code=envelope.error_code,
                 description=envelope.description,
@@ -270,7 +276,9 @@ class TelegramClient:
         }
         if markup is not None:
             payload["reply_markup"] = markup
-        return await self._call("editMessageText", payload, result_model=TelegramMessage)
+        return await self._call(
+            "editMessageText", payload, result_model=TelegramMessage
+        )
 
     async def answer_callback(
         self, callback_query_id: str, *, text: str | None = None

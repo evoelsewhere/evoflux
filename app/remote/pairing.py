@@ -358,3 +358,13 @@ class PairingService:
             await session.delete(row)
         await session.commit()
         return True
+
+
+# Process-wide singleton. Pairing tokens and rate-limit windows live only in
+# this instance's memory (AC-7: "exists only in process memory"), so every
+# caller — the HTTP route that mints a link and the Telegram adapter's
+# inbound dispatch that later consumes it — must share this exact object.
+# A second `PairingService()` starts with an empty token store and can never
+# see a token minted through this one; there is deliberately no other way to
+# reach a `PairingService` in this codebase.
+pairing_service = PairingService()

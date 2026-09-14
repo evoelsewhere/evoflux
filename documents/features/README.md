@@ -45,6 +45,7 @@ Status meanings:
 | Sandbox and permissions | Implemented | Permission modes and Settings | permission engine, sandbox and outbound redaction | [Security and permissions](security-and-permissions.md) |
 | Telemetry and diagnostics | Implemented | `/telemetry`, cache read/write, Diagnostics, health and metrics | OTEL, DuckDB aggregation, Prometheus, diagnostics routes | [Observability](observability-and-diagnostics.md) |
 | Conductor managed resources | Optional | Connection/enterprise settings | `app/conductor/` and settings routes | [Security and permissions](security-and-permissions.md) |
+| Remote access | Optional | Settings → Remote access, Telegram chat | `app/remote/`, telegram adapter, pairing, outbound projection | [Remote access](remote-access.md) |
 | Desktop packaging and updates | Implemented | Native app, updater and installers | `desktop/`, packaging scripts and CI | [Release and packaging](../development/release-and-packaging.md) |
 
 ## Explicit non-claims

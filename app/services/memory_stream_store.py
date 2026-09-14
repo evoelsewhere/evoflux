@@ -13,6 +13,7 @@ Single-process only — no cross-worker fan-out.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Literal, cast
@@ -246,6 +247,50 @@ def _take_replay_snapshot(state: _TurnState) -> _ReplaySnapshot:
     )
 
 
+# ── Observer registry ────────────────────────────────────────────────────────
+#
+# Synchronous callbacks invoked after every successful push_event. Observers
+# are snapshot-copied under the per-turn lock and invoked immediately after
+# releasing it, so they never block stream mutation or SSE fan-out.
+# Each observer must be synchronous and non-blocking (no DB, no network).
+
+Observer = Callable[[str, StreamEnvelope], None]
+
+_observers: list[Observer] = []
+
+
+def register_observer(observer: Observer) -> Callable[[], None]:
+    """Register a synchronous stream observer. Returns an unregister callable.
+
+    Observers receive ``(session_id, envelope)`` after every successful
+    ``push_event``. They must not perform blocking I/O or await anything.
+    Must be called from a synchronous context (e.g. server startup).
+    """
+    _observers.append(observer)
+
+    def _unregister() -> None:
+        try:
+            _observers.remove(observer)
+        except ValueError:
+            pass
+
+    return _unregister
+
+
+def _notify_observers(session_id: str, envelope: StreamEnvelope) -> None:
+    """Invoke every registered observer. Exception-isolated."""
+    for observer in list(_observers):
+        try:
+            observer(session_id, envelope)
+        except Exception as exc:
+            logger.warning(
+                "stream_observer_failed session_id={} event_type={} error={}",
+                session_id,
+                envelope.event,
+                exc,
+            )
+
+
 # Me store all active turns here
 _turns: dict[str, _TurnState] = {}
 
@@ -311,8 +356,13 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
     at the type boundary.  Producers build envelopes via
     :meth:`StreamEnvelope.from_event` (for typed ``*Event`` payloads) or
     :meth:`StreamEnvelope.from_parts` (for ad-hoc lifecycle events).
+
+    After the per-turn lock is released, registered observers are invoked
+    synchronously with ``(session_id, envelope)``.  Observers are
+    exception-isolated — one failure never prevents the next from running.
     """
     try:
+        pushed = False
         while True:
             state = _turns.get(session_id)
             if state is None:
@@ -324,7 +374,10 @@ async def push_event(session_id: str, envelope: StreamEnvelope) -> None:
                 if _turns.get(session_id) is not state:
                     continue
                 _push_event_locked(session_id, state, envelope)
-                return
+                pushed = True
+                break
+        if pushed:
+            _notify_observers(session_id, envelope)
     except Exception as exc:
         logger.warning(
             "memory_store_push_failed session_id={} error={}",
@@ -855,3 +908,4 @@ async def attach(session_id: str) -> AsyncGenerator[dict[str, str], None]:
 async def close() -> None:
     """Clear all state (called on server shutdown)."""
     _turns.clear()
+    _observers.clear()

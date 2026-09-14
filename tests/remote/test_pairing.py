@@ -70,7 +70,13 @@ def service() -> PairingService:
     return PairingService()
 
 
-def _principal(connection_id, *, principal_id="tg-user-1", destination_id="tg-chat-1", display="Alice") -> RemotePrincipal:
+def _principal(
+    connection_id,
+    *,
+    principal_id="tg-user-1",
+    destination_id="tg-chat-1",
+    display="Alice",
+) -> RemotePrincipal:
     return RemotePrincipal(
         connection_id=connection_id,
         principal_id=principal_id,
@@ -98,7 +104,9 @@ def test_issue_link_token_is_url_safe_bounded_and_matches_username(
 
 
 @pytest.mark.asyncio
-async def test_issue_link_never_touches_the_database(service, connection, session) -> None:
+async def test_issue_link_never_touches_the_database(
+    service, connection, session
+) -> None:
     service.issue_link(connection)
 
     rows = (await session.exec(select(RemotePairing))).all()
@@ -202,7 +210,11 @@ async def test_consume_unknown_token_is_refused_silently(
 ) -> None:
     principal = _principal(connection.id)
     result = await service.consume(
-        session, "not-a-real-token", principal, is_private_chat=True, is_bot_sender=False
+        session,
+        "not-a-real-token",
+        principal,
+        is_private_chat=True,
+        is_bot_sender=False,
     )
     assert result is None
 
@@ -274,7 +286,9 @@ async def test_consume_enforces_one_pairing_per_connection(
 ) -> None:
     first_link = service.issue_link(connection)
     first_token = _extract_token(first_link)
-    first_principal = _principal(connection.id, principal_id="tg-user-1", destination_id="tg-chat-1")
+    first_principal = _principal(
+        connection.id, principal_id="tg-user-1", destination_id="tg-chat-1"
+    )
 
     first = await service.consume(
         session, first_token, first_principal, is_private_chat=True, is_bot_sender=False
@@ -283,10 +297,16 @@ async def test_consume_enforces_one_pairing_per_connection(
 
     second_link = service.issue_link(connection)
     second_token = _extract_token(second_link)
-    second_principal = _principal(connection.id, principal_id="tg-user-2", destination_id="tg-chat-2")
+    second_principal = _principal(
+        connection.id, principal_id="tg-user-2", destination_id="tg-chat-2"
+    )
 
     second = await service.consume(
-        session, second_token, second_principal, is_private_chat=True, is_bot_sender=False
+        session,
+        second_token,
+        second_principal,
+        is_private_chat=True,
+        is_bot_sender=False,
     )
     assert second is None
 
@@ -297,7 +317,11 @@ async def test_consume_enforces_one_pairing_per_connection(
     # still-unexpired second token (a rejected attempt did not burn it).
     await service.unpair(session, connection.id)
     retry = await service.consume(
-        session, second_token, second_principal, is_private_chat=True, is_bot_sender=False
+        session,
+        second_token,
+        second_principal,
+        is_private_chat=True,
+        is_bot_sender=False,
     )
     assert retry is not None
     assert retry.principal_id == "tg-user-2"
@@ -314,16 +338,32 @@ async def test_refusals_are_uniform_regardless_of_reason(
     token = _extract_token(link)
 
     unknown_token_result = await service.consume(
-        session, "garbage", _principal(connection.id), is_private_chat=True, is_bot_sender=False
+        session,
+        "garbage",
+        _principal(connection.id),
+        is_private_chat=True,
+        is_bot_sender=False,
     )
     group_chat_result = await service.consume(
-        session, token, _principal(connection.id), is_private_chat=False, is_bot_sender=False
+        session,
+        token,
+        _principal(connection.id),
+        is_private_chat=False,
+        is_bot_sender=False,
     )
     bot_sender_result = await service.consume(
-        session, token, _principal(connection.id), is_private_chat=True, is_bot_sender=True
+        session,
+        token,
+        _principal(connection.id),
+        is_private_chat=True,
+        is_bot_sender=True,
     )
     wrong_connection_result = await service.consume(
-        session, token, _principal(other_connection.id), is_private_chat=True, is_bot_sender=False
+        session,
+        token,
+        _principal(other_connection.id),
+        is_private_chat=True,
+        is_bot_sender=False,
     )
 
     assert (
@@ -358,9 +398,7 @@ async def test_consume_enforces_per_principal_rate_limit(connection, session) ->
 
 
 @pytest.mark.asyncio
-async def test_consume_enforces_connection_wide_rate_limit(
-    connection, session
-) -> None:
+async def test_consume_enforces_connection_wide_rate_limit(connection, session) -> None:
     limited_service = PairingService(connection_rate_limit=1)
     link = limited_service.issue_link(connection)
     token = _extract_token(link)

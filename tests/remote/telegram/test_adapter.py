@@ -32,8 +32,14 @@ def _ok(result) -> httpx.Response:
     return httpx.Response(200, json={"ok": True, "result": result})
 
 
-def _err(status: int, error_code: int, description: str, *, retry_after: int | None = None):
-    body: dict[str, object] = {"ok": False, "error_code": error_code, "description": description}
+def _err(
+    status: int, error_code: int, description: str, *, retry_after: int | None = None
+):
+    body: dict[str, object] = {
+        "ok": False,
+        "error_code": error_code,
+        "description": description,
+    }
     if retry_after is not None:
         body["parameters"] = {"retry_after": retry_after}
     return httpx.Response(status, json=body)
@@ -162,7 +168,9 @@ class TestStartupSequence:
 # ---------------------------------------------------------------------------
 
 
-def _text_update(update_id: int, *, chat_id: int = 100, user_id: int = 200, text: str = "hi"):
+def _text_update(
+    update_id: int, *, chat_id: int = 100, user_id: int = 200, text: str = "hi"
+):
     return {
         "update_id": update_id,
         "message": {
@@ -195,7 +203,9 @@ class TestClassificationAndOffsets:
         adapter = _make_adapter(transport)
         await _run_briefly(adapter)
 
-        get_updates_payloads = [p for name, p in transport.calls if name == "getUpdates"]
+        get_updates_payloads = [
+            p for name, p in transport.calls if name == "getUpdates"
+        ]
         assert "offset" not in get_updates_payloads[0]
         assert get_updates_payloads[1]["offset"] == 6
 
@@ -210,7 +220,9 @@ class TestClassificationAndOffsets:
         adapter = _make_adapter(transport, on_action=failing_on_action)
         await _run_briefly(adapter)
 
-        get_updates_payloads = [p for name, p in transport.calls if name == "getUpdates"]
+        get_updates_payloads = [
+            p for name, p in transport.calls if name == "getUpdates"
+        ]
         # Second call must not have advanced past update 9 — it stays
         # unacknowledged so it is safely redelivered.
         assert "offset" not in get_updates_payloads[1]
@@ -395,7 +407,11 @@ class TestErrorTaxonomy:
         transport = ScriptedTransport()
         transport.queue(
             "getUpdates",
-            _err(409, 409, "Conflict: can't use getUpdates method while webhook is active"),
+            _err(
+                409,
+                409,
+                "Conflict: can't use getUpdates method while webhook is active",
+            ),
         )
         adapter = _make_adapter(transport)
         start = time.monotonic()
@@ -550,7 +566,9 @@ class TestDeliveryIndependentOfPolling:
         await asyncio.sleep(0.02)
 
         await adapter.send(
-            RemoteOutboundMessage(connection_id=uuid4(), destination_id="100", text="hi")
+            RemoteOutboundMessage(
+                connection_id=uuid4(), destination_id="100", text="hi"
+            )
         )
         status = adapter.status()
         await adapter.stop()

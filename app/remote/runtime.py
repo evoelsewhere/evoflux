@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from loguru import logger
@@ -34,8 +35,15 @@ from app.remote.contracts import (
     RemoteAdapterValidationError,
     RemoteConnectionState,
     RemoteInboundAction,
+    RemoteOutboundMessage,
+    RemoteOutboundPriority,
     ValidatedRemoteIdentity,
 )
+
+if TYPE_CHECKING:
+    from app.remote.actions import RemoteActionService
+    from app.remote.gates import RemoteGateBridge
+    from app.remote.outbound import RemoteProjection
 
 __all__ = [
     "AdapterConstructor",
@@ -129,7 +137,9 @@ def _construct_telegram_adapter(
     """
     from app.remote.telegram.adapter import TelegramAdapter
 
-    return TelegramAdapter(connection_id=connection_id, token=token, on_action=on_action)
+    return TelegramAdapter(
+        connection_id=connection_id, token=token, on_action=on_action
+    )
 
 
 class RemoteRuntime:
@@ -167,6 +177,12 @@ class RemoteRuntime:
         self._lock = asyncio.Lock()
         self._adapter: RemoteAdapter | None = None
         self._connection_id: UUID | None = None
+
+        #: Stream projection for outbound delivery. Created lazily.
+        self._projection: RemoteProjection | None = None
+        self._observer_unregister: Callable[[], None] | None = None
+        self._bridge: RemoteGateBridge | None = None
+        self._actions: "RemoteActionService | None" = None
 
     async def start(self) -> None:
         """Start the current connection's adapter, if any (AC-1).
@@ -223,9 +239,9 @@ class RemoteRuntime:
     # ------------------------------------------------------------------
 
     async def _start_locked(self) -> None:
-        from app.core.db import async_session_factory
+        from app.core.db import read_session_factory
 
-        async with async_session_factory() as session:
+        async with read_session_factory() as session:
             connections = await self._connection_service_factory().list(session)
         connection = connections[0] if connections else None
         if connection is None or not connection.enabled:
@@ -252,30 +268,222 @@ class RemoteRuntime:
         self._adapter = adapter
         self._connection_id = connection.id
 
+        # Register the outbound projection as a stream observer.
+        from app.remote.outbound import RemoteProjection
+
+        projection = RemoteProjection()
+        projection.set_adapter(adapter)
+        self._projection = projection
+
+        # Create the gate bridge for callback resolution.
+        from app.remote.gates import RemoteGateBridge
+
+        self._bridge = RemoteGateBridge(adapter=adapter)
+        projection.set_bridge(self._bridge)
+
+        # Slash commands (/help, /status, /new, /stop, /unpair, /actions) and
+        # the More-actions menu — shares the same PairingService singleton
+        # every other pairing-aware caller uses (see the module docstring in
+        # app/remote/pairing.py for why a locally-constructed one would be
+        # silently broken).
+        from app.remote.actions import RemoteActionService
+        from app.remote.pairing import pairing_service as _shared_pairing_service
+
+        self._actions = RemoteActionService(
+            pairing_service=_shared_pairing_service,
+            adapter=adapter,
+            status_provider=lambda: self.status(connection.id),
+        )
+
+        from app.services.memory_stream_store import register_observer
+
+        self._observer_unregister = register_observer(projection.observe)
+
+        logger.info("remote_runtime_started connection_id={}", connection.id)
+
     async def _stop_locked(self) -> None:
         adapter, self._adapter = self._adapter, None
         self._connection_id = None
+
+        # Unregister the stream observer before stopping the adapter.
+        if self._observer_unregister is not None:
+            self._observer_unregister()
+            self._observer_unregister = None
+        if self._projection is not None:
+            self._projection.set_adapter(None)
+            self._projection.set_bridge(None)
+            self._projection = None
+        self._bridge = None
+        self._actions = None
+
         if adapter is not None:
             await adapter.stop()
 
     async def _handle_action(self, action: RemoteInboundAction) -> None:
-        """Placeholder inbound dispatch.
+        """Dispatch one classified inbound action to the appropriate service.
 
-        This task (Desktop API and lazy runtime lifecycle) is scoped to
-        AC-1, AC-2, AC-3, AC-5, AC-7, AC-10, AC-12, AC-13, AC-33, and AC-34
-        — none of which require acting on inbound Telegram updates. A later
-        task supplies the real ``RemoteInboundService`` (natural-language
-        ingress and pairing consumption, AC-8/AC-14+) that this handler
-        will delegate to. Until then, inbound actions are received — so the
-        adapter's poll loop and offset bookkeeping run correctly end to
-        end — and safely dropped, rather than duplicating business logic
-        that belongs to ``PairingService``/a later inbound service here.
+        TEXT actions go to :class:`~app.remote.inbound.RemoteInboundService`;
+        PAIRING_START actions are consumed by
+        :class:`~app.remote.pairing.PairingService`; CALLBACK actions are
+        handled by :class:`~app.remote.gates.RemoteGateBridge`.
         """
+        from app.remote.contracts import RemoteInboundActionKind
+
+        if action.kind == RemoteInboundActionKind.PAIRING_START:
+            await self._handle_pairing(action)
+        elif action.kind == RemoteInboundActionKind.TEXT:
+            if (action.text or "").strip().startswith("/"):
+                await self._handle_command(action)
+            else:
+                await self._handle_text(action)
+        elif action.kind == RemoteInboundActionKind.CALLBACK:
+            # Two independent, opaque token namespaces share the callback
+            # channel: gate replies (permission/question/plan) owned by
+            # RemoteGateBridge, and More-actions menu picks owned by
+            # RemoteActionService. Try the menu first — it's a plain dict
+            # membership check — and fall back to the gate bridge, which
+            # already degrades safely (logs + no-ops) on an unknown token.
+            handled = False
+            if self._actions is not None and action.callback_token is not None:
+                handled = await self._actions.handle_action_callback(action)
+            if not handled and self._bridge is not None:
+                await self._bridge.handle_callback(action)
+            elif not handled and self._bridge is None:
+                logger.debug(
+                    "remote_callback_no_bridge connection_id={} source_key={}",
+                    action.connection_id,
+                    action.source_key,
+                )
+        else:
+            logger.debug(
+                "remote_inbound_action_unknown connection_id={} kind={}",
+                action.connection_id,
+                action.kind,
+            )
+
+    async def _handle_pairing(self, action: RemoteInboundAction) -> None:
+        """Consume a ``/start`` deep-link pairing token."""
+        from app.core.db import async_session_factory
+        from app.remote.pairing import pairing_service
+
+        token = action.pairing_token
+        if not token:
+            logger.debug(
+                "remote_pairing_start_no_token connection_id={}",
+                action.connection_id,
+            )
+            return
+
+        async with async_session_factory() as session:
+            result = await pairing_service.consume(
+                session,
+                token,
+                action.principal,
+                is_private_chat=True,
+                is_bot_sender=False,
+            )
+
+        if result is not None:
+            logger.info(
+                "remote_pairing_success connection_id={} principal_id={}",
+                action.connection_id,
+                action.principal.principal_id,
+            )
+            # A silently-persisted pairing is indistinguishable from a
+            # failed one from the phone's side — confirm it (spec: "sends
+            # Connected to EvoFlux on <device label>"). Never sent on
+            # rejection (AC-9: a refusal reveals no connection state).
+            if self._adapter is not None:
+                await self._adapter.send(
+                    RemoteOutboundMessage(
+                        connection_id=action.connection_id,
+                        destination_id=action.principal.destination_id,
+                        text=f"Connected to EvoFlux on {result.label}.",
+                        priority=RemoteOutboundPriority.HIGH,
+                    )
+                )
+        else:
+            logger.debug(
+                "remote_pairing_rejected connection_id={} principal_id={}",
+                action.connection_id,
+                action.principal.principal_id,
+            )
+
+    async def _handle_command(self, action: RemoteInboundAction) -> None:
+        """Dispatch a ``/command`` to :class:`~app.remote.actions.RemoteActionService`
+        and send its result back.
+
+        Unauthorized (unpaired sender) dispatches are answered with nothing,
+        matching every other refusal in this feature — a stranger sending
+        ``/help`` to a bot they haven't paired with must not learn anything
+        the bot is willing to say to a paired user.
+        """
+        from app.core.db import async_session_factory
+
+        if self._actions is None:
+            return
+
+        async with async_session_factory() as session:
+            result = await self._actions.dispatch_command(session, action)
+
+        if result.status == "unauthorized":
+            logger.debug(
+                "remote_command_unauthorized connection_id={} principal_id={}",
+                action.connection_id,
+                action.principal.principal_id,
+            )
+            return
+
+        # ``/actions`` already sends its own message (with buttons) inside
+        # RemoteActionService — sending its returned text again here would
+        # duplicate it. Every other command relies entirely on this send.
+        command = (action.text or "").strip().split(maxsplit=1)[0][1:].lower()
+        if command == "actions":
+            return
+
+        if result.text and self._adapter is not None:
+            await self._adapter.send(
+                RemoteOutboundMessage(
+                    connection_id=action.connection_id,
+                    destination_id=action.principal.destination_id,
+                    text=result.text,
+                    priority=RemoteOutboundPriority.HIGH,
+                )
+            )
+
+    async def _handle_text(self, action: RemoteInboundAction) -> None:
+        """Submit paired plain text to the inbound service."""
+        from app.core.db import async_session_factory
+        from app.remote.inbound import RemoteInboundService
+        from app.remote.pairing import pairing_service
+
+        # Share the same PairingService instance the routes mint links
+        # through and _handle_pairing consumes tokens against — a
+        # locally-constructed one would carry its own empty rate-limiter
+        # state and diverge from the single source of truth for pairing.
+        inbound_service = RemoteInboundService(pairing_service=pairing_service)
+
+        async with async_session_factory() as session:
+            result = await inbound_service.handle_text(session, action)
+
         logger.debug(
-            "remote_inbound_action_dropped connection_id={} kind={}",
+            "remote_text_handled connection_id={} status={} session_id={}",
             action.connection_id,
-            action.kind,
+            result.status,
+            result.session_id,
         )
+
+        # Register the session with the projection so outbound events are
+        # delivered back through Telegram.
+        if result.session_id is not None and self._projection is not None:
+            self._projection.register_session(
+                str(result.session_id),
+                connection_id=str(action.connection_id),
+                destination_id=action.principal.destination_id,
+                tags=frozenset(
+                    {"remote_origin", f"remote_connection:{action.connection_id}"}
+                ),
+            )
 
 
 remote_runtime = RemoteRuntime()
