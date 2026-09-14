@@ -8,6 +8,7 @@ what a later task's Telegram adapter would classify from a raw update.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
@@ -520,3 +521,83 @@ async def test_unpair_on_connection_without_a_pairing_returns_false(
 @pytest.mark.asyncio
 async def test_unpair_unknown_connection_returns_false(service, session) -> None:
     assert await service.unpair(session, uuid4()) is False
+
+
+# ── concurrency: unsynchronized check-then-act race (fix follow-up) ──────
+
+
+@pytest.mark.asyncio
+async def test_concurrent_consume_with_different_tokens_only_binds_one_pairing(
+    service, connection, session
+) -> None:
+    """Two different valid tokens for the same connection, consumed near-
+    simultaneously via asyncio.gather, must not both pass the
+    one-pairing-per-connection check before either commits — only one may
+    succeed, the other must get the uniform refusal."""
+    first_link = service.issue_link(connection)
+    first_token = _extract_token(first_link)
+    second_link = service.issue_link(connection)
+    second_token = _extract_token(second_link)
+
+    first_principal = _principal(
+        connection.id, principal_id="user-a", destination_id="chat-a"
+    )
+    second_principal = _principal(
+        connection.id, principal_id="user-b", destination_id="chat-b"
+    )
+
+    results = await asyncio.gather(
+        service.consume(
+            session,
+            first_token,
+            first_principal,
+            is_private_chat=True,
+            is_bot_sender=False,
+        ),
+        service.consume(
+            session,
+            second_token,
+            second_principal,
+            is_private_chat=True,
+            is_bot_sender=False,
+        ),
+    )
+
+    successes = [result for result in results if result is not None]
+    refusals = [result for result in results if result is None]
+    assert len(successes) == 1
+    assert len(refusals) == 1
+
+    rows = (await session.exec(select(RemotePairing))).all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_consume_with_the_same_token_only_succeeds_once(
+    service, connection, session
+) -> None:
+    """The same token consumed twice concurrently (e.g. a duplicate inbound
+    delivery) must yield exactly one success and one uniform refusal — never
+    an unhandled exception from a duplicate insert."""
+    link = service.issue_link(connection)
+    token = _extract_token(link)
+    principal = _principal(
+        connection.id, principal_id="user-a", destination_id="chat-a"
+    )
+
+    results = await asyncio.gather(
+        service.consume(
+            session, token, principal, is_private_chat=True, is_bot_sender=False
+        ),
+        service.consume(
+            session, token, principal, is_private_chat=True, is_bot_sender=False
+        ),
+    )
+
+    successes = [result for result in results if result is not None]
+    refusals = [result for result in results if result is None]
+    assert len(successes) == 1
+    assert len(refusals) == 1
+
+    rows = (await session.exec(select(RemotePairing))).all()
+    assert len(rows) == 1

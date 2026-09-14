@@ -45,6 +45,7 @@ never logged.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import threading
 import time
@@ -154,6 +155,18 @@ class PairingService:
         self._connection_rate_limit = connection_rate_limit
         self._tokens: dict[str, _PendingToken] = {}
         self._tokens_lock = threading.Lock()
+        #: Serializes consume()'s whole check-then-act sequence (existing-
+        #: pairing SELECT through token pop and RemotePairing insert) across
+        #: concurrent calls. This app is single-process (see e.g.
+        #: app/services/memory_stream_store.py's module docstring and
+        #: WebBridgeTicketStore's equivalent per-instance lock in
+        #: app/services/webbridge_pairing_service.py), so a plain
+        #: asyncio.Lock — safely held across await points — is the
+        #: right-sized fix: without it, two concurrent consume() calls can
+        #: both pass the "no existing pairing" check before either commits
+        #: (breaking the one-pairing-per-connection limit), or both race
+        #: past a since-consumed token toward a duplicate insert.
+        self._consume_lock = asyncio.Lock()
         self._rate_limiter = _SlidingWindowRateLimiter(
             window_seconds=rate_limit_window_seconds
         )
@@ -210,6 +223,11 @@ class PairingService:
         bind does — so a legitimate retry from a corrected context (for
         example a private chat after a group-chat attempt) can still
         succeed before the token's real expiry.
+
+        The existing-pairing check, token pop, and insert run as one atomic
+        critical section under ``self._consume_lock`` so two concurrent
+        calls cannot both observe "no existing pairing" and both insert, and
+        cannot both pop the same token and both proceed toward insert.
         """
         timestamp = time.monotonic() if now is None else now
 
@@ -226,41 +244,48 @@ class PairingService:
         ):
             return None
 
-        with self._tokens_lock:
-            pending = self._tokens.get(token)
-        if pending is None or pending.expires_at <= timestamp:
-            return None
-        if pending.connection_id != principal.connection_id:
-            return None
-        if not is_private_chat or is_bot_sender:
-            return None
+        async with self._consume_lock:
+            with self._tokens_lock:
+                pending = self._tokens.get(token)
+            if pending is None or pending.expires_at <= timestamp:
+                return None
+            if pending.connection_id != principal.connection_id:
+                return None
+            if not is_private_chat or is_bot_sender:
+                return None
 
-        existing = (
-            await session.exec(
-                select(RemotePairing).where(
-                    RemotePairing.connection_id == principal.connection_id
+            existing = (
+                await session.exec(
+                    select(RemotePairing).where(
+                        RemotePairing.connection_id == principal.connection_id
+                    )
                 )
+            ).first()
+            if existing is not None:
+                return None
+
+            # Every check passed: burn the token now, then persist the
+            # binding. Checking pop()'s return value is correct
+            # defense-in-depth even under the lock — it is the only thing
+            # standing between a racing/duplicate consume of the very same
+            # token and an unhandled IntegrityError from a duplicate insert.
+            with self._tokens_lock:
+                popped = self._tokens.pop(token, None)
+            if popped is None:
+                return None
+
+            display = principal.display[:_MAX_LABEL_LENGTH]
+            pairing = RemotePairing(
+                connection_id=principal.connection_id,
+                principal_id=principal.principal_id,
+                destination_id=principal.destination_id,
+                label=display or "Paired device",
+                display=display,
             )
-        ).first()
-        if existing is not None:
-            return None
-
-        # Every check passed: burn the token now, then persist the binding.
-        with self._tokens_lock:
-            self._tokens.pop(token, None)
-
-        display = principal.display[:_MAX_LABEL_LENGTH]
-        pairing = RemotePairing(
-            connection_id=principal.connection_id,
-            principal_id=principal.principal_id,
-            destination_id=principal.destination_id,
-            label=display or "Paired device",
-            display=display,
-        )
-        session.add(pairing)
-        await session.commit()
-        await session.refresh(pairing)
-        return pairing
+            session.add(pairing)
+            await session.commit()
+            await session.refresh(pairing)
+            return pairing
 
     # ── authorize ────────────────────────────────────────────────────────
 
