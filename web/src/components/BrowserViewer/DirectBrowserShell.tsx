@@ -15,6 +15,8 @@ import {
   Menu,
   Minimize2,
   Monitor,
+  PictureInPicture,
+  PictureInPicture2,
   Plus,
   Printer,
   RefreshCw,
@@ -534,11 +536,21 @@ export function DirectBrowserShell({
             )}
 
             <ToolbarButton
-              label={maximized ? 'Restore panel width' : 'Fill the window'}
-              onClick={toggleMaximized}
+              label={browser.detached ? 'Bring the page back here' : 'Open in its own window'}
+              disabled={!hasPage}
+              onClick={() => void (browser.detached ? browser.attachTab() : browser.detachTab())}
             >
-              {maximized ? <Minimize2 /> : <Maximize2 />}
+              {browser.detached ? <PictureInPicture2 /> : <PictureInPicture />}
             </ToolbarButton>
+
+            {!browser.detached && (
+              <ToolbarButton
+                label={maximized ? 'Restore panel width' : 'Fill the window'}
+                onClick={toggleMaximized}
+              >
+                {maximized ? <Minimize2 /> : <Maximize2 />}
+              </ToolbarButton>
+            )}
 
             <button
               type="button"
@@ -606,6 +618,31 @@ export function DirectBrowserShell({
               ) : browser.creating ? (
                 <div className="absolute inset-0 flex items-center justify-center bg-(--bg-page)">
                   <Loader2 size={26} className="animate-spin text-(--color-accent)" />
+                </div>
+              ) : browser.detached ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-(--bg-page) px-6 text-center">
+                  <div className="max-w-sm">
+                    <PictureInPicture2
+                      size={30}
+                      className="mx-auto mb-3 text-(--color-text-muted)"
+                      aria-hidden
+                    />
+                    <p className="text-sm font-medium text-(--color-text)">
+                      This page is in its own window
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-(--color-text-muted)">
+                      The toolbar here still drives it. Closing that window brings
+                      the page back to this panel.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="mt-4"
+                      onClick={() => void browser.attachTab()}
+                    >
+                      Bring it back
+                    </Button>
+                  </div>
                 </div>
               ) : browser.pageError ? (
                 <BrowserPageErrorView
