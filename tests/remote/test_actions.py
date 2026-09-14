@@ -17,6 +17,7 @@ from app.remote.actions import (
 from app.remote.contracts import (
     RemoteInboundAction,
     RemoteInboundActionKind,
+    RemoteOutboundPriority,
     RemotePrincipal,
 )
 from app.remote.outbound import RemoteProjection
@@ -30,6 +31,7 @@ class FakeAdapter:
         self.calls: list[str] = []
         self.acked_tokens: list[str] = []
         self.sent_texts: list[str] = []
+        self.sent_messages: list = []
 
     async def answer_callback(self, token: str) -> None:
         self.calls.append("answer_callback")
@@ -38,6 +40,7 @@ class FakeAdapter:
     async def send(self, msg) -> None:
         self.calls.append("send")
         self.sent_texts.append(msg.text)
+        self.sent_messages.append(msg)
 
     async def edit(self, msg) -> None:
         self.calls.append("edit")
@@ -291,6 +294,157 @@ class TestSlashCommands:
 
 
 class TestCallbackHandling:
+    def test_register_capability_returns_usable_token(
+        self, service: RemoteActionService
+    ) -> None:
+        token = service.register_capability(
+            connection_id=uuid4(),
+            principal_id="user-1",
+            destination_id="chat-1",
+            session_id="sess-1",
+            action_kind="toollog",
+            action_target="log text",
+        )
+
+        assert isinstance(token, str)
+        assert token
+        assert len(token.encode("utf-8")) <= 64
+
+    @pytest.mark.asyncio
+    async def test_toollog_capability_sends_escaped_stored_content(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        connection_id = uuid4()
+        token = service.register_capability(
+            connection_id=connection_id,
+            principal_id="user-1",
+            destination_id="chat-1",
+            session_id="sess-1",
+            action_kind="toollog",
+            action_target="write <script>alert(1)</script>",
+        )
+        action = _make_action(
+            kind=RemoteInboundActionKind.CALLBACK,
+            callback_token=token,
+            connection_id=connection_id,
+        )
+
+        handled = await service.handle_action_callback(action, MagicMock())
+
+        assert handled is True
+        assert adapter.calls == ["answer_callback", "send"]
+        assert "&lt;script&gt;" in adapter.sent_texts[0]
+        assert "<script>" not in adapter.sent_texts[0]
+        assert adapter.sent_messages[0].priority == RemoteOutboundPriority.HIGH
+
+    @pytest.mark.asyncio
+    async def test_detail_capability_splits_escaped_content_with_valid_html(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        connection_id = uuid4()
+        token = service.register_capability(
+            connection_id=connection_id,
+            principal_id="user-1",
+            destination_id="chat-1",
+            session_id="sess-1",
+            action_kind="toollog",
+            action_target="<" * 5_000,
+        )
+        action = _make_action(
+            kind=RemoteInboundActionKind.CALLBACK,
+            callback_token=token,
+            connection_id=connection_id,
+        )
+
+        handled = await service.handle_action_callback(action, MagicMock())
+
+        assert handled is True
+        assert len(adapter.sent_texts) > 1
+        assert all(len(text) <= 4096 for text in adapter.sent_texts)
+        assert all(text.count("<pre>") == 1 for text in adapter.sent_texts)
+        assert all(text.endswith("</pre>") for text in adapter.sent_texts)
+        assert all("&lt;" in text for text in adapter.sent_texts)
+
+    @pytest.mark.asyncio
+    async def test_detail_capability_refuses_a_different_principal(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        connection_id = uuid4()
+        token = service.register_capability(
+            connection_id=connection_id,
+            principal_id="user-1",
+            destination_id="chat-1",
+            session_id="sess-1",
+            action_kind="diff",
+            action_target="diff text",
+        )
+        action = _make_action(
+            kind=RemoteInboundActionKind.CALLBACK,
+            callback_token=token,
+            connection_id=connection_id,
+            principal_id="other-user",
+        )
+
+        handled = await service.handle_action_callback(action, MagicMock())
+
+        assert handled is False
+        assert adapter.calls == []
+
+    @pytest.mark.asyncio
+    async def test_detail_capability_refuses_a_different_destination(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        connection_id = uuid4()
+        token = service.register_capability(
+            connection_id=connection_id,
+            principal_id="user-1",
+            destination_id="chat-1",
+            session_id="sess-1",
+            action_kind="diff",
+            action_target="diff text",
+        )
+        action = _make_action(
+            kind=RemoteInboundActionKind.CALLBACK,
+            callback_token=token,
+            connection_id=connection_id,
+            destination_id="other-chat",
+        )
+
+        handled = await service.handle_action_callback(action, MagicMock())
+
+        assert handled is False
+        assert adapter.calls == []
+
+    @pytest.mark.asyncio
+    async def test_expired_detail_capability_replies_with_a_friendly_message(
+        self, service: RemoteActionService, adapter: FakeAdapter, monkeypatch
+    ) -> None:
+        connection_id = uuid4()
+        token = service.register_capability(
+            connection_id=connection_id,
+            principal_id="user-1",
+            destination_id="chat-1",
+            session_id="sess-1",
+            action_kind="diff",
+            action_target="diff text",
+        )
+        issued_at = service._capabilities[token].created_at
+        monkeypatch.setattr(
+            "app.remote.actions.time.monotonic",
+            lambda: issued_at + 601,
+        )
+        action = _make_action(
+            kind=RemoteInboundActionKind.CALLBACK,
+            callback_token=token,
+            connection_id=connection_id,
+        )
+
+        handled = await service.handle_action_callback(action, MagicMock())
+
+        assert handled is True
+        assert adapter.calls == ["answer_callback", "send"]
+        assert "expired" in adapter.sent_texts[0].lower()
+
     @pytest.mark.asyncio
     async def test_unknown_callback_returns_false(
         self, service: RemoteActionService
@@ -299,7 +453,7 @@ class TestCallbackHandling:
             kind=RemoteInboundActionKind.CALLBACK,
             callback_token="nonexistent",
         )
-        result = await service.handle_action_callback(action)
+        result = await service.handle_action_callback(action, MagicMock())
         assert result is False
 
     @pytest.mark.asyncio
@@ -335,8 +489,10 @@ class TestCallbackHandling:
             kind=RemoteInboundActionKind.CALLBACK,
             callback_token=token,
             connection_id=conn_id,
+            principal_id="u1",
+            destination_id="c1",
         )
-        result = await service.handle_action_callback(action)
+        result = await service.handle_action_callback(action, MagicMock())
         assert result is False
 
     @pytest.mark.asyncio
@@ -356,7 +512,7 @@ class TestCallbackHandling:
             callback_token=token,
             connection_id=uuid4(),  # different connection
         )
-        result = await service.handle_action_callback(action)
+        result = await service.handle_action_callback(action, MagicMock())
         assert result is False
 
     @pytest.mark.asyncio
@@ -374,7 +530,7 @@ class TestCallbackHandling:
             source_key="test",
             callback_token=None,
         )
-        result = await service.handle_action_callback(action)
+        result = await service.handle_action_callback(action, MagicMock())
         assert result is False
 
 

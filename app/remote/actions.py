@@ -24,6 +24,7 @@ from uuid import UUID
 
 from loguru import logger
 
+from app.remote import formatting
 from app.remote.contracts import (
     RemoteAdapter,
     RemoteButton,
@@ -41,6 +42,7 @@ __all__ = ["RemoteActionResult", "RemoteActionService", "RemoteMenuItem"]
 
 _MAX_CALLBACK_TOKEN_BYTES = 64
 _CAPABILITY_TTL_SECONDS = 600
+_TELEGRAM_MAX_MESSAGE_LENGTH = 4096
 
 CommandName = Literal["start", "help", "status", "new", "stop", "unpair", "actions"]
 
@@ -132,6 +134,26 @@ class RemoteActionService:
         not just callback/menu tokens)."""
         self._projection = projection
 
+    def register_capability(
+        self,
+        *,
+        connection_id: UUID | str,
+        principal_id: str,
+        destination_id: str,
+        session_id: str,
+        action_kind: str,
+        action_target: str,
+    ) -> str:
+        """Register one short-lived, principal-bound detail action."""
+        return self._issue_token(
+            connection_id=UUID(str(connection_id)),
+            principal_id=principal_id,
+            destination_id=destination_id,
+            session_id=session_id,
+            action_kind=action_kind,
+            action_target=action_target,
+        )
+
     # ── Command dispatch ──────────────────────────────────────────────────
 
     async def dispatch_command(
@@ -171,6 +193,7 @@ class RemoteActionService:
     async def handle_action_callback(
         self,
         action: RemoteInboundAction,
+        db: AsyncSession,
     ) -> bool:
         """Handle a callback from a More-actions menu.
 
@@ -184,19 +207,36 @@ class RemoteActionService:
         if cap is None:
             return False
 
-        if cap.connection_id != action.connection_id:
+        if (
+            cap.connection_id != action.connection_id
+            or cap.principal_id != action.principal.principal_id
+            or cap.destination_id != action.principal.destination_id
+        ):
             return False
 
-        if time.monotonic() - cap.created_at > _CAPABILITY_TTL_SECONDS:
-            self._discard(cap)
-            return False
-
-        # Acknowledge the callback.
+        # Acknowledge an authorized callback before any follow-up work so the
+        # provider stops showing its loading state even when the token expired.
         if self._adapter is not None:
             await self._adapter.answer_callback(token)
 
+        if time.monotonic() - cap.created_at > _CAPABILITY_TTL_SECONDS:
+            self._discard(cap)
+            if cap.action_kind in {"diff", "toollog"}:
+                await self._send(
+                    cap.destination_id,
+                    "This expired. Ask me again and I'll fetch it fresh.",
+                    connection_id=cap.connection_id,
+                )
+                return True
+            return False
+
+        if cap.action_kind in {"diff", "toollog"}:
+            self._discard(cap)
+            await self._send_detail(cap)
+            return True
+
         # Dispatch the action.
-        resolved = await self._execute_action(cap, action)
+        resolved = await self._execute_action(cap, action, db)
         if resolved:
             self._discard(cap)
         return resolved
@@ -426,19 +466,19 @@ class RemoteActionService:
     # ── Action execution ───────────────────────────────────────────────────
 
     async def _execute_action(
-        self, cap: _ActionCapability, action: RemoteInboundAction
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
     ) -> bool:
         """Execute a menu action by kind."""
         if cap.action_kind == "workflow_start":
-            return await self._exec_workflow_start(cap, action)
+            return await self._exec_workflow_start(cap, action, db)
         elif cap.action_kind == "coding_task":
-            return await self._exec_coding_task(cap, action)
+            return await self._exec_coding_task(cap, action, db)
         elif cap.action_kind == "schedule_trigger":
-            return await self._exec_schedule_trigger(cap, action)
+            return await self._exec_schedule_trigger(cap, action, db)
         return False
 
     async def _exec_workflow_start(
-        self, cap: _ActionCapability, action: RemoteInboundAction
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
     ) -> bool:
         """Start a workflow by name."""
         try:
@@ -460,22 +500,19 @@ class RemoteActionService:
 
             # Workflows need a session to run in. We need to create one or
             # use the current task's session.
-            from app.core.db import async_session_factory
-
-            async with async_session_factory() as session:
-                pairing = await self._pairing_service.authorize(
-                    session,
-                    connection_id=cap.connection_id,
-                    principal_id=cap.principal_id,
+            pairing = await self._pairing_service.authorize(
+                db,
+                connection_id=cap.connection_id,
+                principal_id=cap.principal_id,
+            )
+            if pairing is None or pairing.active_session_id is None:
+                await self._reply_text(
+                    action.principal.destination_id,
+                    "No active task. Send a message first to create one, then try again.",
                 )
-                if pairing is None or pairing.active_session_id is None:
-                    await self._reply_text(
-                        action.principal.destination_id,
-                        "No active task. Send a message first to create one, then try again.",
-                    )
-                    return True
+                return True
 
-                session_id = str(pairing.active_session_id)
+            session_id = str(pairing.active_session_id)
 
             from app.workflow.runner import WorkflowRunner
 
@@ -507,45 +544,43 @@ class RemoteActionService:
             return True
 
     async def _exec_coding_task(
-        self, cap: _ActionCapability, action: RemoteInboundAction
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
     ) -> bool:
         """Start a coding task for a project."""
         try:
-            from app.core.db import async_session_factory
             from app.services.coding_project_service import get_project
 
-            async with async_session_factory() as session:
-                project = await get_project(session, UUID(cap.action_target))
-                if project is None:
-                    await self._reply_text(
-                        action.principal.destination_id,
-                        "Project not found.",
-                    )
-                    return True
-
-                # Create a coding session for this project.
-                from app.services.chat_service import create_chat_session
-
-                chat = await create_chat_session(session)
-                chat.mode = "coding"
-                chat.project_id = project.id
-                chat.tags = [
-                    "remote_origin",
-                    f"remote_connection:{cap.connection_id}",
-                ]
-                session.add(chat)
-                await session.commit()
-
-                # Update pairing to point to this session.
-                pairing = await self._pairing_service.authorize(
-                    session,
-                    connection_id=cap.connection_id,
-                    principal_id=cap.principal_id,
+            project = await get_project(db, UUID(cap.action_target))
+            if project is None:
+                await self._reply_text(
+                    action.principal.destination_id,
+                    "Project not found.",
                 )
-                if pairing is not None:
-                    pairing.active_session_id = chat.id
-                    session.add(pairing)
-                    await session.commit()
+                return True
+
+            # Create a coding session for this project.
+            from app.services.chat_service import create_chat_session
+
+            chat = await create_chat_session(db)
+            chat.mode = "coding"
+            chat.project_id = project.id
+            chat.tags = [
+                "remote_origin",
+                f"remote_connection:{cap.connection_id}",
+            ]
+            db.add(chat)
+            await db.commit()
+
+            # Update pairing to point to this session.
+            pairing = await self._pairing_service.authorize(
+                db,
+                connection_id=cap.connection_id,
+                principal_id=cap.principal_id,
+            )
+            if pairing is not None:
+                pairing.active_session_id = chat.id
+                db.add(pairing)
+                await db.commit()
 
             await self._reply_text(
                 action.principal.destination_id,
@@ -561,7 +596,7 @@ class RemoteActionService:
             return True
 
     async def _exec_schedule_trigger(
-        self, cap: _ActionCapability, action: RemoteInboundAction
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
     ) -> bool:
         """Trigger a scheduled task manually."""
         try:
@@ -619,18 +654,19 @@ class RemoteActionService:
         destination_id: str,
         text: str,
         buttons: tuple[RemoteButton, ...] = (),
+        *,
+        connection_id: UUID | None = None,
+        priority: RemoteOutboundPriority = RemoteOutboundPriority.INFORMATIONAL,
     ) -> None:
         if self._adapter is None:
             return
         try:
-            from uuid import UUID as _UUID
-
             msg = RemoteOutboundMessage(
-                connection_id=_UUID(int=0),
+                connection_id=connection_id or UUID(int=0),
                 destination_id=destination_id,
                 text=text,
                 buttons=buttons,
-                priority=RemoteOutboundPriority.INFORMATIONAL,
+                priority=priority,
             )
             await self._adapter.send(msg)
         except Exception as exc:
@@ -639,8 +675,49 @@ class RemoteActionService:
     async def _reply_text(self, destination_id: str, text: str) -> None:
         await self._send(destination_id, text)
 
+    async def _send_detail(self, cap: _ActionCapability) -> None:
+        """Send redacted, escaped drill-down content in bounded HTML cards."""
+        label = "Full diff" if cap.action_kind == "diff" else "Tool log"
+        redacted = _redact_text(cap.action_target)
+        for text in _render_detail_cards(label, redacted):
+            await self._send(
+                cap.destination_id,
+                text,
+                connection_id=cap.connection_id,
+                priority=RemoteOutboundPriority.HIGH,
+            )
+
 
 # ── Redaction helper ──────────────────────────────────────────────────────────
+
+
+def _render_detail_cards(label: str, content: str) -> list[str]:
+    """Wrap escaped detail text in independently valid Telegram HTML cards.
+
+    Escaping can expand a source character (``<`` becomes ``&lt;``), so chunk
+    the escaped result rather than source text. Every card keeps its own
+    heading and ``<pre>`` wrapper and is bounded by Telegram's 4096-character
+    provider limit.
+    """
+    prefix = f"<b>{label}</b>\n\n<pre>"
+    suffix = "</pre>"
+    content_budget = _TELEGRAM_MAX_MESSAGE_LENGTH - len(prefix) - len(suffix)
+    assert content_budget > 0
+
+    cards: list[str] = []
+    current: list[str] = []
+    current_length = 0
+    for character in content:
+        escaped = formatting.escape(character)
+        if current and current_length + len(escaped) > content_budget:
+            cards.append(prefix + "".join(current) + suffix)
+            current = []
+            current_length = 0
+        current.append(escaped)
+        current_length += len(escaped)
+
+    cards.append(prefix + "".join(current) + suffix)
+    return cards
 
 
 def _redact_text(text: str) -> str:

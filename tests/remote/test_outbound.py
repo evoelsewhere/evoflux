@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 
 import app.core.db as db_module
-from app.models.chat import ChatSession
+from app.models.chat import ChatSession, SessionMessage
 from app.remote.contracts import (
     RemoteAdapterStatus,
     RemoteConnectionState,
@@ -67,6 +67,17 @@ class FakeAdapter:
         return RemoteAdapterStatus(
             connection_id=uuid4(), state=RemoteConnectionState.POLLING
         )
+
+
+class FakeCapabilityRegistrar:
+    """Records completion-card capabilities without depending on actions.py."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
+    def register_capability(self, **kwargs: str) -> str:
+        self.calls.append(kwargs)
+        return f"{kwargs['action_kind']}-token"
 
 
 @pytest_asyncio.fixture
@@ -180,6 +191,62 @@ async def test_done_sends_completion_message() -> None:
     assert len(adapter.sent) == 1
     assert adapter.sent[0].destination_id == "12345"
     assert adapter.sent[0].priority == RemoteOutboundPriority.HIGH
+
+
+@pytest.mark.asyncio
+async def test_done_registers_current_turn_detail_capabilities(
+    addressable_session: ChatSession,
+) -> None:
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    capabilities = FakeCapabilityRegistrar()
+    projection.set_adapter(adapter)
+    projection.set_actions(capabilities)
+    connection_id = str(uuid4())
+    destination_id = "12345"
+    projection.register_session(
+        str(addressable_session.id),
+        connection_id=connection_id,
+        destination_id=destination_id,
+        tags=frozenset({"remote_origin"}),
+    )
+    projection.begin_phone_turn(
+        str(addressable_session.id),
+        connection_id=connection_id,
+        destination_id=destination_id,
+        principal_id="user-1",
+        title="Task",
+        status="Working",
+    )
+    async with db_module.async_session_factory() as db:
+        db.add(
+            SessionMessage(
+                session_id=addressable_session.id,
+                role="assistant",
+                tool_calls=[
+                    {"name": "write", "arguments": {"path": "new.py"}},
+                    {"name": "shell", "arguments": {"command": "pytest"}},
+                ],
+            )
+        )
+        await db.commit()
+
+    projection.observe(str(addressable_session.id), _envelope("done"))
+    await projection.drain_pending()
+
+    assert [call["action_kind"] for call in capabilities.calls] == [
+        "diff",
+        "toollog",
+    ]
+    assert all(
+        call["session_id"] == str(addressable_session.id) for call in capabilities.calls
+    )
+    assert all(call["principal_id"] == "user-1" for call in capabilities.calls)
+    assert all(call["destination_id"] == destination_id for call in capabilities.calls)
+    assert [button.token for button in adapter.edited[0].buttons[-2:]] == [
+        "diff-token",
+        "toollog-token",
+    ]
 
 
 @pytest.mark.asyncio

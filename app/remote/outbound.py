@@ -193,6 +193,10 @@ class RemoteProjection:
         """Bind or unbind the gate bridge. Called by the runtime on start/stop."""
         self._bridge = bridge
 
+    def set_actions(self, actions: _CapabilityRegistrar | None) -> None:
+        """Bind the short-lived completion-detail capability registrar."""
+        self._actions = actions
+
     def set_active_pairing(
         self,
         *,

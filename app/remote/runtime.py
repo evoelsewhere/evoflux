@@ -319,6 +319,7 @@ class RemoteRuntime:
             adapter=adapter,
             status_provider=lambda: self.status(connection.id),
         )
+        projection.set_actions(self._actions)
         self._actions.set_projection(projection)
 
         from app.services.memory_stream_store import register_observer
@@ -338,9 +339,12 @@ class RemoteRuntime:
         if self._projection is not None:
             self._projection.set_adapter(None)
             self._projection.set_bridge(None)
+            self._projection.set_actions(None)
             self._projection.clear_active_pairing()
             self._projection = None
         self._bridge = None
+        if self._actions is not None:
+            self._actions.set_projection(None)
         self._actions = None
 
         if adapter is not None:
@@ -372,7 +376,12 @@ class RemoteRuntime:
             # already degrades safely (logs + no-ops) on an unknown token.
             handled = False
             if self._actions is not None and action.callback_token is not None:
-                handled = await self._actions.handle_action_callback(action)
+                from app.core.db import async_session_factory
+
+                async with async_session_factory() as callback_session:
+                    handled = await self._actions.handle_action_callback(
+                        action, callback_session
+                    )
             if not handled and self._bridge is not None:
                 await self._bridge.handle_callback(action)
             elif not handled and self._bridge is None:

@@ -217,6 +217,28 @@ async def test_start_constructs_and_starts_adapter(
 
 
 @pytest.mark.asyncio
+async def test_start_and_stop_link_completion_capabilities_bidirectionally(
+    session, fake_stores
+) -> None:
+    connection = await _make_connection(session, enabled=True)
+    fake_stores[connection.id] = FakeCredentialStore("secret-token")
+
+    await remote_runtime.start()
+
+    projection = remote_runtime._projection
+    actions = remote_runtime._actions
+    assert projection is not None
+    assert actions is not None
+    assert projection._actions is actions
+    assert actions._projection is projection
+
+    await remote_runtime.stop()
+
+    assert projection._actions is None
+    assert actions._projection is None
+
+
+@pytest.mark.asyncio
 async def test_start_is_idempotent_while_already_running(
     session, fake_stores, fake_adapters
 ) -> None:

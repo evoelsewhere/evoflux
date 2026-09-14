@@ -55,6 +55,11 @@ to continue.
 4. On completion or error, the adapter edits that card into a bounded final
    summary. It never mirrors token, tool, or file-path deltas into the live
    status text.
+5. A completed card can offer **Full diff** and **Tool log**. Each button is a
+   short-lived, opaque capability for that exact turn only; tapping it sends
+   the already-persisted detail as redacted, escaped, bounded follow-up cards.
+   It cannot retrieve a different turn or session, and an expired button asks
+   the user to request fresh detail.
 
 ### Desktop, Workflow, and Scheduler completion
 
@@ -85,7 +90,8 @@ to continue.
 Requirements and acceptance criteria are defined in the base implementation
 plan as AC-1 through AC-36 and amended by the response-UI specification. The
 implemented response-UI additions are AC-38 (bounded phone-turn lifecycle),
-AC-42 (notification scope), and AC-43 (cross-origin completion delivery).
+AC-39 (on-demand turn detail), AC-42 (notification scope), and AC-43
+(cross-origin completion delivery).
 The status, done, and error-card paths also implement the response-card portion
 of revised AC-24. They cover:
 
@@ -101,6 +107,8 @@ of revised AC-24. They cover:
 - Migration `00000064`
 - HTML-safe Telegram cards, native typing, and one status-card lifecycle for
   phone-started turns
+- Opaque, ten-minute Full diff and Tool log capabilities scoped to the
+  connection, principal, destination, and completed turn
 - Addressability-gated final delivery for desktop, Workflow, and Scheduler
   sessions when notification scope is `all`
 
@@ -201,6 +209,10 @@ a vault key reference, never the raw token.
 - **Private chats only**: the adapter only processes private (non-group) chats.
 - **Authorization model**: `principal_id` authorizes who can reply;
   `destination_id` addresses which pairing receives the message.
+- **On-demand detail**: a Full diff or Tool log token carries no content,
+  path, or session identifier. It is in-memory only, expires after ten
+  minutes, is bound to the connection, principal, and destination, and reads
+  only the detail captured for its own completed turn.
 - **One connection per installation** (v1): only a single remote connection is
   allowed at a time.
 
