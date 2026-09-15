@@ -160,8 +160,17 @@ async def test_disabled_start_does_not_import_telegram(monkeypatch) -> None:
         remote_runtime, "_adapter_constructor", _construct_telegram_adapter
     )
 
-    sys.modules.pop("app.remote.telegram.adapter", None)
-    sys.modules.pop("app.remote.telegram.client", None)
+    # ``monkeypatch.delitem`` (not a raw ``sys.modules.pop``) so this is
+    # restored at teardown — an un-restored pop here silently forces every
+    # later test in the session to import fresh copies of these modules,
+    # producing a *second*, distinct ``TelegramApiError`` class that a
+    # freshly-local `from ... import TelegramApiError` in another test file
+    # binds to while already-imported code (e.g. this file's own top-level
+    # ``TelegramAdapter`` import) keeps raising the original one — so
+    # ``pytest.raises(TelegramApiError)`` stops matching there, sporadically
+    # and non-deterministically depending on test order.
+    monkeypatch.delitem(sys.modules, "app.remote.telegram.adapter", raising=False)
+    monkeypatch.delitem(sys.modules, "app.remote.telegram.client", raising=False)
 
     await remote_runtime.start()
 
