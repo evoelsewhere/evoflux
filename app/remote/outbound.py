@@ -36,11 +36,14 @@ from app.remote.contracts import (
     RemoteOutboundMessage,
     RemoteOutboundPriority,
 )
+from app.remote.edit_budget import EditBudget
 from app.remote.formatting import (
     render_done_card,
     render_error_card,
+    render_live_status_card,
     render_status_card,
 )
+from app.remote.live_activity import LiveActivityWindow
 from app.remote.turn_activity import load_turn_activity
 
 if TYPE_CHECKING:
@@ -65,18 +68,27 @@ class _CapabilityRegistrar(Protocol):
 #: Telegram's maximum message length in characters.
 _TELEGRAM_MAX_MESSAGE_LENGTH = 4096
 
+#: Live-mode-only events (AC-56) — only handled for a turn whose cached
+#: response_mode is "live"; the check happens in ``observe`` itself
+#: (in-memory, synchronous — no I/O), never before it, since ``observe``
+#: has no other reason to look at a turn's mode.
+_ACTIVITY_EVENT_TYPES = frozenset({"tool_call", "tool_start", "tool_end", "thinking"})
+
 #: Events the remote projection forwards to the phone.
-_OBSERVED_EVENT_TYPES = frozenset(
-    {
-        "done",
-        "error",
-        "permission_asked",
-        "question_asked",
-        "plan_approval_requested",
-        "permission_replied",
-        "question_replied",
-        "plan_approval_replied",
-    }
+_OBSERVED_EVENT_TYPES = (
+    frozenset(
+        {
+            "done",
+            "error",
+            "permission_asked",
+            "question_asked",
+            "plan_approval_requested",
+            "permission_replied",
+            "question_replied",
+            "plan_approval_replied",
+        }
+    )
+    | _ACTIVITY_EVENT_TYPES
 )
 
 
@@ -102,6 +114,15 @@ class _TurnDeliveryState:
     typing_task: "asyncio.Task[None] | None" = field(default=None, repr=False)
     title: str = ""
     principal_id: str = ""
+    #: "summary" (default) or "live" — read fresh from the pairing at the
+    #: start of every phone-admitted turn (never cached across turns), so
+    #: AC-55's "no restart needed" holds. Desktop-started turns (no
+    #: begin_phone_turn call) stay at the default; only a phone-admitted
+    #: turn can be live, since only it owns an editable status card.
+    response_mode: str = "summary"
+    #: The rolling activity window this turn renders into while live —
+    #: unused and empty in summary mode.
+    activity: LiveActivityWindow = field(default_factory=LiveActivityWindow)
 
 
 @dataclass
@@ -174,6 +195,10 @@ class RemoteProjection:
     #: connection regardless of which surface (phone or desktop) started the
     #: work being notified about.
     _active_pairing: tuple[str, str, str, str] | None = field(default=None, repr=False)
+    #: Shared across every live turn on this connection (AC-57) — see
+    #: app/remote/edit_budget.py's own docstring for why the throttle is
+    #: connection-scoped rather than per-turn.
+    _edit_budget: EditBudget = field(default_factory=EditBudget, repr=False)
 
     def set_adapter(self, adapter: RemoteAdapter | None) -> None:
         """Bind or unbind the live adapter. Called by the runtime on start/stop.
@@ -258,6 +283,7 @@ class RemoteProjection:
         principal_id: str,
         title: str,
         status: str,
+        response_mode: str = "summary",
     ) -> None:
         """Create the one status message a phone-admitted turn owns, and
         start the native typing indicator alongside it. Called by
@@ -302,6 +328,7 @@ class RemoteProjection:
             lifecycle_correlation_id=correlation_id,
             phone_admitted=True,
             title=title,
+            response_mode=response_mode,
         )
         self._turns[session_id] = turn
         text, buttons = render_status_card(title=title, status=status)
@@ -432,6 +459,10 @@ class RemoteProjection:
             )
             self._turns[session_id] = turn
 
+        if event_type in _ACTIVITY_EVENT_TYPES:
+            self._handle_activity(turn, event_type, envelope)
+            return
+
         if event_type == "done":
             self._handle_done(turn, envelope)
         elif event_type == "error":
@@ -503,6 +534,8 @@ class RemoteProjection:
         from app.core.db import async_session_factory
 
         self._stop_typing(turn)
+        if turn.lifecycle_correlation_id is not None:
+            self._edit_budget.discard(turn.lifecycle_correlation_id)
         elapsed = time.monotonic() - turn.started_at
         async with async_session_factory() as db:
             activity = await load_turn_activity(
@@ -582,6 +615,61 @@ class RemoteProjection:
                 buttons=buttons,
                 priority=RemoteOutboundPriority.HIGH,
             )
+
+    def _handle_activity(
+        self, turn: _TurnDeliveryState, event_type: str, envelope
+    ) -> None:
+        """Feed one tool/thinking event into *turn*'s activity window and,
+        if this is a live phone-admitted turn, enqueue a throttled edit.
+
+        A turn whose final card has already been queued
+        (``completion_sent``) ignores further activity — the card is
+        about to be overwritten by the done/error card regardless."""
+        if (
+            not turn.phone_admitted
+            or turn.response_mode != "live"
+            or turn.completion_sent
+        ):
+            return
+
+        data = envelope.data
+        name = data.get("name", "")
+        tool_call_id = data.get("tool_call_id")
+        if event_type == "tool_call":
+            turn.activity.observe_tool_call(tool_call_id=tool_call_id, name=name)
+        elif event_type == "tool_start":
+            turn.activity.observe_tool_start(
+                tool_call_id=tool_call_id, name=name, arguments=data.get("arguments")
+            )
+        elif event_type == "tool_end":
+            turn.activity.observe_tool_end(tool_call_id=tool_call_id, name=name)
+        elif event_type == "thinking":
+            turn.activity.observe_thinking(agent=data.get("agent", ""))
+
+        self._maybe_schedule_live_edit(turn)
+
+    def _maybe_schedule_live_edit(self, turn: _TurnDeliveryState) -> None:
+        correlation_id = turn.lifecycle_correlation_id
+        if correlation_id is None:
+            return
+        text, buttons = render_live_status_card(
+            title=turn.title,
+            elapsed_seconds=time.monotonic() - turn.started_at,
+            activity_lines=turn.activity.lines(),
+        )
+        if not self._edit_budget.should_edit(
+            connection_id=turn.connection_id, key=correlation_id, text=text
+        ):
+            return
+        self._edit_budget.record_edit(
+            connection_id=turn.connection_id, key=correlation_id, text=text
+        )
+        self._enqueue_edit(
+            destination_id=turn.destination_id,
+            text=text,
+            buttons=buttons,
+            correlation_id=correlation_id,
+        )
 
     def _handle_gate(self, turn: _TurnDeliveryState, event_type: str, envelope) -> None:
         data = envelope.data
@@ -749,6 +837,17 @@ class RemoteProjection:
                 try:
                     await adapter.edit(msg)
                 except Exception as exc:
+                    # A 429 carries retry_after on Telegram's own exception
+                    # type; duck-typed here rather than importing
+                    # TelegramApiError, which would tie this
+                    # adapter-neutral module to one adapter's transport.
+                    error_code = getattr(exc, "error_code", None)
+                    retry_after = getattr(exc, "retry_after", None)
+                    if error_code == 429 and retry_after is not None:
+                        self._edit_budget.note_rate_limited(
+                            connection_id=str(msg.connection_id),
+                            retry_after=float(retry_after),
+                        )
                     logger.warning(
                         "remote_outbound_edit_failed destination_id={} error={}",
                         msg.destination_id,
@@ -825,6 +924,8 @@ class RemoteProjection:
         turn = self._turns.pop(session_id, None)
         if turn is not None:
             self._stop_typing(turn)
+            if turn.lifecycle_correlation_id is not None:
+                self._edit_budget.discard(turn.lifecycle_correlation_id)
 
 
 def _redact_text(text: str) -> str:

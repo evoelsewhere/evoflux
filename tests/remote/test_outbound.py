@@ -1086,3 +1086,181 @@ def test_split_text_preserves_unicode() -> None:
     assert len(chunks[1]) == 904
     for chunk in chunks:
         chunk.encode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Live mode (AC-56/AC-57)
+# ---------------------------------------------------------------------------
+
+
+class TestLiveMode:
+    @pytest.mark.asyncio
+    async def test_summary_mode_never_renders_activity_even_when_tool_events_flow(
+        self,
+    ) -> None:
+        """AC-20 regression guard: response_mode="summary" (the default)
+        must behave exactly as it did before this feature existed."""
+        adapter = FakeAdapter()
+        projection = RemoteProjection()
+        projection.set_adapter(adapter)
+        session_id = str(uuid4())
+        connection_id = str(uuid4())  # must be a real UUID string — _enqueue_edit/
+        # _enqueue_send both do UUID(connection_id) before handing a message to the
+        # adapter, matching every other test in this file.
+        projection.register_session(
+            session_id,
+            connection_id=connection_id,
+            destination_id="chat-1",
+            tags=frozenset({"remote_origin"}),
+        )
+        projection.begin_phone_turn(
+            session_id,
+            connection_id=connection_id,
+            destination_id="chat-1",
+            principal_id="user-1",
+            title="Task",
+            status="accepted",
+        )
+        await projection.drain_pending()
+        edits_before = len(adapter.edited)
+
+        projection.observe(
+            session_id,
+            _envelope(
+                "tool_start",
+                agent="explorer",
+                tool_call_id="call-1",
+                name="grep",
+                arguments="{}",
+            ),
+        )
+        await projection.drain_pending()
+
+        assert len(adapter.edited) == edits_before  # no live edit was sent
+
+    @pytest.mark.asyncio
+    async def test_live_mode_edits_the_status_card_with_activity(self) -> None:
+        adapter = FakeAdapter()
+        projection = RemoteProjection()
+        projection.set_adapter(adapter)
+        session_id = str(uuid4())
+        connection_id = str(uuid4())
+        projection.register_session(
+            session_id,
+            connection_id=connection_id,
+            destination_id="chat-1",
+            tags=frozenset({"remote_origin"}),
+        )
+        projection.begin_phone_turn(
+            session_id,
+            connection_id=connection_id,
+            destination_id="chat-1",
+            principal_id="user-1",
+            title="Task",
+            status="accepted",
+            response_mode="live",
+        )
+        await projection.drain_pending()
+
+        projection.observe(
+            session_id,
+            _envelope(
+                "tool_start",
+                agent="explorer",
+                tool_call_id="call-1",
+                name="grep",
+                arguments='{"pattern": "def test_auth"}',
+            ),
+        )
+        await projection.drain_pending()
+
+        assert len(adapter.edited) == 1
+        assert "grep" in adapter.edited[-1].text
+        assert "def test_auth" in adapter.edited[-1].text
+
+    @pytest.mark.asyncio
+    async def test_live_mode_throttles_a_second_edit_within_the_interval(self) -> None:
+        adapter = FakeAdapter()
+        projection = RemoteProjection()
+        projection.set_adapter(adapter)
+        session_id = str(uuid4())
+        connection_id = str(uuid4())
+        projection.register_session(
+            session_id,
+            connection_id=connection_id,
+            destination_id="chat-1",
+            tags=frozenset({"remote_origin"}),
+        )
+        projection.begin_phone_turn(
+            session_id,
+            connection_id=connection_id,
+            destination_id="chat-1",
+            principal_id="user-1",
+            title="Task",
+            status="accepted",
+            response_mode="live",
+        )
+        await projection.drain_pending()
+
+        projection.observe(
+            session_id,
+            _envelope(
+                "tool_start", agent="explorer", tool_call_id="call-1", name="grep",
+                arguments="{}",
+            ),
+        )
+        await projection.drain_pending()
+        projection.observe(
+            session_id,
+            _envelope(
+                "tool_start", agent="explorer", tool_call_id="call-2", name="read",
+                arguments="{}",
+            ),
+        )
+        await projection.drain_pending()
+
+        # Both tool_start events fire well within LIVE_EDIT_INTERVAL of each
+        # other in real wall-clock terms (this test runs in milliseconds),
+        # so only the first produced an edit.
+        assert len(adapter.edited) == 1
+
+    @pytest.mark.asyncio
+    async def test_final_card_is_not_starved_by_the_live_edit_budget(self) -> None:
+        """A turn's final done card must always be delivered even if the
+        edit budget is currently exhausted from live-activity updates."""
+        adapter = FakeAdapter()
+        projection = RemoteProjection()
+        projection.set_adapter(adapter)
+        session_id = str(uuid4())
+        connection_id = str(uuid4())
+        projection.register_session(
+            session_id,
+            connection_id=connection_id,
+            destination_id="chat-1",
+            tags=frozenset({"remote_origin"}),
+        )
+        projection.begin_phone_turn(
+            session_id,
+            connection_id=connection_id,
+            destination_id="chat-1",
+            principal_id="user-1",
+            title="Task",
+            status="accepted",
+            response_mode="live",
+        )
+        await projection.drain_pending()
+
+        projection.observe(
+            session_id,
+            _envelope(
+                "tool_start", agent="explorer", tool_call_id="call-1", name="grep",
+                arguments="{}",
+            ),
+        )
+        await projection.drain_pending()
+        edits_after_activity = len(adapter.edited)
+
+        projection.observe(session_id, _envelope("done"))
+        await projection.drain_pending()
+
+        assert len(adapter.edited) == edits_after_activity + 1  # the done card landed
