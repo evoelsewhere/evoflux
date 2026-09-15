@@ -521,14 +521,18 @@ class RemoteProjection:
                     action_kind="diff",
                     action_target=activity.diff_text,
                 )
-            toollog_token = self._actions.register_capability(
-                connection_id=turn.connection_id,
-                principal_id=turn.principal_id,
-                destination_id=turn.destination_id,
-                session_id=turn.session_id,
-                action_kind="toollog",
-                action_target=activity.tool_log_text,
-            )
+            # Omit the button entirely rather than link to an always-empty
+            # "No tool calls." page — most conversational turns have none,
+            # and an always-present, always-empty button reads as broken.
+            if activity.tool_call_count > 0:
+                toollog_token = self._actions.register_capability(
+                    connection_id=turn.connection_id,
+                    principal_id=turn.principal_id,
+                    destination_id=turn.destination_id,
+                    session_id=turn.session_id,
+                    action_kind="toollog",
+                    action_target=activity.tool_log_text,
+                )
 
         title = _redact_text(turn.title)
         if error_message is not None:
@@ -541,6 +545,11 @@ class RemoteProjection:
             text, buttons = render_done_card(
                 title=title,
                 elapsed_seconds=elapsed,
+                response_text=(
+                    _redact_text(activity.response_text)
+                    if activity.response_text
+                    else None
+                ),
                 summary_lines=[_redact_text(line) for line in activity.summary_lines],
                 tool_call_count=activity.tool_call_count,
                 diff_token=diff_token,

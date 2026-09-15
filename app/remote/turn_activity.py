@@ -31,6 +31,12 @@ __all__ = ["TurnActivity", "load_turn_activity"]
 @dataclass(frozen=True)
 class TurnActivity:
     tool_call_count: int
+    #: The agent's actual final reply text (the last persisted assistant
+    #: message with non-empty ``content`` in the turn's window) — never
+    #: available on a "done" stream envelope, whose ``DoneEvent`` carries
+    #: no text field at all (only ``type``/``metadata``), so this is the
+    #: only place that text can come from.
+    response_text: str = ""
     summary_lines: list[str] = field(default_factory=list)
     tool_log_text: str = ""
     diff_text: str = ""
@@ -63,11 +69,17 @@ async def load_turn_activity(
     ).all()
 
     tool_calls: list[tuple[str, str]] = []
+    response_text = ""
     for message in rows:
         for call in message.tool_calls or []:
             name = call.get("name", "unknown")
             args = call.get("arguments", {})
             tool_calls.append((name, str(args)))
+        # Rows are ordered oldest-first, so the last assistant message with
+        # actual content (not a tool-call-only or reasoning-only message)
+        # is the turn's final reply — overwriting as we go keeps that one.
+        if message.role == "assistant" and message.content:
+            response_text = message.content
 
     tool_log_lines = [f"{name}: {args}" for name, args in tool_calls]
     diff_lines = [f"{name}: {args}" for name, args in tool_calls if name in _DIFF_TOOLS]
@@ -75,6 +87,7 @@ async def load_turn_activity(
 
     return TurnActivity(
         tool_call_count=len(tool_calls),
+        response_text=response_text,
         summary_lines=diff_paths[:10],
         tool_log_text="\n".join(tool_log_lines) or "No tool calls.",
         diff_text="\n".join(diff_lines) or "No file changes.",

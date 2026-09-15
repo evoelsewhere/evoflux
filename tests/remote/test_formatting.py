@@ -36,6 +36,33 @@ def test_render_done_card_escapes_summary_and_adds_buttons():
     )
 
 
+def test_render_done_card_includes_response_text_for_tool_free_turns():
+    text, _ = formatting.render_done_card(
+        title="What's the weather like",
+        elapsed_seconds=2.0,
+        response_text="It's sunny and 72F.",
+        summary_lines=[],
+        tool_call_count=0,
+        diff_token=None,
+        toollog_token=None,
+    )
+    assert "It's sunny and 72F." in text
+
+
+def test_render_done_card_escapes_response_text():
+    text, _ = formatting.render_done_card(
+        title="Echo",
+        elapsed_seconds=1.0,
+        response_text="<script>alert(1)</script>",
+        summary_lines=[],
+        tool_call_count=0,
+        diff_token=None,
+        toollog_token=None,
+    )
+    assert "<script>alert(1)</script>" not in text
+    assert "&lt;script&gt;" in text
+
+
 def test_render_done_card_omits_buttons_when_no_tokens():
     _, buttons = formatting.render_done_card(
         title="No-op turn",

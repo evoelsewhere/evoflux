@@ -74,6 +74,45 @@ async def test_load_turn_activity_counts_tool_calls_and_builds_diff(
 
 
 @pytest.mark.asyncio
+async def test_load_turn_activity_returns_last_assistant_content_as_response_text(
+    db_session, chat_session
+):
+    """A "done" stream envelope never carries the agent's reply text (its
+    ``DoneEvent`` has no such field) — this is the only place it can come
+    from. Multiple assistant messages (e.g. a tool-call-only one, then the
+    final text reply) must resolve to the LAST one with actual content."""
+    since = datetime.now(UTC) - timedelta(seconds=1)
+    db_session.add_all(
+        [
+            SessionMessage(
+                session_id=chat_session.id,
+                role="assistant",
+                tool_calls=[{"name": "read", "arguments": {"path": "a.py"}}],
+                created_at=since + timedelta(milliseconds=10),
+            ),
+            SessionMessage(
+                session_id=chat_session.id,
+                role="tool",
+                tool_call_id="1",
+                content="file contents",
+                created_at=since + timedelta(milliseconds=20),
+            ),
+            SessionMessage(
+                session_id=chat_session.id,
+                role="assistant",
+                content="Here is the result.",
+                created_at=since + timedelta(milliseconds=30),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    activity = await load_turn_activity(db_session, str(chat_session.id), since=since)
+
+    assert activity.response_text == "Here is the result."
+
+
+@pytest.mark.asyncio
 async def test_load_turn_activity_with_no_tool_calls_returns_placeholders(
     db_session, chat_session
 ):

@@ -41,6 +41,7 @@ def render_done_card(
     *,
     title: str,
     elapsed_seconds: float,
+    response_text: str | None = None,
     summary_lines: Sequence[str],
     tool_call_count: int,
     diff_token: str | None,
@@ -49,6 +50,8 @@ def render_done_card(
     header = f"✅ <b>{escape(title)}</b> · {format_elapsed(elapsed_seconds)}"
     lines = [escape(line) for line in summary_lines]
     parts = [header]
+    if response_text and response_text.strip():
+        parts.append(escape(response_text.strip()))
     if lines:
         parts.append("\n".join(lines))
     parts.append(f"<b>{tool_call_count} tool calls</b>")

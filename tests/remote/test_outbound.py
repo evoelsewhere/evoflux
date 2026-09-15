@@ -194,6 +194,60 @@ async def test_done_sends_completion_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_done_includes_the_agents_actual_reply_text(
+    addressable_session: ChatSession,
+) -> None:
+    """A "done" ``StreamEnvelope`` never carries reply text (``DoneEvent``
+    has no such field) — the done card's answer must come from the turn's
+    own persisted assistant message instead, or a tool-call-free
+    conversational turn would render as an empty "0 tool calls" card with
+    no answer in it at all (the actual regression this guards against)."""
+    proj = RemoteProjection()
+    adapter = FakeAdapter()
+    proj.set_adapter(adapter)
+
+    connection_id = str(uuid4())
+    proj.register_session(
+        str(addressable_session.id),
+        connection_id=connection_id,
+        destination_id="12345",
+        tags=frozenset({"remote_origin"}),
+    )
+    # Establishes the turn's ``turn_started_wall_clock`` — the message
+    # below must be persisted after this so load_turn_activity's ``since``
+    # filter doesn't exclude it (matches how a real turn actually starts
+    # via begin_phone_turn before any reply gets persisted).
+    proj.begin_phone_turn(
+        str(addressable_session.id),
+        connection_id=connection_id,
+        destination_id="12345",
+        principal_id="user-1",
+        title="Task",
+        status="accepted",
+    )
+    async with db_module.async_session_factory() as db:
+        db.add(
+            SessionMessage(
+                session_id=addressable_session.id,
+                role="assistant",
+                content="Here is the result.",
+            )
+        )
+        await db.commit()
+
+    proj.observe(str(addressable_session.id), _envelope("done"))
+    await proj.drain_pending()
+
+    # begin_phone_turn already sent the status card; the done event edits
+    # that same message in place rather than sending a new one.
+    assert len(adapter.edited) == 1
+    assert "Here is the result." in adapter.edited[0].text
+    # No tool calls happened — a "Tool log" button would only ever open an
+    # empty "No tool calls." page, so it must not be offered at all.
+    assert adapter.edited[0].buttons == ()
+
+
+@pytest.mark.asyncio
 async def test_done_registers_current_turn_detail_capabilities(
     addressable_session: ChatSession,
 ) -> None:
