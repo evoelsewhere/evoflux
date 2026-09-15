@@ -412,7 +412,7 @@ export function DirectBrowserShell({
               >
                 {/* Indeterminate: a native WebView reports that it is busy,
                     never how far along it is. */}
-                <div className="h-full w-1/3 animate-[browser-progress_1.1s_ease-in-out_infinite] rounded-full bg-(--color-accent)" />
+                <div className="h-full w-1/3 animate-[progress-sweep_1.1s_ease-in-out_infinite] rounded-full bg-(--color-accent)" />
               </div>
             )}
             <ToolbarButton label="Back" disabled={!hasPage} onClick={() => void browser.command('back')}>

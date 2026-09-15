@@ -4,6 +4,7 @@ import {
   checkForAppUpdates,
   installAppUpdate,
   type AppUpdateCheckResult,
+  type AppUpdateProgress,
 } from '@/lib/app-updater'
 import { useToastStore } from '@/stores/useToastStore'
 
@@ -13,11 +14,14 @@ interface AppUpdaterStore {
   available: AvailableUpdate | null
   checking: boolean
   installing: boolean
+  /** Where the running install has got to, or null before one starts. */
+  progress: AppUpdateProgress | null
   installError: string | null
   check: () => Promise<void>
   install: () => Promise<void>
   dismiss: () => void
   handleResult: (result: AppUpdateCheckResult) => void
+  handleProgress: (progress: AppUpdateProgress) => void
 }
 
 function errorMessage(error: unknown): string {
@@ -52,14 +56,20 @@ export const useAppUpdaterStore = create<AppUpdaterStore>((set, get) => ({
   available: null,
   checking: false,
   installing: false,
+  progress: null,
   installError: null,
 
   handleResult: (result) => {
     const available = showResult(result)
     if (available) {
-      set({ available, installError: null })
+      set({ available, installError: null, progress: null })
     }
   },
+
+  // Progress can only arrive during an install, but it is also the first
+  // sign that one is under way after a restart-less retry — so it marks the
+  // store as installing rather than assuming someone already did.
+  handleProgress: (progress) => set({ progress, installing: true }),
 
   check: async () => {
     if (get().checking || get().installing) return
@@ -82,12 +92,12 @@ export const useAppUpdaterStore = create<AppUpdaterStore>((set, get) => ({
 
   install: async () => {
     if (!get().available || get().installing) return
-    set({ installing: true, installError: null })
+    set({ installing: true, installError: null, progress: null })
     try {
       await installAppUpdate()
     } catch (error) {
       const message = errorMessage(error)
-      set({ installing: false, installError: message })
+      set({ installing: false, installError: message, progress: null })
       useToastStore.getState().push(
         { tone: 'error', title: 'Update installation failed', description: message },
         8_000,
@@ -97,6 +107,6 @@ export const useAppUpdaterStore = create<AppUpdaterStore>((set, get) => ({
 
   dismiss: () => {
     if (get().installing) return
-    set({ available: null, installError: null })
+    set({ available: null, installError: null, progress: null })
   },
 }))

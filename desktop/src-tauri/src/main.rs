@@ -4610,6 +4610,31 @@ enum AppUpdateCheckResult {
     },
 }
 
+/// How far along an update is, for the dialog that is waiting on it.
+///
+/// The download was already measured — it just never left the tray tooltip,
+/// so the dialog showed a spinner labelled "Installing…" from the moment the
+/// button was pressed until the app restarted. On a slow connection that is
+/// several minutes of a window that looks identical to a hung one.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+enum AppUpdateProgress {
+    Downloading {
+        downloaded: u64,
+        /// Absent when the server sends no Content-Length; the bar then has
+        /// to say "so far" rather than a percentage.
+        total: Option<u64>,
+    },
+    Verifying,
+    Installing,
+}
+
+fn emit_update_progress(app: &AppHandle, progress: AppUpdateProgress) {
+    if let Err(error) = app.emit("app-update-progress", progress) {
+        log::debug!("desktop: could not deliver update progress to the app UI: {error}");
+    }
+}
+
 /// Prepare release notes for the in-app update dialog.
 ///
 /// Release notes are truncated to ~600 characters with an ellipsis so a
@@ -4792,6 +4817,14 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
     let finish_app = app.clone();
     let mut downloaded_bytes = 0usize;
     let mut reported_mb = usize::MAX;
+    let mut reported_percent = u8::MAX;
+    emit_update_progress(
+        app,
+        AppUpdateProgress::Downloading {
+            downloaded: 0,
+            total: None,
+        },
+    );
     let bytes = match update
         .download(
             move |chunk_length, total_bytes| {
@@ -4804,9 +4837,31 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
                         &format_download_progress(downloaded_mb, total_bytes),
                     );
                 }
+                // A chunk is a few kilobytes: emitting one event each would
+                // be thousands of them for a bar that has a hundred states.
+                // Report when the whole number of percent changes, and each
+                // megabyte when there is no total to divide by.
+                let percent = total_bytes
+                    .filter(|total| *total > 0)
+                    .map(|total| ((downloaded_bytes as u64 * 100) / total).min(100) as u8);
+                let worth_saying = match percent {
+                    Some(value) => value != reported_percent,
+                    None => downloaded_mb as u8 != reported_percent,
+                };
+                if worth_saying {
+                    reported_percent = percent.unwrap_or(downloaded_mb as u8);
+                    emit_update_progress(
+                        &progress_app,
+                        AppUpdateProgress::Downloading {
+                            downloaded: downloaded_bytes as u64,
+                            total: total_bytes.filter(|total| *total > 0),
+                        },
+                    );
+                }
             },
             move || {
                 update_tray_status(&finish_app, "Status: Verifying update…");
+                emit_update_progress(&finish_app, AppUpdateProgress::Verifying);
             },
         )
         .await
@@ -4820,6 +4875,7 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
     };
 
     update_tray_status(app, "Status: Installing update…");
+    emit_update_progress(app, AppUpdateProgress::Installing);
     persist_active_window_state(app);
     {
         let state: tauri::State<'_, AppState> = app.state();

@@ -965,9 +965,10 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
   animation: shimmer 2s var(--ease-in-out) infinite;
 }
 
-/* In-app browser load indicator. A native WebView reports that it is busy but
- * never how far along it is, so the bar sweeps rather than fills. */
-@keyframes browser-progress {
+/* Work that reports it is busy but not how far along it is: a native WebView
+ * loading a page, an update download whose server sent no Content-Length. The
+ * bar sweeps rather than fills, because filling it would be a claim. */
+@keyframes progress-sweep {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
