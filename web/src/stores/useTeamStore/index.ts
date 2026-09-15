@@ -279,6 +279,7 @@ const SESSION_OWNED_KEYS = [
   'isContinuing',
   'error',
   'activeGoal',
+  'suggestedTasks',
   'activeWorkflowExecution',
   'setupRequired',
   'browserSession',
@@ -398,6 +399,7 @@ function resetSessionState(
   state.historyLoadError = null
   state.error = null
   state.activeGoal = null
+  state.suggestedTasks = []
   state.activeWorkflowExecution = null
   state.setupRequired = null
   state.planApproval = null
@@ -516,6 +518,7 @@ export const useTeamStore = create<TeamStore>()(
     historyLoadError: null,
     error: null,
     activeGoal: null,
+    suggestedTasks: [],
     activeWorkflowExecution: null,
     setupRequired: null,
     browserSession: null,

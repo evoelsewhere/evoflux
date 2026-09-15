@@ -106,6 +106,33 @@ they survive a restart and are restored in queue order.
 Suppressed while a workflow drives the session — queued messages then land at
 node boundaries only.
 
+## Parked out-of-scope work
+
+A Coding lead that notices work worth doing but outside the current change
+parks it with `spawn_task` instead of widening the change or burying it in the
+report. The call is non-blocking: it writes a `session_suggested_tasks` row,
+publishes a `suggested_task` event, and returns, so the turn continues.
+
+Each suggestion carries a title, a one-line rationale, and a self-contained
+prompt — the session that later picks it up never sees the conversation that
+raised it, so paths and reproduction steps live in the prompt text. Prompts
+below a minimum length are rejected as unable to stand alone.
+
+A suggestion is identified by its normalized title plus target workspace, so
+re-raising the same finding returns the original row and creates nothing;
+dismissed findings are deliberately not resurrected. A session holds at most
+five open suggestions, and `dismiss_task` withdraws one the agent has made
+stale.
+
+Starting a suggestion creates a top-level Coding session — its own sidebar
+entry, linked back through `spawned_session_id` rather than
+`parent_session_id` — optionally in a managed worktree created through the
+same path as the worktree sidebar. The route returns the prompt rather than
+sending it, so the client posts it through the ordinary chat path and the
+spawned session inherits the normal permissions, tools and streaming. A
+started suggestion can no longer be dismissed: the spawned session owns the
+work.
+
 ## Concurrency and lifecycle
 
 One member executes one turn at a time. Safe model-emitted tool calls may run in
