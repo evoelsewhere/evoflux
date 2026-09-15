@@ -18,6 +18,7 @@ export function AppUpdateDialog() {
   const available = useAppUpdaterStore((state) => state.available)
   const installing = useAppUpdaterStore((state) => state.installing)
   const progress = useAppUpdaterStore((state) => state.progress)
+  const hidden = useAppUpdaterStore((state) => state.hidden)
   const installError = useAppUpdaterStore((state) => state.installError)
   const install = useAppUpdaterStore((state) => state.install)
   const dismiss = useAppUpdaterStore((state) => state.dismiss)
@@ -56,9 +57,14 @@ export function AppUpdateDialog() {
     }
   }, [handleProgress, handleResult])
 
+  // Only the install itself is uninterruptible — the app is seconds from
+  // closing. A download can be put aside: it keeps running, and the dialog
+  // comes back when the restart is imminent.
+  const sealed = progress?.phase === 'installing'
+
   return (
-    <Dialog open={available !== null} onOpenChange={(open) => !open && dismiss()}>
-      <DialogContent showCloseButton={!installing} className="sm:max-w-md">
+    <Dialog open={available !== null && !hidden} onOpenChange={(open) => !open && dismiss()}>
+      <DialogContent showCloseButton={!sealed} className="sm:max-w-md">
         <DialogHeader>
           <div className="mb-1 flex size-9 items-center justify-center rounded-lg bg-(--color-accent-soft) text-(--color-accent)">
             <Download size={17} aria-hidden="true" />
@@ -97,8 +103,8 @@ export function AppUpdateDialog() {
         ) : null}
 
         <DialogFooter>
-          <Button variant="outline" disabled={installing} onClick={dismiss}>
-            Later
+          <Button variant="outline" disabled={sealed} onClick={dismiss}>
+            {installing ? 'Continue in background' : 'Later'}
           </Button>
           <Button disabled={installing} onClick={() => void install()}>
             {installing ? (

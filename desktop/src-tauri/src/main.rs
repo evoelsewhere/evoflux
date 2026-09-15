@@ -211,6 +211,15 @@ const TRAY_SESSION_MAX_LEN: usize = 60;
 /// time to finish their first paint/startup work.
 const AUTOMATIC_UPDATE_CHECK_DELAY: Duration = Duration::from_secs(8);
 
+/// Give up on a download that has stopped arriving.
+///
+/// A stalled GitHub connection used to leave the dialog waiting forever with
+/// nothing to read and no way out — the modal disables its own dismissal
+/// while an install runs. This is deliberately generous: it is a stall
+/// detector, not a speed limit, and it resets on every byte received.
+const UPDATE_DOWNLOAD_STALL_LIMIT: Duration = Duration::from_secs(90);
+const UPDATE_STALL_POLL: Duration = Duration::from_secs(5);
+
 /// Apply platform-specific window chrome.
 ///
 /// macOS uses an overlay title-bar; the React app places sidebar/history
@@ -4803,15 +4812,23 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
         Ok(Some(update)) => update,
         Ok(None) => {
             update_tray_status(app, "Status: Running");
+            log::warn!("desktop: update vanished between the check and the install");
             return Err(anyhow!(
                 "The update is no longer available. Check again for the latest version."
             ));
         }
         Err(error) => {
             update_tray_status(app, "Status: Running");
+            log::error!("desktop: update install could not re-read release metadata: {error:#}");
             return Err(error).context("check GitHub release update metadata");
         }
     };
+    log::info!(
+        "desktop: installing update {} over {} from {}",
+        update.version,
+        update.current_version,
+        update.download_url
+    );
 
     let progress_app = app.clone();
     let finish_app = app.clone();
@@ -4825,10 +4842,19 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
             total: None,
         },
     );
-    let bytes = match update
-        .download(
+    // Every byte that arrives stamps this. The watchdog below reads it to
+    // tell a slow download from a dead one — a distinction the dialog could
+    // not make, and neither could the log, which said nothing at all.
+    let started = std::time::Instant::now();
+    let last_byte_at = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let watchdog_stamp = last_byte_at.clone();
+    let download = update.download(
             move |chunk_length, total_bytes| {
                 downloaded_bytes = downloaded_bytes.saturating_add(chunk_length);
+                last_byte_at.store(
+                    started.elapsed().as_millis() as u64,
+                    Ordering::Relaxed,
+                );
                 let downloaded_mb = downloaded_bytes / (1024 * 1024);
                 if downloaded_mb != reported_mb {
                     reported_mb = downloaded_mb;
@@ -4863,13 +4889,50 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
                 update_tray_status(&finish_app, "Status: Verifying update…");
                 emit_update_progress(&finish_app, AppUpdateProgress::Verifying);
             },
-        )
-        .await
-    {
-        Ok(bytes) => bytes,
+        );
+
+    // Race the download against a watchdog rather than awaiting it outright.
+    // A connection that dies mid-transfer does not fail — it simply stops
+    // producing bytes, and `download` waits on it for as long as the OS
+    // will, which is how a modal with no dismiss button becomes permanent.
+    tokio::pin!(download);
+    let bytes = loop {
+        tokio::select! {
+            result = &mut download => break result,
+            _ = tokio::time::sleep(UPDATE_STALL_POLL) => {
+                let idle = started
+                    .elapsed()
+                    .saturating_sub(Duration::from_millis(
+                        watchdog_stamp.load(Ordering::Relaxed),
+                    ));
+                if idle > UPDATE_DOWNLOAD_STALL_LIMIT {
+                    update_tray_status(app, "Status: Running");
+                    log::error!(
+                        "desktop: update download stalled with no data for {}s",
+                        idle.as_secs()
+                    );
+                    return Err(anyhow!(
+                        "The download stopped responding after {}s with no data. \
+                         Check the network connection and try again.",
+                        idle.as_secs()
+                    ));
+                }
+            }
+        }
+    };
+    let bytes = match bytes {
+        Ok(bytes) => {
+            log::info!(
+                "desktop: update downloaded and verified, {} bytes in {}s",
+                bytes.len(),
+                started.elapsed().as_secs()
+            );
+            bytes
+        }
         Err(error) => {
             update_tray_status(app, "Status: Update failed");
             update_tray_status(app, "Status: Running");
+            log::error!("desktop: update download or verification failed: {error:#}");
             return Err(error).context("download or verify desktop update");
         }
     };
@@ -4882,7 +4945,15 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
         state.quitting.store(true, Ordering::SeqCst);
     }
     shutdown_sidecar_now(app).await;
+    // The sidecar's Python interpreter lives *inside* the install directory,
+    // and it spawns children of its own — one process per MCP server. Killing
+    // the parent leaves those running, holding open the very files the
+    // installer has to replace, and a Windows installer that cannot replace a
+    // file does not stop: it leaves a half-updated install behind. The job
+    // object they were all put into kills the whole tree in one call.
+    sidecar::terminate_process_tree();
 
+    log::info!("desktop: handing off to the platform installer");
     if let Err(error) = update.install(bytes) {
         log::error!("desktop: update installation failed, restarting current version: {error:#}");
         app.restart();

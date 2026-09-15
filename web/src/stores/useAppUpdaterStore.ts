@@ -16,6 +16,15 @@ interface AppUpdaterStore {
   installing: boolean
   /** Where the running install has got to, or null before one starts. */
   progress: AppUpdateProgress | null
+  /**
+   * The update is still coming, but the dialog is out of the way.
+   *
+   * A download runs for minutes, and the dialog used to refuse to close for
+   * all of them — no Later, no close button, nothing to read. Putting it
+   * aside does not cancel anything; the tray keeps the status and the dialog
+   * comes back for the restart.
+   */
+  hidden: boolean
   installError: string | null
   check: () => Promise<void>
   install: () => Promise<void>
@@ -57,19 +66,28 @@ export const useAppUpdaterStore = create<AppUpdaterStore>((set, get) => ({
   checking: false,
   installing: false,
   progress: null,
+  hidden: false,
   installError: null,
 
   handleResult: (result) => {
     const available = showResult(result)
     if (available) {
-      set({ available, installError: null, progress: null })
+      set({ available, installError: null, progress: null, hidden: false })
     }
   },
 
   // Progress can only arrive during an install, but it is also the first
   // sign that one is under way after a restart-less retry — so it marks the
   // store as installing rather than assuming someone already did.
-  handleProgress: (progress) => set({ progress, installing: true }),
+  handleProgress: (progress) =>
+    set({
+      progress,
+      installing: true,
+      // The install is the point of no return: whatever the user was doing,
+      // the app is about to close, and it should not do that from behind a
+      // dialog they put away ten minutes ago.
+      hidden: progress.phase === 'installing' ? false : undefined,
+    }),
 
   check: async () => {
     if (get().checking || get().installing) return
@@ -106,7 +124,13 @@ export const useAppUpdaterStore = create<AppUpdaterStore>((set, get) => ({
   },
 
   dismiss: () => {
-    if (get().installing) return
-    set({ available: null, installError: null, progress: null })
+    // Closing the dialog while an update downloads hides it; the download
+    // keeps going and the dialog returns for the restart. Closing it before
+    // one starts declines the update until the next check.
+    if (get().installing) {
+      if (get().progress?.phase !== 'installing') set({ hidden: true })
+      return
+    }
+    set({ available: null, installError: null, progress: null, hidden: false })
   },
 }))
