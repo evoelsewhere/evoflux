@@ -362,6 +362,22 @@ class TestSendEditAnswer:
         ]
         await client.aclose()
 
+    @pytest.mark.asyncio
+    async def test_delete_message_sends_chat_id_and_message_id(self):
+        captured: dict[str, object] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            import json
+
+            captured["payload"] = json.loads(request.content)
+            assert request.url.path.endswith("/deleteMessage")
+            return _ok(True)
+
+        client = _client(handler)
+        await client.delete_message(chat_id="1", message_id=42)
+        assert captured["payload"] == {"chat_id": "1", "message_id": 42}
+        await client.aclose()
+
 
 # ---------------------------------------------------------------------------
 # Safe error classification

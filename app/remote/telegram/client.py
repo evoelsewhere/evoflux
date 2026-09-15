@@ -305,6 +305,13 @@ class TelegramClient:
             payload["text"] = text
         await self._call("answerCallbackQuery", payload, result_model=bool)
 
+    async def delete_message(self, *, chat_id: str | int, message_id: int) -> None:
+        await self._call(
+            "deleteMessage",
+            {"chat_id": chat_id, "message_id": message_id},
+            result_model=bool,
+        )
+
     async def set_commands(self, commands: Sequence[tuple[str, str]]) -> None:
         payload = {
             "commands": [

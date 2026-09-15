@@ -576,6 +576,87 @@ class TestDeliveryIndependentOfPolling:
         assert status.state == RemoteConnectionState.PHONE_UNREACHABLE
 
     @pytest.mark.asyncio
+    async def test_clear_history_deletes_every_remembered_message_for_a_destination(
+        self,
+    ):
+        transport = ScriptedTransport()
+        transport.queue(
+            "sendMessage",
+            _ok({"message_id": 1, "date": 1, "chat": {"id": 100, "type": "private"}}),
+        )
+        transport.queue(
+            "sendMessage",
+            _ok({"message_id": 2, "date": 1, "chat": {"id": 100, "type": "private"}}),
+        )
+        adapter = _make_adapter(transport)
+        await adapter.start()
+        await asyncio.sleep(0.02)
+
+        for _ in range(2):
+            await adapter.send(
+                RemoteOutboundMessage(
+                    connection_id=uuid4(), destination_id="100", text="hi"
+                )
+            )
+
+        cleared = await adapter.clear_history("100")
+        await adapter.stop()
+
+        assert cleared == 2
+        delete_calls = [
+            payload for name, payload in transport.calls if name == "deleteMessage"
+        ]
+        assert {c["message_id"] for c in delete_calls} == {1, 2}
+        assert all(c["chat_id"] == "100" for c in delete_calls)
+
+    @pytest.mark.asyncio
+    async def test_clear_history_skips_a_message_telegram_refuses_to_delete(self):
+        transport = ScriptedTransport()
+        transport.queue(
+            "sendMessage",
+            _ok({"message_id": 1, "date": 1, "chat": {"id": 100, "type": "private"}}),
+        )
+        transport.queue(
+            "sendMessage",
+            _ok({"message_id": 2, "date": 1, "chat": {"id": 100, "type": "private"}}),
+        )
+        transport.queue(
+            "deleteMessage",
+            _err(400, 400, "Bad Request: message can't be deleted"),
+        )
+        adapter = _make_adapter(transport)
+        await adapter.start()
+        await asyncio.sleep(0.02)
+
+        for _ in range(2):
+            await adapter.send(
+                RemoteOutboundMessage(
+                    connection_id=uuid4(), destination_id="100", text="hi"
+                )
+            )
+
+        # First deleteMessage (for message_id=1) is scripted to fail (e.g.
+        # older than Telegram's 48h deletion window); the second must still
+        # be attempted rather than aborting the whole clear.
+        cleared = await adapter.clear_history("100")
+        await adapter.stop()
+
+        assert cleared == 1
+
+    @pytest.mark.asyncio
+    async def test_clear_history_is_a_no_op_for_an_unknown_destination(self):
+        transport = ScriptedTransport()
+        adapter = _make_adapter(transport)
+        await adapter.start()
+        await asyncio.sleep(0.02)
+
+        cleared = await adapter.clear_history("never-messaged")
+        await adapter.stop()
+
+        assert cleared == 0
+        assert not any(name == "deleteMessage" for name, _ in transport.calls)
+
+    @pytest.mark.asyncio
     async def test_successful_send_marks_phone_reachable(self):
         transport = ScriptedTransport()
         transport.queue(

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict, deque
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from uuid import UUID
@@ -75,6 +75,13 @@ DEFAULT_RATE_LIMIT_FALLBACK_SECONDS = 1
 #: design, like every other in-memory interaction token (spec: "Remote
 #: interaction contract").
 MAX_PENDING_CALLBACK_IDS = 512
+
+#: Bound on how many sent message ids ``clear_history`` remembers per
+#: destination, so a long-running connection's history for one chat
+#: cannot grow unboundedly. Telegram itself only allows a bot to delete
+#: its own messages within 48 hours anyway, so remembering far more than
+#: this would rarely help.
+MAX_TRACKED_MESSAGES_PER_DESTINATION = 200
 
 
 def _default_clock() -> datetime:
@@ -126,6 +133,13 @@ class TelegramAdapter:
         self._sent_messages: dict[str, tuple[int, int]] = {}
         #: opaque callback token -> raw Telegram callback_query id.
         self._pending_callback_ids: OrderedDict[str, str] = OrderedDict()
+        #: destination_id -> the most recent message ids this bot sent
+        #: there, for ``clear_history``. Bounded per destination
+        #: (MAX_TRACKED_MESSAGES_PER_DESTINATION); ephemeral, like every
+        #: other in-memory tracking this adapter keeps.
+        self._message_history: dict[str, deque[int]] = defaultdict(
+            lambda: deque(maxlen=MAX_TRACKED_MESSAGES_PER_DESTINATION)
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -199,6 +213,7 @@ class TelegramAdapter:
                 sent.chat.id,
                 sent.message_id,
             )
+        self._message_history[message.destination_id].append(sent.message_id)
 
     async def edit(self, message: RemoteOutboundMessage) -> None:
         target = (
@@ -223,6 +238,40 @@ class TelegramAdapter:
             self._record_delivery_failure(exc)
             raise
         self._record_delivery_success()
+
+    async def clear_history(self, destination_id: str) -> int:
+        """Delete every message this bot remembers sending to
+        *destination_id* (bounded to the most recent
+        ``MAX_TRACKED_MESSAGES_PER_DESTINATION`` — see ``_message_history``).
+
+        Telegram only lets a bot delete its own messages, and only within
+        48 hours (docs: "Message can only be deleted if it was sent less
+        than 48 hours ago"); a message outside that window (or already
+        deleted) is skipped rather than aborting the whole clear — this is
+        best-effort tidying, not a guarantee. Not this adapter's job to
+        chase down messages it never sent: the user's own messages in a
+        private chat cannot be deleted by the bot at all.
+        """
+        message_ids = list(self._message_history.pop(destination_id, ()))
+        cleared = 0
+        for message_id in message_ids:
+            try:
+                await self._client.delete_message(
+                    chat_id=destination_id, message_id=message_id
+                )
+            except (
+                TelegramApiError,
+                TelegramTransportError,
+                TelegramMalformedResponseError,
+            ):
+                logger.debug(
+                    "telegram_delete_message_failed destination_id={} message_id={}",
+                    destination_id,
+                    message_id,
+                )
+                continue
+            cleared += 1
+        return cleared
 
     async def answer_callback(self, callback_token: str) -> None:
         raw_id = self._pending_callback_ids.pop(callback_token, None)
