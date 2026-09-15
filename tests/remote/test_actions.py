@@ -122,6 +122,9 @@ class TestSlashCommands:
         assert "/status" in result.text
         assert "/new" in result.text
         assert "/stop" in result.text
+        assert "/settings" in result.text
+        assert "/health" in result.text
+        assert "/changes" in result.text
         assert "/unpair" in result.text
         assert "/actions" in result.text
 

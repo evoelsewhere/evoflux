@@ -99,6 +99,9 @@ Commands:
 /status — What's my agent doing right now?
 /new — Set aside the current task and start a fresh one
 /stop — Interrupt the agent while it's working on your last message
+/settings — Change mode, model, agent, or response style
+/health — Check system health
+/changes — See this task's file changes
 /actions — Run a saved workflow, open a coding project, or fire a \
 scheduled task
 /unpair — Disconnect this phone from EvoFlux
