@@ -2,6 +2,33 @@
 
 All notable changes to EvoFlux are documented in this file.
 
+## [2.0.3] - 2026-09-15
+
+EvoFlux 2.0.3 is a maintenance release focused on updater feedback, coding
+skill routing and EASD workspace correctness.
+
+### Highlights
+
+- Added visible updater progress and actionable failure states, including
+  recovery that leaves the desktop window usable after a failed update.
+- Consolidated thirteen overlapping coding skills into four routing hubs:
+  `coding-change`, `coding-investigate`, `coding-operate` and `coding-verify`,
+  with refreshed references, eval coverage and loader behavior.
+- Centralized observation limits in the new skill hubs so browser and coding
+  workflows share consistent context-budget rules.
+- Fixed EASD runs so their workspace follows the run context instead of being
+  incorrectly pinned to a linked chat request.
+
+### Upgrade notes
+
+- Application, Python, web, Rust, Tauri and lockfile metadata are synchronized
+  at `2.0.3`.
+- Existing databases continue through the normal Alembic migration path; no
+  schema migration is introduced by this release.
+
+For the curated release overview, see
+[`documents/releases/v2.0.3.md`](documents/releases/v2.0.3.md).
+
 ## [2.0.2] - 2026-09-15
 
 EvoFlux 2.0.2 is a maintenance release focused on deeper WebBridge browser
@@ -191,6 +218,7 @@ For the curated release overview, see
 [`documents/releases/v1.0.0.md`](documents/releases/v1.0.0.md).
 
 [2.0.2]: https://github.com/evoelsewhere/evoflux/compare/v2.0.1...v2.0.2
+[2.0.3]: https://github.com/evoelsewhere/evoflux/compare/v2.0.2...v2.0.3
 [2.0.1]: https://github.com/evoelsewhere/evoflux/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/evoelsewhere/evoflux/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/evoelsewhere/evoflux/compare/v0.0.8...v1.0.0
