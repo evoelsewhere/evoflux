@@ -428,6 +428,41 @@ async def test_handle_pairing_consumes_a_token_minted_via_the_shared_service(
 
 
 @pytest.mark.asyncio
+async def test_handle_pairing_success_offers_onboarding_buttons(
+    session, fake_stores, fake_adapters
+) -> None:
+    connection = await _make_connection(session, enabled=True)
+    fake_stores[connection.id] = FakeCredentialStore("secret-token")
+    await remote_runtime.start()
+    link = pairing_service.issue_link(connection)
+    token = link.url.rsplit("start=", 1)[-1]
+
+    action = RemoteInboundAction(
+        connection_id=connection.id,
+        kind=RemoteInboundActionKind.PAIRING_START,
+        principal=RemotePrincipal(
+            connection_id=connection.id,
+            principal_id="12345",
+            destination_id="12345",
+            display="Test User",
+        ),
+        source_key=f"telegram:{connection.id}:1",
+        pairing_token=token,
+    )
+
+    await remote_runtime._handle_pairing(action)
+
+    assert len(fake_adapters[0].sent) == 1
+    confirmation = fake_adapters[0].sent[0]
+    assert "auto" in confirmation.text
+    assert len(confirmation.buttons) == 3
+    button_texts = {b.text for b in confirmation.buttons}
+    assert any("Set up" in t for t in button_texts)
+    assert any("Health" in t for t in button_texts)
+    assert any("start working" in t.lower() for t in button_texts)
+
+
+@pytest.mark.asyncio
 async def test_handle_pairing_sends_nothing_for_a_rejected_token(
     session, fake_stores, fake_adapters
 ) -> None:

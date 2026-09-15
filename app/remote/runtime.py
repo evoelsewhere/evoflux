@@ -433,20 +433,19 @@ class RemoteRuntime:
                     principal_id=result.principal_id,
                 )
             # A silently-persisted pairing is indistinguishable from a
-            # failed one from the phone's side — confirm it (spec: "sends
-            # Connected to EvoFlux on <device label>"). Never sent on
+            # failed one from the phone's side — confirm it with a
+            # starting point rather than a dead end (AC-54). Never sent on
             # rejection (AC-9: a refusal reveals no connection state).
-            if self._adapter is not None:
+            if self._adapter is not None and self._actions is not None:
+                text, buttons = self._actions.build_onboarding_card(
+                    action, label=result.label
+                )
                 await self._adapter.send(
                     RemoteOutboundMessage(
                         connection_id=action.connection_id,
                         destination_id=action.principal.destination_id,
-                        text=(
-                            f'✅ Paired! This phone ("{result.label}") is now '
-                            "connected to EvoFlux.\n\n"
-                            "Type anything to start working with your agent, or "
-                            "send /help to see what else you can do."
-                        ),
+                        text=text,
+                        buttons=buttons,
                         priority=RemoteOutboundPriority.HIGH,
                     )
                 )
