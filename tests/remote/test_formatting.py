@@ -231,6 +231,35 @@ def test_render_settings_card_omits_redaction_section_when_not_supplied():
     assert "Notifications" not in text
 
 
+def test_render_live_status_card_shows_title_elapsed_and_activity() -> None:
+    text, buttons = formatting.render_live_status_card(
+        title="Fix failing tests",
+        elapsed_seconds=72.0,
+        activity_lines=["\U0001f4ad explorer thinking", "\U0001f527 grep foo"],
+    )
+    assert "Fix failing tests" in text
+    assert "1m 12s" in text
+    assert "explorer thinking" in text
+    assert "grep foo" in text
+    assert buttons == ()
+
+
+def test_render_live_status_card_escapes_title() -> None:
+    text, _ = formatting.render_live_status_card(
+        title="<script>alert(1)</script>", elapsed_seconds=1.0, activity_lines=[]
+    )
+    assert "<script>alert(1)</script>" not in text
+    assert "&lt;script&gt;" in text
+
+
+def test_render_live_status_card_with_no_activity_yet_still_renders() -> None:
+    text, buttons = formatting.render_live_status_card(
+        title="New task", elapsed_seconds=0.5, activity_lines=[]
+    )
+    assert "New task" in text
+    assert buttons == ()
+
+
 def test_render_error_card_escapes_message():
     text, buttons = formatting.render_error_card(
         title="Add rate limiter",

@@ -19,6 +19,7 @@ __all__ = [
     "render_permission_resolved_card",
     "render_health_card",
     "render_changes_card",
+    "render_live_status_card",
 ]
 
 _STATUS_ICON = {"accepted": "\U0001f527", "queued": "⏳", "pending": "⏳"}
@@ -53,6 +54,18 @@ def render_status_card(*, title: str, status: str) -> tuple[str, tuple[RemoteBut
     icon = _STATUS_ICON.get(status, "\U0001f527")
     text = f"{icon} <b>{escape(title)}</b>\n<i>{escape(status)}</i>"
     return text, ()
+
+
+def render_live_status_card(
+    *, title: str, elapsed_seconds: float, activity_lines: Sequence[str]
+) -> tuple[str, tuple[RemoteButton, ...]]:
+    """The single status card a live-mode turn edits in place (AC-56). No
+    buttons — like ``render_status_card``, this card is never actionable;
+    when the turn ends this same message becomes the done/error card."""
+    header = f"\U0001f527 <b>{escape(title)}</b> · {format_elapsed(elapsed_seconds)}"
+    if not activity_lines:
+        return header, ()
+    return header + "\n\n" + "\n".join(activity_lines), ()
 
 
 def render_done_card(
