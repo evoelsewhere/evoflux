@@ -1694,6 +1694,123 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       )
     : null
 
+  const handleComposerSubmit = useCallback(async (
+    content: string,
+    files?: File[],
+    delivery: 'steer' | 'queue' = followUpLane,
+  ) => {
+    if (webBridgeEnabled) {
+      try {
+        const status = await getWebBridgeStatus()
+        if (!status.connected) {
+          setWebBridgeEnabled(false)
+          pushToast({
+            tone: 'error',
+            title: 'WebBridge is not connected',
+            description: 'Connect the browser extension before sending this message.',
+          })
+          setWebBridgeDialogOpen(true)
+          return false
+        }
+      } catch {
+        setWebBridgeEnabled(false)
+        pushToast({
+          tone: 'error',
+          title: 'Could not check WebBridge',
+          description: 'Reconnect the browser extension before sending this message.',
+        })
+        setWebBridgeDialogOpen(true)
+        return false
+      }
+    }
+
+    // While a plan is pending review, a text-only message is the revision
+    // feedback — a normal send would just queue behind the blocked agent turn.
+    const pendingPlan = useTeamStore.getState().planApproval
+    if (pendingPlan && (!files || files.length === 0)) {
+      const planSessionId = useTeamStore.getState().sessionId
+      if (planSessionId) {
+        try {
+          await replyPlanApproval(planSessionId, pendingPlan.requestId, 'revise', content)
+          useTeamStore.setState({ planApproval: null })
+          pushToast({ tone: 'info', title: 'Revision sent — agent is updating the plan' })
+        } catch (err) {
+          pushToast({
+            tone: 'error',
+            title: 'Failed to send revision',
+            description: err instanceof Error ? err.message : undefined,
+          })
+        }
+        return true
+      }
+    }
+    // Quoted chat context is prepended as ``> `` lines, so a command the user
+    // typed is no longer at index 0 — matching the raw content used to send
+    // "> …\n\n/goal x" to the model as ordinary prose instead of starting the
+    // goal. The interceptors below split the quote off themselves; only this
+    // guard and the shell check need the body up front.
+    const { body } = splitQuotedContext(content)
+    if (/^\/loop(?:\s|:|$)/.test(body.trim())) {
+      pushToast({
+        tone: 'error',
+        title: '/loop has been removed',
+        description: 'Use /goal <objective> to start durable autonomous work.',
+      })
+      return true
+    }
+    if (await tryHandleBuiltinGoalCommand(content)) return true
+    if (await tryHandleWorkflowCommand(content)) return true
+    const shell = body.startsWith('!')
+    const expanded = shell
+      ? `!${body.slice(1).trim()}`
+      : await expandUserCommand(content)
+    const current = useTeamStore.getState()
+    // A Coding draft's first message is what registers its repository with
+    // the backend, so the sidebar's snapshot is stale the moment it lands:
+    // without the refresh below, a freshly picked (or freshly cloned) folder
+    // stays missing from Workspaces until the query happens to go stale.
+    const registersWorkspace =
+      mode === 'coding' && !!workspace && current.sessionId === null
+    // The composer clears its draft optimistically, so a rejected send has
+    // to say so — returning true regardless dropped the user's text and
+    // their attachments on the floor.
+    const sent = await sendMessage(expanded, files, {
+      mode,
+      // In Work, a folder is only ever sent for a draft: it is the one thing
+      // the session cannot be told afterwards without the opening turn
+      // already having run somewhere else. A saved session's folder lives on
+      // its row and is changed through the workspace endpoint.
+      workspace: mode === 'coding'
+        ? workspace
+        : (current.sessionId ? null : current.newChatDraft?.workspace ?? null),
+      // A draft's model/thinking level are the picker's own, not a leftover
+      // from some other session: they were seeded when the draft opened, so
+      // send them and let the session be born with what the user chose.
+      model: selectedModel || null,
+      thinkingLevel: selectedThinkingLevel || null,
+      fastMode: current.sessionFastMode,
+      shell,
+      webBridgeEnabled,
+      webBridgeExtensionId,
+      delivery,
+    })
+    if (sent && registersWorkspace) notifyCodingWorkspacesChanged()
+    return sent
+  }, [
+    expandUserCommand,
+    followUpLane,
+    mode,
+    pushToast,
+    selectedModel,
+    selectedThinkingLevel,
+    sendMessage,
+    tryHandleBuiltinGoalCommand,
+    tryHandleWorkflowCommand,
+    webBridgeEnabled,
+    webBridgeExtensionId,
+    workspace,
+  ])
+
   // Workbench lives in AppShell's full-height trailing column so opening it
   // constrains both the conversation canvas and the compact topbar.
   const workbenchPanel = (
@@ -1981,122 +2098,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       )}
     </>
   )
-  const handleComposerSubmit = useCallback(async (
-    content: string,
-    files?: File[],
-    delivery: 'steer' | 'queue' = followUpLane,
-  ) => {
-    if (webBridgeEnabled) {
-      try {
-        const status = await getWebBridgeStatus()
-        if (!status.connected) {
-          setWebBridgeEnabled(false)
-          pushToast({
-            tone: 'error',
-            title: 'WebBridge is not connected',
-            description: 'Connect the browser extension before sending this message.',
-          })
-          setWebBridgeDialogOpen(true)
-          return false
-        }
-      } catch {
-        setWebBridgeEnabled(false)
-        pushToast({
-          tone: 'error',
-          title: 'Could not check WebBridge',
-          description: 'Reconnect the browser extension before sending this message.',
-        })
-        setWebBridgeDialogOpen(true)
-        return false
-      }
-    }
-
-    // While a plan is pending review, a text-only message is the revision
-    // feedback — a normal send would just queue behind the blocked agent turn.
-    const pendingPlan = useTeamStore.getState().planApproval
-    if (pendingPlan && (!files || files.length === 0)) {
-      const planSessionId = useTeamStore.getState().sessionId
-      if (planSessionId) {
-        try {
-          await replyPlanApproval(planSessionId, pendingPlan.requestId, 'revise', content)
-          useTeamStore.setState({ planApproval: null })
-          pushToast({ tone: 'info', title: 'Revision sent — agent is updating the plan' })
-        } catch (err) {
-          pushToast({
-            tone: 'error',
-            title: 'Failed to send revision',
-            description: err instanceof Error ? err.message : undefined,
-          })
-        }
-        return true
-      }
-    }
-    // Quoted chat context is prepended as ``> `` lines, so a command the user
-    // typed is no longer at index 0 — matching the raw content used to send
-    // "> …\n\n/goal x" to the model as ordinary prose instead of starting the
-    // goal. The interceptors below split the quote off themselves; only this
-    // guard and the shell check need the body up front.
-    const { body } = splitQuotedContext(content)
-    if (/^\/loop(?:\s|:|$)/.test(body.trim())) {
-      pushToast({
-        tone: 'error',
-        title: '/loop has been removed',
-        description: 'Use /goal <objective> to start durable autonomous work.',
-      })
-      return true
-    }
-    if (await tryHandleBuiltinGoalCommand(content)) return true
-    if (await tryHandleWorkflowCommand(content)) return true
-    const shell = body.startsWith('!')
-    const expanded = shell
-      ? `!${body.slice(1).trim()}`
-      : await expandUserCommand(content)
-    const current = useTeamStore.getState()
-    // A Coding draft's first message is what registers its repository with
-    // the backend, so the sidebar's snapshot is stale the moment it lands:
-    // without the refresh below, a freshly picked (or freshly cloned) folder
-    // stays missing from Workspaces until the query happens to go stale.
-    const registersWorkspace =
-      mode === 'coding' && !!workspace && current.sessionId === null
-    // The composer clears its draft optimistically, so a rejected send has
-    // to say so — returning true regardless dropped the user's text and
-    // their attachments on the floor.
-    const sent = await sendMessage(expanded, files, {
-      mode,
-      // In Work, a folder is only ever sent for a draft: it is the one thing
-      // the session cannot be told afterwards without the opening turn
-      // already having run somewhere else. A saved session's folder lives on
-      // its row and is changed through the workspace endpoint.
-      workspace: mode === 'coding'
-        ? workspace
-        : (current.sessionId ? null : current.newChatDraft?.workspace ?? null),
-      // A draft's model/thinking level are the picker's own, not a leftover
-      // from some other session: they were seeded when the draft opened, so
-      // send them and let the session be born with what the user chose.
-      model: selectedModel || null,
-      thinkingLevel: selectedThinkingLevel || null,
-      fastMode: current.sessionFastMode,
-      shell,
-      webBridgeEnabled,
-      webBridgeExtensionId,
-      delivery,
-    })
-    if (sent && registersWorkspace) notifyCodingWorkspacesChanged()
-    return sent
-  }, [
-    expandUserCommand,
-    mode,
-    pushToast,
-    selectedModel,
-    selectedThinkingLevel,
-    sendMessage,
-    tryHandleBuiltinGoalCommand,
-    tryHandleWorkflowCommand,
-    webBridgeEnabled,
-    webBridgeExtensionId,
-    workspace,
-  ])
-
   // Modals rendered after the body row (fixed-position —
   // DOM order only matters for z-stacking). WikiPanel/SchedulerPanel live
   // at the route root now (``RootOverlayPanels`` in __root.tsx) so they

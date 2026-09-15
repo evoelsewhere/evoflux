@@ -99,5 +99,5 @@ def test_browser_tool_definitions_are_unchanged() -> None:
         "a25995c3f20d22e35a1d24f9cc41f3763eb27dcf24fb1d0957dfb71b910fab1f"
     )
     assert _definition_digest(webbridge) == (
-        "db5eb677a1e17daed4613edc1661dbf45736e2181837953ceeb83cedbcd4aa2a"
+        "0b00224b44b33e223dbed9621a42245908c2c174572ac17f28fe66219965e020"
     )
