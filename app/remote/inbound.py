@@ -29,6 +29,7 @@ class RemoteInboundResult:
     status: str
     session_id: UUID | None = None
     message_id: UUID | None = None
+    response_mode: str = "summary"
 
 
 class RemoteInboundService:
@@ -57,6 +58,11 @@ class RemoteInboundService:
             pairing = await db.get(RemotePairing, pairing.id)
             if pairing is None:
                 return RemoteInboundResult(status="unauthorized")
+            # Captured now, before the rollback below expires every ORM
+            # instance in this session — accessing pairing.response_mode
+            # after that would need a lazy reload, which the async ORM
+            # cannot do implicitly.
+            response_mode = pairing.response_mode
             session = await self._current_session(db, pairing)
             if session is None:
                 session = await self._create_work_session(db, pairing, action)
@@ -93,6 +99,7 @@ class RemoteInboundService:
             status=result.status,
             session_id=UUID(result.session_id),
             message_id=result.message_id,
+            response_mode=response_mode,
         )
 
     async def new_task(

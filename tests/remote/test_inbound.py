@@ -56,6 +56,61 @@ async def _paired_text_action(db, text: str = "Plan my next task"):
 
 
 @pytest.mark.asyncio
+async def test_handle_text_result_defaults_to_summary_response_mode(monkeypatch):
+    from app.remote.inbound import RemoteInboundService
+    import app.remote.inbound as inbound
+
+    async with db_module.async_session_factory() as db:
+        pairing, action = await _paired_text_action(db)
+        team = SimpleNamespace()
+
+        async def resolve(db, session_id: str, *, require_existing: bool):
+            session = await db.get(ChatSession, UUID(session_id))
+            return session, team
+
+        submit = AsyncMock(
+            side_effect=lambda db, *, session, **_kwargs: InteractiveMessageResult(
+                status="accepted", session_id=str(session.id), message_id=None
+            )
+        )
+        monkeypatch.setattr(inbound, "resolve_team_for_session", resolve)
+        monkeypatch.setattr(inbound, "submit_persisted_interactive_message", submit)
+
+        result = await RemoteInboundService().handle_text(db, action)
+
+        assert result.response_mode == "summary"
+
+
+@pytest.mark.asyncio
+async def test_handle_text_result_carries_a_live_response_mode(monkeypatch):
+    from app.remote.inbound import RemoteInboundService
+    import app.remote.inbound as inbound
+
+    async with db_module.async_session_factory() as db:
+        pairing, action = await _paired_text_action(db)
+        pairing.response_mode = "live"
+        db.add(pairing)
+        await db.commit()
+        team = SimpleNamespace()
+
+        async def resolve(db, session_id: str, *, require_existing: bool):
+            session = await db.get(ChatSession, UUID(session_id))
+            return session, team
+
+        submit = AsyncMock(
+            side_effect=lambda db, *, session, **_kwargs: InteractiveMessageResult(
+                status="accepted", session_id=str(session.id), message_id=None
+            )
+        )
+        monkeypatch.setattr(inbound, "resolve_team_for_session", resolve)
+        monkeypatch.setattr(inbound, "submit_persisted_interactive_message", submit)
+
+        result = await RemoteInboundService().handle_text(db, action)
+
+        assert result.response_mode == "live"
+
+
+@pytest.mark.asyncio
 async def test_handle_text_creates_and_selects_a_top_level_work_task(monkeypatch):
     """Removing remote provenance or pointer persistence must fail this test."""
     from app.remote.inbound import RemoteInboundService

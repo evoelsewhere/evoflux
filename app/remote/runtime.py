@@ -555,6 +555,7 @@ class RemoteRuntime:
                     else "New task"
                 ),
                 status=result.status,
+                response_mode=result.response_mode,
             )
 
 
