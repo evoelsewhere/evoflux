@@ -8,6 +8,7 @@ import pytest_asyncio
 
 import app.core.db as db_module
 from app.models.chat import ChatSession
+from app.models.remote import RemotePairing
 from app.remote import control
 
 
@@ -236,3 +237,69 @@ async def test_get_file_diff_returns_empty_for_a_non_git_workspace(
     diff = await control.get_file_diff(str(tmp_path), "nonexistent.py")
 
     assert diff == ""
+
+
+@pytest_asyncio.fixture
+async def remote_pairing() -> RemotePairing:
+    """A minimal, standalone pairing row — this fixture creates its own
+    RemoteConnection first since RemotePairing.connection_id is a
+    non-nullable foreign key. Required fields verified directly against
+    tests/models/test_remote_models.py's own remote_connection fixture."""
+    async with db_module.async_session_factory() as db:
+        from app.models.remote import RemoteConnection
+
+        connection = RemoteConnection(
+            adapter="telegram",
+            label="My phone",
+            enabled=True,
+            adapter_principal_id="bot-1",
+            adapter_username="my_evoflux_bot",
+        )
+        db.add(connection)
+        await db.commit()
+        await db.refresh(connection)
+
+        pairing = RemotePairing(
+            connection_id=connection.id,
+            principal_id="user-1",
+            destination_id="chat-1",
+            label="My phone",
+        )
+        db.add(pairing)
+        await db.commit()
+        await db.refresh(pairing)
+        return pairing
+
+
+@pytest.mark.asyncio
+async def test_set_response_mode_persists_a_valid_mode(
+    remote_pairing: RemotePairing,
+) -> None:
+    async with db_module.async_session_factory() as db:
+        result = await control.set_response_mode(db, str(remote_pairing.id), "live")
+
+    assert result.status == "ok"
+    async with db_module.async_session_factory() as db:
+        refreshed = await db.get(RemotePairing, remote_pairing.id)
+        assert refreshed is not None
+        assert refreshed.response_mode == "live"
+
+
+@pytest.mark.asyncio
+async def test_set_response_mode_rejects_unknown_mode(
+    remote_pairing: RemotePairing,
+) -> None:
+    async with db_module.async_session_factory() as db:
+        result = await control.set_response_mode(
+            db, str(remote_pairing.id), "verbose"
+        )
+
+    assert result.status == "invalid"
+
+
+@pytest.mark.asyncio
+async def test_set_response_mode_not_found_for_unknown_pairing() -> None:
+    async with db_module.async_session_factory() as db:
+        result = await control.set_response_mode(db, str(UUID(int=0)), "live")
+
+    assert result.status == "not_found"

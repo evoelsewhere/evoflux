@@ -49,6 +49,8 @@ __all__ = [
     "list_model_ids",
     "get_health_diagnostics",
     "get_file_diff",
+    "ALLOWED_RESPONSE_MODES",
+    "set_response_mode",
 ]
 
 #: Every permission mode this phone may set — bypass excluded on purpose.
@@ -238,3 +240,33 @@ async def get_file_diff(workspace: str, path: str) -> str:
 
     result = await get_diff_view(workspace=workspace, path=path)
     return result.get("diff", "")
+
+
+#: The two response modes a phone may choose between (AC-55). Unlike
+#: ALLOWED_REMOTE_MODES (permission modes, chat-session-scoped), this
+#: preference lives on RemotePairing — one phone, one pairing, one
+#: notion of how chatty its own turns should be.
+ALLOWED_RESPONSE_MODES: tuple[str, ...] = ("summary", "live")
+
+
+async def set_response_mode(
+    db: AsyncSession, pairing_id: str, mode: str
+) -> ControlResult:
+    if mode not in ALLOWED_RESPONSE_MODES:
+        return ControlResult(status="invalid", detail=mode)
+
+    from app.models.remote import RemotePairing
+
+    try:
+        pairing_uuid = UUID(pairing_id)
+    except ValueError:
+        return ControlResult(status="not_found")
+    pairing = await db.get(RemotePairing, pairing_uuid)
+    if pairing is None:
+        return ControlResult(status="not_found")
+
+    pairing.response_mode = mode
+    db.add(pairing)
+    await db.commit()
+
+    return ControlResult(status="ok")
