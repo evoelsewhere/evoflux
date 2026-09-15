@@ -1122,19 +1122,10 @@ class TestBuiltinSkills:
 
     def test_builtin_catalog_is_curated_and_mode_scoped(self):
         assert set(discover_skills()) == {
-            "coding-api-design",
-            "coding-browser-verify",
-            "coding-debugging",
-            "coding-git-workflow",
-            "coding-implementation",
-            "coding-investigation",
-            "coding-migration",
-            "coding-observability",
-            "coding-performance",
-            "coding-review",
-            "coding-security",
-            "coding-simplification",
-            "coding-testing",
+            "coding-change",
+            "coding-investigate",
+            "coding-operate",
+            "coding-verify",
             "compose-next",
             "data-analytics",
             "deep-research",
@@ -1172,19 +1163,15 @@ class TestBuiltinSkills:
         assert {"deep-research", "data-analytics", "sales"} <= work
         assert "plugin-development" in work
         assert {
-            "coding-investigation",
-            "coding-implementation",
-            "coding-debugging",
-            "coding-review",
-            "coding-migration",
-            "coding-performance",
+            "coding-investigate",
+            "coding-change",
+            "coding-verify",
+            "coding-operate",
             "review-pull-requests",
-            "coding-security",
-            "coding-testing",
             "modern-python-toolchain",
         } <= coding
         assert "plugin-development" in coding
-        assert "coding-investigation" not in work
+        assert "coding-investigate" not in work
         assert "deep-research" not in coding
         assert {"docx-official", "xlsx-official", "pptx-official", "pdf-official"} <= (
             work & coding
@@ -1247,12 +1234,12 @@ class TestBuiltinSkills:
 
     @pytest.mark.asyncio
     async def test_load_and_list_reject_out_of_mode_builtin_skill(self):
-        result = await load_skill("coding-investigation", _mode="work")
+        result = await load_skill("coding-investigate", _mode="work")
         assert "not available in work mode" in result
 
         work_catalog = await load_skill(action="list", _mode="work")
         assert "deep-research" in work_catalog
-        assert "coding-investigation" not in work_catalog
+        assert "coding-investigate" not in work_catalog
 
     @pytest.mark.asyncio
     async def test_implicit_specialist_is_directly_visible_and_loadable(self):
@@ -1261,15 +1248,24 @@ class TestBuiltinSkills:
         )
 
         specialist = await load_skill(
-            "coding-investigation", _mode="coding", _state=state
+            "coding-investigate", _mode="coding", _state=state
         )
         catalog = await load_skill(action="list", _mode="coding", _state=state)
 
-        assert '<skill_content name="coding-investigation"' in specialist
-        assert "coding-investigation" in catalog
+        assert '<skill_content name="coding-investigate"' in specialist
+        assert "coding-investigate" in catalog
         assert "code-context-navigation" not in catalog
         assert "`code_context`" in specialist
-        assert "`definition`, `callers`, `callees`" in specialist
+        assert "references/workflows/investigate.md" in specialist
+
+        workflow = await load_skill(
+            action="read_resource",
+            skill_name="coding-investigate",
+            resource_path="references/workflows/investigate.md",
+            _mode="coding",
+            _state=state,
+        )
+        assert "`definition`, `callers`, `callees`" in workflow
 
     @pytest.mark.asyncio
     async def test_removed_code_context_skill_is_not_loadable(self):
@@ -1290,42 +1286,55 @@ class TestBuiltinSkills:
 
     def test_native_code_context_contract_is_embedded_in_coding_workflows(self):
         expected_owners = [
-            "coding-api-design",
-            "coding-browser-verify",
-            "coding-debugging",
-            "coding-implementation",
-            "coding-investigation",
-            "coding-migration",
-            "coding-observability",
-            "coding-performance",
-            "coding-review",
-            "coding-security",
-            "coding-simplification",
-            "coding-testing",
-            "review-pull-requests",
+            "coding-change/references/workflows/api-design.md",
+            "coding-change/references/workflows/implement.md",
+            "coding-change/references/workflows/migrate.md",
+            "coding-change/references/workflows/simplify.md",
+            "coding-investigate/references/workflows/browser-verify.md",
+            "coding-investigate/references/workflows/debug.md",
+            "coding-investigate/references/workflows/investigate.md",
+            "coding-operate/references/workflows/observability.md",
+            "coding-operate/references/workflows/performance.md",
+            "coding-verify/references/workflows/review.md",
+            "coding-verify/references/workflows/security.md",
+            "coding-verify/references/workflows/test.md",
+            "review-pull-requests/SKILL.md",
         ]
-        roots = [_builtin_skills_dir() / owner for owner in expected_owners]
+        builtin = _builtin_skills_dir()
+        bodies = [
+            *sorted(builtin.glob("coding-*/references/workflows/*.md")),
+            builtin / "review-pull-requests" / "SKILL.md",
+        ]
         owners = [
-            skill_file.parent.name
-            for skill_file in sorted(_builtin_skills_dir().glob("*/SKILL.md"))
-            if "code_context" in skill_file.read_text(encoding="utf-8")
+            body.relative_to(builtin).as_posix()
+            for body in bodies
+            if "code_context" in body.read_text(encoding="utf-8")
         ]
 
         assert owners == expected_owners
-        for root in roots:
-            normalized = " ".join(
-                (root / "SKILL.md").read_text(encoding="utf-8").split()
+        for owner in expected_owners:
+            normalized = " ".join((builtin / owner).read_text(encoding="utf-8").split())
+            assert "`code_context`" in normalized, owner
+            assert "skip" in normalized.casefold(), owner
+            assert "Keep `refresh=true` for the first indexed query" in normalized, (
+                owner
             )
-            assert "`code_context`" in normalized
-            assert "skip" in normalized.casefold()
-            assert "Keep `refresh=true` for the first indexed query" in normalized
-            assert "`refresh=false` only for an immediate follow-up" in normalized
+            assert "`refresh=false` only for an immediate follow-up" in normalized, (
+                owner
+            )
 
+        # One contract copy per hub, shared by every workflow that hub routes to.
         contracts = {
-            (root / "references" / "code-context-contract.md").read_text(
+            (builtin / name / "references" / "code-context-contract.md").read_text(
                 encoding="utf-8"
             )
-            for root in roots
+            for name in (
+                "coding-change",
+                "coding-investigate",
+                "coding-operate",
+                "coding-verify",
+                "review-pull-requests",
+            )
         }
         assert len(contracts) == 1
         contract = contracts.pop()
@@ -1373,9 +1382,11 @@ class TestBuiltinSkills:
         assert "`code_context` is the single indexed-code tool" in easd_contract
         assert "Cross-repository edges are resolved dynamically" in easd_contract
 
-    def test_coding_investigation_locks_graph_first_trajectory(self):
-        root = _builtin_skills_dir() / "coding-investigation"
-        skill = (root / "SKILL.md").read_text(encoding="utf-8")
+    def test_coding_investigate_locks_graph_first_trajectory(self):
+        root = _builtin_skills_dir() / "coding-investigate"
+        skill = (root / "references" / "workflows" / "investigate.md").read_text(
+            encoding="utf-8"
+        )
         normalized = " ".join(skill.split())
         cases = json.loads(
             (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
@@ -1398,9 +1409,11 @@ class TestBuiltinSkills:
         )
         assert exact_callers["expected_trajectory"] == ["code_context"]
 
-    def test_coding_implementation_locks_bounded_phase_trajectory(self):
-        root = _builtin_skills_dir() / "coding-implementation"
-        skill = (root / "SKILL.md").read_text(encoding="utf-8")
+    def test_coding_change_locks_bounded_phase_trajectory(self):
+        root = _builtin_skills_dir() / "coding-change"
+        skill = (root / "references" / "workflows" / "implement.md").read_text(
+            encoding="utf-8"
+        )
         normalized = " ".join(skill.split())
         cases = json.loads(
             (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
@@ -1441,41 +1454,87 @@ class TestBuiltinSkills:
 
     def test_coding_specialists_share_bounded_execution_contracts(self):
         expected_stop_evidence = {
-            "coding-debugging": "one falsifiable hypothesis explains the first bad state",
-            "coding-migration": "Treat every rollout phase as a gate",
-            "coding-performance": "Compare with the same protocol",
-            "coding-review": "concrete trigger and changed causal path",
-            "coding-security": "one reachable attacker-to-operation boundary",
-            "coding-testing": "one proof obligation and the cheapest sufficient level",
+            ("coding-investigate", "debug"): (
+                "one falsifiable hypothesis explains the first bad state"
+            ),
+            ("coding-change", "migrate"): "Treat every rollout phase as a gate",
+            ("coding-operate", "performance"): "Compare with the same protocol",
+            ("coding-verify", "review"): "concrete trigger and changed causal path",
+            ("coding-verify", "security"): (
+                "one reachable attacker-to-operation boundary"
+            ),
+            ("coding-verify", "test"): (
+                "one proof obligation and the cheapest sufficient level"
+            ),
         }
 
-        for name, stop_evidence in expected_stop_evidence.items():
-            root = _builtin_skills_dir() / name
+        for (hub, workflow), stop_evidence in expected_stop_evidence.items():
+            root = _builtin_skills_dir() / hub
             normalized = " ".join(
-                (root / "SKILL.md").read_text(encoding="utf-8").split()
+                (root / "references" / "workflows" / f"{workflow}.md")
+                .read_text(encoding="utf-8")
+                .split()
             )
-            cases = json.loads(
-                (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
-            )
+            cases = [
+                case
+                for case in json.loads(
+                    (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
+                )
+                if case.get("expected_workflow") == workflow
+            ]
 
-            assert stop_evidence in normalized, name
-            assert "do not use shell `cat`, `sed`, `head`, `tail`" in normalized, name
-            assert "observation receipt" in normalized, name
-            assert '`process(action="wait", wait_seconds=60)`' in normalized, name
+            assert cases, workflow
+            assert stop_evidence in normalized, workflow
+            assert "do not use shell `cat`, `sed`, `head`, `tail`" in normalized, (
+                workflow
+            )
+            assert "observation receipt" in normalized, workflow
+            assert '`process(action="wait", wait_seconds=60)`' in normalized, workflow
 
             forbidden = {
                 behavior
                 for case in cases
                 for behavior in case.get("forbidden_behaviors", [])
             }
-            assert "shell_source_reread" in forbidden, name
-            assert "bypass_observation_receipt" in forbidden, name
+            assert "shell_source_reread" in forbidden, workflow
+            assert "bypass_observation_receipt" in forbidden, workflow
             trajectory = next(
                 case["expected_trajectory"]
                 for case in cases
                 if case.get("expected_trajectory")
             )
-            assert trajectory[-1] in {"stop", "phase_stop"}, name
+            assert trajectory[-1] in {"stop", "phase_stop"}, workflow
+
+    def test_coding_hubs_route_to_every_workflow_they_own(self):
+        """Each hub must name every workflow file it ships, and only those."""
+        builtin = _builtin_skills_dir()
+        for hub in (
+            "coding-change",
+            "coding-investigate",
+            "coding-operate",
+            "coding-verify",
+        ):
+            root = builtin / hub
+            body = (root / "SKILL.md").read_text(encoding="utf-8")
+            shipped = {
+                path.relative_to(root).as_posix()
+                for path in (root / "references" / "workflows").glob("*.md")
+            }
+            assert shipped, hub
+            for relative in shipped:
+                assert relative in body, f"{hub} does not route to {relative}"
+            cases = json.loads(
+                (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
+            )
+            routed = {
+                case["expected_workflow"]
+                for case in cases
+                if case.get("expected_workflow")
+            }
+            assert routed == {
+                relative.removeprefix("references/workflows/").removesuffix(".md")
+                for relative in shipped
+            }, hub
 
     def test_builtin_skill_resource_links_exist(self):
         resource_link = re.compile(
@@ -1483,16 +1542,24 @@ class TestBuiltinSkills:
             r"`((?:references?|scripts?|assets?|templates?|themes?)/[^`]+)`)"
         )
         missing: list[str] = []
-        roots = [_builtin_skills_dir()]
-        for root in roots:
-            for skill_file in sorted(root.glob("*/SKILL.md")):
-                text = skill_file.read_text(encoding="utf-8")
-                for match in resource_link.finditer(text):
-                    raw = (match.group(1) or match.group(2)).split("#", 1)[0]
-                    if raw.startswith(("http:", "https:", "#")):
-                        continue
-                    if not (skill_file.parent / raw).exists():
-                        missing.append(f"{skill_file.parent.name}: {raw}")
+        root = _builtin_skills_dir()
+        # Workflow bodies resolve their links against the owning skill root,
+        # exactly like skill(action="read_resource") does.
+        bodies = [
+            *sorted(root.glob("*/SKILL.md")),
+            *sorted(root.glob("*/references/workflows/*.md")),
+        ]
+        for body_file in bodies:
+            skill_root = body_file.parent
+            while skill_root.parent != root:
+                skill_root = skill_root.parent
+            text = body_file.read_text(encoding="utf-8")
+            for match in resource_link.finditer(text):
+                raw = (match.group(1) or match.group(2)).split("#", 1)[0]
+                if raw.startswith(("http:", "https:", "#")):
+                    continue
+                if not (skill_root / raw).exists():
+                    missing.append(f"{body_file.relative_to(root).as_posix()}: {raw}")
         assert missing == []
 
     @pytest.mark.asyncio

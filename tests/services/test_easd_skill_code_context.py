@@ -25,7 +25,7 @@ from app.services.easd_setup_service import (
 )
 
 CANONICAL_CONTRACT = Path(
-    "app/agent/builtin_skills/coding-investigation/references/code-context-contract.md"
+    "app/agent/builtin_skills/coding-investigate/references/code-context-contract.md"
 )
 
 
