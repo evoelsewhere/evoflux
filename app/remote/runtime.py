@@ -482,11 +482,12 @@ class RemoteRuntime:
             )
             return
 
-        # ``/actions`` already sends its own message (with buttons) inside
-        # RemoteActionService — sending its returned text again here would
-        # duplicate it. Every other command relies entirely on this send.
+        # ``/actions`` and ``/settings`` already send their own message
+        # (with buttons) inside RemoteActionService — sending the returned
+        # text again here would duplicate it. Every other command relies
+        # entirely on this send.
         command = (action.text or "").strip().split(maxsplit=1)[0][1:].lower()
-        if command == "actions":
+        if command in ("actions", "settings"):
             return
 
         if result.text and self._adapter is not None:

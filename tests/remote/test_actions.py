@@ -8,6 +8,8 @@ from uuid import uuid4
 
 import pytest
 
+import app.core.db as db_module
+from app.models.chat import ChatSession
 from app.remote.actions import (
     RemoteActionService,
     RemoteMenuItem,
@@ -598,3 +600,98 @@ class TestMenuLoading:
         assert result.status == "ok"
         assert "Item 1" in result.text
         assert "Item 2" in result.text
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+
+class TestSettings:
+    @pytest.mark.asyncio
+    async def test_settings_command_shows_current_mode_model_and_agent(
+        self, service: RemoteActionService
+    ) -> None:
+        async with db_module.async_session_factory() as db:
+            session = ChatSession(
+                title="Settings test",
+                mode="work",
+                session_type="main",
+                permission_mode="ask",
+                model="anthropic:claude-sonnet-5",
+                agent_name="evoflux",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            mock_pairing = MagicMock()
+            mock_pairing.active_session_id = session.id
+            mock_pairing.label = "My Phone"
+
+            with patch.object(
+                service._pairing_service, "authorize", return_value=mock_pairing
+            ):
+                action = _make_action(text="/settings")
+                result = await service.dispatch_command(db, action)
+
+        assert result.status == "ok"
+        assert "ask" in result.text
+        assert "anthropic:claude-sonnet-5" in result.text
+        assert "evoflux" in result.text
+
+    @pytest.mark.asyncio
+    async def test_settings_command_without_active_session_is_friendly(
+        self, service: RemoteActionService
+    ) -> None:
+        mock_db = MagicMock()
+        mock_pairing = MagicMock()
+        mock_pairing.active_session_id = None
+
+        with patch.object(
+            service._pairing_service, "authorize", return_value=mock_pairing
+        ):
+            action = _make_action(text="/settings")
+            result = await service.dispatch_command(mock_db, action)
+
+        assert result.status == "ok"
+        assert "no active task yet" in result.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_mode_callback_applies_the_selected_mode(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        conn_id = uuid4()
+        async with db_module.async_session_factory() as db:
+            session = ChatSession(
+                title="Settings test",
+                mode="work",
+                session_type="main",
+                permission_mode="auto",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            mock_pairing = MagicMock()
+            mock_pairing.active_session_id = session.id
+            mock_pairing.label = "My Phone"
+
+            with patch.object(
+                service._pairing_service, "authorize", return_value=mock_pairing
+            ):
+                settings_action = _make_action(text="/settings", connection_id=conn_id)
+                await service.dispatch_command(db, settings_action)
+
+            sent_buttons = adapter.sent_messages[-1].buttons
+            ask_token = next(b.token for b in sent_buttons if b.text == "Mode: ask")
+
+            callback_action = _make_action(
+                kind=RemoteInboundActionKind.CALLBACK,
+                callback_token=ask_token,
+                connection_id=conn_id,
+            )
+            handled = await service.handle_action_callback(callback_action, db)
+
+            assert handled is True
+            refreshed = await db.get(ChatSession, session.id)
+            assert refreshed is not None
+            assert refreshed.permission_mode == "ask"

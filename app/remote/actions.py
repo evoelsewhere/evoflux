@@ -35,6 +35,7 @@ from app.remote.contracts import (
 from app.remote.pairing import PairingService
 
 if TYPE_CHECKING:
+    from app.remote import control
     from app.remote.contracts import RemoteAdapterStatus
     from app.remote.outbound import RemoteProjection
 
@@ -81,7 +82,7 @@ class _ActionCapability:
 # ── Known commands ────────────────────────────────────────────────────────────
 
 _SLASH_COMMANDS: frozenset[str] = frozenset(
-    {"start", "help", "status", "new", "stop", "unpair", "actions"}
+    {"start", "help", "status", "new", "stop", "unpair", "actions", "settings"}
 )
 
 
@@ -189,6 +190,8 @@ class RemoteActionService:
             return await self._cmd_unpair(db, action)
         elif command == "actions":
             return await self._cmd_actions(db, action, arg)
+        elif command == "settings":
+            return await self._cmd_settings(db, action)
         else:
             # Unknown command — return bounded help.
             return await self._cmd_help(db, action)
@@ -282,6 +285,82 @@ class RemoteActionService:
         return RemoteActionResult(
             status="ok",
             text=f"{status_text}\n{task_text}\nPaired: {pairing.label or 'Yes'}",
+        )
+
+    async def _cmd_settings(
+        self, db: AsyncSession, action: RemoteInboundAction
+    ) -> RemoteActionResult:
+        from app.models.chat import ChatSession, normalize_mode
+        from app.remote import control
+        from app.remote.formatting import render_settings_card
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            return RemoteActionResult(status="unauthorized")
+
+        no_active_session_text = (
+            "No active task yet — send a message to start one, then "
+            "/settings shows its mode/model/agent."
+        )
+        if pairing.active_session_id is None:
+            await self._send(action.principal.destination_id, no_active_session_text)
+            return RemoteActionResult(status="ok", text=no_active_session_text)
+
+        session = await db.get(ChatSession, pairing.active_session_id)
+        if session is None:
+            await self._send(action.principal.destination_id, no_active_session_text)
+            return RemoteActionResult(status="ok", text=no_active_session_text)
+
+        app_mode = normalize_mode(session.mode)
+        session_id = str(session.id)
+
+        mode_tokens = {
+            mode: self._issue_settings_token(action, session_id, "set_mode", mode)
+            for mode in control.ALLOWED_REMOTE_MODES
+        }
+        agent_names = await control.list_lead_names(app_mode)
+        agent_tokens = {
+            name: self._issue_settings_token(action, session_id, "set_agent", name)
+            for name in agent_names
+        }
+        model_ids = await control.list_model_ids(app_mode)
+        model_tokens = {
+            model_id: self._issue_settings_token(action, session_id, "set_model", model_id)
+            for model_id in model_ids
+        }
+
+        text, buttons = render_settings_card(
+            connection_label=pairing.label or "This phone",
+            model=session.model or "(default)",
+            permission_mode=session.permission_mode,
+            agent_name=session.agent_name or "(default)",
+            mode_tokens=mode_tokens,
+            agent_tokens=agent_tokens,
+            model_tokens=model_tokens,
+        )
+
+        if self._adapter is not None:
+            await self._send(action.principal.destination_id, text, buttons=buttons)
+        return RemoteActionResult(status="ok", text=text)
+
+    def _issue_settings_token(
+        self,
+        action: RemoteInboundAction,
+        session_id: str,
+        action_kind: str,
+        action_target: str,
+    ) -> str:
+        return self._issue_token(
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+            destination_id=action.principal.destination_id,
+            session_id=session_id,
+            action_kind=action_kind,
+            action_target=action_target,
         )
 
     async def _cmd_new(
@@ -478,6 +557,12 @@ class RemoteActionService:
             return await self._exec_coding_task(cap, action, db)
         elif cap.action_kind == "schedule_trigger":
             return await self._exec_schedule_trigger(cap, action, db)
+        elif cap.action_kind == "set_mode":
+            return await self._exec_set_mode(cap, action, db)
+        elif cap.action_kind == "set_agent":
+            return await self._exec_set_agent(cap, action, db)
+        elif cap.action_kind == "set_model":
+            return await self._exec_set_model(cap, action, db)
         return False
 
     async def _exec_workflow_start(
@@ -674,6 +759,57 @@ class RemoteActionService:
             await self._adapter.send(msg)
         except Exception as exc:
             logger.warning("remote_action_send_failed error={}", exc)
+
+    async def _exec_set_mode(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        from app.remote import control
+
+        result = await control.set_permission_mode(db, cap.session_id, cap.action_target)
+        await self._reply_control_result(
+            action, result, f"Mode set to {cap.action_target}."
+        )
+        return True
+
+    async def _exec_set_agent(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        from app.remote import control
+
+        result = await control.set_lead_agent(db, cap.session_id, cap.action_target)
+        await self._reply_control_result(
+            action, result, f"Lead agent set to {cap.action_target}."
+        )
+        return True
+
+    async def _exec_set_model(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        from app.remote import control
+
+        result = await control.set_model(db, cap.session_id, cap.action_target)
+        await self._reply_control_result(
+            action, result, f"Model set to {cap.action_target}."
+        )
+        return True
+
+    async def _reply_control_result(
+        self,
+        action: RemoteInboundAction,
+        result: control.ControlResult,
+        success_text: str,
+    ) -> None:
+        if result.status == "ok":
+            text = success_text
+        elif result.status == "conflict":
+            text = result.detail or "That can't be changed right now."
+        elif result.status == "not_found":
+            text = "That task no longer exists."
+        elif result.detail:
+            text = f"That value isn't valid: {result.detail}"
+        else:
+            text = "That value isn't valid."
+        await self._reply_text(action.principal.destination_id, text)
 
     async def _reply_text(self, destination_id: str, text: str) -> None:
         await self._send(destination_id, text)

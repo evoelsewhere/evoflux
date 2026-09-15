@@ -902,7 +902,7 @@ class TestSettings:
             result = await service.dispatch_command(mock_db, action)
 
         assert result.status == "ok"
-        assert "start" in result.text.lower()
+        assert "no active task yet" in result.text.lower()
 
     @pytest.mark.asyncio
     async def test_mode_callback_applies_the_selected_mode(
@@ -988,18 +988,23 @@ _SLASH_COMMANDS: frozenset[str] = frozenset(
         if pairing is None:
             return RemoteActionResult(status="unauthorized")
 
+        # Both branches below call self._send explicitly, not just return
+        # text — runtime.py's guard (next step) skips its own fallback send
+        # for the WHOLE "settings" command unconditionally (matching how it
+        # already does for "actions"), so a branch that only returned text
+        # without sending it would silently never reach the phone at all.
+        no_active_session_text = (
+            "No active task yet — send a message to start one, then "
+            "/settings shows its mode/model/agent."
+        )
         if pairing.active_session_id is None:
-            return RemoteActionResult(
-                status="ok",
-                text="No active task yet — send a message to start one, then /settings shows its mode/model/agent.",
-            )
+            await self._send(action.principal.destination_id, no_active_session_text)
+            return RemoteActionResult(status="ok", text=no_active_session_text)
 
         session = await db.get(ChatSession, pairing.active_session_id)
         if session is None:
-            return RemoteActionResult(
-                status="ok",
-                text="No active task yet — send a message to start one, then /settings shows its mode/model/agent.",
-            )
+            await self._send(action.principal.destination_id, no_active_session_text)
+            return RemoteActionResult(status="ok", text=no_active_session_text)
 
         app_mode = normalize_mode(session.mode)
         session_id = str(session.id)
@@ -1069,57 +1074,62 @@ Expected: PASS.
 
 - [ ] **Step 6: Write failing tests for the three new capability action kinds, then implement `_execute_action`'s new branches**
 
+`_execute_action` already receives `db: AsyncSession` as a parameter
+(from Task 6 of the earlier response-ui plan, which added it so
+`handle_action_callback`'s existing workflow/coding-project/schedule
+branches could share one session) — use that directly rather than
+opening a second, redundant session via `async_session_factory()`.
+
 ```python
 # app/remote/actions.py — inside _execute_action
         elif cap.action_kind == "set_mode":
-            return await self._exec_set_mode(cap, action)
+            return await self._exec_set_mode(cap, action, db)
         elif cap.action_kind == "set_agent":
-            return await self._exec_set_agent(cap, action)
+            return await self._exec_set_agent(cap, action, db)
         elif cap.action_kind == "set_model":
-            return await self._exec_set_model(cap, action)
+            return await self._exec_set_model(cap, action, db)
 ```
 
 ```python
 # app/remote/actions.py — new methods, near _exec_workflow_start
     async def _exec_set_mode(
-        self, cap: _ActionCapability, action: RemoteInboundAction
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
     ) -> bool:
-        from app.core.db import async_session_factory
         from app.remote import control
 
-        async with async_session_factory() as db:
-            result = await control.set_permission_mode(
-                db, cap.session_id, cap.action_target
-            )
-        await self._reply_control_result(action, result, f"Mode set to {cap.action_target}.")
+        result = await control.set_permission_mode(db, cap.session_id, cap.action_target)
+        await self._reply_control_result(
+            action, result, f"Mode set to {cap.action_target}."
+        )
         return True
 
     async def _exec_set_agent(
-        self, cap: _ActionCapability, action: RemoteInboundAction
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
     ) -> bool:
-        from app.core.db import async_session_factory
         from app.remote import control
 
-        async with async_session_factory() as db:
-            result = await control.set_lead_agent(db, cap.session_id, cap.action_target)
+        result = await control.set_lead_agent(db, cap.session_id, cap.action_target)
         await self._reply_control_result(
             action, result, f"Lead agent set to {cap.action_target}."
         )
         return True
 
     async def _exec_set_model(
-        self, cap: _ActionCapability, action: RemoteInboundAction
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
     ) -> bool:
-        from app.core.db import async_session_factory
         from app.remote import control
 
-        async with async_session_factory() as db:
-            result = await control.set_model(db, cap.session_id, cap.action_target)
-        await self._reply_control_result(action, result, f"Model set to {cap.action_target}.")
+        result = await control.set_model(db, cap.session_id, cap.action_target)
+        await self._reply_control_result(
+            action, result, f"Model set to {cap.action_target}."
+        )
         return True
 
     async def _reply_control_result(
-        self, action: RemoteInboundAction, result, success_text: str
+        self,
+        action: RemoteInboundAction,
+        result: control.ControlResult,
+        success_text: str,
     ) -> None:
         if result.status == "ok":
             text = success_text
@@ -1127,10 +1137,21 @@ Expected: PASS.
             text = result.detail or "That can't be changed right now."
         elif result.status == "not_found":
             text = "That task no longer exists."
+        elif result.detail:
+            text = f"That value isn't valid: {result.detail}"
         else:
-            text = f"That value isn't valid: {result.detail}" if result.detail else "That value isn't valid."
+            text = "That value isn't valid."
         await self._reply_text(action.principal.destination_id, text)
 ```
+
+`result: control.ControlResult`'s annotation resolves fine at type-check
+time only because `from __future__ import annotations` is already at the
+top of `actions.py` (deferring all annotations to strings) — add `from
+app.remote import control` to the existing `if TYPE_CHECKING:` block near
+the top of the file (alongside `RemoteAdapterStatus`/`RemoteProjection`)
+so the type checker can still resolve the name, without a real module-level
+import (this module never imports `app.remote.control` outside `TYPE_CHECKING`,
+matching every other cross-module reference in this file).
 
 - [ ] **Step 7: Run and confirm pass**
 
