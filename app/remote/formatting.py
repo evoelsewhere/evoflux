@@ -17,6 +17,8 @@ __all__ = [
     "render_prompt_suggestions",
     "render_permission_card",
     "render_permission_resolved_card",
+    "render_health_card",
+    "render_changes_card",
 ]
 
 _STATUS_ICON = {"accepted": "\U0001f527", "queued": "⏳", "pending": "⏳"}
@@ -33,6 +35,7 @@ _RESOLUTION_LABEL = {
     "always": "Allowed for session",
     "reject": "Rejected",
 }
+_HEALTH_ICON = {"ok": "✅", "warn": "⚠️", "fail": "❌"}
 
 
 def escape(value: str) -> str:
@@ -227,3 +230,41 @@ def render_prompt_suggestions(
         buttons.append(RemoteButton(text="▶ Continue last session", token=continue_token))
     buttons += [RemoteButton(text=escape(label), token=token) for token, label in suggestions]
     return text, tuple(buttons)
+
+
+def render_health_card(checks: Sequence[Mapping[str, object]]) -> str:
+    lines = ["<b>\U0001fa7a Health</b>", ""]
+    for check in checks:
+        icon = _HEALTH_ICON.get(str(check.get("status", "")), "❓")
+        label = escape(str(check.get("label", "")))
+        detail = escape(str(check.get("detail", "")))
+        lines.append(f"{icon} <b>{label}</b>\n{detail}")
+    return "\n\n".join(lines)
+
+
+def render_changes_card(
+    *,
+    title: str,
+    files: Sequence[tuple[str, str, int | None, int | None]],
+    additions: int,
+    deletions: int,
+    file_tokens: Mapping[str, str],
+) -> tuple[str, tuple[RemoteButton, ...]]:
+    lines = [
+        f"<b>\U0001f4dd Changes</b> — {escape(title)}",
+        "",
+        f"+{additions} -{deletions} across {len(files)} file(s)",
+        "",
+    ]
+    for path, status, file_additions, file_deletions in files:
+        counts = ""
+        if file_additions is not None or file_deletions is not None:
+            counts = f" (+{file_additions or 0} -{file_deletions or 0})"
+        lines.append(f"\U0001f4c4 {escape(path)}{counts} — {escape(status)}")
+    text = "\n".join(lines)
+
+    buttons = tuple(
+        RemoteButton(text=f"View: {escape(path)}", token=token)
+        for path, token in file_tokens.items()
+    )
+    return text, buttons

@@ -286,3 +286,65 @@ def test_render_prompt_suggestions_escapes_labels():
     # Suggestion buttons should have escaped labels
     assert buttons[1].text == "Suggest &lt;tag&gt;"
     assert buttons[2].text == "Other &amp; more"
+
+
+def test_render_health_card_shows_each_check_with_its_status_icon():
+    text = formatting.render_health_card(
+        [
+            {"id": "db", "label": "Database", "status": "ok", "detail": "connected"},
+            {
+                "id": "disk",
+                "label": "Disk space",
+                "status": "fail",
+                "detail": "2.1 GB free",
+            },
+        ]
+    )
+    assert "Database" in text
+    assert "Disk space" in text
+    assert "✅" in text  # ok icon
+    assert "❌" in text  # fail icon
+
+
+def test_render_health_card_escapes_detail_text():
+    text = formatting.render_health_card(
+        [
+            {
+                "id": "x",
+                "label": "X",
+                "status": "warn",
+                "detail": "<script>alert(1)</script>",
+            }
+        ]
+    )
+    assert "<script>alert(1)</script>" not in text
+    assert "&lt;script&gt;" in text
+
+
+def test_render_changes_card_lists_files_with_line_counts_and_buttons():
+    text, buttons = formatting.render_changes_card(
+        title="Fix auth tests",
+        files=[
+            ("app/auth.py", "modified", 10, 2),
+            ("tests/test_auth.py", "added", 5, 0),
+        ],
+        additions=15,
+        deletions=2,
+        file_tokens={"app/auth.py": "tok-1", "tests/test_auth.py": "tok-2"},
+    )
+    assert "app/auth.py" in text
+    assert "+15" in text
+    assert "-2" in text
+    assert {b.token for b in buttons} == {"tok-1", "tok-2"}
+
+
+def test_render_changes_card_escapes_file_paths():
+    text, _ = formatting.render_changes_card(
+        title="Task",
+        files=[("<script>.py", "modified", 1, 0)],
+        additions=1,
+        deletions=0,
+        file_tokens={},
+    )
+    assert "<script>.py" not in text
+    assert "&lt;script&gt;.py" in text
