@@ -10,19 +10,10 @@ from __future__ import annotations
 from app.core.skill_scope import ALL_SKILL_MODES, SkillMode
 
 BUNDLED_SKILL_MODES: dict[str, tuple[SkillMode, ...]] = {
-    "coding-api-design": ("coding",),
-    "coding-browser-verify": ("coding",),
-    "coding-debugging": ("coding",),
-    "coding-git-workflow": ("coding",),
-    "coding-implementation": ("coding",),
-    "coding-investigation": ("coding",),
-    "coding-migration": ("coding",),
-    "coding-observability": ("coding",),
-    "coding-performance": ("coding",),
-    "coding-review": ("coding",),
-    "coding-security": ("coding",),
-    "coding-simplification": ("coding",),
-    "coding-testing": ("coding",),
+    "coding-change": ("coding",),
+    "coding-investigate": ("coding",),
+    "coding-operate": ("coding",),
+    "coding-verify": ("coding",),
     "compose-next": ("coding",),
     "data-analytics": ("work",),
     "deep-research": ("work",),

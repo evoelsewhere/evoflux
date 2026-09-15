@@ -320,7 +320,7 @@ async def test_integrated_code_navigation_is_visible_without_body_preload(
     )
 
     assert updated is not None
-    assert "coding-investigation" in updated.system_prompt
+    assert "coding-investigate" in updated.system_prompt
     assert "Never pass request prose" not in updated.system_prompt
     assert "loaded_skills" not in state.metadata
     assert state.messages == [state.messages[0]]

@@ -1,0 +1,86 @@
+---
+workflow: review
+owner: coding-verify
+description: Use this workflow for a read-only audit of a local diff or supplied implementation to find production-impacting correctness, data-loss, authorization, concurrency, compatibility, resilience, performance, and test defects. Report only actionable findings with concrete triggers; do not use it to implement requested changes or manage a remote pull-request lifecycle.
+---
+
+# Review a code change
+
+Remain read-only unless the user separately authorizes fixes. Optimize for
+defects that change production behavior, not commentary volume.
+Do not load bundled references when this skill activates.
+
+## Establish intent and scope
+
+1. Determine the intended contract from the request, specification, tests, and
+   existing behavior.
+2. Inspect the complete diff, including generated/configuration changes, then
+   read enough surrounding code to understand every changed state transition
+   and public boundary.
+3. Trace affected producers, callers, consumers, persistence, asynchronous
+   work, and independently deployed dependents where behavior can propagate.
+
+When a changed behavior cannot yet be tied to an exact declaration, call
+`code_context` with `action="search"` once with a stable changed literal, interface term, or code
+fragment. Use the result only to select an exact symbol; skip search when the
+diff already names it.
+
+For exact changed symbols, use `code_context` to verify direct
+`callers`/`references`, outbound `callees`, and bounded `impact` rather than
+guessing propagation from filenames. Start at depth 1, disambiguate duplicate
+definitions, preserve repository labels, and reuse returned call-site source.
+Once a changed symbol and propagation question are selected, make the graph the
+next structural observation rather than continuing broad discovery.
+
+Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
+
+Read [references/code-context-contract.md](references/code-context-contract.md)
+only when a result exposes limitations or truncation in cross-repository
+edges, dynamic wiring, or truncation that limits review coverage.
+
+## Review by risk
+
+Check in this order:
+
+1. Incorrect result, lost or duplicated data, invalid state transition
+2. Authorization, tenant isolation, unsafe input, and secret exposure
+3. Concurrency, cancellation, retry, idempotency, and partial failure
+4. API, schema, serialization, configuration, and rollout compatibility
+5. Resource exhaustion, latency regression, and unbounded work
+6. Missing tests for changed behavior and failure modes
+
+Construct a concrete input, state sequence, or deployment pairing for each
+candidate finding. Reject style preferences, speculative hypotheticals with no
+reachable path, and issues unchanged by the diff.
+
+Read [references/finding-contract.md](references/finding-contract.md) before
+reporting findings, when assigning severity, or when several observations may
+share one root cause.
+
+## Validate findings
+
+Use narrow, non-mutating checks when they materially increase confidence.
+Confirm exact line anchors against the final working diff. Deduplicate symptoms
+that one fix would resolve, and separate an unverified risk from a demonstrated
+defect.
+
+## Execution discipline and finding stop
+
+Inspect the complete diff once, then batch independent reads/graph queries for
+changed boundaries. Use `code_context`, `read`, `grep`, and `glob` for source;
+apart from one scoped diff/status command, do not use shell `cat`, `sed`, `head`,
+`tail`, `nl`, `rg`, or `find` to reread source or bypass an observation receipt.
+If a narrow check returns a process handle, use
+`process(action="wait", wait_seconds=60)`.
+
+Keep only candidates with a concrete trigger and changed causal path. Once each
+surviving candidate satisfies the finding contract—or is rejected—stop. Do not
+continue reading to increase commentary volume, and do not rerun checks after
+line anchors and final diff remain unchanged.
+
+## Deliverable
+
+Order findings by severity. Each finding must state trigger, impact, causal
+code path, exact location, and concrete fix direction. If no actionable defect
+remains, say so and list verification gaps separately. Do not pad the review
+with praise, summaries of the diff, or low-value nits.

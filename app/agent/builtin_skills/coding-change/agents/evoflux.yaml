@@ -1,0 +1,11 @@
+interface:
+  display_name: "Change Code"
+  short_description: "Implement, refactor, migrate, or shape a contract with proof"
+  default_prompt: "Use $coding-change to make this change and verify its observable contract."
+policy:
+  allow_implicit_invocation: true
+dependencies:
+  tools:
+    - type: builtin
+      value: code_context
+      description: "Unified indexed search, structural grep, exact-symbol graph navigation, and dynamic cross-repository resolution"
