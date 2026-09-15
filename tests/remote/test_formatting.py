@@ -75,6 +75,94 @@ def test_render_done_card_omits_buttons_when_no_tokens():
     assert buttons == ()
 
 
+def test_render_permission_card_shows_command_and_severity_icon():
+    text, buttons = formatting.render_permission_card(
+        tool="shell",
+        command="rm -rf build/",
+        severity="high",
+        agent="evoflux",
+        always_glob=None,
+        always_token=None,
+        once_token="once-tok",
+        reject_token="reject-tok",
+    )
+    assert "rm -rf build/" in text
+    assert "\U0001f534" in text  # red circle = high severity
+    assert "shell" in text
+    assert "evoflux" in text
+    assert buttons == (
+        RemoteButton(text="Allow once", token="once-tok"),
+        RemoteButton(text="Reject", token="reject-tok"),
+    )
+
+
+def test_render_permission_card_escapes_command():
+    text, _ = formatting.render_permission_card(
+        tool="shell",
+        command="echo <script>alert(1)</script>",
+        severity="elevated",
+        agent="evoflux",
+        always_glob=None,
+        always_token=None,
+        once_token="once-tok",
+        reject_token="reject-tok",
+    )
+    assert "<script>alert(1)</script>" not in text
+    assert "&lt;script&gt;" in text
+
+
+def test_render_permission_card_adds_allow_for_session_button_with_glob():
+    text, buttons = formatting.render_permission_card(
+        tool="shell",
+        command="git push origin main",
+        severity="elevated",
+        agent="evoflux",
+        always_glob="git push *",
+        always_token="always-tok",
+        once_token="once-tok",
+        reject_token="reject-tok",
+    )
+    assert "git push *" in text or any("git push *" in b.text for b in buttons)
+    assert buttons == (
+        RemoteButton(text="Allow once", token="once-tok"),
+        RemoteButton(
+            text="\U0001f512 Allow for session — git push *", token="always-tok"
+        ),
+        RemoteButton(text="Reject", token="reject-tok"),
+    )
+
+
+def test_render_permission_card_omits_always_button_without_glob():
+    _, buttons = formatting.render_permission_card(
+        tool="read",
+        command="tests/test_auth.py",
+        severity="normal",
+        agent="evoflux",
+        always_glob=None,
+        always_token=None,
+        once_token="once-tok",
+        reject_token="reject-tok",
+    )
+    assert len(buttons) == 2
+
+
+def test_render_permission_resolved_card_states_decision_and_has_no_buttons():
+    text, buttons = formatting.render_permission_resolved_card(
+        command="rm -rf build/", resolution="once"
+    )
+    assert "rm -rf build/" in text
+    assert "Allowed once" in text
+    assert buttons == ()
+
+
+def test_render_permission_resolved_card_escapes_command():
+    text, _ = formatting.render_permission_resolved_card(
+        command="<script>alert(1)</script>", resolution="reject"
+    )
+    assert "<script>alert(1)</script>" not in text
+    assert "&lt;script&gt;" in text
+
+
 def test_render_error_card_escapes_message():
     text, buttons = formatting.render_error_card(
         title="Add rate limiter",

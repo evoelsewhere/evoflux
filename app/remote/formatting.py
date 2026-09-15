@@ -15,9 +15,24 @@ __all__ = [
     "render_settings_card",
     "render_project_picker",
     "render_prompt_suggestions",
+    "render_permission_card",
+    "render_permission_resolved_card",
 ]
 
 _STATUS_ICON = {"accepted": "\U0001f527", "queued": "⏳", "pending": "⏳"}
+
+_SEVERITY_ICON = {"high": "\U0001f534", "elevated": "\U0001f7e0", "normal": "\U0001f527"}
+_SEVERITY_LABEL = {
+    "high": "Dangerous command",
+    "elevated": "Command",
+    "normal": "Permission requested",
+}
+_RESOLUTION_ICON = {"once": "✅", "always": "\U0001f512", "reject": "❌"}
+_RESOLUTION_LABEL = {
+    "once": "Allowed once",
+    "always": "Allowed for session",
+    "reject": "Rejected",
+}
 
 
 def escape(value: str) -> str:
@@ -74,6 +89,45 @@ def render_error_card(
         else ()
     )
     return text, buttons
+
+
+def render_permission_card(
+    *,
+    tool: str,
+    command: str,
+    severity: str,
+    agent: str,
+    always_glob: str | None,
+    always_token: str | None,
+    once_token: str,
+    reject_token: str,
+) -> tuple[str, tuple[RemoteButton, ...]]:
+    icon = _SEVERITY_ICON.get(severity, "\U0001f527")
+    label = _SEVERITY_LABEL.get(severity, "Permission requested")
+    text = (
+        f"{icon} <b>{escape(label)}</b>\n"
+        f"<pre>{escape(command)}</pre>\n"
+        f"<i>{escape(tool)} · {escape(agent)}</i>"
+    )
+    buttons = [RemoteButton(text="Allow once", token=once_token)]
+    if always_token and always_glob:
+        buttons.append(
+            RemoteButton(
+                text=f"\U0001f512 Allow for session — {escape(always_glob)}",
+                token=always_token,
+            )
+        )
+    buttons.append(RemoteButton(text="Reject", token=reject_token))
+    return text, tuple(buttons)
+
+
+def render_permission_resolved_card(
+    *, command: str, resolution: str
+) -> tuple[str, tuple[RemoteButton, ...]]:
+    icon = _RESOLUTION_ICON.get(resolution, "✅")
+    label = _RESOLUTION_LABEL.get(resolution, "Resolved")
+    text = f"{icon} <b>{escape(label)}</b>\n<pre>{escape(command)}</pre>"
+    return text, ()
 
 
 def render_gate_card(
