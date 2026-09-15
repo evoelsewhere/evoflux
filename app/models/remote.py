@@ -74,6 +74,10 @@ class RemotePairing(SQLModel, table=True):
         default="all",
         sa_column=Column(sa.String(20), nullable=False, server_default="all"),
     )
+    response_mode: str = Field(
+        default="summary",
+        sa_column=Column(sa.String(20), nullable=False, server_default="summary"),
+    )
     active_session_id: UUID | None = Field(
         default=None,
         sa_column=Column(

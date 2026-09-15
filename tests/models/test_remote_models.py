@@ -70,3 +70,38 @@ async def test_notify_scope_round_trips_a_non_default_value(session, remote_conn
         )
     ).one()
     assert reloaded.notify_scope == "phone_initiated"
+
+
+@pytest.mark.asyncio
+async def test_new_pairing_defaults_response_mode_to_summary(session, remote_connection):
+    pairing = RemotePairing(
+        connection_id=remote_connection.id,
+        principal_id="user-1",
+        destination_id="chat-1",
+        label="My phone",
+    )
+    session.add(pairing)
+    await session.commit()
+    await session.refresh(pairing)
+    assert pairing.response_mode == "summary"
+
+
+@pytest.mark.asyncio
+async def test_response_mode_round_trips_a_non_default_value(session, remote_connection):
+    pairing = RemotePairing(
+        connection_id=remote_connection.id,
+        principal_id="user-1",
+        destination_id="chat-1",
+        label="My phone",
+        response_mode="live",
+    )
+    session.add(pairing)
+    await session.commit()
+    await session.refresh(pairing)
+
+    reloaded = (
+        await session.exec(
+            select(RemotePairing).where(RemotePairing.id == pairing.id)
+        )
+    ).one()
+    assert reloaded.response_mode == "live"
