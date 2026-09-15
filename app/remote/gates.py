@@ -275,14 +275,51 @@ class RemoteGateBridge:
         if gate is None:
             return
 
-        # Clean up capability tokens.
         for token in gate.tokens:
             self._capabilities.pop(token, None)
             self._pending_by_token.pop(token, None)
 
-        # Edit the message to remove buttons (if we have a reference).
-        if gate.chat_id is not None and gate.message_id is not None:
-            self._edit_remove_buttons(gate)
+        resolution_text = self._resolution_text(gate, data)
+        self._enqueue_resolved_edit(gate, resolution_text)
+
+    def _resolution_text(self, gate: _PendingGate, data: dict) -> str:
+        """Build the resolved-form message text for one gate kind. Only
+        permission gates have a per-decision label defined by the spec
+        (AC-45's "Allowed once"/"Allowed for session"/"Rejected"); question
+        and plan gates get a generic resolved marker."""
+        if gate.gate_kind == "permission":
+            reply = data.get("reply", "reject")
+            text, _buttons = render_permission_resolved_card(
+                command=gate.command or "(command unavailable)", resolution=reply
+            )
+            return text
+        return "✅ <b>Resolved</b>"
+
+    def _enqueue_resolved_edit(self, gate: _PendingGate, text: str) -> None:
+        """Edit this gate's card into its resolved form — fire-and-forget,
+        matching the delivery pattern already used by ``_enqueue_send``."""
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._do_resolved_edit(gate, text))
+        except RuntimeError:
+            pass
+
+    async def _do_resolved_edit(self, gate: _PendingGate, text: str) -> None:
+        try:
+            msg = RemoteOutboundMessage(
+                connection_id=UUID(int=0),  # not used for edit lookup
+                destination_id="",
+                text=text,
+                buttons=(),
+                correlation_id=f"gate:{gate.request_id}",
+            )
+            await self._adapter.edit(msg)
+        except Exception as exc:
+            logger.debug(
+                "remote_gate_resolved_edit_failed request_id={} error={}",
+                gate.request_id,
+                exc,
+            )
 
     async def handle_callback(self, action: RemoteInboundAction) -> None:
         """Handle an inbound callback action.
@@ -346,19 +383,19 @@ class RemoteGateBridge:
     async def _resolve_permission(
         self, cap: GateCapability, action: RemoteInboundAction
     ) -> bool:
-        """Resolve a permission gate. Remote is limited to once/reject."""
-        from app.agent.permission import get_service_for_session
+        """Resolve a permission gate. Remote accepts once/always/reject
+        (AC-28, revised) — "always" is session-scoped in PermissionService
+        (it appends a rule to session_ruleset, not a permanent grant), which
+        is exactly what the remote card's "Allow for session" label says."""
+        from app.agent.permission import Reply, get_service_for_session
 
-        if cap.action == "once":
-            reply_value: Literal["once", "reject"] = "once"
-        elif cap.action == "reject":
-            reply_value = "reject"
-        else:
+        if cap.action not in ("once", "always", "reject"):
             logger.warning(
                 "remote_gate_invalid_permission_action action={}",
                 cap.action,
             )
             return False
+        reply_value: Reply = cap.action  # ty: ignore[invalid-assignment]
 
         svc = get_service_for_session(cap.session_id)
         if svc is None:
@@ -470,43 +507,9 @@ class RemoteGateBridge:
         self._capabilities[token] = cap
         return token
 
-    def _edit_remove_buttons(self, gate: _PendingGate) -> None:
-        """Edit a message to remove its inline buttons."""
-        if gate.chat_id is None or gate.message_id is None:
-            return
-        # We need to send an edit with empty buttons to remove the keyboard.
-        # This is a fire-and-forget best-effort.
-        try:
-            import asyncio
-
-            loop = asyncio.get_running_loop()
-            loop.create_task(self._do_edit_remove(gate))
-        except RuntimeError:
-            pass
-
-    async def _do_edit_remove(self, gate: _PendingGate) -> None:
-        """Actually edit the message to remove buttons."""
-        try:
-            msg = RemoteOutboundMessage(
-                connection_id=UUID(int=0),  # not used for edit lookup
-                destination_id="",
-                text="",  # text not changed
-                buttons=(),
-                correlation_id=f"gate:{gate.request_id}",
-            )
-            await self._adapter.edit(msg)
-        except Exception as exc:
-            logger.debug(
-                "remote_gate_edit_remove_buttons_failed request_id={} error={}",
-                gate.request_id,
-                exc,
-            )
-
     def _enqueue_send(self, msg: RemoteOutboundMessage) -> None:
         """Enqueue a message for async delivery."""
         try:
-            import asyncio
-
             loop = asyncio.get_running_loop()
             loop.create_task(self._do_send(msg))
         except RuntimeError:

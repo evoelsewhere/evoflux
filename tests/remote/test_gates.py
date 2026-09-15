@@ -347,6 +347,42 @@ class TestCallbackOrdering:
 
         mock_svc.reply.assert_called_once_with("req-1", "reject")
 
+    @pytest.mark.asyncio
+    async def test_callback_resolves_permission_always(
+        self, bridge: RemoteGateBridge, adapter: FakeAdapter
+    ) -> None:
+        conn_id = uuid4()
+        bridge.on_gate(
+            session_id="sess-1",
+            event_type="permission_asked",
+            data={
+                "request_id": "req-1",
+                "tool": "shell",
+                "patterns": ["git push origin main"],
+                "always_patterns": ["git push *"],
+            },
+            connection_id=conn_id,
+            destination_id="chat-1",
+        )
+        await asyncio.sleep(0.05)
+
+        gate = bridge._pending_gates["req-1"]
+        # Token order from _on_permission_asked: once, always, reject.
+        always_token = gate.tokens[1]
+
+        from unittest.mock import patch
+
+        mock_svc = MagicMock()
+        mock_svc.reply.return_value = True
+
+        with patch(
+            "app.agent.permission.get_service_for_session", return_value=mock_svc
+        ):
+            action = _make_action(callback_token=always_token, connection_id=conn_id)
+            await bridge.handle_callback(action)
+
+        mock_svc.reply.assert_called_once_with("req-1", "always")
+
 
 # ── Validation and ownership ──────────────────────────────────────────────────
 
@@ -566,6 +602,33 @@ class TestReplyEvents:
         for t in tokens:
             assert t not in bridge._capabilities
             assert t not in bridge._pending_by_token
+
+    @pytest.mark.asyncio
+    async def test_on_reply_edits_the_card_to_a_resolved_form(
+        self, bridge: RemoteGateBridge, adapter: FakeAdapter
+    ) -> None:
+        bridge.on_gate(
+            session_id="sess-1",
+            event_type="permission_asked",
+            data={
+                "request_id": "req-1",
+                "tool": "shell",
+                "patterns": ["rm -rf build/"],
+            },
+            connection_id=uuid4(),
+            destination_id="chat-1",
+        )
+
+        bridge.on_reply(
+            "sess-1", "permission_replied", {"request_id": "req-1", "reply": "once"}
+        )
+        await asyncio.sleep(0.05)
+
+        assert len(adapter.edited) == 1
+        assert adapter.edited[0].correlation_id == "gate:req-1"
+        assert adapter.edited[0].buttons == ()
+        assert "Allowed once" in adapter.edited[0].text
+        assert "rm -rf build/" in adapter.edited[0].text
 
     def test_on_reply_unknown_request_id_noop(self, bridge: RemoteGateBridge) -> None:
         bridge.on_reply(
