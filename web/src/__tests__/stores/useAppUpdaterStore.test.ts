@@ -74,4 +74,40 @@ describe('useAppUpdaterStore', () => {
       expect.objectContaining({ tone: 'error', title: 'Update installation failed' }),
     )
   })
+
+  it('carries how far along the install is', () => {
+    const store = useAppUpdaterStore.getState()
+
+    store.handleProgress({ phase: 'downloading', downloaded: 1_048_576, total: 8_388_608 })
+    expect(useAppUpdaterStore.getState().progress).toEqual({
+      phase: 'downloading',
+      downloaded: 1_048_576,
+      total: 8_388_608,
+    })
+    // Progress is itself proof an install is running, even if this window
+    // was not the one that started it.
+    expect(useAppUpdaterStore.getState().installing).toBe(true)
+
+    store.handleProgress({ phase: 'installing' })
+    expect(useAppUpdaterStore.getState().progress).toEqual({ phase: 'installing' })
+  })
+
+  it('forgets stale progress when an install fails', async () => {
+    updater.installAppUpdate.mockRejectedValue(new Error('disk full'))
+    useAppUpdaterStore.setState({
+      available: {
+        status: 'available',
+        version: '2.0.2',
+        current_version: '2.0.0',
+      },
+      progress: { phase: 'downloading', downloaded: 10, total: 100 },
+    })
+
+    await useAppUpdaterStore.getState().install()
+
+    const state = useAppUpdaterStore.getState()
+    expect(state.installing).toBe(false)
+    expect(state.progress).toBeNull()
+    expect(state.installError).toBe('disk full')
+  })
 })

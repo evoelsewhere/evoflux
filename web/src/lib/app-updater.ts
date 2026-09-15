@@ -13,6 +13,18 @@ export type AppUpdateCheckResult =
   | { status: 'error'; title: string; message: string }
 
 /**
+ * How far along an install is.
+ *
+ * `total` is absent when the release server sends no Content-Length, which
+ * is the one case a percentage cannot be shown — the bar says how much has
+ * arrived instead of pretending to know how much is left.
+ */
+export type AppUpdateProgress =
+  | { phase: 'downloading'; downloaded: number; total?: number | null }
+  | { phase: 'verifying' }
+  | { phase: 'installing' }
+
+/**
  * Ask the native desktop shell to check GitHub Releases and run the signed
  * updater check. Results stay in the EvoFlux UI; Rust still owns signature
  * verification and updater bytes.
