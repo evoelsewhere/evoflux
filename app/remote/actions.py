@@ -84,7 +84,7 @@ class _ActionCapability:
 _SLASH_COMMANDS: frozenset[str] = frozenset(
     {
         "start", "help", "status", "new", "stop", "unpair", "actions",
-        "settings", "health", "changes",
+        "settings", "health", "changes", "clear",
     }
 )
 
@@ -104,6 +104,7 @@ Commands:
 /changes — See this task's file changes
 /actions — Run a saved workflow, open a coding project, or fire a \
 scheduled task
+/clear — Delete my recent messages in this chat (not yours)
 /unpair — Disconnect this phone from EvoFlux
 
 Send /help any time to see this again."""
@@ -202,6 +203,8 @@ class RemoteActionService:
             return await self._cmd_health(db, action)
         elif command == "changes":
             return await self._cmd_changes(db, action)
+        elif command == "clear":
+            return await self._cmd_clear(db, action)
         else:
             # Unknown command — return bounded help.
             return await self._cmd_help(db, action)
@@ -506,6 +509,38 @@ class RemoteActionService:
         )
 
         await self._send(action.principal.destination_id, text, buttons=buttons)
+        return RemoteActionResult(status="ok", text=text)
+
+    async def _cmd_clear(
+        self, db: AsyncSession, action: RemoteInboundAction
+    ) -> RemoteActionResult:
+        """Delete this bot's own recent messages in the chat. Telegram
+        only lets a bot delete messages it sent, and only within 48 hours
+        (see TelegramAdapter.clear_history) — the user's own messages,
+        including the /clear command itself, are never touched. Does not
+        self-send: like /health, its text is delivered by runtime.py's
+        command fallback."""
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            return RemoteActionResult(status="unauthorized")
+
+        clear_history = getattr(self._adapter, "clear_history", None)
+        if clear_history is None:
+            return RemoteActionResult(
+                status="ok", text="This connection can't clear messages."
+            )
+
+        cleared = await clear_history(action.principal.destination_id)
+        text = (
+            f"Cleared {cleared} message(s)."
+            if cleared
+            else "Nothing to clear (either none sent, or too old for Telegram "
+            "to delete)."
+        )
         return RemoteActionResult(status="ok", text=text)
 
     async def _cmd_new(

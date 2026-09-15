@@ -34,6 +34,8 @@ class FakeAdapter:
         self.acked_tokens: list[str] = []
         self.sent_texts: list[str] = []
         self.sent_messages: list = []
+        self.cleared_destinations: list[str] = []
+        self.clear_history_return_value: int = 3
 
     async def answer_callback(self, token: str) -> None:
         self.calls.append("answer_callback")
@@ -46,6 +48,11 @@ class FakeAdapter:
 
     async def edit(self, msg) -> None:
         self.calls.append("edit")
+
+    async def clear_history(self, destination_id: str) -> int:
+        self.calls.append("clear_history")
+        self.cleared_destinations.append(destination_id)
+        return self.clear_history_return_value
 
 
 def _make_action(
@@ -850,6 +857,64 @@ class TestHealth:
             result = await service.dispatch_command(mock_db, action)
 
         assert result.status == "unauthorized"
+
+
+# ── Clear ─────────────────────────────────────────────────────────────────────
+
+
+class TestClear:
+    @pytest.mark.asyncio
+    async def test_clear_command_deletes_history_and_reports_the_count(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        mock_db = MagicMock()
+        action = _make_action(text="/clear")
+        adapter.clear_history_return_value = 5
+
+        with patch.object(
+            service._pairing_service, "authorize", return_value=MagicMock()
+        ):
+            result = await service.dispatch_command(mock_db, action)
+
+        assert result.status == "ok"
+        assert "5" in result.text
+        assert adapter.cleared_destinations == [action.principal.destination_id]
+
+    @pytest.mark.asyncio
+    async def test_clear_requires_authorization(
+        self, service: RemoteActionService
+    ) -> None:
+        mock_db = MagicMock()
+        action = _make_action(text="/clear")
+
+        with patch.object(service._pairing_service, "authorize", return_value=None):
+            result = await service.dispatch_command(mock_db, action)
+
+        assert result.status == "unauthorized"
+
+    @pytest.mark.asyncio
+    async def test_clear_on_an_adapter_without_clear_support_says_so(self) -> None:
+        class _NoClearAdapter:
+            async def send(self, msg) -> None:
+                pass
+
+            async def edit(self, msg) -> None:
+                pass
+
+            async def answer_callback(self, token: str) -> None:
+                pass
+
+        service = RemoteActionService(adapter=_NoClearAdapter())  # type: ignore[arg-type]
+        mock_db = MagicMock()
+        action = _make_action(text="/clear")
+
+        with patch.object(
+            service._pairing_service, "authorize", return_value=MagicMock()
+        ):
+            result = await service.dispatch_command(mock_db, action)
+
+        assert result.status == "ok"
+        assert "clear" in result.text.lower()
 
 
 # ── Changes ───────────────────────────────────────────────────────────────────
