@@ -339,12 +339,20 @@ class RemoteActionService:
             model_id: self._issue_settings_token(action, session_id, "set_model", model_id)
             for model_id in model_ids
         }
+        response_mode_tokens = {
+            mode: self._issue_settings_token(
+                action, str(pairing.id), "set_response_mode", mode
+            )
+            for mode in control.ALLOWED_RESPONSE_MODES
+        }
 
         text, buttons = render_settings_card(
             connection_label=pairing.label or "This phone",
             model=session.model or "(default)",
             permission_mode=session.permission_mode,
             agent_name=session.agent_name or "(default)",
+            response_mode=pairing.response_mode,
+            response_mode_tokens=response_mode_tokens,
             mode_tokens=mode_tokens,
             agent_tokens=agent_tokens,
             model_tokens=model_tokens,
@@ -651,6 +659,8 @@ class RemoteActionService:
             return await self._exec_set_agent(cap, action, db)
         elif cap.action_kind == "set_model":
             return await self._exec_set_model(cap, action, db)
+        elif cap.action_kind == "set_response_mode":
+            return await self._exec_set_response_mode(cap, action, db)
         elif cap.action_kind == "changes_diff":
             return await self._exec_changes_diff(cap, action, db)
         return False
@@ -880,6 +890,20 @@ class RemoteActionService:
         result = await control.set_model(db, cap.session_id, cap.action_target)
         await self._reply_control_result(
             action, result, f"Model set to {cap.action_target}."
+        )
+        return True
+
+    async def _exec_set_response_mode(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        """cap.session_id here holds a PAIRING id, not a chat session id —
+        this preference lives on RemotePairing, the one action kind in
+        this module that isn't chat-session-scoped."""
+        from app.remote import control
+
+        result = await control.set_response_mode(db, cap.session_id, cap.action_target)
+        await self._reply_control_result(
+            action, result, f"Responses set to {cap.action_target}."
         )
         return True
 

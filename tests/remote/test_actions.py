@@ -696,6 +696,74 @@ class TestSettings:
             assert refreshed is not None
             assert refreshed.permission_mode == "ask"
 
+    @pytest.mark.asyncio
+    async def test_response_mode_callback_applies_the_selected_mode(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        from app.models.remote import RemoteConnection, RemotePairing
+
+        conn_id = uuid4()
+        async with db_module.async_session_factory() as db:
+            session = ChatSession(
+                title="Settings test",
+                mode="work",
+                session_type="main",
+                permission_mode="auto",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            connection = RemoteConnection(
+                adapter="telegram",
+                label="My phone",
+                enabled=True,
+                adapter_principal_id="bot-1",
+                adapter_username="my_evoflux_bot",
+            )
+            db.add(connection)
+            await db.commit()
+            await db.refresh(connection)
+
+            real_pairing = RemotePairing(
+                connection_id=connection.id,
+                principal_id="user-1",
+                destination_id="chat-1",
+                label="My Phone",
+            )
+            db.add(real_pairing)
+            await db.commit()
+            await db.refresh(real_pairing)
+
+            mock_pairing = MagicMock()
+            mock_pairing.id = real_pairing.id
+            mock_pairing.active_session_id = session.id
+            mock_pairing.label = "My Phone"
+            mock_pairing.response_mode = "summary"
+
+            with patch.object(
+                service._pairing_service, "authorize", return_value=mock_pairing
+            ):
+                settings_action = _make_action(text="/settings", connection_id=conn_id)
+                await service.dispatch_command(db, settings_action)
+
+            sent_buttons = adapter.sent_messages[-1].buttons
+            live_token = next(
+                b.token for b in sent_buttons if b.text == "Responses: live"
+            )
+
+            callback_action = _make_action(
+                kind=RemoteInboundActionKind.CALLBACK,
+                callback_token=live_token,
+                connection_id=conn_id,
+            )
+            handled = await service.handle_action_callback(callback_action, db)
+
+            assert handled is True
+            refreshed = await db.get(RemotePairing, real_pairing.id)
+            assert refreshed is not None
+            assert refreshed.response_mode == "live"
+
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
