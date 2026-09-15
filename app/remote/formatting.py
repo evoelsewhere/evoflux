@@ -20,6 +20,7 @@ __all__ = [
     "render_health_card",
     "render_changes_card",
     "render_live_status_card",
+    "render_onboarding_card",
 ]
 
 _STATUS_ICON = {"accepted": "\U0001f527", "queued": "⏳", "pending": "⏳"}
@@ -227,6 +228,36 @@ def render_settings_card(
         for name, token in notify_scope_tokens.items()
     ]
     return text, tuple(buttons)
+
+
+def render_onboarding_card(
+    *,
+    label: str,
+    default_permission_mode: str,
+    setup_token: str,
+    health_token: str,
+    start_token: str,
+) -> tuple[str, tuple[RemoteButton, ...]]:
+    """The first-run card sent right after a successful pairing (AC-54) —
+    a starting point rather than a dead end. The mode line is stated
+    because it is the single most consequential default the operator
+    should know about at pairing time: "auto" means no approval prompts
+    will ever reach this phone."""
+    mode_line = f"Mode is <code>{escape(default_permission_mode)}</code>"
+    if default_permission_mode == "auto":
+        mode_line += " — the agent won't ask before running commands."
+    else:
+        mode_line += "."
+    text = (
+        f'✅ <b>Paired!</b> This phone ("{escape(label)}") is now connected '
+        f"to EvoFlux.\n\n{mode_line}"
+    )
+    buttons = (
+        RemoteButton(text="⚙️ Set up", token=setup_token),
+        RemoteButton(text="\U0001fa7a Health check", token=health_token),
+        RemoteButton(text="\U0001f4ac Just start working", token=start_token),
+    )
+    return text, buttons
 
 
 def render_project_picker(

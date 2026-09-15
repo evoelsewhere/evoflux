@@ -327,6 +327,46 @@ def test_render_settings_card_now_emits_mode_and_model_buttons():
     assert any("strict" in t.lower() for t in button_texts)
 
 
+def test_render_onboarding_card_names_the_phone_and_states_auto_mode() -> None:
+    text, buttons = formatting.render_onboarding_card(
+        label="My Phone",
+        default_permission_mode="auto",
+        setup_token="setup-tok",
+        health_token="health-tok",
+        start_token="start-tok",
+    )
+    assert "My Phone" in text
+    assert "connected to EvoFlux" in text
+    assert "auto" in text
+    assert "won't ask" in text
+    assert len(buttons) == 3
+    assert {b.token for b in buttons} == {"setup-tok", "health-tok", "start-tok"}
+
+
+def test_render_onboarding_card_escapes_label() -> None:
+    text, _ = formatting.render_onboarding_card(
+        label="<script>alert(1)</script>",
+        default_permission_mode="auto",
+        setup_token="s",
+        health_token="h",
+        start_token="w",
+    )
+    assert "<script>alert(1)</script>" not in text
+    assert "&lt;script&gt;" in text
+
+
+def test_render_onboarding_card_states_non_auto_mode_without_the_auto_warning() -> None:
+    text, _ = formatting.render_onboarding_card(
+        label="My Phone",
+        default_permission_mode="ask",
+        setup_token="s",
+        health_token="h",
+        start_token="w",
+    )
+    assert "ask" in text
+    assert "won't ask" not in text
+
+
 def test_render_gate_card_escapes_action_labels():
     text, buttons = formatting.render_gate_card(
         title="Approve deploy?",
