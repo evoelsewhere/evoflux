@@ -9,8 +9,11 @@ Design constraints (from spec):
 - Callback tokens are opaque, random, connection/principal-bound, and <=64 bytes.
 - Internal IDs (session_id, request_id) are never serialized into callback data.
 - ``answer_callback`` is called before any gate resolution (AC-26).
-- ``edit_text`` removes buttons after resolution.
-- Remote permission replies are limited to ``once`` and ``reject`` (AC-28).
+- A resolved gate's card is edited into a button-free, decision-stating
+  form (AC-47) — never left with live buttons after a reply.
+- Remote permission replies accept ``once``, ``always``, and ``reject``
+  (AC-28, revised) — ``always`` is session-scoped in ``PermissionService``
+  (appends a rule to ``session_ruleset``), not a permanent grant.
 """
 
 from __future__ import annotations
