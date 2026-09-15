@@ -322,12 +322,12 @@ class TelegramAdapter:
         failure here must never block the poll loop from starting.
         """
         commands = [
-            ("help", "Show available commands"),
-            ("status", "Show connection and current task status"),
-            ("new", "Start a new task"),
-            ("stop", "Stop the current running task"),
-            ("unpair", "Unpair this phone from EvoFlux"),
-            ("actions", "Show more actions (Workflows, Projects, Scheduler)"),
+            ("help", "What can I do here?"),
+            ("status", "What's my agent doing right now?"),
+            ("new", "Set aside this task, start a new one"),
+            ("stop", "Interrupt the agent mid-task"),
+            ("actions", "Run a workflow, project, or schedule"),
+            ("unpair", "Disconnect this phone"),
         ]
         try:
             await self._client.set_commands(commands)

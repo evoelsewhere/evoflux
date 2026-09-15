@@ -87,16 +87,19 @@ _SLASH_COMMANDS: frozenset[str] = frozenset(
 
 # ── Help text ─────────────────────────────────────────────────────────────────
 
-_HELP_TEXT = """Available commands:
+_HELP_TEXT = """\U0001f44b You're paired with EvoFlux. Just type a message to send it to \
+your agent — no command needed. It'll pick up your current task, or start \
+a new one if there isn't one yet.
 
-/help — Show this help
-/status — Show connection and current task status
-/new — Start a new task (clears current task)
-/stop — Stop the current running task
-/unpair — Unpair this phone from EvoFlux
-/actions — Show more actions (Workflows, Projects, Scheduler)
+Commands:
+/status — What's my agent doing right now?
+/new — Set aside the current task and start a fresh one
+/stop — Interrupt the agent while it's working on your last message
+/actions — Run a saved workflow, open a coding project, or fire a \
+scheduled task
+/unpair — Disconnect this phone from EvoFlux
 
-Or just type a message to chat with your agent."""
+Send /help any time to see this again."""
 
 
 class RemoteActionService:

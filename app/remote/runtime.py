@@ -441,7 +441,12 @@ class RemoteRuntime:
                     RemoteOutboundMessage(
                         connection_id=action.connection_id,
                         destination_id=action.principal.destination_id,
-                        text=f"Connected to EvoFlux on {result.label}.",
+                        text=(
+                            f'✅ Paired! This phone ("{result.label}") is now '
+                            "connected to EvoFlux.\n\n"
+                            "Type anything to start working with your agent, or "
+                            "send /help to see what else you can do."
+                        ),
                         priority=RemoteOutboundPriority.HIGH,
                     )
                 )
