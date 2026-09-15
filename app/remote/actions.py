@@ -345,6 +345,7 @@ class RemoteActionService:
             )
             for mode in control.ALLOWED_RESPONSE_MODES
         }
+        configured_provider_count = await control.count_configured_providers()
 
         text, buttons = render_settings_card(
             connection_label=pairing.label or "This phone",
@@ -356,6 +357,7 @@ class RemoteActionService:
             mode_tokens=mode_tokens,
             agent_tokens=agent_tokens,
             model_tokens=model_tokens,
+            configured_provider_count=configured_provider_count,
         )
 
         if self._adapter is not None:

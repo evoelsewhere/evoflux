@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -763,6 +763,42 @@ class TestSettings:
             refreshed = await db.get(RemotePairing, real_pairing.id)
             assert refreshed is not None
             assert refreshed.response_mode == "live"
+
+    @pytest.mark.asyncio
+    async def test_settings_command_shows_configured_provider_count(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        async with db_module.async_session_factory() as db:
+            session = ChatSession(
+                title="Settings test",
+                mode="work",
+                session_type="main",
+                permission_mode="ask",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            mock_pairing = MagicMock()
+            mock_pairing.id = uuid4()
+            mock_pairing.active_session_id = session.id
+            mock_pairing.label = "My Phone"
+            mock_pairing.response_mode = "summary"
+
+            with (
+                patch.object(
+                    service._pairing_service, "authorize", return_value=mock_pairing
+                ),
+                patch(
+                    "app.remote.control.count_configured_providers",
+                    new=AsyncMock(return_value=2),
+                ),
+            ):
+                settings_action = _make_action(text="/settings")
+                await service.dispatch_command(db, settings_action)
+
+            sent_text = adapter.sent_messages[-1].text
+            assert "2 configured" in sent_text
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
