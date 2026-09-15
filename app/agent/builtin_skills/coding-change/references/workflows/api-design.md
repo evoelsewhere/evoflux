@@ -37,10 +37,6 @@ cross-repository reference as an unknown consumer, not as evidence none
 exists. Once the boundary and its consumers are located, make the graph the
 next structural observation instead of continuing broad discovery.
 
-Keep `refresh=true` for the first indexed query and after edits. Use
-`refresh=false` only for an immediate follow-up that intentionally reuses the
-same index version.
-
 Read [references/code-context-contract.md](references/code-context-contract.md)
 only after a result exposes ambiguity, cross-repository scope, or another
 static fallback gap.
@@ -72,11 +68,8 @@ must coexist across a rollout).
 
 ## Execution discipline and design stop
 
-Locate the boundary and its consumers once; batch independent graph queries
-and reads. Use `code_context`, `read`, `grep`, and `glob` for source; do not
-use shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find` to reread source
-or bypass an observation receipt. Reserve shell for formatter, lint/type,
-build, and verification commands.
+Locate the boundary and its consumers once. Reserve shell for formatter,
+lint/type, build, and verification commands.
 
 Stop once the contract, its outcome model, and its consumer impact are stated
 and any required compatibility path is named. Do not implement beyond what is

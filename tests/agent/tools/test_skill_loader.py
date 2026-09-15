@@ -25,6 +25,14 @@ from app.agent.tools.builtin.skill import (
 )
 
 
+CODING_HUBS = (
+    "coding-change",
+    "coding-investigate",
+    "coding-operate",
+    "coding-verify",
+)
+
+
 # ---------------------------------------------------------------------------
 # _parse_frontmatter
 # ---------------------------------------------------------------------------
@@ -1284,7 +1292,25 @@ class TestBuiltinSkills:
             assert isinstance(meta["description"], str) and meta["description"].strip()
             assert body.strip(), skill_file
 
-    def test_native_code_context_contract_is_embedded_in_coding_workflows(self):
+    def test_native_code_context_contract_is_stated_once_per_coding_hub(self):
+        """The indexed-query contract belongs to the hub, not to each workflow.
+
+        A hub is always loaded before the workflow it routes to, so stating the
+        contract once there keeps one copy authoritative. The second half of
+        this test is the half that matters: a workflow must NOT restate it, or
+        the copies drift apart again.
+        """
+        builtin = _builtin_skills_dir()
+        for owner in (*CODING_HUBS, "review-pull-requests"):
+            normalized = " ".join(
+                (builtin / owner / "SKILL.md").read_text(encoding="utf-8").split()
+            )
+            assert "`code_context`" in normalized, owner
+            assert "`refresh=true` for the first indexed query" in normalized, owner
+            assert "`refresh=false` only for an immediate follow-up" in normalized, (
+                owner
+            )
+
         expected_owners = [
             "coding-change/references/workflows/api-design.md",
             "coding-change/references/workflows/implement.md",
@@ -1298,30 +1324,26 @@ class TestBuiltinSkills:
             "coding-verify/references/workflows/review.md",
             "coding-verify/references/workflows/security.md",
             "coding-verify/references/workflows/test.md",
-            "review-pull-requests/SKILL.md",
-        ]
-        builtin = _builtin_skills_dir()
-        bodies = [
-            *sorted(builtin.glob("coding-*/references/workflows/*.md")),
-            builtin / "review-pull-requests" / "SKILL.md",
         ]
         owners = [
             body.relative_to(builtin).as_posix()
-            for body in bodies
+            for body in sorted(builtin.glob("coding-*/references/workflows/*.md"))
             if "code_context" in body.read_text(encoding="utf-8")
         ]
 
         assert owners == expected_owners
         for owner in expected_owners:
             normalized = " ".join((builtin / owner).read_text(encoding="utf-8").split())
-            assert "`code_context`" in normalized, owner
+            assert "code_context" in normalized, owner
             assert "skip" in normalized.casefold(), owner
-            assert "Keep `refresh=true` for the first indexed query" in normalized, (
-                owner
-            )
-            assert "`refresh=false` only for an immediate follow-up" in normalized, (
-                owner
-            )
+            for hoisted in (
+                "`refresh=true` for the first indexed query",
+                "`refresh=false` only for an immediate follow-up",
+                "shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find`",
+                "covered-range receipt is authoritative",
+                '`process(action="wait", wait_seconds=60)`',
+            ):
+                assert hoisted not in normalized, f"{owner} restates {hoisted!r}"
 
         # One contract copy per hub, shared by every workflow that hub routes to.
         contracts = {
@@ -1423,14 +1445,9 @@ class TestBuiltinSkills:
         assert "**Exit criterion:** one owning symbol/file" in normalized
         assert "do not return to broad discovery" in normalized
         assert (
-            "Do not use shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find`"
-            in normalized
-        )
-        assert (
             "When the regression check and required surface checks pass, stop"
             in normalized
         )
-        assert '`process(action="wait", wait_seconds=60)`' in normalized
 
         forbidden = {
             behavior
@@ -1485,11 +1502,6 @@ class TestBuiltinSkills:
 
             assert cases, workflow
             assert stop_evidence in normalized, workflow
-            assert "do not use shell `cat`, `sed`, `head`, `tail`" in normalized, (
-                workflow
-            )
-            assert "observation receipt" in normalized, workflow
-            assert '`process(action="wait", wait_seconds=60)`' in normalized, workflow
 
             forbidden = {
                 behavior
@@ -1505,15 +1517,30 @@ class TestBuiltinSkills:
             )
             assert trajectory[-1] in {"stop", "phase_stop"}, workflow
 
+    def test_coding_hubs_own_the_bounded_execution_contract(self):
+        """The observation limits are hub-level, so every workflow inherits them.
+
+        Each hub is loaded before the workflow it routes to, so these rules
+        reach the model exactly once per activation instead of once per
+        workflow file.
+        """
+        builtin = _builtin_skills_dir()
+        for hub in CODING_HUBS:
+            normalized = " ".join(
+                (builtin / hub / "SKILL.md").read_text(encoding="utf-8").split()
+            )
+            assert (
+                "shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find`"
+                in normalized
+            ), hub
+            assert "covered-range receipt is authoritative" in normalized, hub
+            assert '`process(action="wait", wait_seconds=60)`' in normalized, hub
+            assert "Batch independent graph queries and reads" in normalized, hub
+
     def test_coding_hubs_route_to_every_workflow_they_own(self):
         """Each hub must name every workflow file it ships, and only those."""
         builtin = _builtin_skills_dir()
-        for hub in (
-            "coding-change",
-            "coding-investigate",
-            "coding-operate",
-            "coding-verify",
-        ):
+        for hub in CODING_HUBS:
             root = builtin / hub
             body = (root / "SKILL.md").read_text(encoding="utf-8")
             shipped = {

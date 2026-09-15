@@ -56,8 +56,6 @@ next structural observation. Do not continue broad grep or reread source that
 the graph returns. Runtime reproduction may still come first when it is the
 cheapest test that can falsify the current causal hypothesis.
 
-Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
-
 Read [references/code-context-contract.md](references/code-context-contract.md)
 only after a graph result exposes ambiguity, cross-repository scope,
 index limitations or truncation.
@@ -75,12 +73,8 @@ and explain why the new synchronization removes it.
 
 ## Execution discipline and stop gate
 
-Batch independent graph queries and source reads. Use `code_context`, `read`,
-`grep`, and `glob` for source; do not use shell `cat`, `sed`, `head`, `tail`,
-`nl`, `rg`, or `find` to reread source or bypass a revision-aware observation
-receipt. Reserve shell for reproduction, formatter, test, diagnostics, and
-runtime commands. If one returns a process handle, prefer
-`process(action="wait", wait_seconds=60)` over repeated short polls.
+Reserve shell for reproduction, formatter, test, diagnostics, and runtime
+commands.
 
 Once one falsifiable hypothesis explains the first bad state and its cheapest
 disproof supports it, stop broad discovery. After the original reproduction

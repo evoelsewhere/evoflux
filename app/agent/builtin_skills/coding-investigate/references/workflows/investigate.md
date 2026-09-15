@@ -29,13 +29,7 @@ Do not strip it to a primary-relative path.
 
 A single bounded investigation question is one work lane, not an implementation
 plan. Do not create a todo unless the request contains multiple independent
-questions or deliverables. When several independent source ranges are already
-known, issue their read-only calls together in one model turn instead of
-serializing them.
-
-`read` results already carry stable line numbers. Reuse those anchors for the
-final answer; never rerun `sed`, `nl`, or another read solely to add citation
-numbers that the existing result already provides.
+questions or deliverables.
 
 Never pass request prose, a filename, module, route, comment, or guessed spelling
 as the exact-symbol `query`. Promotion from unknown-root to exact-symbol ends broad
@@ -75,8 +69,6 @@ Choose the smallest of `definition`, `callers`, `callees`, `references`,
 Start at depth 1. Increase depth only for an explicitly transitive question.
 Disambiguate multiple definitions before traversal. Reuse graph-returned source
 and callsites; never read the same evidence again.
-
-Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
 
 ## Gaps
 

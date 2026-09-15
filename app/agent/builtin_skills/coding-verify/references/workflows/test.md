@@ -34,8 +34,6 @@ do not prove runtime ordering, concurrency, reflection, or environment state.
 Once the proof obligation selects an exact symbol, make the graph the next
 structural observation instead of continuing broad discovery.
 
-Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
-
 Read
 [references/code-context-contract.md](references/code-context-contract.md) only
 after a result exposes ambiguity, cross-repository coverage, or another static
@@ -72,16 +70,12 @@ temporarily but are not its fix.
 ## Execution discipline and proof stop
 
 Choose one proof obligation and the cheapest sufficient level before surveying
-fixtures. Search/read one nearest existing seam, then batch independent source
-and test observations. Use `code_context`, `read`, `grep`, and `glob` for source;
-do not use shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find` to reread
-source or bypass an observation receipt. Before the first test command, confirm
-this repository's actual invocation for a focused test and the full
+fixtures. Search/read one nearest existing seam. Before the first test command,
+confirm this repository's actual invocation for a focused test and the full
 suite—checked-in wrapper script, manifest command, or build file—rather than
 assuming a default runner; a multi-language workspace has one command per
 surface. Reserve shell for test, formatter, lint/type, build, repetition, and
-runtime commands. Await long commands with `process(action="wait",
-wait_seconds=60)`.
+runtime commands.
 
 When the focused proof fails, use its exact diagnostic to correct one fixture,
 boundary, or assertion and rerun the same command. Once the focused proof and

@@ -32,8 +32,6 @@ definitions, preserve repository labels, and reuse returned call-site source.
 Once a changed symbol and propagation question are selected, make the graph the
 next structural observation rather than continuing broad discovery.
 
-Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
-
 Read [references/code-context-contract.md](references/code-context-contract.md)
 only when a result exposes limitations or truncation in cross-repository
 edges, dynamic wiring, or truncation that limits review coverage.
@@ -66,12 +64,8 @@ defect.
 
 ## Execution discipline and finding stop
 
-Inspect the complete diff once, then batch independent reads/graph queries for
-changed boundaries. Use `code_context`, `read`, `grep`, and `glob` for source;
-apart from one scoped diff/status command, do not use shell `cat`, `sed`, `head`,
-`tail`, `nl`, `rg`, or `find` to reread source or bypass an observation receipt.
-If a narrow check returns a process handle, use
-`process(action="wait", wait_seconds=60)`.
+Inspect the complete diff once. Reserve shell for that scoped diff/status
+command and for narrow verification checks.
 
 Keep only candidates with a concrete trigger and changed causal path. Once each
 surviving candidate satisfies the finding contract—or is rejected—stop. Do not

@@ -32,12 +32,6 @@ required command or contract.
   for explicitly transitive risk and start at depth 1.
 - Keep repository identity. Ordinary file tools require the displayed absolute
   path for a non-primary repository.
-- Batch independent graph queries and source reads in one model turn. Graph and
-  `read` results already contain source and line numbers; reuse them.
-
-Keep `refresh=true` for the first indexed query and after edits. Use
-`refresh=false` only for an immediate follow-up that intentionally reuses the
-same index version.
 
 Choose the regression seam with one bounded search/read pass. Reuse the closest
 fixture or public API already observed. If no seam exists, create the smallest
@@ -71,9 +65,7 @@ the call.
 
 Run formatter/diagnostics and the smallest test that exercises the changed
 behavior. Batch independent verification commands when safe. Do not start with
-the full repository suite. If a command returns a process handle, use one
-`process(action="wait", wait_seconds=60)` observation rather than repeated short
-polls; wait again only when that result still reports running.
+the full repository suite.
 
 When a command fails:
 
@@ -99,18 +91,14 @@ tests that merely mirror implementation. When the regression check and required
 surface checks pass, stop. Do not add an unsolicited broader review or search
 for adjacent improvements.
 
-## Observation discipline
+## Execution discipline
 
-- Use `code_context`, `read`, `grep`, and `glob` for source discovery. Do not use
-  shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find` to reread source or
-  bypass an observation receipt.
-- A revision-aware reuse/covered-range receipt is authoritative. Read again only
-  after an edit changed that source or when the required range is not covered.
-- Reserve shell for repository-native formatter, test, lint, build, diagnostics,
-  and runtime commands.
-- A typical focused fix should finish orientation within two model turns and
-  recovery within two turns per failing command. If it cannot, state the named
-  blocker rather than expanding silently.
+Reserve shell for repository-native formatter, test, lint, build, diagnostics,
+and runtime commands.
+
+A typical focused fix should finish orientation within two model turns and
+recovery within two turns per failing command. If it cannot, state the named
+blocker rather than expanding silently.
 
 ## Deliverable
 
