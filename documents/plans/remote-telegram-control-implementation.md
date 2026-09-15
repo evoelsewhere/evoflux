@@ -460,33 +460,64 @@ git commit -m "feat(remote): add lead-agent control"
 
 - [ ] **Step 1: Write the failing tests**
 
+Same lesson as Task 2's lead-agent tests: this environment happens to have
+real models available via an ambiently-configured provider, but that isn't
+guaranteed on every machine this suite runs on, so mock `get_registry`
+with a small, controlled fake instead of depending on it.
+
 ```python
 # tests/remote/test_control.py (add)
+class _FakeModelEntry:
+    """Stand-in for the real registry's ModelCatalogEntry — only ``.id``
+    is read by list_model_ids/set_model."""
+
+    def __init__(self, id: str) -> None:
+        self.id = id
+
+
+class _FakeRegistry:
+    def __init__(self, model_ids: list[str]) -> None:
+        self.models = [_FakeModelEntry(mid) for mid in model_ids]
+
+
+def _mock_registry(monkeypatch: pytest.MonkeyPatch, model_ids: list[str]) -> None:
+    async def _fake_get_registry(*args: object, **kwargs: object) -> _FakeRegistry:
+        return _FakeRegistry(model_ids)
+
+    monkeypatch.setattr("app.api.routes.agents.get_registry", _fake_get_registry)
+
+
 @pytest.mark.asyncio
-async def test_list_model_ids_is_bounded() -> None:
+async def test_list_model_ids_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_registry(monkeypatch, [f"provider:model-{i}" for i in range(8)])
+
     model_ids = await control.list_model_ids(limit=5)
 
-    assert isinstance(model_ids, list)
-    assert len(model_ids) <= 5
+    assert len(model_ids) == 5
 
 
 @pytest.mark.asyncio
-async def test_set_model_persists_a_valid_model(chat_session: ChatSession) -> None:
-    model_ids = await control.list_model_ids(limit=5)
-    assert model_ids, "test fixture assumes at least one registered model"
+async def test_set_model_persists_a_valid_model(
+    chat_session: ChatSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_registry(monkeypatch, ["provider:model-a", "provider:model-b"])
 
     async with db_module.async_session_factory() as db:
-        result = await control.set_model(db, str(chat_session.id), model_ids[0])
+        result = await control.set_model(db, str(chat_session.id), "provider:model-a")
 
     assert result.status == "ok"
     async with db_module.async_session_factory() as db:
         refreshed = await db.get(ChatSession, chat_session.id)
         assert refreshed is not None
-        assert refreshed.model == model_ids[0]
+        assert refreshed.model == "provider:model-a"
 
 
 @pytest.mark.asyncio
-async def test_set_model_rejects_unknown_model_id(chat_session: ChatSession) -> None:
+async def test_set_model_rejects_unknown_model_id(
+    chat_session: ChatSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_registry(monkeypatch, ["provider:model-a"])
+
     async with db_module.async_session_factory() as db:
         result = await control.set_model(
             db, str(chat_session.id), "not-a-real-provider:not-a-real-model"
@@ -515,12 +546,14 @@ async def list_model_ids(app_mode: str | None = None, *, limit: int = 5) -> list
     """A short, catalog-order list of registered model ids — bounded for a
     phone's button row. There is no curated "recommended models" concept
     in the registry today (every provider-visible model is returned
-    unbounded), so this is a simple positional cap, not a ranking."""
-    from typing import Literal, cast
-
+    unbounded), so this is a simple positional cap, not a ranking.
+    Uses the module-level `cast` (imported at the top of the file, next
+    to Literal used for ControlStatus) — a local `from typing import
+    Literal, cast` here is flagged unused by ruff, since the Literal
+    reference below is inside a string forward-ref, not a live name."""
     from app.api.routes.agents import get_registry
 
-    mode_arg = cast(Literal["work", "coding"] | None, app_mode)
+    mode_arg = cast("Literal['work', 'coding'] | None", app_mode)
     registry = await get_registry(mode=mode_arg)
     return [entry.id for entry in registry.models][:limit]
 
@@ -566,7 +599,7 @@ async def set_model(
 uv run pytest --no-cov -q tests/remote/test_control.py
 ```
 
-Expected: PASS (11 tests).
+Expected: PASS (12 tests).
 
 - [ ] **Step 5: Lint**
 

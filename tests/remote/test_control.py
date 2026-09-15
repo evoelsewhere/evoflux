@@ -149,3 +149,67 @@ async def test_set_lead_agent_conflicts_while_session_is_running(
         result = await control.set_lead_agent(db, str(chat_session.id), "evoflux")
 
     assert result.status == "conflict"
+
+
+class _FakeModelEntry:
+    """Stand-in for the real registry's ModelCatalogEntry — only ``.id``
+    is read by list_model_ids/set_model."""
+
+    def __init__(self, id: str) -> None:
+        self.id = id
+
+
+class _FakeRegistry:
+    def __init__(self, model_ids: list[str]) -> None:
+        self.models = [_FakeModelEntry(mid) for mid in model_ids]
+
+
+def _mock_registry(monkeypatch: pytest.MonkeyPatch, model_ids: list[str]) -> None:
+    """Mocked rather than using this environment's real, ambiently-configured
+    provider registry (present here via a "xiaomi" provider, but not
+    guaranteed on every machine this suite runs on) — same lesson as
+    _mock_one_lead_roster above."""
+
+    async def _fake_get_registry(*args: object, **kwargs: object) -> _FakeRegistry:
+        return _FakeRegistry(model_ids)
+
+    monkeypatch.setattr("app.api.routes.agents.get_registry", _fake_get_registry)
+
+
+@pytest.mark.asyncio
+async def test_list_model_ids_is_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_registry(monkeypatch, [f"provider:model-{i}" for i in range(8)])
+
+    model_ids = await control.list_model_ids(limit=5)
+
+    assert len(model_ids) == 5
+
+
+@pytest.mark.asyncio
+async def test_set_model_persists_a_valid_model(
+    chat_session: ChatSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_registry(monkeypatch, ["provider:model-a", "provider:model-b"])
+
+    async with db_module.async_session_factory() as db:
+        result = await control.set_model(db, str(chat_session.id), "provider:model-a")
+
+    assert result.status == "ok"
+    async with db_module.async_session_factory() as db:
+        refreshed = await db.get(ChatSession, chat_session.id)
+        assert refreshed is not None
+        assert refreshed.model == "provider:model-a"
+
+
+@pytest.mark.asyncio
+async def test_set_model_rejects_unknown_model_id(
+    chat_session: ChatSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_registry(monkeypatch, ["provider:model-a"])
+
+    async with db_module.async_session_factory() as db:
+        result = await control.set_model(
+            db, str(chat_session.id), "not-a-real-provider:not-a-real-model"
+        )
+
+    assert result.status == "invalid"

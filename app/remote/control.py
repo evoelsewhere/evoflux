@@ -31,6 +31,8 @@ __all__ = [
     "set_permission_mode",
     "set_lead_agent",
     "list_lead_names",
+    "set_model",
+    "list_model_ids",
 ]
 
 #: Every permission mode this phone may set — bypass excluded on purpose.
@@ -137,5 +139,60 @@ async def set_lead_agent(
         await db.commit()
         await db.refresh(session)
         await team_manager.stop_sessions({session_id})
+
+    return ControlResult(status="ok")
+
+
+async def list_model_ids(app_mode: str | None = None, *, limit: int = 5) -> list[str]:
+    """A short, catalog-order list of registered model ids — bounded for a
+    phone's button row. There is no curated "recommended models" concept
+    in the registry today (every provider-visible model is returned
+    unbounded), so this is a simple positional cap, not a ranking.
+
+    One deliberate departure from this module's own "service layer only"
+    rule: get_registry lives in app.api.routes.agents (a route module),
+    not a service — there is no equivalent service-layer function to call
+    instead. It is a plain async function with no Request/Depends-injected
+    state (its Query(...) annotations are OpenAPI metadata on otherwise
+    plain defaults), so calling it directly here is safe.
+    """
+    from app.api.routes.agents import get_registry
+
+    mode_arg = cast("Literal['work', 'coding'] | None", app_mode)
+    registry = await get_registry(mode=mode_arg)
+    return [entry.id for entry in registry.models][:limit]
+
+
+async def set_model(
+    db: AsyncSession,
+    session_id: str,
+    model_id: str,
+    *,
+    thinking_level: str | None = None,
+) -> ControlResult:
+    from app.agent.providers.thinking import accepts_thinking_level
+    from app.api.routes.agents import get_registry
+
+    try:
+        session_uuid = UUID(session_id)
+    except ValueError:
+        return ControlResult(status="not_found")
+    session = await db.get(ChatSession, session_uuid)
+    if session is None:
+        return ControlResult(status="not_found")
+
+    registry = await get_registry()
+    selected = next((entry for entry in registry.models if entry.id == model_id), None)
+    if selected is None:
+        return ControlResult(status="invalid", detail=model_id)
+    if thinking_level is not None and not accepts_thinking_level(
+        model_id, thinking_level
+    ):
+        return ControlResult(status="invalid", detail=thinking_level)
+
+    session.model = model_id
+    session.thinking_level = thinking_level
+    db.add(session)
+    await db.commit()
 
     return ControlResult(status="ok")
