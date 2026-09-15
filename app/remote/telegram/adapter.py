@@ -369,6 +369,11 @@ class TelegramAdapter:
 
         Best-effort: a paired user can still type any command by hand, so a
         failure here must never block the poll loop from starting.
+
+        ``clear`` is a deliberate addition beyond the control-surface
+        spec's original AC-58 bounded set (9 commands) — requested
+        directly by a user testing this feature live, after this set was
+        first implemented.
         """
         commands = [
             ("help", "What can I do here?"),
@@ -378,6 +383,7 @@ class TelegramAdapter:
             ("settings", "Change mode, model, agent, or response style"),
             ("health", "Check system health"),
             ("changes", "See this task's file changes"),
+            ("clear", "Delete my recent messages here"),
             ("actions", "Run a workflow, project, or schedule"),
             ("unpair", "Disconnect this phone"),
         ]

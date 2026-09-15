@@ -154,7 +154,9 @@ class TestStartupSequence:
         assert payload["drop_pending_updates"] is True
 
     @pytest.mark.asyncio
-    async def test_registers_exactly_the_ac58_bounded_command_set(self):
+    async def test_registers_exactly_the_bounded_command_set(self):
+        """AC-58's original 9-command set plus /clear, a deliberate
+        post-spec addition (see _register_commands's docstring)."""
         transport = ScriptedTransport()
         adapter = _make_adapter(transport)
         await _run_briefly(adapter)
@@ -170,6 +172,7 @@ class TestStartupSequence:
             "settings",
             "health",
             "changes",
+            "clear",
             "actions",
             "unpair",
         ]
