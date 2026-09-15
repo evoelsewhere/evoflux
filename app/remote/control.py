@@ -29,6 +29,8 @@ __all__ = [
     "ALLOWED_REMOTE_MODES",
     "ControlResult",
     "set_permission_mode",
+    "set_lead_agent",
+    "list_lead_names",
 ]
 
 #: Every permission mode this phone may set — bypass excluded on purpose.
@@ -79,5 +81,61 @@ async def set_permission_mode(
 
     for service in get_services_for_stream(session_id):
         service.set_mode(cast(Mode, mode))
+
+    return ControlResult(status="ok")
+
+
+async def list_lead_names(app_mode: str, *, limit: int = 5) -> list[str]:
+    """A short, stable-order list of configured lead-agent names for
+    *app_mode* ("work"/"coding") — bounded for a phone's button row, same
+    pattern already used for workflow/project menu items in actions.py."""
+    from app.services import team_manager
+
+    try:
+        _default_lead, rosters = team_manager.configured_lead_rosters(app_mode)
+    except ValueError:
+        return []
+    return [lead.name for lead, _path, _members in rosters][:limit]
+
+
+async def set_lead_agent(
+    db: AsyncSession, session_id: str, lead_name: str
+) -> ControlResult:
+    from app.models.chat import normalize_mode
+    from app.services import memory_stream_store as stream_store
+    from app.services import team_manager
+
+    try:
+        session_uuid = UUID(session_id)
+    except ValueError:
+        return ControlResult(status="not_found")
+    session = await db.get(ChatSession, session_uuid)
+    if session is None:
+        return ControlResult(status="not_found")
+    if session.parent_session_id is not None:
+        return ControlResult(status="not_found")
+
+    live_team = team_manager.find_team_for_session(session_id)
+    if session_id in stream_store.running_session_ids() or (
+        live_team is not None
+        and any(member.state == "working" for member in live_team.all_members)
+    ):
+        return ControlResult(
+            status="conflict",
+            detail="Finish or stop the active task before changing lead.",
+        )
+
+    app_mode = normalize_mode(session.mode)
+    try:
+        selected = team_manager.resolve_configured_lead(app_mode, lead_name)
+    except ValueError as exc:
+        return ControlResult(status="invalid", detail=str(exc))
+
+    if session.agent_name != selected:
+        session.agent_name = selected
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        await team_manager.stop_sessions({session_id})
 
     return ControlResult(status="ok")
