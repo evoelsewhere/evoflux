@@ -169,6 +169,8 @@ def test_render_settings_card_shows_mode_model_and_agent_buttons():
         model="anthropic:claude-sonnet-5",
         permission_mode="ask",
         agent_name="evoflux",
+        response_mode="summary",
+        response_mode_tokens={},
         mode_tokens={"ask": "m1", "auto": "m2"},
         agent_tokens={"evoflux": "a1", "explorer": "a2"},
         model_tokens={"anthropic:claude-sonnet-5": "d1"},
@@ -180,12 +182,31 @@ def test_render_settings_card_shows_mode_model_and_agent_buttons():
     assert {"m1", "m2", "a1", "a2", "d1"} <= button_tokens
 
 
+def test_render_settings_card_shows_response_mode_and_its_toggle():
+    text, buttons = formatting.render_settings_card(
+        connection_label="evoflux-api",
+        model="claude-sonnet-5",
+        permission_mode="ask",
+        agent_name="evoflux",
+        response_mode="summary",
+        response_mode_tokens={"summary": "r1", "live": "r2"},
+        mode_tokens={},
+        agent_tokens={},
+        model_tokens={},
+    )
+    assert "summary" in text
+    button_tokens = {b.token for b in buttons}
+    assert {"r1", "r2"} <= button_tokens
+
+
 def test_render_settings_card_never_offers_a_bypass_button():
     _, buttons = formatting.render_settings_card(
         connection_label="evoflux-api",
         model="anthropic:claude-sonnet-5",
         permission_mode="auto",
         agent_name="evoflux",
+        response_mode="summary",
+        response_mode_tokens={},
         mode_tokens={"auto": "m1", "bypass": "should-never-appear"},
         agent_tokens={},
         model_tokens={},
@@ -200,6 +221,8 @@ def test_render_settings_card_omits_redaction_section_when_not_supplied():
         model="anthropic:claude-sonnet-5",
         permission_mode="auto",
         agent_name="evoflux",
+        response_mode="summary",
+        response_mode_tokens={},
         mode_tokens={},
         agent_tokens={},
         model_tokens={},
@@ -227,6 +250,8 @@ def test_render_settings_card_now_emits_mode_and_model_buttons():
         model="claude-sonnet-5",
         permission_mode="ask",
         agent_name="evoflux",
+        response_mode="summary",
+        response_mode_tokens={},
         mode_tokens={"ask": "m1"},
         agent_tokens={},
         model_tokens={"claude-sonnet-5": "d1"},
@@ -260,6 +285,8 @@ def test_render_settings_card_escapes_toggle_names():
         model="claude-sonnet-5",
         permission_mode="ask",
         agent_name="evoflux",
+        response_mode="summary",
+        response_mode_tokens={},
         mode_tokens={},
         agent_tokens={},
         model_tokens={},

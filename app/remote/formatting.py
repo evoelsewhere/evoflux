@@ -147,6 +147,8 @@ def render_settings_card(
     model: str,
     permission_mode: str,
     agent_name: str,
+    response_mode: str,
+    response_mode_tokens: Mapping[str, str],
     mode_tokens: Mapping[str, str],
     agent_tokens: Mapping[str, str],
     model_tokens: Mapping[str, str],
@@ -165,6 +167,8 @@ def render_settings_card(
         f"<b>Model</b>\n<code>{escape(model)}</code>",
         "",
         f"<b>Lead agent</b>\n<code>{escape(agent_name)}</code>",
+        "",
+        f"<b>Responses</b>\n<code>{escape(response_mode)}</code>",
     ]
     if notify_scope is not None:
         lines += ["", f"<b>Notifications</b>\n<code>{escape(notify_scope)}</code>"]
@@ -186,6 +190,10 @@ def render_settings_card(
     buttons += [
         RemoteButton(text=f"Agent: {escape(name)}", token=token)
         for name, token in agent_tokens.items()
+    ]
+    buttons += [
+        RemoteButton(text=f"Responses: {escape(name)}", token=token)
+        for name, token in response_mode_tokens.items()
     ]
     buttons += [
         RemoteButton(text=f"Model: {escape(name)}", token=token)
