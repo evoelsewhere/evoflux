@@ -124,6 +124,20 @@ class GoalStatusEvent(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SuggestedTaskEvent(BaseModel):
+    """One parked suggestion changed state (raised, started, or dismissed).
+
+    Carries the whole row rather than a delta: the dock renders from this
+    without a refetch, and a client that missed an earlier event still ends
+    up with the current state.
+    """
+
+    type: Literal["suggested_task"] = "suggested_task"
+    session_id: str
+    task: dict[str, Any]
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class DoneEvent(BaseModel):
     """Stream complete."""
 

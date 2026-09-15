@@ -20,7 +20,7 @@ import {
   touchesWiki,
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
-import type { GoalResponse, TurnChangedFile, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
+import type { GoalResponse, SuggestedTask, TurnChangedFile, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
 type Setter = (fn: (draft: TeamStore) => void) => void
@@ -674,6 +674,19 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       case 'goal_status': {
         set((draft) => {
           draft.activeGoal = (d.goal as GoalResponse | null | undefined) ?? null
+        })
+        break
+      }
+
+      case 'suggested_task': {
+        const task = d.task as SuggestedTask | undefined
+        if (!task?.id) break
+        set((draft) => {
+          // The event carries the whole row, so an upsert keeps the dock
+          // correct whether this is a new chip or one that just changed
+          // state — and a task that left 'pending' simply leaves the list.
+          const rest = draft.suggestedTasks.filter((t) => t.id !== task.id)
+          draft.suggestedTasks = task.status === 'pending' ? [...rest, task] : rest
         })
         break
       }

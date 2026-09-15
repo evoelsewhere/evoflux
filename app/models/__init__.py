@@ -7,6 +7,7 @@ from .chat import (
 )
 from .goal import SessionGoal
 from .memory import MemoryExtractionState, MemoryFact, MemoryFactEvidence
+from .suggested_task import SessionSuggestedTask
 from .team import DelegationTask
 from .trace import (
     TraceDeviation,
@@ -42,6 +43,7 @@ __all__ = [
     "SessionMessage",
     "ScheduledTask",
     "SessionGoal",
+    "SessionSuggestedTask",
     "TraceDeviation",
     "TraceEvidence",
     "TracePlanRevision",

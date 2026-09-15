@@ -43,6 +43,7 @@ from app.api.routes.team import (
     questions,
     reviews,
     search_everywhere,
+    suggested_tasks,
     terminal,
     todos,
     webbridge,
@@ -60,6 +61,8 @@ router.include_router(browser.router)
 router.include_router(folders.router)
 # Literal /preview/* paths, ahead of chat.py's /sessions/{session_id} family.
 router.include_router(preview.router)
+# Literal /suggested-tasks/* paths, same reason.
+router.include_router(suggested_tasks.router)
 router.include_router(chat.router)
 router.include_router(files.router)
 router.include_router(change_sets.router)

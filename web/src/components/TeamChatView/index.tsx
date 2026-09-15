@@ -49,6 +49,7 @@ import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPan
 import type { Command } from '@/components/CommandPalette'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
+import { SuggestedTaskDock } from '../SuggestedTaskDock'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useFollowUpSettingsQuery, useRegistryQuery, useTriggerDreamMutation, useWebBridgeSettingsQuery } from '@/queries'
 import { getSessionWorkspaceRoot, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, searchEverywhere, setSessionPermissionMode } from '@/api/client'
@@ -2369,6 +2370,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           historySkeleton
         ) : null}
 
+        <SuggestedTaskDock />
         <PermissionApprovalModal />
         <AskUserQuestionModal />
         <PlanActionBar onRevise={() => inputRef.current?.focus()} />

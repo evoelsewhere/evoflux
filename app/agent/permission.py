@@ -183,6 +183,9 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "visualize_read_me",
         "todo_manage",
         "schedule_task",
+        # parks a suggestion for the user; starting it is the user's click
+        "spawn_task",
+        "dismiss_task",
         # user interaction & plan flow (already block on the user)
         "ask_user",
         "enter_plan_mode",

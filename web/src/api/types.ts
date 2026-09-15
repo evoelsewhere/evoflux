@@ -906,6 +906,33 @@ export interface GoalResponse {
   completed_at: string | null
 }
 
+export type SuggestedTaskStatus = 'pending' | 'started' | 'dismissed'
+
+/** One out-of-scope suggestion an agent parked for the user to act on. */
+export interface SuggestedTask {
+  id: string
+  session_id: string
+  title: string
+  tldr: string
+  prompt: string
+  cwd: string | null
+  status: SuggestedTaskStatus
+  spawned_session_id: string | null
+  worktree_path: string | null
+  dismiss_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SuggestedTaskStartResult {
+  session_id: string
+  workspace: string
+  /** Posted by the client as the spawned session's first message. */
+  prompt: string
+  worktree_path: string | null
+  task: SuggestedTask
+}
+
 export interface TeamHistoryResponse {
   lead: SessionDetailResponse
   members: Array<{

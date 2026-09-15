@@ -39,6 +39,7 @@ import { panelTransition, useMotionPreset } from '@/lib/motion'
 import { sessionHasWorkbenchTool, useUIStore } from '@/stores/useUIStore'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { DelegationTaskCards } from '@/components/DelegationTaskCards'
+import { SuggestedTaskToolRow } from '@/components/SuggestedTaskCard'
 import { ImageAttachment } from '@/components/ImageAttachment'
 import { FileCard } from '@/components/FileCard'
 import { ActivityStatus } from '@/components/motion/ActivityStatus'
@@ -420,6 +421,12 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   const activityLabel = state === 'start' || state === 'running'
     ? customActivityLabel ?? toolActivityLabel(name, state, headerTitle)
     : null
+
+  // The dock renders the actionable chip; the transcript only records that
+  // the suggestion was raised here.
+  if (name === 'spawn_task') {
+    return <SuggestedTaskToolRow args={args} />
+  }
 
   // Cursor-like Task chrome for team_delegate — replace generic tool row.
   if (name === 'team_delegate') {
