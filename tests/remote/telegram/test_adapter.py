@@ -154,6 +154,27 @@ class TestStartupSequence:
         assert payload["drop_pending_updates"] is True
 
     @pytest.mark.asyncio
+    async def test_registers_exactly_the_ac58_bounded_command_set(self):
+        transport = ScriptedTransport()
+        adapter = _make_adapter(transport)
+        await _run_briefly(adapter)
+
+        _, payload = next(c for c in transport.calls if c[0] == "setMyCommands")
+        registered = [cmd["command"] for cmd in payload["commands"]]
+
+        assert registered == [
+            "help",
+            "status",
+            "new",
+            "stop",
+            "settings",
+            "health",
+            "changes",
+            "actions",
+            "unpair",
+        ]
+
+    @pytest.mark.asyncio
     async def test_requests_only_message_and_callback_query_updates(self):
         transport = ScriptedTransport()
         adapter = _make_adapter(transport)

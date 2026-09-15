@@ -326,6 +326,9 @@ class TelegramAdapter:
             ("status", "What's my agent doing right now?"),
             ("new", "Set aside this task, start a new one"),
             ("stop", "Interrupt the agent mid-task"),
+            ("settings", "Change mode, model, agent, or response style"),
+            ("health", "Check system health"),
+            ("changes", "See this task's file changes"),
             ("actions", "Run a workflow, project, or schedule"),
             ("unpair", "Disconnect this phone"),
         ]
