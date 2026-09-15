@@ -364,6 +364,50 @@ class RemoteActionService:
             await self._send(action.principal.destination_id, text, buttons=buttons)
         return RemoteActionResult(status="ok", text=text)
 
+    def build_onboarding_card(
+        self, action: RemoteInboundAction, *, label: str
+    ) -> tuple[str, tuple[RemoteButton, ...]]:
+        """The first-run card sent right after a successful pairing
+        (AC-54). Unlike every other card this module builds, no session
+        or turn exists yet — these three tokens' session_id/action_target
+        are unused placeholders, the same repurposed-field pattern already
+        used for the response-mode tokens' pairing-id reuse."""
+        from app.models.chat import ChatSession
+        from app.remote.formatting import render_onboarding_card
+
+        setup_token = self._issue_token(
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+            destination_id=action.principal.destination_id,
+            session_id="",
+            action_kind="onboarding_setup",
+            action_target="",
+        )
+        health_token = self._issue_token(
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+            destination_id=action.principal.destination_id,
+            session_id="",
+            action_kind="onboarding_health",
+            action_target="",
+        )
+        start_token = self._issue_token(
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+            destination_id=action.principal.destination_id,
+            session_id="",
+            action_kind="onboarding_start",
+            action_target="",
+        )
+        default_mode = ChatSession.model_fields["permission_mode"].default
+        return render_onboarding_card(
+            label=label,
+            default_permission_mode=default_mode,
+            setup_token=setup_token,
+            health_token=health_token,
+            start_token=start_token,
+        )
+
     def _issue_settings_token(
         self,
         action: RemoteInboundAction,
@@ -663,6 +707,12 @@ class RemoteActionService:
             return await self._exec_set_model(cap, action, db)
         elif cap.action_kind == "set_response_mode":
             return await self._exec_set_response_mode(cap, action, db)
+        elif cap.action_kind == "onboarding_setup":
+            return await self._exec_onboarding_setup(cap, action, db)
+        elif cap.action_kind == "onboarding_health":
+            return await self._exec_onboarding_health(cap, action, db)
+        elif cap.action_kind == "onboarding_start":
+            return await self._exec_onboarding_start(cap, action, db)
         elif cap.action_kind == "changes_diff":
             return await self._exec_changes_diff(cap, action, db)
         return False
@@ -906,6 +956,34 @@ class RemoteActionService:
         result = await control.set_response_mode(db, cap.session_id, cap.action_target)
         await self._reply_control_result(
             action, result, f"Responses set to {cap.action_target}."
+        )
+        return True
+
+    async def _exec_onboarding_setup(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        """/settings already self-sends its reply — nothing further to do
+        here, matching how /settings itself works when typed directly."""
+        await self._cmd_settings(db, action)
+        return True
+
+    async def _exec_onboarding_health(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        """Unlike /settings, _cmd_health does not self-send (its text is
+        normally sent by runtime.py's /health fallback path) — send it
+        explicitly here."""
+        result = await self._cmd_health(db, action)
+        if result.text:
+            await self._reply_text(action.principal.destination_id, result.text)
+        return True
+
+    async def _exec_onboarding_start(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        await self._reply_text(
+            action.principal.destination_id,
+            "Great — type your first message whenever you're ready.",
         )
         return True
 

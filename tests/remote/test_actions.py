@@ -979,3 +979,105 @@ class TestChanges:
 
             assert handled is True
             assert any("fixed" in text for text in adapter.sent_texts)
+
+
+# ── Onboarding ────────────────────────────────────────────────────────────────
+
+
+class TestOnboarding:
+    @pytest.mark.asyncio
+    async def test_build_onboarding_card_mints_three_distinct_tokens(
+        self, service: RemoteActionService
+    ) -> None:
+        action = _make_action(text="/start")
+
+        text, buttons = service.build_onboarding_card(action, label="My Phone")
+
+        assert "My Phone" in text
+        assert len(buttons) == 3
+        tokens = {b.token for b in buttons}
+        assert len(tokens) == 3  # all distinct
+
+    @pytest.mark.asyncio
+    async def test_onboarding_setup_button_behaves_like_settings(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        conn_id = uuid4()
+        onboarding_action = _make_action(text="/start", connection_id=conn_id)
+        _text, buttons = service.build_onboarding_card(
+            onboarding_action, label="My Phone"
+        )
+        setup_token = next(b.token for b in buttons if "Set up" in b.text)
+
+        mock_pairing = MagicMock()
+        mock_pairing.active_session_id = None
+        mock_pairing.label = "My Phone"
+
+        async with db_module.async_session_factory() as db:
+            with patch.object(
+                service._pairing_service, "authorize", return_value=mock_pairing
+            ):
+                callback_action = _make_action(
+                    kind=RemoteInboundActionKind.CALLBACK,
+                    callback_token=setup_token,
+                    connection_id=conn_id,
+                )
+                handled = await service.handle_action_callback(callback_action, db)
+
+        assert handled is True
+        assert "No active task yet" in adapter.sent_messages[-1].text
+
+    @pytest.mark.asyncio
+    async def test_onboarding_health_button_sends_health_diagnostics(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        conn_id = uuid4()
+        onboarding_action = _make_action(text="/start", connection_id=conn_id)
+        _text, buttons = service.build_onboarding_card(
+            onboarding_action, label="My Phone"
+        )
+        health_token = next(b.token for b in buttons if "Health" in b.text)
+
+        mock_pairing = MagicMock()
+
+        async with db_module.async_session_factory() as db:
+            with (
+                patch.object(
+                    service._pairing_service, "authorize", return_value=mock_pairing
+                ),
+                patch(
+                    "app.remote.control.get_health_diagnostics",
+                    new=AsyncMock(return_value={"checks": []}),
+                ),
+            ):
+                callback_action = _make_action(
+                    kind=RemoteInboundActionKind.CALLBACK,
+                    callback_token=health_token,
+                    connection_id=conn_id,
+                )
+                handled = await service.handle_action_callback(callback_action, db)
+
+        assert handled is True
+        assert "Health" in adapter.sent_messages[-1].text
+
+    @pytest.mark.asyncio
+    async def test_onboarding_start_button_sends_a_friendly_prompt(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        conn_id = uuid4()
+        onboarding_action = _make_action(text="/start", connection_id=conn_id)
+        _text, buttons = service.build_onboarding_card(
+            onboarding_action, label="My Phone"
+        )
+        start_token = next(b.token for b in buttons if "start" in b.text.lower())
+
+        async with db_module.async_session_factory() as db:
+            callback_action = _make_action(
+                kind=RemoteInboundActionKind.CALLBACK,
+                callback_token=start_token,
+                connection_id=conn_id,
+            )
+            handled = await service.handle_action_callback(callback_action, db)
+
+        assert handled is True
+        assert adapter.sent_messages  # something was sent
