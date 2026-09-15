@@ -33,8 +33,6 @@ repository identity and treat dynamically unresolved cross-repository references
 gap, not as absence of consumers. Once an exact boundary is selected, make the
 graph the next structural observation instead of continuing broad discovery.
 
-Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
-
 Read [references/code-context-contract.md](references/code-context-contract.md)
 only after a result exposes ambiguity, cross-repository traversal, truncation,
 or dynamic-wiring limits.
@@ -71,12 +69,8 @@ loss are acceptable.
 
 ## Execution discipline and phase stop
 
-Inventory each named boundary once, batch independent graph/source observations,
-and preserve repository-qualified results. Use `code_context`, `read`, `grep`,
-and `glob` for source; do not use shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`,
-or `find` to reread source or bypass an observation receipt. Reserve shell for
-migration, formatter, test, build, and runtime commands. Await long commands
-with `process(action="wait", wait_seconds=60)`.
+Inventory each named boundary once and preserve repository-qualified results.
+Reserve shell for migration, formatter, test, build, and runtime commands.
 
 Treat every rollout phase as a gate. Once its compatibility rows, proof,
 telemetry, rollback, and deletion condition are complete, stop that phase; do

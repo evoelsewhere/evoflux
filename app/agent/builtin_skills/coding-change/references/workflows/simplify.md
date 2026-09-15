@@ -34,10 +34,6 @@ For an exact symbol being simplified, use `code_context` to confirm direct
 caller. Start at depth 1. Once the symbol and its callers are known, make the
 graph the next structural observation instead of continuing broad discovery.
 
-Keep `refresh=true` for the first indexed query and after edits. Use
-`refresh=false` only for an immediate follow-up that intentionally reuses the
-same index version.
-
 Read [references/code-context-contract.md](references/code-context-contract.md)
 only after a result exposes ambiguity, cross-repository scope, or another
 static fallback gap.
@@ -60,10 +56,8 @@ previously untested branch.
 
 ## Execution discipline and simplification stop
 
-Confirm callers once; batch independent reads. Use `code_context`, `read`,
-`grep`, and `glob` for source; do not use shell `cat`, `sed`, `head`, `tail`,
-`nl`, `rg`, or `find` to reread source or bypass an observation receipt.
-Reserve shell for formatter, lint/type, build, and test commands.
+Confirm callers once. Reserve shell for formatter, lint/type, build, and test
+commands.
 
 Stop once the motivating clarity problem is resolved and the existing tests
 pass unmodified. Do not continue simplifying adjacent code the request did

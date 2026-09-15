@@ -85,12 +85,48 @@ The cost is one routing hop per task: load the hub, read one workflow. For
   `test_coding_hubs_route_to_every_workflow_they_own` asserts the eval routing
   set matches the shipped workflow set.
 
-## Not done
+## Second pass — hoisting the repeated prose
 
-Workflow bodies were moved unchanged. Their shared "Observation discipline"
-and "Deliverable" sections are still repeated across twelve files and could be
-lifted into the hubs, which would shrink activation bytes as this change
-shrank catalog bytes. That is a separate, higher-risk edit and is left open.
+The first pass moved workflow bodies unchanged, so each one still restated the
+observation limits. Those were hoisted into the hubs afterwards. Three blocks
+were genuinely duplicated:
+
+| Block | Copies before | After |
+| --- | --- | --- |
+| `refresh=true` / `refresh=false` index semantics (byte-identical) | 11 | 4 hubs |
+| Source-discovery tooling and the shell-reread prohibition | 10 | 4 hubs |
+| `process(action="wait", wait_seconds=60)` polling rule | 7 | 4 hubs |
+
+What stayed in each workflow is what actually varies: **what it reserves shell
+for** (reproduction vs benchmarks vs migration vs bounded negative tests vs
+git), its **stop gate**, and its **deliverable**. Those read as boilerplate but
+are not.
+
+### The prediction above was wrong
+
+This section originally predicted the hoist "would shrink activation bytes as
+this change shrank catalog bytes." Measured, it does not. An activation loads
+one hub plus one workflow, so moving text from thirteen workflows into one hub
+does not remove it from any single activation — it only stops paying for the
+text thirteen times on disk.
+
+| | Before hoist | After hoist |
+| --- | --- | --- |
+| Mean activation (hub + one workflow) | 8,571 B | 8,674 B |
+| Total bytes across 4 hubs + 13 workflows | 77,591 B | 74,186 B |
+
+Mean activation rose by 103 bytes (+1.2%). Four of the thirteen activations got
+cheaper; `coding-operate/git-workflow` got 660 bytes more expensive, because
+that workflow never carried the hoisted rules and now pays for hub bullets
+about source discovery it does not use.
+
+The change is still worth keeping, but for the maintenance reason rather than
+the context reason: eleven hand-synchronised copies of the index-refresh
+paragraph became four, and `test_native_code_context_contract_is_stated_once_per_coding_hub`
+now asserts that no workflow restates a hoisted rule, so they cannot drift
+apart again.
+
+## Not done
 
 The remaining 9,060-byte catalog is still over budget at a 128k context window
 once user and project skills are added. The residual is driven by the twenty

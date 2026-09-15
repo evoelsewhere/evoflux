@@ -44,8 +44,6 @@ structural context: `callers` for invocation sites, `callees` for delegated
 work, and `references` for dispatch/registration uses. Start at depth 1 and do
 not infer frequency, timing, allocation, or runtime order from static edges.
 
-Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
-
 Read [references/code-context-contract.md](references/code-context-contract.md)
 only after a graph result exposes ambiguity, cross-repository traversal, or
 index limitations. Once profiling selects the exact symbol, make the graph the
@@ -73,11 +71,8 @@ representative and deterministic enough to maintain.
 ## Execution discipline and measurement stop
 
 Do not survey source before the baseline/profiler identifies a material owner.
-After it does, batch independent graph queries and reads. Use `code_context`,
-`read`, `grep`, and `glob` for source; do not use shell `cat`, `sed`, `head`,
-`tail`, `nl`, `rg`, or `find` to reread source or bypass an observation receipt.
 Reserve shell for benchmarks, profilers, formatter, tests, builds, and runtime
-commands. Await long commands with `process(action="wait", wait_seconds=60)`.
+commands.
 
 One baseline, one bottleneck hypothesis, and one coherent change form the normal
 loop. Compare with the same protocol. When correctness guards pass and the

@@ -47,11 +47,20 @@ Routing notes that decide close cases:
 workflows here that read source. Read it only on ambiguity, truncation, stale
 index data, cross-repository edges, or dynamic wiring — not preemptively.
 
-Every workflow in this skill shares these limits:
+These limits bind every workflow here and are not repeated in the workflow
+bodies, which state only what they reserve shell for and where they stop.
 
-- Use `code_context`, `read`, `grep`, and `glob` for source discovery. Do not
-  use shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find` to reread source
-  or bypass an observation receipt.
+- Discover source with `code_context`, `read`, `grep`, and `glob`; never with
+  shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find` — `git-workflow.md`
+  is the exception, since git is its subject and it drives `shell` directly. A
+  revision-aware covered-range receipt is authoritative — read again only after
+  an edit changed that source or the range is not covered.
+- `refresh=true` for the first indexed query and after edits; `refresh=false`
+  only for an immediate follow-up reusing the same index version.
+- Batch independent graph queries and reads in one turn; graph and `read`
+  results already carry source and line numbers.
+- On a process handle, use one `process(action="wait", wait_seconds=60)` rather
+  than repeated short polls.
 - A claim about production behavior needs an observation, not an inference:
   before/after numbers from the same protocol, an alert seen to fire, or a
   command actually run.

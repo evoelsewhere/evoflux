@@ -34,10 +34,6 @@ correlation ID or span is attached at the actual request boundary, not an
 internal helper. Start at depth 1. Once the boundary is known, make the graph
 the next structural observation instead of continuing broad discovery.
 
-Keep `refresh=true` for the first indexed query and after edits. Use
-`refresh=false` only for an immediate follow-up that intentionally reuses the
-same index version.
-
 Read [references/code-context-contract.md](references/code-context-contract.md)
 only after a result exposes ambiguity, cross-repository scope, or another
 static fallback gap.
@@ -66,10 +62,7 @@ unverified, not trustworthy.
 
 ## Execution discipline and instrumentation stop
 
-Confirm the owning boundary once; batch independent reads. Use
-`code_context`, `read`, `grep`, and `glob` for source; do not use shell
-`cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find` to reread source or
-bypass an observation receipt. Reserve shell for formatter, lint/type,
+Confirm the owning boundary once. Reserve shell for formatter, lint/type,
 build, and verification commands.
 
 Stop once every named on-call question has a signal, the signal is verified

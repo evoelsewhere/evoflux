@@ -36,8 +36,6 @@ but never replace runtime authorization, data-flow, or exploit evidence.
 Once the boundary exposes an exact source and sink relationship, make the graph
 the next structural observation instead of continuing broad grep.
 
-Keep `refresh=true` for the first indexed query and after edits. Use `refresh=false` only for an immediate follow-up that intentionally reuses the same index version.
-
 Read [references/code-context-contract.md](references/code-context-contract.md) for
 ambiguity, cross-repository limits, and dynamic-wiring fallbacks only after the
 graph reports such a gap.
@@ -80,12 +78,8 @@ trades a known vulnerability for unreviewed breakage.
 ## Execution discipline and threat stop
 
 Select one reachable attacker-to-operation boundary before enumerating checks.
-Batch independent source/sink graph queries and reads. Use `code_context`,
-`read`, `grep`, and `glob` for source; do not use shell `cat`, `sed`, `head`,
-`tail`, `nl`, `rg`, or `find` to reread source or bypass an observation receipt.
 Reserve shell for bounded negative tests, formatter, lint, build, dependency
-audit, and runtime checks. Await long commands with
-`process(action="wait", wait_seconds=60)`.
+audit, and runtime checks.
 
 Stop expanding when reachability, control failure, and impact are either proven
 or one named dynamic boundary remains. After the invariant fix and negative

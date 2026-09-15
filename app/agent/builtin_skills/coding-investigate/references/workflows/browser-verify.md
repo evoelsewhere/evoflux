@@ -37,10 +37,6 @@ when the exact symbol is already known. For an exact symbol, use
 depth 1; once the owning symbol is found, make the graph the next structural
 observation instead of continuing broad discovery.
 
-Keep `refresh=true` for the first indexed query and after edits. Use
-`refresh=false` only for an immediate follow-up that intentionally reuses
-the same index version.
-
 Read [references/code-context-contract.md](references/code-context-contract.md)
 only after a result exposes ambiguity, cross-repository scope, or another
 static fallback gap.
