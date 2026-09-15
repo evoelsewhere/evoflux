@@ -829,12 +829,17 @@ describe('EvoAgentSpecsPanel', () => {
 
     expect(onRunInChat).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'session-1',
-      workspace: '/repo',
+      navigationWorkspace: '/repo',
       projectId: 'project-1',
       autoSend: false,
       phase: 'implementation',
       prompt: expect.stringContaining('Resume implementation for EASD run'),
     }))
+    // The run's own workspace must not travel as `workspace`: for a run on a
+    // multi-workspace project the linked session resolves to the project's
+    // primary path, and pinning the run's instead made the chat endpoint
+    // answer 409 "Session belongs to a different coding workspace".
+    expect(onRunInChat.mock.calls[0][0]).not.toHaveProperty('workspace')
     expect(String(onRunInChat.mock.calls[0][0].prompt)).toMatch(/^\$easd-implement/)
   })
 

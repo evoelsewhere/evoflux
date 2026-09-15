@@ -113,7 +113,8 @@ export interface WorkspaceFileRequest {
 export interface EasdChatRequest {
   id: number
   sessionId: string
-  workspace: string
+  /** Focus fallback for navigation only; never sent to the chat endpoint. */
+  navigationWorkspace?: string | null
   projectId: string | null
   prompt: string | null
   autoSend: boolean

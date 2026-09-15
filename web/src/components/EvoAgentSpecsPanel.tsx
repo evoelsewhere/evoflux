@@ -110,7 +110,17 @@ interface EvoAgentSpecsPanelProps {
 
 export interface EasdRunChatRequest {
   sessionId: string
-  workspace: string
+  /**
+   * Focus fallback for navigation only, used when the run has no project.
+   *
+   * Deliberately NOT named `workspace`: the run's workspace must never reach
+   * the chat endpoint. A run on a multi-workspace project resolves its session
+   * against the project's primary path, so pinning the run's own workspace onto
+   * the request made the endpoint reject it with 409 "Session belongs to a
+   * different coding workspace". Omitting it lets the endpoint use the
+   * session's persisted workspace, which is the authoritative one.
+   */
+  navigationWorkspace?: string | null
   projectId: string | null
   prompt: string | null
   autoSend: boolean
@@ -1617,7 +1627,7 @@ function RunDetail({
         : { ...detail, run: { ...detail.run, session_id: sessionId } }
       onRunInChat({
         sessionId,
-        workspace: detail.run.workspace,
+        navigationWorkspace: detail.run.workspace,
         projectId: detail.run.project_id,
         prompt: detail.run.status === 'converged'
           ? null
@@ -1723,7 +1733,7 @@ function RunDetail({
               : verificationPrompt(recoveredDetail)
       onRunInChat({
         sessionId: detail.run.session_id,
-        workspace: detail.run.workspace,
+        navigationWorkspace: detail.run.workspace,
         projectId: detail.run.project_id,
         prompt,
         autoSend: true,

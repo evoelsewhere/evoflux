@@ -1614,7 +1614,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     if (request.sessionId === sessionIdState) return
     const focusId = codingFocusId({
       project_id: request.projectId,
-      workspace: request.workspace,
+      workspace: request.navigationWorkspace,
     })
     navigate(
       focusId
@@ -1654,9 +1654,12 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       return
     }
     inputRef.current?.setValue('')
+    // No `workspace` here on purpose. The session this run is linked to already
+    // has a persisted workspace, and for a multi-workspace project it differs
+    // from the run's own — sending the run's would trip the endpoint's 409
+    // guard. Omitting it makes the endpoint use the session's, which is right.
     void current.sendMessage(easdChatRequest.prompt, undefined, {
       mode: 'coding',
-      workspace: easdChatRequest.workspace,
       model: (current.sessionModel ?? selectedModel) || null,
       thinkingLevel: (current.sessionThinkingLevel ?? selectedThinkingLevel) || null,
       fastMode: current.sessionFastMode,
