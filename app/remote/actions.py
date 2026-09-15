@@ -82,7 +82,10 @@ class _ActionCapability:
 # ── Known commands ────────────────────────────────────────────────────────────
 
 _SLASH_COMMANDS: frozenset[str] = frozenset(
-    {"start", "help", "status", "new", "stop", "unpair", "actions", "settings"}
+    {
+        "start", "help", "status", "new", "stop", "unpair", "actions",
+        "settings", "health",
+    }
 )
 
 
@@ -192,6 +195,8 @@ class RemoteActionService:
             return await self._cmd_actions(db, action, arg)
         elif command == "settings":
             return await self._cmd_settings(db, action)
+        elif command == "health":
+            return await self._cmd_health(db, action)
         else:
             # Unknown command — return bounded help.
             return await self._cmd_help(db, action)
@@ -362,6 +367,26 @@ class RemoteActionService:
             action_kind=action_kind,
             action_target=action_target,
         )
+
+    async def _cmd_health(
+        self, db: AsyncSession, action: RemoteInboundAction
+    ) -> RemoteActionResult:
+        """System-wide diagnostics — no pairing/session lookup beyond
+        authorization, unlike /settings and /changes which are per-session."""
+        from app.remote import control
+        from app.remote.formatting import render_health_card
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            return RemoteActionResult(status="unauthorized")
+
+        diagnostics = await control.get_health_diagnostics()
+        text = render_health_card(diagnostics.get("checks", []))
+        return RemoteActionResult(status="ok", text=text)
 
     async def _cmd_new(
         self, db: AsyncSession, action: RemoteInboundAction

@@ -695,3 +695,51 @@ class TestSettings:
             refreshed = await db.get(ChatSession, session.id)
             assert refreshed is not None
             assert refreshed.permission_mode == "ask"
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
+
+
+class TestHealth:
+    @pytest.mark.asyncio
+    async def test_health_command_shows_checks(
+        self, service: RemoteActionService
+    ) -> None:
+        mock_db = MagicMock()
+        action = _make_action(text="/health")
+
+        fake_diagnostics = {
+            "checks": [
+                {"id": "db", "label": "Database", "status": "ok", "detail": "connected"},
+            ],
+            "summary": "ok",
+        }
+
+        async def _fake_get_health_diagnostics():
+            return fake_diagnostics
+
+        with (
+            patch.object(
+                service._pairing_service, "authorize", return_value=MagicMock()
+            ),
+            patch(
+                "app.remote.control.get_health_diagnostics",
+                _fake_get_health_diagnostics,
+            ),
+        ):
+            result = await service.dispatch_command(mock_db, action)
+
+        assert result.status == "ok"
+        assert "Database" in result.text
+
+    @pytest.mark.asyncio
+    async def test_health_requires_authorization(
+        self, service: RemoteActionService
+    ) -> None:
+        mock_db = MagicMock()
+        action = _make_action(text="/health")
+
+        with patch.object(service._pairing_service, "authorize", return_value=None):
+            result = await service.dispatch_command(mock_db, action)
+
+        assert result.status == "unauthorized"
