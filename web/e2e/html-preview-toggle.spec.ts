@@ -26,7 +26,7 @@ test.describe('HTML Preview JS Toggle', () => {
         iframe.id = 'preview'
         iframe.style.cssText = 'width:100%;height:200px;border:0'
         iframe.setAttribute('sandbox', scriptsEnabled ? 'allow-scripts allow-same-origin' : '')
-        iframe.srcdoc = '<!doctype html><html><body><div id="app">static</div><script>document.getElementById("app").innerHTML="<h1>JS Works!<\/h1>"<\/script></body></html>'
+        iframe.srcdoc = '<!doctype html><html><body><div id="app">static</div><script>document.getElementById("app").innerHTML="<h1>JS Works!</h1>"</script></body></html>'
 
         toolbar.appendChild(btn)
         root.appendChild(toolbar)
@@ -90,12 +90,12 @@ test.describe('HTML Preview JS Toggle', () => {
     const htmlWithExternalScript = `<!DOCTYPE html>
       <html><body>
         <div id="app">loading...</div>
-        <script src="./app.js"><\/script>
+        <script src="./app.js"></script>
       </body></html>`
 
     const inlined = htmlWithExternalScript.replace(
-      '<script src="./app.js"><\/script>',
-      '<script>' + externalJs + '<\/script>'
+      '<script src="./app.js"></script>',
+      '<script>' + externalJs + '</script>'
     )
 
     await page.setContent(`

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test } from '@playwright/test'
 
 test.describe('HTML Preview JS Toggle — Evidence', () => {
 
@@ -84,10 +84,10 @@ test.describe('HTML Preview JS Toggle — Evidence', () => {
 
   test('screenshot: external JS inlined', async ({ page }) => {
     const externalJs = `document.getElementById('app').innerHTML = '<h1 style="color:#3fb950">External JS inlined and executed!</h1>';`
-    const htmlWithExternalScript = `<!DOCTYPE html><html><head><style>body{font-family:system-ui;background:#0d1117;color:#c9d1d9;padding:20px}h1{color:#58a6fa}</style></head><body><h1>External JS Test</h1><div id="app">loading...</div><script src="./app.js"><\/script></body></html>`
+    const htmlWithExternalScript = `<!DOCTYPE html><html><head><style>body{font-family:system-ui;background:#0d1117;color:#c9d1d9;padding:20px}h1{color:#58a6fa}</style></head><body><h1>External JS Test</h1><div id="app">loading...</div><script src="./app.js"></script></body></html>`
     const inlined = htmlWithExternalScript.replace(
-      '<script src="./app.js"><\/script>',
-      '<script>' + externalJs + '<\/script>'
+      '<script src="./app.js"></script>',
+      '<script>' + externalJs + '</script>'
     )
 
     await page.setContent(`
