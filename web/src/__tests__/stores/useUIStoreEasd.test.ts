@@ -10,7 +10,7 @@ describe('EASD chat handoff state', () => {
   it('keeps a one-shot request until the target chat consumes its exact id', () => {
     useUIStore.getState().requestEasdChat({
       sessionId: 'session-2',
-      workspace: '/repo',
+      navigationWorkspace: '/repo',
       projectId: 'project-1',
       prompt: 'Execute the active EASD run.',
       autoSend: true,
