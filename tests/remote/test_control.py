@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -213,3 +214,25 @@ async def test_set_model_rejects_unknown_model_id(
         )
 
     assert result.status == "invalid"
+
+
+@pytest.mark.asyncio
+async def test_get_health_diagnostics_returns_checks_and_summary() -> None:
+    result = await control.get_health_diagnostics()
+
+    assert "checks" in result
+    assert "summary" in result
+    assert result["summary"] in ("ok", "warn", "fail")
+    assert isinstance(result["checks"], list)
+    if result["checks"]:
+        first = result["checks"][0]
+        assert set(first.keys()) >= {"id", "label", "status", "detail"}
+
+
+@pytest.mark.asyncio
+async def test_get_file_diff_returns_empty_for_a_non_git_workspace(
+    tmp_path: Path,
+) -> None:
+    diff = await control.get_file_diff(str(tmp_path), "nonexistent.py")
+
+    assert diff == ""

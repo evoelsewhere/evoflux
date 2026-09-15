@@ -1,4 +1,5 @@
-"""Mode/model/lead-agent control for the phone's /settings command.
+"""Mode/model/lead-agent/health/diff control for the phone's /settings,
+/health, and /changes commands.
 
 Each write function replicates the exact persistence sequence its HTTP
 route sibling already uses (app/api/routes/team/chat.py's
@@ -6,8 +7,21 @@ set_session_permission_mode/update_team_session_lead,
 app/api/routes/team/webbridge.py's update_browser_session_model), as a
 plain async function app/remote/actions.py can call directly — remote
 and desktop must stay behaviorally identical, but app/remote/ never
-depends on app/api/routes/* (see list_model_ids/set_model for the one
-deliberate departure: the model registry).
+depends on app/api/routes/* except two narrow, deliberate departures:
+
+- list_model_ids/set_model call app.api.routes.agents.get_registry — the
+  model catalog has no service-layer equivalent.
+- get_health_diagnostics/get_file_diff call
+  app.api.routes.health.health_diagnostics and
+  app.api.routes.team.git.get_diff_view directly — each already carries
+  nontrivial, security-sensitive logic (health's ~250 lines of db/
+  provider/team/MCP/disk checks; diff-view's path-traversal guard and
+  staged/unstaged/untracked detection) with no service-layer equivalent
+  either. Reimplementing either in app/remote/ would risk silently
+  diverging from the desktop's own behavior, or worse, subtly
+  reintroducing a path-traversal bug. Both are called with explicit
+  arguments, never relying on their Depends(...) defaults, which are
+  FastAPI dependency-injection sentinels outside a real request.
 
 bypass is deliberately excluded from ALLOWED_REMOTE_MODES, checked by
 name (not by list length or position) before anything else runs — a
@@ -33,6 +47,8 @@ __all__ = [
     "list_lead_names",
     "set_model",
     "list_model_ids",
+    "get_health_diagnostics",
+    "get_file_diff",
 ]
 
 #: Every permission mode this phone may set — bypass excluded on purpose.
@@ -196,3 +212,29 @@ async def set_model(
     await db.commit()
 
     return ControlResult(status="ok")
+
+
+async def get_health_diagnostics() -> dict:
+    """The same active health check the desktop UI's Diagnostics screen
+    uses, called directly rather than duplicated — see this module's
+    docstring for why app/remote/ makes an exception to "service layer
+    only" for this one function. Uses read_session_factory (not
+    async_session_factory) since this mirrors a GET route — app.core.db's
+    own get_session dependency picks the same read lane for GET requests."""
+    from app.api.routes.health import health_diagnostics
+    from app.core.db import read_session_factory
+
+    async with read_session_factory() as db:
+        return await health_diagnostics(session=db)
+
+
+async def get_file_diff(workspace: str, path: str) -> str:
+    """One file's unified diff (staged, unstaged, or untracked-as-additions)
+    — delegates to the same route function the desktop UI's diff viewer
+    uses, which already carries the path-traversal and staged/unstaged/
+    untracked detection logic; reimplementing that here would risk
+    subtly reintroducing a path-traversal bug."""
+    from app.api.routes.team.git import get_diff_view
+
+    result = await get_diff_view(workspace=workspace, path=path)
+    return result.get("diff", "")
