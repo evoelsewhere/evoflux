@@ -99,6 +99,59 @@ class TestTokenConstraints:
                     assert len(token.encode("utf-8")) <= _MAX_CALLBACK_TOKEN_BYTES
 
 
+# ── Decidable permission cards ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_on_gate_permission_renders_the_real_command(
+    bridge: RemoteGateBridge, adapter: FakeAdapter
+) -> None:
+    bridge.on_gate(
+        session_id="sess-1",
+        event_type="permission_asked",
+        data={
+            "request_id": "req-1",
+            "tool": "shell",
+            "patterns": ["rm -rf build/"],
+            "always_patterns": [],
+            "metadata": {"agent": "evoflux"},
+        },
+        connection_id=uuid4(),
+        destination_id="chat-1",
+    )
+    await asyncio.sleep(0.05)  # drain the fire-and-forget send
+
+    assert len(adapter.sent) == 1
+    assert "rm -rf build/" in adapter.sent[0].text
+    assert "Permission requested: shell" not in adapter.sent[0].text
+    assert adapter.sent[0].correlation_id == "gate:req-1"
+    assert [b.text for b in adapter.sent[0].buttons] == ["Allow once", "Reject"]
+
+
+@pytest.mark.asyncio
+async def test_on_gate_permission_offers_allow_for_session_with_glob(
+    bridge: RemoteGateBridge, adapter: FakeAdapter
+) -> None:
+    bridge.on_gate(
+        session_id="sess-1",
+        event_type="permission_asked",
+        data={
+            "request_id": "req-1",
+            "tool": "shell",
+            "patterns": ["git push origin main"],
+            "always_patterns": ["git push *"],
+            "metadata": {"agent": "evoflux"},
+        },
+        connection_id=uuid4(),
+        destination_id="chat-1",
+    )
+    await asyncio.sleep(0.05)
+
+    button_texts = [b.text for b in adapter.sent[0].buttons]
+    assert len(button_texts) == 3
+    assert "git push *" in button_texts[1]
+
+
 # ── Gate rendering ────────────────────────────────────────────────────────────
 
 
@@ -120,7 +173,7 @@ class TestGateRendering:
         assert len(adapter.sent) == 1
         msg = adapter.sent[0]
         assert len(msg.buttons) == 2
-        assert msg.buttons[0].text == "Allow"
+        assert msg.buttons[0].text == "Allow once"
         assert msg.buttons[1].text == "Reject"
         assert msg.buttons[0].token != msg.buttons[1].token
 

@@ -15,6 +15,7 @@ Design constraints (from spec):
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -30,6 +31,8 @@ from app.remote.contracts import (
     RemoteOutboundMessage,
     RemoteOutboundPriority,
 )
+from app.remote.formatting import render_permission_card, render_permission_resolved_card
+from app.remote.severity import derive_severity
 
 if TYPE_CHECKING:
     pass
@@ -63,14 +66,14 @@ class GateCapability:
 
 @dataclass
 class _PendingGate:
-    """Tracks one gate's outstanding capabilities and message reference."""
+    """Tracks one gate's outstanding capabilities and the command text (if
+    any) needed to render its resolved form later."""
 
     request_id: str
     session_id: str
     gate_kind: GateKind
     tokens: list[str] = field(default_factory=list)
-    chat_id: int | None = None
-    message_id: int | None = None
+    command: str = ""
 
 
 class RemoteGateBridge:
@@ -104,15 +107,16 @@ class RemoteGateBridge:
         if not request_id:
             return
 
+        if event_type == "permission_asked":
+            self._on_permission_asked(
+                session_id, data, connection_id, destination_id, request_id
+            )
+            return
+
         gate_kind: GateKind
         actions: list[tuple[str, str]]  # (action_label, button_text)
 
-        if event_type == "permission_asked":
-            gate_kind = "permission"
-            tool = data.get("tool", "unknown")
-            text = f"Permission requested: {tool}"
-            actions = [("once", "Allow"), ("reject", "Reject")]
-        elif event_type == "question_asked":
+        if event_type == "question_asked":
             gate_kind = "question"
             questions = data.get("questions", [])
             if questions:
@@ -166,11 +170,99 @@ class RemoteGateBridge:
             text=text,
             buttons=tuple(buttons),
             priority=RemoteOutboundPriority.HIGH,
+            correlation_id=f"gate:{request_id}",
+        )
+        self._enqueue_send(msg)
+
+    def _on_permission_asked(
+        self,
+        session_id: str,
+        data: dict,
+        connection_id: UUID,
+        destination_id: str,
+        request_id: str,
+    ) -> None:
+        """Render and send a decidable permission card (AC-45/AC-46): the
+        real command and a derived, advisory-only severity, never a tool
+        name alone."""
+        tool = data.get("tool", "unknown")
+        patterns = data.get("patterns") or []
+        command = patterns[0] if patterns else tool
+        always_patterns = data.get("always_patterns") or []
+        always_glob = always_patterns[0] if always_patterns else None
+        agent_name = data.get("metadata", {}).get("agent", "agent")
+        severity = derive_severity(tool=tool, command=command)
+
+        gate = _PendingGate(
+            request_id=request_id,
+            session_id=session_id,
+            gate_kind="permission",
+            command=_redact_text(command),
+        )
+
+        once_token = self._issue_token(
+            connection_id=connection_id,
+            principal_id="",
+            destination_id=destination_id,
+            session_id=session_id,
+            request_id=request_id,
+            gate_kind="permission",
+            action="once",
+        )
+        gate.tokens.append(once_token)
+        self._pending_by_token[once_token] = request_id
+
+        always_token: str | None = None
+        if always_glob:
+            always_token = self._issue_token(
+                connection_id=connection_id,
+                principal_id="",
+                destination_id=destination_id,
+                session_id=session_id,
+                request_id=request_id,
+                gate_kind="permission",
+                action="always",
+            )
+            gate.tokens.append(always_token)
+            self._pending_by_token[always_token] = request_id
+
+        reject_token = self._issue_token(
+            connection_id=connection_id,
+            principal_id="",
+            destination_id=destination_id,
+            session_id=session_id,
+            request_id=request_id,
+            gate_kind="permission",
+            action="reject",
+        )
+        gate.tokens.append(reject_token)
+        self._pending_by_token[reject_token] = request_id
+
+        self._pending_gates[request_id] = gate
+
+        text, buttons = render_permission_card(
+            tool=tool,
+            command=gate.command,
+            severity=severity,
+            agent=agent_name,
+            always_glob=_redact_text(always_glob) if always_glob else None,
+            always_token=always_token,
+            once_token=once_token,
+            reject_token=reject_token,
+        )
+        msg = RemoteOutboundMessage(
+            connection_id=connection_id,
+            destination_id=destination_id,
+            text=text,
+            buttons=buttons,
+            priority=RemoteOutboundPriority.HIGH,
+            correlation_id=f"gate:{request_id}",
         )
         self._enqueue_send(msg)
 
     def on_reply(self, session_id: str, event_type: str, data: dict) -> None:
-        """Handle a gate reply event by removing buttons from the message.
+        """Handle a gate reply event by editing its card into a resolved,
+        button-free form (AC-47).
 
         Called by the projection when a ``permission_replied``,
         ``question_replied``, or ``plan_approval_replied`` event fires.
