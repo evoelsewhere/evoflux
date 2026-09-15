@@ -54,7 +54,8 @@ async def test_count_configured_providers_counts_only_configured_ones(
                 _entry("openai", is_configured=True),
                 _entry("anthropic", is_configured=True),
                 _entry("mistral", is_configured=False),
-            ]
+            ],
+            has_any_configured=True,
         )
 
     monkeypatch.setattr(
@@ -73,7 +74,7 @@ async def test_count_configured_providers_is_zero_with_none_configured(
     from app.api.schemas.settings import ProvidersListBody
 
     async def _fake_list_providers() -> ProvidersListBody:
-        return ProvidersListBody(providers=[])
+        return ProvidersListBody(providers=[], has_any_configured=False)
 
     monkeypatch.setattr(
         "app.api.routes.settings.list_providers", _fake_list_providers

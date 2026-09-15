@@ -22,6 +22,14 @@ depends on app/api/routes/* except two narrow, deliberate departures:
   reintroducing a path-traversal bug. Both are called with explicit
   arguments, never relying on their Depends(...) defaults, which are
   FastAPI dependency-injection sentinels outside a real request.
+- count_configured_providers calls app.api.routes.settings.list_providers
+  — the same static-credential/daemon-reachability aggregation the
+  desktop Settings screen reads, with no service-layer equivalent.
+  Providers stay read-only from the phone (AC-53): this module never
+  imports any of that file's write-capable functions (save_provider,
+  save_provider_visible_models, test_provider, list_provider_models,
+  delete_provider), enforced by a standing inspection test rather than
+  by convention (tests/remote/test_ac53_providers_read_only.py).
 
 bypass is deliberately excluded from ALLOWED_REMOTE_MODES, checked by
 name (not by list length or position) before anything else runs — a
@@ -51,6 +59,7 @@ __all__ = [
     "get_file_diff",
     "ALLOWED_RESPONSE_MODES",
     "set_response_mode",
+    "count_configured_providers",
 ]
 
 #: Every permission mode this phone may set — bypass excluded on purpose.
@@ -270,3 +279,16 @@ async def set_response_mode(
     await db.commit()
 
     return ControlResult(status="ok")
+
+
+async def count_configured_providers() -> int:
+    """How many catalog providers currently have usable credentials —
+    the one number `/settings` shows for AC-53. Calls the same route
+    function the desktop Settings screen uses (see this module's
+    docstring for why app/remote/ makes this exception) rather than
+    reimplementing the static-credential/daemon-reachability checks
+    GET /api/settings/providers already performs."""
+    from app.api.routes.settings import list_providers
+
+    result = await list_providers()
+    return sum(1 for provider in result.providers if provider.is_configured)

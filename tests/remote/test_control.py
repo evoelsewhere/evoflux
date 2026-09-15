@@ -303,3 +303,55 @@ async def test_set_response_mode_not_found_for_unknown_pairing() -> None:
         result = await control.set_response_mode(db, str(UUID(int=0)), "live")
 
     assert result.status == "not_found"
+
+
+@pytest.mark.asyncio
+async def test_count_configured_providers_counts_only_configured_ones(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.schemas.settings import ProviderInfo, ProvidersListBody
+
+    def _entry(id_: str, *, is_configured: bool) -> ProviderInfo:
+        return ProviderInfo(
+            id=id_,
+            label=id_,
+            description="",
+            kind="api_key",
+            is_configured=is_configured,
+        )
+
+    async def _fake_list_providers() -> ProvidersListBody:
+        return ProvidersListBody(
+            providers=[
+                _entry("openai", is_configured=True),
+                _entry("anthropic", is_configured=True),
+                _entry("mistral", is_configured=False),
+            ],
+            has_any_configured=True,
+        )
+
+    monkeypatch.setattr(
+        "app.api.routes.settings.list_providers", _fake_list_providers
+    )
+
+    count = await control.count_configured_providers()
+
+    assert count == 2
+
+
+@pytest.mark.asyncio
+async def test_count_configured_providers_is_zero_with_none_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.schemas.settings import ProvidersListBody
+
+    async def _fake_list_providers() -> ProvidersListBody:
+        return ProvidersListBody(providers=[], has_any_configured=False)
+
+    monkeypatch.setattr(
+        "app.api.routes.settings.list_providers", _fake_list_providers
+    )
+
+    count = await control.count_configured_providers()
+
+    assert count == 0
