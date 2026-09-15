@@ -7,7 +7,7 @@
  * four minutes is indistinguishable from one that has hung.
  */
 
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { AppUpdateDialog } from '@/components/AppUpdateDialog'
@@ -82,5 +82,57 @@ describe('AppUpdateDialog', () => {
 
     expect(screen.getByText('Starting download…')).toBeTruthy()
     expect(screen.getByRole('progressbar')).toBeTruthy()
+  })
+})
+
+describe('AppUpdateDialog — getting out of the way', () => {
+  beforeEach(() => {
+    useAppUpdaterStore.setState({
+      available: null,
+      installing: false,
+      progress: null,
+      hidden: false,
+      installError: null,
+    })
+  })
+
+  it('lets a download be put aside instead of trapping the window', () => {
+    // The modal used to refuse to close for the whole download: no Later, no
+    // close button, and nothing on screen that said how long it would be.
+    installing({ progress: { phase: 'downloading', downloaded: 1, total: 100 } })
+    render(<AppUpdateDialog />)
+
+    const later = screen.getByText('Continue in background')
+    expect((later as HTMLButtonElement).disabled).toBe(false)
+
+    act(() => useAppUpdaterStore.getState().dismiss())
+
+    const state = useAppUpdaterStore.getState()
+    expect(state.hidden).toBe(true)
+    // Put aside, not cancelled.
+    expect(state.installing).toBe(true)
+    expect(state.available).not.toBeNull()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+  })
+
+  it('comes back when the app is about to restart', () => {
+    useAppUpdaterStore.setState({ available, installing: true, hidden: true })
+    render(<AppUpdateDialog />)
+    expect(screen.queryByRole('progressbar')).toBeNull()
+
+    act(() => useAppUpdaterStore.getState().handleProgress({ phase: 'installing' }))
+
+    expect(useAppUpdaterStore.getState().hidden).toBe(false)
+    expect(screen.getByText('Installing — EvoFlux will restart')).toBeTruthy()
+  })
+
+  it('will not let the install itself be dismissed', () => {
+    installing({ progress: { phase: 'installing' } })
+    render(<AppUpdateDialog />)
+
+    expect((screen.getByText('Continue in background') as HTMLButtonElement).disabled).toBe(true)
+
+    act(() => useAppUpdaterStore.getState().dismiss())
+    expect(useAppUpdaterStore.getState().hidden).toBe(false)
   })
 })

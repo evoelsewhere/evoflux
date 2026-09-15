@@ -435,38 +435,62 @@ async fn append_log_line(log_path: &Path, line: &str) {
     }
 }
 
+// Single process-wide Job Object. ``KILL_ON_JOB_CLOSE`` means every child
+// attached here dies when Tauri exits — even on hard crash — because closing
+// the last handle to the job (which happens at process teardown) terminates
+// all members.
+//
+// ``HANDLE`` is ``*mut c_void`` under the hood and therefore not ``Send`` /
+// ``Sync`` by default — Rust has no way to know the Win32 kernel object
+// behind the pointer is safe to use from any thread. For a kernel job-object
+// handle it *is* safe, so we wrap in a newtype and assert it. Standard
+// pattern for storing Win32 handles in a ``static`` / ``OnceCell``.
+#[cfg(windows)]
+#[repr(transparent)]
+#[derive(Copy, Clone)]
+struct JobHandle(windows::Win32::Foundation::HANDLE);
+// SAFETY: Win32 job-object handles are kernel objects; the userland pointer
+// is just an opaque token whose dereferences happen inside the kernel and
+// are thread-safe by contract.
+#[cfg(windows)]
+unsafe impl Send for JobHandle {}
+#[cfg(windows)]
+unsafe impl Sync for JobHandle {}
+
+#[cfg(windows)]
+static JOB: once_cell::sync::OnceCell<JobHandle> = once_cell::sync::OnceCell::new();
+
+/// Kill the sidecar and everything it started, now.
+///
+/// Closing the job normally does this at process exit, which is too late for
+/// an updater: the installer is already running by then, racing processes
+/// that still hold files inside the install directory open. One MCP server
+/// per plugin runs as a child of the Python sidecar, and terminating the
+/// parent leaves them all behind.
+pub fn terminate_process_tree() {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::JobObjects::TerminateJobObject;
+        if let Some(job) = JOB.get() {
+            // SAFETY: the handle came from CreateJobObjectW and is only ever
+            // read here and in `attach_to_job_object`.
+            if let Err(error) = unsafe { TerminateJobObject(job.0, 0) } {
+                log::warn!("could not terminate the sidecar job object: {error}");
+            } else {
+                log::info!("terminated the sidecar process tree");
+            }
+        }
+    }
+}
+
 #[cfg(windows)]
 fn attach_to_job_object(child: &Child) -> Result<()> {
-    use once_cell::sync::OnceCell;
-    use windows::Win32::Foundation::HANDLE;
     use windows::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
         SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows::Win32::System::Threading::{OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE};
-
-    // Single process-wide Job Object. ``KILL_ON_JOB_CLOSE`` means every
-    // child attached here dies when Tauri exits — even on hard crash —
-    // because closing the last handle to the job (which happens at
-    // process teardown) terminates all members.
-    //
-    // ``HANDLE`` is ``*mut c_void`` under the hood and therefore not
-    // ``Send`` / ``Sync`` by default — Rust has no way to know the Win32
-    // kernel object behind the pointer is safe to use from any thread.
-    // For a kernel job-object handle it *is* safe, so we wrap in a
-    // newtype and assert it. Standard pattern for storing Win32 handles
-    // in a ``static`` / ``OnceCell``.
-    #[repr(transparent)]
-    #[derive(Copy, Clone)]
-    struct JobHandle(HANDLE);
-    // SAFETY: Win32 job-object handles are kernel objects; the userland
-    // pointer is just an opaque token whose dereferences happen inside
-    // the kernel and are thread-safe by contract.
-    unsafe impl Send for JobHandle {}
-    unsafe impl Sync for JobHandle {}
-
-    static JOB: OnceCell<JobHandle> = OnceCell::new();
 
     let job = JOB.get_or_try_init::<_, anyhow::Error>(|| unsafe {
         let h = CreateJobObjectW(None, None)?;
