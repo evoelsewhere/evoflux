@@ -165,6 +165,7 @@ def render_settings_card(
     mode_tokens: Mapping[str, str],
     agent_tokens: Mapping[str, str],
     model_tokens: Mapping[str, str],
+    configured_provider_count: int | None = None,
     redaction_policy: str | None = None,
     notify_scope: str | None = None,
     redaction_tokens: Mapping[str, str] = {},
@@ -183,6 +184,11 @@ def render_settings_card(
         "",
         f"<b>Responses</b>\n<code>{escape(response_mode)}</code>",
     ]
+    if configured_provider_count is not None:
+        lines += [
+            "",
+            f"<b>Providers</b>\n{configured_provider_count} configured",
+        ]
     if notify_scope is not None:
         lines += ["", f"<b>Notifications</b>\n<code>{escape(notify_scope)}</code>"]
     if redaction_policy is not None:

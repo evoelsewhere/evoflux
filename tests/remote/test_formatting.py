@@ -199,6 +199,38 @@ def test_render_settings_card_shows_response_mode_and_its_toggle():
     assert {"r1", "r2"} <= button_tokens
 
 
+def test_render_settings_card_shows_configured_provider_count() -> None:
+    text, _ = formatting.render_settings_card(
+        connection_label="evoflux-api",
+        model="claude-sonnet-5",
+        permission_mode="ask",
+        agent_name="evoflux",
+        response_mode="summary",
+        response_mode_tokens={},
+        mode_tokens={},
+        agent_tokens={},
+        model_tokens={},
+        configured_provider_count=3,
+    )
+    assert "Providers" in text
+    assert "3" in text
+
+
+def test_render_settings_card_omits_providers_line_when_not_supplied() -> None:
+    text, _ = formatting.render_settings_card(
+        connection_label="evoflux-api",
+        model="claude-sonnet-5",
+        permission_mode="ask",
+        agent_name="evoflux",
+        response_mode="summary",
+        response_mode_tokens={},
+        mode_tokens={},
+        agent_tokens={},
+        model_tokens={},
+    )
+    assert "Providers" not in text
+
+
 def test_render_settings_card_never_offers_a_bypass_button():
     _, buttons = formatting.render_settings_card(
         connection_label="evoflux-api",
