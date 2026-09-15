@@ -429,7 +429,7 @@ class TelegramAdapter:
                 try:
                     await self._on_action(action)
                 except Exception:
-                    logger.warning(
+                    logger.exception(
                         "telegram_inbound_action_handler_failed "
                         "connection_id={} update_id={}",
                         self._connection_id,
