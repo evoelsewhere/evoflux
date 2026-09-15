@@ -84,7 +84,7 @@ class _ActionCapability:
 _SLASH_COMMANDS: frozenset[str] = frozenset(
     {
         "start", "help", "status", "new", "stop", "unpair", "actions",
-        "settings", "health",
+        "settings", "health", "changes",
     }
 )
 
@@ -197,6 +197,8 @@ class RemoteActionService:
             return await self._cmd_settings(db, action)
         elif command == "health":
             return await self._cmd_health(db, action)
+        elif command == "changes":
+            return await self._cmd_changes(db, action)
         else:
             # Unknown command — return bounded help.
             return await self._cmd_help(db, action)
@@ -386,6 +388,67 @@ class RemoteActionService:
 
         diagnostics = await control.get_health_diagnostics()
         text = render_health_card(diagnostics.get("checks", []))
+        return RemoteActionResult(status="ok", text=text)
+
+    async def _cmd_changes(
+        self, db: AsyncSession, action: RemoteInboundAction
+    ) -> RemoteActionResult:
+        from app.models.chat import ChatSession
+        from app.remote.formatting import render_changes_card
+        from app.services.turn_changes import get_latest
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            return RemoteActionResult(status="unauthorized")
+
+        no_changes_text = (
+            "No active task yet — send a message to start one, then "
+            "/changes shows what it touched."
+        )
+        if pairing.active_session_id is None:
+            await self._send(action.principal.destination_id, no_changes_text)
+            return RemoteActionResult(status="ok", text=no_changes_text)
+
+        session = await db.get(ChatSession, pairing.active_session_id)
+        if session is None:
+            await self._send(action.principal.destination_id, no_changes_text)
+            return RemoteActionResult(status="ok", text=no_changes_text)
+
+        session_id = str(session.id)
+        snapshot = get_latest(session_id)
+        if snapshot is None or not snapshot.files:
+            no_files_text = "No file changes recorded for this task yet."
+            await self._send(action.principal.destination_id, no_files_text)
+            return RemoteActionResult(status="ok", text=no_files_text)
+
+        bounded_files = snapshot.files[:8]
+        file_tokens = {
+            f.path: self._issue_token(
+                connection_id=action.connection_id,
+                principal_id=action.principal.principal_id,
+                destination_id=action.principal.destination_id,
+                session_id=session_id,
+                action_kind="changes_diff",
+                action_target=f.path,
+            )
+            for f in bounded_files
+        }
+
+        text, buttons = render_changes_card(
+            title=session.title or "Task",
+            files=[
+                (f.path, f.status, f.additions, f.deletions) for f in bounded_files
+            ],
+            additions=snapshot.additions,
+            deletions=snapshot.deletions,
+            file_tokens=file_tokens,
+        )
+
+        await self._send(action.principal.destination_id, text, buttons=buttons)
         return RemoteActionResult(status="ok", text=text)
 
     async def _cmd_new(
@@ -588,6 +651,8 @@ class RemoteActionService:
             return await self._exec_set_agent(cap, action, db)
         elif cap.action_kind == "set_model":
             return await self._exec_set_model(cap, action, db)
+        elif cap.action_kind == "changes_diff":
+            return await self._exec_changes_diff(cap, action, db)
         return False
 
     async def _exec_workflow_start(
@@ -816,6 +881,54 @@ class RemoteActionService:
         await self._reply_control_result(
             action, result, f"Model set to {cap.action_target}."
         )
+        return True
+
+    async def _exec_changes_diff(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        """Unlike every other capability action kind, this one fetches its
+        content fresh at tap time rather than reading a pre-stored
+        ``action_target`` string — a git diff must reflect the file's
+        state now, not its state when the turn finished. ``action_target``
+        holds the file path; the session's workspace (needed for
+        ``control.get_file_diff``) is resolved from ``cap.session_id`` here."""
+        from uuid import UUID as _UUID
+
+        from app.models.chat import ChatSession
+        from app.remote import control
+
+        try:
+            session_uuid = _UUID(cap.session_id)
+        except ValueError:
+            await self._reply_text(
+                action.principal.destination_id, "That task no longer exists."
+            )
+            return True
+
+        session = await db.get(ChatSession, session_uuid)
+        if session is None or not session.workspace:
+            await self._reply_text(
+                action.principal.destination_id,
+                "That task's workspace is no longer available.",
+            )
+            return True
+
+        diff = await control.get_file_diff(session.workspace, cap.action_target)
+        if not diff.strip():
+            await self._reply_text(
+                action.principal.destination_id,
+                f"No diff available for {cap.action_target}.",
+            )
+            return True
+
+        redacted = _redact_text(diff)
+        for text in _render_detail_cards(f"Diff: {cap.action_target}", redacted):
+            await self._send(
+                action.principal.destination_id,
+                text,
+                connection_id=action.connection_id,
+                priority=RemoteOutboundPriority.HIGH,
+            )
         return True
 
     async def _reply_control_result(

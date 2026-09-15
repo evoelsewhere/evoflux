@@ -743,3 +743,135 @@ class TestHealth:
             result = await service.dispatch_command(mock_db, action)
 
         assert result.status == "unauthorized"
+
+
+# ── Changes ───────────────────────────────────────────────────────────────────
+
+
+class TestChanges:
+    @pytest.mark.asyncio
+    async def test_changes_command_lists_files_with_counts(
+        self, service: RemoteActionService
+    ) -> None:
+        async with db_module.async_session_factory() as db:
+            session = ChatSession(
+                title="Fix auth tests",
+                mode="work",
+                session_type="main",
+                workspace="/tmp/fake-workspace",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            mock_pairing = MagicMock()
+            mock_pairing.active_session_id = session.id
+            mock_pairing.label = "My Phone"
+
+            from app.services.turn_changes import ChangedFile, TurnChangesSnapshot
+
+            fake_snapshot = TurnChangesSnapshot(
+                session_id=str(session.id),
+                files=[
+                    ChangedFile(
+                        path="app/auth.py", status="modified", additions=10, deletions=2
+                    )
+                ],
+                additions=10,
+                deletions=2,
+            )
+
+            with (
+                patch.object(
+                    service._pairing_service, "authorize", return_value=mock_pairing
+                ),
+                patch(
+                    "app.services.turn_changes.get_latest",
+                    return_value=fake_snapshot,
+                ),
+            ):
+                action = _make_action(text="/changes")
+                result = await service.dispatch_command(db, action)
+
+        assert result.status == "ok"
+        assert "app/auth.py" in result.text
+        assert "+10" in result.text
+
+    @pytest.mark.asyncio
+    async def test_changes_command_without_active_session_is_friendly(
+        self, service: RemoteActionService
+    ) -> None:
+        mock_db = MagicMock()
+        mock_pairing = MagicMock()
+        mock_pairing.active_session_id = None
+
+        with patch.object(
+            service._pairing_service, "authorize", return_value=mock_pairing
+        ):
+            action = _make_action(text="/changes")
+            result = await service.dispatch_command(mock_db, action)
+
+        assert result.status == "ok"
+        assert "no active task yet" in result.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_changes_diff_callback_fetches_and_sends_the_diff(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        conn_id = uuid4()
+        async with db_module.async_session_factory() as db:
+            session = ChatSession(
+                title="Fix auth tests",
+                mode="work",
+                session_type="main",
+                workspace="/tmp/fake-workspace",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            mock_pairing = MagicMock()
+            mock_pairing.active_session_id = session.id
+            mock_pairing.label = "My Phone"
+
+            from app.services.turn_changes import ChangedFile, TurnChangesSnapshot
+
+            fake_snapshot = TurnChangesSnapshot(
+                session_id=str(session.id),
+                files=[
+                    ChangedFile(
+                        path="app/auth.py", status="modified", additions=10, deletions=2
+                    )
+                ],
+                additions=10,
+                deletions=2,
+            )
+
+            async def _fake_get_file_diff(workspace: str, path: str) -> str:
+                return "--- a/app/auth.py\n+++ b/app/auth.py\n+fixed"
+
+            with (
+                patch.object(
+                    service._pairing_service, "authorize", return_value=mock_pairing
+                ),
+                patch(
+                    "app.services.turn_changes.get_latest",
+                    return_value=fake_snapshot,
+                ),
+            ):
+                changes_action = _make_action(text="/changes", connection_id=conn_id)
+                await service.dispatch_command(db, changes_action)
+
+            sent_buttons = adapter.sent_messages[-1].buttons
+            file_token = next(b.token for b in sent_buttons if "app/auth.py" in b.text)
+
+            with patch("app.remote.control.get_file_diff", _fake_get_file_diff):
+                callback_action = _make_action(
+                    kind=RemoteInboundActionKind.CALLBACK,
+                    callback_token=file_token,
+                    connection_id=conn_id,
+                )
+                handled = await service.handle_action_callback(callback_action, db)
+
+            assert handled is True
+            assert any("fixed" in text for text in adapter.sent_texts)

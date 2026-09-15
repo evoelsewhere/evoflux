@@ -482,12 +482,14 @@ class RemoteRuntime:
             )
             return
 
-        # ``/actions`` and ``/settings`` already send their own message
-        # (with buttons) inside RemoteActionService — sending the returned
-        # text again here would duplicate it. Every other command relies
-        # entirely on this send.
+        # ``/actions``, ``/settings``, and ``/changes`` already send their
+        # own message (with buttons, or a friendly no-active-task/no-files
+        # notice) inside RemoteActionService — sending the returned text
+        # again here would duplicate it. ``/health`` does NOT self-send
+        # (plain text, no buttons), so it relies on this fallback like
+        # every other command.
         command = (action.text or "").strip().split(maxsplit=1)[0][1:].lower()
-        if command in ("actions", "settings"):
+        if command in ("actions", "settings", "changes"):
             return
 
         if result.text and self._adapter is not None:
