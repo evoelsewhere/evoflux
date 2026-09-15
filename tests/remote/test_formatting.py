@@ -163,6 +163,51 @@ def test_render_permission_resolved_card_escapes_command():
     assert "&lt;script&gt;" in text
 
 
+def test_render_settings_card_shows_mode_model_and_agent_buttons():
+    text, buttons = formatting.render_settings_card(
+        connection_label="evoflux-api",
+        model="anthropic:claude-sonnet-5",
+        permission_mode="ask",
+        agent_name="evoflux",
+        mode_tokens={"ask": "m1", "auto": "m2"},
+        agent_tokens={"evoflux": "a1", "explorer": "a2"},
+        model_tokens={"anthropic:claude-sonnet-5": "d1"},
+    )
+    assert "ask" in text
+    assert "anthropic:claude-sonnet-5" in text
+    assert "evoflux" in text
+    button_tokens = {b.token for b in buttons}
+    assert {"m1", "m2", "a1", "a2", "d1"} <= button_tokens
+
+
+def test_render_settings_card_never_offers_a_bypass_button():
+    _, buttons = formatting.render_settings_card(
+        connection_label="evoflux-api",
+        model="anthropic:claude-sonnet-5",
+        permission_mode="auto",
+        agent_name="evoflux",
+        mode_tokens={"auto": "m1", "bypass": "should-never-appear"},
+        agent_tokens={},
+        model_tokens={},
+    )
+    assert "should-never-appear" not in {b.token for b in buttons}
+    assert not any("bypass" in b.text.lower() for b in buttons)
+
+
+def test_render_settings_card_omits_redaction_section_when_not_supplied():
+    text, _ = formatting.render_settings_card(
+        connection_label="evoflux-api",
+        model="anthropic:claude-sonnet-5",
+        permission_mode="auto",
+        agent_name="evoflux",
+        mode_tokens={},
+        agent_tokens={},
+        model_tokens={},
+    )
+    assert "Outbound redaction" not in text
+    assert "Notifications" not in text
+
+
 def test_render_error_card_escapes_message():
     text, buttons = formatting.render_error_card(
         title="Add rate limiter",
@@ -173,19 +218,26 @@ def test_render_error_card_escapes_message():
     assert len(buttons) == 1
 
 
-def test_render_settings_card_never_emits_model_or_permission_buttons():
+def test_render_settings_card_now_emits_mode_and_model_buttons():
+    """Supersedes the old AC-41 boundary (model/mode were never buttons,
+    "desktop only" read-only text) — AC-48/49 revise that: mode and model
+    are now remotely settable, so this card must offer buttons for both."""
     text, buttons = formatting.render_settings_card(
         connection_label="evoflux-api",
         model="claude-sonnet-5",
-        permission_mode="ask each time",
+        permission_mode="ask",
+        agent_name="evoflux",
+        mode_tokens={"ask": "m1"},
+        agent_tokens={},
+        model_tokens={"claude-sonnet-5": "d1"},
         redaction_policy="standard",
         notify_scope="all",
         redaction_tokens={"strict": "r1", "off": "r2"},
         notify_scope_tokens={"all": "n1", "remote_only": "n2"},
     )
     button_texts = [b.text for b in buttons]
-    assert not any("model" in t.lower() for t in button_texts)
-    assert not any("permission" in t.lower() for t in button_texts)
+    assert any("model" in t.lower() for t in button_texts)
+    assert any("mode" in t.lower() for t in button_texts)
     assert any("strict" in t.lower() for t in button_texts)
 
 
@@ -206,7 +258,11 @@ def test_render_settings_card_escapes_toggle_names():
     text, buttons = formatting.render_settings_card(
         connection_label="evoflux-api",
         model="claude-sonnet-5",
-        permission_mode="ask each time",
+        permission_mode="ask",
+        agent_name="evoflux",
+        mode_tokens={},
+        agent_tokens={},
+        model_tokens={},
         redaction_policy="standard",
         notify_scope="all",
         redaction_tokens={"<strict>": "r1", "off": "r2"},

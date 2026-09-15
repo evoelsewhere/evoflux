@@ -751,6 +751,50 @@ def render_settings_card(
 
 Note the `if name != "bypass"` filter on the mode-button comprehension: defense in depth alongside `control.ALLOWED_REMOTE_MODES` already excluding it at the source (AC-48's boundary is enforced at both the write path and the render path, so a bug in one is never the only thing standing between a phone and bypass).
 
+- [ ] **Step 3b: Update two pre-existing tests this rewrite breaks**
+
+`test_render_settings_card_never_emits_model_or_permission_buttons` and
+`test_render_settings_card_escapes_toggle_names` (both already in
+`tests/remote/test_formatting.py`, from the earlier response-ui work) call
+`render_settings_card` without the new required `agent_name`/`mode_tokens`/
+`agent_tokens`/`model_tokens` — both will now raise `TypeError`. The first
+one is more than a signature mismatch: it explicitly asserted the *old*
+AC-41 boundary ("never emits model or permission buttons"), which this
+phase's AC-48/49 deliberately supersede. Rename and invert it rather than
+just patching its call:
+
+```python
+# tests/remote/test_formatting.py — replace in place
+def test_render_settings_card_now_emits_mode_and_model_buttons():
+    """Supersedes the old AC-41 boundary (model/mode were never buttons,
+    "desktop only" read-only text) — AC-48/49 revise that: mode and model
+    are now remotely settable, so this card must offer buttons for both."""
+    text, buttons = formatting.render_settings_card(
+        connection_label="evoflux-api",
+        model="claude-sonnet-5",
+        permission_mode="ask",
+        agent_name="evoflux",
+        mode_tokens={"ask": "m1"},
+        agent_tokens={},
+        model_tokens={"claude-sonnet-5": "d1"},
+        redaction_policy="standard",
+        notify_scope="all",
+        redaction_tokens={"strict": "r1", "off": "r2"},
+        notify_scope_tokens={"all": "n1", "remote_only": "n2"},
+    )
+    button_texts = [b.text for b in buttons]
+    assert any("model" in t.lower() for t in button_texts)
+    assert any("mode" in t.lower() for t in button_texts)
+    assert any("strict" in t.lower() for t in button_texts)
+```
+
+```python
+# tests/remote/test_formatting.py — test_render_settings_card_escapes_toggle_names,
+# add the three new required kwargs to its existing render_settings_card call
+# (agent_name="evoflux", mode_tokens={}, agent_tokens={}, model_tokens={}) —
+# its actual assertions (about redaction/notify escaping) are unchanged.
+```
+
 - [ ] **Step 4: Run and confirm pass**
 
 ```powershell

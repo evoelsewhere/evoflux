@@ -143,20 +143,52 @@ def render_settings_card(
     connection_label: str,
     model: str,
     permission_mode: str,
-    redaction_policy: str,
-    notify_scope: str,
-    redaction_tokens: Mapping[str, str],
-    notify_scope_tokens: Mapping[str, str],
+    agent_name: str,
+    mode_tokens: Mapping[str, str],
+    agent_tokens: Mapping[str, str],
+    model_tokens: Mapping[str, str],
+    redaction_policy: str | None = None,
+    notify_scope: str | None = None,
+    redaction_tokens: Mapping[str, str] = {},
+    notify_scope_tokens: Mapping[str, str] = {},
 ) -> tuple[str, tuple[RemoteButton, ...]]:
-    text = (
-        "<b>⚙️ Settings</b>\n\n"
-        f"<b>Connection</b>\n{escape(connection_label)}\n\n"
-        f"<b>Model</b>\n<code>{escape(model)}</code> <i>(desktop only)</i>\n\n"
-        f"<b>Permission mode</b>\n<code>{escape(permission_mode)}</code> <i>(desktop only)</i>\n\n"
-        f"<b>Notifications</b>\n<code>{escape(notify_scope)}</code>\n\n"
-        f"<b>Outbound redaction</b>\n<code>{escape(redaction_policy)}</code>"
-    )
-    buttons = [
+    lines = [
+        "<b>⚙️ Settings</b>",
+        "",
+        f"<b>Connection</b>\n{escape(connection_label)}",
+        "",
+        f"<b>Mode</b>\n<code>{escape(permission_mode)}</code>",
+        "",
+        f"<b>Model</b>\n<code>{escape(model)}</code>",
+        "",
+        f"<b>Lead agent</b>\n<code>{escape(agent_name)}</code>",
+    ]
+    if notify_scope is not None:
+        lines += ["", f"<b>Notifications</b>\n<code>{escape(notify_scope)}</code>"]
+    if redaction_policy is not None:
+        lines += [
+            "",
+            f"<b>Outbound redaction</b>\n<code>{escape(redaction_policy)}</code>",
+        ]
+    text = "\n".join(lines)
+
+    # bypass is excluded here too (not just at the control.py write path,
+    # see ALLOWED_REMOTE_MODES) — a bug in one boundary alone must never be
+    # the only thing standing between a phone and bypass mode (AC-48).
+    buttons: list[RemoteButton] = [
+        RemoteButton(text=f"Mode: {escape(name)}", token=token)
+        for name, token in mode_tokens.items()
+        if name != "bypass"
+    ]
+    buttons += [
+        RemoteButton(text=f"Agent: {escape(name)}", token=token)
+        for name, token in agent_tokens.items()
+    ]
+    buttons += [
+        RemoteButton(text=f"Model: {escape(name)}", token=token)
+        for name, token in model_tokens.items()
+    ]
+    buttons += [
         RemoteButton(text=f"Redaction: {escape(name)}", token=token)
         for name, token in redaction_tokens.items()
     ]
