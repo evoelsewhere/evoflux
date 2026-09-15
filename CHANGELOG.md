@@ -2,6 +2,32 @@
 
 All notable changes to EvoFlux are documented in this file.
 
+## [2.0.2] - 2026-09-15
+
+EvoFlux 2.0.2 is a maintenance release focused on deeper WebBridge browser
+inspection and more reliable browser interaction workflows.
+
+### Highlights
+
+- Added WebBridge scraping inside a selected element and across shadow roots
+  and frames, with `extract_elements` ref/deep traversal controls.
+- Added selector/ref-aware scrolling for nested scroll containers through
+  `scroll_to_bottom`.
+- Added stable element-handle actions, changed-only snapshots, batched action
+  chains and broken-chain recovery for WebBridge browser automation.
+- Included browser preview handoff, resize/placement, dialog/permission and
+  workbench ownership fixes from the 2.0.1 follow-up cycle.
+
+### Upgrade notes
+
+- Application, Python, web, Rust, Tauri and lockfile metadata are synchronized
+  at `2.0.2`.
+- Existing databases continue through the normal Alembic migration path; no
+  schema migration is introduced by this release.
+
+For the curated release overview, see
+[`documents/releases/v2.0.2.md`](documents/releases/v2.0.2.md).
+
 ## [2.0.1] - 2026-09-14
 
 EvoFlux 2.0.1 is a focused maintenance release for browser workflows, the
@@ -164,5 +190,7 @@ EvoFlux 1.0.0 is the first stable release.
 For the curated release overview, see
 [`documents/releases/v1.0.0.md`](documents/releases/v1.0.0.md).
 
+[2.0.2]: https://github.com/evoelsewhere/evoflux/compare/v2.0.1...v2.0.2
+[2.0.1]: https://github.com/evoelsewhere/evoflux/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/evoelsewhere/evoflux/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/evoelsewhere/evoflux/compare/v0.0.8...v1.0.0
