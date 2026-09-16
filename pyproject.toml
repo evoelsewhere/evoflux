@@ -58,7 +58,9 @@ dependencies = [
     # this package so Scheduler validation accepts browser-reported zones in
     # the bundled desktop sidecar as well as on Unix hosts.
     "tzdata>=2025.2",
-    "mcp>=1.28.1",
+    # MCP 2.x uses the native Streamable HTTP transport and httpx2 client.
+    "mcp>=2.2.0",
+    "httpx2>=2.5.0",
     "boto3>=1.35.0",
     "duckdb>=1.1.0",
     "truststore>=0.10.4",

@@ -24,13 +24,18 @@ class WorkflowNodeError(RuntimeError):
 def shape_tool_output(result: Any) -> dict:
     """The §4.3 output-shape rule for tool results.
 
-    MCP results: ``structuredContent`` when present, else JSON-parse the
+    MCP results: native ``structured_content`` when present, else JSON-parse the
     flattened text, else ``{"text": ...}``. Registry tools return plain
     strings — same JSON-parse-then-text rule.
     """
-    structured = getattr(result, "structuredContent", None)
+    structured = getattr(result, "structured_content", None)
+    if structured is None:
+        # Compatibility for pre-MCP-2.x result doubles and adapters.
+        structured = getattr(result, "structuredContent", None)
     if isinstance(structured, dict):
         return structured
+    if structured is not None:
+        return {"value": structured}
 
     if hasattr(result, "content"):  # MCP CallToolResult
         pieces: list[str] = []

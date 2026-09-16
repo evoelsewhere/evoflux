@@ -128,7 +128,7 @@ by a plugin also grants and activates the ready MCP tools from that same
 installation for the current run. Installation alone does not grant every
 agent every tool, and calls remain subject to the normal permission pipeline.
 
-For stdio servers, EvoFlux creates a persistent installation-scoped data directory and injects absolute `PLUGIN_ROOT` and `PLUGIN_DATA`. Only those exact placeholders are expanded, once, in `args`, `env` values, and `cwd`. Remote configured headers remain literal, and redirects are disabled to avoid forwarding them to a different origin.
+For stdio servers, EvoFlux creates a persistent installation-scoped data directory and injects absolute `PLUGIN_ROOT` and `PLUGIN_DATA`. Only those exact placeholders are expanded, once, in `args`, `env` values, and `cwd`. Remote configured headers remain literal. MCP 2.x's native Streamable HTTP transport allows only origin-safe redirects, so configured headers are never forwarded to a different origin.
 
 EvoFlux does not generate an MCP implementation, provide a host-interpreter
 alias, create a virtual environment, or install package dependencies. Authors
