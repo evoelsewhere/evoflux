@@ -136,11 +136,8 @@ interface WorkbenchState {
   activeWorkbenchTool: WorkbenchTool | null
   workbenchOpen: boolean
   workbenchMaximized: boolean
-  /**
-   * Session whose agent has a page open in a floating window rather than in
-   * the workbench. Null when no such page exists.
-   */
-  browserPipSessionId: string | null
+  /** Sessions whose agent pages are open in stacked floating previews. */
+  browserPipSessionIds: string[]
   pullRequestsScope: PullRequestsScope
   gitWorkspaceView: GitWorkspaceView
 }
@@ -414,7 +411,8 @@ interface UIStore extends WorkbenchState {
   showWorkbenchLauncher: () => void
   toggleWorkbenchMaximized: () => void
   openBrowserPip: (sessionId: string) => void
-  closeBrowserPip: () => void
+  focusBrowserPip: (sessionId: string) => void
+  closeBrowserPip: (sessionId?: string) => void
   toggleWiki: () => void
   toggleScheduler: () => void
   togglePullRequests: () => void
@@ -459,7 +457,7 @@ export const useUIStore = create<UIStore>()(
     // Starts cleared because the workbench starts empty; `activateTab`
     // re-applies the remembered posture as soon as there is a tab.
     workbenchMaximized: false,
-    browserPipSessionId: null,
+    browserPipSessionIds: [],
     pullRequestsScope: 'session',
     gitWorkspaceView: 'changes',
     createWorkbenchTab: (tool, options = {}) => set((state) => {
@@ -577,10 +575,25 @@ export const useUIStore = create<UIStore>()(
       state.workbenchMaximized = false
     }),
     openBrowserPip: (sessionId) => set((state) => {
-      state.browserPipSessionId = sessionId
+      if (!state.browserPipSessionIds.includes(sessionId)) {
+        state.browserPipSessionIds.push(sessionId)
+      }
     }),
-    closeBrowserPip: () => set((state) => {
-      state.browserPipSessionId = null
+    focusBrowserPip: (sessionId) => set((state) => {
+      if (!state.browserPipSessionIds.includes(sessionId)) return
+      state.browserPipSessionIds = [
+        ...state.browserPipSessionIds.filter((id) => id !== sessionId),
+        sessionId,
+      ]
+    }),
+    closeBrowserPip: (sessionId) => set((state) => {
+      if (sessionId === undefined) {
+        state.browserPipSessionIds = []
+      } else {
+        state.browserPipSessionIds = state.browserPipSessionIds.filter(
+          (id) => id !== sessionId,
+        )
+      }
     }),
     toggleWorkbenchMaximized: () => set((state) => {
       if (!state.activeWorkbenchTabId) return

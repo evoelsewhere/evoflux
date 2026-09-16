@@ -14,6 +14,8 @@ import {
   nextPreviewSize,
   PREVIEW_MIN_SIZE,
   PREVIEW_SIZES,
+  PREVIEW_STACK_OFFSET,
+  stackPreviewPlacement,
 } from '@/components/BrowserViewer/browserPreviewPlacement'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 
@@ -63,6 +65,25 @@ describe('browser preview placement', () => {
   it('toggles between the two quick sizes', () => {
     expect(nextPreviewSize(small)).toEqual(PREVIEW_SIZES.large)
     expect(nextPreviewSize({ x: 0, y: 0, ...PREVIEW_SIZES.large })).toEqual(PREVIEW_SIZES.small)
+  })
+
+  it('stacks older previews up and left while keeping the newest at the saved placement', () => {
+    expect(stackPreviewPlacement(small, 0, viewport)).toEqual(small)
+    expect(stackPreviewPlacement(small, 1, viewport)).toEqual({
+      ...small,
+      x: small.x - PREVIEW_STACK_OFFSET,
+      y: small.y - PREVIEW_STACK_OFFSET,
+    })
+  })
+
+  it('clamps a deep stack back into the viewport', () => {
+    const stacked = stackPreviewPlacement(
+      { ...small, x: 10, y: 10 },
+      3,
+      viewport,
+    )
+    expect(stacked.x).toBe(0)
+    expect(stacked.y).toBe(0)
   })
 })
 

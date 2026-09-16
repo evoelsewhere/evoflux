@@ -455,8 +455,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const isTeamWorking  = useTeamStore((s) => s.isTeamWorking)
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
-  useDirectBrowserPresence(sessionIdState)
-  const browserPipSessionId = useUIStore((state) => state.browserPipSessionId)
+  const browserPipSessionIds = useUIStore((state) => state.browserPipSessionIds)
+  useDirectBrowserPresence([sessionIdState, ...browserPipSessionIds])
   const projectIdState = useTeamStore((s) => s.projectId)
   // A project session isn't "in" any one repo — chat-level UI (empty state,
   // composer placeholder) must reflect the project, not the primary repo
@@ -1689,10 +1689,17 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // a glance at a second chat threw away the page an agent was working in
   // and left it a blank new tab. The card floats above whatever is open
   // until someone closes it, which is what a floating window is for.
-  const browserPipHost = browserPipSessionId
+  const browserPipHost = browserPipSessionIds.length > 0
     ? (
         <Suspense fallback={null}>
-          <BrowserPipHost key={browserPipSessionId} sessionId={browserPipSessionId} />
+          {browserPipSessionIds.map((sessionId, index) => (
+            <BrowserPipHost
+              key={sessionId}
+              sessionId={sessionId}
+              stackDepth={browserPipSessionIds.length - index - 1}
+              stackOrder={index}
+            />
+          ))}
         </Suspense>
       )
     : null
