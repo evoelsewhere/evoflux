@@ -1,6 +1,7 @@
 """Adapter that wraps an MCP server tool as a local :class:`Tool`.
 
-An MCP tool ships with a JSON Schema (``inputSchema``) for its arguments.
+An MCP tool ships with a JSON Schema (``input_schema`` in the native SDK,
+serialized as ``inputSchema``) for its arguments.
 We forward that schema directly to the LLM in the OpenAI-compatible
 function-calling shape, and route invocations back through the live
 ``ClientSession`` held by the :class:`MCPManager`.
@@ -13,10 +14,11 @@ collide with built-in tool names.
 from __future__ import annotations
 
 import base64
+import json
 from typing import TYPE_CHECKING, Any, cast
 
 from loguru import logger
-from pydantic import AnyUrl, BaseModel
+from pydantic import BaseModel
 
 from app.agent.errors import ToolExecutionError
 from app.agent.outbound_redaction import OutboundContext, protect_outbound_value
@@ -31,8 +33,23 @@ if TYPE_CHECKING:
 MCP_APP_MIME_TYPE = "text/html;profile=mcp-app"
 
 
+def _get_attr(value: Any, *names: str, default: Any = None) -> Any:
+    """Read native MCP 2.x fields with a compatibility fallback.
+
+    MCP 2.x exposes snake_case Pydantic attributes while keeping the
+    protocol's camelCase names as wire aliases (for example
+    ``input_schema``/``inputSchema``).
+    """
+    for name in names:
+        if hasattr(value, name):
+            current = getattr(value, name)
+            if current is not None:
+                return current
+    return default
+
+
 def _sanitize_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
-    """Coerce an MCP tool ``inputSchema`` into the OpenAI function-call shape.
+    """Coerce an MCP tool ``input_schema`` into the OpenAI function-call shape.
 
     MCP servers return JSON Schema; OpenAI tool schemas are JSON Schema with
     a ``type: "object"`` wrapper. Most servers already return that shape.
@@ -61,7 +78,7 @@ class MCPTool(Tool):
     """A :class:`Tool` whose schema and execution are sourced from an MCP server.
 
     Unlike the base ``Tool``, the JSON Schema comes from the MCP server's
-    ``inputSchema`` rather than being derived from a Python function signature.
+    ``input_schema`` rather than being derived from a Python function signature.
     Calls are forwarded to ``session.call_tool(remote_name, args)``.
     """
 
@@ -86,7 +103,7 @@ class MCPTool(Tool):
 
         # ── Build the OpenAI-compatible tool definition directly ─────────
         parameters = _sanitize_schema(
-            mcp_tool.inputSchema if hasattr(mcp_tool, "inputSchema") else None
+            _get_attr(mcp_tool, "input_schema", "inputSchema")
         )
         self._definition = {
             "type": "function",
@@ -105,7 +122,9 @@ class MCPTool(Tool):
         self._func = self._invoke  # for repr / __wrapped__ compatibility
         self.concurrency_safe = False
         annotations = getattr(mcp_tool, "annotations", None)
-        self.read_only = bool(getattr(annotations, "readOnlyHint", False))
+        self.read_only = bool(
+            _get_attr(annotations, "read_only_hint", "readOnlyHint", default=False)
+        )
         self.tiers = None
         self.lead_only = False
         self.deferred = True
@@ -185,14 +204,23 @@ class MCPTool(Tool):
                 f"MCP tool '{self.name}' failed: {type(exc).__name__}: {exc}"
             ) from exc
 
-        if getattr(result, "isError", False):
+        if _get_attr(result, "is_error", "isError", default=False):
             text = _extract_text(result.content)
             raise ToolExecutionError(
                 f"MCP tool '{self.name}' returned error: {text or '(no message)'}"
             )
 
         text_summary = _extract_text(result.content)
+        structured_summary = _format_structured_content(
+            _get_attr(result, "structured_content", "structuredContent")
+        )
+        if structured_summary:
+            text_summary = _append_structured_summary(text_summary, structured_summary)
         content_parts = _extract_content_parts(result.content)
+        if structured_summary:
+            content_parts.append(
+                TextBlock(text=f"Structured output:\n{structured_summary}")
+            )
         has_image = any(isinstance(part, ImageDataBlock) for part in content_parts)
 
         mcp_app_meta = _get_ui_meta(self._mcp_tool)
@@ -200,7 +228,7 @@ class MCPTool(Tool):
 
         if resource_uri:
             try:
-                resource = await session.read_resource(AnyUrl(resource_uri))
+                resource = await session.read_resource(resource_uri)
                 app_resource = _extract_app_resource(resource, resource_uri)
 
                 if app_resource is not None:
@@ -244,9 +272,27 @@ def _dump_mcp_model(value: Any) -> Any:
     return value
 
 
+def _format_structured_content(value: Any) -> str:
+    """Render MCP 2.x structured output for text-only model channels."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _append_structured_summary(text: str, structured: str) -> str:
+    if not text:
+        return structured
+    return f"{text}\n\nStructured output:\n{structured}"
+
+
 def _get_ui_meta(mcp_tool: Any) -> dict[str, Any]:
     """Extract MCP Apps tool metadata from Pydantic or plain test doubles."""
-    meta = getattr(mcp_tool, "meta", None) or getattr(mcp_tool, "_meta", None) or {}
+    meta = _get_attr(mcp_tool, "meta", "_meta", default={})
     if not isinstance(meta, dict):
         return {}
     ui = meta.get("ui")
@@ -259,7 +305,7 @@ def _get_ui_meta(mcp_tool: Any) -> dict[str, Any]:
 
 def _get_capabilities(mcp_tool: Any) -> frozenset[str]:
     """Read explicit EvoFlux capability metadata from an MCP tool definition."""
-    meta = getattr(mcp_tool, "meta", None) or getattr(mcp_tool, "_meta", None) or {}
+    meta = _get_attr(mcp_tool, "meta", "_meta", default={})
     if not isinstance(meta, dict):
         return frozenset()
     raw = meta.get("evoflux/capabilities")
@@ -293,7 +339,7 @@ async def _get_listing_resource_meta(
     for resource in resources:
         if str(getattr(resource, "uri", "")) != resource_uri:
             continue
-        meta = getattr(resource, "meta", None) or getattr(resource, "_meta", None)
+        meta = _get_attr(resource, "meta", "_meta")
         return meta if isinstance(meta, dict) else None
     return None
 
@@ -307,7 +353,7 @@ def _extract_app_resource(
         return None
 
     for content in contents:
-        mime_type = getattr(content, "mimeType", None)
+        mime_type = _get_attr(content, "mime_type", "mimeType")
         if mime_type != MCP_APP_MIME_TYPE:
             continue
         html = getattr(content, "text", None)
@@ -320,7 +366,7 @@ def _extract_app_resource(
                     html = None
         if not html:
             continue
-        meta = getattr(content, "meta", None) or getattr(content, "_meta", None)
+        meta = _get_attr(content, "meta", "_meta")
         return {
             "resourceUri": str(getattr(content, "uri", resource_uri)),
             "mimeType": mime_type,
@@ -349,7 +395,7 @@ def _extract_text(content: Any) -> str:
         if block_type == "text":
             parts.append(getattr(block, "text", "") or "")
         elif block_type == "image":
-            mime = getattr(block, "mimeType", "image/*")
+            mime = _get_attr(block, "mime_type", "mimeType", default="image/*")
             parts.append(f"[image: {mime}]")
         elif block_type == "resource":
             uri = getattr(getattr(block, "resource", None), "uri", "?")
@@ -379,7 +425,8 @@ def _extract_content_parts(content: Any) -> list[ContentBlock]:
                 parts.append(
                     ImageDataBlock(
                         data=data,
-                        media_type=getattr(block, "mimeType", None) or "image/png",
+                        media_type=_get_attr(block, "mime_type", "mimeType")
+                        or "image/png",
                     )
                 )
             continue
@@ -387,7 +434,7 @@ def _extract_content_parts(content: Any) -> list[ContentBlock]:
         if block_type == "resource":
             resource = getattr(block, "resource", None)
             blob = getattr(resource, "blob", None)
-            media_type = getattr(resource, "mimeType", None)
+            media_type = _get_attr(resource, "mime_type", "mimeType")
             if (
                 isinstance(blob, str)
                 and blob

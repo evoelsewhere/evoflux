@@ -14,7 +14,7 @@ from loguru import logger
 from mcp.types import CallToolResult
 
 from app.agent.mcp.config import HttpServerConfig, MCPConfig, StdioServerConfig
-from app.agent.mcp.manager import MCPManager
+from app.agent.mcp.manager import MCPRuntime
 from app.agent.tools.registry import Tool
 from app.plugin_platform.credentials import credential_environment
 from app.plugin_platform.extensions import (
@@ -247,7 +247,7 @@ class PluginMCPRuntime:
     """Own plugin-sourced MCP runners without mutating global MCP config."""
 
     def __init__(self, *, watch_interval: float = 1.0) -> None:
-        self._manager = MCPManager(watch_config=False)
+        self._manager = MCPRuntime(watch_config=False)
         self._watch_interval = watch_interval
         self._watch_task: asyncio.Task[None] | None = None
         self._signature: tuple | None = None

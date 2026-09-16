@@ -99,7 +99,7 @@ being embedded in transcript JSON.
 |---|---|
 | Scheduler | Starts only when enabled tasks exist; wakes teams at the next fire time |
 | Dream | Optional cron/manual wiki consolidation |
-| MCP manager | Watches global `mcp.json` and reconciles servers |
+| MCP runtime | `MCPRuntime` watches global `mcp.json` and reconciles servers; `MCPServerRunner` and `MCPTransportFactory` own per-server session/transport boundaries |
 | Plugin MCP runtime | Reconciles enabled installation-scoped servers separately |
 | Conductor | Optional enrollment, heartbeat, resource sync and telemetry delivery |
 | WebBridge cleanup | Expires sessions, artifacts and relay state |

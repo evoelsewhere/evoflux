@@ -99,6 +99,8 @@ class HttpServerConfig(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
     enabled: bool = True
     resolve_header_refs: bool = Field(default=True, exclude=True)
+    # MCP 2.x enforces origin-safe redirect handling in the native transport;
+    # retain this internal field for plugin/config compatibility.
     follow_redirects: bool = Field(default=True, exclude=True)
 
 
