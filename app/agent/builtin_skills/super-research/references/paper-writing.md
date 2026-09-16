@@ -6,6 +6,14 @@ The failure mode this mode is designed against: fabricated references, and (wors
 
 This mode has two parts. They can run together (writing a new paper) or independently (auditing someone else's).
 
+For section-level composition, read only the detailed guide that matches the
+requested section from `references/paper-writing/`: `abstract.md`,
+`introduction.md`, `related-work.md`, `method.md`, `experiments.md`, or
+`conclusion.md`. Use `paragraph-flow.md` for a sentence/paragraph polish,
+`paper-review.md` for adversarial pre-submission review, and `pdf-export.md`
+for LaTeX/PDF compilation. Do not preload these guides for unrelated paper
+work.
+
 ## Part A: Writing
 
 ### Contract fields (writing)
@@ -51,6 +59,11 @@ For each section in the outline:
 4. After the full draft: run Part B (citation audit) before the review pass — you don't want a reviewer to find fabrications you could have caught mechanically.
 5. **Delegated reviewer pass** — delegate a fresh reviewer with `team_delegate`, giving it only the draft path (not your `claims.tsv`, not your confidence). Ask it for the strongest rejection argument: weakest claim, missing baseline, overclaiming. Address in text or explicitly concede. 1–3 rounds; stop when new findings become cosmetic.
 6. **Refinement tightens, never inflates.** If a revision pass ends with claims stronger than the baseline, revert — you drifted into overclaiming.
+
+Preserve technical meaning and claim strength during rewrites. Respect
+double-blind constraints, never invent experimental numbers/citations, and
+scale the response to the request: a paragraph polish should not trigger the
+full paper contract.
 
 ## Part B: Citation audit
 
