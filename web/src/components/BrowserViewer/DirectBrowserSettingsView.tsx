@@ -113,27 +113,6 @@ export function DirectBrowserSettingsView({
           />
           <SettingsRow
             Icon={Database}
-            title="Pages an agent opens"
-            description="Where a page appears when an agent opens one"
-            action={(
-              <SelectControl
-                value={preferences.agentBrowsingSurface}
-                onValueChange={(value) => onPreferencesChange({
-                  ...preferences,
-                  agentBrowsingSurface: value as BrowserPreferences['agentBrowsingSurface'],
-                })}
-                size="sm"
-                className="min-w-32 bg-(--bg-key) text-xs"
-                ariaLabel="Where pages an agent opens appear"
-                options={[
-                  { value: 'panel', label: 'This panel' },
-                  { value: 'preview', label: 'Corner preview' },
-                ]}
-              />
-            )}
-          />
-          <SettingsRow
-            Icon={Database}
             title="Browser profile"
             description="Applies to newly created tabs"
             action={(

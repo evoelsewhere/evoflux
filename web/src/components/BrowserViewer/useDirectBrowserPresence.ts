@@ -4,50 +4,58 @@ import { apiWsBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { getPlatform } from '@/hooks/use-platform'
 import { useUIStore } from '@/stores/useUIStore'
-import { loadBrowserPreferences } from './browserPreferences'
 
-export function useDirectBrowserPresence(sessionId: string | null): void {
+export function useDirectBrowserPresence(
+  sessionIds: string | null | readonly (string | null)[],
+): void {
+  const normalizedSessionIds = typeof sessionIds === 'string' || sessionIds === null
+    ? sessionIds ? [sessionIds] : []
+    : [...new Set(sessionIds.filter((id): id is string => Boolean(id)))]
+  const sessionKey = normalizedSessionIds.join('\u0000')
+
   useEffect(() => {
-    if (!sessionId || !getPlatform().isTauri) return
+    if (!sessionKey || !getPlatform().isTauri) return
     let alive = true
-    let socket: WebSocket | null = null
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    const sockets = new Map<string, {
+      socket: WebSocket | null
+      reconnectTimer: ReturnType<typeof setTimeout> | null
+    }>()
 
-    const connect = () => {
+    const connect = (sessionId: string) => {
       if (!alive) return
-      socket = new WebSocket(presenceUrl(sessionId))
-      socket.onmessage = (event) => {
+      const entry = sockets.get(sessionId) ?? { socket: null, reconnectTimer: null }
+      sockets.set(sessionId, entry)
+      entry.socket = new WebSocket(presenceUrl(sessionId))
+      entry.socket.onmessage = (event) => {
         if (typeof event.data !== 'string') return
         try {
           const message = JSON.parse(event.data) as { action?: string }
           if (message.action === 'open') {
-            // Where an agent's page appears is the user's call. The panel
-            // shares its space with every other tool, so opening one there
-            // puts away whatever they were using; the preview does not.
-            if (loadBrowserPreferences().agentBrowsingSurface === 'preview') {
-              useUIStore.getState().openBrowserPip(sessionId)
-            } else {
-              useUIStore.getState().openWorkbenchTool('browser')
-            }
+            // Agent browsing never steals the user's workbench. Each session
+            // gets its own floating preview, and the chat stacks multiple
+            // previews when agents in different sessions are active.
+            useUIStore.getState().openBrowserPip(sessionId)
           }
         } catch {
           // Ignore malformed bridge messages.
         }
       }
-      socket.onclose = () => {
-        socket = null
-        if (alive) reconnectTimer = setTimeout(connect, 1000)
+      entry.socket.onclose = () => {
+        entry.socket = null
+        if (alive) entry.reconnectTimer = setTimeout(() => connect(sessionId), 1000)
       }
-      socket.onerror = () => socket?.close()
+      entry.socket.onerror = () => entry.socket?.close()
     }
 
-    connect()
+    for (const sessionId of sessionKey.split('\u0000')) connect(sessionId)
     return () => {
       alive = false
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      socket?.close()
+      for (const entry of sockets.values()) {
+        if (entry.reconnectTimer) clearTimeout(entry.reconnectTimer)
+        entry.socket?.close()
+      }
     }
-  }, [sessionId])
+  }, [sessionKey])
 }
 
 function presenceUrl(sessionId: string): string {

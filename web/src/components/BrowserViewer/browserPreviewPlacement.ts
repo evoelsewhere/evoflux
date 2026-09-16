@@ -26,6 +26,8 @@ export const PREVIEW_MIN_SIZE = { width: 260, height: 160 }
 export const PREVIEW_MAX_SIZE = { width: 1600, height: 1000 }
 
 const EDGE_MARGIN = 16
+/** Offset older previews up and left so their headers remain reachable. */
+export const PREVIEW_STACK_OFFSET = 28
 
 export interface PreviewPlacement {
   /** Distance from the viewport's left and top edges, in CSS pixels. */
@@ -53,6 +55,26 @@ export function nextPreviewSize(
   return placement.width < PREVIEW_SIZES.large.width
     ? PREVIEW_SIZES.large
     : PREVIEW_SIZES.small
+}
+
+/**
+ * Offset an older preview behind newer previews while keeping its header on
+ * screen. The newest preview uses depth 0 and stays at the saved placement.
+ */
+export function stackPreviewPlacement(
+  placement: PreviewPlacement,
+  depth: number,
+  viewport?: { width: number; height: number },
+): PreviewPlacement {
+  if (depth <= 0) return placement
+  return clampPreviewPlacement(
+    {
+      ...placement,
+      x: placement.x - depth * PREVIEW_STACK_OFFSET,
+      y: placement.y - depth * PREVIEW_STACK_OFFSET,
+    },
+    viewport,
+  )
 }
 
 /**
