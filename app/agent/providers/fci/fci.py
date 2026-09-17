@@ -199,8 +199,12 @@ class _FCIResponsesHandler(ResponsesHandler):
         # No named effort is currently declared by FPT's live model contract.
         return None
 
-    def parse_response(self, data: dict) -> AssistantMessage:
-        return super().parse_response(_unwrap_fci_envelope(data))
+    def parse_response(
+        self, data: dict, *, probe_scope: str | None = None
+    ) -> AssistantMessage:
+        return super().parse_response(
+            _unwrap_fci_envelope(data), probe_scope=probe_scope
+        )
 
 
 class FCIProvider(OpenAIProvider):

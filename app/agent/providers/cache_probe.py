@@ -9,9 +9,9 @@ nothing in the response says which segment moved.
 
 This probe answers that question. Enable it with ``EVOFLUX_CACHE_PROBE=1``
 and every outbound request is split into ordered segments (tools, system,
-one per message), compared against the previous request on the same
-conversation, and the first divergent segment is logged with the character
-offset inside it and the share of the prompt it invalidates.
+one per message), compared against the previous request in the same
+conversation/phase partition, and the first divergent segment is logged with
+the character offset inside it and the share of the prompt it invalidates.
 
 It is off unless the environment variable is set, allocates nothing when
 off, and never changes the request.
@@ -31,7 +31,7 @@ _ENV_FLAG = "EVOFLUX_CACHE_PROBE"
 _ENV_PATH = "EVOFLUX_CACHE_PROBE_PATH"
 
 _lock = threading.Lock()
-#: Recent requests per conversation key. A provider's cache matches a new
+#: Recent requests per conversation/phase key. A provider's cache matches a new
 #: request against *any* prefix it still holds, not only the immediately
 #: preceding call, so the probe keeps a short history and reports the best
 #: match — otherwise interleaved callers (title generation, sub-agents) on
@@ -101,18 +101,37 @@ def _common_prefix_chars(a: str, b: str) -> int:
     return limit
 
 
-def record(body: dict[str, Any], *, provider: str | None, model: str) -> None:
-    """Log how much of this request's prefix still matches the previous one."""
+def record(
+    body: dict[str, Any],
+    *,
+    provider: str | None,
+    model: str,
+    scope: str | None = None,
+) -> None:
+    """Log how much of this request's prefix still matches its partition.
+
+    ``scope`` is internal diagnostic metadata. It prevents requests from
+    unrelated sessions or auxiliary phases from being compared just because
+    they use the same provider/model, without adding anything to the wire
+    payload.
+    """
     if not enabled():
         return
     try:
-        _record(body, provider=provider, model=model)
+        _record(body, provider=provider, model=model, scope=scope)
     except Exception as exc:  # diagnostics must never break a run
         logger.debug("cache_probe_failed error={}", exc)
 
 
-def _record(body: dict[str, Any], *, provider: str | None, model: str) -> None:
-    key = f"{provider or '?'}:{model}:{body.get('prompt_cache_key') or '-'}"
+def _record(
+    body: dict[str, Any],
+    *,
+    provider: str | None,
+    model: str,
+    scope: str | None = None,
+) -> None:
+    partition = body.get("prompt_cache_key") or scope or "-"
+    key = f"{provider or '?'}:{model}:{partition}"
     segments = _segments(body)
     total = sum(len(text) for _, text in segments)
 
@@ -198,7 +217,13 @@ def _record(body: dict[str, Any], *, provider: str | None, model: str) -> None:
     )
 
 
-def record_usage(*, provider: str | None, model: str, usage: Any) -> None:
+def record_usage(
+    *,
+    provider: str | None,
+    model: str,
+    usage: Any,
+    scope: str | None = None,
+) -> None:
     """Log what the provider actually cached, next to what we sent it.
 
     The probe's own numbers say how much of the prefix we *kept identical*;
@@ -213,9 +238,10 @@ def record_usage(*, provider: str | None, model: str, usage: Any) -> None:
         cached = getattr(usage, "cached_tokens", None) or 0
         share = (cached / prompt * 100.0) if prompt else 0.0
         logger.info(
-            "cache_probe_usage key={}:{} prompt_tokens={} cached_tokens={} ({:.1f}%)",
+            "cache_probe_usage key={}:{}:{} prompt_tokens={} cached_tokens={} ({:.1f}%)",
             provider,
             model,
+            scope or "-",
             prompt,
             cached,
             share,
@@ -223,7 +249,7 @@ def record_usage(*, provider: str | None, model: str, usage: Any) -> None:
         _append_jsonl(
             {
                 "kind": "usage",
-                "key": f"{provider}:{model}",
+                "key": f"{provider}:{model}:{scope or '-'}",
                 "prompt_tokens": prompt,
                 "cached_tokens": cached,
                 "cached_percent": round(share, 2),

@@ -61,6 +61,12 @@ def _positive_token_count(value: object) -> int | None:
 _NO_SERVICE_TIER = frozenset({"", "auto", "default", "none", "off", "standard"})
 
 
+def _probe_scope(merged: dict[str, Any]) -> str | None:
+    """Read the cache-probe partition without putting it on-wire."""
+    value = merged.get("cache_probe_scope") or merged.get("prompt_cache_key")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
 class CompletionsHandler:
     """Handles all interaction with /v1/chat/completions."""
 
@@ -380,7 +386,9 @@ class CompletionsHandler:
         """Normalize one provider-specific SSE JSON payload."""
         return data
 
-    def parse_response(self, data: dict) -> AssistantMessage:
+    def parse_response(
+        self, data: dict, *, probe_scope: str | None = None
+    ) -> AssistantMessage:
         data = self.normalize_response_payload(data)
         parsed = OpenAIChatResponse.model_validate(data)
         if not parsed.choices:
@@ -402,7 +410,8 @@ class CompletionsHandler:
         usage_dict = None
         if parsed.usage is not None:
             usage_dict = usage_to_dict(
-                self._usage_from_openai(parsed.usage), self.usage_model_id
+                self._usage_from_openai(parsed.usage, probe_scope=probe_scope),
+                self.usage_model_id,
             )
         return AssistantMessage(
             content=msg.content or None,
@@ -421,11 +430,13 @@ class CompletionsHandler:
         tools: list[dict[str, Any]] | None,
         merged: dict[str, Any],
     ) -> AssistantMessage:
+        probe_scope = _probe_scope(merged)
         body = self.build_request(messages, tools, stream=False, merged=merged)
         cache_probe.record(
             body,
             provider=self.provider_id or self.default_provider_id,
             model=self.model,
+            scope=probe_scope,
         )
         url = f"{self.base_url}/chat/completions"
 
@@ -440,7 +451,7 @@ class CompletionsHandler:
                     response.text[:500],
                 )
             response.raise_for_status()
-            return self.parse_response(response.json())
+            return self.parse_response(response.json(), probe_scope=probe_scope)
 
     async def stream(
         self,
@@ -448,11 +459,13 @@ class CompletionsHandler:
         tools: list[dict[str, Any]] | None,
         merged: dict[str, Any],
     ) -> AsyncIterator[ChatCompletionChunk]:
+        probe_scope = _probe_scope(merged)
         body = self.build_request(messages, tools, stream=True, merged=merged)
         cache_probe.record(
             body,
             provider=self.provider_id or self.default_provider_id,
             model=self.model,
+            scope=probe_scope,
         )
         url = f"{self.base_url}/chat/completions"
 
@@ -479,7 +492,7 @@ class CompletionsHandler:
 
                     if not chunk.choices:
                         if chunk.usage:
-                            yield self._usage_chunk(chunk)
+                            yield self._usage_chunk(chunk, probe_scope=probe_scope)
                         continue
 
                     choice = chunk.choices[0]
@@ -501,7 +514,9 @@ class CompletionsHandler:
                         )
 
                     usage = (
-                        self._usage_from_openai(chunk.usage) if chunk.usage else None
+                        self._usage_from_openai(chunk.usage, probe_scope=probe_scope)
+                        if chunk.usage
+                        else None
                     )
 
                     yield ChatCompletionChunk(
@@ -527,7 +542,7 @@ class CompletionsHandler:
     # Usage helpers
     # ------------------------------------------------------------------
 
-    def _usage_from_openai(self, u: Any) -> Usage:
+    def _usage_from_openai(self, u: Any, *, probe_scope: str | None = None) -> Usage:
         cached = None
         cache_write = None
         if u.prompt_tokens_details:
@@ -556,14 +571,17 @@ class CompletionsHandler:
             provider=self.provider_id or self.default_provider_id,
             model=self.model,
             usage=result,
+            scope=probe_scope,
         )
         return result
 
-    def _usage_chunk(self, chunk: OpenAIStreamChunk) -> ChatCompletionChunk:
+    def _usage_chunk(
+        self, chunk: OpenAIStreamChunk, *, probe_scope: str | None = None
+    ) -> ChatCompletionChunk:
         return ChatCompletionChunk(
             id=chunk.id,
             created=chunk.created,
             model=chunk.model,
             choices=[],
-            usage=self._usage_from_openai(chunk.usage),
+            usage=self._usage_from_openai(chunk.usage, probe_scope=probe_scope),
         )

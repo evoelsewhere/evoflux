@@ -41,6 +41,7 @@ from app.agent.schemas.chat import (
     Usage,
 )
 from app.agent.providers import cache_probe
+from .completions import _probe_scope
 from .sanitization import sanitize_openai_tool_pairs
 from app.agent.providers.registry import Transport
 
@@ -279,7 +280,9 @@ class ResponsesHandler:
     # Response parsing — non-streaming
     # ------------------------------------------------------------------
 
-    def parse_response(self, data: dict) -> AssistantMessage:
+    def parse_response(
+        self, data: dict, *, probe_scope: str | None = None
+    ) -> AssistantMessage:
         output = data.get("output", [])
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -315,7 +318,7 @@ class ResponsesHandler:
                     )
                 )
 
-        usage_dict = self._usage_dict(data.get("usage") or {})
+        usage_dict = self._usage_dict(data.get("usage") or {}, probe_scope=probe_scope)
         return AssistantMessage(
             content="\n".join(content_parts) if content_parts else None,
             # Me: reasoning parts each carry their own bold header
@@ -329,13 +332,23 @@ class ResponsesHandler:
             extra={"usage": usage_dict} if usage_dict is not None else None,
         )
 
-    def _usage_dict(self, usage_data: dict[str, Any]) -> dict[str, Any] | None:
+    def _usage_dict(
+        self,
+        usage_data: dict[str, Any],
+        *,
+        probe_scope: str | None = None,
+    ) -> dict[str, Any] | None:
         if not usage_data:
             return None
-        usage = self._usage_from_data(usage_data)
+        usage = self._usage_from_data(usage_data, probe_scope=probe_scope)
         return usage_to_dict(usage, self.usage_model_id)
 
-    def _usage_from_data(self, usage_data: dict[str, Any]) -> Usage:
+    def _usage_from_data(
+        self,
+        usage_data: dict[str, Any],
+        *,
+        probe_scope: str | None = None,
+    ) -> Usage:
         input_details = usage_data.get("input_tokens_details", {}) or {}
         output_details = usage_data.get("output_tokens_details", {}) or {}
         result = Usage(
@@ -354,6 +367,7 @@ class ResponsesHandler:
             provider=self.provider_id or self.default_provider_id,
             model=self.model,
             usage=result,
+            scope=probe_scope,
         )
         return result
 
@@ -411,11 +425,13 @@ class ResponsesHandler:
         tools: list[dict[str, Any]] | None,
         merged: dict[str, Any],
     ) -> AssistantMessage:
+        probe_scope = _probe_scope(merged)
         body = self.build_request(messages, tools, stream=False, merged=merged)
         cache_probe.record(
             body,
             provider=self.provider_id or self.default_provider_id,
             model=self.model,
+            scope=probe_scope,
         )
         url = f"{self.base_url}/responses"
 
@@ -433,7 +449,7 @@ class ResponsesHandler:
                     response.text[:500],
                 )
             response.raise_for_status()
-            return self.parse_response(response.json())
+            return self.parse_response(response.json(), probe_scope=probe_scope)
 
     async def stream(
         self,
@@ -441,11 +457,13 @@ class ResponsesHandler:
         tools: list[dict[str, Any]] | None,
         merged: dict[str, Any],
     ) -> AsyncIterator[ChatCompletionChunk]:
+        probe_scope = _probe_scope(merged)
         body = self.build_request(messages, tools, stream=True, merged=merged)
         cache_probe.record(
             body,
             provider=self.provider_id or self.default_provider_id,
             model=self.model,
+            scope=probe_scope,
         )
         url = f"{self.base_url}/responses"
 
@@ -466,14 +484,21 @@ class ResponsesHandler:
                     )
                     response.raise_for_status()
 
-                async for chunk in self._parse_stream(response):
+                async for chunk in self._parse_stream(
+                    response, probe_scope=probe_scope
+                ):
                     yield chunk
 
     # ------------------------------------------------------------------
     # Streaming parser
     # ------------------------------------------------------------------
 
-    async def _parse_stream(self, response: Any) -> AsyncIterator[ChatCompletionChunk]:
+    async def _parse_stream(
+        self,
+        response: Any,
+        *,
+        probe_scope: str | None = None,
+    ) -> AsyncIterator[ChatCompletionChunk]:
         """Parse SSE stream from /responses API into ChatCompletionChunk objects."""
         response_id = ""
         current_tool_call_index = -1
@@ -725,7 +750,9 @@ class ResponsesHandler:
                         created=int(time.time()),
                         model=self.model,
                         choices=[],
-                        usage=self._usage_from_data(usage_data),
+                        usage=self._usage_from_data(
+                            usage_data, probe_scope=probe_scope
+                        ),
                     )
 
     def _raise_response_failed(self, event: dict[str, Any], response: Any) -> None:

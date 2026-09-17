@@ -152,6 +152,7 @@ async def resolve_skill(
             ),
         ],
         tools=None,
+        cache_probe_scope=_RESOLUTION_CACHE_KEY,
         **provider.cache_affinity_kwargs(_RESOLUTION_CACHE_KEY),
     )
     usage = (response.extra or {}).get("usage") if response.extra else None
