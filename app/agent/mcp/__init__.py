@@ -17,6 +17,7 @@ _LAZY_EXPORTS = {
     "load_config": ("app.agent.mcp.config", "load_config"),
     "save_config": ("app.agent.mcp.config", "save_config"),
     "MCPManager": ("app.agent.mcp.manager", "MCPManager"),
+    "MCPRuntime": ("app.agent.mcp.manager", "MCPRuntime"),
     "MCPServerStatus": ("app.agent.mcp.manager", "MCPServerStatus"),
     "mcp_manager": ("app.agent.mcp.lazy", "mcp_manager"),
 }
@@ -38,6 +39,7 @@ __all__ = [
     "StdioServerConfig",
     "HttpServerConfig",
     "MCPManager",
+    "MCPRuntime",
     "MCPServerStatus",
     "load_config",
     "save_config",
