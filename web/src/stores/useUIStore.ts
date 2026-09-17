@@ -32,7 +32,7 @@ export type WorkbenchTool =
   | 'source-control'
   | 'pull-requests'
   | 'problems'
-  | 'easd'
+  | 'asdd'
 
 export interface WorkbenchTab {
   id: string
@@ -72,7 +72,7 @@ const SESSION_SCOPED_TOOLS: ReadonlySet<WorkbenchTool> = new Set([
   'source-control',
   'pull-requests',
   'problems',
-  'easd',
+  'asdd',
 ])
 // 'wiki', 'scheduler' and 'plugins' mean the same thing in every session,
 // so their tabs stay put across a switch.
@@ -110,20 +110,9 @@ export interface WorkspaceFileRequest {
   path: string
 }
 
-export interface EasdChatRequest {
+export interface AsddChangeOpenRequest {
   id: number
-  sessionId: string
-  /** Focus fallback for navigation only; never sent to the chat endpoint. */
-  navigationWorkspace?: string | null
-  projectId: string | null
-  prompt: string | null
-  autoSend: boolean
-  phase: 'authoring' | 'planning' | 'implementation' | 'review' | 'verification'
-}
-
-export interface EasdRunOpenRequest {
-  id: number
-  runId: string
+  changeId: string
 }
 
 interface WorkbenchState {
@@ -145,8 +134,7 @@ interface WorkbenchState {
 const MULTI_INSTANCE_TOOLS = new Set<WorkbenchTool>(['terminal', 'browser'])
 let workbenchTabSequence = 0
 let workspaceFileRequestSequence = 0
-let easdChatRequestSequence = 0
-let easdRunOpenRequestSequence = 0
+let asddChangeOpenRequestSequence = 0
 
 function newWorkbenchTab(
   tool: WorkbenchTool,
@@ -385,12 +373,10 @@ interface UIStore extends WorkbenchState {
   sideChatRequest: string | null
   /** One-shot request from a transcript artifact link to preview a workspace file. */
   workspaceFileRequest: WorkspaceFileRequest | null
-  /** One-shot handoff from an EASD run to its linked Coding chat. */
-  easdChatRequest: EasdChatRequest | null
-  /** One-shot request from a successful EASD tool result to its Run detail. */
-  easdRunOpenRequest: EasdRunOpenRequest | null
-  /** Run currently selected in the EASD workbench. */
-  easdSelectedRunId: string | null
+  /** One-shot request to open one ASDD change in the Agent Spec-Driven panel. */
+  asddChangeOpenRequest: AsddChangeOpenRequest | null
+  /** Change currently selected in the Agent Spec-Driven workbench. */
+  asddSelectedChangeId: string | null
   createWorkbenchTab: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
   restoreWorkbenchTabs: (
     tool: WorkbenchTool,
@@ -439,11 +425,9 @@ interface UIStore extends WorkbenchState {
   clearSideChatRequest: () => void
   requestWorkspaceFile: (sessionId: string, path: string) => void
   clearWorkspaceFileRequest: (requestId?: number) => void
-  requestEasdChat: (request: Omit<EasdChatRequest, 'id'>) => void
-  clearEasdChatRequest: (requestId?: number) => void
-  requestEasdRunOpen: (runId: string) => void
-  clearEasdRunOpenRequest: (requestId?: number) => void
-  setEasdSelectedRunId: (runId: string | null) => void
+  requestAsddChangeOpen: (changeId: string) => void
+  clearAsddChangeOpenRequest: (requestId?: number) => void
+  setAsddSelectedChangeId: (changeId: string | null) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -692,29 +676,20 @@ export const useUIStore = create<UIStore>()(
       if (requestId !== undefined && state.workspaceFileRequest?.id !== requestId) return
       state.workspaceFileRequest = null
     }),
-    easdChatRequest: null,
-    requestEasdChat: (request) => set((state) => {
-      easdChatRequestSequence += 1
-      state.easdChatRequest = { id: easdChatRequestSequence, ...request }
+    asddChangeOpenRequest: null,
+    asddSelectedChangeId: null,
+    requestAsddChangeOpen: (changeId) => set((state) => {
+      asddChangeOpenRequestSequence += 1
+      state.asddChangeOpenRequest = { id: asddChangeOpenRequestSequence, changeId }
+      state.asddSelectedChangeId = changeId
+      addOrActivateTool(state, 'asdd')
     }),
-    clearEasdChatRequest: (requestId) => set((state) => {
-      if (requestId !== undefined && state.easdChatRequest?.id !== requestId) return
-      state.easdChatRequest = null
+    clearAsddChangeOpenRequest: (requestId) => set((state) => {
+      if (requestId !== undefined && state.asddChangeOpenRequest?.id !== requestId) return
+      state.asddChangeOpenRequest = null
     }),
-    easdRunOpenRequest: null,
-    easdSelectedRunId: null,
-    requestEasdRunOpen: (runId) => set((state) => {
-      easdRunOpenRequestSequence += 1
-      state.easdRunOpenRequest = { id: easdRunOpenRequestSequence, runId }
-      state.easdSelectedRunId = runId
-      addOrActivateTool(state, 'easd')
-    }),
-    clearEasdRunOpenRequest: (requestId) => set((state) => {
-      if (requestId !== undefined && state.easdRunOpenRequest?.id !== requestId) return
-      state.easdRunOpenRequest = null
-    }),
-    setEasdSelectedRunId: (runId) => set((state) => {
-      state.easdSelectedRunId = runId
+    setAsddSelectedChangeId: (changeId) => set((state) => {
+      state.asddSelectedChangeId = changeId
     }),
   }))
 )

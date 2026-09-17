@@ -24,15 +24,13 @@ import { HandoffCard } from './HandoffCard'
 import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
 import { FileCard } from './FileCard'
-import { EasdChatMessage } from './easd/EasdChatMessage'
-import { EasdCommandBlock } from './easd/EasdTechnicalText'
+import { CommandBlock } from './asdd/TechnicalText'
 import { extractSleepPrefix, formatTime, hasSleepLifecycle } from '@/utils/format'
 import { isConsolidatedDelegationMessage } from '@/utils/blocks'
 import { findCommittedMentions } from './InputBar.mentions'
 import { findCommandDirectives, findSkillDirectives } from './InputBar.skills'
 import { resolveApiUrl } from '@/api/client'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
-import { parseEasdChatMessage } from '@/utils/easd-chat-message'
 
 const USER_COLLAPSE_LINES = 10
 const USER_COLLAPSE_CHARS = 700
@@ -174,7 +172,6 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
       ? lines.slice(0, USER_COLLAPSE_LINES).join('\n')
       : `${messageContent.slice(0, USER_COLLAPSE_CHARS).trimEnd()}...`
     : messageContent
-  const easdMessage = parseEasdChatMessage(visibleContent)
 
   // Always expose copy; revert/timestamp/model appear when available.
   // Touch: full opacity. Desktop: reveal on group hover / focus-within.
@@ -259,9 +256,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
              </div>
            )}
            {shell
-             ? <EasdCommandBlock commands={visibleContent.split('\n').map((line, index) => index === 0 ? line.replace(/^!\s*/, '') : line)} prompt="!" className="border-0 bg-transparent p-0 text-xs" />
-             : easdMessage
-             ? <EasdChatMessage content={visibleContent} />
+             ? <CommandBlock commands={visibleContent.split('\n').map((line, index) => index === 0 ? line.replace(/^!\s*/, '') : line)} prompt="!" className="border-0 bg-transparent p-0 text-xs" />
              : <p data-i18n-ignore className={`min-w-0 break-words whitespace-pre-wrap [overflow-wrap:anywhere] ${shell ? 'font-mono' : ''}`}>{renderMentionSegments(visibleContent)}</p>}
            {/* Gradient fade at bottom when collapsed */}
            {needsCollapse && !expanded && (

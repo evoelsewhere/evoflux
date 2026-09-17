@@ -40,10 +40,9 @@ operation the user cares about is mid-write if a read-only handle is refused.
 |---|---|---|
 | `chat_sessions` | One row per session | `id`, `parent_session_id`, `agent_name`, `title`, `mode`, `permission_mode`, `workspace`, `project_id`, `folder_id`, `model` |
 | `session_messages` | Turns within a session | `id`, `session_id`, `role`, `content`, `tool_calls`, `tool_call_id`, `name`, `extra`, `is_summary`, `exclude_from_context`, `created_at` |
-| `delegation_tasks` | Team delegation records | `id`, `lead_session_id`, `trace_run_id`, `delegator`, `recipient`, `status`, `spec` |
+| `delegation_tasks` | Team delegation records | `id`, `lead_session_id`, `asdd_change_id`, `delegator`, `recipient`, `status`, `spec` |
 | `memory_facts` | Curated durable facts | `scope_type`, `scope_id`, `kind`, `content`, `confidence`, `status`, `origin`, `occurrences`, `last_seen_at` |
 | `memory_fact_evidence` | Links a fact to its source message | fact and message identifiers |
-| `trace_runs`, `trace_spec_revisions`, `trace_plan_revisions`, `trace_evidence`, `trace_deviations` | EASD run history | run, revision, and evidence identifiers |
 | `session_goals`, `dream_log`, `dream_notes_log`, `scheduled_task` | Goals, background passes, schedules | see each table |
 
 Conventions that matter when writing a query:

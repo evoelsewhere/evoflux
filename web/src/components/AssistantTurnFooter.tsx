@@ -19,7 +19,6 @@ import {
 } from '@/utils/turn-meta'
 import { cn } from '@/lib/utils'
 import { AssistantTurnContent } from './AssistantTurnContent'
-import { easdToolReviewTarget } from './easd/easdToolReviewTarget'
 import type { ContentBlock, TurnUsage } from '@/api/types'
 
 export interface AssistantTurnFooterProps {
@@ -53,7 +52,6 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
     let modelId: string | undefined
     let turnUsage: TurnUsage | undefined
     let hasTool = false
-    let hasEasdReviewAction = false
     for (let i = turnBlocks.length - 1; i >= 0; i--) {
       const block = turnBlocks[i]
       responseDurationMs ??= typeof block.responseDurationMs === 'number'
@@ -62,15 +60,11 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
       modelId ??= typeof block.extra?.model === 'string' ? block.extra.model : undefined
       turnUsage ??= block.turnUsage
       hasTool ||= block.type === 'tool'
-      hasEasdReviewAction ||= block.type === 'tool' && Boolean(
-        easdToolReviewTarget(block.toolName, block.toolArgs, block.toolResult),
-      )
       if (
         responseDurationMs !== undefined
         && modelId !== undefined
         && turnUsage !== undefined
         && hasTool
-        && hasEasdReviewAction
       ) break
     }
     return {
@@ -80,14 +74,13 @@ export function AssistantTurnFooter({ turnBlocks, size = 'compact', onContinue }
       modelName: shortModelName(modelId),
       turnUsage,
       hasTool,
-      hasEasdReviewAction,
     }
   }, [turnBlocks])
   const {
     textContent, responseDurationMs, modelId, modelName, turnUsage,
-    hasTool, hasEasdReviewAction,
+    hasTool,
   } = footerData
-  const canContinue = Boolean(onContinue && (textContent || hasTool) && !hasEasdReviewAction)
+  const canContinue = Boolean(onContinue && (textContent || hasTool))
   const totalTokens = turnUsage ? turnUsage.input + turnUsage.output : 0
   // `input` is summed across every model call in the turn, so a prompt that
   // was read from cache is counted once per call. Measured on a three-call

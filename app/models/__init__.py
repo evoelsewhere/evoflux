@@ -9,13 +9,6 @@ from .goal import SessionGoal
 from .memory import MemoryExtractionState, MemoryFact, MemoryFactEvidence
 from .suggested_task import SessionSuggestedTask
 from .team import DelegationTask
-from .trace import (
-    TraceDeviation,
-    TraceEvidence,
-    TracePlanRevision,
-    TraceRun,
-    TraceSpecRevision,
-)
 from .workflow import (
     WorkflowApproval,
     WorkflowExecution,
@@ -44,11 +37,6 @@ __all__ = [
     "ScheduledTask",
     "SessionGoal",
     "SessionSuggestedTask",
-    "TraceDeviation",
-    "TraceEvidence",
-    "TracePlanRevision",
-    "TraceRun",
-    "TraceSpecRevision",
     "WorkflowApproval",
     "WorkflowExecution",
     "WorkflowGateRequest",

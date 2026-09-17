@@ -1354,26 +1354,27 @@ class TestBuiltinSkills:
         assert "`code_context` is the single indexed-code tool" in contract
         assert "Cross-repository edges are resolved dynamically" in contract
 
-        # --- EASD skill coverage ---
-        easd_skills_dir = Path(".evoflux/skills")
-        expected_easd_owners = [
-            "easd-specify",
-            "easd-plan",
-            "easd-implement",
-            "easd-review",
-            "easd-verify",
+        # --- ASDD skill coverage ---
+        asdd_skills_dir = Path(".evoflux/skills")
+        expected_asdd_owners = [
+            "asdd-propose",
+            "asdd-specify",
+            "asdd-plan",
+            "asdd-implement",
+            "asdd-verify",
+            "asdd-archive",
         ]
-        easd_roots = [easd_skills_dir / owner for owner in expected_easd_owners]
-        easd_owners = sorted(
+        asdd_roots = [asdd_skills_dir / owner for owner in expected_asdd_owners]
+        asdd_owners = sorted(
             [
                 skill_file.parent.name
-                for skill_file in easd_skills_dir.glob("easd-*/SKILL.md")
+                for skill_file in asdd_skills_dir.glob("asdd-*/SKILL.md")
                 if "code_context" in skill_file.read_text(encoding="utf-8")
             ]
         )
 
-        assert easd_owners == sorted(expected_easd_owners)
-        for root in easd_roots:
+        assert asdd_owners == sorted(expected_asdd_owners)
+        for root in asdd_roots:
             normalized = " ".join(
                 (root / "SKILL.md").read_text(encoding="utf-8").split()
             )
@@ -1382,17 +1383,17 @@ class TestBuiltinSkills:
             assert "Keep `refresh=true` for the first indexed query" in normalized
             assert "`refresh=false` only for an immediate follow-up" in normalized
 
-        easd_contracts = {
+        asdd_contracts = {
             (root / "references" / "code-context-contract.md").read_text(
                 encoding="utf-8"
             )
-            for root in easd_roots
+            for root in asdd_roots
         }
-        assert len(easd_contracts) == 1
-        easd_contract = easd_contracts.pop()
-        assert "## Choose the action from the evidence you have" in easd_contract
-        assert "`code_context` is the single indexed-code tool" in easd_contract
-        assert "Cross-repository edges are resolved dynamically" in easd_contract
+        assert len(asdd_contracts) == 1
+        asdd_contract = asdd_contracts.pop()
+        assert "## Choose the action from the evidence you have" in asdd_contract
+        assert "`code_context` is the single indexed-code tool" in asdd_contract
+        assert "Cross-repository edges are resolved dynamically" in asdd_contract
 
     def test_coding_investigate_locks_graph_first_trajectory(self):
         root = _builtin_skills_dir() / "coding-investigate"
@@ -1588,8 +1589,8 @@ class TestBuiltinSkills:
         assert "mcp_apply.py" in body
 
 
-class TestEasdSkills:
-    """Tests for EASD skill structure, frontmatter, and scope."""
+class TestAsddSkills:
+    """Tests for ASDD skill structure, frontmatter, and scope."""
 
     @pytest.fixture(autouse=True)
     def _clear_cache(self):
@@ -1597,15 +1598,17 @@ class TestEasdSkills:
         yield
         _discover_skills_cached.cache_clear()
 
-    def _easd_skills_dir(self) -> Path:
-        return Path(".evoflux/skills")
+    def _asdd_skill_dirs(self) -> list[Path]:
+        # Asserted non-empty so a rename cannot turn these into loops over
+        # nothing that still report green.
+        directories = sorted(Path(".evoflux/skills").glob("asdd-*"))
+        assert directories, "this repository should have ASDD skills installed"
+        return directories
 
-    def test_easd_skill_files_have_correct_frontmatter(self):
-        easd_dir = self._easd_skills_dir()
-        for skill_dir in sorted(easd_dir.glob("easd-*")):
+    def test_asdd_skill_files_have_correct_frontmatter(self):
+        for skill_dir in self._asdd_skill_dirs():
             skill_file = skill_dir / "SKILL.md"
-            if not skill_file.exists():
-                continue
+            assert skill_file.exists(), f"Missing SKILL.md in {skill_dir}"
             text = skill_file.read_text(encoding="utf-8")
             meta, _ = _parse_frontmatter(text)
             assert set(meta) == {"name", "description"}, skill_file
@@ -1614,9 +1617,8 @@ class TestEasdSkills:
                 skill_file
             )
 
-    def test_easd_skill_scope_files(self):
-        easd_dir = self._easd_skills_dir()
-        for skill_dir in sorted(easd_dir.glob("easd-*")):
+    def test_asdd_skill_scope_files(self):
+        for skill_dir in self._asdd_skill_dirs():
             scope_file = skill_dir / ".evoflux.json"
             assert scope_file.exists(), f"Missing .evoflux.json in {skill_dir}"
             scope = json.loads(scope_file.read_text(encoding="utf-8"))

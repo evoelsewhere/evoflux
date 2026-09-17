@@ -46,9 +46,7 @@ class TestTaskSpecSchema:
         assert spec.resolved_isolation == "shared"
         assert spec.target_repos == []
         assert spec.complexity == "auto"
-        assert spec.trace_run_id is None
-        assert spec.trace_plan_hash is None
-        assert spec.plan_mission_id is None
+        assert spec.asdd_change_id is None
         assert spec.acceptance_criteria == []
 
     def test_full_spec(self):
@@ -65,35 +63,38 @@ class TestTaskSpecSchema:
         assert len(spec.constraints) == 2
         assert spec.depends_on == ["task_1"]
 
-    def test_trace_contract_supports_direct_and_planned_identity(self):
-        with pytest.raises(ValueError, match="EASD delegation requires"):
+    def test_an_asdd_mission_names_a_change_and_the_requirements_it_owns(self):
+        with pytest.raises(ValueError, match="ASDD delegation requires"):
             TaskSpec(
-                goal="Implement AC-1",
+                goal="Implement the slug identity requirement",
                 expected_output="Verified implementation",
-                trace_run_id=str(uuid7()),
+                asdd_change_id="add-user-auth",
             )
 
-        direct = TaskSpec(
-            goal="Implement AC-1 directly",
-            expected_output="Verified implementation",
-            trace_run_id=str(uuid7()),
-            trace_spec_hash="f" * 64,
-            acceptance_criteria=["AC-1"],
-        )
-        assert direct.trace_plan_hash is None
-        assert direct.plan_mission_id is None
+        with pytest.raises(ValueError, match="ASDD delegation requires"):
+            TaskSpec(
+                goal="Implement the slug identity requirement",
+                expected_output="Verified implementation",
+                acceptance_criteria=["Slug identity"],
+            )
 
         spec = TaskSpec(
-            goal="Implement AC-1",
+            goal="Implement the slug identity requirement",
             expected_output="Verified implementation",
-            trace_run_id=str(uuid7()),
-            trace_spec_hash="f" * 64,
-            trace_plan_hash="e" * 64,
-            plan_mission_id="M1",
-            acceptance_criteria=["AC-1"],
+            asdd_change_id="add-user-auth",
+            acceptance_criteria=["Slug identity"],
         )
-        assert spec.acceptance_criteria == ["AC-1"]
-        assert spec.plan_mission_id == "M1"
+        assert spec.asdd_change_id == "add-user-auth"
+        assert spec.acceptance_criteria == ["Slug identity"]
+
+    def test_an_asdd_mission_cannot_own_the_same_requirement_twice(self):
+        with pytest.raises(ValueError, match="must be unique"):
+            TaskSpec(
+                goal="Implement",
+                expected_output="Verified",
+                asdd_change_id="add-user-auth",
+                acceptance_criteria=["Slug identity", "Slug identity"],
+            )
 
     def test_serialization_excludes_none(self):
         """model_dump with exclude_none drops empty optional fields."""

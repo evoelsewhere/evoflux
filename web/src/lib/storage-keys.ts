@@ -74,8 +74,8 @@ export const STORAGE_KEYS = {
     favorites: 'oa.enterprise.favorites',
   },
 
-  easd: {
-    runsView: 'oa.easd.runsView',
+  asdd: {
+    changesView: 'oa.asdd.changesView',
   },
 
   desktopNotifications: {

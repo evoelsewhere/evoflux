@@ -38,7 +38,7 @@ class CacheBoundaryHook(BaseAgentHook):
     Register this immediately before the hooks that append per-turn-volatile
     content (memory context, the ranked skill catalog) so everything already
     in ``request.system_prompt`` at this point — role prompt, team protocol,
-    goal/folder/EASD context, workspace instructions — stays a stable,
+    goal/folder/ASDD context, workspace instructions — stays a stable,
     cacheable prefix across turns.
     """
 

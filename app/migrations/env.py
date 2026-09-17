@@ -13,13 +13,6 @@ from app.core.config import settings
 from app.models import ChatSession, SessionMessage  # noqa: F401
 from app.models import DelegationTask, GitServerConnection  # noqa: F401
 from app.models import MemoryExtractionState, MemoryFact, MemoryFactEvidence  # noqa: F401
-from app.models import (  # noqa: F401
-    TraceDeviation,
-    TraceEvidence,
-    TracePlanRevision,
-    TraceRun,
-    TraceSpecRevision,
-)
 from app.models.chat import TZDateTime  # noqa: F401 — used by render_item
 from app.scheduler.models import ScheduledTask  # noqa: F401
 
@@ -115,8 +108,30 @@ def do_run_migrations(connection):
         context.run_migrations()
 
 
+def _repair_retired_stamp() -> None:
+    """Move this database off a revision the build no longer ships.
+
+    Here rather than at a call site because every migration path funnels through
+    `env.py`: the server's startup upgrade, `make migrate`, and a bare
+    `alembic upgrade head` all land in this file. Anywhere else leaves one of
+    them failing on "Can't locate revision".
+    """
+
+    from sqlalchemy.engine import make_url
+
+    from app.core.schema_version import repair_retired_revision
+
+    url = make_url(config.get_main_option("sqlalchemy.url") or "")
+    if url.get_backend_name() != "sqlite":
+        return
+    if not url.database or url.database == ":memory:":
+        return
+    repair_retired_revision(url.database)
+
+
 async def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
+    _repair_retired_stamp()
     connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

@@ -101,9 +101,9 @@ export const WORKBENCH_TOOLS: Record<
     description: 'Review LSP, build, test, AI, security, and plugin findings',
     icon: CircleAlert,
   },
-  easd: {
-    label: 'Evo Agent Specs',
-    description: 'Run specs through accountable missions, evidence, and convergence (EASD)',
+  asdd: {
+    label: 'Agent Spec-Driven',
+    description: 'Propose, specify, build and archive changes against the repository spec catalogue (ASDD)',
     icon: ListChecks,
   },
 }
@@ -120,7 +120,7 @@ export function isWorkbenchToolEnabled(
   if (tool === 'problems') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }
-  if (tool === 'easd') {
+  if (tool === 'asdd') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }
   if (tool === 'source-control' || tool === 'pull-requests') {
