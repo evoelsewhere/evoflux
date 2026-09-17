@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.model_context import PREFIX_SNAPSHOT_FROZEN_KEY
 
 if TYPE_CHECKING:
     from app.agent.schemas.chat import AssistantMessage
@@ -39,6 +40,8 @@ class WikiInjectionHook(BaseAgentHook):
         request: "ModelRequest",
         handler: "ModelCallHandler",
     ) -> "AssistantMessage":
+        if state.metadata.get(PREFIX_SNAPSHOT_FROZEN_KEY) is True:
+            return await handler(request)
         user_block = self._read_user_md()
         if not user_block:
             return await handler(request)

@@ -212,6 +212,45 @@ class TestSQLiteCheckpointerLoad:
 
 class TestSQLiteCheckpointerSync:
     @pytest.mark.asyncio
+    async def test_sync_persists_hidden_model_context_once_and_loads_it_for_llm(
+        self,
+    ):
+        import app.core.db as _db
+        from app.agent.model_context import (
+            MEMORY_RECALL_CONTEXT_KIND,
+            MODEL_CONTEXT_FOR_KEY,
+            MODEL_CONTEXT_KEY,
+        )
+        from app.services.chat_service import get_messages, get_messages_for_llm
+
+        sid = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _make_session(db, sid)
+
+        context = HumanMessage(
+            content="<system-reminder>remembered fact</system-reminder>",
+            extra={
+                "hidden_from_user": True,
+                "system_generated": True,
+                MODEL_CONTEXT_KEY: MEMORY_RECALL_CONTEXT_KIND,
+                MODEL_CONTEXT_FOR_KEY: "message:question",
+            },
+        )
+        cp = SQLiteCheckpointer(_db.async_session_factory)
+        await cp.sync(_ctx(str(sid)), AgentState(messages=[context]))
+        await cp.sync(_ctx(str(sid)), AgentState(messages=[context]))
+
+        async with _db.async_session_factory() as db:
+            visible = await get_messages(db, sid)
+            llm_messages = await get_messages_for_llm(db, sid)
+
+        assert visible == []
+        assert len(llm_messages) == 1
+        assert llm_messages[0].content == context.content
+        assert llm_messages[0].extra == context.extra
+
+    @pytest.mark.asyncio
     async def test_sync_persists_assistant_message(self):
         """AssistantMessage is persisted to DB."""
         import app.core.db as _db

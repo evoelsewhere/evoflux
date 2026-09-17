@@ -32,9 +32,14 @@ from app.agent.schemas.chat import (
     SystemMessage,
     ToolMessage,
 )
+from app.agent.model_context import (
+    PREFIX_SNAPSHOT_PROFILE_KEY,
+    is_durable_model_context,
+)
 from app.agent.state import AgentState, RunContext
 from app.models.chat import SessionMessage
 from app.services.chat_service import get_messages_for_llm, save_message
+from app.services.prompt_prefix import advance_prefix_snapshot
 
 if TYPE_CHECKING:
     from app.core.db import DbFactory
@@ -281,8 +286,10 @@ class SQLiteCheckpointer(Checkpointer):
         * ``AssistantMessage`` — saved with ``extra``, ``is_summary``, and
           ``exclude_from_context``.
         * ``ToolMessage`` — saved with defaults.
-        * ``SystemMessage`` / ``HumanMessage`` — skipped (human messages are
-          saved by the route handler; system messages are never persisted).
+        * ``SystemMessage`` / ordinary ``HumanMessage`` — skipped (real human
+          messages are saved by the route handler; system messages are never
+          persisted). Hidden durable model-context ``HumanMessage`` rows are
+          the one exception and are saved with their marker metadata.
         * Already-persisted messages whose ``exclude_from_context`` flipped to
           ``True`` are updated in the DB (``exclude_from_context=True``).
         """
@@ -414,6 +421,21 @@ class SQLiteCheckpointer(Checkpointer):
                                 sid,
                                 row.id,
                             )
+                        elif is_durable_model_context(msg):
+                            row = await save_message(
+                                db,
+                                UUID(sid),
+                                msg,
+                                exclude_from_context=msg.exclude_from_context,
+                                extra=msg.extra,
+                            )
+                            msg.db_id = row.id
+                            logger.debug(
+                                "checkpointer_saved_model_context session_id={} db_id={} kind={}",
+                                sid,
+                                row.id,
+                                (msg.extra or {}).get("evoflux_model_context"),
+                            )
                         # Me real user messages already saved by route handler — skip
                     else:
                         logger.debug(
@@ -424,6 +446,37 @@ class SQLiteCheckpointer(Checkpointer):
                         continue
 
                     persisted_ids.add(id(msg))
+
+                # Mirror MiMo-Code's completed-step watermark. The prefix
+                # snapshot hook writes its profile key into ephemeral state;
+                # only a message with a durable DB id is eligible to advance it.
+                snapshot_profile_key = state.metadata.get(PREFIX_SNAPSHOT_PROFILE_KEY)
+                latest_assistant_id = next(
+                    (
+                        message.db_id
+                        for message in reversed(state.messages)
+                        if isinstance(message, AssistantMessage)
+                        and message.db_id is not None
+                    ),
+                    None,
+                )
+                if (
+                    isinstance(snapshot_profile_key, str)
+                    and latest_assistant_id is not None
+                ):
+                    try:
+                        await advance_prefix_snapshot(
+                            db,
+                            session_id=UUID(sid),
+                            profile_key=snapshot_profile_key,
+                            watermark_message_id=latest_assistant_id,
+                        )
+                    except Exception as exc:  # noqa: BLE001 — watermark is advisory
+                        logger.debug(
+                            "checkpointer_snapshot_watermark_failed session_id={} error={}",
+                            sid,
+                            exc,
+                        )
 
         # Me drop this agent's stream buffer — once the assistant text is in
         # the DB, a mid-turn reconnect loading it via loadSession must not
