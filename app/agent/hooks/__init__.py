@@ -3,6 +3,7 @@ from .code_navigation_telemetry import CodeNavigationTelemetryHook
 from .dynamic_prompt import PromptRequest, dynamic_prompt, inject_current_date
 from .memory_context import MemoryContextHook, default_memory_context_hook
 from .memory_flush import build_memory_flush_hook
+from .prefix_snapshot import SessionPrefixSnapshotHook
 from .wiki_injection import WikiInjectionHook, default_wiki_injection_hook
 from .otel import OpenTelemetryHook
 from .stream_publisher import StreamPublisherHook
@@ -17,6 +18,7 @@ __all__ = [
     "BaseAgentHook",
     "CodeNavigationTelemetryHook",
     "MemoryContextHook",
+    "SessionPrefixSnapshotHook",
     "WikiInjectionHook",
     "OpenTelemetryHook",
     "PromptRequest",
