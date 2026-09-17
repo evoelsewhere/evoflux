@@ -4,6 +4,8 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-09-17
+
 ### Changed — EASD is now ASDD, and a change lives in the repository
 
 EASD (Evo Agent Specification-Driven Development) is replaced by **ASDD — Agent
