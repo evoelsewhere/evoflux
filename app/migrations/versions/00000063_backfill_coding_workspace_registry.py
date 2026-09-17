@@ -1,7 +1,7 @@
 """backfill the coding workspace registry from existing coding sessions
 
 Revision ID: 00000063
-Revises: 00000062
+Revises: 00000054
 Create Date: 2026-09-12
 
 The coding sidebar renders ``coding_workspaces`` rows only. Until now the row
@@ -34,7 +34,7 @@ from app.models.chat import TZDateTime
 from app.uuid7 import uuid7
 
 revision: str = "00000063"
-down_revision: Union[str, Sequence[str], None] = "00000062"
+down_revision: Union[str, Sequence[str], None] = "00000054"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

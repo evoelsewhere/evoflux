@@ -27,7 +27,7 @@ desktop/      Rust/Tauri shell and native packaging
 seed/         First-install agent and configuration templates
 scripts/      Development, build, validation, and release utilities
 tests/        Python backend, integration, CLI, and packaging tests
-documents/    Single documentation root and EASD repository data
+documents/    Single documentation root and ASDD spec catalogue
 ```
 
 Start with:
@@ -60,15 +60,20 @@ Start with:
 EvoFlux follows **Specification-Driven Development (SDD)** and
 **Agent-Driven Development (ADD)**. The specification defines the intended
 contract; agents implement and verify that contract with traceable evidence.
-The named product-executable method is **EASD — Evo Agent Specification-Driven
-Development**; its product/UI name is **Evo Agent Specs**. Its normative
-lifecycle, roles, trust levels, and convergence rules live in
-`documents/reference/easd-methodology.md`.
+The named product-executable method is **ASDD — Agent Specification-Driven
+Development**; its product/UI name is **Agent Spec-Driven**. Its normative lifecycle,
+roles and gates live in `documents/reference/asdd-methodology.md`.
+
+A change is a folder of Markdown in the repository, not a row in a database.
+Its phase is the `status` field in its `proposal.md`, its contract is the delta
+under `specs/<capability>/spec.md`, and its identity is its directory name.
+Nothing binds a change to a chat session, and nothing requires restating a hash
+to act on one.
 
 The workflow is:
 
 ```text
-discover → specify → [plan when required] → implement → review → verify → reconcile docs → hand off
+propose → specify → [design when risk requires] → plan → implement → verify → archive
 ```
 
 Do not start a non-trivial implementation from a vague request. First resolve
@@ -360,17 +365,17 @@ During iteration, run the smallest focused tests named by the nearest nested
 - Never commit generated sidecars, `target/`, `web/dist`, credentials, signing
   keys, machine-specific paths, or local `.evoflux/` runtime state such as
   `team_state.json`, sessions, caches, and worktrees. Repository-owned
-  `.evoflux/easd/config.json`, `.evoflux/easd/RULES.md`, the manifest-selected
-  EASD `data_directory`, repository-scoped `.evoflux/skills/easd-*/**`, and
-  normative `.evoflux/trace/**` contracts are the explicit version-controlled
-  exception. `.evoflux/easd/.local/**` remains machine-local and ignored.
+  `.evoflux/asdd/config.json`, `.evoflux/asdd/RULES.md`, the manifest-selected
+  ASDD `data_directory`, and repository-scoped `.evoflux/skills/asdd-*/**` are
+  the explicit version-controlled exception. `.evoflux/asdd/locks/**` is
+  machine-local and ignored.
 
 ## Documentation contract
 
 `documents/` is the only product/contributor documentation root. The
-manifest-owned `documents/easd/` subtree is this repository's EASD knowledge
-skeleton and Run data. EASD setup must not move or copy existing current docs
-into that subtree; adoption is an explicit accepted change.
+manifest-owned `documents/asdd/` subtree is this repository's spec catalogue and
+its open changes. ASDD setup must not move or copy existing current docs into
+that subtree; adoption is an explicit approved change.
 
 - Current behavior belongs in `documents/features/`, `documents/architecture/`, and
   `documents/reference/`.

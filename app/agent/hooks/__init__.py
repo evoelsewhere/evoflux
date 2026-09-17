@@ -11,7 +11,7 @@ from .streaming import StreamingHook
 from .summarization import SummarizationHook
 from .telemetry import TelemetryHook
 from .title_generation import TitleGenerationHook, build_title_generation_hook
-from .easd_context import EasdContextHook
+from .asdd_context import AsddContextHook
 
 __all__ = [
     "BaseAgentHook",
@@ -26,7 +26,7 @@ __all__ = [
     "SummarizationHook",
     "TelemetryHook",
     "TitleGenerationHook",
-    "EasdContextHook",
+    "AsddContextHook",
     "build_memory_flush_hook",
     "build_title_generation_hook",
     "default_memory_context_hook",

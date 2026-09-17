@@ -1,52 +1,50 @@
-# Evo Agent Specs knowledge base
+# EvoFlux documentation
 
-This directory is the repository-local, version-controlled EASD knowledge base.
-It contains accepted and explicitly adopted contracts without relocating or
-copying documentation that the repository already owns elsewhere. Operational
-Run data is local and ignored under `.evoflux/easd/.local/runs/`.
+This directory is the single documentation root for the product and its
+contributors. Two things live here with different owners.
 
-## Structure
+## Written by people
 
 ```text
-<data_directory>/
-├── README.md
-├── index.yaml
-├── specs/                         # accepted normative behavior contracts
-├── features/                      # current implemented product behavior
-├── architecture/
-│   └── decisions/                 # ADR-style durable decisions
-├── reference/                     # exact API/config/schema/CLI contracts
-├── guides/                        # task-oriented user/operator workflows
-├── development/                   # contributor/build/test/release procedures
-├── records/
-│   ├── analysis/                  # dated audits
-│   ├── research/                  # prior art and investigations
-│   ├── plans/                     # proposed or historical designs
-│   └── releases/                  # release/submission evidence
-└── images/                        # media referenced by Markdown
-
-.evoflux/easd/.local/
-├── templates/                     # bundled runtime artifact shapes
-└── runs/                          # ignored operational ledgers
-    └── <slug>--<run-uuid>/        # Intent, Plan, missions, evidence, events
+documents/
+├── features/       # current implemented product behavior
+├── architecture/   # process, storage, concurrency, trust and system boundaries
+│   └── decisions/  # ADR-style durable decisions
+├── reference/      # exact API, configuration, schema and CLI contracts
+├── guides/         # task-oriented walkthroughs
+├── development/    # contributor and release procedure
+├── analysis/ research/ plans/ releases/   # dated, historical
+└── images/
 ```
 
-## Authority
+`features/`, `architecture/` and `reference/` describe what ships today. The
+dated directories are historical and never override them.
 
-- `specs/` is the discoverable catalogue of accepted behavior-first contracts.
-- `features/`, `architecture/`, and `reference/` describe current shipped state
-  and are reconciled when a Run changes those boundaries.
-- `.evoflux/easd/.local/runs/` owns change-specific Intent, Plan, missions,
-  evidence and convergence and is not a Git collaboration transport.
-- `records/` is historical and never overrides current Specs or current-state
-  documents.
-- Bundled local templates define shapes; template presence is not proof of
-  implementation.
+## Owned by Agent Spec-Driven
 
-Draft Specs stay Run-local. User acceptance publishes a hash-identical immutable
-copy into `specs/`; the Run snapshot remains audit evidence. Existing project
-documentation outside this directory remains authoritative until maintainers
-explicitly adopt or link it.
+```text
+documents/asdd/
+├── project.md                   # this repository's context and rules for agents
+├── specs/
+│   └── <capability>/spec.md     # the behavior the system guarantees now
+└── changes/
+    ├── <change-id>/             # one proposed change, with its own folder
+    └── archive/YYYY-MM-DD-<change-id>/
+```
 
-Do not store credentials, absolute machine paths, session bindings or locks
-here. Rebuildable local state belongs under `.evoflux/easd/.local/`.
+This subtree is the ASDD catalogue. `specs/` is normative: when code and a
+capability spec disagree, the code is wrong until a change says otherwise.
+A spec changes only when a change is archived — never by hand.
+
+See [ASDD methodology](reference/asdd-methodology.md) for the lifecycle and
+[Agent Spec-Driven](features/agent-specs.md) for the product surface.
+
+## What does not belong here
+
+ASDD setup never moves or copies existing documentation into `documents/asdd/`.
+Adoption is an explicit approved change.
+
+Do not store credentials, absolute machine paths or lock state anywhere under
+`documents/`. Contributor, build and release procedure stays wherever the
+repository already owns it — `CONTRIBUTING.md`, `AGENTS.md`, the makefile. Link
+to it; do not copy it here.

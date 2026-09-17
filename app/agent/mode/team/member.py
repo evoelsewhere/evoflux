@@ -56,7 +56,7 @@ from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.skill_catalog import SkillCatalogFinalizerHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
-from app.agent.hooks.easd_context import EasdContextHook
+from app.agent.hooks.asdd_context import AsddContextHook
 from app.agent.hooks.memory_extraction import build_memory_extraction_hook
 from app.agent.lifecycle import is_sleep_message
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
@@ -1473,17 +1473,18 @@ class TeamMemberBase(abc.ABC):
                     ),
                 )
         if self._team.mode == "coding":
-            if self.db_factory:
-                pipeline.add(
-                    HookStage.SESSION_CONTEXT,
-                    "trace-context",
-                    EasdContextHook(
-                        db_factory=self.db_factory,
-                        lead_session_id=lead_session_id,
-                        agent_name=self.name,
-                        role=self._role_label,
-                    ),
-                )
+            # No database here on purpose: ASDD reads the repository, so the
+            # hook works in a worktree, a fresh clone, and a session whose row
+            # is gone.
+            pipeline.add(
+                HookStage.SESSION_CONTEXT,
+                "asdd-context",
+                AsddContextHook(
+                    workspace=task_workspace.workspace,
+                    agent_name=self.name,
+                    role=self._role_label,
+                ),
+            )
             pipeline.add(
                 HookStage.WORKSPACE,
                 "workspace-context",
@@ -1541,7 +1542,7 @@ class TeamMemberBase(abc.ABC):
         # Summarization then receives the exact same finalized system prompt as
         # the main provider call instead of snapshotting an incomplete prefix.
         # cache-boundary must run first: it stamps everything built so far
-        # (role prompt, team protocol, goal/folder/EASD context, workspace
+        # (role prompt, team protocol, goal/folder/ASDD context, workspace
         # instructions) as the stable prefix before memory-context and the
         # skill catalog append content that changes on essentially every turn.
         pipeline.add(

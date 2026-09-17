@@ -26,7 +26,7 @@
 - **Bring your own model** through hosted, cloud, routed, or local providers.
 - **Repository-aware Coding** with code search, symbol relationships, LSP
   feedback, git workflows, and reviewable diffs.
-- **Spec-first delivery** through Evo Agent Specs (EASD), with user-approved
+- **Spec-first delivery** through Agent Spec-Driven (ASDD), with user-approved
   specifications, verification, and evidence-based convergence.
 - **Local control** with inspectable history, permissions, sandboxing, and
   outbound data protection.
@@ -93,7 +93,7 @@ The README stays intentionally high-level. Detailed contracts and guides live
 under [`documents/`](documents/):
 
 - [Documentation index](documents/README.md)
-- [EASD methodology](documents/reference/easd-methodology.md)
+- [ASDD methodology](documents/reference/asdd-methodology.md)
 - [Evo Agent Specs guide](documents/guides/agent-specification-driven-development.md)
 - [Agent Plugins guide](documents/guides/agent-plugins.md)
 - [Coding architecture](documents/architecture/)

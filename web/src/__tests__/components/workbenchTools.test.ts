@@ -35,25 +35,25 @@ describe('process manager workbench tool', () => {
   })
 })
 
-describe('Evo Agent Specs workbench tool', () => {
+describe('Agent Spec-Driven workbench tool', () => {
   it('is labelled with the product name, not the methodology', () => {
     // The rail is narrow and the tab sits next to Files and Terminal, so it
     // carries the product name. The methodology is spelled out in the panel.
-    expect(WORKBENCH_TOOLS.easd.label).toBe('Evo Agent Specs')
+    expect(WORKBENCH_TOOLS.asdd.label).toBe('Agent Spec-Driven')
   })
 
   it('is available only in a Coding workspace', () => {
-    expect(isWorkbenchToolEnabled('easd', {
+    expect(isWorkbenchToolEnabled('asdd', {
       mode: 'coding',
       sessionId: 'session-1',
       workspace: '/repo',
     })).toBe(true)
-    expect(isWorkbenchToolEnabled('easd', {
+    expect(isWorkbenchToolEnabled('asdd', {
       mode: 'coding',
       sessionId: 'session-1',
       workspace: null,
     })).toBe(false)
-    expect(isWorkbenchToolEnabled('easd', {
+    expect(isWorkbenchToolEnabled('asdd', {
       mode: 'work',
       sessionId: 'session-1',
       workspace: '/repo',

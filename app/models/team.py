@@ -39,14 +39,13 @@ class DelegationTask(SQLModel, table=True):
             nullable=False,
         )
     )
-    trace_run_id: UUID | None = Field(
+    # The ASDD change this task serves, by slug. Deliberately not a foreign
+    # key: a change lives in the repository, not in this database, so the row
+    # records which change asked for the work and nothing here can be
+    # invalidated by someone editing, renaming or archiving that folder.
+    asdd_change_id: str | None = Field(
         default=None,
-        sa_column=Column(
-            sa.Uuid(),
-            ForeignKey("trace_runs.id", ondelete="SET NULL"),
-            nullable=True,
-            index=True,
-        ),
+        sa_column=Column(sa.String(80), nullable=True, index=True),
     )
     delegator: str = Field(sa_column=Column(sa.String(100), nullable=False))
     recipient: str = Field(sa_column=Column(sa.String(100), nullable=False))

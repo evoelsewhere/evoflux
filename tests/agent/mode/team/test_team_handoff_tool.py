@@ -66,7 +66,7 @@ class TestHandoffArtifactSchema:
             summary="Focused test passed.",
         )
         artifact = HandoffArtifact(
-            summary="EASD mission completed.", criteria_results=[result]
+            summary="ASDD mission completed.", criteria_results=[result]
         )
         assert artifact.criteria_results[0].criterion_id == "AC-1"
 

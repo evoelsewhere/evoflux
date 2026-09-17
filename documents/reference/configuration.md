@@ -45,11 +45,10 @@ Derived values:
 | `<data>/agent-plugins/` | Plugin Center | installed package registry and private data |
 | `<workspace>/.evoflux/workflows/*.yaml` | repository | project-local Coding Workflows |
 | `<workspace>/.evoflux/launch.json` | repository | preview/process launch definitions |
-| `<workspace>/.evoflux/easd/config.json` | repository/EASD setup | tracked knowledge path, fixed local runtime policy, manual publish policy, rules, and project-skill contract |
-| `<workspace>/<data_directory>/` | repository | accepted Specs and explicitly adopted feature/architecture/reference/historical docs (default `documents/easd`) |
-| `<source-workspace>/.evoflux/easd/.local/` | machine-local | ignored Runs, plans, missions, evidence, events, Recovery, templates and locks; linked Git worktrees resolve to this canonical source owner |
-| `<workspace>/.evoflux/skills/easd-*/` | repository | Coding-only portable EASD phase Skills installed by EASD setup |
-| `<workspace>/<data_directory>/records/runs/` | repository/manual | allowlisted compact convergence records created only by explicit Publish audit record confirmation |
+| `<workspace>/.evoflux/asdd/config.json` | repository/ASDD setup | the catalogue path, the skills directory and the six installed Skill names |
+| `<workspace>/<data_directory>/` | repository | the ASDD catalogue: `project.md`, `specs/<capability>/spec.md` and `changes/` (default `documents/asdd`) |
+| `<source-workspace>/.evoflux/asdd/locks/` | machine-local | the per-repository catalogue write lock; linked Git worktrees resolve to this canonical source owner |
+| `<workspace>/.evoflux/skills/asdd-*/` | repository | Coding-only portable ASDD phase Skills installed by ASDD setup |
 
 Project `.env` is loaded first and `~/.config/evoflux/.env` overrides it.
 Process environment values follow Pydantic settings precedence. Keep secrets out

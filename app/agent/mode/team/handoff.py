@@ -65,7 +65,7 @@ class Verification(BaseModel):
 
 
 class CriterionResult(BaseModel):
-    """One mission-owned EASD acceptance criterion result."""
+    """One mission-owned ASDD requirement result."""
 
     criterion_id: str = Field(min_length=3, max_length=64)
     result: Literal["passed", "failed", "inconclusive"]
@@ -198,13 +198,13 @@ def format_handoff_message(
                 verification_line += f" — {artifact.verification.result}"
         lines.append(verification_line)
     if artifact.criteria_results:
-        lines.append("EASD criteria:")
+        lines.append("ASDD requirements:")
         lines.extend(
             f"  • {item.criterion_id}: {item.result} — {item.summary}"
             for item in artifact.criteria_results
         )
     if artifact.deviations:
-        lines.append("EASD deviations:")
+        lines.append("ASDD deviations:")
         lines.extend(f"  ⚠ {item}" for item in artifact.deviations)
     if artifact.workspace_result:
         repositories = artifact.workspace_result.get("repositories", [])
@@ -326,14 +326,14 @@ def make_team_handoff_tool(
             list[dict[str, Any]],
             Field(
                 description=(
-                    "EASD criterion results: criterion_id, "
+                    "ASDD requirement results: criterion_id, "
                     "passed|failed|inconclusive result, summary, evidence_ids."
                 )
             ),
         ] = [],  # noqa: B006
         deviations: Annotated[
             list[str],
-            Field(description="EASD scope/spec deviations discovered by the mission."),
+            Field(description="ASDD scope/spec deviations discovered by the mission."),
         ] = [],  # noqa: B006
         _state: Annotated[Any, InjectedArg()] = None,
     ) -> str:
@@ -474,7 +474,7 @@ def make_team_handoff_tool(
                     for item in linked_task.spec.get("acceptance_criteria", [])
                     if isinstance(item, str)
                 ]
-                if linked_task is not None and linked_task.trace_run_id is not None
+                if linked_task is not None and linked_task.asdd_change_id is not None
                 else []
             )
             try:
@@ -482,14 +482,14 @@ def make_team_handoff_tool(
                     CriterionResult.model_validate(item) for item in criteria_results
                 ]
             except ValueError as exc:
-                quality_issues.append(f"Invalid EASD criteria_results: {exc}")
+                quality_issues.append(f"Invalid ASDD criteria_results: {exc}")
                 parsed_criteria = []
             if trace_assigned:
                 provided = {item.criterion_id for item in parsed_criteria}
                 missing = sorted(set(trace_assigned) - provided)
                 if missing:
                     quality_issues.append(
-                        "EASD final handoff must report every assigned criterion: "
+                        "An ASDD final handoff must report every owned requirement: "
                         + ", ".join(missing)
                     )
             if quality_issues:

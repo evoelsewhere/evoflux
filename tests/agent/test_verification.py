@@ -100,25 +100,7 @@ async def test_accepted_planned_command_runs_as_machine_evidence(sandbox: Path):
     ]
 
 
-async def test_easd_scope_violation_blocks_completion(sandbox: Path):
-    (sandbox / "outside.py").write_text("value = 1\n", encoding="utf-8")
-    hook = CompletionVerificationHook()
-    state = SimpleNamespace(
-        metadata={
-            "_verification_changed_files": {"outside.py"},
-            "_easd_impact_targets": [{"repository": "repo", "path": "app/allowed.py"}],
-        }
-    )
-    ctx = SimpleNamespace(session_id="verification-test")
-
-    feedback = await hook.before_completion(ctx, state, SimpleNamespace())
-
-    assert feedback is not None
-    assert "EASD scope violation" in feedback
-    assert "outside.py" in feedback
-
-
-def test_easd_scope_identity_distinguishes_same_path_in_two_repositories(
+def test_scope_identity_distinguishes_same_path_in_two_repositories(
     tmp_path: Path,
 ):
     backend = tmp_path / "backend"
@@ -138,10 +120,6 @@ def test_easd_scope_identity_distinguishes_same_path_in_two_repositories(
 
     assert paths == ("app/shared.py",)
     assert targets == ({"repository": "Frontend", "path": "app/shared.py"},)
-    assert verification_module._outside_impact_targets(
-        targets,
-        [{"repository": "Backend", "path": "app/shared.py"}],
-    ) == ["Frontend:app/shared.py"]
 
 
 def test_changed_files_are_grouped_by_authorized_repository(
@@ -171,7 +149,10 @@ def test_changed_files_are_grouped_by_authorized_repository(
     }
 
 
-async def test_easd_detects_changes_not_made_by_file_tools(sandbox: Path):
+async def test_changes_not_made_by_file_tools_still_require_verification(
+    sandbox: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     subprocess.run(["git", "init", "-q", str(sandbox)], check=True)
     baseline = sandbox / "baseline.py"
     baseline.write_text("value = 1\n", encoding="utf-8")
@@ -195,19 +176,29 @@ async def test_easd_detects_changes_not_made_by_file_tools(sandbox: Path):
     hook = CompletionVerificationHook()
     state = SimpleNamespace(
         metadata={
-            "_easd_run_id": "run-1",
-            "_easd_impact_targets": [{"repository": "repo", "path": "app/allowed.py"}],
+            "_asdd_change_ids": ["add-user-auth"],
         }
     )
     ctx = SimpleNamespace(session_id="verification-test")
     await hook.before_agent(ctx, state)
 
+    seen: dict[str, tuple[str, ...]] = {}
+
+    async def record_checks(
+        workspace, changed_files, artifact_hash, rigor, planned_commands
+    ):
+        seen["changed_files"] = changed_files
+        return []
+
+    monkeypatch.setattr(verification_module, "_run_required_checks", record_checks)
+
+    # Written by a shell command rather than a file tool: only the git baseline
+    # can see it, which is why the hook takes one when ASDD is in use.
     (sandbox / "outside.py").write_text("value = 2\n", encoding="utf-8")
     feedback = await hook.before_completion(ctx, state, SimpleNamespace())
 
+    assert any("outside.py" in path for path in seen["changed_files"])
     assert feedback is not None
-    assert "EASD scope violation" in feedback
-    assert "outside.py" in feedback
 
 
 async def test_changed_file_requires_and_persists_passing_evidence(
@@ -258,47 +249,6 @@ async def test_changed_file_requires_and_persists_passing_evidence(
     assert contract["passed"] is True
     assert contract["evidence"][0]["command_id"] == "cmd-1"
     assert contract["evidence"][0]["revision"] == "abc123"
-
-
-async def test_easd_verify_runs_accepted_commands_without_file_mutation(
-    sandbox: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    hook = CompletionVerificationHook()
-    state = SimpleNamespace(
-        metadata={
-            "_easd_phase": "verifying",
-            "_easd_verification_commands": ["python -m compileall module.py"],
-        }
-    )
-    ctx = SimpleNamespace(session_id="verification-test")
-
-    async def passing_checks(
-        workspace, changed_files, artifact_hash, rigor, planned_commands
-    ):
-        assert changed_files == ()
-        assert planned_commands == ("python -m compileall module.py",)
-        return [
-            VerificationEvidence(
-                command_id="cmd-verify",
-                command=["python", "-m", "compileall", "module.py"],
-                cwd=str(workspace),
-                exit_code=0,
-                revision="verify-revision",
-                artifact_hash=artifact_hash,
-                output="verified",
-                source="planned",
-                spec_command="python -m compileall module.py",
-            )
-        ]
-
-    monkeypatch.setattr(verification_module, "_run_required_checks", passing_checks)
-
-    assert await hook.before_completion(ctx, state, SimpleNamespace()) is None
-    contract = state.metadata["completion_contract"]
-    assert contract["changed_files"] == []
-    assert contract["passed"] is True
-    assert contract["evidence"][0]["source"] == "planned"
 
 
 async def test_failed_contract_blocks_completion_and_final_handoff(

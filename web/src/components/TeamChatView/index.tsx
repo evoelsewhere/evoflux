@@ -82,7 +82,7 @@ import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBr
 import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
-import type { EasdRunChatRequest } from '@/components/EvoAgentSpecsPanel'
+import type { AsddChatRequest } from '@/components/AgentSpecsPanel'
 import { useSideChat } from '../SideChatPanel/useSideChat'
 import type {
   AgentCapabilities as AgentCapabilitiesType,
@@ -117,14 +117,6 @@ import {
   codeReviewSessionTags,
   parseCodeReviewSessionTags,
 } from '@/lib/code-review-session'
-
-const EASD_PHASE_COPY: Record<EasdRunChatRequest['phase'], { noun: string; started: string }> = {
-  authoring: { noun: 'Specification', started: 'Specification drafting' },
-  planning: { noun: 'Plan', started: 'EASD planning' },
-  implementation: { noun: 'Implementation', started: 'EASD implementation' },
-  review: { noun: 'Review', started: 'EASD review' },
-  verification: { noun: 'Verification', started: 'EASD verification' },
-}
 
 const WorkspaceFilesPanel = lazy(() =>
   import('@/components/WorkspaceFilesPanel').then((module) => ({
@@ -195,9 +187,9 @@ const ProblemsPanel = lazy(() =>
     default: module.ProblemsPanel,
   })),
 )
-const EvoAgentSpecsPanel = lazy(() =>
-  import('@/components/EvoAgentSpecsPanel').then((module) => ({
-    default: module.EvoAgentSpecsPanel,
+const AgentSpecsPanel = lazy(() =>
+  import('@/components/AgentSpecsPanel').then((module) => ({
+    default: module.AgentSpecsPanel,
   })),
 )
 const loadSplitWorkbench = () =>
@@ -495,9 +487,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const updateWorkbenchTab = useUIStore((s) => s.updateWorkbenchTab)
   const workspaceFileRequest = useUIStore((s) => s.workspaceFileRequest)
   const clearWorkspaceFileRequest = useUIStore((s) => s.clearWorkspaceFileRequest)
-  const easdChatRequest = useUIStore((s) => s.easdChatRequest)
-  const requestEasdChat = useUIStore((s) => s.requestEasdChat)
-  const clearEasdChatRequest = useUIStore((s) => s.clearEasdChatRequest)
   const wikiOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'wiki'))
   const sideChatOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'side-chat'))
   const hasFilesTab = useUIStore((s) => sessionHasWorkbenchTool(s, 'files'))
@@ -1607,79 +1596,18 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       )
     : null
 
-  const handleEasdRunInChat = useCallback((request: EasdRunChatRequest) => {
-    requestEasdChat(request)
-    // Keep the Evo Agent Specs panel open: the layout already shows the chat
-    // beside it, and closing it hid the lifecycle rail at exactly the moment
-    // the phase started running.
-    if (request.sessionId === sessionIdState) return
-    const focusId = codingFocusId({
-      project_id: request.projectId,
-      workspace: request.navigationWorkspace,
+  // An ASDD change belongs to the repository, not to a chat, so a phase always
+  // runs in the chat the user is looking at. There is nothing to navigate to
+  // and no session to reconcile — the prompt just lands in this input.
+  const handleAsddRunInChat = useCallback((request: AsddChatRequest) => {
+    inputRef.current?.setValue(request.prompt)
+    inputRef.current?.focus()
+    pushToast({
+      tone: 'info',
+      title: `${request.skill} prompt ready`,
+      description: `Review the kickoff prompt for ${request.changeId}, then send when ready.`,
     })
-    navigate(
-      focusId
-        ? {
-            to: '/coding/$focusId/$sessionId',
-            params: { focusId, sessionId: request.sessionId },
-          }
-        : { to: '/$sessionId', params: { sessionId: request.sessionId } },
-    )
-  }, [navigate, requestEasdChat, sessionIdState])
-
-  useEffect(() => {
-    if (
-      !easdChatRequest
-      || easdChatRequest.sessionId !== sessionIdState
-      || isSessionLoading
-    ) return
-    clearEasdChatRequest(easdChatRequest.id)
-    if (!easdChatRequest.prompt) {
-      pushToast({ tone: 'info', title: 'Opened the run’s linked chat' })
-      return
-    }
-    const current = useTeamStore.getState()
-    if (!easdChatRequest.autoSend || current.isTeamWorking) {
-      const phaseCopy = EASD_PHASE_COPY[easdChatRequest.phase]
-      inputRef.current?.setValue(easdChatRequest.prompt)
-      inputRef.current?.focus()
-      pushToast({
-        tone: 'info',
-        title: current.isTeamWorking
-          ? 'Chat is already running'
-          : `${phaseCopy.noun} prompt ready`,
-        description: current.isTeamWorking
-          ? 'The resume prompt is ready to queue or send after the current turn.'
-          : 'Review the kickoff prompt, then send when ready.',
-      })
-      return
-    }
-    inputRef.current?.setValue('')
-    // No `workspace` here on purpose. The session this run is linked to already
-    // has a persisted workspace, and for a multi-workspace project it differs
-    // from the run's own — sending the run's would trip the endpoint's 409
-    // guard. Omitting it makes the endpoint use the session's, which is right.
-    void current.sendMessage(easdChatRequest.prompt, undefined, {
-      mode: 'coding',
-      model: (current.sessionModel ?? selectedModel) || null,
-      thinkingLevel: (current.sessionThinkingLevel ?? selectedThinkingLevel) || null,
-      fastMode: current.sessionFastMode,
-    }).then(() => {
-      const error = useTeamStore.getState().error
-      const phaseCopy = EASD_PHASE_COPY[easdChatRequest.phase]
-      pushToast(error
-        ? { tone: 'error', title: `${phaseCopy.started} could not start`, description: error }
-        : { tone: 'success', title: `${phaseCopy.started} started in chat` })
-    })
-  }, [
-    clearEasdChatRequest,
-    easdChatRequest,
-    isSessionLoading,
-    pushToast,
-    selectedModel,
-    selectedThinkingLevel,
-    sessionIdState,
-  ])
+  }, [pushToast])
 
   // A page an agent opened has no tab in the workbench when the preview is
   // what the user asked for, so it hangs here instead — over the
@@ -1883,14 +1811,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 projectId={projectIdState}
               />
             </WorkbenchSurface>
-            <WorkbenchSurface tool="easd">
+            <WorkbenchSurface tool="asdd">
               {(_tab, active) => (
-                <EvoAgentSpecsPanel
+                <AgentSpecsPanel
                   workspace={workspace}
                   projectId={projectIdState}
-                  sessionId={sessionIdState}
                   active={active}
-                  onRunInChat={handleEasdRunInChat}
+                  onRunInChat={handleAsddRunInChat}
                 />
               )}
             </WorkbenchSurface>

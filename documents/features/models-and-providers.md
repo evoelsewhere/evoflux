@@ -373,9 +373,9 @@ are not enabled automatically because cache writes can cost more than ordinary
 input when a prefix is not reused. Cache controls never change tool permission,
 outbound redaction or sandbox boundaries.
 
-## EASD role guidance for GPT-5.6 family
+## ASDD role guidance for GPT-5.6 family
 
-When the Codex OAuth catalogue exposes the GPT-5.6 family, EASD benchmarks and
+When the Codex OAuth catalogue exposes the GPT-5.6 family, ASDD benchmarks and
 high-assurance runs prefer:
 
 | Role | Model | Typical reasoning |
