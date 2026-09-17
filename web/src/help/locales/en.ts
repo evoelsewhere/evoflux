@@ -1832,6 +1832,50 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     openAction: { type: 'settings', path: 'browser' },
   },
   {
+    id: 'remote-access-telegram',
+    category: 'settings',
+    title: 'Remote access (Telegram)',
+    summary:
+      'Control EvoFlux from your phone through a Telegram bot. Pair with a code, receive task updates, approve or reject gates, and run actions — all without opening the desktop.',
+    keywords: [
+      'remote', 'telegram', 'phone', 'mobile', 'pairing', 'bot',
+      'connect phone', 'pair code', '/pair', '/unpair',
+    ],
+    tricks: [
+      'One-time setup: create a Telegram bot via BotFather, paste the token in Settings \u2192 Remote access.',
+      'Pair your phone: click "Generate pairing code" on the desktop, then send /pair <code> in the bot chat.',
+      'Alternative pairing: use a deep link or QR code if the code flow is not available.',
+      '/pair connects your phone; /unpair disconnects it.',
+      'The bot shows current-task text, gate prompts with inline buttons, and completion summaries.',
+      'Rate limits protect against flood abuse; unpairing revokes access immediately.',
+      'Bot token is stored in the OS credential vault, never in the database.',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Remote access lets you interact with EvoFlux from your phone through a Telegram bot you own. After a one-time token setup, you pair your phone by entering a short numeric code in the bot chat. The bot then relays task updates, permission gates, and action menus so you can stay productive without sitting at the desktop.',
+      },
+      {
+        type: 'p',
+        text: 'To pair: open Settings \u2192 Remote access, click "Generate pairing code", then type /pair followed by the8-digit code in your Telegram bot chat. The code expires in10 minutes. For a fallback, click "Having trouble?" to use a deep link or QR code instead.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'The /pair command is the primary phone-pairing method. No QR scanning or link tapping needed.',
+          'If the code expires, generate a new one — only one code is active at a time.',
+          'Send /help in the bot chat to see all available commands.',
+          'Unpairing from the phone (/unpair) or the desktop (Settings \u2192 Remove) revokes access immediately.',
+        ],
+      }
+    ],
+    related: [
+      'settings-safety',
+      'troubleshooting-connection',
+    ],
+    openAction: { type: 'settings', path: 'remote-access' },
+  },
+  {
     id: 'providers-settings',
     category: 'settings',
     title: 'Providers and models (BYOM)',

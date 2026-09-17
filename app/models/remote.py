@@ -23,9 +23,7 @@ class RemoteConnection(SQLModel, table=True):
         default=False,
         sa_column=Column(sa.Boolean(), nullable=False, server_default=sa.false()),
     )
-    adapter_principal_id: str = Field(
-        sa_column=Column(sa.String(128), nullable=False)
-    )
+    adapter_principal_id: str = Field(sa_column=Column(sa.String(128), nullable=False))
     adapter_username: str = Field(
         default="",
         sa_column=Column(sa.String(128), nullable=False, server_default=""),
@@ -75,8 +73,8 @@ class RemotePairing(SQLModel, table=True):
         sa_column=Column(sa.String(20), nullable=False, server_default="all"),
     )
     response_mode: str = Field(
-        default="summary",
-        sa_column=Column(sa.String(20), nullable=False, server_default="summary"),
+        default="live",
+        sa_column=Column(sa.String(20), nullable=False, server_default="live"),
     )
     active_session_id: UUID | None = Field(
         default=None,
@@ -88,6 +86,19 @@ class RemotePairing(SQLModel, table=True):
     )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
+    )
+    #: Optional phone-first pairing code hash (bcrypt).  Nullable so existing
+    #: deep-link pairings and rows created before the phone-first flow are
+    #: unaffected.
+    pair_code_hash: str | None = Field(
+        default=None,
+        sa_column=Column(sa.String(128), nullable=True),
+    )
+    #: Wall-clock UTC expiry for the pairing code.  Nullable for the same
+    #: reason as ``pair_code_hash``.
+    pair_code_expires_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(TZDateTime(), nullable=True),
     )
     last_seen_at: datetime = Field(
         default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)

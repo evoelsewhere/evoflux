@@ -5,7 +5,8 @@
  * States: unconfigured → validating → configured-disabled → connecting →
  * paired → removal confirmation.
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 import {
   AlertCircle,
   CheckCircle2,
@@ -13,7 +14,6 @@ import {
   ExternalLink,
   Link2,
   Loader2,
-  QrCode,
   Smartphone,
   Trash2,
   Wifi,
@@ -70,6 +70,17 @@ function UnconfiguredState() {
   const [label, setLabel] = useState('My phone')
   const createMut = useCreateConnectionMutation()
   const [error, setError] = useState<string | null>(null)
+  const [botFatherCopied, setBotFatherCopied] = useState(false)
+
+  async function handleOpenBotFather() {
+    try {
+      await navigator.clipboard.writeText('/newbot')
+      setBotFatherCopied(true)
+    } catch {
+      // Clipboard may be blocked — user can type manually.
+    }
+    window.open('https://t.me/BotFather', '_blank', 'noopener,noreferrer')
+  }
 
   async function handleConnect() {
     setError(null)
@@ -88,9 +99,52 @@ function UnconfiguredState() {
   return (
     <>
       <SettingsGroup
-        title="Set up a Telegram bot"
-        description="Create a personal bot with @BotFather on Telegram, then paste its token here. Each computer needs its own bot."
+        title="Set up remote access"
+        description="Create a Telegram bot, then paste its token here to connect."
       >
+        {/* ── Bot-creation helper (collapsible) ── */}
+        <details className="group/bot rounded-lg border border-(--color-border) bg-(--color-surface)">
+          <summary className="flex cursor-pointer items-center gap-2 px-4 py-3 text-sm font-medium text-(--color-text) select-none">
+            <Smartphone className="size-4 shrink-0 text-(--color-text-muted)" />
+            Need a bot? Create one with @BotFather
+          </summary>
+          <div className="flex flex-col gap-3 border-t border-(--color-border) px-4 py-3">
+            <ol className="flex list-decimal flex-col gap-1.5 pl-4 text-sm text-(--color-text-muted)">
+              <li>
+                Open{' '}
+                <a
+                  href="https://t.me/BotFather"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-(--color-accent) underline"
+                >
+                  @BotFather
+                </a>{' '}
+                in Telegram.
+              </li>
+              <li>
+                Send{' '}
+                <code className="rounded bg-(--color-surface-raised) px-1 py-0.5 font-mono text-xs">
+                  /newbot
+                </code>
+                , choose a name and username.
+              </li>
+              <li>Copy the token BotFather gives you.</li>
+            </ol>
+            <div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleOpenBotFather()}
+              >
+                <ExternalLink className="mr-1.5 size-3.5" />
+                {botFatherCopied ? 'Copied! Open BotFather' : 'Open BotFather'}
+              </Button>
+            </div>
+          </div>
+        </details>
+
+        {/* ── Token input ── */}
         <SettingsRow
           label="Bot token"
           description="The token from @BotFather. Write-only — stored in your OS credential vault, never returned by the API."
@@ -121,27 +175,27 @@ function UnconfiguredState() {
             />
           }
         />
+
+        {error && (
+          <SettingsCallout tone="error" icon={AlertCircle}>
+            {error}
+          </SettingsCallout>
+        )}
+
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => void handleConnect()}
+            disabled={createMut.isPending || !token.trim()}
+          >
+            {createMut.isPending ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <Link2 className="mr-2 size-4" />
+            )}
+            Connect
+          </Button>
+        </div>
       </SettingsGroup>
-
-      {error && (
-        <SettingsCallout tone="error" icon={AlertCircle}>
-          {error}
-        </SettingsCallout>
-      )}
-
-      <div className="flex items-center gap-3">
-        <Button
-          onClick={() => void handleConnect()}
-          disabled={createMut.isPending || !token.trim()}
-        >
-          {createMut.isPending ? (
-            <Loader2 className="mr-2 size-4 animate-spin" />
-          ) : (
-            <Link2 className="mr-2 size-4" />
-          )}
-          Connect phone
-        </Button>
-      </div>
 
       <SettingsCallout tone="info" icon={Smartphone}>
         EvoFlux must stay running on this computer for remote access to work.
@@ -266,8 +320,26 @@ function PairingSection({
 
   const paired = pairingQ.data != null
 
+  // Auto-issue a pairing link once the adapter reaches "polling" and no
+  // pairing exists yet.  Uses a ref guard so the effect fires at most once
+  // per connection session — avoids re-triggering on every render.
+  const autoIssuedRef = useRef(false)
+  useEffect(() => {
+    if (
+      state === 'polling' &&
+      !paired &&
+      !autoIssuedRef.current &&
+      !linkMut.isPending &&
+      !linkMut.data
+    ) {
+      autoIssuedRef.current = true
+      linkMut.mutate(connectionId)
+    }
+  }, [state, paired, connectionId, linkMut])
+
   async function handleGetLink() {
     setLinkCopied(false)
+    linkMut.reset()
     await linkMut.mutateAsync(connectionId)
   }
 
@@ -317,27 +389,26 @@ function PairingSection({
             label="Connect phone"
             description={
               state === 'polling'
-                ? 'Generate a one-tap link or QR code to pair your phone.'
+                ? 'Scan the QR code with your phone camera to link Telegram — no typing needed.'
                 : `Waiting for adapter to connect (current state: ${state}).`
             }
             stacked
             control={
-              <div className="flex flex-col gap-3">
-                <Button
-                  onClick={() => void handleGetLink()}
-                  disabled={linkMut.isPending || state !== 'polling'}
-                >
-                  {linkMut.isPending ? (
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <QrCode className="mr-2 size-4" />
-                  )}
-                  Generate pairing link
-                </Button>
-
+              <div className="flex flex-col gap-4">
+                {/* ── QR code — primary pairing method ── */}
                 {linkMut.data && (
-                  <div className="flex flex-col gap-2 rounded-lg border border-(--color-border) bg-(--bg-key) p-3">
-                    <div className="flex items-center gap-2">
+                  <div className="flex flex-col items-center gap-3 rounded-lg border border-(--color-border) bg-(--bg-key) p-4">
+                    <QRCodeSVG
+                      value={linkMut.data.url}
+                      size={180}
+                      bgColor="transparent"
+                      fgColor="var(--color-text)"
+                      level="M"
+                    />
+                    <p className="text-center text-sm text-(--color-text-muted)">
+                      Scan with your phone camera, or tap the link below.
+                    </p>
+                    <div className="flex w-full items-center gap-2">
                       <a
                         href={linkMut.data.url}
                         target="_blank"
@@ -369,10 +440,37 @@ function PairingSection({
                     </div>
                     <p className="text-xs text-(--color-text-muted)">
                       Link expires {formatRelativeTime(linkMut.data.expires_at)}.
-                      Open it on your phone or scan the QR code in the Telegram app.
                     </p>
                   </div>
                 )}
+
+                {/* ── Loading spinner while auto-issuing ── */}
+                {!linkMut.data && linkMut.isPending && (
+                  <div className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-key) p-4 text-sm text-(--color-text-muted)">
+                    <Loader2 className="size-4 animate-spin" />
+                    Generating QR code...
+                  </div>
+                )}
+
+                {/* ── Manual link generation (when auto-issue hasn't fired or failed) ── */}
+                {!linkMut.data && !linkMut.isPending && (
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => void handleGetLink()}
+                      disabled={state !== 'polling'}
+                    >
+                      <Link2 className="mr-2 size-4" />
+                      Generate pairing link
+                    </Button>
+                    {linkMut.isError && (
+                      <p className="text-xs text-(--color-error)">
+                        {linkMut.error?.message ?? 'Could not generate link.'}
+                      </p>
+                    )}
+                  </div>
+                )}
+
               </div>
             }
           />
@@ -416,14 +514,17 @@ function formatRelativeTime(iso: string): string {
     const date = new Date(iso)
     const now = new Date()
     const diffMs = now.getTime() - date.getTime()
-    if (diffMs < 0) return 'just now'
-    const diffMin = Math.floor(diffMs / 60_000)
-    if (diffMin < 1) return 'just now'
-    if (diffMin < 60) return `${diffMin}m ago`
+    const absDiffMs = Math.abs(diffMs)
+    const future = diffMs < 0
+
+    if (absDiffMs < 60_000) return future ? 'in <1m' : 'just now'
+
+    const diffMin = Math.floor(absDiffMs / 60_000)
+    if (diffMin < 60) return future ? `in ${diffMin}m` : `${diffMin}m ago`
     const diffH = Math.floor(diffMin / 60)
-    if (diffH < 24) return `${diffH}h ago`
+    if (diffH < 24) return future ? `in ${diffH}h` : `${diffH}h ago`
     const diffD = Math.floor(diffH / 24)
-    return `${diffD}d ago`
+    return future ? `in ${diffD}d` : `${diffD}d ago`
   } catch {
     return iso
   }

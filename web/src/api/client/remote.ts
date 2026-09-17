@@ -63,6 +63,11 @@ export type RemotePairingLink = {
   expires_at: string
 }
 
+export type RemotePairingCode = {
+  code_display: string
+  expires_at: string
+}
+
 export type RemotePairing = {
   id: string
   label: string
@@ -178,4 +183,14 @@ export async function revokePairing(id: string): Promise<void> {
   })
   if (!res.ok)
     await parseDetailOrThrow(res, `DELETE /remote/connections/${id}/pairing`)
+}
+
+/** POST /api/remote/connections/{id}/pairing-codes — issue a one-time pairing code. */
+export async function issuePairingCode(id: string): Promise<RemotePairingCode> {
+  const res = await fetch(`${apiBaseUrl()}/remote/connections/${id}/pairing-codes`, {
+    method: 'POST',
+  })
+  if (!res.ok)
+    await parseDetailOrThrow(res, `POST /remote/connections/${id}/pairing-codes`)
+  return res.json()
 }

@@ -34,7 +34,10 @@ from app.remote.contracts import (
     RemoteOutboundMessage,
     RemoteOutboundPriority,
 )
-from app.remote.formatting import render_permission_card, render_permission_resolved_card
+from app.remote.formatting import (
+    render_permission_card,
+    render_permission_resolved_card,
+)
 from app.remote.severity import derive_severity
 
 if TYPE_CHECKING:

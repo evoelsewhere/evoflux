@@ -56,7 +56,7 @@ async def _paired_text_action(db, text: str = "Plan my next task"):
 
 
 @pytest.mark.asyncio
-async def test_handle_text_result_defaults_to_summary_response_mode(monkeypatch):
+async def test_handle_text_result_defaults_to_live_response_mode(monkeypatch):
     from app.remote.inbound import RemoteInboundService
     import app.remote.inbound as inbound
 
@@ -78,7 +78,7 @@ async def test_handle_text_result_defaults_to_summary_response_mode(monkeypatch)
 
         result = await RemoteInboundService().handle_text(db, action)
 
-        assert result.response_mode == "summary"
+        assert result.response_mode == "live"
 
 
 @pytest.mark.asyncio

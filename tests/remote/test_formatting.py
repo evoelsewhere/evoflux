@@ -476,3 +476,214 @@ def test_render_changes_card_escapes_file_paths():
     )
     assert "<script>.py" not in text
     assert "&lt;script&gt;.py" in text
+
+
+# ── Markdown → Telegram HTML ─────────────────────────────────────────────────
+
+
+class TestMarkdownToTelegramHtml:
+    """Regression tests for markdown_to_telegram_html.  Telegram uses
+    parse_mode="HTML" so every Markdown construct must be converted."""
+
+    def test_bold(self) -> None:
+        assert formatting.markdown_to_telegram_html("**bold**") == "<b>bold</b>"
+
+    def test_italic(self) -> None:
+        assert formatting.markdown_to_telegram_html("*italic*") == "<i>italic</i>"
+
+    def test_bold_italic(self) -> None:
+        result = formatting.markdown_to_telegram_html("***both***")
+        assert "<b>" in result and "<i>" in result
+
+    def test_inline_code(self) -> None:
+        result = formatting.markdown_to_telegram_html("use `foo()` here")
+        assert "<code>foo()</code>" in result
+
+    def test_fenced_code_block(self) -> None:
+        md = "```python\ndef f():\n    pass\n```"
+        result = formatting.markdown_to_telegram_html(md)
+        assert "<pre>" in result
+        assert "def f():" in result
+
+    def test_link(self) -> None:
+        result = formatting.markdown_to_telegram_html("[click here](https://example.com)")
+        assert '<a href="https://example.com">click here</a>' in result
+
+    def test_heading(self) -> None:
+        result = formatting.markdown_to_telegram_html("# Title")
+        assert "<b>Title</b>" in result
+
+    def test_strikethrough(self) -> None:
+        result = formatting.markdown_to_telegram_html("~~deleted~~")
+        assert "<s>deleted</s>" in result
+
+    def test_unordered_list(self) -> None:
+        result = formatting.markdown_to_telegram_html("- item one\n- item two")
+        assert "• item one" in result
+        assert "• item two" in result
+
+    def test_html_escape_before_conversion(self) -> None:
+        """Literal < and > in source Markdown must be escaped, not treated
+        as HTML tags."""
+        result = formatting.markdown_to_telegram_html("x < y and y > z")
+        assert "&lt;" in result
+        assert "&gt;" in result
+
+    def test_empty_input(self) -> None:
+        assert formatting.markdown_to_telegram_html("") == ""
+
+    def test_none_like_empty(self) -> None:
+        # The function accepts str, but callers may pass empty.
+        assert formatting.markdown_to_telegram_html("") == ""
+
+    def test_code_block_protected_from_inner_formatting(self) -> None:
+        """Bold markers inside code blocks must NOT be converted."""
+        md = "```\n**not bold**\n```"
+        result = formatting.markdown_to_telegram_html(md)
+        assert "<b>" not in result
+        assert "**not bold**" in result
+
+    def test_inline_code_protected_from_inner_formatting(self) -> None:
+        md = "`**not bold**`"
+        result = formatting.markdown_to_telegram_html(md)
+        assert "<b>" not in result
+
+    def test_mixed_content(self) -> None:
+        md = (
+            "# Header\n\n"
+            "Some **bold** and *italic* text.\n\n"
+            "- Item 1\n"
+            "- Item 2\n\n"
+            "Check `code()` and [link](https://example.com)."
+        )
+        result = formatting.markdown_to_telegram_html(md)
+        assert "<b>Header</b>" in result
+        assert "<b>bold</b>" in result
+        assert "<i>italic</i>" in result
+        assert "• Item 1" in result
+        assert "<code>code()</code>" in result
+        assert '<a href="https://example.com">link</a>' in result
+
+
+# ── derive_card_heading ──────────────────────────────────────────────────────
+
+
+class TestDeriveCardHeading:
+    def test_short_message_used_as_is(self) -> None:
+        assert formatting.derive_card_heading("fix the bug") == "fix the bug"
+
+    def test_long_message_truncated_with_ellipsis(self) -> None:
+        msg = "a" * 100
+        result = formatting.derive_card_heading(msg)
+        assert len(result) <= 60
+        assert result.endswith("\u2026")
+
+    def test_newlines_replaced_with_spaces(self) -> None:
+        assert formatting.derive_card_heading("line1\nline2") == "line1 line2"
+
+    def test_none_uses_fallback(self) -> None:
+        assert formatting.derive_card_heading(None) == "Task"
+
+    def test_empty_string_uses_fallback(self) -> None:
+        assert formatting.derive_card_heading("") == "Task"
+
+    def test_whitespace_only_uses_fallback(self) -> None:
+        assert formatting.derive_card_heading("   ") == "Task"
+
+    def test_custom_fallback(self) -> None:
+        assert formatting.derive_card_heading(None, fallback_title="Custom") == "Custom"
+
+
+# ── render_done_card with usage data ─────────────────────────────────────────
+
+
+class TestRenderDoneCardUsage:
+    def test_done_card_shows_model_and_tokens(self) -> None:
+        text, _ = formatting.render_done_card(
+            title="Task",
+            elapsed_seconds=5.0,
+            summary_lines=[],
+            tool_call_count=0,
+            diff_token=None,
+            toollog_token=None,
+            model="claude-sonnet-4-20250514",
+            input_tokens=1000,
+            output_tokens=500,
+            cached_tokens=200,
+            cost_usd=0.015,
+        )
+        assert "claude-sonnet-4-20250514" in text
+        # Compact format: ↓1K ↑500 · cache 200 (20%)
+        assert "1K" in text
+        assert "500" in text
+        assert "cache 200" in text
+        assert "20%" in text
+        assert "$0.0150" in text
+
+    def test_done_card_shows_reasoning_tokens(self) -> None:
+        text, _ = formatting.render_done_card(
+            title="Task",
+            elapsed_seconds=2.0,
+            summary_lines=[],
+            tool_call_count=0,
+            diff_token=None,
+            toollog_token=None,
+            model="o3-mini",
+            input_tokens=500,
+            output_tokens=200,
+            reasoning_tokens=3000,
+        )
+        assert "reasoning 3K" in text
+
+    def test_done_card_omits_usage_when_none(self) -> None:
+        text, _ = formatting.render_done_card(
+            title="Task",
+            elapsed_seconds=1.0,
+            summary_lines=[],
+            tool_call_count=0,
+            diff_token=None,
+            toollog_token=None,
+        )
+        assert "\U0001f4ca" not in text  # chart icon = usage footer
+
+    def test_done_card_converts_markdown_response(self) -> None:
+        """Response text with Markdown should be converted to HTML."""
+        text, _ = formatting.render_done_card(
+            title="Task",
+            elapsed_seconds=1.0,
+            summary_lines=[],
+            tool_call_count=0,
+            diff_token=None,
+            toollog_token=None,
+            response_text="**fixed** the `auth.ts` bug",
+        )
+        assert "<b>fixed</b>" in text
+        assert "<code>auth.ts</code>" in text
+
+
+# ── render_live_status_card with usage ────────────────────────────────────────
+
+
+class TestRenderLiveStatusCardUsage:
+    def test_live_card_shows_model_and_tokens(self) -> None:
+        text, _ = formatting.render_live_status_card(
+            title="Working",
+            elapsed_seconds=3.0,
+            activity_lines=[],
+            model="gpt-4",
+            input_tokens=500,
+            output_tokens=100,
+            cost_usd=0.005,
+        )
+        assert "gpt-4" in text
+        assert "500" in text
+        assert "100" in text
+        assert "$0.0050" in text
+
+    def test_live_card_omits_usage_when_none(self) -> None:
+        text, _ = formatting.render_live_status_card(
+            title="Working",
+            elapsed_seconds=1.0,
+            activity_lines=["tool call"],
+        )
+        assert "\U0001f4ca" not in text

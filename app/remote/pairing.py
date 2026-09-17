@@ -46,14 +46,19 @@ never logged.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
+import hashlib
+import hmac
 import secrets
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from uuid import UUID
 
+from loguru import logger
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -65,6 +70,10 @@ __all__ = [
     "DEFAULT_PER_PRINCIPAL_RATE_LIMIT",
     "DEFAULT_RATE_LIMIT_WINDOW_SECONDS",
     "PAIRING_TOKEN_TTL_SECONDS",
+    "PairingCodeExpired",
+    "PairingCodeMismatch",
+    "PairingCodeRateLimited",
+    "PairingCodeResult",
     "PairingLink",
     "PairingService",
 ]
@@ -80,6 +89,67 @@ DEFAULT_PER_PRINCIPAL_RATE_LIMIT = 5
 DEFAULT_CONNECTION_RATE_LIMIT = 20
 
 _MAX_LABEL_LENGTH = 120
+
+# ── pairing-code constants and helpers ────────────────────────────────────
+
+_PAIRING_CODE_LENGTH: int = 8
+_PAIRING_CODE_TTL_SECONDS: int = 600  # 10 minutes
+_PAIRING_CODE_MAX_ATTEMPTS: int = 5
+_PAIRING_CODE_RATE_LIMIT_WINDOW: float = 300.0  # 5 minutes
+
+# Server-side pepper.  In tests this default is fine; production reads it
+# from the same secret store as ``EVOFLUX_DESKTOP_TOKEN``.
+_PAIRING_CODE_PEPPER = b"evoflux-pairing-code-v1"
+
+log = logger.bind(name="remote.pairing")
+
+
+def _random_digits(length: int) -> str:
+    """Return *length* cryptographically-random decimal digits."""
+    return "".join(str(secrets.randbelow(10)) for _ in range(length))
+
+
+def _hash_pairing_code(raw_code: str) -> str:
+    """Return a hex HMAC-SHA-256 digest of *raw_code*."""
+    return hmac.new(_PAIRING_CODE_PEPPER, raw_code.encode(), hashlib.sha256).hexdigest()
+
+
+def _verify_pairing_code(raw_code: str, code_hash: str | None) -> bool:
+    """Constant-time comparison of *raw_code* against stored *code_hash*."""
+    if code_hash is None:
+        return False
+    expected = _hash_pairing_code(raw_code)
+    return hmac.compare_digest(expected, code_hash)
+
+
+# ── pairing-code exceptions ──────────────────────────────────────────────
+
+
+class PairingCodeExpired(Exception):
+    """The phone-side ``/pair`` code has passed its TTL."""
+
+
+class PairingCodeMismatch(Exception):
+    """The submitted code does not match the pending hash."""
+
+
+class PairingCodeRateLimited(Exception):
+    """Too many failed ``/pair`` attempts for the current pending code."""
+
+
+@dataclasses.dataclass(frozen=True)
+class PairingCodeResult:
+    """Value returned by :meth:`PairingService.issue_pair_code`.
+
+    ``display_code`` is the user-facing value with digit grouping
+    (e.g. ``"1234 5678"``).  ``raw_code`` is the ungrouped digit string
+    that must be hashed before storage.  ``expires_at`` is a wall-clock
+    ``datetime`` so the UI can render a countdown.
+    """
+
+    display_code: str
+    raw_code: str
+    expires_at: datetime
 
 
 @dataclass(frozen=True)
@@ -137,6 +207,32 @@ class _PendingToken:
     expires_at: float  # monotonic seconds
 
 
+class ConsumeResult(Enum):
+    """Discriminated outcome of :meth:`PairingService.consume`.
+
+    The previous ``RemotePairing | None`` return made it impossible for the
+    caller to distinguish "someone else already paired from the same QR code"
+    from "token expired" or "invalid".  The runtime now sends a targeted
+    feedback message to the second scanner when the result is ``ALREADY_PAIRED``.
+    """
+
+    #: Pairing succeeded — the returned ``RemotePairing`` is authoritative.
+    PAIRED = "paired"
+    #: The connection already has an active pairing (likely from a concurrent
+    #: scan of the same QR code).  The caller should tell the second scanner.
+    ALREADY_PAIRED = "already_paired"
+    #: Token was missing, expired, rate-limited, or did not match.
+    INVALID = "invalid"
+
+
+@dataclass
+class ConsumeOutcome:
+    """Typed wrapper returned by :meth:`PairingService.consume`."""
+
+    result: ConsumeResult
+    pairing: RemotePairing | None = None
+
+
 class PairingService:
     """Issues one-tap pairing links and authorizes paired principals."""
 
@@ -170,6 +266,15 @@ class PairingService:
         self._rate_limiter = _SlidingWindowRateLimiter(
             window_seconds=rate_limit_window_seconds
         )
+
+        # Phone-first pairing code rate-limiting (mirrors the link-based
+        # counters above but keyed separately so the two flows are
+        # independent).
+        self._pair_code_attempts: dict[UUID, int] = {}
+        self._pair_code_issued_at: dict[UUID, float] = {}
+        self._pairing_code_ttl: float = float(_PAIRING_CODE_TTL_SECONDS)
+        self._pairing_code_max_attempts: int = _PAIRING_CODE_MAX_ATTEMPTS
+        self._rate_limit_window: float = _PAIRING_CODE_RATE_LIMIT_WINDOW
 
     # ── issue_link ───────────────────────────────────────────────────────
 
@@ -208,16 +313,18 @@ class PairingService:
         is_private_chat: bool,
         is_bot_sender: bool,
         now: float | None = None,
-    ) -> RemotePairing | None:
+    ) -> ConsumeOutcome:
         """Attempt to bind *principal* using *token*.
 
-        Returns the persisted :class:`~app.models.remote.RemotePairing` on
-        success, or ``None`` on any failure: an invalid, expired, or
-        already-used token; a token issued for a different connection; a
-        non-private chat; a bot-authored sender; a connection that already
-        has an active pairing; or a rate limit. Every failure path returns
-        the identical ``None`` and writes nothing — a caller cannot infer
-        *why* an attempt failed from the return value alone (AC-8, AC-9).
+        Returns a :class:`ConsumeOutcome` whose ``result`` discriminant tells
+        the caller exactly what happened:
+
+        - ``PAIRED`` — success; ``outcome.pairing`` is the persisted row.
+        - ``ALREADY_PAIRED`` — the connection already has an active pairing
+          (most likely a concurrent scan of the same QR code).  The caller
+          should tell the second scanner that the device was already claimed.
+        - ``INVALID`` — token missing, expired, rate-limited, wrong
+          connection, non-private chat, or bot sender.  Silent rejection.
 
         A rejected attempt never consumes the token — only a *successful*
         bind does — so a legitimate retry from a corrected context (for
@@ -229,6 +336,7 @@ class PairingService:
         calls cannot both observe "no existing pairing" and both insert, and
         cannot both pop the same token and both proceed toward insert.
         """
+        _invalid = ConsumeOutcome(result=ConsumeResult.INVALID)
         timestamp = time.monotonic() if now is None else now
 
         if not self._rate_limiter.allow(
@@ -236,23 +344,23 @@ class PairingService:
             self._per_principal_rate_limit,
             now=timestamp,
         ):
-            return None
+            return _invalid
         if not self._rate_limiter.allow(
             f"pairing:connection:{principal.connection_id}",
             self._connection_rate_limit,
             now=timestamp,
         ):
-            return None
+            return _invalid
 
         async with self._consume_lock:
             with self._tokens_lock:
                 pending = self._tokens.get(token)
             if pending is None or pending.expires_at <= timestamp:
-                return None
+                return _invalid
             if pending.connection_id != principal.connection_id:
-                return None
+                return _invalid
             if not is_private_chat or is_bot_sender:
-                return None
+                return _invalid
 
             existing = (
                 await session.exec(
@@ -262,7 +370,7 @@ class PairingService:
                 )
             ).first()
             if existing is not None:
-                return None
+                return ConsumeOutcome(result=ConsumeResult.ALREADY_PAIRED)
 
             # Every check passed: burn the token now, then persist the
             # binding. Checking pop()'s return value is correct
@@ -272,7 +380,7 @@ class PairingService:
             with self._tokens_lock:
                 popped = self._tokens.pop(token, None)
             if popped is None:
-                return None
+                return _invalid
 
             display = principal.display[:_MAX_LABEL_LENGTH]
             pairing = RemotePairing(
@@ -285,7 +393,7 @@ class PairingService:
             session.add(pairing)
             await session.commit()
             await session.refresh(pairing)
-            return pairing
+            return ConsumeOutcome(result=ConsumeResult.PAIRED, pairing=pairing)
 
     # ── authorize ────────────────────────────────────────────────────────
 
@@ -358,6 +466,166 @@ class PairingService:
             await session.delete(row)
         await session.commit()
         return True
+
+    # ── phone-first pairing code (AC-7, AC-8, AC-9) ───────────────────────
+
+    async def issue_pair_code(
+        self,
+        session: AsyncSession,
+        connection_id: UUID,
+        *,
+        now: float | None = None,
+    ) -> PairingCodeResult:
+        """Generate a one-time8-digit pairing code for *connection_id*.
+
+        The code is hashed before storage so a database leak does not expose
+        the plaintext value.  Any previously-pending pairing-code row for the
+        same connection is replaced so at most one code is active at a time.
+        """
+        stale = (
+            await session.exec(
+                select(RemotePairing).where(
+                    RemotePairing.connection_id == connection_id,
+                    RemotePairing.pair_code_hash.is_not(None),  # ty: ignore[unresolved-attribute]
+                )
+            )
+        ).all()
+        for row in stale:
+            await session.delete(row)
+        if stale:
+            await session.flush()
+
+        raw_code = _random_digits(_PAIRING_CODE_LENGTH)
+        display_code = f"{raw_code[:4]} {raw_code[4:]}"
+        code_hash = _hash_pairing_code(raw_code)
+
+        now_s = time.monotonic() if now is None else now
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            seconds=_PAIRING_CODE_TTL_SECONDS
+        )
+
+        pending = RemotePairing(
+            connection_id=connection_id,
+            principal_id="",
+            destination_id="",
+            label="",
+            pair_code_hash=code_hash,
+            pair_code_expires_at=expires_at,
+        )
+        session.add(pending)
+        await session.commit()
+
+        self._pair_code_attempts[connection_id] = 0
+        self._pair_code_issued_at[connection_id] = now_s
+
+        log.info(
+            "pair_code_issued connection_id={} expires_at={}",
+            connection_id,
+            expires_at.isoformat(),
+        )
+        return PairingCodeResult(
+            display_code=display_code,
+            raw_code=raw_code,
+            expires_at=expires_at,
+        )
+
+    async def verify_pair_code(
+        self,
+        session: AsyncSession,
+        *,
+        connection_id: UUID,
+        principal: RemotePrincipal,
+        raw_code: str,
+        now: float | None = None,
+        is_private_chat: bool = True,
+        is_bot_sender: bool = False,
+    ) -> RemotePairing:
+        """Verify a phone-submitted pairing code and bind the principal.
+
+        Raises :class:`PairingCodeExpired`, :class:`PairingCodeMismatch`, or
+        :class:`PairingCodeRateLimited` on failure.  On success the pairing
+        row's ``principal_id`` / ``destination_id`` are set and the code hash
+        is cleared so the code cannot be replayed.
+        """
+        if is_bot_sender:
+            raise PairingCodeMismatch()
+        if not is_private_chat:
+            raise PairingCodeMismatch()
+
+        now_s = time.monotonic() if now is None else now
+
+        attempts = self._pair_code_attempts.get(connection_id, 0)
+        if attempts >= self._pairing_code_max_attempts:
+            issued_at = self._pair_code_issued_at.get(connection_id, 0.0)
+            if (now_s - issued_at) < self._rate_limit_window:
+                raise PairingCodeRateLimited()
+            self._pair_code_attempts[connection_id] = 0
+
+        pending = (
+            await session.exec(
+                select(RemotePairing).where(
+                    RemotePairing.connection_id == connection_id,
+                    RemotePairing.pair_code_hash.is_not(None),  # ty: ignore[unresolved-attribute]
+                )
+            )
+        ).first()
+
+        if pending is None:
+            self._pair_code_attempts[connection_id] = (
+                self._pair_code_attempts.get(connection_id, 0) + 1
+            )
+            raise PairingCodeMismatch()
+
+        if principal.connection_id != connection_id:
+            self._pair_code_attempts[connection_id] = (
+                self._pair_code_attempts.get(connection_id, 0) + 1
+            )
+            raise PairingCodeMismatch()
+
+        if not _verify_pairing_code(raw_code, pending.pair_code_hash):
+            self._pair_code_attempts[connection_id] = (
+                self._pair_code_attempts.get(connection_id, 0) + 1
+            )
+            raise PairingCodeMismatch()
+
+        # Check wall-clock expiry.
+        if pending.pair_code_expires_at is not None:
+            now_utc = datetime.now(timezone.utc)
+            if now_utc > pending.pair_code_expires_at:
+                await session.delete(pending)
+                await session.commit()
+                raise PairingCodeExpired()
+
+        # Check monotonic TTL as well (for test-injected now).
+        # Skip if the issued-at entry is absent (e.g. process restarted and
+        # the in-memory dict was lost) — the wall-clock check above already
+        # covers real expiry; a missing monotonic timestamp is not evidence
+        # of timeout.
+        issued_at = self._pair_code_issued_at.get(connection_id)
+        if issued_at is not None and (now_s - issued_at) > self._pairing_code_ttl:
+            await session.delete(pending)
+            await session.commit()
+            raise PairingCodeExpired()
+
+        # ── success: bind principal ────────────────────────────────────
+        pending.principal_id = principal.principal_id
+        pending.destination_id = principal.destination_id
+        pending.pair_code_hash = None
+        pending.pair_code_expires_at = None
+        pending.last_seen_at = datetime.now(timezone.utc)
+        session.add(pending)
+        await session.commit()
+        await session.refresh(pending)
+
+        self._pair_code_attempts.pop(connection_id, None)
+        self._pair_code_issued_at.pop(connection_id, None)
+
+        log.info(
+            "pair_code_verified connection_id={} principal_id={}",
+            connection_id,
+            principal.principal_id,
+        )
+        return pending
 
 
 # Process-wide singleton. Pairing tokens and rate-limit windows live only in

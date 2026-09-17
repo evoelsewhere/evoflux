@@ -20,6 +20,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.schemas.remote import (
+    PairingCodeBody,
     RemoteConnectionCreateRequest,
     RemoteConnectionPatchRequest,
     RemoteConnectionResponse,
@@ -39,6 +40,8 @@ from app.remote.connection_service import (
     RemoteCredentialError,
     default_credential_store_factory,
 )
+from loguru import logger
+
 from app.remote.contracts import RemoteAdapterValidationError
 from app.remote.pairing import PairingService, pairing_service as _pairing_service
 from app.remote.runtime import TelegramAdapterFactory, remote_runtime
@@ -287,9 +290,61 @@ async def revoke_pairing(
     pairing_service: PairingService = Depends(get_pairing_service),
 ) -> None:
     """Revoke the paired account (AC-10) — a later ``authorize`` call for
-    the former principal fails immediately, with no cache to invalidate."""
+    the former principal fails immediately, with no cache to invalidate.
+
+    Sends a notification message to the phone *before* removing the pairing
+    so the user sees an immediate explanation instead of a silent disconnect.
+    """
     await _connection_or_404(session, service, connection_id)
+    pairing = await _get_pairing(session, connection_id)
+    # Best-effort notification — if the adapter is stopped or send fails we
+    # still proceed with the unpair so the user isn't stuck.
+    if pairing is not None:
+        try:
+            adapter = remote_runtime.adapter
+            if adapter is not None:
+                from app.remote.contracts import (
+                    RemoteOutboundMessage,
+                    RemoteOutboundPriority,
+                )
+
+                await adapter.send(
+                    RemoteOutboundMessage(
+                        connection_id=connection_id,
+                        destination_id=pairing.destination_id,
+                        text="\u26a0\ufe0f This device has been unpaired from EvoFlux. Send /start to pair again.",
+                        buttons=(),
+                        priority=RemoteOutboundPriority.HIGH,
+                    )
+                )
+        except Exception:
+            logger.debug("remote_unpair_notify_failed connection_id={}", connection_id)
     await pairing_service.unpair(session, connection_id)
+
+
+@router.post(
+    "/connections/{connection_id}/pairing-codes",
+    response_model=PairingCodeBody,
+    status_code=201,
+)
+async def issue_pairing_code(
+    connection_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    service: RemoteConnectionService = Depends(get_connection_service),
+    pairing_service: PairingService = Depends(get_pairing_service),
+) -> PairingCodeBody:
+    """Generate a one-time8-digit pairing code for a connection.
+
+    The phone user then types ``/pair <code>`` in the Telegram bot to
+    complete pairing.  Any previously-pending code for this connection is
+    replaced.
+    """
+    await _connection_or_404(session, service, connection_id)
+    result = await pairing_service.issue_pair_code(session, connection_id)
+    return PairingCodeBody(
+        code_display=result.display_code,
+        expires_at=result.expires_at,
+    )
 
 
 # ── Status ────────────────────────────────────────────────────────────────

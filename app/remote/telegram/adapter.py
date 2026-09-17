@@ -284,6 +284,18 @@ class TelegramAdapter:
         try:
             await self._client.answer_callback(raw_id)
         except TelegramApiError as exc:
+            if exc.error_code == 400:
+                # Expired or invalid callback query — Telegram requires
+                # answering within 10 seconds; after a server restart or
+                # network delay the query is stale.  Log and continue so
+                # the actual action (session switch, summarize, etc.) still
+                # executes instead of being killed by the transport error.
+                logger.debug(
+                    "remote_answer_callback_expired error={}",
+                    exc,
+                )
+                self._record_delivery_failure(exc)
+                return
             self._record_delivery_failure(exc)
             raise
         self._record_delivery_success()
@@ -370,10 +382,10 @@ class TelegramAdapter:
         Best-effort: a paired user can still type any command by hand, so a
         failure here must never block the poll loop from starting.
 
-        ``clear`` is a deliberate addition beyond the control-surface
-        spec's original AC-58 bounded set (9 commands) — requested
-        directly by a user testing this feature live, after this set was
-        first implemented.
+        ``clear``, ``history``, and ``pair`` are deliberate additions
+        beyond the control-surface spec's original AC-58 bounded set (9
+        commands) — requested directly by a user testing this feature
+        live, after that set was first implemented.
         """
         commands = [
             ("help", "What can I do here?"),
@@ -382,14 +394,20 @@ class TelegramAdapter:
             ("stop", "Interrupt the agent mid-task"),
             ("settings", "Change mode, model, agent, or response style"),
             ("health", "Check system health"),
+            ("history", "Browse recent chat sessions"),
             ("changes", "See this task's file changes"),
             ("clear", "Delete my recent messages here"),
             ("actions", "Run a workflow, project, or schedule"),
+            ("pair", "Connect this phone with a code"),
             ("unpair", "Disconnect this phone"),
         ]
         try:
             await self._client.set_commands(commands)
-        except (TelegramApiError, TelegramTransportError, TelegramMalformedResponseError):
+        except (
+            TelegramApiError,
+            TelegramTransportError,
+            TelegramMalformedResponseError,
+        ):
             logger.warning(
                 "remote_set_commands_failed connection_id={}", self._connection_id
             )

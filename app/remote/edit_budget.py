@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 __all__ = ["EditBudget", "LIVE_EDIT_INTERVAL"]
 
-LIVE_EDIT_INTERVAL = 3.0
+LIVE_EDIT_INTERVAL = 2.0
 
 
 @dataclass

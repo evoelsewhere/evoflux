@@ -155,8 +155,9 @@ class TestStartupSequence:
 
     @pytest.mark.asyncio
     async def test_registers_exactly_the_bounded_command_set(self):
-        """AC-58's original 9-command set plus /clear, a deliberate
-        post-spec addition (see _register_commands's docstring)."""
+        """AC-58's original 9-command set plus /clear, /history, and
+        /pair, each a deliberate post-spec addition (see
+        _register_commands's docstring)."""
         transport = ScriptedTransport()
         adapter = _make_adapter(transport)
         await _run_briefly(adapter)
@@ -171,9 +172,11 @@ class TestStartupSequence:
             "stop",
             "settings",
             "health",
+            "history",
             "changes",
             "clear",
             "actions",
+            "pair",
             "unpair",
         ]
 
@@ -902,4 +905,87 @@ class TestStatusIsSafe:
         await _run_briefly(adapter)
         status = adapter.status()
         assert TOKEN not in repr(status)
+
+
+# ---------------------------------------------------------------------------
+# answer_callback: 400 errors are benign (expired query)
+# ---------------------------------------------------------------------------
+
+
+class TestAnswerCallbackExpired:
+    @pytest.mark.asyncio
+    async def test_answer_callback_400_does_not_crash(self):
+        """Regression: 400 'query is too old' should be swallowed so the
+        actual callback action still executes."""
+        transport = ScriptedTransport()
+        transport.queue(
+            "getUpdates",
+            _ok(
+                [
+                    {
+                        "update_id": 1,
+                        "callback_query": {
+                            "id": "raw-cbq-expired",
+                            "from": {"id": 200, "is_bot": False},
+                            "message": {
+                                "message_id": 1,
+                                "date": 1,
+                                "chat": {"id": 100, "type": "private"},
+                            },
+                            "data": "opaque-token-expired",
+                        },
+                    }
+                ]
+            ),
+        )
+        transport.queue(
+            "answerCallbackQuery",
+            _err(400, 400, "Bad Request: query is too old and response timeout expired"),
+        )
+        adapter = _make_adapter(transport)
+        await adapter.start()
+        await asyncio.sleep(0.05)
+
+        # Must NOT raise.
+        await adapter.answer_callback("opaque-token-expired")
+        await adapter.stop()
+
+    @pytest.mark.asyncio
+    async def test_answer_callback_403_still_raises(self):
+        """403 (bot blocked) must still propagate — it's a real error."""
+        transport = ScriptedTransport()
+        transport.queue(
+            "getUpdates",
+            _ok(
+                [
+                    {
+                        "update_id": 1,
+                        "callback_query": {
+                            "id": "raw-cbq-blocked",
+                            "from": {"id": 200, "is_bot": False},
+                            "message": {
+                                "message_id": 1,
+                                "date": 1,
+                                "chat": {"id": 100, "type": "private"},
+                            },
+                            "data": "opaque-token-blocked",
+                        },
+                    }
+                ]
+            ),
+        )
+        transport.queue(
+            "answerCallbackQuery",
+            _err(403, 403, "Forbidden: bot was blocked by the user"),
+        )
+        adapter = _make_adapter(transport)
+        await adapter.start()
+        await asyncio.sleep(0.05)
+
+        from app.remote.telegram.client import TelegramApiError
+
+        with pytest.raises(TelegramApiError):
+            await adapter.answer_callback("opaque-token-blocked")
+        status = adapter.status()
+        await adapter.stop()
         assert TOKEN not in str(status)

@@ -13,8 +13,8 @@ to continue.
 
 ## Goals
 
-1. **One-tap pairing** — scan a QR or open a deep link; no manual token entry
-   on the phone.
+1. **One-tap pairing** — scan a QR, open a deep link, or enter a short code;
+   no manual token entry on the phone.
 2. **Current-task text** — the bot shows what the active session is doing so the
    user can decide without opening the desktop.
 3. **Automatic gates and completion** — permission requests, questions, and plan
@@ -36,13 +36,31 @@ to continue.
 
 ### Setup
 
-1. User creates a Telegram bot via BotFather and copies the bot token.
-2. In Settings → Remote access the user pastes the token and clicks Connect.
+1. In Settings → Remote access, the user clicks **Open BotFather & copy
+   /newbot**. The button opens @BotFather in Telegram and copies the
+   `/newbot` command to the clipboard so the user can paste it immediately.
+2. The user creates a bot in BotFather, copies the token, and pastes it into
+   the EvoFlux token field.
 3. EvoFlux stores the token in the OS credential vault, verifies it with the
-   Telegram API, and creates a `remote_connections` row.
-4. The UI shows a pairing link (or QR). The user opens it on the phone.
-5. The user taps Start in the bot chat. EvoFlux records the `chat_id` in
-   `remote_pairings` and the state becomes `paired`.
+   Telegram API, creates a `remote_connections` row, and starts the adapter.
+4. Once the adapter reaches `polling` state, EvoFlux automatically issues a
+   one-time pairing link and displays a **QR code** on the settings page. The
+   QR code encodes a `t.me/<bot>?start=<token>` deep link.
+5. The user scans the QR code with their phone camera (or taps the link).
+   Telegram opens and sends the `/start <token>` command automatically — no
+   typing needed.
+6. EvoFlux records the `chat_id` in `remote_pairings` and the state becomes
+   `paired`.
+
+Users who prefer to type a code can expand the "Prefer to type a code
+instead?" fallback section, which generates an 8-digit code and a `/pair`
+command.
+
+The connection status uses adaptive polling: the frontend polls every 2
+seconds during transitional states (`starting`, `backoff`) and every 15
+seconds once the connection is stable (`polling`, `offline`). This ensures
+the UI tracks adapter lifecycle changes in real time without navigating
+away from the settings page.
 
 ### Daily use
 
@@ -83,7 +101,7 @@ to continue.
 ### Unpair
 
 - Desktop: Settings → Remote access → Remove.
-- Phone: send `/unpair` to the bot.
+- Phone: send `/pair <code>` to connect, or `/unpair` to disconnect.
 
 ## Requirements and acceptance criteria
 
@@ -136,6 +154,7 @@ of revised AC-24. They cover:
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/api/remote/connections/{id}/pairing-links` | Issue pairing link |
+| `POST` | `/api/remote/connections/{id}/pairing-codes` | Issue one-time8-digit pairing code |
 | `GET` | `/api/remote/connections/{id}/pairing` | Read pairing state |
 | `DELETE` | `/api/remote/connections/{id}/pairing` | Revoke pairing |
 
@@ -264,7 +283,7 @@ count.
 |---|---|
 | Adapter and polling | `app/remote/adapter.py`, `app/remote/poller.py` |
 | Telegram client | `app/remote/telegram_client.py` |
-| Connection and pairing services | `app/remote/connection_service.py`, `app/remote/pairing_service.py` |
+| Connection and pairing services | `app/remote/connection_service.py`, `app/remote/pairing.py` |
 | Outbound projection | `app/remote/projection.py` |
 | Redaction | `app/remote/redaction.py` (wraps `protect_outbound_text`) |
 | API routes | `app/api/routes/remote.py`, `app/api/routes/settings_remote.py` |

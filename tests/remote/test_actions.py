@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -122,8 +124,12 @@ class TestCommandValidation:
 class TestSlashCommands:
     @pytest.mark.asyncio
     async def test_help_returns_help_text(self, service: RemoteActionService) -> None:
+        mock_db = MagicMock()
         action = _make_action(text="/help")
-        result = await service.dispatch_command(MagicMock(), action)
+        with patch.object(
+            service._pairing_service, "authorize", return_value=MagicMock()
+        ):
+            result = await service.dispatch_command(mock_db, action)
         assert result.status == "ok"
         assert "/help" in result.text
         assert "/status" in result.text
@@ -136,9 +142,23 @@ class TestSlashCommands:
         assert "/actions" in result.text
 
     @pytest.mark.asyncio
+    async def test_help_requires_authorization(
+        self, service: RemoteActionService
+    ) -> None:
+        mock_db = MagicMock()
+        action = _make_action(text="/help")
+        with patch.object(service._pairing_service, "authorize", return_value=None):
+            result = await service.dispatch_command(mock_db, action)
+        assert result.status == "unauthorized"
+
+    @pytest.mark.asyncio
     async def test_start_returns_help(self, service: RemoteActionService) -> None:
+        mock_db = MagicMock()
         action = _make_action(text="/start")
-        result = await service.dispatch_command(MagicMock(), action)
+        with patch.object(
+            service._pairing_service, "authorize", return_value=MagicMock()
+        ):
+            result = await service.dispatch_command(mock_db, action)
         assert result.status == "ok"
         assert "/help" in result.text
 
@@ -146,8 +166,12 @@ class TestSlashCommands:
     async def test_unknown_command_returns_help(
         self, service: RemoteActionService
     ) -> None:
+        mock_db = MagicMock()
         action = _make_action(text="/unknown")
-        result = await service.dispatch_command(MagicMock(), action)
+        with patch.object(
+            service._pairing_service, "authorize", return_value=MagicMock()
+        ):
+            result = await service.dispatch_command(mock_db, action)
         assert result.status == "ok"
         assert "/help" in result.text
 
@@ -616,6 +640,13 @@ class TestMenuLoading:
 
 
 class TestSettings:
+    @pytest.fixture(autouse=True)
+    def _mock_home(self, tmp_path: Path) -> Iterator[None]:
+        """``Path.home()`` fails on some CI Windows images; stub it with
+        *tmp_path* so skill-discovery ``_iter_skill_roots`` does not crash."""
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            yield
+
     @pytest.mark.asyncio
     async def test_settings_command_shows_current_mode_model_and_agent(
         self, service: RemoteActionService
@@ -824,7 +855,12 @@ class TestHealth:
 
         fake_diagnostics = {
             "checks": [
-                {"id": "db", "label": "Database", "status": "ok", "detail": "connected"},
+                {
+                    "id": "db",
+                    "label": "Database",
+                    "status": "ok",
+                    "detail": "connected",
+                },
             ],
             "summary": "ok",
         }
@@ -1149,3 +1185,323 @@ class TestOnboarding:
 
         assert handled is True
         assert adapter.sent_messages  # something was sent
+
+
+# ── Session history (/history) ────────────────────────────────────────────────
+
+
+class TestHistoryCommand:
+    """Regression tests for /history, session_detail, session_switch,
+    session_summarize — and the _issue_token parameter contract that caused
+    repeated crashes when fields were missing."""
+
+    @pytest.mark.asyncio
+    async def test_history_returns_sessions_with_buttons(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        async with db_module.async_session_factory() as db:
+            for i in range(3):
+                db.add(
+                    ChatSession(
+                        title=f"Session {i}",
+                        mode="work",
+                        session_type="main",
+                    )
+                )
+            await db.commit()
+
+            mock_pairing = MagicMock()
+            mock_pairing.active_session_id = None
+
+            with patch.object(
+                service._pairing_service, "authorize", return_value=mock_pairing
+            ):
+                action = _make_action(text="/history")
+                result = await service.dispatch_command(db, action)
+
+        assert result.status == "ok"
+        assert adapter.sent_messages, "history should send a message with buttons"
+        sent = adapter.sent_messages[-1]
+        assert len(sent.buttons) == 3, f"expected 3 buttons, got {len(sent.buttons)}"
+        assert "Recent sessions" in sent.text
+
+    @pytest.mark.asyncio
+    async def test_history_with_no_sessions(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        async with db_module.async_session_factory() as db:
+            mock_pairing = MagicMock()
+            mock_pairing.active_session_id = None
+
+            with patch.object(
+                service._pairing_service, "authorize", return_value=mock_pairing
+            ):
+                action = _make_action(text="/history")
+                result = await service.dispatch_command(db, action)
+
+        assert result.status == "ok"
+        assert "no session" in result.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_history_issue_token_contract(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        """Regression: _issue_token requires all fields — missing any causes
+        TypeError that breaks chat until restart."""
+        async with db_module.async_session_factory() as db:
+            db.add(ChatSession(title="S1", mode="work", session_type="main"))
+            await db.commit()
+
+            mock_pairing = MagicMock()
+            mock_pairing.active_session_id = None
+
+            with patch.object(
+                service._pairing_service, "authorize", return_value=mock_pairing
+            ):
+                action = _make_action(text="/history")
+                result = await service.dispatch_command(db, action)
+
+        assert result.status == "ok"
+        assert adapter.sent_messages
+
+    @pytest.mark.asyncio
+    async def test_session_detail_shows_metadata(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        conn_id = uuid4()
+        async with db_module.async_session_factory() as db:
+            session = ChatSession(
+                title="Fix login bug",
+                mode="coding",
+                session_type="main",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            token = service._issue_token(
+                action_kind="session_detail",
+                action_target=str(session.id),
+                connection_id=conn_id,
+                principal_id="user-1",
+                destination_id="chat-1",
+                session_id="",
+            )
+
+            callback_action = _make_action(
+                kind=RemoteInboundActionKind.CALLBACK,
+                callback_token=token,
+                connection_id=conn_id,
+            )
+            handled = await service.handle_action_callback(callback_action, db)
+
+        assert handled is True
+        assert adapter.sent_messages
+        sent = adapter.sent_messages[-1]
+        assert "Fix login bug" in sent.text
+        button_texts = [b.text for b in sent.buttons]
+        assert any("Switch" in t for t in button_texts)
+        assert any("Summarize" in t for t in button_texts)
+
+    @pytest.mark.asyncio
+    async def test_session_switch_updates_active_session(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        from app.models.remote import RemoteConnection, RemotePairing
+
+        conn_id = uuid4()
+        async with db_module.async_session_factory() as db:
+            # Create the connection first (FK dependency for pairing).
+            connection = RemoteConnection(
+                id=conn_id,
+                adapter="telegram",
+                label="TestConn",
+                enabled=True,
+                adapter_principal_id="user-1",
+            )
+            db.add(connection)
+
+            session = ChatSession(
+                title="Target",
+                mode="work",
+                session_type="main",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            pairing = RemotePairing(
+                connection_id=conn_id,
+                principal_id="user-1",
+                destination_id="chat-1",
+                label="Test",
+            )
+            db.add(pairing)
+            await db.commit()
+            await db.refresh(pairing)
+
+            token = service._issue_token(
+                action_kind="session_switch",
+                action_target=str(session.id),
+                connection_id=conn_id,
+                principal_id="user-1",
+                destination_id="chat-1",
+                session_id="",
+            )
+
+            with patch.object(
+                service._pairing_service, "authorize", return_value=pairing
+            ):
+                callback_action = _make_action(
+                    kind=RemoteInboundActionKind.CALLBACK,
+                    callback_token=token,
+                    connection_id=conn_id,
+                )
+                handled = await service.handle_action_callback(callback_action, db)
+
+        assert handled is True
+        assert pairing.active_session_id == session.id
+        assert "Switched" in adapter.sent_texts[-1]
+
+    @pytest.mark.asyncio
+    async def test_session_summarize_shows_transcript(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        from app.models.chat import SessionMessage
+
+        conn_id = uuid4()
+        async with db_module.async_session_factory() as db:
+            session = ChatSession(
+                title="Chat",
+                mode="work",
+                session_type="main",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            for role, content in [
+                ("user", "Fix the login bug"),
+                ("assistant", "I found the issue in auth.ts"),
+                ("user", "Also check the tests"),
+                ("assistant", "Tests pass now"),
+            ]:
+                db.add(
+                    SessionMessage(session_id=session.id, role=role, content=content)
+                )
+            await db.commit()
+
+            token = service._issue_token(
+                action_kind="session_summarize",
+                action_target=str(session.id),
+                connection_id=conn_id,
+                principal_id="user-1",
+                destination_id="chat-1",
+                session_id="",
+            )
+
+            callback_action = _make_action(
+                kind=RemoteInboundActionKind.CALLBACK,
+                callback_token=token,
+                connection_id=conn_id,
+            )
+            handled = await service.handle_action_callback(callback_action, db)
+
+        assert handled is True
+        text = adapter.sent_texts[-1]
+        assert "Session transcript" in text
+        assert "Fix the login bug" in text
+        assert "auth.ts" in text
+
+    @pytest.mark.asyncio
+    async def test_session_summarize_empty_session(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        conn_id = uuid4()
+        async with db_module.async_session_factory() as db:
+            session = ChatSession(
+                title="Empty",
+                mode="work",
+                session_type="main",
+            )
+            db.add(session)
+            await db.commit()
+            await db.refresh(session)
+
+            token = service._issue_token(
+                action_kind="session_summarize",
+                action_target=str(session.id),
+                connection_id=conn_id,
+                principal_id="user-1",
+                destination_id="chat-1",
+                session_id="",
+            )
+
+            callback_action = _make_action(
+                kind=RemoteInboundActionKind.CALLBACK,
+                callback_token=token,
+                connection_id=conn_id,
+            )
+            handled = await service.handle_action_callback(callback_action, db)
+
+        assert handled is True
+        assert "No messages" in adapter.sent_texts[-1]
+
+    @pytest.mark.asyncio
+    async def test_session_detail_deleted_session(
+        self, service: RemoteActionService, adapter: FakeAdapter
+    ) -> None:
+        conn_id = uuid4()
+        token = service._issue_token(
+            action_kind="session_detail",
+            action_target=str(uuid4()),
+            connection_id=conn_id,
+            principal_id="user-1",
+            destination_id="chat-1",
+            session_id="",
+        )
+
+        async with db_module.async_session_factory() as db:
+            callback_action = _make_action(
+                kind=RemoteInboundActionKind.CALLBACK,
+                callback_token=token,
+                connection_id=conn_id,
+            )
+            handled = await service.handle_action_callback(callback_action, db)
+
+        assert handled is True
+        assert "not found" in adapter.sent_texts[-1].lower()
+
+    def test_issue_token_requires_all_fields(self, service: RemoteActionService) -> None:
+        conn_id = uuid4()
+
+        with pytest.raises(TypeError, match="principal_id"):
+            service._issue_token(
+                action_kind="session_detail",
+                action_target="x",
+                connection_id=conn_id,
+                destination_id="d",
+                session_id="",
+            )
+
+        with pytest.raises(TypeError, match="destination_id"):
+            service._issue_token(
+                action_kind="session_detail",
+                action_target="x",
+                connection_id=conn_id,
+                principal_id="p",
+                session_id="",
+            )
+
+        with pytest.raises(TypeError, match="session_id"):
+            service._issue_token(
+                action_kind="session_detail",
+                action_target="x",
+                connection_id=conn_id,
+                principal_id="p",
+                destination_id="d",
+            )
+
+    def test_history_is_in_slash_commands(self) -> None:
+        assert "history" in _SLASH_COMMANDS
+        assert is_slash_command("/history")

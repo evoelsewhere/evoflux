@@ -220,6 +220,12 @@ class RemoteRuntime:
             await self._stop_locked()
             await self._start_locked()
 
+    @property
+    def adapter(self) -> RemoteAdapter | None:
+        """The currently running adapter, if any. Read-only — callers must
+        not mutate the returned instance's lifecycle."""
+        return self._adapter
+
     def status(self, connection_id: UUID) -> RemoteAdapterStatus:
         """Safe, diagnosable status for *connection_id* (AC-34).
 
@@ -410,8 +416,10 @@ class RemoteRuntime:
             )
             return
 
+        from app.remote.pairing import ConsumeResult
+
         async with async_session_factory() as session:
-            result = await pairing_service.consume(
+            outcome = await pairing_service.consume(
                 session,
                 token,
                 action.principal,
@@ -419,7 +427,8 @@ class RemoteRuntime:
                 is_bot_sender=False,
             )
 
-        if result is not None:
+        if outcome.result is ConsumeResult.PAIRED and outcome.pairing is not None:
+            pairing = outcome.pairing
             logger.info(
                 "remote_pairing_success connection_id={} principal_id={}",
                 action.connection_id,
@@ -428,17 +437,16 @@ class RemoteRuntime:
             if self._projection is not None:
                 self._projection.set_active_pairing(
                     connection_id=str(action.connection_id),
-                    destination_id=result.destination_id,
-                    notify_scope=result.notify_scope,
-                    principal_id=result.principal_id,
+                    destination_id=pairing.destination_id,
+                    notify_scope=pairing.notify_scope,
+                    principal_id=pairing.principal_id,
                 )
             # A silently-persisted pairing is indistinguishable from a
             # failed one from the phone's side — confirm it with a
-            # starting point rather than a dead end (AC-54). Never sent on
-            # rejection (AC-9: a refusal reveals no connection state).
+            # starting point rather than a dead end (AC-54).
             if self._adapter is not None and self._actions is not None:
                 text, buttons = self._actions.build_onboarding_card(
-                    action, label=result.label
+                    action, label=pairing.label
                 )
                 await self._adapter.send(
                     RemoteOutboundMessage(
@@ -446,6 +454,24 @@ class RemoteRuntime:
                         destination_id=action.principal.destination_id,
                         text=text,
                         buttons=buttons,
+                        priority=RemoteOutboundPriority.HIGH,
+                    )
+                )
+        elif outcome.result is ConsumeResult.ALREADY_PAIRED:
+            # Another device already claimed this QR code. Tell the second
+            # scanner explicitly so they know the code is spent.
+            logger.debug(
+                "remote_pairing_already_claimed connection_id={} principal_id={}",
+                action.connection_id,
+                action.principal.principal_id,
+            )
+            if self._adapter is not None:
+                await self._adapter.send(
+                    RemoteOutboundMessage(
+                        connection_id=action.connection_id,
+                        destination_id=action.principal.destination_id,
+                        text="\u26a0\ufe0f This device is already connected to another phone. Only one phone can be paired at a time.",
+                        buttons=(),
                         priority=RemoteOutboundPriority.HIGH,
                     )
                 )
@@ -472,6 +498,9 @@ class RemoteRuntime:
 
         async with async_session_factory() as session:
             result = await self._actions.dispatch_command(session, action)
+
+        if result is None:
+            return
 
         if result.status == "unauthorized":
             logger.debug(
@@ -555,6 +584,7 @@ class RemoteRuntime:
                 ),
                 status=result.status,
                 response_mode=result.response_mode,
+                user_message=action.text,
             )
 
 

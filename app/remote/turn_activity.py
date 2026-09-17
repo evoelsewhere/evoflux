@@ -72,8 +72,15 @@ async def load_turn_activity(
     response_text = ""
     for message in rows:
         for call in message.tool_calls or []:
-            name = call.get("name", "unknown")
-            args = call.get("arguments", {})
+            # Handle OpenAI nested format: {"function": {"name": ..., "arguments": ...}}
+            # and flat legacy/test format: {"name": ..., "arguments": ...}
+            fn = call.get("function")
+            if isinstance(fn, dict):
+                name = fn.get("name", "unknown")
+                args = fn.get("arguments", "{}")
+            else:
+                name = call.get("name", "unknown")
+                args = call.get("arguments", "{}")
             tool_calls.append((name, str(args)))
         # Rows are ordered oldest-first, so the last assistant message with
         # actual content (not a tool-call-only or reasoning-only message)

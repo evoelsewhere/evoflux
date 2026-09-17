@@ -25,7 +25,7 @@ import time
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID
 
 from loguru import logger
@@ -38,6 +38,7 @@ from app.remote.contracts import (
 )
 from app.remote.edit_budget import EditBudget
 from app.remote.formatting import (
+    derive_card_heading,
     render_done_card,
     render_error_card,
     render_live_status_card,
@@ -80,6 +81,8 @@ _OBSERVED_EVENT_TYPES = (
         {
             "done",
             "error",
+            "message",
+            "usage",
             "permission_asked",
             "question_asked",
             "plan_approval_requested",
@@ -123,6 +126,20 @@ class _TurnDeliveryState:
     #: The rolling activity window this turn renders into while live —
     #: unused and empty in summary mode.
     activity: LiveActivityWindow = field(default_factory=LiveActivityWindow)
+
+    # ── Usage tracking (populated from UsageEvent stream data) ──
+    usage_model: str | None = None
+    usage_context_window: int | None = None
+    usage_input_tokens: int | None = None
+    usage_output_tokens: int | None = None
+    usage_cached_tokens: int | None = None
+    usage_reasoning_tokens: int | None = None
+    usage_cost_usd: float | None = None
+
+    #: The user's original message text.  Used to derive a more meaningful
+    #: card heading than the session title (which is often "Task" or an
+    #: LLM-generated title that hasn't been generated yet).
+    user_message: str | None = None
 
 
 @dataclass
@@ -284,6 +301,7 @@ class RemoteProjection:
         title: str,
         status: str,
         response_mode: str = "summary",
+        user_message: str | None = None,
     ) -> None:
         """Create the one status message a phone-admitted turn owns, and
         start the native typing indicator alongside it. Called by
@@ -329,6 +347,7 @@ class RemoteProjection:
             phone_admitted=True,
             title=title,
             response_mode=response_mode,
+            user_message=user_message,
         )
         self._turns[session_id] = turn
         text, buttons = render_status_card(title=title, status=status)
@@ -463,6 +482,22 @@ class RemoteProjection:
             self._handle_activity(turn, event_type, envelope)
             return
 
+        if event_type == "usage":
+            self._handle_usage(turn, envelope)
+            return
+
+        # Message (text content deltas) fire during LLM streaming.  Observe
+        # them so the live status card refreshes at the edit-budget cadence
+        # even when no tool/thinking events are in flight.
+        if event_type == "message":
+            if (
+                turn.phone_admitted
+                and turn.response_mode == "live"
+                and not turn.completion_sent
+            ):
+                self._maybe_schedule_live_edit(turn)
+            return
+
         if event_type == "done":
             self._handle_done(turn, envelope)
         elif event_type == "error":
@@ -567,16 +602,16 @@ class RemoteProjection:
                     action_target=activity.tool_log_text,
                 )
 
-        title = _redact_text(turn.title)
+        heading = derive_card_heading(turn.user_message, turn.title)
         if error_message is not None:
             text, buttons = render_error_card(
-                title=title,
+                title=heading,
                 message=_redact_text(error_message),
                 toollog_token=toollog_token,
             )
         else:
             text, buttons = render_done_card(
-                title=title,
+                title=heading,
                 elapsed_seconds=elapsed,
                 response_text=(
                     _redact_text(activity.response_text)
@@ -587,6 +622,13 @@ class RemoteProjection:
                 tool_call_count=activity.tool_call_count,
                 diff_token=diff_token,
                 toollog_token=toollog_token,
+                model=turn.usage_model,
+                context_window=turn.usage_context_window,
+                input_tokens=turn.usage_input_tokens,
+                output_tokens=turn.usage_output_tokens,
+                cached_tokens=turn.usage_cached_tokens,
+                reasoning_tokens=turn.usage_reasoning_tokens,
+                cost_usd=turn.usage_cost_usd,
             )
 
         # Only edit when this turn's status card was actually confirmed
@@ -653,9 +695,13 @@ class RemoteProjection:
         if correlation_id is None:
             return
         text, buttons = render_live_status_card(
-            title=turn.title,
+            title=derive_card_heading(turn.user_message, turn.title),
             elapsed_seconds=time.monotonic() - turn.started_at,
             activity_lines=turn.activity.lines(),
+            model=turn.usage_model,
+            input_tokens=turn.usage_input_tokens,
+            output_tokens=turn.usage_output_tokens,
+            cost_usd=turn.usage_cost_usd,
         )
         if not self._edit_budget.should_edit(
             connection_id=turn.connection_id, key=correlation_id, text=text
@@ -715,6 +761,85 @@ class RemoteProjection:
             buttons=buttons,
             priority=RemoteOutboundPriority.HIGH,
         )
+
+    @staticmethod
+    def _pick_primary_model(models: list[str] | None) -> str | None:
+        """Return the most relevant model name from a turn's model list.
+
+        The list is ordered by first-seen; the primary model is typically
+        the last entry (the one used for the final response).  Returns
+        ``None`` when the list is empty or ``None``.
+        """
+        if not models:
+            return None
+        return models[-1]
+
+    def _handle_usage(self, turn: _TurnDeliveryState, envelope: Any) -> None:
+        """Accumulate token/model usage from a ``UsageEvent`` envelope.
+
+        Usage events may fire multiple times per turn (primary model, auxiliary
+        calls, etc).  We *sum* token counts and keep the last model name seen,
+        which matches the semantics the done card needs: a total across all
+        model calls in the turn.
+        """
+        data = envelope.data
+        # Model name — UsageEvent has no top-level ``model`` field; the
+        # publisher stores it in ``metadata.models`` (a list of model IDs
+        # seen during the turn) or occasionally ``metadata.model``.
+        metadata = data.get("metadata") or {}
+        model = (
+            data.get("model")
+            or metadata.get("model")
+            or self._pick_primary_model(metadata.get("models"))
+        )
+        if model and isinstance(model, str):
+            turn.usage_model = model
+            # Look up context window from the model metadata registry.
+            try:
+                from app.agent.providers.model_metadata import get_model_limits
+
+                limits = get_model_limits(model)
+                if limits.context_length:
+                    turn.usage_context_window = limits.context_length
+            except Exception:  # pragma: no cover
+                pass  # best-effort; missing metadata is non-fatal
+
+        prompt = data.get("prompt_tokens") or data.get("input_tokens")
+        if isinstance(prompt, int):
+            turn.usage_input_tokens = (turn.usage_input_tokens or 0) + prompt
+
+        completion = data.get("completion_tokens") or data.get("output_tokens")
+        if isinstance(completion, int):
+            turn.usage_output_tokens = (turn.usage_output_tokens or 0) + completion
+
+        cached = data.get("cached_tokens")
+        if isinstance(cached, int):
+            turn.usage_cached_tokens = (turn.usage_cached_tokens or 0) + cached
+
+        thoughts = data.get("thoughts_tokens")
+        if isinstance(thoughts, int):
+            turn.usage_reasoning_tokens = (turn.usage_reasoning_tokens or 0) + thoughts
+
+        cost = data.get("cost")
+        # UsageEvent.cost is ``dict[str, float]`` produced by
+        # ``estimate_cost()``.  The dict contains a pre-calculated
+        # ``estimated_usd`` total *plus* per-component entries (``input_usd``,
+        # ``output_usd``, etc.).  Use ``estimated_usd`` when present to avoid
+        # double-counting the total with the component values.
+        if isinstance(cost, dict):
+            estimated = cost.get("estimated_usd")
+            if isinstance(estimated, (int, float)):
+                turn.usage_cost_usd = (turn.usage_cost_usd or 0.0) + float(estimated)
+            else:
+                turn.usage_cost_usd = (turn.usage_cost_usd or 0.0) + sum(
+                    v for v in cost.values() if isinstance(v, (int, float))
+                )
+        elif isinstance(cost, (int, float)):
+            turn.usage_cost_usd = (turn.usage_cost_usd or 0.0) + float(cost)
+
+        # Trigger a live card edit so the phone sees updated token/model
+        # info in real time — not only at the next tool-call boundary.
+        self._maybe_schedule_live_edit(turn)
 
     def _enqueue_send(
         self,

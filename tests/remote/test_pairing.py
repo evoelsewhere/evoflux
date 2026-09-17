@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
@@ -21,12 +22,35 @@ import app.core.db as db_module
 from app.models.remote import RemoteConnection, RemotePairing
 from app.remote.contracts import RemotePrincipal
 from app.remote.pairing import PairingLink, PairingService
+from app.remote.pairing import (
+    ConsumeOutcome,
+    ConsumeResult,
+    PairingCodeExpired,
+    PairingCodeMismatch,
+    PairingCodeRateLimited,
+    _hash_pairing_code,
+    _random_digits,
+    _verify_pairing_code,
+)
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_-]{22,64}")
 
 
 def _extract_token(link: PairingLink) -> str:
     return parse_qs(urlparse(link.url).query)["start"][0]
+
+
+def _assert_paired(outcome: ConsumeOutcome) -> RemotePairing:
+    """Assert consume succeeded and return the pairing."""
+    assert outcome.result == ConsumeResult.PAIRED, f"expected PAIRED, got {outcome.result}"
+    assert outcome.pairing is not None
+    return outcome.pairing
+
+
+def _assert_not_paired(outcome: ConsumeOutcome) -> None:
+    """Assert consume did not produce a pairing."""
+    assert outcome.pairing is None
+    assert outcome.result is not ConsumeResult.PAIRED
 
 
 @pytest_asyncio.fixture
@@ -122,12 +146,12 @@ async def test_issued_token_is_single_use(service, connection, session) -> None:
     pairing = await service.consume(
         session, token, principal, is_private_chat=True, is_bot_sender=False
     )
-    assert pairing is not None
+    pairing = _assert_paired(pairing)
 
     second = await service.consume(
         session, token, principal, is_private_chat=True, is_bot_sender=False
     )
-    assert second is None
+    _assert_not_paired(second)
 
 
 # ── consume: success path (AC-8) ─────────────────────────────────────────
@@ -150,7 +174,7 @@ async def test_consume_persists_principal_and_destination_separately(
         session, token, principal, is_private_chat=True, is_bot_sender=False
     )
 
-    assert pairing is not None
+    pairing = _assert_paired(pairing)
     assert pairing.principal_id == "tg-user-42"
     assert pairing.destination_id == "tg-chat-99"
     assert pairing.principal_id != pairing.destination_id
@@ -178,7 +202,7 @@ async def test_consume_rejects_expired_token(service, connection, session) -> No
         now=1_000.0 + 600.0 + 1.0,  # just past the ten-minute expiry
     )
 
-    assert result is None
+    _assert_not_paired(result)
 
 
 @pytest.mark.asyncio
@@ -198,7 +222,7 @@ async def test_consume_accepts_token_right_before_expiry(
         now=1_000.0 + 599.0,
     )
 
-    assert result is not None
+    result = _assert_paired(result)
 
 
 # ── consume: silence and refusal shape (AC-9) ────────────────────────────
@@ -216,7 +240,7 @@ async def test_consume_unknown_token_is_refused_silently(
         is_private_chat=True,
         is_bot_sender=False,
     )
-    assert result is None
+    _assert_not_paired(result)
 
 
 @pytest.mark.asyncio
@@ -230,14 +254,14 @@ async def test_consume_rejects_group_chat_without_burning_token(
     group_attempt = await service.consume(
         session, token, principal, is_private_chat=False, is_bot_sender=False
     )
-    assert group_attempt is None
+    _assert_not_paired(group_attempt)
 
     # A legitimate retry from a private chat still succeeds with the same
     # token: a rejected attempt must not burn it.
     retry = await service.consume(
         session, token, principal, is_private_chat=True, is_bot_sender=False
     )
-    assert retry is not None
+    retry = _assert_paired(retry)
 
 
 @pytest.mark.asyncio
@@ -251,12 +275,12 @@ async def test_consume_rejects_bot_sender_without_burning_token(
     bot_attempt = await service.consume(
         session, token, principal, is_private_chat=True, is_bot_sender=True
     )
-    assert bot_attempt is None
+    _assert_not_paired(bot_attempt)
 
     retry = await service.consume(
         session, token, principal, is_private_chat=True, is_bot_sender=False
     )
-    assert retry is not None
+    retry = _assert_paired(retry)
 
 
 @pytest.mark.asyncio
@@ -270,14 +294,14 @@ async def test_consume_rejects_token_issued_for_a_different_connection(
     result = await service.consume(
         session, token, wrong_principal, is_private_chat=True, is_bot_sender=False
     )
-    assert result is None
+    _assert_not_paired(result)
 
     # The token remains valid for the connection it was actually issued for.
     right_principal = _principal(connection.id)
     retry = await service.consume(
         session, token, right_principal, is_private_chat=True, is_bot_sender=False
     )
-    assert retry is not None
+    retry = _assert_paired(retry)
 
 
 @pytest.mark.asyncio
@@ -293,7 +317,7 @@ async def test_consume_enforces_one_pairing_per_connection(
     first = await service.consume(
         session, first_token, first_principal, is_private_chat=True, is_bot_sender=False
     )
-    assert first is not None
+    first = _assert_paired(first)
 
     second_link = service.issue_link(connection)
     second_token = _extract_token(second_link)
@@ -308,7 +332,7 @@ async def test_consume_enforces_one_pairing_per_connection(
         is_private_chat=True,
         is_bot_sender=False,
     )
-    assert second is None
+    _assert_not_paired(second)
 
     rows = (await session.exec(select(RemotePairing))).all()
     assert [row.principal_id for row in rows] == ["tg-user-1"]
@@ -323,7 +347,7 @@ async def test_consume_enforces_one_pairing_per_connection(
         is_private_chat=True,
         is_bot_sender=False,
     )
-    assert retry is not None
+    retry = _assert_paired(retry)
     assert retry.principal_id == "tg-user-2"
 
 
@@ -366,13 +390,18 @@ async def test_refusals_are_uniform_regardless_of_reason(
         is_bot_sender=False,
     )
 
-    assert (
-        unknown_token_result
-        is group_chat_result
-        is bot_sender_result
-        is wrong_connection_result
-        is None
-    )
+    # AC-9: every non-pairing failure returns INVALID — the caller cannot
+    # distinguish *why* the attempt failed.  ALREADY_PAIRED is reserved for
+    # the concurrent-scan race where the token was valid but the connection
+    # already had a pairing.
+    for outcome in (
+        unknown_token_result,
+        group_chat_result,
+        bot_sender_result,
+        wrong_connection_result,
+    ):
+        assert outcome.result is ConsumeResult.INVALID
+        assert outcome.pairing is None
 
 
 # ── rate limiting (AC-9) ──────────────────────────────────────────────────
@@ -394,7 +423,7 @@ async def test_consume_enforces_per_principal_rate_limit(connection, session) ->
         session, token, principal, is_private_chat=True, is_bot_sender=False, now=1.0
     )
 
-    assert second is None
+    _assert_not_paired(second)
 
 
 @pytest.mark.asyncio
@@ -420,7 +449,7 @@ async def test_consume_enforces_connection_wide_rate_limit(connection, session) 
         now=1.0,
     )
 
-    assert second is None
+    _assert_not_paired(second)
 
 
 @pytest.mark.asyncio
@@ -437,12 +466,12 @@ async def test_consume_rate_limit_window_recovers_over_time(
     blocked = await limited_service.consume(
         session, token, principal, is_private_chat=False, is_bot_sender=False, now=1.0
     )
-    assert blocked is None
+    _assert_not_paired(blocked)
 
     later = await limited_service.consume(
         session, token, principal, is_private_chat=True, is_bot_sender=False, now=12.0
     )
-    assert later is not None
+    later = _assert_paired(later)
 
 
 # ── authorize (AC-8, AC-9, AC-10) ─────────────────────────────────────────
@@ -601,10 +630,12 @@ async def test_concurrent_consume_with_different_tokens_only_binds_one_pairing(
         ),
     )
 
-    successes = [result for result in results if result is not None]
-    refusals = [result for result in results if result is None]
+    successes = [r for r in results if r.result == ConsumeResult.PAIRED]
+    refusals = [r for r in results if r.result != ConsumeResult.PAIRED]
     assert len(successes) == 1
     assert len(refusals) == 1
+    # The losing scanner gets ALREADY_PAIRED (not a silent INVALID).
+    assert refusals[0].result == ConsumeResult.ALREADY_PAIRED
 
     rows = (await session.exec(select(RemotePairing))).all()
     assert len(rows) == 1
@@ -632,10 +663,279 @@ async def test_concurrent_consume_with_the_same_token_only_succeeds_once(
         ),
     )
 
-    successes = [result for result in results if result is not None]
-    refusals = [result for result in results if result is None]
+    successes = [r for r in results if r.result == ConsumeResult.PAIRED]
+    refusals = [r for r in results if r.result != ConsumeResult.PAIRED]
     assert len(successes) == 1
     assert len(refusals) == 1
 
     rows = (await session.exec(select(RemotePairing))).all()
     assert len(rows) == 1
+
+
+# ── phone-first pairing code tests ────────────────────────────────────────
+
+
+def _digits(raw: str) -> str:
+    """Strip spaces from a display code to get raw digits."""
+    return raw.replace(" ", "")
+
+
+# -- unit tests for helpers --
+
+
+@pytest.mark.asyncio
+async def test_random_digits_returns_correct_length() -> None:
+    for length in (4, 8, 12):
+        result = _random_digits(length)
+        assert len(result) == length
+        assert result.isdigit()
+
+
+@pytest.mark.asyncio
+async def test_hash_and_verify_round_trip() -> None:
+    code = "12345678"
+    code_hash = _hash_pairing_code(code)
+    assert _verify_pairing_code(code, code_hash) is True
+    assert _verify_pairing_code("87654321", code_hash) is False
+
+
+@pytest.mark.asyncio
+async def test_verify_pairing_code_with_none_hash_returns_false() -> None:
+    assert _verify_pairing_code("12345678", None) is False
+
+
+# -- issue_pair_code tests --
+
+
+@pytest.mark.asyncio
+async def test_issue_pair_code_creates_pending_row(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    result = await service.issue_pair_code(session, connection.id)
+
+    assert len(_digits(result.display_code)) == 8
+    assert len(result.raw_code) == 8
+    assert result.raw_code.isdigit()
+    assert result.expires_at > datetime.now(timezone.utc)
+
+    rows = (await session.exec(select(RemotePairing))).all()
+    assert len(rows) == 1
+    assert rows[0].pair_code_hash is not None
+    assert rows[0].pair_code_expires_at is not None
+    assert rows[0].principal_id == ""  # not yet bound
+
+
+@pytest.mark.asyncio
+async def test_issue_pair_code_replaces_stale_pending_code(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    first = await service.issue_pair_code(session, connection.id)
+    second = await service.issue_pair_code(session, connection.id)
+
+    rows = (await session.exec(select(RemotePairing))).all()
+    assert len(rows) == 1
+    assert second.raw_code != first.raw_code
+
+
+# -- verify_pair_code tests --
+
+
+@pytest.mark.asyncio
+async def test_verify_pair_code_with_correct_code_succeeds(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    result = await service.issue_pair_code(session, connection.id, now=1000.0)
+    principal = _principal(connection.id)
+
+    pairing = await service.verify_pair_code(
+        session,
+        connection_id=connection.id,
+        principal=principal,
+        raw_code=result.raw_code,
+        now=1000.0,
+    )
+    # verify_pair_code returns RemotePairing | None (not ConsumeOutcome).
+    assert pairing is not None
+    assert pairing.principal_id == "tg-user-1"
+    assert pairing.destination_id == "tg-chat-1"
+    assert pairing.pair_code_hash is None
+    assert pairing.pair_code_expires_at is None
+
+
+@pytest.mark.asyncio
+async def test_verify_pair_code_with_wrong_code_raises_mismatch(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    await service.issue_pair_code(session, connection.id, now=1000.0)
+    principal = _principal(connection.id)
+
+    with pytest.raises(PairingCodeMismatch):
+        await service.verify_pair_code(
+            session,
+            connection_id=connection.id,
+            principal=principal,
+            raw_code="00000000",
+            now=1000.0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_pair_code_expired_code_raises_expired(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    result = await service.issue_pair_code(session, connection.id, now=1000.0)
+    principal = _principal(connection.id)
+
+    with pytest.raises(PairingCodeExpired):
+        await service.verify_pair_code(
+            session,
+            connection_id=connection.id,
+            principal=principal,
+            raw_code=result.raw_code,
+            now=1000.0 + 601.0,
+        )
+
+    rows = (await session.exec(select(RemotePairing))).all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_verify_pair_code_rate_limited_after_max_attempts(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    await service.issue_pair_code(session, connection.id, now=1000.0)
+    principal = _principal(connection.id)
+
+    for _ in range(5):
+        with pytest.raises(PairingCodeMismatch):
+            await service.verify_pair_code(
+                session,
+                connection_id=connection.id,
+                principal=principal,
+                raw_code="99999999",
+                now=1000.0,
+            )
+
+    with pytest.raises(PairingCodeRateLimited):
+        await service.verify_pair_code(
+            session,
+            connection_id=connection.id,
+            principal=principal,
+            raw_code="99999999",
+            now=1000.0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_pair_code_bot_sender_raises_mismatch(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    result = await service.issue_pair_code(session, connection.id, now=1000.0)
+    principal = _principal(connection.id)
+
+    with pytest.raises(PairingCodeMismatch):
+        await service.verify_pair_code(
+            session,
+            connection_id=connection.id,
+            principal=principal,
+            raw_code=result.raw_code,
+            now=1000.0,
+            is_bot_sender=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_pair_code_non_private_chat_raises_mismatch(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    result = await service.issue_pair_code(session, connection.id, now=1000.0)
+    principal = _principal(connection.id)
+
+    with pytest.raises(PairingCodeMismatch):
+        await service.verify_pair_code(
+            session,
+            connection_id=connection.id,
+            principal=principal,
+            raw_code=result.raw_code,
+            now=1000.0,
+            is_private_chat=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_pair_code_no_pending_code_raises_mismatch(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    principal = _principal(connection.id)
+
+    with pytest.raises(PairingCodeMismatch):
+        await service.verify_pair_code(
+            session,
+            connection_id=connection.id,
+            principal=principal,
+            raw_code="12345678",
+            now=1000.0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_verify_pair_code_wrong_connection_raises_mismatch(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    result = await service.issue_pair_code(session, connection.id, now=1000.0)
+    other_principal = _principal(uuid4())
+
+    with pytest.raises(PairingCodeMismatch):
+        await service.verify_pair_code(
+            session,
+            connection_id=connection.id,
+            principal=other_principal,
+            raw_code=result.raw_code,
+            now=1000.0,
+        )
+
+
+@pytest.mark.asyncio
+async def test_full_pairing_code_lifecycle(
+    service: PairingService,
+    connection,
+    session,
+) -> None:
+    """End-to-end: issue code, verify with correct code, authorize succeeds."""
+    result = await service.issue_pair_code(session, connection.id, now=1000.0)
+    principal = _principal(connection.id)
+
+    pairing = await service.verify_pair_code(
+        session,
+        connection_id=connection.id,
+        principal=principal,
+        raw_code=result.raw_code,
+        now=1000.0,
+    )
+    assert pairing.principal_id == "tg-user-1"
+
+    authorized = await service.authorize(
+        session, connection_id=connection.id, principal_id="tg-user-1"
+    )
+    assert authorized is not None
+    assert authorized.principal_id == "tg-user-1"

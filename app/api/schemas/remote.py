@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.remote.contracts import RemoteConnectionState, RemoteErrorClass
 
 __all__ = [
+    "PairingCodeBody",
     "RemoteConnectionCreateRequest",
     "RemoteConnectionPatchRequest",
     "RemoteConnectionResponse",
@@ -113,6 +114,23 @@ class RemoteConnectionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     status: RemoteConnectionStatusBody
+
+
+class PairingCodeBody(BaseModel):
+    """``POST /api/remote/connections/{id}/pairing-codes`` response.
+
+    ``code_display`` is the user-facing8-digit code with a space separator
+    (e.g. ``"1234 5678"``).  ``expires_at`` is a wall-clock UTC timestamp
+    so the UI can render a countdown timer.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    code_display: str = Field(
+        description="User-facing pairing code with digit grouping, e.g. '1234 5678'.",
+        examples=["1234 5678"],
+    )
+    expires_at: datetime
 
 
 class RemotePairingLinkResponse(BaseModel):
