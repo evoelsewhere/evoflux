@@ -1,6 +1,6 @@
 ---
 name: super-research
-description: "Use this skill for long-horizon autonomous research that must stay comparable, honest, and auditable across many attempts: experiment loops that move a measured metric, benchmark comparisons across candidates, ablation studies, root-cause investigations, hypothesis-first quantitative analysis, paper reproductions, and citation audits. It fixes a contract, records a baseline, logs every attempt including failures, and runs to an agreed stopping condition. Do not use it for a single quick answer or for work with no measurable outcome."
+description: "Use this skill for long-horizon autonomous research that must stay comparable, honest, and auditable across many attempts: thorough multi-source topic surveys with cited reports, academic paper drafting and citation audits, experiment loops that move a measured metric, benchmark comparisons across candidates, ablation studies, root-cause investigations, hypothesis-first quantitative analysis, and paper reproductions. It fixes a contract, records a baseline, logs every attempt including failures, and runs to an agreed stopping condition. Do not use it for a single quick answer or for work with no measurable outcome."
 ---
 
 # Autonomous Research
