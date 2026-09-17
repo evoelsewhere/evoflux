@@ -154,6 +154,13 @@ Duplicate owners fail immediately. Coding workspace context has one owner:
 `AGENTS.md` instruction chain exactly once. Work sessions do not coordinate
 with repository indexing.
 
+For session-backed team runs, `SessionPrefixSnapshotHook` pins the finalized
+system prompt and ordered tool contract per `(session, profile)`. Later turns
+reuse the persisted prefix; a model/agent/permission profile change creates a
+new snapshot and a tool-contract change rotates the existing one. Turn-varying
+memory recall remains an append-only hidden model-context message, so it does
+not rewrite the system prefix or user-visible transcript.
+
 Team delegation routing is generated from the actual blueprint names and
 descriptions. Adding a custom specialist never requires a hard-coded routing
 branch.

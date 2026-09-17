@@ -361,6 +361,10 @@ Provider cache behavior remains adapter-specific:
   one trailing cache checkpoint. Other Bedrock families are left unchanged.
 - DeepSeek, Gemini/Vertex, QwenCloud, Z.AI and Xiaomi retain their provider-side
   implicit cache behavior and normalize their reported cache-hit tokens.
+- Session-backed team runs persist a profile-scoped, ordered system/tool prefix
+  snapshot and reuse it across turns; snapshots rotate only when the model
+  profile or tool contract changes. Dynamic memory recall is persisted as
+  hidden append-only model context rather than rewriting the system prefix.
 - Native OpenAI/Foundry OpenAI and Codex receive an opaque stable
   `prompt_cache_key`; OpenRouter receives `session_id`; xAI Chat Completions
   receives `x-grok-conv-id`. The key is derived from, but does not expose, the
