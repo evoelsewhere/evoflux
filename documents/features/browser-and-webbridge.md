@@ -8,9 +8,11 @@ WebBridge for the user's existing Chrome/Edge profile.
 
 The Browser workbench opens a desktop-owned browser surface whose profile can
 persist across sessions. A session presence channel lets the backend ask the UI
-to mount the browser; a separate WebSocket carries versioned command requests
-and responses. Commands are serialized per visible browser connection and fail
-pending requests when the panel reconnects or closes.
+to mount an agent-owned floating browser preview; the workbench remains under
+the user's control. Multiple agent previews can stay open at once and stack
+with the newest preview on top. A separate WebSocket carries versioned command
+requests and responses. Commands are serialized per visible browser connection
+and fail pending requests when the panel reconnects or closes.
 
 The built-in browser policy can independently allow/block domains and control
 JavaScript evaluation, storage, cookie-value access, HTTP requests, clipboard,

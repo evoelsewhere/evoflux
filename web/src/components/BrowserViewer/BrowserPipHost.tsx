@@ -44,6 +44,7 @@ import {
   loadPreviewPlacement,
   nextPreviewSize,
   PREVIEW_SIZES,
+  stackPreviewPlacement,
   savePreviewPlacement,
   type PreviewPlacement,
 } from './browserPreviewPlacement'
@@ -51,9 +52,11 @@ import { isBrowserNewTab, useDirectBrowserTabs } from './useDirectBrowserTabs'
 
 interface BrowserPipHostProps {
   sessionId: string
+  stackDepth: number
+  stackOrder: number
 }
 
-export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
+export function BrowserPipHost({ sessionId, stackDepth, stackOrder }: BrowserPipHostProps) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [preferences, setPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
   const [placement, setPlacement] = useState<PreviewPlacement>(loadPreviewPlacement)
@@ -62,7 +65,12 @@ export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
   // this box's rectangle, and moving a box fires no observer.
   const [syncKey, setSyncKey] = useState(0)
   const pushToast = useToastStore((state) => state.push)
-  const closePip = useUIStore((state) => state.closeBrowserPip)
+  const closePipForSession = useUIStore((state) => state.closeBrowserPip)
+  const focusPip = useUIStore((state) => state.focusBrowserPip)
+  const closePip = useCallback(
+    () => closePipForSession(sessionId),
+    [closePipForSession, sessionId],
+  )
   // A new tab every time, not the last browser tab reused: the pages this
   // opens are a popup and a handed-over page, and both are specific pages
   // that would be silently dropped by activating a tab already showing
@@ -92,7 +100,7 @@ export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
     // which is what watching an agent work needs.
     fitWidth: FIT_DESKTOP_WIDTH,
     minFitScale: 0.2,
-    syncKey,
+    syncKey: syncKey + stackDepth,
     devtools: preferences.developerTools,
     profileMode: preferences.profileMode,
     onError: (message) => pushToast({
@@ -209,7 +217,8 @@ export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
     window.addEventListener('blur', end)
   }, [place, placement])
 
-  const { width, height } = placement
+  const stackedPlacement = stackPreviewPlacement(placement, stackDepth)
+  const { width, height } = stackedPlacement
   const preset = nextPreviewSize(placement)
   const growing = preset.width === PREVIEW_SIZES.large.width
   let host = 'Browser'
@@ -230,7 +239,13 @@ export function BrowserPipHost({ sessionId }: BrowserPipHostProps) {
   return createPortal((
     <div
       className="fixed z-(--z-overlay)"
-      style={{ left: placement.x, top: placement.y, width }}
+      onPointerDownCapture={() => focusPip(sessionId)}
+      style={{
+        left: stackedPlacement.x,
+        top: stackedPlacement.y,
+        width,
+        zIndex: 100 + stackOrder,
+      }}
     >
       <div
         className={cn(
