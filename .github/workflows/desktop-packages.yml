@@ -696,7 +696,24 @@ jobs:
           file "$binary" | tee "$RUNNER_TEMP/evoflux-architecture.txt"
           grep -q "${{ matrix.architecture }}" "$RUNNER_TEMP/evoflux-architecture.txt"
           codesign --verify --deep --strict --verbose=2 "$app_path"
-          hdiutil verify "$dmg_path"
+          # macOS runners can briefly report a freshly-created DMG as
+          # unavailable while diskimages-helper finishes flushing it. Retry
+          # the verification without weakening the final integrity gate.
+          verified=false
+          for attempt in 1 2 3 4 5; do
+            echo "Verifying DMG (attempt ${attempt}/5)..."
+            if hdiutil verify "$dmg_path"; then
+              verified=true
+              break
+            fi
+            if (( attempt < 5 )); then
+              sleep 5
+            fi
+          done
+          if [[ "$verified" != "true" ]]; then
+            echo "DMG verification failed after 5 attempts." >&2
+            exit 1
+          fi
 
           if [[ "${{ steps.mac_signing.outputs.enabled }}" == "true" ]]; then
             codesign --verify --verbose=2 "$dmg_path"
