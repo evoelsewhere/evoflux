@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 
 import { LanguageServersSettingsPage } from '@/routes/settings.language-servers'
@@ -38,6 +38,11 @@ vi.mock('@/queries', () => ({
     variables: undefined,
     error: null,
   }),
+  useDismissLanguageServerErrorMutation: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  }),
 }))
 
 beforeEach(() => {
@@ -72,6 +77,7 @@ beforeEach(() => {
           installed_version: null,
           expected_version: '5.3.0',
           installable: true,
+          blocked_reason: null,
           installer: 'npm',
           installer_available: true,
           install_hint: 'Downloads pinned packages from https://registry.npmjs.org/.',
@@ -86,13 +92,17 @@ beforeEach(() => {
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 
-it('aggregates project repositories and confirms a pinned install', () => {
+it('aggregates project repositories and confirms a pinned install', async () => {
   render(<LanguageServersSettingsPage />)
 
   expect(mocks.useStatus).toHaveBeenCalledWith(['/repo/web', '/repo/api'])
   expect(screen.getByText('TypeScript & JavaScript')).toBeInTheDocument()
   expect(screen.getByText(/12 matching files across web/)).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: 'Install' }))
-  expect(window.confirm).toHaveBeenCalledWith(expect.stringContaining('v5.3.0'))
+  fireEvent.click(screen.getByRole('button', {
+    name: 'Install TypeScript & JavaScript language server',
+  }))
+  const dialog = await screen.findByRole('dialog')
+  expect(dialog).toHaveTextContent('v5.3.0')
+  fireEvent.click(within(dialog).getByRole('button', { name: /^Install$/ }))
   expect(mocks.mutate).toHaveBeenCalledWith('typescript')
 })
