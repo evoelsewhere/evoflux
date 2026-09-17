@@ -315,6 +315,12 @@ async def stream_with_retry(
             **kwargs,
             **provider.cache_affinity_kwargs(cache_affinity_key),
         }
+        # Keep the diagnostic baseline scoped to this session even for
+        # providers such as MiMo that intentionally receive no wire-level
+        # affinity field. This is internal metadata and is ignored by
+        # provider adapters that do not use the cache probe.
+        if cache_affinity_key:
+            provider_kwargs.setdefault("cache_probe_scope", cache_affinity_key)
         for attempt in range(MAX_RETRIES):
             if interrupt_event is not None and interrupt_event.is_set():
                 return

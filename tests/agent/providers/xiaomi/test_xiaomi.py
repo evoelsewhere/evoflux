@@ -211,6 +211,23 @@ class TestXiaomiThinking:
         assert "reasoning_effort" not in body
         assert "thinking" not in body
 
+    def test_cache_probe_scope_is_internal_only(self):
+        from app.agent.schemas.chat import HumanMessage
+
+        p = XiaomiProvider(
+            api_key="xiaomi-test-key",
+            model="mimo-v2.5",
+            base_url=XIAOMI_API_BASE,
+        )
+        body = p._completions.build_request(
+            [HumanMessage(content="hi")],
+            None,
+            stream=False,
+            merged=p._merged_kwargs(cache_probe_scope="session-a"),
+        )
+
+        assert "cache_probe_scope" not in body
+
     def test_thinking_disabled_sent_when_thinking_level_none(self):
         body = self._build_body("none")
         assert body.get("thinking") == {"type": "disabled"}

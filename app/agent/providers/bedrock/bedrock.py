@@ -414,6 +414,8 @@ class BedrockProvider(LLMProviderBase):
             # support them and must never reach Bedrock model fields.
             "cache_affinity_key",
             "prompt_cache_key",
+            # Internal cache-probe partition; never forward it to the model.
+            "cache_probe_scope",
             # Anthropic-specific system-prompt cache-split hint — Bedrock
             # already caches via the trailing cachePoint block below.
             "cache_boundary",
