@@ -53,10 +53,31 @@ compatibility with supported MCP client transports in the runtime. Environment
 references expand from the process or config `.env`; secret values are not
 materialized into API responses.
 
-The MCP manager watches configuration, starts/restarts enabled servers, exposes
-status and maps tools into the agent registry. MCP tools use the same permission
+`MCPRuntime` watches configuration, reconciles enabled servers, exposes status
+and maps tools into the agent registry. MCP tools use the same permission
 system as native tools. OAuth responses are stored in the cache root and are
 scoped by server.
+
+The Python runtime currently locks the MCP SDK to `2.2.0` and uses its native
+`stdio_client` and `streamable_http_client` transports. Streamable HTTP headers
+and OAuth are supplied through the SDK's native `httpx2` client; protocol
+handshake versions remain negotiated per server by `ClientSession`.
+
+The runtime is split into explicit boundaries:
+
+```text
+MCPRuntime
+├── config watcher/reconciler + public registry
+├── MCPServerRunner per server
+│   └── ClientSession lifecycle and tool projection
+└── MCPTransportFactory
+    ├── stdio
+    └── Streamable HTTP + httpx2 + OAuth
+```
+
+Global and plugin MCP runtimes share these components but use separate runtime
+instances and configuration scopes. `MCPManager` remains as a compatibility
+facade for existing integrations.
 
 ## Agent Plugins
 

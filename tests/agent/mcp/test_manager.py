@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -251,6 +252,57 @@ class TestMCPManagerApplyConfig:
 
 class TestMCPManagerWithMockedServer:
     """Test MCPManager with mocked _run_server."""
+
+    @pytest.mark.asyncio
+    async def test_http_uses_native_mcp_2_streamable_client(self) -> None:
+        manager = MCPManager(watch_config=False)
+        cfg = HttpServerConfig(
+            url="https://mcp.example.com/mcp",
+            headers={"X-Test": "ok"},
+        )
+        captured: dict[str, object] = {}
+
+        @asynccontextmanager
+        async def fake_transport(url: str, *, http_client: object):
+            captured["url"] = url
+            captured["client"] = http_client
+            yield object(), object()
+
+        class FakeSession:
+            def __init__(self, read: object, write: object) -> None:
+                self.read = read
+                self.write = write
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return False
+
+            async def initialize(self):
+                return None
+
+            async def list_tools(self):
+                return SimpleNamespace(tools=[])
+
+        with (
+            patch("mcp.ClientSession", FakeSession),
+            patch(
+                "mcp.client.streamable_http.streamable_http_client",
+                fake_transport,
+            ),
+        ):
+            await manager._spawn_runner("example", cfg)
+            runner = manager._runners["example"]
+            await asyncio.wait_for(runner.ready.wait(), timeout=1.0)
+
+            assert runner.status.state == "ready"
+            assert captured["url"] == cfg.url
+            client = captured["client"]
+            assert client.__class__.__module__.startswith("httpx2")
+            assert client.headers["x-test"] == "ok"
+
+            await manager.stop()
 
     @pytest.mark.asyncio
     async def test_spawn_runner_with_mocked_server(self) -> None:
@@ -528,7 +580,7 @@ class TestMCPManagerOAuth:
             mock_load.return_value = cfg
 
             with patch(
-                "mcp.client.streamable_http.streamablehttp_client",
+                "mcp.client.streamable_http.streamable_http_client",
                 return_value=FailingStreamableHttpClient(),
             ):
                 await manager.start()
@@ -573,7 +625,7 @@ class TestMCPManagerOAuth:
                     return_value=True,
                 ),
                 patch(
-                    "mcp.client.streamable_http.streamablehttp_client",
+                    "mcp.client.streamable_http.streamable_http_client",
                     return_value=FailingStreamableHttpClient(),
                 ),
             ):
@@ -620,7 +672,7 @@ class TestMCPManagerOAuth:
                     return_value=True,
                 ),
                 patch(
-                    "mcp.client.streamable_http.streamablehttp_client",
+                    "mcp.client.streamable_http.streamable_http_client",
                     return_value=FailingStreamableHttpClient(),
                 ),
             ):

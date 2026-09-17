@@ -1,4 +1,4 @@
-"""Long-lived MCP client manager.
+"""MCP runtime orchestration and compatibility facade.
 
 Owns one :class:`mcp.ClientSession` per configured server. Sessions are spawned
 best-effort during application startup and kept alive for the server's lifetime,
@@ -7,7 +7,7 @@ matching the lifecycle of ``team_manager`` and ``task_scheduler``.
 A failed server does NOT block startup: the error is logged, status is set
 to ``error``, and the process continues. Healthy servers' tools are merged
 into the agent loader's tool registry on next call to
-:meth:`MCPManager.get_tools_dict`.
+:meth:`MCPRuntime.get_tools_dict`.
 
 Threading model
 ---------------
@@ -16,7 +16,7 @@ The MCP SDK uses ``anyio`` task groups internally and requires that a
 ``ClientSession`` is entered and exited from the **same task**. We therefore
 spawn one long-running ``asyncio.Task`` per server that:
 
-1. Enters the transport context (``stdio_client`` or ``streamablehttp_client``).
+1. Enters the transport context (``stdio_client`` or ``streamable_http_client``).
 2. Enters the ``ClientSession`` context.
 3. Calls ``session.initialize()`` and ``session.list_tools()``.
 4. Awaits a shutdown ``Event``.
@@ -32,10 +32,8 @@ import asyncio
 import hashlib
 import os
 import urllib.parse
-from contextlib import AsyncExitStack, suppress
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, cast
+from contextlib import suppress
+from typing import Any, cast
 
 from loguru import logger
 from mcp.client.auth import OAuthRegistrationError
@@ -48,7 +46,6 @@ from app.agent.mcp.config import (
     config_path,
     load_config,
     resolve_headers,
-    resolve_secret_refs,
 )
 from app.agent.outbound_redaction import OutboundContext, protect_outbound_value
 from app.agent.mcp.oauth import (
@@ -59,11 +56,14 @@ from app.agent.mcp.oauth import (
     interactive_oauth_allowed,
     supports_dynamic_client_registration,
 )
-from app.agent.mcp.tools import MCPTool
+from app.agent.mcp.models import MCPServerStatus, _ServerRunner
+from app.agent.mcp.runner import run_server_session
+from app.agent.mcp.transport import (
+    MCPTransportFactory,
+    StdioLaunch,
+    resolve_stdio_launch,
+)
 from app.agent.tools.registry import Tool
-
-if TYPE_CHECKING:
-    from mcp import ClientSession
 
 
 def _find_exception(
@@ -139,41 +139,11 @@ async def _get_user_path(*, force_refresh: bool = False) -> str:
         return _CACHED_USER_PATH
 
 
-@dataclass(frozen=True)
-class _StdioLaunch:
-    command: str
-    env: dict[str, str]
-
-
-async def _resolve_stdio_launch(server_cfg: StdioServerConfig) -> _StdioLaunch:
-    import shutil
-
-    configured_path = server_cfg.env.get("PATH")
-    if configured_path is not None:
-        effective_path = configured_path
-    else:
-        user_path = await _get_user_path()
-        effective_path = user_path or os.environ.get("PATH", "")
-    resolved_command = shutil.which(server_cfg.command, path=effective_path)
-
-    if not resolved_command and configured_path is None:
-        user_path = await _get_user_path(force_refresh=True)
-        effective_path = user_path or os.environ.get("PATH", "")
-        resolved_command = shutil.which(server_cfg.command, path=effective_path)
-
-    env: dict[str, str] = {}
-    if effective_path:
-        env["PATH"] = effective_path
-    env.update(
-        {
-            key: resolve_secret_refs(value) if server_cfg.resolve_env_refs else value
-            for key, value in server_cfg.env.items()
-        }
-    )
-
-    return _StdioLaunch(
-        command=resolved_command or server_cfg.command,
-        env=env,
+async def _resolve_stdio_launch(server_cfg: StdioServerConfig) -> StdioLaunch:
+    """Compatibility seam for the transport-owned stdio resolver."""
+    return await resolve_stdio_launch(
+        server_cfg,
+        user_path_loader=_get_user_path,
     )
 
 
@@ -220,44 +190,12 @@ def _oauth_config_required_message(name: str) -> str:
     )
 
 
-@dataclass
-class MCPServerStatus:
-    """Live state for one MCP server. Returned by ``GET /api/mcp/servers``."""
+class MCPRuntime:
+    """Orchestrate configured MCP servers and project them into tools.
 
-    name: str
-    transport: str
-    enabled: bool
-    state: str  # "stopped" | "starting" | "ready" | "error"
-    error: str | None = None
-    tool_names: list[str] = field(default_factory=list)
-    started_at: str | None = None
-
-
-@dataclass
-class _ServerRunner:
-    """Holds the asyncio.Task and live session for one MCP server.
-
-    ``task`` is ``None`` for disabled servers (which have nothing to run);
-    callers must check before awaiting. The ``ready`` and ``shutdown``
-    events stay populated so polling code can treat all runners uniformly.
-    """
-
-    shutdown: asyncio.Event
-    ready: asyncio.Event
-    task: asyncio.Task[None] | None = None
-    session: "ClientSession | None" = None
-    status: MCPServerStatus = field(
-        default_factory=lambda: MCPServerStatus(
-            name="", transport="", enabled=False, state="stopped"
-        )
-    )
-    tools: list[MCPTool] = field(default_factory=list)
-
-
-class MCPManager:
-    """Lifecycle owner for all configured MCP server connections.
-
-    Singleton: import :data:`mcp_manager` rather than instantiating directly.
+    Transport setup and per-session SDK lifecycle live in ``transport.py`` and
+    ``runner.py``. This class owns only runtime policy, reconciliation, status,
+    and the public tool/session registry contract.
     """
 
     def __init__(
@@ -274,6 +212,10 @@ class MCPManager:
         self._watch_interval = watch_interval
         self._watch_task: asyncio.Task[None] | None = None
         self._config_fingerprint: tuple[bytes | None, bytes | None] | None = None
+        self._transport_factory = MCPTransportFactory(
+            stdio_launch_resolver=_resolve_stdio_launch,
+            header_resolver=resolve_headers,
+        )
 
     # ── Public lifecycle ──────────────────────────────────────────────────
 
@@ -710,127 +652,36 @@ class MCPManager:
         server_cfg: StdioServerConfig | HttpServerConfig,
         runner: _ServerRunner,
     ) -> None:
-        """Long-lived task: open the session, list tools, await shutdown."""
-        # Imports here so the module is importable without the SDK installed.
-        # All three are required for the file to do anything useful, so they
-        # share the same prelude rather than scattering one inside an `else`.
-        from mcp import ClientSession, StdioServerParameters
-        from mcp.client.stdio import stdio_client
-        from mcp.client.streamable_http import streamablehttp_client
-
+        """Apply policy, then delegate session ownership to ``runner.py``."""
         try:
-            async with AsyncExitStack() as stack:
-                if isinstance(server_cfg, StdioServerConfig):
-                    launch = await _resolve_stdio_launch(server_cfg)
-                    params = StdioServerParameters(
-                        command=launch.command,
-                        args=list(server_cfg.args),
-                        env=launch.env,
-                        cwd=server_cfg.cwd,
+            auth = None
+            if isinstance(server_cfg, HttpServerConfig):
+                if server_cfg.oauth is None and _requires_oauth_config(server_cfg):
+                    raise OAuthRequiredError(_oauth_config_required_message(name))
+                if (
+                    server_cfg.oauth is not None
+                    and not has_cached_oauth_tokens(name)
+                    and not interactive_oauth_allowed(name)
+                ):
+                    raise OAuthRequiredError(
+                        f"MCP server '{name}' needs OAuth. Use Settings -> MCP -> Connect OAuth."
                     )
-                    read, write = await stack.enter_async_context(stdio_client(params))
-                    session = await stack.enter_async_context(
-                        ClientSession(read, write)
-                    )
-                else:
-                    if server_cfg.oauth is None and _requires_oauth_config(server_cfg):
-                        raise OAuthRequiredError(_oauth_config_required_message(name))
-                    if (
-                        server_cfg.oauth is not None
-                        and not has_cached_oauth_tokens(name)
-                        and not interactive_oauth_allowed(name)
-                    ):
-                        raise OAuthRequiredError(
-                            f"MCP server '{name}' needs OAuth. Use Settings -> MCP -> Connect OAuth."
-                        )
-                    if (
-                        server_cfg.oauth is not None
-                        and interactive_oauth_allowed(name)
-                        and not has_resolved_client_id(server_cfg)
-                        and not await supports_dynamic_client_registration(server_cfg)
-                    ):
-                        raise OAuthRequiredError(
-                            _oauth_credentials_required_message(name)
-                        )
-                    headers = (
-                        resolve_headers(server_cfg.headers)
-                        if server_cfg.resolve_header_refs
-                        else dict(server_cfg.headers)
-                    )
-                    httpx_client_factory = None
-                    if not server_cfg.follow_redirects:
-                        import httpx
+                if (
+                    server_cfg.oauth is not None
+                    and interactive_oauth_allowed(name)
+                    and not has_resolved_client_id(server_cfg)
+                    and not await supports_dynamic_client_registration(server_cfg)
+                ):
+                    raise OAuthRequiredError(_oauth_credentials_required_message(name))
+                auth = build_oauth_provider(name, server_cfg)
 
-                        def no_redirect_client(
-                            headers: dict[str, str] | None = None,
-                            timeout: httpx.Timeout | None = None,
-                            auth: httpx.Auth | None = None,
-                        ) -> httpx.AsyncClient:
-                            kwargs: dict = {"follow_redirects": False}
-                            if headers is not None:
-                                kwargs["headers"] = headers
-                            if timeout is not None:
-                                kwargs["timeout"] = timeout
-                            if auth is not None:
-                                kwargs["auth"] = auth
-                            return httpx.AsyncClient(**kwargs)
-
-                        httpx_client_factory = no_redirect_client
-
-                    auth = build_oauth_provider(name, server_cfg)
-                    if httpx_client_factory is None:
-                        client_context = streamablehttp_client(
-                            server_cfg.url,
-                            headers=headers or None,
-                            auth=auth,
-                        )
-                    else:
-                        client_context = streamablehttp_client(
-                            server_cfg.url,
-                            headers=headers or None,
-                            auth=auth,
-                            httpx_client_factory=httpx_client_factory,
-                        )
-                    transport = await stack.enter_async_context(client_context)
-                    # streamablehttp_client yields (read, write, get_session_id).
-                    read, write = transport[0], transport[1]
-                    session = await stack.enter_async_context(
-                        ClientSession(read, write)
-                    )
-
-                await session.initialize()
-                tools_resp = await session.list_tools()
-
-                runner.session = session
-                runner.tools = [
-                    MCPTool(
-                        server_name=name,
-                        mcp_tool=t,
-                        session_provider=lambda r=runner: r.session,
-                        server_capabilities=server_cfg.capabilities,
-                    )
-                    for t in tools_resp.tools
-                ]
-                # Mutate the existing status in place rather than rebuilding —
-                # ``name``, ``transport``, ``enabled`` are already set correctly
-                # by ``_spawn_runner``; only the lifecycle fields move.
-                runner.status.state = "ready"
-                runner.status.tool_names = [t.name for t in runner.tools]
-                runner.status.started_at = datetime.now(UTC).isoformat()
-                runner.status.error = None
-                runner.ready.set()
-                logger.info(
-                    "mcp_server_ready name={} transport={} tools={}",
-                    name,
-                    server_cfg.transport,
-                    len(runner.tools),
-                )
-
-                # Hold the contexts open until shutdown is requested.
-                await runner.shutdown.wait()
-
-                runner.session = None
-                logger.info("mcp_server_stopping name={}", name)
+            await run_server_session(
+                name,
+                server_cfg,
+                runner,
+                transport_factory=self._transport_factory,
+                auth=auth,
+            )
         except asyncio.CancelledError:
             runner.status.state = "stopped"
             runner.status.error = None
@@ -880,6 +731,11 @@ class MCPManager:
             runner.status.error = _format_exception(exc)
             runner.status.tool_names = []
             runner.ready.set()
+
+
+# Compatibility facade for callers that still use the pre-refactor name.
+class MCPManager(MCPRuntime):
+    """Backward-compatible name for :class:`MCPRuntime`."""
 
 
 # ── Module-level singleton ─────────────────────────────────────────────────

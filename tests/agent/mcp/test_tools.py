@@ -7,8 +7,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from pydantic import AnyUrl
-
 from app.agent.errors import ToolExecutionError
 from app.agent.mcp.tools import (
     MCPTool,
@@ -155,6 +153,29 @@ class TestExtractText:
 
 class TestMCPToolDefinition:
     """Test MCPTool.definition property."""
+
+    def test_native_mcp_2_tool_fields_are_adapted(self) -> None:
+        from mcp.types import Tool as MCPToolDefinition
+        from mcp.types import ToolAnnotations
+
+        mcp_tool = MCPToolDefinition(
+            name="list_files",
+            description="List files",
+            input_schema={"type": "object", "properties": {}},
+            annotations=ToolAnnotations(read_only_hint=True),
+        )
+        tool = MCPTool(
+            server_name="filesystem",
+            mcp_tool=mcp_tool,
+            session_provider=lambda: None,
+        )
+
+        assert tool.definition["function"]["parameters"] == {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
+        assert tool.read_only is True
 
     def test_mcp_tool_definition_name(self) -> None:
         """MCPTool.definition has correct name format mcp_<server>_<tool>."""
@@ -322,6 +343,30 @@ class TestMCPToolArun:
         session.call_tool.assert_called_once_with("mytool", {"arg1": "value1"})
 
     @pytest.mark.asyncio
+    async def test_arun_native_mcp_2_result_includes_structured_output(self) -> None:
+        from mcp.types import CallToolResult, TextContent
+
+        session = AsyncMock()
+        session.call_tool.return_value = CallToolResult(
+            content=[TextContent(text="Saved")],
+            structured_content={"checkpoint_id": "cp1"},
+        )
+        mcp_tool = SimpleNamespace(
+            name="save",
+            description="Save a checkpoint",
+            inputSchema={"type": "object"},
+        )
+        tool = MCPTool(
+            server_name="example",
+            mcp_tool=mcp_tool,  # type: ignore[arg-type]
+            session_provider=lambda: session,
+        )
+
+        result = await tool.arun()
+
+        assert result == ('Saved\n\nStructured output:\n{"checkpoint_id": "cp1"}')
+
+    @pytest.mark.asyncio
     async def test_arun_redacts_nested_outbound_arguments(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -439,8 +484,7 @@ class TestMCPToolArun:
             "ui": {"prefersBorder": True, "permissions": {"clipboardWrite": True}}
         }
         read_resource_arg = session.read_resource.call_args.args[0]
-        assert isinstance(read_resource_arg, AnyUrl)
-        assert str(read_resource_arg) == "ui://excalidraw/mcp-app.html"
+        assert read_resource_arg == "ui://excalidraw/mcp-app.html"
 
     @pytest.mark.asyncio
     async def test_arun_uses_listing_resource_meta_when_read_resource_omits_meta(
@@ -513,6 +557,30 @@ class TestMCPToolArun:
         result = _extract_app_resource(resource, "ui://excalidraw/mcp-app.html")
         assert result is not None
         assert result["resourceMeta"] is None
+
+    def test_extract_app_resource_reads_native_mcp_2_fields(self) -> None:
+        from mcp.types import BlobResourceContents, ReadResourceResult
+
+        html = "<html><body>native MCP app</body></html>"
+        resource = ReadResourceResult(
+            contents=[
+                BlobResourceContents(
+                    uri="ui://example/app.html",
+                    mime_type="text/html;profile=mcp-app",
+                    blob=b64encode(html.encode()).decode(),
+                    meta={"ui": {"prefersBorder": True}},
+                )
+            ]
+        )
+
+        result = _extract_app_resource(resource, "ui://example/app.html")
+
+        assert result == {
+            "resourceUri": "ui://example/app.html",
+            "mimeType": "text/html;profile=mcp-app",
+            "html": html,
+            "resourceMeta": {"ui": {"prefersBorder": True}},
+        }
 
     @pytest.mark.asyncio
     async def test_arun_no_session_raises_error(self) -> None:
