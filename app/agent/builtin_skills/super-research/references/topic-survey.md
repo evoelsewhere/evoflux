@@ -1,6 +1,6 @@
 # Mode: Topic survey / 主题调研
 
-Use when the user wants a research question answered by gathering and synthesizing external sources — "survey the literature", "调研 X", "state of the art in Y", "gather evidence about Z".
+Use when the user wants a research question answered by gathering and synthesizing external sources — "deep research", "survey the literature", "调研 X", "state of the art in Y", "gather evidence about Z". Do not use it for a one- or two-search answer, a supplied document summary, or a measured experiment/benchmark.
 
 The failure mode this mode is designed against: producing a plausible-sounding synthesis with no verifiable trail back to the sources. Every claim must be traceable to a specific row in `sources.tsv`.
 
@@ -11,6 +11,21 @@ The failure mode this mode is designed against: producing a plausible-sounding s
 3. **Depth**: How many sources at minimum before you stop? Default is 15 for a short survey, 30 for a thorough one. Also: saturation criterion — stop when the last 5 sources add no new claims to your synthesis.
 4. **Deliverable**: Markdown report + `sources.tsv` (evidence table) + optionally a `claims.tsv` (claim ↔ sources mapping). Length target (usually 1–3 pages of report body).
 5. **Working directory**: A dedicated `survey/<tag>/` folder. Everything — the log, the sources, notes, drafts — goes there.
+
+## Step 0 — date, triage, and depth
+
+Run `date +%Y-%m-%d` before searching. Pick the narrowest depth that satisfies
+the request; the default is **standard**:
+
+| Depth | Delegated members | Follow-up rounds | Source target |
+| --- | ---: | ---: | ---: |
+| quick | 2–3 | 0 | 8+ |
+| standard | 3–5 | 1 | 15+ |
+| deep | 5–8 | 2 | 25+ |
+
+Enumeration requests still use this mode, but decompose by candidate or item
+batch so every row in the comparison has evidence. If the question is
+answerable with one or two searches, stop and answer it directly.
 
 ## Baseline
 
@@ -66,6 +81,13 @@ LOOP UNTIL saturation OR the depth minimum is hit AND the last 5 sources added n
 5. Every ~5 sources, re-read `claims.tsv` in full — this is where synthesis happens. Are claims sharpening? Is a claim collapsing under new evidence? Is a new sub-question emerging?
 6. Loop.
 
+For standard/deep surveys, delegate independent angles in parallel. Each member
+must write a durable `findings/F<n>.md` containing one sourced claim per item:
+quote, URL, source type, publication date, and confidence, followed by dead
+ends and suggested follow-ups. Members return only a short summary; raw page
+content stays in the workspace. If a member fails or finds thin evidence,
+record the gap and continue with the other angles.
+
 ## Scholarly / paper-heavy surveys — use the toolbox
 
 When the sources you care about are peer-reviewed papers or arXiv preprints (not blog posts / tweets / docs), prefer the shared scripts over ad-hoc `web_fetch`. They query multiple free APIs in one call and dedup for you:
@@ -109,3 +131,12 @@ See "Reporting" in SKILL.md. Mode-specific structure for the body:
 - **Contradictions and open questions** — where sources disagree, and what's not settled.
 - **Methodology note** — sources examined, saturation reached at N, exclusions and why.
 - **Where to look**: `sources.tsv`, `claims.tsv`, the `survey/<tag>/` folder.
+
+The report is written once, by the orchestrator, after all findings are read.
+Use this order when the survey is substantial: executive summary with inline
+citations; background and scope; thematic findings; comparison table when
+alternatives are involved; contradictions and open questions; methodology;
+numbered Sources. Every non-obvious claim must resolve to a source actually
+captured in `sources.tsv` or a finding file. In deep mode, do a hostile critique
+pass before finalizing for unsupported claims, stale sources, and missing
+counter-evidence.

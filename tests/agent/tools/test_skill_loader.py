@@ -1134,27 +1134,18 @@ class TestBuiltinSkills:
             "coding-investigate",
             "coding-operate",
             "coding-verify",
-            "compose-next",
             "data-analytics",
-            "deep-research",
             "design-blueprint",
             "docx-official",
-            "evolve",
             "frontend-design",
-            "html-to-video-pipeline",
             "learn-everything",
             "mcp-installer",
             "memory-search",
-            "modern-python-toolchain",
             "pdf-official",
-            "playwright",
             "plugin-development",
             "plugin-installer",
             "pptx-official",
-            "product-design",
-            "research-paper-writing",
             "review-pull-requests",
-            "sales",
             "self-healing",
             "skill-creator",
             "skill-installer",
@@ -1168,7 +1159,7 @@ class TestBuiltinSkills:
         work = set(skills_for_mode(discovered, "work"))
         coding = set(skills_for_mode(discovered, "coding"))
 
-        assert {"deep-research", "data-analytics", "sales"} <= work
+        assert {"super-research", "data-analytics"} <= work
         assert "plugin-development" in work
         assert {
             "coding-investigate",
@@ -1176,11 +1167,10 @@ class TestBuiltinSkills:
             "coding-verify",
             "coding-operate",
             "review-pull-requests",
-            "modern-python-toolchain",
         } <= coding
         assert "plugin-development" in coding
         assert "coding-investigate" not in work
-        assert "deep-research" not in coding
+        assert "super-research" in coding
         assert {"docx-official", "xlsx-official", "pptx-official", "pdf-official"} <= (
             work & coding
         )
@@ -1246,7 +1236,7 @@ class TestBuiltinSkills:
         assert "not available in work mode" in result
 
         work_catalog = await load_skill(action="list", _mode="work")
-        assert "deep-research" in work_catalog
+        assert "super-research" in work_catalog
         assert "coding-investigate" not in work_catalog
 
     @pytest.mark.asyncio
