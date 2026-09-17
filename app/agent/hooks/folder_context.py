@@ -8,6 +8,7 @@ from uuid import UUID
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.model_context import PREFIX_SNAPSHOT_FROZEN_KEY
 from app.core.db import DbFactory, resolve_db_factory
 from app.services.session_folder_service import build_folder_context_block
 
@@ -46,6 +47,8 @@ class FolderContextHook(BaseAgentHook):
         state: AgentState,
         request: ModelRequest,
     ) -> ModelRequest | None:
+        if state.metadata.get(PREFIX_SNAPSHOT_FROZEN_KEY) is True:
+            return None
         if not self._loaded:
             self._loaded = True
             self._block = await self._load_block()

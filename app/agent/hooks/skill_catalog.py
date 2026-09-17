@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Sequence
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.model_context import PREFIX_SNAPSHOT_FROZEN_KEY
 from app.agent.providers.model_metadata import get_model_limits
 from app.agent.skills.catalog import SkillCatalogRender, render_skill_catalog
 
@@ -29,10 +30,16 @@ class SkillCatalogHook(BaseAgentHook):
         mode: str,
         model_id: str | None,
         preferred_skills: Sequence[str] = (),
+        cache_stable: bool = False,
     ) -> None:
         self._mode = "coding" if mode == "coding" else "work"
         self._model_id = model_id
         self._preferred_skills = tuple(preferred_skills)
+        # Query-ranking is useful for standalone callers, but changing the
+        # selected catalog from one user turn to the next rewrites the system
+        # prefix. Runtime agents opt into the deterministic form so the same
+        # skill/tool configuration produces byte-stable model input.
+        self._cache_stable = cache_stable
 
     async def before_agent(self, ctx: RunContext, state: AgentState) -> None:
         state.metadata.pop("_skill_catalog_render", None)
@@ -43,13 +50,17 @@ class SkillCatalogHook(BaseAgentHook):
         state: AgentState,
         request: ModelRequest,
     ) -> ModelRequest | None:
+        if state.metadata.get(PREFIX_SNAPSHOT_FROZEN_KEY) is True:
+            return None
         rendered = state.metadata.get("_skill_catalog_render")
         if not isinstance(rendered, SkillCatalogRender):
             from app.agent.tools.builtin.skill import discover_skill_records_runtime
 
             records = discover_skill_records_runtime(mode=self._mode).values()
             context_window = get_model_limits(self._model_id).context_length
-            latest_user_text = self._latest_user_text(request.messages)
+            latest_user_text = (
+                None if self._cache_stable else self._latest_user_text(request.messages)
+            )
             rendered = render_skill_catalog(
                 records,
                 mode=self._mode,
@@ -129,6 +140,8 @@ class SkillCatalogFinalizerHook(BaseAgentHook):
         request: ModelRequest,
         handler: ModelCallHandler,
     ) -> AssistantMessage:
+        if state.metadata.get(PREFIX_SNAPSHOT_FROZEN_KEY) is True:
+            return await handler(request)
         rendered = state.metadata.get("_skill_catalog_render")
         if not isinstance(rendered, SkillCatalogRender) or not rendered.text:
             return await handler(request)

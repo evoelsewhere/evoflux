@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.model_context import PREFIX_SNAPSHOT_FROZEN_KEY
 from app.services.asdd_lifecycle import action_rail
 from app.services.asdd_service import catalogue_for
 from app.services.asdd_setup_service import ASDD_MANIFEST
@@ -114,6 +115,8 @@ class AsddContextHook(BaseAgentHook):
     async def before_model(
         self, ctx: RunContext, state: AgentState, request: ModelRequest
     ) -> ModelRequest | None:
+        if state.metadata.get(PREFIX_SNAPSHOT_FROZEN_KEY) is True:
+            return None
         if not self._block:
             return None
         prompt = (

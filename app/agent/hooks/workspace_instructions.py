@@ -9,6 +9,10 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.model_context import (
+    PREFIX_SNAPSHOT_DIRTY_KEY,
+    PREFIX_SNAPSHOT_FROZEN_KEY,
+)
 from app.services.turn_changes import _parse_patch_ops
 
 if TYPE_CHECKING:
@@ -77,6 +81,8 @@ class WorkspaceInstructionsHook(BaseAgentHook):
         request: "ModelRequest",
         handler: "ModelCallHandler",
     ) -> "AssistantMessage":
+        if state is not None and state.metadata.get(PREFIX_SNAPSHOT_FROZEN_KEY) is True:
+            return await handler(request)
         repository_map = self._repository_map()
         sections = self._root_sections()
         loaded = (
@@ -146,6 +152,10 @@ class WorkspaceInstructionsHook(BaseAgentHook):
                 new_files.append(instruction_file)
 
         if new_files:
+            # A newly applicable instruction changes the assembled system
+            # prefix. Let the terminal prefix hook rotate its snapshot once
+            # after this tool round instead of silently replaying stale rules.
+            state.metadata[PREFIX_SNAPSHOT_DIRTY_KEY] = True
             # Always surface newly-applicable rules once, in this tool result,
             # regardless of budget — only what gets carried forward into every
             # future system prompt is capped.

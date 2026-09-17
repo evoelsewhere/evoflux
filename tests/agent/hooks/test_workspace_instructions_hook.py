@@ -133,6 +133,7 @@ async def test_nested_override_preflights_mutation_once(tmp_path):
     assert "app rule" in first
     assert "feature override rule" in first
     assert "stale standard rule" not in first
+    assert state.metadata["_prefix_snapshot_dirty"] is True
     assert calls == 0
 
     second = await hook.wrap_tool_call(None, state, tool_call, handler)

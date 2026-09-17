@@ -556,6 +556,7 @@ def test_build_agent_skills_wire_configured_activation_and_catalog(
         "SkillCatalogHook",
     ]
     assert agent.hooks[-1]._preferred_skills == ("myskill",)
+    assert agent.hooks[-1]._cache_stable is True
 
 
 def test_build_agent_wires_coding_resolution_without_router_preload():
@@ -576,6 +577,7 @@ def test_build_agent_wires_coding_resolution_without_router_preload():
     assert runtime_hook._mode == "coding"
     assert catalog_hook.__class__.__name__ == "SkillCatalogHook"
     assert catalog_hook._preferred_skills == ()
+    assert catalog_hook._cache_stable is True
     assert agent.skills == []
 
 

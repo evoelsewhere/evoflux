@@ -62,6 +62,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from .base import BaseAgentHook
+from app.agent.model_context import PREFIX_SNAPSHOT_FROZEN_KEY
 
 if TYPE_CHECKING:
     from app.agent.schemas.chat import AssistantMessage
@@ -108,6 +109,8 @@ class _DynamicPromptHook(BaseAgentHook):
         handler: "ModelCallHandler",
     ) -> "AssistantMessage":
         """Rewrite the system prompt on the immutable request before each model call."""
+        if state.metadata.get(PREFIX_SNAPSHOT_FROZEN_KEY) is True:
+            return await handler(request)
         prompt_request = PromptRequest(
             base_prompt=request.system_prompt,
             state=state,

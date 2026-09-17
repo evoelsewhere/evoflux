@@ -620,6 +620,7 @@ def _build_agent(
                 mode=mode,
                 model_id=cfg.model,
                 preferred_skills=cfg.skills,
+                cache_stable=True,
             ),
         ]
     )

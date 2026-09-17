@@ -54,14 +54,15 @@ def _memory_page(body: str, *, tags: list[str] | None = None) -> str:
     )
 
 
-async def _invoke(hook: MemoryContextHook, req: ModelRequest) -> str:
-    received: list[str] = []
+async def _invoke(hook: MemoryContextHook, req: ModelRequest) -> ModelRequest:
+    received: list[ModelRequest] = []
 
     async def handler(request: ModelRequest) -> AssistantMessage:
-        received.append(request.system_prompt)
+        received.append(request)
         return AssistantMessage(content="ok")
 
-    await hook.wrap_model_call(_ctx(), _state(), req, handler)
+    state = AgentState(messages=list(req.messages), system_prompt=req.system_prompt)
+    await hook.wrap_model_call(_ctx(), state, req, handler)
     return received[0]
 
 
@@ -69,7 +70,7 @@ async def _invoke(hook: MemoryContextHook, req: ModelRequest) -> str:
 async def test_no_memory_match_passes_through_unchanged():
     result = await _invoke(MemoryContextHook(), _request(user="unrelated query"))
 
-    assert result == "Base."
+    assert result.system_prompt == "Base."
 
 
 @pytest.mark.asyncio
@@ -85,7 +86,7 @@ async def test_unrelated_query_does_not_inject_incidental_user_memory(
         MemoryContextHook(), _request(user="Explain Kubernetes pod scheduling.")
     )
 
-    assert result == "Base."
+    assert result.system_prompt == "Base."
 
 
 @pytest.mark.asyncio
@@ -102,7 +103,7 @@ async def test_domain_specific_question_does_not_inject_generic_preference(
         _request(user="What is Hoang's preferred Kubernetes scheduler plugin?"),
     )
 
-    assert result == "Base."
+    assert result.system_prompt == "Base."
 
 
 @pytest.mark.asyncio
@@ -116,10 +117,12 @@ async def test_relevant_topic_is_injected():
         MemoryContextHook(), _request(user="How should you answer Hoang?")
     )
 
-    assert "## Relevant memory" in result
-    assert '"source":"topic:response-style"' in result
-    assert '"provenance":["session-test"]' in result
-    assert "direct fact-based" in result
+    context = result.messages[-1].content or ""
+    assert result.system_prompt == "Base."
+    assert "## Relevant memory" in context
+    assert '"source":"topic:response-style"' in context
+    assert '"provenance":["session-test"]' in context
+    assert "direct fact-based" in context
 
 
 @pytest.mark.asyncio
@@ -137,8 +140,9 @@ async def test_metadata_tags_boost_domain_memory():
         _request(user="How should EvoFlux memory retrieval work?"),
     )
 
-    assert '"source":"topic:evoflux-memory"' in result
-    assert "benchmarkable" in result
+    context = result.messages[-1].content or ""
+    assert '"source":"topic:evoflux-memory"' in context
+    assert "benchmarkable" in context
 
 
 @pytest.mark.asyncio
@@ -153,7 +157,7 @@ async def test_raw_notes_are_not_automatically_injected():
         _request(user="What temporary scratchpad content should memory reveal?"),
     )
 
-    assert result == "Base."
+    assert result.system_prompt == "Base."
 
 
 @pytest.mark.asyncio
@@ -168,27 +172,30 @@ async def test_memory_search_failure_does_not_block_model_call(monkeypatch):
 
     result = await _invoke(MemoryContextHook(), _request(user="remember me"))
 
-    assert result == "Base."
+    assert result.system_prompt == "Base."
 
 
 @pytest.mark.asyncio
-async def test_memory_block_is_identical_across_a_turns_tool_calls():
-    """The block must not appear and vanish between calls in one turn.
-
-    It sits in the system prompt, so dropping it once a tool has run rewrites
-    the front of the prompt and costs the cached history behind it.
-    """
+async def test_memory_context_is_append_only_and_deduplicated_across_tool_calls():
+    """The same durable context row is replayed across model calls."""
     write_file(
         "topics/response-style.md",
         _memory_page("Hoang prefers direct fact-based answers."),
     )
-    first_call = ModelRequest(
-        messages=(HumanMessage(content="How should you answer Hoang?"),),
-        system_prompt="Base.",
-    )
-    after_tool = ModelRequest(
-        messages=(
-            HumanMessage(content="How should you answer Hoang?"),
+    user_message = HumanMessage(content="How should you answer Hoang?")
+    state = AgentState(messages=[user_message], system_prompt="Base.")
+    first_call = ModelRequest(messages=(user_message,), system_prompt="Base.")
+    received: list[ModelRequest] = []
+
+    async def handler(request: ModelRequest) -> AssistantMessage:
+        received.append(request)
+        return AssistantMessage(content="ok")
+
+    hook = MemoryContextHook()
+    first = await hook.wrap_model_call(_ctx(), state, first_call, handler)
+
+    state.messages.extend(
+        [
             AssistantMessage(
                 content=None,
                 tool_calls=[
@@ -199,9 +206,26 @@ async def test_memory_block_is_identical_across_a_turns_tool_calls():
                 ],
             ),
             ToolMessage(tool_call_id="call_1", content="{}"),
-        ),
+        ]
+    )
+    second_call = ModelRequest(
+        messages=tuple(state.messages),
         system_prompt="Base.",
     )
+    second = await hook.wrap_model_call(_ctx(), state, second_call, handler)
 
-    hook = MemoryContextHook()
-    assert await _invoke(hook, after_tool) == await _invoke(hook, first_call)
+    assert first.content == second.content == "ok"
+    assert first_call.system_prompt == second_call.system_prompt == "Base."
+    assert len(state.messages) == 4
+    assert len(received) == 2
+    assert len(received[0].messages) == 2
+    assert len(received[1].messages) == 4
+    assert received[0].messages[1].content == received[1].messages[1].content
+    assert (
+        sum(
+            1
+            for message in state.messages
+            if (message.extra or {}).get("evoflux_model_context") == "memory_recall"
+        )
+        == 1
+    )

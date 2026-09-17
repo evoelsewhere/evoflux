@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.model_context import PREFIX_SNAPSHOT_FROZEN_KEY
 
 if TYPE_CHECKING:
     from app.agent.schemas.chat import AssistantMessage
@@ -58,6 +59,8 @@ class AgentTeamProtocolHook(BaseAgentHook):
         (see :meth:`AgentTeam._persist_roster_change`) and via ``team_message``
         / ``team_manage`` tool results — never by mutating this prompt.
         """
+        if state.metadata.get(PREFIX_SNAPSHOT_FROZEN_KEY) is True:
+            return await handler(request)
         member = self._get_member()
         new_prompt = member.build_protocol(request.system_prompt, self._team)
         return await handler(request.override(system_prompt=new_prompt))

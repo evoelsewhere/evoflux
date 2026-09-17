@@ -12,6 +12,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.model_context import is_durable_model_context
 from app.agent.providers.base import get_qualified_model_id
 from app.agent.outbound_redaction import (
     OutboundContext,
@@ -106,6 +107,11 @@ def _format_transcript(state: AgentState, max_chars: int) -> str:
 
     lines: list[str] = []
     for message in state.messages:
+        # Recalled memory is untrusted model context, not user-authored input.
+        # Feeding it back to the extractor would create a memory amplification
+        # loop and could promote poisoned recall text into durable facts.
+        if is_durable_model_context(message):
+            continue
         if message.exclude_from_context:
             continue
         extra = message.extra or {}
