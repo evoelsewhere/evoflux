@@ -38,6 +38,7 @@ from app.agent.hooks.continuation import ContinuationHook
 from app.agent.hooks.folder_context import FolderContextHook
 from app.agent.hooks.goal import GoalContextHook, GoalUsageHook
 from app.agent.hooks.dynamic_prompt import inject_current_date
+from app.agent.hooks.prefix_snapshot import SessionPrefixSnapshotHook
 from app.agent.hooks.memory_context import (
     MemoryContextHook,
     default_memory_context_hook,
@@ -1222,6 +1223,29 @@ class TeamMemberBase(abc.ABC):
             except Exception:
                 history = []
             session_row = await db.get(ChatSession, session_uuid)
+            goal_profile: dict[str, object] | None = None
+            if self._role_label == "lead":
+                from app.services import goal_service
+
+                try:
+                    goal = await goal_service.get_goal(db, session_uuid)
+                    if goal is not None:
+                        # Progress counters intentionally stay out of the
+                        # profile: usage changes every turn and must not rotate
+                        # the cache. Lifecycle/objective changes do rotate the
+                        # snapshot so a paused/completed goal cannot leave
+                        # stale instructions in the frozen system prefix.
+                        goal_profile = {
+                            "objective": goal.objective,
+                            "status": goal.status,
+                            "token_budget": goal.token_budget,
+                        }
+                except Exception as exc:  # noqa: BLE001 — cache is optional
+                    logger.warning(
+                        "goal_prefix_profile_load_failed session_id={} error={}",
+                        self.session_id,
+                        exc,
+                    )
             active_task_specs: list[dict] = []
             if self._role_label == "member":
                 try:
@@ -1543,8 +1567,9 @@ class TeamMemberBase(abc.ABC):
         # the main provider call instead of snapshotting an incomplete prefix.
         # cache-boundary must run first: it stamps everything built so far
         # (role prompt, team protocol, goal/folder/ASDD context, workspace
-        # instructions) as the stable prefix before memory-context and the
-        # skill catalog append content that changes on essentially every turn.
+        # instructions) as the stable prefix before the final catalog tail.
+        # Memory recall is an append-only hidden history message, so it does
+        # not rewrite this system prefix.
         pipeline.add(
             HookStage.PROMPT_FINALIZATION,
             "cache-boundary",
@@ -1560,6 +1585,48 @@ class TeamMemberBase(abc.ABC):
             "skill-catalog-finalizer",
             SkillCatalogFinalizerHook(),
         )
+
+        prefix_snapshot_hook = None
+        if self.db_factory:
+            profile_model = (
+                effective_model or runtime_model or self.agent.model_id or ""
+            )
+            team_blueprints = [
+                {
+                    "name": name,
+                    "description": " ".join((blueprint.description or name).split()),
+                }
+                for name, blueprint in sorted(self._team.blueprints.items())
+            ]
+            prefix_snapshot_hook = SessionPrefixSnapshotHook(
+                db_factory=self.db_factory,
+                session_id=self.session_id,
+                profile={
+                    "provider_id": (
+                        profile_model.partition(":")[0] if ":" in profile_model else ""
+                    ),
+                    "model_id": profile_model,
+                    "agent": self.agent.name,
+                    "agent_id": self.name,
+                    "mode": self._team.mode,
+                    "role": self._role_label,
+                    "permission_mode": session_row.permission_mode
+                    if session_row is not None
+                    else "auto",
+                    "session_tags": sorted(self._team.session_tags),
+                    "folder_id": (
+                        str(session_row.folder_id)
+                        if session_row is not None and session_row.folder_id is not None
+                        else None
+                    ),
+                    "workspace": session_row.workspace
+                    if session_row is not None
+                    else task_workspace.workspace,
+                    "goal": goal_profile,
+                    "system_prompt": self.agent.system_prompt,
+                    "team_blueprints": team_blueprints,
+                },
+            )
 
         # Build checkpointer — stream_session_id + agent_name let it clear
         # this agent's stream buffer after each persist, preventing
@@ -1766,6 +1833,9 @@ class TeamMemberBase(abc.ABC):
                 checkpointer=checkpointer,
                 llm_provider=runtime_provider,
                 model_id=runtime_model,
+                final_model_hooks=(
+                    [prefix_snapshot_hook] if prefix_snapshot_hook is not None else None
+                ),
             )
 
             await self._maybe_inject_open_task_nudge()

@@ -336,6 +336,7 @@ class Agent(Generic[TContext]):
         checkpointer: Checkpointer | None = None,
         llm_provider: LLMProviderBase | None = None,
         model_id: str | None = None,
+        final_model_hooks: Sequence[BaseAgentHook] | None = None,
         **kwargs,
     ) -> list[ChatMessage]:
         """Runs the agent loop for a single turn.
@@ -369,6 +370,11 @@ class Agent(Generic[TContext]):
         that the loop calls at defined sync points to persist state.  When
         provided, ``DatabaseHook`` is not needed — the loop owns persistence.
 
+        ``final_model_hooks`` are runtime-owned terminal model wrappers. They
+        run after ordinary and plugin hooks, and are reserved for invariants
+        that must be the last request transform before provider serialization
+        (for example, a session-level frozen prompt prefix).
+
         Agent role for plugin ``applies_to`` filtering is read from the
         :mod:`app.agent.plugins.role` contextvar — team callers wrap the
         ``run()`` invocation with :func:`set_role`.
@@ -378,7 +384,15 @@ class Agent(Generic[TContext]):
         role = current_role()
         self.run_config = config
         plugin_hooks = await self._load_plugin_hooks(role)
-        combined_hooks = list(self.hooks) + list(hooks or []) + plugin_hooks
+        # ``final_model_hooks`` run after plugin hooks. They are reserved for
+        # runtime-owned terminal request invariants, such as a frozen session
+        # prefix, which must be the last authority before provider serialization.
+        combined_hooks = (
+            list(self.hooks)
+            + list(hooks or [])
+            + plugin_hooks
+            + list(final_model_hooks or [])
+        )
         active_provider = llm_provider or self.llm_provider
         active_model_id = model_id or self.model_id
 
@@ -729,6 +743,13 @@ class Agent(Generic[TContext]):
             # before_model: hooks may return a modified ModelRequest.
             # SummarizationHook mutates state.messages and returns updated messages
             # in the new ModelRequest — so the current LLM call sees the summary.
+            # Terminal hooks may expose a preflight method so prompt-producing
+            # hooks can skip rebuilding a persisted/frozen system prefix before
+            # the terminal wrapper gets its final authority.
+            for hook in final_model_hooks or ():
+                preflight = getattr(hook, "preflight_before_model", None)
+                if preflight is not None:
+                    await preflight(ctx, state, model_request)
             for hook in combined_hooks:
                 updated = await hook.before_model(ctx, state, model_request)
                 if updated is not None:
