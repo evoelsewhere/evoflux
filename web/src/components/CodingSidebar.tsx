@@ -508,6 +508,9 @@ export function CodingSidebar({
   const [removedWorktreePaths, setRemovedWorktreePaths] = useState<Set<string>>(
     () => new Set(),
   );
+  // Tracks the last folder chosen via the native picker so the next dialog
+  // open can start at its parent directory rather than inside it.
+  const [lastPickPath, setLastPickPath] = useState<string | null>(null);
 
   const loadBrowser = useCallback(async (path?: string | null) => {
     setLoading(true);
@@ -528,8 +531,10 @@ export function CodingSidebar({
     setSelectedWorkspace(null);
     setTrustWorkspace(null);
     setDialogOpen(true);
-    if (!browserPath) void loadBrowser(null);
-  }, [browserPath, loadBrowser]);
+    // Navigate to the parent of the last-browsed directory so siblings are
+    // visible. Fall back to root when there is no prior browse state.
+    void loadBrowser(parentPath ?? null);
+  }, [loadBrowser, parentPath]);
 
   // Closes the folder-picker dialog and clears every mode flag it can be in
   // (plain "open a standalone workspace" vs. "add a repo to project X") so a
@@ -574,17 +579,67 @@ export function CodingSidebar({
     setError(null);
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
+      const wantMultiple =
+        purpose === "workspace" && addRepoDialogProjectId !== null;
+      // Open at the parent of the last selection so siblings are visible,
+      // falling back to the OS default when there is no prior pick.
+      const defaultPath =
+        lastPickPath?.replace(/[\\/][^\\/]*$/, "") || undefined;
       const selected = await open({
         directory: true,
-        multiple: false,
-        title: purpose === "clone" ? "Choose clone destination" : "Open workspace",
+        multiple: wantMultiple,
+        defaultPath,
+        title: purpose === "clone"
+          ? "Choose clone destination"
+          : wantMultiple
+            ? "Add repositories"
+            : "Open workspace",
       });
-      if (typeof selected !== "string") return;
       if (purpose === "clone") {
+        if (typeof selected !== "string") return;
         setCloneParent(selected);
         return;
       }
+      // Multi-select: add every selected folder to the project directly.
+      if (Array.isArray(selected) && selected.length > 0) {
+        const projectId = addRepoDialogProjectId!;
+        for (const folder of selected) {
+          addWorkspaceMutation.mutate(
+            { projectId, body: { workspace_path: folder } },
+            {
+              onSuccess: () => {
+                setExpandedProjects((current) => {
+                  if (current.has(projectId)) return current;
+                  const next = new Set(current);
+                  next.add(projectId);
+                  return next;
+                });
+              },
+              onError: (err) => {
+                useToastStore.getState().push({
+                  tone: "error",
+                  title: "Couldn't add repository",
+                  description: `${folder}: ${err instanceof Error ? err.message : String(err)}`,
+                });
+              },
+            },
+          );
+        }
+        const project = projects.find((item) => item.id === projectId);
+        useToastStore.getState().push({
+          tone: "success",
+          title: `${selected.length} ${selected.length === 1 ? "repository" : "repositories"} added`,
+          description: project
+            ? `They are now visible under ${project.name}.`
+            : "They are now visible under the project.",
+        });
+        setLastPickPath(selected[selected.length - 1]);
+        return;
+      }
+      // Single-select (standalone or non-array result).
+      if (typeof selected !== "string") return;
       setSelectedWorkspace(selected);
+      setLastPickPath(selected);
       const result = await validateWorkspace(selected);
       setTrustWorkspace(result.workspace);
     } catch (err) {
@@ -592,7 +647,7 @@ export function CodingSidebar({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [addRepoDialogProjectId, addWorkspaceMutation, lastPickPath, projects, setExpandedProjects]);
 
   const refreshWorkspaceTree = useCallback(async () => {
     // Force the merged Projects + Workspaces snapshot to be fetched even if
