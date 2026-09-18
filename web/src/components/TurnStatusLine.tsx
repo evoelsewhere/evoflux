@@ -25,7 +25,7 @@ import { subscribeClock } from './ToolCall/liveClock'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
-import { formatTurnCost, formatTurnDuration, formatTurnTokens, shortModelName } from '@/utils/turn-meta'
+import { formatTurnCost, formatTurnDuration, formatTurnTokens } from '@/utils/turn-meta'
 import { liveTurnActivity } from '@/utils/turn-status'
 import type { AgentStream, TeamStoreState } from '@/stores/useTeamStore'
 import type { ContentBlock } from '@/api/types'
@@ -136,6 +136,17 @@ function StatusIcon({
   /* eslint-enable react-hooks/static-components */
 }
 
+/**
+ * Animated dots that cycle while a status is active.
+ */
+function AnimatedDots({ className }: { className?: string }) {
+  return (
+    <span className={cn('inline-flex items-center', className)} aria-hidden="true">
+      <span className="working-dots">...</span>
+    </span>
+  )
+}
+
 export function TurnStatusLine({
   blocks,
   agentName,
@@ -159,33 +170,12 @@ export function TurnStatusLine({
   const costUsd = useTeamStore(
     (state) => targetStream(state, agentName)?.usage.turnCost?.estimated_usd ?? 0,
   )
-  const sessionModel = useTeamStore((state) => state.sessionModel)
-
-  // The turn's own model wins over the session default: a turn that fell back
-  // to another model should say so while it is still running, not only in the
-  // footer once it has finished.
-  const turnModel = useMemo(() => {
-    for (let index = blocks.length - 1; index >= 0; index -= 1) {
-      const model = blocks[index].extra?.model
-      if (typeof model === 'string' && model) return model
-    }
-    return null
-  }, [blocks])
-  const modelName = shortModelName(turnModel ?? sessionModel)
 
   const activity = useMemo(
-    () => liveTurnActivity(blocks, phase, modelName),
-    [blocks, phase, modelName],
+    () => liveTurnActivity(blocks, phase),
+    [blocks, phase],
   )
 
-  // The clock must start when the turn did, not when this instance mounted.
-  // The runway line and the turn's own line are two mounts of the same turn,
-  // and a block-derived start made the elapsed jump backwards at the handover.
-  // Keep the earliest start seen while this line is up. The store restarts
-  // `_turnStartedAt` on every agent activation, and a turn that pauses and
-  // resumes is still one answer to the reader — measured in the app, the
-  // elapsed otherwise dropped from 20s back to 580ms mid-answer. The latch
-  // resets with the component, which unmounts once the turn really ends.
   const [firstStart, setFirstStart] = useState<number | null>(streamStartedAt)
   if (streamStartedAt !== null && (firstStart === null || streamStartedAt < firstStart)) {
     setFirstStart(streamStartedAt)
@@ -197,44 +187,37 @@ export function TurnStatusLine({
   if (costUsd > 0) meta.push(formatTurnCost(costUsd))
 
   const animated = preset.intensity !== 'reduced'
-  const iconSize = size === 'roomy' ? 15 : 13
+  const iconSize = size === 'roomy' ? 16 : 14
+
+  const showDots = animated && activity.kind === 'waiting'
 
   const row = (
     <div
-      // No top padding of its own: both hosts already space their children
-      // (`space-y-4` in the transcript, `space-y-3` in the pane), so adding
-      // padding here double-counted the gap and pushed the line away from the
-      // output it describes.
       className={cn('flex min-w-0 items-center gap-2', className)}
       role="status"
-      aria-label={`${activity.label} — ${meta.join(', ')}`}
+      aria-label={`${activity.label} \u2014 ${meta.join(', ')}`}
     >
-      <span className="flex size-4 shrink-0 items-center justify-center">
+      <span className="flex size-[18px] shrink-0 items-center justify-center">
         <StatusIcon toolName={activity.toolName} size={iconSize} animated={animated} />
       </span>
 
-      {/* Label and meta sweep together: one highlight crossing the whole
-          line, rather than the label lighting up while its own timing and
-          cost sit dim beside it. Inside the sweep the text colour is the
-          gradient, so the two levels are told apart by size and family. */}
       <span
         className={cn(
           'flex min-w-0 items-center gap-2',
           animated && 'activity-text-shimmer',
         )}
       >
-        {/* These colours only show when the sweep is off (reduced motion):
-            inside it the gradient fill wins over `color`. */}
         <span
           className={cn(
-            'min-w-0 truncate text-(--color-text-muted)',
-            size === 'roomy' ? 'text-xs' : 'text-[11px]',
+            'min-w-0 truncate font-medium text-(--color-text-muted)',
+            size === 'roomy' ? 'text-sm' : 'text-xs',
           )}
         >
           {activity.label}
+          {showDots && <AnimatedDots />}
         </span>
-        <span className="shrink-0 font-mono text-[11px] text-(--color-text-subtle)">
-          {meta.join(' · ')}
+        <span className="shrink-0 font-mono text-xs text-(--color-text-subtle)">
+          {meta.join(' \u00B7 ')}
         </span>
       </span>
     </div>

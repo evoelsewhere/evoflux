@@ -43,46 +43,41 @@ describe('liveTurnActivity', () => {
     const activity = liveTurnActivity(
       [block({ type: 'tool', toolName: 'edit', toolArgs: '{"file_path":"main.rs"}' })],
       'model_calling',
-      'opus-5',
     )
     expect(activity).toEqual({ kind: 'tool', label: 'Editing main.rs', toolName: 'edit' })
   })
 
   it('waits on the model once a tool call has finished', () => {
-    // The backend emits `model_calling` once per turn, so the phase cannot
-    // tell us this — only the block tail can.
     const activity = liveTurnActivity(
       [block({ type: 'tool', toolName: 'edit', toolDone: true })],
       'model_calling',
-      'opus-5',
     )
     expect(activity.kind).toBe('waiting')
-    expect(activity.label).toBe('Waiting for opus-5…')
+    expect(activity.label).toBe('Working')
   })
 
   it('distinguishes reasoning from answering', () => {
-    expect(liveTurnActivity([block({ type: 'thinking' })], 'model_calling', null).kind)
+    expect(liveTurnActivity([block({ type: 'thinking' })], 'model_calling').kind)
       .toBe('thinking')
-    expect(liveTurnActivity([block({ type: 'text' })], 'model_calling', null).kind)
+    expect(liveTurnActivity([block({ type: 'text' })], 'model_calling').kind)
       .toBe('responding')
   })
 
   it('separates ingress from a request the provider already has', () => {
-    expect(liveTurnActivity([], 'ingress', 'opus-5').kind).toBe('preparing')
-    expect(liveTurnActivity([], null, 'opus-5').kind).toBe('preparing')
-    expect(liveTurnActivity([], 'model_calling', 'opus-5').kind).toBe('waiting')
+    expect(liveTurnActivity([], 'ingress').kind).toBe('preparing')
+    expect(liveTurnActivity([], null).kind).toBe('preparing')
+    expect(liveTurnActivity([], 'model_calling').kind).toBe('waiting')
   })
 
   it('ignores the user block a turn opens with', () => {
     const activity = liveTurnActivity(
       [block({ type: 'user', content: 'hi' })],
       'model_calling',
-      'opus-5',
     )
     expect(activity.kind).toBe('waiting')
   })
 
   it('names no model rather than inventing one', () => {
-    expect(liveTurnActivity([], 'model_calling', null).label).toBe('Waiting for the model…')
+    expect(liveTurnActivity([], 'model_calling').label).toBe('Working')
   })
 })

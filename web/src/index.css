@@ -401,8 +401,8 @@
 
     /* Shimmer sweep — same intent inverted: on light the crest is the
        darkest ink, so "brighter" means more contrast against the surface. */
-    --color-text-sweep-base: #4A4A4A;
-    --color-text-sweep-peak: #000000;
+    --color-text-sweep-base: #9A9A9A;
+    --color-text-sweep-peak: #1A1A1A;
 
     /* Accent — the light counterpart of clay, darkened until white label
        text clears 4.5:1 against it. */
@@ -913,6 +913,24 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
 }
 
 /* ─────────────────────────────────────────────────────────────
+ * Working dots — accent-coloured "..." that pulse to signal
+ * "still working" on the status line. Visible in both themes.
+ * ───────────────────────────────────────────────────────────── */
+@keyframes working-dots-fade {
+  0%, 20%  { opacity: 0.25; }
+  40%, 60% { opacity: 1; }
+  80%, 100%{ opacity: 0.25; }
+}
+
+.working-dots {
+  display: inline-block;
+  letter-spacing: 0.15em;
+  font-weight: 600;
+  color: var(--color-accent);
+  animation: working-dots-fade 1.4s var(--ease-in-out) infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────
  * Progressive block reveal — fade-in + slight slide-up
  * ───────────────────────────────────────────────────────────── */
 @keyframes block-reveal {
@@ -1077,6 +1095,11 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
     animation: none;
     opacity: 0.72;
     transform: none;
+  }
+
+  .working-dots {
+    animation: none;
+    opacity: 1;
   }
 
   .skeleton-shimmer {
