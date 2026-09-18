@@ -1,7 +1,7 @@
 """create remote connection and pairing tables
 
-Revision ID: 00000064
-Revises: 00000063
+Revision ID: 00000067
+Revises: 00000066
 Create Date: 2026-09-14
 """
 
@@ -12,8 +12,8 @@ from alembic import op
 
 from app.models.chat import TZDateTime
 
-revision: str = "00000064"
-down_revision: Union[str, Sequence[str], None] = "00000063"
+revision: str = "00000067"
+down_revision: Union[str, Sequence[str], None] = "00000066"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
