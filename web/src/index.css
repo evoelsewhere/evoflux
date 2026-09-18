@@ -694,6 +694,16 @@ a svg.lucide,
     transform var(--motion-fast) ease;
 }
 
+/* Base sidebar card surface — web fallback. On desktop the more-specific
+ * [data-desktop-sidebar-glass] and native-glass overrides below replace
+ * both background and backdrop-filter, so this rule only applies in the
+ * browser where no native material exists. */
+[data-sidebar-card] {
+  background: color-mix(in srgb, var(--bg-sidebar) 80%, transparent);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+}
+
 /* Native macOS/Windows sidebar material can only show through when the WebView's
  * document and the shell gutter are transparent. Main/workbench canvases keep
  * their own opaque palette surfaces, so only the application chrome receives

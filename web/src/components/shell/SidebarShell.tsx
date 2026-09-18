@@ -220,7 +220,7 @@ export function SidebarCard({
     <div
       data-sidebar-card
       className={cn(
-        'flex min-h-0 flex-col overflow-hidden bg-(--bg-sidebar)/80 backdrop-blur-xl',
+        'flex min-h-0 flex-col overflow-hidden',
         className,
       )}
     >
