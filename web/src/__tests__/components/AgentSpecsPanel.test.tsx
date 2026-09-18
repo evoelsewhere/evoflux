@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AsddChangeDetail, AsddChangeList, AsddSetupResponse } from '@/api/types'
@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   archive: vi.fn(),
   remove: vi.fn(),
   create: vi.fn(),
+  createArgs: vi.fn(),
   initialize: vi.fn(),
 }))
 
@@ -30,7 +31,13 @@ vi.mock('@/queries', () => ({
   useSetAsddAutopilotMutation: () => mocks.autopilot(),
   useArchiveAsddChangeMutation: () => mocks.archive(),
   useDeleteAsddChangeMutation: () => mocks.remove(),
-  useCreateAsddChangeMutation: () => mocks.create(),
+  // Records which workspace each render asked the mutation to target, so a
+  // test can tell the "New change" form actually redirected the create call
+  // to the repository selected in its dropdown.
+  useCreateAsddChangeMutation: (workspace: string, projectId?: string | null) => {
+    mocks.createArgs(workspace, projectId)
+    return mocks.create()
+  },
   useInitializeAsddSetupMutation: () => mocks.initialize(),
 }))
 
@@ -675,8 +682,8 @@ describe('Agent Spec-Driven autopilot through the build phases', () => {
 })
 
 describe('Agent Spec-Driven new change form', () => {
-  function openForm() {
-    panel()
+  function openForm(props: Partial<Parameters<typeof AgentSpecsPanel>[0]> = {}) {
+    panel(props)
     fireEvent.click(screen.getByRole('button', { name: /^New/ }))
   }
 
@@ -734,6 +741,66 @@ describe('Agent Spec-Driven new change form', () => {
       expect.objectContaining({ risk: undefined }),
       expect.anything(),
     )
+  })
+
+  it('has no repository picker when the project has only one repository', () => {
+    openForm()
+
+    expect(screen.queryByText('Repository')).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Target repository' })).not.toBeInTheDocument()
+  })
+
+  it('offers a repository picker limited to the installed repositories of a multi-repo project', async () => {
+    mocks.setup.mockReturnValue(idle(setupResponse({
+      project_id: 'project-1',
+      repositories: [
+        repository({ path: '/repo', name: 'repo' }),
+        repository({ path: '/other', name: 'other', display_name: 'Other service' }),
+        // Not installed yet — cannot receive a change, so it must not appear.
+        repository({ path: '/third', name: 'third', status: 'not_initialized', installed: false }),
+      ],
+    })))
+
+    openForm({ projectId: 'project-1' })
+
+    expect(screen.getByText('Repository')).toBeInTheDocument()
+    expect(screen.getByText(/2 repositories set up/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Target repository' }))
+    expect(await screen.findByRole('option', { name: 'repo' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Other service' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'third' })).not.toBeInTheDocument()
+  })
+
+  it('creates the change in the repository chosen from the picker, not the default one', async () => {
+    const create = mutation()
+    mocks.create.mockReturnValue(create)
+    mocks.setup.mockReturnValue(idle(setupResponse({
+      project_id: 'project-1',
+      repositories: [
+        repository({ path: '/repo', name: 'repo' }),
+        repository({ path: '/other', name: 'other', display_name: 'Other service' }),
+      ],
+    })))
+
+    openForm({ projectId: 'project-1' })
+    fireEvent.click(screen.getByRole('combobox', { name: 'Target repository' }))
+    const option = await screen.findByRole('option', { name: 'Other service' })
+    fireEvent.mouseMove(option)
+    fireEvent.pointerDown(option, { pointerType: 'mouse' })
+    fireEvent.mouseUp(option)
+    fireEvent.click(option)
+    await waitFor(() =>
+      expect(screen.getByRole('combobox', { name: 'Target repository' })).toHaveTextContent('Other service'),
+    )
+
+    fireEvent.change(screen.getByPlaceholderText('Add user authentication'), {
+      target: { value: 'Export notes to PDF' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Create change/ }))
+
+    expect(mocks.createArgs).toHaveBeenLastCalledWith('/other', 'project-1')
+    expect(create.mutate).toHaveBeenCalled()
   })
 })
 

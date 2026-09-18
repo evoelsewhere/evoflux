@@ -424,12 +424,14 @@ function previewSlug(title: string): string {
 function NewChangeForm({
   workspace,
   projectId,
+  repositories,
   onCreated,
   onCancel,
 }: {
   workspace: string
   projectId?: string | null
-  onCreated: (changeId: string) => void
+  repositories: AsddRepositorySetup[]
+  onCreated: (changeId: string, workspace: string) => void
   onCancel: () => void
 }) {
   const [title, setTitle] = useState('')
@@ -442,7 +444,12 @@ function NewChangeForm({
   const [risk, setRisk] = useState<AsddRisk | ''>('')
   const [capabilities, setCapabilities] = useState('')
   const [changeId, setChangeId] = useState('')
-  const create = useCreateAsddChangeMutation(workspace, projectId)
+  // A project can hold several repositories; only the ones already set up for
+  // ASDD are valid targets. Defaults to whichever repository the panel is
+  // currently showing, but a Coding Project lets the author redirect it.
+  const [targetWorkspace, setTargetWorkspace] = useState(workspace)
+  const installedRepositories = repositories.filter((repository) => repository.installed)
+  const create = useCreateAsddChangeMutation(targetWorkspace, projectId)
   const failure = errorText(create.error)
 
   const derived = previewSlug(title)
@@ -467,7 +474,7 @@ function NewChangeForm({
           .map((item) => item.trim())
           .filter(Boolean),
       },
-      { onSuccess: (detail) => onCreated(detail.change.change_id) },
+      { onSuccess: (detail) => onCreated(detail.change.change_id, targetWorkspace) },
     )
   }
 
@@ -486,6 +493,27 @@ function NewChangeForm({
           make now.
         </p>
       </div>
+
+      {installedRepositories.length > 1 && (
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-(--color-text-subtle)">
+            Repository
+          </span>
+          <SelectControl
+            value={targetWorkspace}
+            ariaLabel="Target repository"
+            onValueChange={setTargetWorkspace}
+            options={installedRepositories.map((repository) => ({
+              value: repository.path,
+              label: repositoryLabel(repository),
+            }))}
+          />
+          <span className="text-[10px] leading-4 text-(--color-text-subtle)">
+            This Coding Project has {installedRepositories.length} repositories set up for
+            Agent Spec-Driven. The change folder is written to whichever one you pick here.
+          </span>
+        </label>
+      )}
 
       <label className="flex flex-col gap-1">
         <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-(--color-text-subtle)">
@@ -1239,6 +1267,11 @@ export function AgentSpecsPanel({
   const [openChangeId, setOpenChangeId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [catalogue, setCatalogue] = useState(false)
+  // Normally just `workspace`. Creating a change against a sibling repository
+  // (a Coding Project can hold several) redirects the panel to follow it, so
+  // the overview and detail queries below read the repository the change
+  // actually landed in rather than the one the session happened to open on.
+  const [activeWorkspace, setActiveWorkspace] = useState(workspace)
 
   useEffect(() => {
     try {
@@ -1248,13 +1281,17 @@ export function AgentSpecsPanel({
     }
   }, [view])
 
-  const setup = useAsddSetupQuery(workspace, projectId, active)
+  useEffect(() => {
+    setActiveWorkspace(workspace)
+  }, [workspace])
+
+  const setup = useAsddSetupQuery(activeWorkspace, projectId, active)
   // A catalogue belongs to one repository, so this session is usable as soon as
   // its own repository is installed. Gating on the whole project would lock a
   // ready repository behind a sibling nobody has set up yet.
   const ready = setup.data?.workspace_ready ?? false
-  const changes = useAsddChangesQuery(workspace, projectId, active && ready)
-  const detail = useAsddChangeQuery(workspace, openChangeId, active && ready)
+  const changes = useAsddChangesQuery(activeWorkspace, projectId, active && ready)
+  const detail = useAsddChangeQuery(activeWorkspace, openChangeId, active && ready)
 
   if (!active) return null
 
@@ -1269,7 +1306,7 @@ export function AgentSpecsPanel({
   if (!ready) {
     return (
       <div className="@container/asdd h-full overflow-auto">
-        <SetupView workspace={workspace} projectId={projectId} setup={setup.data} />
+        <SetupView workspace={activeWorkspace} projectId={projectId} setup={setup.data} />
       </div>
     )
   }
@@ -1278,7 +1315,7 @@ export function AgentSpecsPanel({
     return (
       <div className="@container/asdd h-full">
         <AsddCatalogueView
-          workspace={workspace}
+          workspace={activeWorkspace}
           capabilities={changes.data?.capabilities ?? []}
           archived={changes.data?.archived ?? []}
           onBack={() => setCatalogue(false)}
@@ -1291,10 +1328,12 @@ export function AgentSpecsPanel({
     return (
       <div className="@container/asdd h-full overflow-auto">
         <NewChangeForm
-          workspace={workspace}
+          workspace={activeWorkspace}
           projectId={projectId}
+          repositories={setup.data.repositories}
           onCancel={() => setCreating(false)}
-          onCreated={(changeId) => {
+          onCreated={(changeId, changeWorkspace) => {
+            setActiveWorkspace(changeWorkspace)
             setCreating(false)
             setOpenChangeId(changeId)
           }}
@@ -1307,7 +1346,7 @@ export function AgentSpecsPanel({
     return (
       <div className="@container/asdd h-full">
         <ChangeDetail
-          workspace={workspace}
+          workspace={activeWorkspace}
           projectId={projectId}
           detail={detail.data}
           onBack={() => setOpenChangeId(null)}
