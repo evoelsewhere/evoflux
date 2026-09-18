@@ -1,4 +1,4 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse, PermissionMode, MessageAttachment } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse, PermissionMode, MessageAttachment, SuggestedTask } from '@/api/types'
 
 export interface PendingMessage {
   id: string
@@ -130,6 +130,8 @@ export interface TeamStoreState {
   historyLoadError: string | null
   error: string | null
   activeGoal: GoalResponse | null
+  /** Open suggestion chips for this session, oldest first. */
+  suggestedTasks: SuggestedTask[]
   activeWorkflowExecution: ActiveWorkflowExecution | null
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null

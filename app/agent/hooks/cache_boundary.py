@@ -2,12 +2,12 @@
 
 Anthropic (and Bedrock) prompt caching matches an exact byte prefix up to a
 declared breakpoint — a single byte anywhere before that point invalidates
-the whole cached segment. If turn-varying content (memory search results,
-the query-ranked skill catalog) is concatenated into the same system-prompt
-string as everything else, providers have no way to tell "safe to cache"
-apart from "changes every turn", so caching either covers nothing or is
-invalidated every turn regardless of how much of the prompt is actually
-still stable.
+the whole cached segment. If turn-varying content is concatenated into the same
+system-prompt string as everything else, providers have no way to tell "safe
+to cache" apart from "changes every turn", so caching either covers nothing
+or is invalidated every turn regardless of how much of the prompt is actually
+still stable. Memory recall therefore lives in append-only history; this
+marker is for system-prompt sections that are intentionally volatile.
 
 ``CacheBoundaryHook`` stamps an invisible marker into the system prompt at
 the point where volatile hooks take over. ``agent_loop/streaming.py`` strips
@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.model_context import PREFIX_SNAPSHOT_FROZEN_KEY
 
 if TYPE_CHECKING:
     from app.agent.schemas.chat import AssistantMessage
@@ -36,10 +37,10 @@ class CacheBoundaryHook(BaseAgentHook):
     """Stamp the cache boundary marker onto the system prompt built so far.
 
     Register this immediately before the hooks that append per-turn-volatile
-    content (memory context, the ranked skill catalog) so everything already
-    in ``request.system_prompt`` at this point — role prompt, team protocol,
-    goal/folder/EASD context, workspace instructions — stays a stable,
-    cacheable prefix across turns.
+    content (for example, a provider-specific or runtime catalog tail) so
+    everything already in ``request.system_prompt`` at this point — role
+    prompt, team protocol, goal/folder/ASDD context, workspace instructions —
+    stays a stable, cacheable prefix across turns.
     """
 
     async def wrap_model_call(
@@ -49,6 +50,8 @@ class CacheBoundaryHook(BaseAgentHook):
         request: "ModelRequest",
         handler: "ModelCallHandler",
     ) -> "AssistantMessage":
+        if state.metadata.get(PREFIX_SNAPSHOT_FROZEN_KEY) is True:
+            return await handler(request)
         return await handler(
             request.override(
                 system_prompt=request.system_prompt + CACHE_VOLATILE_MARKER

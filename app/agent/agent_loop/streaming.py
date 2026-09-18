@@ -222,8 +222,9 @@ async def stream_and_assemble(
     # CacheBoundaryHook (if registered) stamps the end of the stable prefix
     # with a marker. Strip it before anything else — logs, summarization, the
     # wire payload — ever sees it, and hand its position to caching-aware
-    # providers so they can cache the stable head even though the tail
-    # (memory context, skill catalog) changes almost every turn.
+    # providers so they can cache the stable head even when a deliberately
+    # volatile system-prompt tail is present. Memory recall is an append-only
+    # hidden history message and does not belong in this tail.
     cache_boundary: int | None = None
     marker_index = protected_prompt.find(CACHE_VOLATILE_MARKER)
     if marker_index != -1:

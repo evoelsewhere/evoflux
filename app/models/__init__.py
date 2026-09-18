@@ -7,15 +7,10 @@ from .chat import (
 )
 from .goal import SessionGoal
 from .memory import MemoryExtractionState, MemoryFact, MemoryFactEvidence
+from .prompt_cache import SessionPrefixSnapshot
 from .remote import RemoteConnection, RemotePairing
+from .suggested_task import SessionSuggestedTask
 from .team import DelegationTask
-from .trace import (
-    TraceDeviation,
-    TraceEvidence,
-    TracePlanRevision,
-    TraceRun,
-    TraceSpecRevision,
-)
 from .workflow import (
     WorkflowApproval,
     WorkflowExecution,
@@ -43,13 +38,10 @@ __all__ = [
     "RemoteConnection",
     "RemotePairing",
     "SessionMessage",
+    "SessionPrefixSnapshot",
     "ScheduledTask",
     "SessionGoal",
-    "TraceDeviation",
-    "TraceEvidence",
-    "TracePlanRevision",
-    "TraceRun",
-    "TraceSpecRevision",
+    "SessionSuggestedTask",
     "WorkflowApproval",
     "WorkflowExecution",
     "WorkflowGateRequest",

@@ -93,9 +93,11 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     from app.agent.tools.builtin.browser_use_tool import browser_use
     from app.agent.tools.builtin.webbridge_tool import webbridge
 
+    # Changed deliberately: `resize.orientation` no longer defaults to
+    # "portrait", which was rotating every landscape viewport request.
     assert _definition_digest(browser_use) == (
-        "ff0bd9eb42e302299cd5ed2142a7a72474ee7fae3f902282f94db0b47fb1f94a"
+        "a25995c3f20d22e35a1d24f9cc41f3763eb27dcf24fb1d0957dfb71b910fab1f"
     )
     assert _definition_digest(webbridge) == (
-        "db5eb677a1e17daed4613edc1661dbf45736e2181837953ceeb83cedbcd4aa2a"
+        "0b00224b44b33e223dbed9621a42245908c2c174572ac17f28fe66219965e020"
     )

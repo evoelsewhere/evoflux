@@ -32,18 +32,19 @@ The main SQLModel/Alembic database stores:
 | Workflows | approvals, executions, node runs and gate requests |
 | Git/reviews | server connection metadata |
 | WebBridge | pairings, interactions, tab bindings, Teach drafts and replays |
-| Evo Agent Specs (EASD) | rebuildable local run projection and generic delegation execution only; repository YAML is normative |
+| Agent Spec-Driven (ASDD) | nothing; a change lives entirely in the repository, and a delegated mission records only its change slug |
 
 SQLite is the default embedded database and uses WAL, foreign keys, a bounded
 read pool and a single FIFO writer. Production startup automatically migrates
 and validates schema compatibility. Refer to
 [SQLite concurrency](sqlite-concurrency.md) for transaction rules.
 
-EASD is the explicit product-state exception: the owning repository's
-manifest-selected data directory stores shared Intent, lifecycle, Spec/Plan
-revisions, missions, evidence, deviations, events, and convergence. SQLite may
-materialize those documents for the local runtime but can be rebuilt and never
-wins over Git state. See [Evo Agent Specs architecture](evo-agent-specs.md).
+ASDD is the explicit exception to "product state lives in SQLite": it has no
+tables at all. A change is a folder of Markdown in the repository — its phase,
+its contract, its tasks and its evidence — and the database holds no copy that
+could disagree with it. `delegation_tasks.asdd_change_id` records which change
+asked for a mission, as a string rather than a foreign key. See
+[Agent Spec-Driven architecture](agent-specs.md).
 
 ## Repository-local code indexes
 

@@ -364,6 +364,7 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.ask_user import ask_user
     from app.agent.tools.builtin.process import process_tool
     from app.agent.tools.builtin.worktree import worktree_start, worktree_finish
+    from app.agent.tools.builtin.suggested_task import spawn_task, dismiss_task
     from app.agent.tools.builtin.lsp import (
         lsp_diagnostics,
         lsp_definition,
@@ -409,6 +410,8 @@ def _default_tool_registry() -> dict[str, Tool]:
         "process": process_tool,
         "worktree_start": worktree_start,
         "worktree_finish": worktree_finish,
+        "spawn_task": spawn_task,
+        "dismiss_task": dismiss_task,
         "create_pull_request": create_pull_request,
         "list_code_reviews": list_code_reviews,
         "get_code_review": get_code_review,
@@ -617,6 +620,7 @@ def _build_agent(
                 mode=mode,
                 model_id=cfg.model,
                 preferred_skills=cfg.skills,
+                cache_stable=True,
             ),
         ]
     )

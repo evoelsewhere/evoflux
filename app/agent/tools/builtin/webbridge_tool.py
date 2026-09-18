@@ -19,10 +19,10 @@ tool to work. Check connection with ``status`` action before issuing commands.
 from __future__ import annotations
 
 import asyncio
-import base64
 from contextvars import ContextVar
 import json
 from typing import Annotated, Any, Literal, cast
+from urllib.parse import urlsplit
 
 from loguru import logger
 from pydantic import BaseModel, Field, model_validator
@@ -48,16 +48,28 @@ def _get_sid(state: Any) -> str:
     return metadata.get("webbridge_session_id") or metadata.get("session_id", "default")
 
 
+#: Set when a command comes back unsuccessful. Handlers report failure by
+#: *returning* a message rather than raising — which reads well for the model
+#: and leaves the caller with nothing but prose to inspect. This records the
+#: fact itself, so a sequence can stop without guessing from the text.
+_webbridge_command_failed: ContextVar[bool] = ContextVar(
+    "webbridge_command_failed", default=False
+)
+
+
 async def _send_command(
     session_id: str, action: str, params: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Send a command to the extension via the manager and wait for response."""
-    return await webbridge_manager.send_command(
+    response = await webbridge_manager.send_command(
         session_id,
         action,
         params,
         extension_id=_webbridge_target_id.get(),
     )
+    if not response.get("success"):
+        _webbridge_command_failed.set(True)
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -178,6 +190,13 @@ class ExtractAction(BaseModel):
         default="text",
         description="Output form: plain text, structure-preserving markdown (best for LLM crawling), or raw HTML.",
     )
+    ref: str | None = Field(
+        default=None,
+        description=(
+            "Scope to this element handle from a snapshot — the only way to "
+            "read content inside a shadow root, which no CSS selector reaches."
+        ),
+    )
     selector: str | None = Field(
         default=None,
         description="Scope to the first element matching this CSS selector (default: whole page).",
@@ -203,6 +222,18 @@ class ExtractElementsAction(BaseModel):
         ),
     )
     limit: int = Field(default=100, ge=1, le=1000)
+    ref: str | None = Field(
+        default=None,
+        description="Search inside this element handle instead of the whole page.",
+    )
+    deep: bool = Field(
+        default=True,
+        description=(
+            "Search through shadow roots and same-origin frames, where CSS "
+            "selectors do not reach. On by default: a list rendered by web "
+            "components returns nothing without it."
+        ),
+    )
     tab_id: int | None = Field(
         default=None, description="Target tab ID (default: active tab)."
     )
@@ -216,6 +247,17 @@ class ScrollToBottomAction(BaseModel):
         ge=50,
         le=5000,
         description="Wait after each scroll for content to load.",
+    )
+    ref: str | None = Field(
+        default=None,
+        description=(
+            "Scroll this element instead of the window — a chat log, a data "
+            "grid, a drawer. Scrolling the window does nothing for a list "
+            "that scrolls inside a pane of its own."
+        ),
+    )
+    selector: str | None = Field(
+        default=None, description="The scrolling element, if no ref."
     )
     tab_id: int | None = Field(
         default=None, description="Target tab ID (default: active tab)."
@@ -329,15 +371,57 @@ class WaitForNetworkIdleAction(BaseModel):
     )
 
 
-class ClickSelectorAction(BaseModel):
-    action: Literal["click_selector"]
-    selector: str = Field(description="CSS selector of the element to click.")
+class WaitForUrlAction(BaseModel):
+    """Wait for the address to become *url*.
+
+    The one wait that works for a single-page app that changes route without
+    loading anything: no document load fires, no selector is reliably new,
+    but the address does change.
+    """
+
+    action: Literal["wait_for_url"]
+    url: str = Field(
+        description="URL to wait for. '*' matches any run of characters, "
+        "e.g. 'https://app.example.com/orders/*'.",
+    )
+    timeout_ms: int = Field(default=15000, ge=100, le=60000)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+_REF_DESC = (
+    "Element handle from a snapshot (e.g. 'e12'). Preferred over selector: it "
+    "is exact, costs nothing to quote, and is the only way to reach an element "
+    "inside a shadow root or a frame. Valid until the page navigates."
+)
+
+
+class TargetMixin(BaseModel):
+    """One element, named either by handle or by CSS.
+
+    Both are accepted because they fail in different ways: a handle is exact
+    but belongs to a snapshot of a page that may since have navigated, while
+    a selector survives that but may match something else — or, inside a
+    shadow root, nothing at all.
+    """
+
+    ref: str | None = Field(default=None, description=_REF_DESC)
+    selector: str | None = Field(
+        default=None, description="CSS selector of the element, if no ref."
+    )
     index: int = Field(
-        default=0, ge=0, description="Which match to click when several exist."
+        default=0, ge=0, description="Which match to use when a selector matches several."
     )
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+    @model_validator(mode="after")
+    def _one_target(self) -> "TargetMixin":
+        if not self.ref and not self.selector:
+            raise ValueError("needs a ref (from a snapshot) or a selector")
+        return self
+
+
+class ClickSelectorAction(TargetMixin):
+    action: Literal["click_selector"]
 
 
 class ClickTextAction(BaseModel):
@@ -354,27 +438,16 @@ class ClickTextAction(BaseModel):
     )
 
 
-class HoverAction(BaseModel):
+class HoverAction(TargetMixin):
     action: Literal["hover"]
-    selector: str = Field(description="CSS selector of the element to hover.")
-    index: int = Field(
-        default=0, ge=0, description="Which match to hover when several exist."
-    )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
-class FocusAction(BaseModel):
+class FocusAction(TargetMixin):
     action: Literal["focus"]
-    selector: str = Field(description="CSS selector of the element to focus.")
-    index: int = Field(
-        default=0, ge=0, description="Which match to focus when several exist."
-    )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
-class SelectOptionAction(BaseModel):
+class SelectOptionAction(TargetMixin):
     action: Literal["select_option"]
-    selector: str = Field(description="CSS selector of the select element.")
     values: list[str] = Field(
         min_length=1,
         max_length=100,
@@ -384,25 +457,23 @@ class SelectOptionAction(BaseModel):
         default="value",
         description="Whether entries in values match option values or visible labels.",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
-class SetCheckedAction(BaseModel):
+class SetCheckedAction(TargetMixin):
     action: Literal["set_checked"]
-    selector: str = Field(
-        description="CSS selector of a checkbox, radio, or ARIA toggle."
-    )
     checked: bool = Field(description="Desired checked state.")
-    index: int = Field(
-        default=0, ge=0, description="Which match to update when several exist."
-    )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
 class DragAction(BaseModel):
     action: Literal["drag"]
-    source_selector: str = Field(description="CSS selector of the element to drag.")
-    target_selector: str = Field(description="CSS selector of the drop target.")
+    source_ref: str | None = Field(default=None, description=_REF_DESC)
+    target_ref: str | None = Field(default=None, description=_REF_DESC)
+    source_selector: str | None = Field(
+        default=None, description="CSS selector of the element to drag, if no ref."
+    )
+    target_selector: str | None = Field(
+        default=None, description="CSS selector of the drop target, if no ref."
+    )
     source_index: int = Field(default=0, ge=0)
     target_index: int = Field(default=0, ge=0)
     steps: int = Field(
@@ -413,16 +484,50 @@ class DragAction(BaseModel):
     )
     tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
+    @model_validator(mode="after")
+    def _both_ends(self) -> "DragAction":
+        if not (self.source_ref or self.source_selector):
+            raise ValueError("drag needs source_ref or source_selector")
+        if not (self.target_ref or self.target_selector):
+            raise ValueError("drag needs target_ref or target_selector")
+        return self
 
-class FillAction(BaseModel):
+
+class DragToPointAction(BaseModel):
+    """Drag an element to a coordinate rather than onto another element.
+
+    What a slider, a canvas, a map or a resize handle needs: there is no
+    element under the drop point to name.
+    """
+
+    action: Literal["drag_to_point"]
+    ref: str | None = Field(default=None, description=_REF_DESC)
+    source_selector: str | None = Field(
+        default=None, description="CSS selector of the element to drag, if no ref."
+    )
+    source_index: int = Field(default=0, ge=0)
+    target_x: float = Field(description="X coordinate to drop at, in CSS pixels.")
+    target_y: float = Field(description="Y coordinate to drop at, in CSS pixels.")
+    steps: int = Field(
+        default=30,
+        ge=2,
+        le=60,
+        description="Number of pointer-move steps along the way.",
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+    @model_validator(mode="after")
+    def _needs_source(self) -> "DragToPointAction":
+        if not (self.ref or self.source_selector):
+            raise ValueError("drag_to_point needs a ref or source_selector")
+        return self
+
+
+class FillAction(TargetMixin):
     action: Literal["fill"]
-    selector: str = Field(description="CSS selector of the input/textarea to fill.")
     value: str = Field(description="Value to set.")
     clear: bool = Field(default=True, description="Clear existing content first.")
     submit: bool = Field(default=False, description="Press Enter after filling.")
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
 
 
 class OpenTabAction(BaseModel):
@@ -442,6 +547,15 @@ class CloseTabAction(BaseModel):
 class SnapshotAction(BaseModel):
     action: Literal["snapshot"]
     max_elements: int = Field(default=80, ge=1, le=300)
+    diff: bool = Field(
+        default=False,
+        description=(
+            "Return only what changed since the last snapshot of this tab — "
+            "new, changed and gone elements. After an action that changes one "
+            "part of a page this is a few lines instead of the whole listing. "
+            "Falls back to a full snapshot when there is nothing to compare to."
+        ),
+    )
     tab_id: int | None = Field(
         default=None, description="Target tab ID (default: active tab)."
     )
@@ -652,6 +766,8 @@ AnyAction = Annotated[
     | ExtractElementsAction
     | ScrollToBottomAction
     | WaitForNetworkIdleAction
+    | WaitForUrlAction
+    | DragToPointAction
     | CrawlAction,
     Field(discriminator="action"),
 ]
@@ -664,16 +780,45 @@ tool connects to an external Chrome/Edge browser through an extension. The
 user must explicitly enable WebBridge, install the EvoFlux WebBridge
 extension, and have it connected.
 
-Prefer the element-based actions (snapshot → click_selector/click_text/fill)
-over coordinate clicks: they are robust to layout and HiDPI scaling. Use
-screenshot coordinates only when no selector works. Screenshot pixels equal
-CSS pixels (the extension normalizes device scaling), so click x,y read off a
+Work from a snapshot, act by ref. Each element in a snapshot carries a handle
+like `e12`; pass `ref: "e12"` to click_selector, fill, hover, focus,
+set_checked, select_option, drag or drag_to_point. A ref is exact, costs
+nothing to quote, survives a re-render that would break a CSS path, and is
+the only way to reach an element inside a shadow root or a frame — the
+snapshot walks into both. Refs last until the page navigates; after that,
+take a new snapshot. A selector still works where you have a good one.
+
+Every targeted action scrolls to its element and checks nothing is covering
+it, and says what is in the way when something is ("covered by div.cookie
+-banner"). It also reports whether the page changed, so you usually do not
+need a snapshot afterwards to find out whether the click did anything.
+
+After an action, `snapshot {diff: true}` returns only what changed — a few
+lines instead of the whole listing.
+
+Screenshots are the fallback, not the method: use them for canvas/WebGL
+apps, for a cross-origin frame the snapshot marks as unreadable, or when the
+question is genuinely about how something looks. Screenshot pixels equal CSS
+pixels (the extension normalizes device scaling), so click x,y read off a
 screenshot map directly.
+
+Put the whole sequence in one call. Actions run in order and stop at the
+first failure, so `navigate → wait_for_load → click_selector → fill →
+click_text` is one call, not five — and a step that fails does not leave the
+rest of the chain acting on a page that never opened. Pass
+`continue_on_error: true` only for actions that do not depend on each other.
+Consecutive simple actions (clicks, fills, keys, scrolls) are sent to the
+browser as a single message, so a long form costs one crossing, not one per
+field.
+
+A snapshot lists a link's address only when the link has no label to be
+recognised by. To collect URLs, use extract_elements with an attribute field
+(e.g. {'url': 'a@href'}) rather than reading them out of a snapshot.
 
 Actions:
   status          — Check if the extension is connected.
   navigate        — Go to a URL in the active tab.
-  snapshot        — List interactive elements (selector, text, role, box) — use this to find click/fill targets.
+  snapshot        — List interactive elements with a ref, role, text and coordinates — including inside shadow roots and same-origin frames. `diff: true` lists only what changed since the last one.
     semantic_snapshot — AX-first semantic targets for rich editors, grids, and slides.
     semantic_read   — Read an opaque semantic target, active text, document, range, or slide object.
     semantic_select — Select an opaque target, spreadsheet range, or slide object without coordinate fallback.
@@ -700,10 +845,12 @@ Actions:
     wait_for_text   — Wait until text becomes visible or hidden, optionally within a selector.
   wait_for_load   — Wait until the page finishes loading.
   wait_for_network_idle — Wait until in-flight XHR/fetch requests go quiet (SPA data loads).
+    wait_for_url    — Wait until the address matches (use '*' as a wildcard) — the wait for an SPA route change that loads no document.
+    drag_to_point   — Drag an element to x,y — sliders, canvases, maps, resize handles.
   screenshot      — Capture the viewport (or full_page) as PNG/JPEG image.
   extract         — Extract page content as text / markdown / html (optionally scoped to a selector).
-  extract_elements— Scrape many records by selector into structured JSON (with per-field sub-selectors / attributes).
-  scroll_to_bottom— Auto-scroll to load lazy / infinite-scroll content before extracting.
+  extract_elements— Scrape many records by selector into structured JSON (with per-field sub-selectors / attributes). Searches through shadow roots and frames by default.
+  scroll_to_bottom— Auto-scroll to load lazy / infinite-scroll content before extracting. Pass ref/selector when the list scrolls inside a pane rather than the window.
   crawl           — Fetch + extract many URLs at once, running concurrently across background tabs.
   get_tabs        — List all open tabs.
   switch_tab      — Switch to a tab by index or ID.
@@ -762,6 +909,18 @@ async def webbridge(
         list[AnyAction],
         Field(description="Ordered list of browser actions to execute."),
     ],
+    continue_on_error: Annotated[
+        bool,
+        Field(
+            description=(
+                "Keep going after a failed action. Default false: a sequence "
+                "is normally a chain — clicking, filling and submitting a form "
+                "the first step never opened does nothing but hide which step "
+                "broke. Set true only for independent actions, such as "
+                "extracting from several tabs."
+            )
+        ),
+    ] = False,
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str | ToolResult:
     """Control the user's real browser via the WebBridge Chrome extension."""
@@ -772,18 +931,100 @@ async def webbridge(
     )
     results: list[str | ToolResult] = []
     try:
-        for act in actions:
+        index = 0
+        while index < len(actions):
+            act = actions[index]
+            run = _batchable_run(actions, index) if _supports_batch(session_id) else 1
+            failed_token = _webbridge_command_failed.set(False)
             try:
-                result = await _dispatch_webbridge(act, session_id)
-                if act.action in _UNTRUSTED_BROWSER_ACTIONS:
-                    result = mark_untrusted_browser_result(result)
-                results.append(result)
+                if run > 1:
+                    lines, failed = await _run_batch(
+                        session_id, actions[index : index + run], continue_on_error
+                    )
+                    results.extend(lines)
+                    index += run
+                else:
+                    result = await _dispatch_webbridge(act, session_id)
+                    if act.action in _UNTRUSTED_BROWSER_ACTIONS:
+                        result = mark_untrusted_browser_result(result)
+                    results.append(result)
+                    # A crawl is a batch of its own and reports each URL's
+                    # outcome in its result; one unreachable page is not a
+                    # broken chain.
+                    failed = _webbridge_command_failed.get() and act.action != "crawl"
+                    index += 1
             except Exception as e:
                 logger.debug("webbridge_error action={} error={}", act.action, e)
                 results.append(f"Error ({act.action}): {e}")
+                failed = True
+                index += 1
+            finally:
+                _webbridge_command_failed.reset(failed_token)
+            if failed and not continue_on_error:
+                skipped = len(actions) - index
+                if skipped:
+                    results.append(
+                        f"Stopped after {act.action} failed: {skipped} later "
+                        "action(s) not run. Fix the step that failed, or pass "
+                        "continue_on_error for actions that do not depend on it."
+                    )
+                break
         return combine_browser_results(results)
     finally:
         _webbridge_target_id.reset(target_token)
+
+
+def _supports_batch(session_id: str) -> bool:
+    ext = webbridge_manager.resolve_target(session_id, _webbridge_target_id.get())
+    if ext is None:
+        return False
+    commands = ext.capabilities.get("commands")
+    return not isinstance(commands, list) or "batch" in commands
+
+
+def _batchable_run(actions: list[Any], start: int) -> int:
+    """How many actions from *start* can travel together.
+
+    Only a run of two or more is worth it: a batch of one is the same round
+    trip with a wrapper around it.
+    """
+    count = 0
+    for act in actions[start:]:
+        if act.action not in _BATCHABLE:
+            break
+        count += 1
+    return count if count > 1 else 1
+
+
+async def _run_batch(
+    session_id: str, actions: list[Any], continue_on_error: bool
+) -> tuple[list[str], bool]:
+    """Send a run of simple actions as one command and report each outcome."""
+    commands = [
+        {"action": act.action, "params": _BATCHABLE[act.action](act)} for act in actions
+    ]
+    resp = await _send_command(
+        session_id,
+        "batch",
+        {"commands": commands, "stop_on_error": not continue_on_error},
+    )
+    if not resp.get("success"):
+        return [f"batch failed: {resp.get('error', 'unknown')}"], True
+
+    data = resp.get("data") or {}
+    entries = data.get("results") or []
+    lines: list[str] = []
+    failed = False
+    for act, entry in zip(actions, entries):
+        if entry.get("success"):
+            lines.append(f"{act.action}: ok.{_outcome(entry)}")
+        else:
+            lines.append(f"{act.action} failed: {entry.get('error', 'unknown')}")
+            failed = True
+    skipped = int(data.get("skipped") or 0)
+    if skipped:
+        lines.append(f"({skipped} later action(s) in the batch not run.)")
+    return lines, failed
 
 
 async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
@@ -870,6 +1111,10 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
         return await _handle_scroll_to_bottom(session_id, act)
     if action == "wait_for_network_idle":
         return await _handle_wait_for_network_idle(session_id, act)
+    if action == "wait_for_url":
+        return await _handle_wait_for_url(session_id, act)
+    if action == "drag_to_point":
+        return await _handle_drag_to_point(session_id, act)
     if action == "crawl":
         return await _handle_crawl(session_id, act)
 
@@ -877,8 +1122,13 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
 
 
 def _tab_params(act: Any, **extra: Any) -> dict[str, Any]:
-    """Command params with ``tab_id`` folded in only when the action set one."""
-    params = dict(extra)
+    """Command params, with anything unset left out.
+
+    The extension reads every optional parameter as "absent or falsy", so a
+    key carrying ``null`` says exactly what omitting it says — while making
+    each command larger and each assertion about one harder to read.
+    """
+    params = {key: value for key, value in extra.items() if value is not None}
     tab_id = getattr(act, "tab_id", None)
     if tab_id is not None:
         params["tab_id"] = tab_id
@@ -945,7 +1195,7 @@ async def _handle_dblclick(session_id: str, act: DblClickAction) -> str:
 
 
 async def _handle_type(session_id: str, act: TypeAction) -> str:
-    resp = await _send_command(session_id, "type", _tab_params(act, text=act.text))
+    resp = await _send_command(session_id, "type", _params_type(act))
     if resp.get("success"):
         return f"Typed {len(act.text)} characters"
     return f"Type failed: {resp.get('error', 'unknown')}"
@@ -955,7 +1205,7 @@ async def _handle_key(session_id: str, act: KeyAction) -> str:
     resp = await _send_command(
         session_id,
         "key",
-        _tab_params(act, key=act.key, modifiers=act.modifiers),
+        _params_key(act),
     )
     if resp.get("success"):
         chord = "+".join([*act.modifiers, act.key])
@@ -965,7 +1215,7 @@ async def _handle_key(session_id: str, act: KeyAction) -> str:
 
 async def _handle_scroll(session_id: str, act: ScrollAction) -> str:
     resp = await _send_command(
-        session_id, "scroll", _tab_params(act, dx=act.dx, dy=act.dy)
+        session_id, "scroll", _params_scroll(act)
     )
     if resp.get("success"):
         return f"Scrolled ({act.dx}, {act.dy})"
@@ -1072,8 +1322,11 @@ async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResu
             parts=[TextBlock(text="Screenshot returned empty image data.")]
         )
 
-    # Decode base64 to bytes
-    image_bytes = base64.b64decode(b64_image)
+    # Sized from the encoding rather than by decoding it: the bytes were only
+    # ever used for this one number, and a full-page PNG is megabytes. Four
+    # base64 characters carry three bytes, less whatever the padding stands in
+    # for — exact, not an estimate.
+    image_bytes = len(b64_image) * 3 // 4 - b64_image.count("=")
     mime = "image/jpeg" if fmt == "jpeg" else "image/png"
 
     # Viewport metadata lets the model map screenshot pixels to click coords.
@@ -1090,7 +1343,7 @@ async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResu
                 media_type=mime,
             ),
             TextBlock(
-                text=f"Screenshot captured ({scope}, {fmt}{dims}, {len(image_bytes)} bytes). "
+                text=f"Screenshot captured ({scope}, {fmt}{dims}, {image_bytes} bytes). "
                 "Screenshot pixels are CSS pixels — click x,y map 1:1."
             ),
         ]
@@ -1104,6 +1357,7 @@ async def _handle_extract(session_id: str, act: ExtractAction) -> str:
         _tab_params(
             act,
             format=act.format,
+            ref=act.ref,
             selector=act.selector,
             max_chars=act.max_chars,
         ),
@@ -1138,6 +1392,8 @@ async def _handle_extract_elements(session_id: str, act: ExtractElementsAction) 
             selector=act.selector,
             fields=act.fields,
             limit=act.limit,
+            ref=act.ref,
+            deep=act.deep,
         ),
     )
     if not resp.get("success"):
@@ -1160,6 +1416,8 @@ async def _handle_scroll_to_bottom(session_id: str, act: ScrollToBottomAction) -
             act,
             max_scrolls=act.max_scrolls,
             delay_ms=act.delay_ms,
+            ref=act.ref,
+            selector=act.selector,
             timeout_ms=act.max_scrolls * (act.delay_ms + 400) + 2000,
         ),
     )
@@ -1320,64 +1578,160 @@ async def _handle_wait_for_network_idle(
     )
 
 
-async def _handle_click_selector(session_id: str, act: ClickSelectorAction) -> str:
+async def _handle_wait_for_url(session_id: str, act: WaitForUrlAction) -> str:
     resp = await _send_command(
         session_id,
-        "click_selector",
+        "wait_for_url",
+        _tab_params(act, url=act.url, timeout_ms=act.timeout_ms),
+    )
+    if not resp.get("success"):
+        return f"wait_for_url failed: {resp.get('error', 'unknown')}"
+    return f"URL is now {(resp.get('data') or {}).get('url', act.url)}"
+
+
+async def _handle_drag_to_point(session_id: str, act: DragToPointAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "drag_to_point",
         _tab_params(
             act,
-            selector=act.selector,
-            index=act.index,
+            ref=act.ref,
+            source_selector=act.source_selector,
+            source_index=act.source_index,
+            target_x=act.target_x,
+            target_y=act.target_y,
+            steps=act.steps,
         ),
     )
+    if not resp.get("success"):
+        return f"drag_to_point failed: {resp.get('error', 'unknown')}"
+    source = act.ref or repr(act.source_selector)
+    return f"Dragged {source} to ({int(act.target_x)},{int(act.target_y)})."
+
+
+#: Actions whose whole job is one command and one short answer. A run of
+#: these travels to the extension as a single message instead of one round
+#: trip each — the difference between a five-step form costing five crossings
+#: of the relay and costing one.
+#:
+#: Everything else stays out: `crawl` runs its own fan-out, `screenshot`
+#: returns an image, `extract` returns a document, and the waits are where
+#: the time is meant to go.
+_BATCHABLE: dict[str, Any] = {}
+
+
+def _batchable(action: str):
+    def register(build: Any) -> Any:
+        _BATCHABLE[action] = build
+        return build
+
+    return register
+
+
+@_batchable("click_selector")
+@_batchable("hover")
+@_batchable("focus")
+def _params_target(act: Any) -> dict[str, Any]:
+    return _target_params(act)
+
+
+@_batchable("click_text")
+def _params_click_text(act: Any) -> dict[str, Any]:
+    return _tab_params(act, text=act.text, tag=act.tag, exact=act.exact)
+
+
+@_batchable("fill")
+def _params_fill(act: Any) -> dict[str, Any]:
+    return _target_params(act, value=act.value, clear=act.clear, submit=act.submit)
+
+
+@_batchable("set_checked")
+def _params_set_checked(act: Any) -> dict[str, Any]:
+    return _target_params(act, checked=act.checked)
+
+
+@_batchable("select_option")
+def _params_select_option(act: Any) -> dict[str, Any]:
+    return _target_params(act, values=act.values, match=act.match)
+
+
+@_batchable("key")
+def _params_key(act: Any) -> dict[str, Any]:
+    return _tab_params(act, key=act.key, modifiers=act.modifiers)
+
+
+@_batchable("type")
+def _params_type(act: Any) -> dict[str, Any]:
+    return _tab_params(act, text=act.text)
+
+
+@_batchable("scroll")
+def _params_scroll(act: Any) -> dict[str, Any]:
+    return _tab_params(act, dx=act.dx, dy=act.dy)
+
+
+def _target_params(act: TargetMixin, **extra: Any) -> dict[str, Any]:
+    """The handle or selector, whichever the caller gave."""
+    if act.ref:
+        return _tab_params(act, ref=act.ref, **extra)
+    return _tab_params(act, selector=act.selector, index=act.index, **extra)
+
+
+def _named(act: TargetMixin) -> str:
+    return act.ref or repr(act.selector)
+
+
+def _outcome(resp: dict[str, Any]) -> str:
+    """What the page did about it.
+
+    An action that reports only "done" leaves the caller to spend a snapshot
+    finding out whether anything happened, which is the single most repeated
+    round trip in a browsing session.
+    """
+    data = resp.get("data") or {}
+    if not isinstance(data, dict):
+        return ""
+    if data.get("navigated_to"):
+        return f" Page went to {data['navigated_to']}."
+    changes = data.get("dom_changes")
+    if changes == 0:
+        return " Nothing on the page changed."
+    if isinstance(changes, int) and changes > 0:
+        return f" The page changed ({changes} DOM updates)."
+    return ""
+
+
+async def _handle_click_selector(session_id: str, act: ClickSelectorAction) -> str:
+    resp = await _send_command(session_id, "click_selector", _params_target(act))
     if resp.get("success"):
-        return f"Clicked {act.selector!r}."
+        # The page's own name for what was clicked when the extension knows
+        # it, since that is what the snapshot called it too.
+        target = (resp.get("data") or {}).get("target")
+        label = repr(target) if target else _named(act)
+        return f"Clicked {label}.{_outcome(resp)}"
     return f"click_selector failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_click_text(session_id: str, act: ClickTextAction) -> str:
-    resp = await _send_command(
-        session_id,
-        "click_text",
-        _tab_params(
-            act,
-            text=act.text,
-            tag=act.tag,
-            exact=act.exact,
-        ),
-    )
+    resp = await _send_command(session_id, "click_text", _params_click_text(act))
     if resp.get("success"):
-        return f"Clicked element with text {act.text!r}."
+        data = resp.get("data") or {}
+        handle = f" (ref {data['ref']})" if data.get("ref") else ""
+        return f"Clicked element with text {act.text!r}{handle}.{_outcome(resp)}"
     return f"click_text failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_hover(session_id: str, act: HoverAction) -> str:
-    resp = await _send_command(
-        session_id,
-        "hover",
-        _tab_params(
-            act,
-            selector=act.selector,
-            index=act.index,
-        ),
-    )
+    resp = await _send_command(session_id, "hover", _params_target(act))
     if resp.get("success"):
-        return f"Hovered {act.selector!r}."
+        return f"Hovered {_named(act)}.{_outcome(resp)}"
     return f"hover failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_focus(session_id: str, act: FocusAction) -> str:
-    resp = await _send_command(
-        session_id,
-        "focus",
-        _tab_params(
-            act,
-            selector=act.selector,
-            index=act.index,
-        ),
-    )
+    resp = await _send_command(session_id, "focus", _params_target(act))
     if resp.get("success"):
-        return f"Focused {act.selector!r}."
+        return f"Focused {_named(act)}."
     return f"focus failed: {resp.get('error', 'unknown')}"
 
 
@@ -1385,32 +1739,22 @@ async def _handle_select_option(session_id: str, act: SelectOptionAction) -> str
     resp = await _send_command(
         session_id,
         "select_option",
-        _tab_params(
-            act,
-            selector=act.selector,
-            values=act.values,
-            match=act.match,
-        ),
+        _params_select_option(act),
     )
     if not resp.get("success"):
         return f"select_option failed: {resp.get('error', 'unknown')}"
     selected = (resp.get("data") or {}).get("selected", act.values)
-    return f"Selected {json.dumps(selected, ensure_ascii=False)} in {act.selector!r}."
+    return f"Selected {json.dumps(selected, ensure_ascii=False)} in {_named(act)}."
 
 
 async def _handle_set_checked(session_id: str, act: SetCheckedAction) -> str:
     resp = await _send_command(
-        session_id,
-        "set_checked",
-        _tab_params(
-            act,
-            selector=act.selector,
-            checked=act.checked,
-            index=act.index,
-        ),
+        session_id, "set_checked", _params_set_checked(act)
     )
     if resp.get("success"):
-        return f"Set {act.selector!r} checked={act.checked}."
+        already = (resp.get("data") or {}).get("changed") is False
+        note = " (already was)" if already else ""
+        return f"Set {_named(act)} checked={act.checked}{note}."
     return f"set_checked failed: {resp.get('error', 'unknown')}"
 
 
@@ -1420,6 +1764,8 @@ async def _handle_drag(session_id: str, act: DragAction) -> str:
         "drag",
         _tab_params(
             act,
+            source_ref=act.source_ref,
+            target_ref=act.target_ref,
             source_selector=act.source_selector,
             target_selector=act.target_selector,
             source_index=act.source_index,
@@ -1427,8 +1773,10 @@ async def _handle_drag(session_id: str, act: DragAction) -> str:
             steps=act.steps,
         ),
     )
+    source = act.source_ref or repr(act.source_selector)
+    target = act.target_ref or repr(act.target_selector)
     if resp.get("success"):
-        return f"Dragged {act.source_selector!r} to {act.target_selector!r}."
+        return f"Dragged {source} to {target}."
     return f"drag failed: {resp.get('error', 'unknown')}"
 
 
@@ -1436,17 +1784,11 @@ async def _handle_fill(session_id: str, act: FillAction) -> str:
     resp = await _send_command(
         session_id,
         "fill",
-        _tab_params(
-            act,
-            selector=act.selector,
-            value=act.value,
-            clear=act.clear,
-            submit=act.submit,
-        ),
+        _params_fill(act),
     )
     if resp.get("success"):
         suffix = " and submitted" if act.submit else ""
-        return f"Filled {act.selector!r}{suffix}."
+        return f"Filled {_named(act)}{suffix}.{_outcome(resp) if act.submit else ''}"
     return f"fill failed: {resp.get('error', 'unknown')}"
 
 
@@ -1476,61 +1818,150 @@ async def _handle_close_tab(session_id: str, act: CloseTabAction) -> str:
 
 async def _handle_snapshot(session_id: str, act: SnapshotAction) -> str:
     resp = await _send_command(
-        session_id, "snapshot", _tab_params(act, max_elements=act.max_elements)
+        session_id,
+        "snapshot",
+        _tab_params(act, max_elements=act.max_elements, diff=act.diff),
     )
     if not resp.get("success"):
         return f"snapshot failed: {resp.get('error', 'unknown')}"
 
     data = resp.get("data", {})
+    url = data.get("url") or ""
+    header = _snapshot_header(data)
+
+    if data.get("diff"):
+        return "\n".join(header + _snapshot_diff_lines(data, url))
+
     elements = data.get("elements", [])
     if not elements:
         return "No interactive elements found on the page."
+    lines = header + [f"Interactive elements ({len(elements)}):"]
+    lines.extend(_snapshot_line(el, url) for el in elements)
+    return "\n".join(lines)
 
-    lines: list[str] = []
-    title = data.get("title") or "Untitled"
-    url = data.get("url") or ""
+
+def _snapshot_header(data: dict[str, Any]) -> list[str]:
+    lines = [f"Page snapshot: {data.get('title') or 'Untitled'}"]
+    if data.get("url"):
+        lines.append(f"URL: {data['url']}")
     viewport = data.get("viewport") or {}
-    lines.append(f"Page snapshot: {title}")
-    if url:
-        lines.append(f"URL: {url}")
     if viewport.get("width") and viewport.get("height"):
         lines.append(
             f"Viewport: {viewport['width']}x{viewport['height']} css-px "
             f"at ({viewport.get('scrollX', 0)}, {viewport.get('scrollY', 0)})"
         )
-    lines.append(f"Interactive elements ({len(elements)}):")
-    for index, el in enumerate(elements):
-        box = el.get("box") or {}
-        center = ""
-        if box.get("x") is not None and box.get("y") is not None:
-            center = f" @({int(box['x'])},{int(box['y'])})"
-        label = (el.get("text") or el.get("name") or "").strip().replace("\n", " ")
-        if len(label) > 80:
-            label = label[:77] + "…"
-        state = el.get("state") or {}
-        state_text = ""
-        if state:
-            state_text = (
-                " ["
-                + ", ".join(
-                    f"{key}={str(value).lower()}" for key, value in state.items()
-                )
-                + "]"
-            )
-        attributes = el.get("attributes") or {}
-        attribute_text = ""
-        visible_attributes = [
-            f"{key}={value!r}"
-            for key, value in attributes.items()
-            if key in {"type", "href", "placeholder"}
-        ]
-        if visible_attributes:
-            attribute_text = " {" + ", ".join(visible_attributes) + "}"
-        lines.append(
-            f"  {index}. [{el.get('role', 'element')}]{center}{state_text} "
-            f"{label!r}{attribute_text} — {el.get('selector', '')}"
-        )
-    return "\n".join(lines)
+    return lines
+
+
+def _snapshot_diff_lines(data: dict[str, Any], url: str) -> list[str]:
+    """Only what moved since the last snapshot.
+
+    Most actions change one thing. Re-reading eighty elements to learn which
+    one is the most repeated waste in a browsing session, and the parts that
+    did not change are exactly the parts already in the conversation.
+    """
+    added = data.get("added") or []
+    changed = data.get("changed") or []
+    removed = data.get("removed") or []
+    unchanged = data.get("unchanged") or 0
+    if not added and not changed and not removed:
+        return [f"No change since the last snapshot ({unchanged} elements)."]
+
+    lines = [f"Changes since the last snapshot ({unchanged} unchanged):"]
+    if added:
+        lines.append(f"New ({len(added)}):")
+        lines.extend(_snapshot_line(el, url) for el in added)
+    if changed:
+        lines.append(f"Changed ({len(changed)}):")
+        lines.extend(_snapshot_line(el, url) for el in changed)
+    if removed:
+        lines.append(f"Gone: {', '.join(str(ref) for ref in removed)}")
+    return lines
+
+
+def _snapshot_line(el: dict[str, Any], url: str) -> str:
+    box = el.get("box") or {}
+    ref = el.get("ref")
+    center = ""
+    # Coordinates are how you act on an element when you have no handle for
+    # it. With a handle they are 10% of a snapshot spent on a fallback that
+    # is no longer the way in — and a screenshot gives pixels when a drop
+    # point genuinely needs them.
+    if not ref and box.get("x") is not None and box.get("y") is not None:
+        center = f" @({int(box['x'])},{int(box['y'])})"
+    label = (el.get("text") or el.get("name") or "").strip().replace("\n", " ")
+    if len(label) > 80:
+        label = label[:77] + "…"
+    handle = f"{ref} " if ref else ""
+    # A selector is only worth printing when it says something the handle
+    # does not — and for anything inside a shadow root there is none.
+    selector = el.get("selector") or ""
+    tail = f" — {selector}" if selector and not ref else ""
+    flags = ""
+    if el.get("offscreen"):
+        # Not visible from here: acting by ref scrolls to it first, and any
+        # coordinates it has are not clickable ones.
+        flags += " (offscreen)"
+    if el.get("cross_origin"):
+        flags += " (cross-origin frame — only screenshot/coordinates reach inside)"
+    state_text = _snapshot_state(el.get("state") or {})
+    attribute_text = _snapshot_attributes(el.get("attributes") or {}, label, url)
+    return (
+        f"  {handle}[{el.get('role', 'element')}]{center}{state_text} "
+        f"{label!r}{attribute_text}{flags}{tail}"
+    )
+
+
+def _snapshot_state(state: dict[str, Any]) -> str:
+    """The parts of an element's state worth spending tokens on.
+
+    A page's worth of ``disabled=false`` says nothing — that is the ordinary
+    condition of every control on it. Being *unchecked* is different: it is
+    the thing the next click is about to change, so it stays even when false.
+    """
+    shown = {
+        key: value
+        for key, value in state.items()
+        if value or key in {"checked", "selected"}
+    }
+    if not shown:
+        return ""
+    return " [" + ", ".join(f"{k}={str(v).lower()}" for k, v in shown.items()) + "]"
+
+
+def _snapshot_attributes(
+    attributes: dict[str, Any], label: str, page_url: str
+) -> str:
+    """Attributes worth showing beside a labelled element.
+
+    ``href`` was half of every snapshot this tool produced — measured at 50%
+    of an 80-element listing of a Wikipedia article, because each of the 74
+    links carried its absolute URL in full. An element that already says
+    "History" does not also need to say where History lives: the model clicks
+    it by its label or its selector, and `extract_elements` is the action for
+    harvesting URLs. So a link keeps its address only when it has no label to
+    be recognised by, and then only the part that distinguishes it.
+    """
+    shown: list[str] = []
+    for key in ("type", "placeholder"):
+        if attributes.get(key):
+            shown.append(f"{key}={attributes[key]!r}")
+    href = attributes.get("href")
+    if href and not label:
+        shown.append(f"href={_short_href(str(href), page_url)!r}")
+    return " {" + ", ".join(shown) + "}" if shown else ""
+
+
+def _short_href(href: str, page_url: str) -> str:
+    """Drop what the address shares with the page it was found on."""
+    origin = ""
+    if page_url:
+        parts = urlsplit(page_url)
+        if parts.scheme and parts.netloc:
+            origin = f"{parts.scheme}://{parts.netloc}"
+    if origin and href.startswith(origin):
+        href = href[len(origin) :] or "/"
+    return href if len(href) <= 60 else href[:59] + "…"
 
 
 async def _handle_semantic(

@@ -240,7 +240,10 @@ async def update_plugin_path(
     installation_id: str,
     body: PluginUpdateRequest,
 ) -> PluginOperationResponse:
+    from app.plugin_platform.runtime import plugin_mcp_runtime
+
     try:
+        await plugin_mcp_runtime.stop_installation(installation_id)
         installation = await asyncio.to_thread(
             update_plugin,
             installation_id,
@@ -280,6 +283,9 @@ async def update_plugin_archive(
                         f"Archive exceeds the {MAX_ARCHIVE_BYTES}-byte limit."
                     )
                 output.write(chunk)
+        from app.plugin_platform.runtime import plugin_mcp_runtime
+
+        await plugin_mcp_runtime.stop_installation(installation_id)
         installation = await asyncio.to_thread(
             update_plugin,
             installation_id,
@@ -518,7 +524,10 @@ async def delete_plugin(
     if installation is None:
         raise HTTPException(status_code=404, detail="Plugin installation not found.")
     inspection = await asyncio.to_thread(_inspection_for, installation)
+    from app.plugin_platform.runtime import plugin_mcp_runtime
+
     try:
+        await plugin_mcp_runtime.stop_installation(installation_id)
         removed = await asyncio.to_thread(
             uninstall_plugin,
             installation_id,

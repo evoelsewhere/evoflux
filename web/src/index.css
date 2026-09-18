@@ -965,6 +965,14 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
   animation: shimmer 2s var(--ease-in-out) infinite;
 }
 
+/* Work that reports it is busy but not how far along it is: a native WebView
+ * loading a page, an update download whose server sent no Content-Length. The
+ * bar sweeps rather than fills, because filling it would be a claim. */
+@keyframes progress-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
 /* Compact panel fallback: a miniature workspace assembles while a lazy panel
  * is fetched. Animations use opacity/transform only to stay compositor-only. */
 @keyframes oa-panel-loader-enter {
@@ -1213,6 +1221,23 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
 .workbench-topbar {
   container-name: workbench-topbar;
   container-type: inline-size;
+}
+
+/* The bar drops labels as its own width runs out, widest control first. A
+ * window-width breakpoint is the wrong measure here: the window can be wide
+ * while this bar is narrow, because the workbench takes its space from the
+ * conversation column, not from the window. Everything hidden keeps its
+ * accessible name through aria-label/title. */
+@container workbench-topbar (max-width: 620px) {
+  .workbench-openwith-label {
+    display: none;
+  }
+}
+
+@container workbench-topbar (max-width: 560px) {
+  .workbench-bridge-label {
+    display: none;
+  }
 }
 
 @container workbench-topbar (max-width: 480px) {

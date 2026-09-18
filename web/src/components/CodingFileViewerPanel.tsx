@@ -115,9 +115,12 @@ function TextPreview({
   pendingDiff,
   onAcceptDiff,
   onRejectDiff,
+  initialLine,
 }: {
   workspace: string
   file: WorkspaceFileInfo
+  /** Line to reveal once the file is open, 1-based. */
+  initialLine?: number | null
   onAddComment?: (path: string, startLine: number, endLine: number) => void
   onSendToChat?: (action: string, code: string, path: string, startLine: number, endLine: number) => void
   /** Append selected code block to the chat composer. */
@@ -502,6 +505,16 @@ function TextPreview({
       editorRef.current.setValue(content)
     }
   }, [content])
+
+  // Arriving from a problem means arriving at a line, not at the top of a
+  // file the user then has to search. Waits for the editor, because
+  // revealing a line in an editor that has not mounted does nothing.
+  useEffect(() => {
+    if (!initialLine || !editorMounted || content === null) return
+    const lineNumber = Math.max(1, initialLine)
+    editorRef.current?.revealLineInCenter(lineNumber)
+    editorRef.current?.setPosition({ lineNumber, column: 1 })
+  }, [initialLine, editorMounted, content])
 
   const jumpToDiagnostic = useCallback((diagnostic: CodingLspDiagnostic) => {
     const range = diagnostic.range ?? {}
@@ -978,9 +991,12 @@ export function CodingFileViewerPanel({
   embedded = false,
   fileTreeVisible = false,
   onToggleFileTree,
+  initialLine,
 }: {
   workspace: string
   file: WorkspaceFileInfo | null
+  /** Line to reveal once the file is open, 1-based. */
+  initialLine?: number | null
   onClose: () => void
   onAddComment?: (path: string, startLine: number, endLine: number) => void
   /** Editor → Chat: user triggers an action on selected code */
@@ -1191,6 +1207,7 @@ export function CodingFileViewerPanel({
             pendingDiff={pendingDiff}
             onAcceptDiff={onAcceptDiff}
             onRejectDiff={onRejectDiff}
+            initialLine={initialLine}
           />
         ) : (
           <BinaryPreview workspace={workspace} file={file} />

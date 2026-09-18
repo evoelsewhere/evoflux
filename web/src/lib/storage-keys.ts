@@ -46,6 +46,7 @@ export const STORAGE_KEYS = {
     codingWorkspaceTree: 'oa.codingWorkspace.treeWidth',
     sideChat: 'oa.sideChatPanel.width',
     workbench: 'oa.workbenchPanel.width',
+    workbenchMaximized: 'oa.workbenchPanel.maximized',
   },
 
   workspaceFiles: {
@@ -73,8 +74,8 @@ export const STORAGE_KEYS = {
     favorites: 'oa.enterprise.favorites',
   },
 
-  easd: {
-    runsView: 'oa.easd.runsView',
+  asdd: {
+    changesView: 'oa.asdd.changesView',
   },
 
   desktopNotifications: {
@@ -84,6 +85,9 @@ export const STORAGE_KEYS = {
 
   browser: {
     preferences: 'oa.browser.preferences',
+    zoomByOrigin: 'oa.browser.zoom-by-origin',
+    recentSites: 'oa.browser.recent-sites',
+    previewPlacement: 'oa.browser.preview-placement',
     webBridgeDefaultEnabled: 'oa.browser.webbridge-default-enabled',
   },
 } as const

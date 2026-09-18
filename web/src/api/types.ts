@@ -381,6 +381,8 @@ export interface CodingProblem {
   details: string | null
   fix: Record<string, unknown> | null
   suppression_key: string
+  /** How many rows suppressing this one would hide, this row included. */
+  suppression_count: number
   provenance: Record<string, unknown>
   session_id: string | null
   status: ProblemStatus
@@ -392,6 +394,9 @@ export interface ProblemsResponse {
   problems: CodingProblem[]
   counts: Record<'error' | 'warning' | 'info' | 'hint' | 'total', number>
 }
+
+/** What a user can decide about a problem. `restore` undoes the other two. */
+export type ProblemDecision = 'dismiss' | 'suppress' | 'restore'
 
 export type EditorAiAction =
   | 'explain_code'
@@ -901,6 +906,33 @@ export interface GoalResponse {
   completed_at: string | null
 }
 
+export type SuggestedTaskStatus = 'pending' | 'started' | 'dismissed'
+
+/** One out-of-scope suggestion an agent parked for the user to act on. */
+export interface SuggestedTask {
+  id: string
+  session_id: string
+  title: string
+  tldr: string
+  prompt: string
+  cwd: string | null
+  status: SuggestedTaskStatus
+  spawned_session_id: string | null
+  worktree_path: string | null
+  dismiss_reason: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SuggestedTaskStartResult {
+  session_id: string
+  workspace: string
+  /** Posted by the client as the spawned session's first message. */
+  prompt: string
+  worktree_path: string | null
+  task: SuggestedTask
+}
+
 export interface TeamHistoryResponse {
   lead: SessionDetailResponse
   members: Array<{
@@ -921,548 +953,6 @@ export interface TeamHistoryResponse {
   } | null
   has_more: boolean
   next_cursor: string | null
-}
-
-// ── Evo Agent Specs (EASD) ─────────────────────────────────────────────
-
-export type EasdRiskTier = 'trivial' | 'standard' | 'cross_layer' | 'critical'
-export type EasdDeliveryMode = 'direct' | 'planned'
-export type EasdEvidenceKind = 'machine' | 'review' | 'manual' | 'waiver'
-export type EasdAppendableEvidenceKind = Exclude<EasdEvidenceKind, 'machine'>
-export type EasdEvidenceResult = 'passed' | 'failed' | 'inconclusive' | 'waived'
-
-export interface EasdEvidencePolicy {
-  allowed_kinds: EasdEvidenceKind[]
-  machine_required: boolean
-  minimum_passes: number
-}
-
-export interface EasdCriterionInput {
-  id: string
-  statement: string
-  required: boolean
-  evidence_policy: EasdEvidencePolicy
-}
-
-export type EasdConstraintKind = 'architecture' | 'compatibility' | 'security' | 'operational' | 'product'
-
-export interface EasdImpactTarget {
-  repository: string
-  path: string
-  module: string | null
-  reason: string
-}
-
-export interface EasdConstraint {
-  kind: EasdConstraintKind
-  statement: string
-  source_refs: string[]
-}
-
-export interface EasdDeliveryFlow {
-  mode: EasdDeliveryMode
-  rationale: string
-  confidence: number
-  required_by: string[]
-}
-
-export interface EasdSpecificationInput {
-  title: string
-  problem: string
-  outcome: string
-  goals: string[]
-  non_goals: string[]
-  source_refs: string[]
-  impact_targets?: EasdImpactTarget[]
-  constraints?: EasdConstraint[]
-  verification_commands?: string[]
-  risk_tier: EasdRiskTier
-  delivery_flow?: EasdDeliveryFlow
-  criteria: EasdCriterionInput[]
-}
-
-export type EasdGenerationTarget = 'scope' | 'proof' | 'both'
-
-export interface EasdGenerationQuestion {
-  id: string
-  question: string
-  reason: string
-  required: boolean
-}
-
-export interface EasdGeneratedScope {
-  goals: string[]
-  non_goals: string[]
-  source_refs: string[]
-  impact_targets: EasdImpactTarget[]
-  constraints: EasdConstraint[]
-  used_sources: string[]
-}
-
-export interface EasdGeneratedProof {
-  risk_tier: EasdRiskTier
-  delivery_flow: EasdDeliveryFlow
-  criteria: EasdCriterionInput[]
-  verification_commands: string[]
-  independent_review_required: boolean
-  used_sources: string[]
-}
-
-export interface EasdGenerationProvenance {
-  repository: string
-  path: string
-  kind: 'instructions' | 'documentation' | 'source' | 'test' | 'configuration' | 'repository_map'
-  sha256: string
-  truncated: boolean
-  used_for: Array<'scope' | 'proof'>
-}
-
-export interface EasdGenerateRequest {
-  workspace: string
-  project_id?: string | null
-  session_id: string
-  target: EasdGenerationTarget
-  intent: { title: string; problem: string; outcome?: string }
-  current_draft: {
-    goals: string[]
-    non_goals: string[]
-    source_refs: string[]
-    impact_targets: EasdImpactTarget[]
-    constraints: EasdConstraint[]
-    risk_tier: EasdRiskTier
-    delivery_flow: EasdDeliveryFlow
-    criteria: EasdCriterionInput[]
-    verification_commands: string[]
-  }
-  clarifications: Array<{ question: string; answer: string }>
-}
-
-export interface EasdGenerateResponse {
-  status: 'ready' | 'needs_clarification'
-  generation_id: string
-  generated_at: string
-  provider: string | null
-  model: string | null
-  usage: Record<string, unknown> | null
-  target: EasdGenerationTarget
-  confidence: number
-  rationale: string
-  questions: EasdGenerationQuestion[]
-  outcome: string | null
-  scope: EasdGeneratedScope | null
-  proof: EasdGeneratedProof | null
-  provenance: EasdGenerationProvenance[]
-  base_fingerprint: string
-  context_fingerprint: string
-}
-
-export interface EasdAuthoringGeneration {
-  generation_id: string
-  generated_at: string
-  provider: string | null
-  model: string | null
-  confidence: number
-  rationale: string
-  context_fingerprint: string
-  base_fingerprint: string
-  applied_sections: Array<'scope' | 'proof'>
-  edited_sections: Array<'scope' | 'proof'>
-  sources: EasdGenerationProvenance[]
-  usage: Record<string, unknown> | null
-}
-
-export interface EasdAuthoringMetadata {
-  generations: EasdAuthoringGeneration[]
-}
-
-export interface EasdAgentAuthoringMetadata {
-  mode: 'agent_chat'
-  agent: string
-  session_id: string
-  summary: string
-  confidence: number
-  submitted_at: string
-}
-
-export interface EasdRun {
-  id: string
-  project_id: string | null
-  workspace: string
-  session_id: string | null
-  title: string
-  intent: { title: string; problem: string; outcome: string } | null
-  status: 'intent' | 'authoring' | 'draft' | 'accepted' | 'planning' | 'plan_review' | 'planned' | 'active' | 'reviewing' | 'verifying' | 'converged' | 'failed' | 'cancelled'
-  risk_tier: EasdRiskTier
-  active_spec_revision_id: string | null
-  active_plan_revision_id: string | null
-  convergence_report: Record<string, unknown> | null
-  converged_at: string | null
-  created_at: string
-  updated_at: string
-  compact_before_run: boolean
-  auto_pilot: boolean
-  repository_document_hash?: string | null
-  store_generation?: number | null
-}
-
-export interface EasdSpecRevision {
-  id: string
-  run_id: string
-  version: number
-  status: 'draft' | 'accepted' | 'superseded'
-  spec: EasdSpecificationInput
-  authoring?: EasdAuthoringMetadata | EasdAgentAuthoringMetadata | null
-  content_hash: string
-  created_at: string
-  accepted_at: string | null
-}
-
-export type EasdPlanMissionKind = 'implementation' | 'integration' | 'review' | 'verification'
-
-export interface EasdPlanMission {
-  id: string
-  kind: EasdPlanMissionKind
-  title: string
-  goal: string
-  acceptance_criteria: string[]
-  target_repositories: string[]
-  target_paths: string[]
-  depends_on: string[]
-  expected_output: string
-  constraints: string[]
-  verification_commands: string[]
-  isolation: 'auto' | 'shared' | 'worktree'
-}
-
-export interface EasdPlanInput {
-  spec_hash: string
-  review_required: boolean
-  integration_owner: string | null
-  missions: EasdPlanMission[]
-}
-
-export interface EasdPlanRevision {
-  id: string
-  run_id: string
-  version: number
-  status: 'draft' | 'accepted' | 'superseded'
-  spec_hash: string
-  plan: EasdPlanInput
-  authoring?: EasdAgentAuthoringMetadata | null
-  content_hash: string
-  created_at: string
-  accepted_at: string | null
-}
-
-export interface EasdCriterionState {
-  id: string
-  statement: string
-  required: boolean
-  status: 'uncovered' | 'in_progress' | 'passed' | 'failed' | 'waived'
-  evidence_policy: EasdEvidencePolicy
-  evidence_ids: string[]
-  mission_ids: string[]
-}
-
-export interface EasdMission {
-  id: string
-  trace_run_id: string | null
-  lead_session_id: string
-  delegator: string
-  recipient: string
-  status: string
-  spec: Record<string, unknown>
-  dependencies: string[]
-  attempt: number
-  deadline_at: string | null
-  dispatched_at: string | null
-  completed_at: string | null
-  result: Record<string, unknown> | null
-  last_rejection: Record<string, unknown> | null
-  created_at: string
-  updated_at: string
-}
-
-export interface EasdEvidence {
-  id: string
-  run_id: string
-  delegation_task_id: string | null
-  spec_hash: string
-  criterion_ids: string[]
-  producer: string
-  kind: EasdEvidenceKind
-  result: EasdEvidenceResult
-  summary: string
-  revision: string | null
-  artifact_hash: string | null
-  payload: Record<string, unknown>
-  source_key: string | null
-  created_at: string
-}
-
-export interface EasdDeviation {
-  id: string
-  run_id: string
-  spec_hash: string
-  criterion_id: string | null
-  delegation_task_id: string | null
-  status: 'open' | 'approved' | 'rejected' | 'resolved'
-  blocking: boolean
-  description: string
-  proposed_change: Record<string, unknown>
-  resolution: string | null
-  resolved_spec_hash: string | null
-  created_at: string
-  updated_at: string
-  resolved_at: string | null
-}
-
-export type EasdActionId =
-  | 'draft_specification'
-  | 'retry_specification'
-  | 'approve_specification'
-  | 'start_planning'
-  | 'retry_planning'
-  | 'approve_plan'
-  | 'start_implementation'
-  | 'start_review'
-  | 'start_verification'
-  | 'converge'
-
-export interface EasdActionBlocker {
-  code: string
-  message: string
-  criterion_id?: string | null
-  mission_id?: string | null
-  deviation_id?: string | null
-  status?: string | null
-  commands?: string[] | null
-}
-
-export interface EasdRunAction {
-  id: EasdActionId
-  label: string
-  state: 'available' | 'blocked'
-  blockers: EasdActionBlocker[]
-}
-
-export interface EasdActionRail {
-  phase: EasdRun['status']
-  primary_action: EasdActionId | null
-  actions: EasdRunAction[]
-}
-
-export type EasdTraceNodeKind =
-  | 'run'
-  | 'specification'
-  | 'plan'
-  | 'criterion'
-  | 'mission_contract'
-  | 'mission_attempt'
-  | 'evidence'
-  | 'deviation'
-  | 'convergence'
-
-export interface EasdTraceNode {
-  id: string
-  kind: EasdTraceNodeKind
-  label: string
-  status: string | null
-  timestamp: string | null
-  entity_id: string | null
-  data: Record<string, unknown>
-}
-
-export interface EasdTraceEdge {
-  id: string
-  kind: 'contains' | 'defines' | 'compiled_to' | 'owns' | 'depends_on' | 'executes' | 'produced' | 'supports' | 'affects' | 'converged_as'
-  source: string
-  target: string
-  criterion_ids: string[]
-}
-
-export interface EasdTraceEvent {
-  id: string
-  sequence: number
-  event: string
-  actor: string | null
-  created_at: string | null
-  from_status: string | null
-  to_status: string | null
-  entity_refs: string[]
-  data: Record<string, unknown>
-}
-
-export interface EasdTraceGap extends EasdActionBlocker {
-  action_id: EasdActionId
-}
-
-export interface EasdRunTrace {
-  version: 1
-  run_id: string
-  store_generation: number | null
-  nodes: EasdTraceNode[]
-  edges: EasdTraceEdge[]
-  events: EasdTraceEvent[]
-  gaps: EasdTraceGap[]
-  diagnostics: Array<{ code: string; message: string }>
-}
-
-export type EasdRecoveryActionId =
-  | 'retry_specification'
-  | 'redraft_specification'
-  | 'retry_planning'
-  | 'replan'
-  | 'retry_implementation'
-  | 'retry_review'
-  | 'retry_verification'
-
-export interface EasdRecoveryAction {
-  id: EasdRecoveryActionId
-  label: string
-  summary: string
-  from_status: EasdRun['status']
-  to_status: EasdRun['status']
-  prompt_phase: 'authoring' | 'planning' | 'implementation' | 'review' | 'verification'
-  reuses: string[]
-  preserves: string[]
-}
-
-export interface EasdRecoveryPreview {
-  run_id: string
-  store_generation: number | null
-  actions: EasdRecoveryAction[]
-  unavailable_reason: string | null
-}
-
-export interface EasdRecoveryExecuteResponse {
-  run: EasdRun
-  recovery: EasdRecoveryAction & { recorded_at: string; session_id: string }
-}
-
-export interface EasdRealtimeEvent {
-  type: 'easd_event'
-  run_id: string
-  sequence: number
-  repository_generation: number | null
-  event: Record<string, unknown> & { event: string; sequence: number }
-}
-
-export interface EasdPresenceEvent {
-  type: 'easd_presence'
-  run_id: string
-  client_ids: string[]
-  count: number
-}
-
-export interface EasdResyncEvent {
-  type: 'easd_resync_required'
-  run_id: string
-  reason: string
-}
-
-export interface EasdRunDetail {
-  run: EasdRun
-  revisions: EasdSpecRevision[]
-  active_spec: EasdSpecRevision | null
-  plan_revisions: EasdPlanRevision[]
-  active_plan: EasdPlanRevision | null
-  criteria: EasdCriterionState[]
-  missions: EasdMission[]
-  evidence: EasdEvidence[]
-  deviations: EasdDeviation[]
-  convergence: Record<string, unknown> | null
-  action_rail?: EasdActionRail | null
-}
-
-export interface EasdConvergenceReason {
-  code: string
-  message?: string
-  criterion_id?: string
-  mission_id?: string
-  deviation_id?: string
-  status?: string
-  commands?: string[]
-}
-
-export type EasdSetupStatus = 'not_initialized' | 'upgrade_required' | 'ready' | 'invalid'
-
-export interface EasdRepositorySetup {
-  path: string
-  name: string
-  display_name: string | null
-  status: EasdSetupStatus
-  installed: boolean
-  manifest_path: string
-  data_directory: string
-  data_path: string
-  runtime_directory: string
-  runtime_path: string
-  runtime_owner_path: string
-  runtime_shared_across_worktrees: boolean
-  legacy_run_count: number
-  legacy_generated_file_count: number
-  rules_path: string
-  skills_path: string
-  skill_names: string[]
-  issue: string | null
-}
-
-export interface EasdRuntimeMigrationRun {
-  run_id: string
-  name: string
-  source: string
-  target: string
-  file_count: number
-  bytes: number
-}
-
-export interface EasdRuntimeMigrationRepository {
-  path: string
-  name: string
-  display_name: string | null
-  runtime_owner_path: string
-  legacy_run_count: number
-  runs: EasdRuntimeMigrationRun[]
-  legacy_generated_file_count: number
-  generated_files: string[]
-  generated_bytes: number
-  moved_run_count?: number | null
-  removed_generated_file_count?: number | null
-}
-
-export interface EasdRuntimeMigrationPreview {
-  workspace: string
-  project_id: string | null
-  legacy_run_count: number
-  file_count: number
-  bytes: number
-  legacy_generated_file_count: number
-  generated_bytes: number
-  repositories: EasdRuntimeMigrationRepository[]
-}
-
-export interface EasdRuntimeMigrationResult extends EasdRuntimeMigrationPreview {
-  moved_run_count: number
-  removed_generated_file_count: number
-}
-
-export interface EasdPublication {
-  eligible: boolean
-  published: boolean
-  created?: boolean | null
-  path: string | null
-  record: Record<string, unknown> | null
-}
-
-export interface EasdSetupResponse {
-  scope: 'workspace' | 'project'
-  workspace: string
-  project_id: string | null
-  ready: boolean
-  repository_count: number
-  installed_count: number
-  repositories: EasdRepositorySetup[]
 }
 
 // ── Workflows (documents/plans/workflows-feature-plan.md) ────────────────────
@@ -2927,4 +2417,177 @@ export interface PluginCredentialState {
 export interface SideChatCreateResponse {
   side_chat_id: string
   title: string
+}
+
+// ── Agent Spec-Driven (ASDD) ───────────────────────────────────────────────────
+//
+// A change is identified by its slug and described entirely by the files in
+// its folder. Nothing here carries a hash, a revision id or a session id.
+
+export type AsddStatus =
+  | 'drafting'
+  | 'proposed'
+  | 'specifying'
+  | 'specified'
+  | 'designing'
+  | 'designed'
+  | 'tasking'
+  | 'tasked'
+  | 'implementing'
+  | 'verifying'
+  | 'ready'
+  | 'archived'
+
+export type AsddRisk = 'trivial' | 'standard' | 'cross_layer' | 'critical'
+
+export type AsddApproveArtifact = 'proposal' | 'specs' | 'design' | 'tasks'
+
+export interface AsddBlocker {
+  code: string
+  message: string
+  [key: string]: unknown
+}
+
+export interface AsddAction {
+  id: string
+  label: string
+  state: 'available' | 'blocked'
+  blockers: AsddBlocker[]
+}
+
+export interface AsddHold {
+  gate: string | null
+  reason: string | null
+  raised: string | null
+}
+
+export interface AsddActionRail {
+  status: string
+  primary_action: string | null
+  actions: AsddAction[]
+  required_approvals: string[]
+  problems: AsddBlocker[]
+  autopilot: boolean
+  hold: AsddHold | null
+  /** Gates this risk tier keeps for a person even with autopilot on. */
+  human_only_gates: string[]
+}
+
+export interface AsddChange {
+  change_id: string
+  repository: string
+  title: string
+  /**
+   * Usually an `AsddStatus`, but `status` is hand-editable and the server
+   * reports an unrecognised one rather than refusing to serve the change.
+   */
+  status: AsddStatus | (string & {})
+  risk: AsddRisk | (string & {})
+  capabilities: string[]
+  delta_capabilities: string[]
+  /** What a person signed. */
+  approvals: Record<string, string | null>
+  /** What autopilot cleared on its own judgment. */
+  auto_approvals: Record<string, string | null>
+  autopilot: boolean
+  hold: AsddHold | null
+  tasks_total: number
+  tasks_done: number
+  evidence_count: number
+  review_recorded: boolean
+  created: string | null
+  path: string
+}
+
+export interface AsddCapabilityDelta {
+  capability: string
+  added: string[]
+  modified: string[]
+  removed: string[]
+  problems: string[]
+  body: string
+}
+
+export interface AsddEvidence {
+  id: string
+  kind: string
+  result: string
+  requirement: string | null
+  recorded: string | null
+  summary: string
+}
+
+export interface AsddChangeDetail {
+  change: AsddChange
+  rail: AsddActionRail
+  proposal: string
+  design: string | null
+  tasks: string | null
+  deltas: AsddCapabilityDelta[]
+  evidence: AsddEvidence[]
+}
+
+export interface AsddChangeList {
+  workspace: string
+  project_id: string | null
+  changes: AsddChange[]
+  archived: string[]
+  capabilities: string[]
+}
+
+export interface AsddChangeActionResult {
+  change: AsddChange
+  rail: AsddActionRail
+  prompt: string
+  skill: string
+}
+
+export interface AsddArchiveResult {
+  change_id: string
+  archived_as: string
+  capabilities_updated: string[]
+}
+
+export interface AsddRepositorySetup {
+  path: string
+  name: string
+  display_name: string | null
+  status: 'not_initialized' | 'upgrade_required' | 'ready' | 'invalid'
+  installed: boolean
+  manifest_path: string
+  data_directory: string
+  data_path: string
+  rules_path: string
+  skills_path: string
+  skill_names: string[]
+  missing_skills: string[]
+  missing_catalogue_files: string[]
+  issue: string | null
+}
+
+export interface AsddSetupResponse {
+  scope: 'workspace' | 'project'
+  workspace: string
+  project_id: string | null
+  /** This workspace's own catalogue is installed and usable. */
+  workspace_ready: boolean
+  /** Every repository in scope is installed. Drives the progress readout. */
+  ready: boolean
+  repository_count: number
+  installed_count: number
+  repositories: AsddRepositorySetup[]
+}
+
+export interface AsddRequirement {
+  name: string
+  statement: string
+  scenarios: { name: string; steps: string[] }[]
+}
+
+export interface AsddSpec {
+  capability: string
+  purpose: string
+  requirements: AsddRequirement[]
+  path: string
+  body: string
 }

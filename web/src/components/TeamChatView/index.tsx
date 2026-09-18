@@ -49,6 +49,7 @@ import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPan
 import type { Command } from '@/components/CommandPalette'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
+import { SuggestedTaskDock } from '../SuggestedTaskDock'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useFollowUpSettingsQuery, useRegistryQuery, useTriggerDreamMutation, useWebBridgeSettingsQuery } from '@/queries'
 import { getSessionWorkspaceRoot, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, searchEverywhere, setSessionPermissionMode } from '@/api/client'
@@ -81,7 +82,7 @@ import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBr
 import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
-import type { EasdRunChatRequest } from '@/components/EvoAgentSpecsPanel'
+import type { AsddChatRequest } from '@/components/AgentSpecsPanel'
 import { useSideChat } from '../SideChatPanel/useSideChat'
 import type {
   AgentCapabilities as AgentCapabilitiesType,
@@ -116,14 +117,6 @@ import {
   codeReviewSessionTags,
   parseCodeReviewSessionTags,
 } from '@/lib/code-review-session'
-
-const EASD_PHASE_COPY: Record<EasdRunChatRequest['phase'], { noun: string; started: string }> = {
-  authoring: { noun: 'Specification', started: 'Specification drafting' },
-  planning: { noun: 'Plan', started: 'EASD planning' },
-  implementation: { noun: 'Implementation', started: 'EASD implementation' },
-  review: { noun: 'Review', started: 'EASD review' },
-  verification: { noun: 'Verification', started: 'EASD verification' },
-}
 
 const WorkspaceFilesPanel = lazy(() =>
   import('@/components/WorkspaceFilesPanel').then((module) => ({
@@ -166,6 +159,11 @@ const BrowserViewer = lazy(() =>
     default: module.BrowserViewer,
   })),
 )
+const BrowserPipHost = lazy(() =>
+  import('@/components/BrowserViewer/BrowserPipHost').then((module) => ({
+    default: module.BrowserPipHost,
+  })),
+)
 const TerminalPanel = lazy(() =>
   import('@/components/TerminalPanel').then((module) => ({
     default: module.TerminalPanel,
@@ -189,9 +187,9 @@ const ProblemsPanel = lazy(() =>
     default: module.ProblemsPanel,
   })),
 )
-const EvoAgentSpecsPanel = lazy(() =>
-  import('@/components/EvoAgentSpecsPanel').then((module) => ({
-    default: module.EvoAgentSpecsPanel,
+const AgentSpecsPanel = lazy(() =>
+  import('@/components/AgentSpecsPanel').then((module) => ({
+    default: module.AgentSpecsPanel,
   })),
 )
 const loadSplitWorkbench = () =>
@@ -341,6 +339,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const [codingFileViewer, setCodingFileViewer] = useState<WorkspaceFileInfo | null>(null)
   const [codingFileViewerHost, setCodingFileViewerHost] = useState<CodingFileViewerHost>(null)
   const [codingFileViewerMode, setCodingFileViewerMode] = useState<'file' | 'diff' | 'preview'>('file')
+  /** Line to reveal when the viewer opens from something that knows one. */
+  const [codingFileViewerLine, setCodingFileViewerLine] = useState<number | null>(null)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
   const [showActivity, setShowActivity] = useState(false)
@@ -448,7 +448,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const isTeamWorking  = useTeamStore((s) => s.isTeamWorking)
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
-  useDirectBrowserPresence(sessionIdState)
+  const browserPipSessionIds = useUIStore((state) => state.browserPipSessionIds)
+  useDirectBrowserPresence([sessionIdState, ...browserPipSessionIds])
   const projectIdState = useTeamStore((s) => s.projectId)
   // A project session isn't "in" any one repo — chat-level UI (empty state,
   // composer placeholder) must reflect the project, not the primary repo
@@ -486,9 +487,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const updateWorkbenchTab = useUIStore((s) => s.updateWorkbenchTab)
   const workspaceFileRequest = useUIStore((s) => s.workspaceFileRequest)
   const clearWorkspaceFileRequest = useUIStore((s) => s.clearWorkspaceFileRequest)
-  const easdChatRequest = useUIStore((s) => s.easdChatRequest)
-  const requestEasdChat = useUIStore((s) => s.requestEasdChat)
-  const clearEasdChatRequest = useUIStore((s) => s.clearEasdChatRequest)
   const wikiOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'wiki'))
   const sideChatOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'side-chat'))
   const hasFilesTab = useUIStore((s) => sessionHasWorkbenchTool(s, 'files'))
@@ -1598,358 +1596,43 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       )
     : null
 
-  const handleEasdRunInChat = useCallback((request: EasdRunChatRequest) => {
-    requestEasdChat(request)
-    // Keep the Evo Agent Specs panel open: the layout already shows the chat
-    // beside it, and closing it hid the lifecycle rail at exactly the moment
-    // the phase started running.
-    if (request.sessionId === sessionIdState) return
-    const focusId = codingFocusId({
-      project_id: request.projectId,
-      workspace: request.workspace,
+  // An ASDD change belongs to the repository, not to a chat, so a phase always
+  // runs in the chat the user is looking at. There is nothing to navigate to
+  // and no session to reconcile — the prompt just lands in this input.
+  const handleAsddRunInChat = useCallback((request: AsddChatRequest) => {
+    inputRef.current?.setValue(request.prompt)
+    inputRef.current?.focus()
+    pushToast({
+      tone: 'info',
+      title: `${request.skill} prompt ready`,
+      description: `Review the kickoff prompt for ${request.changeId}, then send when ready.`,
     })
-    navigate(
-      focusId
-        ? {
-            to: '/coding/$focusId/$sessionId',
-            params: { focusId, sessionId: request.sessionId },
-          }
-        : { to: '/$sessionId', params: { sessionId: request.sessionId } },
-    )
-  }, [navigate, requestEasdChat, sessionIdState])
+  }, [pushToast])
 
-  useEffect(() => {
-    if (
-      !easdChatRequest
-      || easdChatRequest.sessionId !== sessionIdState
-      || isSessionLoading
-    ) return
-    clearEasdChatRequest(easdChatRequest.id)
-    if (!easdChatRequest.prompt) {
-      pushToast({ tone: 'info', title: 'Opened the run’s linked chat' })
-      return
-    }
-    const current = useTeamStore.getState()
-    if (!easdChatRequest.autoSend || current.isTeamWorking) {
-      const phaseCopy = EASD_PHASE_COPY[easdChatRequest.phase]
-      inputRef.current?.setValue(easdChatRequest.prompt)
-      inputRef.current?.focus()
-      pushToast({
-        tone: 'info',
-        title: current.isTeamWorking
-          ? 'Chat is already running'
-          : `${phaseCopy.noun} prompt ready`,
-        description: current.isTeamWorking
-          ? 'The resume prompt is ready to queue or send after the current turn.'
-          : 'Review the kickoff prompt, then send when ready.',
-      })
-      return
-    }
-    inputRef.current?.setValue('')
-    void current.sendMessage(easdChatRequest.prompt, undefined, {
-      mode: 'coding',
-      workspace: easdChatRequest.workspace,
-      model: (current.sessionModel ?? selectedModel) || null,
-      thinkingLevel: (current.sessionThinkingLevel ?? selectedThinkingLevel) || null,
-      fastMode: current.sessionFastMode,
-    }).then(() => {
-      const error = useTeamStore.getState().error
-      const phaseCopy = EASD_PHASE_COPY[easdChatRequest.phase]
-      pushToast(error
-        ? { tone: 'error', title: `${phaseCopy.started} could not start`, description: error }
-        : { tone: 'success', title: `${phaseCopy.started} started in chat` })
-    })
-  }, [
-    clearEasdChatRequest,
-    easdChatRequest,
-    isSessionLoading,
-    pushToast,
-    selectedModel,
-    selectedThinkingLevel,
-    sessionIdState,
-  ])
-
-  // Workbench lives in AppShell's full-height trailing column so opening it
-  // constrains both the conversation canvas and the compact topbar.
-  const workbenchPanel = (
-    <WorkbenchDock
-        mode={mode}
-        sessionId={sessionIdState}
-        workspace={workspace}
-        onOpenSidebar={sidebarOverlay ? () => setMobileSidebarOpen(true) : undefined}
-      >
-      <Suspense fallback={<PanelLoadingFallback />}>
-        {mode === 'coding' && workspace && (
-          <>
-            <WorkbenchSurface tool="overview">
-              {(_tab, active) => (
-                <CodingSummaryPanel
-                  workspace={workspace}
-                  sessionId={sessionIdState}
-                  open={active}
-                  isWorking={isTeamWorking}
-                  onOpenFile={(path) => {
-                    setCodingFileViewer({
-                      path,
-                      name: path.split('/').pop() ?? path,
-                      size: 0,
-                      mtime: 0,
-                      mime: 'text/plain',
-                    })
-                    setCodingFileViewerHost('standalone')
-                    setCodingFileViewerMode('diff')
-                  }}
-                />
-              )}
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="files">
-              <CodingWorkspacePanel
-                workspace={workspace}
-                open
-                view="files"
-                embedded
-                selectedFilePath={codingFileViewer?.path ?? null}
-                selectedFile={codingFileViewer}
-                onFileSelect={handleCodingFileSelect}
-                initialFileViewMode={codingFileViewerMode}
-                onAddFileComment={handleAddFileComment}
-                onSendFileToChat={handleSendToChat}
-                onClose={() => closeWorkbenchTool('files')}
-                projectId={projectIdState}
-              />
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="graph">
-              <CodingWorkspacePanel
-                workspace={workspace}
-                open
-                view="graph"
-                embedded
-                selectedFilePath={codingFileViewer?.path ?? null}
-                onFileSelect={handleCodingFileSelect}
-                onClose={() => closeWorkbenchTool('graph')}
-                projectId={projectIdState}
-              />
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="easd">
-              {(_tab, active) => (
-                <EvoAgentSpecsPanel
-                  workspace={workspace}
-                  projectId={projectIdState}
-                  sessionId={sessionIdState}
-                  active={active}
-                  onRunInChat={handleEasdRunInChat}
-                />
-              )}
-            </WorkbenchSurface>
-          </>
-        )}
-        {mode !== 'coding' && (
-          <WorkbenchSurface tool="files">
-            <WorkspaceFilesPanel
-              open
-              embedded
-              sessionId={sessionIdState}
-              onClose={() => closeWorkbenchTool('files')}
+  // A page an agent opened has no tab in the workbench when the preview is
+  // what the user asked for, so it hangs here instead — over the
+  // conversation, as a card of its own.
+  //
+  // Deliberately not tied to the chat on screen: reading another
+  // conversation used to unmount this, and unmounting closes the WebView, so
+  // a glance at a second chat threw away the page an agent was working in
+  // and left it a blank new tab. The card floats above whatever is open
+  // until someone closes it, which is what a floating window is for.
+  const browserPipHost = browserPipSessionIds.length > 0
+    ? (
+        <Suspense fallback={null}>
+          {browserPipSessionIds.map((sessionId, index) => (
+            <BrowserPipHost
+              key={sessionId}
+              sessionId={sessionId}
+              stackDepth={browserPipSessionIds.length - index - 1}
+              stackOrder={index}
             />
-          </WorkbenchSurface>
-        )}
-        <WorkbenchSurface tool="terminal">
-          {(tab, active) => (
-            <TerminalPanel
-              sessionId={tab.sessionId ?? sessionIdState}
-              terminalId={tab.id}
-              active={active}
-              workspace={mode === 'coding' ? workspace : null}
-              activeFilePath={codingFileViewer?.path ?? null}
-            />
-          )}
-        </WorkbenchSurface>
-        <WorkbenchSurface tool="processes">
-          {(_tab, active) => (
-            <ProcessPanel active={active} currentSessionId={sessionIdState} />
-          )}
-        </WorkbenchSurface>
-        <WorkbenchSurface tool="browser">
-          {(tab, active) => (
-            <BrowserViewer
-              sessionId={tab.sessionId ?? sessionIdState}
-              workspace={mode === 'coding' ? workspace : null}
-              tabId={tab.id}
-              initialUrl={tab.initialUrl}
-              open
-              visible={active}
-              embedded
-              onNewTab={(url) => createWorkbenchTab('browser', {
-                initialUrl: url,
-                title: 'New tab',
-              })}
-              onTitleChange={(title) => updateWorkbenchTab(tab.id, { title })}
-              onClose={() => closeWorkbenchTab(tab.id)}
-            />
-          )}
-        </WorkbenchSurface>
-        {sessionIdState && (
-          <WorkbenchSurface tool="side-chat">
-            <SideChatPanel
-              isOpen={sideChatOpen}
-              embedded
-              onClose={() => closeWorkbenchTool('side-chat')}
-              initialQuote={sideChatQuote}
-              onQuoteConsumed={() => setSideChatQuote(null)}
-              blocks={sideChat.blocks}
-              currentBlocks={sideChat.currentBlocks}
-              isWorking={sideChat.isWorking}
-              error={sideChat.error}
-              sideChatId={sideChat.sideChatId}
-              onSend={sideChat.sendMessage}
-              onStop={() => void sideChat.stopGeneration()}
-            />
-          </WorkbenchSurface>
-        )}
-        <WorkbenchSurface tool="wiki">
-          <WikiPanel
-            open={wikiOpen}
-            embedded
-            onClose={() => closeWorkbenchTool('wiki')}
-          />
-        </WorkbenchSurface>
-        <WorkbenchSurface tool="scheduler">
-          <SchedulerPanel
-            open={schedulerOpen}
-            embedded
-            onClose={() => closeWorkbenchTool('scheduler')}
-            contextMode={workOrCodingMode}
-            contextWorkspace={mode === 'coding' ? workspace : null}
-          />
-        </WorkbenchSurface>
-        <WorkbenchSurface tool="plugins">
-          <PluginCenterPanel />
-        </WorkbenchSurface>
-        {mode === 'coding' && (
-          <>
-            <WorkbenchSurface tool="source-control">
-              {(_tab, active) => (
-                <GitWorkspacePanel
-                  open={active}
-                  view="changes"
-                  scope="session"
-                  workspace={workspace}
-                  projectId={projectIdState}
-                  focus={null}
-                  onOpenInChat={handleOpenCodeReviewChat}
-                  onOpenWorkspace={handleOpenWorkspaceDialog}
-                />
-              )}
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="pull-requests">
-              {(_tab, active) => (
-                <GitWorkspacePanel
-                  open={active}
-                  view="reviews"
-                  scope={pullRequestsScope}
-                  workspace={workspace}
-                  projectId={projectIdState}
-                  focus={reviewSessionContext}
-                  onOpenInChat={handleOpenCodeReviewChat}
-                  onOpenWorkspace={handleOpenWorkspaceDialog}
-                />
-              )}
-            </WorkbenchSurface>
-            {workspace && <WorkbenchSurface tool="problems">
-              {(_tab, active) => (
-                <ProblemsPanel
-                  workspace={workspace}
-                  active={active}
-                  onOpenFile={(path) => {
-                    setCodingFileViewer({
-                      path,
-                      name: path.split('/').pop() ?? path,
-                      size: 0,
-                      mtime: 0,
-                      mime: 'text/plain',
-                    })
-                    setCodingFileViewerHost('standalone')
-                    setCodingFileViewerMode('file')
-                    openWorkbenchTool('files')
-                  }}
-                  onSendToAgent={(prompt) => {
-                    inputRef.current?.setValue(prompt)
-                    inputRef.current?.focus()
-                  }}
-                />
-              )}
-            </WorkbenchSurface>}
-          </>
-        )}
-      </Suspense>
-    </WorkbenchDock>
-  )
-
-  // Contextual panels that only constrain the body row.
-  const trailingPanels = (
-    <>
-      <ChatTrailingPanels
-        onQuoteComment={handlePlanQuoteComment}
-        showActivity={showActivity}
-        onCloseActivity={() => setShowActivity(false)}
-        workspace={workspace}
-        mode={mode}
-        onOpenChangedFile={(path) => {
-          if (mode === 'coding' && workspace) {
-            setCodingFileViewer({
-              path,
-              name: path.split('/').pop() ?? path,
-              size: 0,
-              mtime: 0,
-              mime: 'text/plain',
-            })
-            setCodingFileViewerHost('standalone')
-            setCodingFileViewerMode('diff')
-          }
-        }}
-      />
-      {mode === 'coding' && <div ref={setCodingWorkspacePickerPortal} className="contents" />}
-    </>
-  )
-
-  // On desktop, Coding panels sit in AppShell's outer trailing column — the
-  // same structural slot Work uses. This constrains both the chat *and its
-  // topbar*; mobile keeps its full-screen overlay behavior.
-  const fullHeightTrailing = (
-    <>
-      {workbenchPanel}
-      {mode === 'coding'
-        && workspace
-        && !isMobile
-        && !workbenchMaximized
-        && codingFileViewer !== null
-        && shouldShowStandaloneEditor(
-          codingFileViewerHost,
-          workbenchOpen,
-          activeWorkbenchTool,
-        )
-        && (
-        <Suspense fallback={<PanelLoadingFallback />}>
-          <CodingFileViewerPanel
-            key={`${codingFileViewer.path}:${codingFileViewerMode}`}
-            workspace={codingFileViewer.sourceWorkspace ?? workspace}
-            file={codingFileViewer}
-            mobile={false}
-            desktopOverlay={false}
-            initialViewMode={codingFileViewerMode}
-            onAddComment={handleAddFileComment}
-            onSendToChat={handleSendToChat}
-            onAddCodeToChat={handleAddCodeToChat}
-            onClose={() => {
-              setCodingFileViewer(null)
-              setCodingFileViewerHost(null)
-              setCodingFileViewerMode('file')
-            }}
-          />
+          ))}
         </Suspense>
-      )}
-    </>
-  )
+      )
+    : null
+
   const handleComposerSubmit = useCallback(async (
     content: string,
     files?: File[],
@@ -2054,6 +1737,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     return sent
   }, [
     expandUserCommand,
+    followUpLane,
     mode,
     pushToast,
     selectedModel,
@@ -2066,6 +1750,292 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     workspace,
   ])
 
+  // Workbench lives in AppShell's full-height trailing column so opening it
+  // constrains both the conversation canvas and the compact topbar.
+  const workbenchPanel = (
+    <WorkbenchDock
+        mode={mode}
+        sessionId={sessionIdState}
+        workspace={workspace}
+        onOpenSidebar={sidebarOverlay ? () => setMobileSidebarOpen(true) : undefined}
+      >
+      <Suspense fallback={<PanelLoadingFallback />}>
+        {mode === 'coding' && workspace && (
+          <>
+            <WorkbenchSurface tool="overview">
+              {(_tab, active) => (
+                <CodingSummaryPanel
+                  workspace={workspace}
+                  sessionId={sessionIdState}
+                  open={active}
+                  isWorking={isTeamWorking}
+                  onOpenFile={(path) => {
+                    setCodingFileViewer({
+                      path,
+                      name: path.split('/').pop() ?? path,
+                      size: 0,
+                      mtime: 0,
+                      mime: 'text/plain',
+                    })
+                    setCodingFileViewerHost('standalone')
+                    setCodingFileViewerMode('diff')
+                  }}
+                />
+              )}
+            </WorkbenchSurface>
+            <WorkbenchSurface tool="files">
+              <CodingWorkspacePanel
+                workspace={workspace}
+                open
+                view="files"
+                embedded
+                selectedFilePath={codingFileViewer?.path ?? null}
+                selectedFile={codingFileViewer}
+                onFileSelect={handleCodingFileSelect}
+                initialFileViewMode={codingFileViewerMode}
+                onAddFileComment={handleAddFileComment}
+                onSendFileToChat={handleSendToChat}
+                onClose={() => closeWorkbenchTool('files')}
+                projectId={projectIdState}
+              />
+            </WorkbenchSurface>
+            <WorkbenchSurface tool="graph">
+              <CodingWorkspacePanel
+                workspace={workspace}
+                open
+                view="graph"
+                embedded
+                selectedFilePath={codingFileViewer?.path ?? null}
+                onFileSelect={handleCodingFileSelect}
+                onClose={() => closeWorkbenchTool('graph')}
+                projectId={projectIdState}
+              />
+            </WorkbenchSurface>
+            <WorkbenchSurface tool="asdd">
+              {(_tab, active) => (
+                <AgentSpecsPanel
+                  workspace={workspace}
+                  projectId={projectIdState}
+                  active={active}
+                  onRunInChat={handleAsddRunInChat}
+                />
+              )}
+            </WorkbenchSurface>
+          </>
+        )}
+        {mode !== 'coding' && (
+          <WorkbenchSurface tool="files">
+            <WorkspaceFilesPanel
+              open
+              embedded
+              sessionId={sessionIdState}
+              onClose={() => closeWorkbenchTool('files')}
+            />
+          </WorkbenchSurface>
+        )}
+        <WorkbenchSurface tool="terminal">
+          {(tab, active) => (
+            <TerminalPanel
+              sessionId={tab.sessionId ?? sessionIdState}
+              terminalId={tab.id}
+              active={active}
+              workspace={mode === 'coding' ? workspace : null}
+              activeFilePath={codingFileViewer?.path ?? null}
+            />
+          )}
+        </WorkbenchSurface>
+        <WorkbenchSurface tool="processes">
+          {(_tab, active) => (
+            <ProcessPanel active={active} currentSessionId={sessionIdState} />
+          )}
+        </WorkbenchSurface>
+        <WorkbenchSurface tool="browser">
+          {(tab, active) => (
+            <BrowserViewer
+              sessionId={tab.sessionId ?? sessionIdState}
+              workspace={mode === 'coding' ? workspace : null}
+              tabId={tab.id}
+              initialUrl={tab.initialUrl}
+              open
+              visible={active}
+              onNewTab={(url) => createWorkbenchTab('browser', {
+                initialUrl: url,
+                title: 'New tab',
+              })}
+              onTitleChange={(title) => updateWorkbenchTab(tab.id, { title })}
+              onClose={() => closeWorkbenchTab(tab.id)}
+            />
+          )}
+        </WorkbenchSurface>
+        {sessionIdState && (
+          <WorkbenchSurface tool="side-chat">
+            <SideChatPanel
+              isOpen={sideChatOpen}
+              embedded
+              onClose={() => closeWorkbenchTool('side-chat')}
+              initialQuote={sideChatQuote}
+              onQuoteConsumed={() => setSideChatQuote(null)}
+              blocks={sideChat.blocks}
+              currentBlocks={sideChat.currentBlocks}
+              isWorking={sideChat.isWorking}
+              error={sideChat.error}
+              sideChatId={sideChat.sideChatId}
+              onSend={sideChat.sendMessage}
+              onStop={() => void sideChat.stopGeneration()}
+            />
+          </WorkbenchSurface>
+        )}
+        <WorkbenchSurface tool="wiki">
+          <WikiPanel
+            open={wikiOpen}
+            embedded
+            onClose={() => closeWorkbenchTool('wiki')}
+          />
+        </WorkbenchSurface>
+        <WorkbenchSurface tool="scheduler">
+          <SchedulerPanel
+            open={schedulerOpen}
+            embedded
+            onClose={() => closeWorkbenchTool('scheduler')}
+            contextMode={workOrCodingMode}
+            contextWorkspace={mode === 'coding' ? workspace : null}
+          />
+        </WorkbenchSurface>
+        <WorkbenchSurface tool="plugins">
+          <PluginCenterPanel />
+        </WorkbenchSurface>
+        {mode === 'coding' && (
+          <>
+            <WorkbenchSurface tool="source-control">
+              {(_tab, active) => (
+                <GitWorkspacePanel
+                  open={active}
+                  view="changes"
+                  scope="session"
+                  workspace={workspace}
+                  projectId={projectIdState}
+                  focus={null}
+                  onOpenInChat={handleOpenCodeReviewChat}
+                  onOpenWorkspace={handleOpenWorkspaceDialog}
+                />
+              )}
+            </WorkbenchSurface>
+            <WorkbenchSurface tool="pull-requests">
+              {(_tab, active) => (
+                <GitWorkspacePanel
+                  open={active}
+                  view="reviews"
+                  scope={pullRequestsScope}
+                  workspace={workspace}
+                  projectId={projectIdState}
+                  focus={reviewSessionContext}
+                  onOpenInChat={handleOpenCodeReviewChat}
+                  onOpenWorkspace={handleOpenWorkspaceDialog}
+                />
+              )}
+            </WorkbenchSurface>
+            {workspace && <WorkbenchSurface tool="problems">
+              {(_tab, active) => (
+                <ProblemsPanel
+                  workspace={workspace}
+                  active={active}
+                  onOpenFile={(path, line) => {
+                    setCodingFileViewer({
+                      path,
+                      name: path.split('/').pop() ?? path,
+                      size: 0,
+                      mtime: 0,
+                      mime: 'text/plain',
+                    })
+                    setCodingFileViewerLine(line ?? null)
+                    setCodingFileViewerHost('standalone')
+                    setCodingFileViewerMode('file')
+                    openWorkbenchTool('files')
+                  }}
+                  onAddToComposer={(prompt) => {
+                    // Appending, not replacing: this fires from a panel
+                    // beside the composer, and replacing threw away
+                    // whatever the user was part-way through typing.
+                    inputRef.current?.appendValue(prompt)
+                    inputRef.current?.focus()
+                  }}
+                  onSendToAgent={(prompt) => { void handleComposerSubmit(prompt) }}
+                />
+              )}
+            </WorkbenchSurface>}
+          </>
+        )}
+      </Suspense>
+    </WorkbenchDock>
+  )
+
+  // Contextual panels that only constrain the body row.
+  const trailingPanels = (
+    <>
+      <ChatTrailingPanels
+        onQuoteComment={handlePlanQuoteComment}
+        showActivity={showActivity}
+        onCloseActivity={() => setShowActivity(false)}
+        workspace={workspace}
+        mode={mode}
+        onOpenChangedFile={(path) => {
+          if (mode === 'coding' && workspace) {
+            setCodingFileViewer({
+              path,
+              name: path.split('/').pop() ?? path,
+              size: 0,
+              mtime: 0,
+              mime: 'text/plain',
+            })
+            setCodingFileViewerHost('standalone')
+            setCodingFileViewerMode('diff')
+          }
+        }}
+      />
+      {mode === 'coding' && <div ref={setCodingWorkspacePickerPortal} className="contents" />}
+    </>
+  )
+
+  // On desktop, Coding panels sit in AppShell's outer trailing column — the
+  // same structural slot Work uses. This constrains both the chat *and its
+  // topbar*; mobile keeps its full-screen overlay behavior.
+  const fullHeightTrailing = (
+    <>
+      {browserPipHost}
+      {workbenchPanel}
+      {mode === 'coding'
+        && workspace
+        && !isMobile
+        && !workbenchMaximized
+        && codingFileViewer !== null
+        && shouldShowStandaloneEditor(
+          codingFileViewerHost,
+          workbenchOpen,
+          activeWorkbenchTool,
+        )
+        && (
+        <Suspense fallback={<PanelLoadingFallback />}>
+          <CodingFileViewerPanel
+            key={`${codingFileViewer.path}:${codingFileViewerMode}`}
+            workspace={codingFileViewer.sourceWorkspace ?? workspace}
+            file={codingFileViewer}
+            mobile={false}
+            desktopOverlay={false}
+            initialViewMode={codingFileViewerMode}
+            initialLine={codingFileViewerLine}
+            onAddComment={handleAddFileComment}
+            onSendToChat={handleSendToChat}
+            onAddCodeToChat={handleAddCodeToChat}
+            onClose={() => {
+              setCodingFileViewer(null)
+              setCodingFileViewerHost(null)
+              setCodingFileViewerMode('file')
+            }}
+          />
+        </Suspense>
+      )}
+    </>
+  )
   // Modals rendered after the body row (fixed-position —
   // DOM order only matters for z-stacking). WikiPanel/SchedulerPanel live
   // at the route root now (``RootOverlayPanels`` in __root.tsx) so they
@@ -2327,6 +2297,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           historySkeleton
         ) : null}
 
+        <SuggestedTaskDock />
         <PermissionApprovalModal />
         <AskUserQuestionModal />
         <PlanActionBar onRevise={() => inputRef.current?.focus()} />

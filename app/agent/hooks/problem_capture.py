@@ -15,15 +15,27 @@ from app.agent.hooks.base import BaseAgentHook
 if TYPE_CHECKING:
     from app.agent.schemas.chat import ToolCall
     from app.agent.state import AgentState, RunContext
+    from app.services.problems_service import ProblemSeverity
 
 _TEST_COMMAND = re.compile(
     r"(?:^|\s)(?:pytest|vitest|jest|go test|cargo test|mvn test|gradle\w* test|"
     r"npm test|pnpm test|bun test)(?:\s|$)",
     re.IGNORECASE,
 )
+# ``build`` and ``compile`` used to sit here as bare words, which made
+# ``rm -rf build``, ``cd build && ls`` and ``echo build`` all count as build
+# commands whose output was then mined for problems. A build is named by the
+# tool that runs it, so name the tools.
 _BUILD_COMMAND = re.compile(
-    r"(?:^|\s)(?:build|compile|tsc|mypy|ruff|eslint|cargo check|go vet|"
-    r"mvn verify|gradle\w* check)(?:\s|$)",
+    r"(?:^|\s)(?:"
+    r"tsc|mypy|ruff|eslint|make"
+    r"|go\s+(?:build|vet)"
+    r"|cargo\s+(?:build|check|clippy)"
+    r"|(?:npm|pnpm|yarn|bun)\s+run\s+[\w:-]*build[\w:-]*"
+    r"|(?:ninja|bazel|dotnet|msbuild)\s+\S*build"
+    r"|gradle\w*\s+(?:build|check|assemble)"
+    r"|mvn\s+(?:verify|compile|package)"
+    r")(?:\s|$)",
     re.IGNORECASE,
 )
 _GENERIC = re.compile(
@@ -32,6 +44,12 @@ _GENERIC = re.compile(
     r"(?:\s+(?P<code>[A-Za-z]+\d+))?[:\s-]*)?(?P<message>.+)$",
     re.IGNORECASE,
 )
+#: Upper bound on rows published from one command's output.
+_MAX_PROBLEMS = 200
+
+# Python names its warning categories ``…Warning``, and a warnings summary
+# line states the category where a compiler would state a severity.
+_WARNING_CLASS = re.compile(r"^\w*Warning\b", re.IGNORECASE)
 _PAREN = re.compile(
     r"^(?P<path>.+\.[A-Za-z0-9]+)\((?P<line>\d+),(?P<column>\d+)\):\s*"
     r"(?P<severity>error|warning)\s*(?P<code>[A-Za-z]+\d+)?:?\s*(?P<message>.+)$",
@@ -70,6 +88,29 @@ class ProblemCaptureHook(BaseAgentHook):
         return result
 
 
+def _severity_of(match: "re.Match[str]") -> ProblemSeverity:
+    """Read the severity a line states, and believe it when it states none.
+
+    Defaulting an unlabelled line to ``error`` turned every mypy ``note:``
+    into a red error in the panel — and mypy emits a note for nearly every
+    error it reports, so a single type failure arrived as a pile of them.
+    A line that does not call itself a failure is reported as information.
+    """
+    stated = (match.groupdict().get("severity") or "").casefold()
+    if stated == "warning":
+        return "warning"
+    if stated:
+        return "error"
+    message = match.group("message").strip()
+    if message.casefold().startswith("note:"):
+        return "info"
+    if _WARNING_CLASS.match(message):
+        return "warning"
+    # An unlabelled line from a failing test run is still a failure; only
+    # the two shapes above are known to be something milder.
+    return "error"
+
+
 def _command_source(command: str) -> Literal["test", "build"] | None:
     if _TEST_COMMAND.search(command):
         return "test"
@@ -106,11 +147,10 @@ def publish_command_output(
             path.relative_to(root)
         except ValueError:
             continue
-        severity_text = (match.groupdict().get("severity") or "error").casefold()
         inputs.append(
             ProblemInput(
                 message=match.group("message").strip(),
-                severity="warning" if severity_text == "warning" else "error",
+                severity=_severity_of(match),
                 path=str(path),
                 line=int(match.group("line")),
                 column=int(match.groupdict().get("column") or 1),
@@ -122,7 +162,22 @@ def publish_command_output(
                 },
             )
         )
-        if len(inputs) >= 200:
+        if len(inputs) >= _MAX_PROBLEMS:
+            # Stopping here is fine; stopping silently is not. A panel that
+            # shows 200 of 900 failures while looking complete is worse than
+            # one that admits it is a sample.
+            inputs.append(
+                ProblemInput(
+                    message=(
+                        f"Only the first {_MAX_PROBLEMS} problems from "
+                        f"`{command}` are listed. Re-run it to see the rest."
+                    ),
+                    severity="info",
+                    title="Output truncated",
+                    code="problems-truncated",
+                    provenance={"producer": "verification-command", "truncated": True},
+                )
+            )
             break
     command_hash = hashlib.sha256(command.encode()).hexdigest()[:16]
     publish_problems(
@@ -131,5 +186,10 @@ def publish_command_output(
         scope=f"shell:{source}:{command_hash}",
         problems=inputs,
         session_id=session_id,
+        # The latest run is the current truth for this kind of check. Without
+        # this, changing the command at all — one file instead of the suite,
+        # an added flag — stranded the previous run's findings in a scope
+        # nothing would ever publish to again.
+        supersedes_prefix=f"shell:{source}:",
     )
     return len(inputs)

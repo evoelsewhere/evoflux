@@ -1,6 +1,0 @@
-interface:
-  display_name: "Deep Research"
-  short_description: "Multi-source investigation ending in a cited report"
-  default_prompt: "Use $deep-research to investigate this across sources and write one cited report."
-policy:
-  allow_implicit_invocation: true

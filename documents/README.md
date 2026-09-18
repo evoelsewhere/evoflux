@@ -1,92 +1,50 @@
 # EvoFlux documentation
 
-This directory is the single documentation root for EvoFlux. The current-state
-documents are reverse-engineered from the application code, API routes, data
-models, desktop shell, frontend surfaces, and tests. When prose and code differ,
-code is authoritative and the document should be updated in the same change.
+This directory is the single documentation root for the product and its
+contributors. Two things live here with different owners.
 
-## Start here
+## Written by people
 
-| Audience | Entry point | Purpose |
-|---|---|---|
-| Product and support | [Feature catalogue](features/README.md) | Every implemented product area and its owning code |
-| Product and engineering | [EASD methodology](reference/easd-methodology.md) | Normative SDD + ADD lifecycle, contracts, roles, and gates |
-| EASD repository collaborators | [EASD knowledge-base skeleton](easd/README.md) | Portable taxonomy, authority, templates, and Run store |
-| Engineers | [System overview](architecture/system-overview.md) | Processes, boundaries, and end-to-end request flow |
-| New contributors | [Repository map](reference/repository-map.md) | Where code, state, tests, and documentation live |
-| Local operators | [Configuration reference](reference/configuration.md) | Runtime directories, files, settings, and credentials |
-| API clients | [HTTP and streaming API](reference/http-api.md) | Route families, auth, SSE, and WebSockets |
-| CLI users | [CLI reference](reference/cli.md) | Setup, lifecycle, diagnostics, migration, and plugins |
-| Contributors | [Development and testing](development/setup-and-testing.md) | Toolchain, run modes, checks, and change workflow |
-| Release maintainers | [Release and packaging](development/release-and-packaging.md) | Web build, Python sidecar, native packages, and updates |
+```text
+documents/
+├── features/       # current implemented product behavior
+├── architecture/   # process, storage, concurrency, trust and system boundaries
+│   └── decisions/  # ADR-style durable decisions
+├── reference/      # exact API, configuration, schema and CLI contracts
+├── guides/         # task-oriented walkthroughs
+├── development/    # contributor and release procedure
+├── analysis/ research/ plans/ releases/   # dated, historical
+└── images/
+```
 
-## Current architecture
+`features/`, `architecture/` and `reference/` describe what ships today. The
+dated directories are historical and never override them.
 
-- [System overview](architecture/system-overview.md)
-- [Application harness](architecture/application-harness.md)
-- [Backend runtime](architecture/backend-runtime.md)
-- [Web frontend](architecture/web-frontend.md)
-- [Desktop shell](architecture/desktop.md)
-- [Data and storage](architecture/data-and-storage.md)
-- [Memory architecture](architecture/memory-system.md)
-- [SQLite concurrency](architecture/sqlite-concurrency.md)
-- [Coding-agent code context](architecture/coding-agent-code-context.md)
-- [Coding semantic intelligence](architecture/coding-semantic-intelligence.md)
-- [EASD development architecture](architecture/evo-agent-specs.md)
-- [Provider model capability flow](architecture/model-capability-flow.md)
-- [Portable Agent Plugins](architecture/agent-plugins.md)
+## Owned by Agent Spec-Driven
 
-## Implemented features
+```text
+documents/asdd/
+├── project.md                   # this repository's context and rules for agents
+├── specs/
+│   └── <capability>/spec.md     # the behavior the system guarantees now
+└── changes/
+    ├── <change-id>/             # one proposed change, with its own folder
+    └── archive/YYYY-MM-DD-<change-id>/
+```
 
-- [Modes, workspaces, and sessions](features/modes-workspaces-and-sessions.md)
-- [Agent runtime and teams](features/agent-runtime-and-teams.md)
-- [Workbench, files, and Side Chat](features/workbench-files-and-side-chat.md)
-- [Coding intelligence](features/coding-intelligence.md)
-- [Evo Agent Specs](features/evo-agent-specs.md)
-- [Git, reviews, and guarded edits](features/git-reviews-and-guarded-edits.md)
-- [Memory and Dream](features/memory-and-dream.md)
-- [Goals, workflows, and scheduler](features/automation.md)
-- [Models and providers](features/models-and-providers.md)
-- [Skills, tools, MCP, and plugins](features/tools-skills-mcp-and-plugins.md)
-- [Browser and WebBridge](features/browser-and-webbridge.md)
-- [Security and permissions](features/security-and-permissions.md)
-- [Observability and diagnostics](features/observability-and-diagnostics.md)
+This subtree is the ASDD catalogue. `specs/` is normative: when code and a
+capability spec disagree, the code is wrong until a change says otherwise.
+A spec changes only when a change is archived — never by hand.
 
-The in-app Help Center in `web/src/help/locales/` is the source for end-user UI
-walkthroughs and is localized in English, Vietnamese, and Japanese. The pages
-under `features/` describe implementation contracts and code ownership instead
-of duplicating every UI instruction.
+See [ASDD methodology](reference/asdd-methodology.md) for the lifecycle and
+[Agent Spec-Driven](features/agent-specs.md) for the product surface.
 
-`easd/` is the initialized EASD knowledge skeleton for this repository. Its
-presence does not relocate or supersede the current EvoFlux pages listed above;
-those remain authoritative until an explicit accepted change adopts them.
+## What does not belong here
 
-## Guides and project records
+ASDD setup never moves or copies existing documentation into `documents/asdd/`.
+Adoption is an explicit approved change.
 
-- `guides/` contains task-oriented operator guides.
-- `analysis/` contains dated audits and competitive/implementation analyses,
-  including the completed [EASD benchmark report](analysis/easd-benchmark-2026-08-24.md).
-- `research/` contains investigations and proposals, including the
-  [EASD repository-skill prior-art review](research/easd-skill-prior-art-2026-08-24.md).
-- `plans/` contains design plans, including plans for features that may have
-  changed after implementation.
-- `releases/` contains submission and release evidence.
-- `images/` contains documentation and README media.
-
-Files in `analysis/`, `research/`, `plans/`, and `releases/` are historical
-records. They may explain why a decision was made, but they do not override the
-current-state architecture and feature documents.
-
-## Documentation contract
-
-For a feature change, update all applicable layers:
-
-1. the feature page and feature catalogue row;
-2. the architecture page when a process, trust, storage, or concurrency
-   boundary changes;
-3. the API or configuration reference when a public contract changes;
-4. in-app Help when user-visible behavior changes;
-5. tests and code comments that link to the old contract.
-
-Use repository-relative Markdown links. Keep generated screenshots under
-`documents/images/`; do not create another documentation root.
+Do not store credentials, absolute machine paths or lock state anywhere under
+`documents/`. Contributor, build and release procedure stays wherever the
+repository already owns it — `CONTRIBUTING.md`, `AGENTS.md`, the makefile. Link
+to it; do not copy it here.

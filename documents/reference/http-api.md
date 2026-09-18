@@ -29,7 +29,7 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/diagnostics` | runtime/platform/path diagnostics | `diagnostics.py` |
 | `/api/team` | chat, sessions, files, terminal, projects and Coding workbench | `routes/team/` |
 | `/api/team/webbridge` | pairing, browser-panel chat, relay, bindings and Teach | `team/webbridge.py` |
-| `/api/easd` | Evo Agent Specs: specification revisions, missions, evidence, deviations and convergence | `easd.py` |
+| `/api/asdd` | Agent Spec-Driven: changes, capability specs, approvals, evidence and archive | `asdd.py` |
 | `/api/agents` | agent registry and editable/runtime configuration | `agents.py` |
 | `/api/skills` | Skill discovery, CRUD and runtime settings | `skills.py` |
 | `/api/mcp` | global/plugin server status and global MCP lifecycle | `mcp.py` |
@@ -100,108 +100,55 @@ The `/api/team` router includes:
 Use the OpenAPI document rather than copying request/response field definitions
 from this overview.
 
-## Evo Agent Specs (EASD)
+## Agent Spec-Driven (ASDD)
 
-Evo Agent Specs routes are Coding-scoped:
+Agent Spec-Driven routes are Coding-scoped, and every one of them identifies a change
+by its slug. None takes a content hash, a revision id or a session id.
 
-- `GET /api/easd/setup` returns per-repository initialization state for a
-  workspace or Coding Project. Repository state is `not_initialized`,
-  `upgrade_required`, `ready`, or `invalid`, with manifest/data/rules/skills
-  paths and the five installed skill names; no setup or bundle version is exposed;
-- `POST /api/easd/setup` initializes selected/all repositories or explicitly
-  repairs invalid setup. It installs Coding-only `easd-specify`, `easd-plan`,
-  `easd-implement`, `easd-review`, and `easd-verify` project skills under
-  `.evoflux/skills`. `data_directory` selects the safe repository-relative EASD
-  knowledge base (default `documents/easd`) containing accepted Specs and
-  explicitly adopted knowledge. Runtime Runs and templates live under ignored
-  `.evoflux/easd/.local/`. Legacy setups add the local policy without moving
-  existing project docs or Runs;
-  invalid setup requires `overwrite=true`;
-- `GET/POST /api/easd/setup/runtime-migration` previews and explicitly moves
-  legacy Git-visible Runs into ignored local runtime storage. The same confirmed
-  migration removes only byte-identical generated templates/placeholders;
-  customized files are preserved and previously tracked moves appear as Git
-  deletions for user review;
-- `GET/POST /api/easd/runs/{run_id}/publication` previews and explicitly writes
-  one compact Git-visible convergence record. Only converged Runs are eligible;
-  publication omits raw evidence/local paths, is idempotent, and never commits;
-- `POST /api/easd/generate` reads bounded authorized project context and returns
-  a non-persisted intended-outcome/Scope/Proof plus `direct|planned` flow proposal,
-  provenance/confidence, or clarifying questions. `intent.title` and
-  `intent.problem` are required; `intent.outcome` is optional and is drafted by
-  the model for `scope`/`both`. `target` may be `scope`, `proof`, or `both`;
-  cancellation is the HTTP request cancellation and never mutates a run;
-- `GET/POST /api/easd/runs` list/create runs for a workspace/project. New UI
-  clients send exactly one minimal `intent` (title, problem, optional outcome);
-  `specification` remains an exclusive compatibility input for importing an
-  already-authored full draft;
-- `GET /api/easd/runs/{id}` returns spec and plan revisions/active hashes,
-  computed AC matrix, missions, evidence, deviations, convergence report, and
-  an additive `action_rail`. The rail identifies the current phase and primary
-  action; every action includes a stable ID, label, `available|blocked` state,
-  and structured blocker messages with relevant criterion/mission/deviation
-  IDs or verification commands;
-- `GET /api/easd/runs/{id}/trace` returns projection version, repository
-  generation, stable artifact nodes, typed relationship edges, ordered bounded
-  repository events, current action gaps, and degraded-read diagnostics. It is
-  read-only and legacy Runs with minimal events still receive an artifact graph;
-- `GET /api/easd/runs/{id}/recovery` returns the safe current retry, observed
-  repository generation, reused identities, and preserved history. `POST` to
-  the same path requires action ID, bound Coding session, expected generation,
-  and idempotency key; stale generations return `409`. Redraft/Replan use their
-  existing transitions, while implementation/Review/Verify retries remain in
-  phase and append an ordered recovery event;
-- `GET /api/easd/runs/{id}/stream` is a Run-scoped SSE feed. `after_sequence`
-  replays only newer repository events before live delivery; `client_id`
-  participates in ephemeral presence. Events are `easd_event`,
-  `easd_presence`, `easd_resync_required`, diagnostics, and keepalive. Presence
-  is not durable and queue overflow requires query resync;
-- spec revision and `/plans` create/accept endpoints preserve separate immutable
-  hash-bound contracts; Spec acceptance also publishes an immutable
-  hash-identical common-catalogue revision, while a plan is valid only for its
-  exact accepted spec hash;
-- `POST /api/easd/runs/{id}/authoring/start` atomically binds persisted Intent
-  to an authorized idle Coding session without creating or approving a spec;
-- `POST /api/easd/runs/{id}/authoring/retry` is same-session and idempotent in
-  `authoring`, or explicitly moves `draft → authoring`. The existing draft is
-  retained until a successful newer submission supersedes it;
-- `POST /api/easd/runs/{id}/planning/start` moves an accepted planned-flow spec into typed
-  planning; agent submission moves it to `plan_review`, but only user plan
-  acceptance establishes `planned`;
-- `POST /api/easd/runs/{id}/planning/retry` is same-session and idempotent in
-  `planning`, or explicitly moves `plan_review → planning`. The prior Plan draft
-  remains durable until a successful replacement is persisted;
-- `POST /api/easd/runs/{id}/start` binds an authorized Coding chat and moves
-  eligible direct flow `accepted → active`; planned flow still requires the current
-  accepted Plan and moves `planned → active`;
-- `/review/start` requires terminal implementation missions and moves
-  `active → reviewing`; `/verification/start` requires terminal review missions,
-  passing review evidence, and runtime-independent evidence when required, then
-  moves `reviewing → verifying`;
-- evidence and deviation endpoints append accountable run state; callers may
-  add manual, review, or waiver evidence, while machine evidence is reserved
-  for runtime-generated CompletionContracts. Public review payloads cannot set
-  runtime reviewer identity or independence;
-- `POST /converge` accepts only `verifying` and returns either a repository-owned
-  durable report bound to the Spec and optional Plan hash, or structured `409`
-  gate reasons, including
-  `planned_verification_missing` when accepted Proof commands lack passing
-  machine evidence.
+- `GET /api/asdd/setup` returns per-repository installation state for a
+  workspace or Coding Project: `not_initialized`, `upgrade_required`, `ready` or
+  `invalid`, with the manifest, catalogue, rules and skills paths, the six
+  installed Skill names, and what is missing;
+- `POST /api/asdd/setup` installs or repairs. `data_directory` selects the
+  repository-relative catalogue (default `documents/asdd`). Repair needs
+  `overwrite=true` and never touches a change or a capability spec;
+- `GET /api/asdd/changes` lists open changes, archived entries and known
+  capabilities for one workspace. A change folder that cannot be read is omitted
+  and logged rather than failing the list;
+- `POST /api/asdd/changes` creates a change. The slug comes from `change_id` when
+  given, otherwise from the title; a collision against an open or archived change
+  is a `409`;
+- `GET /api/asdd/changes/{change_id}` returns the change, its action rail, and
+  its proposal, deltas, design, tasks and evidence as Markdown;
+- `POST /api/asdd/changes/{change_id}/approve/{artifact}` records a human
+  approval for `proposal`, `specs`, `design` or `tasks` and advances the status.
+  An approval the files do not support returns `409` with
+  `detail.code = asdd_action_blocked` and the blockers the rail already showed;
+- `POST /api/asdd/changes/{change_id}/autopilot` takes `{"enabled": bool}` and
+  writes `autopilot` into `proposal.md`. It is a property of the change, not of
+  a session, so any chat that opens the change afterwards inherits it. Turning
+  it off also clears any `hold`;
+- `POST /api/asdd/changes/{change_id}/actions/{action}` returns the prompt and
+  Skill that carry out one phase. It says nothing about where the work runs: the
+  client sends the prompt to whichever Coding chat is open. With autopilot on,
+  `action = autopilot_continue` resolves to whichever phase follows the gate the
+  change is standing at, and the prompt carries the autopilot protocol — write
+  `auto_approvals`, never `approvals`, and raise a `hold` instead of guessing;
+- `POST /api/asdd/changes/{change_id}/ready` and `/archive` mark a verified
+  change ready and fold its deltas into `specs/<capability>/spec.md`, moving the
+  folder to `changes/archive/YYYY-MM-DD-<change-id>/`. Both re-check every gate;
+- `POST /api/asdd/changes/{change_id}/evidence` appends one evidence page;
+- `DELETE /api/asdd/changes/{change_id}` removes an unarchived change folder;
+- `GET /api/asdd/specs` and `/api/asdd/specs/{capability}` read the capability
+  catalogue, parsed into requirements and scenarios.
 
-Run/revision create accepts optional bounded `authoring` metadata for generated
-drafts. It records generation ID/time, provider/model/usage, confidence,
-fingerprints, applied/edited sections, and hash-addressed sources; it does not
-change lifecycle state or imply user acceptance.
+There is no ASDD stream endpoint. Agents change a catalogue by writing files, so
+no request reaches the server to broadcast; clients poll `GET /api/asdd/changes`
+and `GET /api/asdd/changes/{change_id}` while a panel is open.
 
-Run creation before full scope initialization returns `409` with
-`detail.code = easd_setup_required` and the unready repository paths.
-
-`/api/trace` remains a hidden compatibility alias for clients created before
-the EASD rename. It is not emitted in OpenAPI and new integrations must use
-`/api/easd`. Legacy database/table/mission field names remain unchanged.
-
-See [EASD architecture](../architecture/evo-agent-specs.md) for trust,
-transaction, evidence, and state rules.
+See [Agent Spec-Driven architecture](../architecture/agent-specs.md) for the storage,
+trust and concurrency rules, and
+[ASDD methodology](asdd-methodology.md) for the normative lifecycle.
 
 ## Asynchronous chat contract
 

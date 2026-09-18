@@ -20,7 +20,7 @@ from loguru import logger
 from app.agent.hooks.base import BaseAgentHook
 from app.agent.sandbox import get_sandbox
 from app.agent.tools.builtin.shell import _scrubbed_env
-from app.services.trace_contracts import parse_verification_command
+from app.services.verification_commands import parse_verification_command
 from app.services.turn_changes import _parse_patch_ops
 
 #: Terminal control sequences. Probe detail is persisted into the YAML
@@ -82,7 +82,10 @@ class CompletionVerificationHook(BaseAgentHook):
 
     async def before_agent(self, ctx, state) -> None:
         state.metadata.setdefault("_verification_changed_files", set())
-        if "_easd_run_id" in state.metadata:
+        if "_asdd_change_ids" in state.metadata:
+            # A repository running ASDD gets a git baseline, so changes made by
+            # a delegated member or a script still count toward this turn's
+            # verification rather than only the edits this agent made by tool.
             state.metadata["_verification_git_baseline"] = await _git_baseline(
                 get_sandbox()
             )
@@ -129,46 +132,19 @@ class CompletionVerificationHook(BaseAgentHook):
             raw_paths.update(await _git_changes_since(get_sandbox(), baseline))
         planned_commands = tuple(
             str(command)
-            for command in state.metadata.get("_easd_verification_commands", [])
+            for command in state.metadata.get("_asdd_verification_commands", [])
             if isinstance(command, str) and command.strip()
         )
-        # The final EASD Verify phase is intentionally read-only. It still needs
-        # a machine CompletionContract bound to the current repository revision,
-        # even when this verifier did not mutate a file in its own turn.
-        verify_only = state.metadata.get("_easd_phase") == "verifying" and bool(
-            planned_commands
-        )
-        if not raw_paths and not verify_only:
+        if not raw_paths:
             return None
-        context_error = state.metadata.get("_easd_context_error")
-        if context_error:
-            return (
-                "EASD contract unavailable: workspace changes cannot be verified "
-                f"against the accepted Scope ({context_error}). Retry after the "
-                "local contract store is available."
-            )
 
         sandbox = get_sandbox()
         changed_files = tuple(sorted(str(path) for path in raw_paths))
         scope_paths, scope_targets = _scope_changes(
             sandbox,
             changed_files,
-            state.metadata.get("_easd_repository_roots"),
+            state.metadata.get("_asdd_repository_roots"),
         )
-        impact_targets = state.metadata.get("_easd_impact_targets")
-        outside = (
-            _outside_impact_targets(scope_targets, impact_targets)
-            if "_easd_impact_targets" in state.metadata
-            else []
-        )
-        if outside:
-            return (
-                "EASD scope violation: changed paths are outside the accepted "
-                "Impact targets: "
-                + ", ".join(outside)
-                + ". Record a deviation and ask the user to accept a revised "
-                "specification before completing."
-            )
         repository_revision = await _git_revision(sandbox.workspace_root)
         artifact_hash = _artifact_hash(
             sandbox.workspace_root,
@@ -662,45 +638,6 @@ def _file_fingerprint(path: Path) -> str:
         return "<missing>"
     except (IsADirectoryError, PermissionError, OSError) as exc:
         return f"<unreadable:{type(exc).__name__}>"
-
-
-def _outside_impact_targets(
-    changed_files: tuple[dict[str, str | None], ...], impact_targets: object
-) -> list[str]:
-    if not changed_files or not isinstance(impact_targets, list):
-        return []
-    accepted: list[tuple[str | None, str]] = []
-    for raw in cast(list[object], impact_targets):
-        if not isinstance(raw, dict):
-            continue
-        item = cast(dict[str, object], raw)
-        path = item.get("path")
-        repository = item.get("repository")
-        if isinstance(path, str):
-            accepted.append(
-                (
-                    repository if isinstance(repository, str) else None,
-                    Path(path).as_posix().strip("/"),
-                )
-            )
-    if not accepted:
-        return [
-            f"{item['repository']}:{item['path']}"
-            if item["repository"]
-            else str(item["path"])
-            for item in changed_files
-        ]
-    outside: list[str] = []
-    for changed in changed_files:
-        path = changed["path"] or ""
-        repository = changed["repository"]
-        if path.startswith("<outside>:") or not any(
-            (repository is None or accepted_repository == repository)
-            and (path == target or path.startswith(f"{target}/"))
-            for accepted_repository, target in accepted
-        ):
-            outside.append(f"{repository}:{path}" if repository else path)
-    return outside
 
 
 def _pytest_command_prefix(workspace: Path | None = None) -> list[str]:

@@ -6,6 +6,7 @@ import {
   nextBrowserSurfaceOrder,
   registerDirectBrowserSurface,
 } from './directBrowserAgentRegistry'
+import { claimBrowserTab, offerBrowserTab } from './browserTabHandoff'
 
 export interface DirectBrowserTab {
   id: string
@@ -41,6 +42,71 @@ export interface BrowserViewportOverride {
   height: number
 }
 
+export interface BrowserSitePermission {
+  name: string
+  state: 'granted' | 'denied' | 'prompt'
+}
+
+/** Asks the page what it has, in the page's own terms. */
+const SITE_PERMISSIONS_SCRIPT = `(async () => {
+  const names = ['geolocation', 'notifications', 'camera', 'microphone', 'clipboard-read']
+  const results = []
+  for (const name of names) {
+    try {
+      const status = await navigator.permissions.query({ name })
+      if (status && status.state !== 'prompt') results.push({ name, state: status.state })
+    } catch {
+      // A name this engine does not know is not a permission this site has.
+    }
+  }
+  return results
+})()`
+
+export interface BrowserDownload {
+  id: number
+  url: string
+  /** Where the engine is writing it, which is also where to reveal it. */
+  path: string
+  totalBytes: number
+  receivedBytes: number
+  state: 'started' | 'in_progress' | 'completed' | 'interrupted'
+}
+
+export interface BrowserPageError {
+  /** The address that failed, as the user asked for it. */
+  url: string
+  /** The engine's own description, when the error page carries one. */
+  detail: string | null
+}
+
+/**
+ * A failed navigation leaves the tab on the engine's error page, which lives
+ * under its own scheme. That scheme is the only thing that says "this did not
+ * load" — the document itself is perfectly valid.
+ */
+export function isBrowserErrorUrl(url: string | undefined | null): boolean {
+  return typeof url === 'string' && /^chrome-error:/i.test(url)
+}
+
+/** Reads the engine's own words off its error page, in one round trip. */
+const BROWSER_ERROR_DETAIL_SCRIPT = `(() => {
+  const detail = document.querySelector('#sub-frame-error-details')?.textContent?.trim()
+  const code = document.querySelector('.error-code')?.textContent?.trim()
+  return [detail, code && code !== detail ? code : null].filter(Boolean).join(' · ').slice(0, 200)
+})()`
+
+export type BrowserViewportPreset = 'mobile' | 'tablet' | 'desktop'
+
+/** The device sizes the panel's own picker offers, mirrored by `resize`. */
+export const BROWSER_VIEWPORT_PRESETS: Record<
+  BrowserViewportPreset,
+  { width: number; height: number }
+> = {
+  mobile: { width: 375, height: 812 },
+  tablet: { width: 768, height: 1024 },
+  desktop: { width: 1280, height: 800 },
+}
+
 interface UseDirectBrowserTabsOptions {
   sessionId: string
   instanceId?: string
@@ -51,6 +117,24 @@ interface UseDirectBrowserTabsOptions {
   initialUrl?: string
   singleTab?: boolean
   zoom: number
+  /**
+   * Bumped by a surface that moves without resizing — a preview being
+   * dragged, say. The native view is placed by reading the placeholder's
+   * rectangle, and nothing observes a box that only changes position.
+   */
+  syncKey?: number
+  /**
+   * Smallest scale fit-width may apply. A preview is deliberately tiny, so
+   * it accepts a scale the panel would refuse as unreadable.
+   */
+  minFitScale?: number
+  /**
+   * CSS width to lay pages out at while the panel is narrower than it —
+   * the page is rendered at this width and scaled down to fill the panel,
+   * so a docked browser shows a site's desktop layout instead of its
+   * tablet one. Null keeps the page at the panel's own width.
+   */
+  fitWidth?: number | null
   devtools: boolean
   profileMode: 'shared' | 'session' | 'incognito'
   onError: (message: string) => void
@@ -152,6 +236,9 @@ const withTimeout = async <T,>(
 /** Retries before the panel admits defeat and says so. */
 const CREATE_MAX_ATTEMPTS = 6
 const CREATE_RETRY_BASE_MS = 250
+/** Smallest fit-width scale worth applying — below it, text stops being readable. */
+export const MIN_FIT_SCALE = 0.6
+
 const BROWSER_DATA_DIRECTORY = 'browser-profile'
 const BROWSER_DATA_STORE_ID = [
   0x45, 0x76, 0x6f, 0x46, 0x6c, 0x75, 0x78, 0x42,
@@ -168,6 +255,9 @@ export function useDirectBrowserTabs({
   initialUrl = NEW_TAB_URL,
   singleTab = false,
   zoom,
+  fitWidth = null,
+  minFitScale = MIN_FIT_SCALE,
+  syncKey = 0,
   devtools,
   profileMode,
   onError,
@@ -194,6 +284,14 @@ export function useDirectBrowserTabs({
   const boundsRef = useRef<NativeBounds | null>(null)
   const viewportOverrideRef = useRef<BrowserViewportOverride | null>(null)
   const viewportScaleRef = useRef(1)
+  // Read inside callbacks that must not be rebuilt when the preference
+  // changes; the effects that need to re-run list `fitWidth` themselves.
+  const fitWidthRef = useRef(fitWidth)
+  fitWidthRef.current = fitWidth
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+  const minFitScaleRef = useRef(minFitScale)
+  minFitScaleRef.current = minFitScale
   const lastDialogKeyRef = useRef('')
   const seenPopupKeysRef = useRef(new Set<string>())
   const visibilityRef = useRef(new Map<string, boolean>())
@@ -235,6 +333,55 @@ export function useDirectBrowserTabs({
   const [pageDialog, setPageDialog] = useState<BrowserPageDialog | null>(null)
   const [pagePermission, setPagePermission] = useState<BrowserPermissionRequest | null>(null)
   const [viewportOverride, setViewportOverride] = useState<BrowserViewportOverride | null>(null)
+  // A native WebView paints when it is ready and says nothing until then, so
+  // a slow page looked identical to a frozen panel.
+  const [loading, setLoading] = useState(false)
+  const [downloads, setDownloads] = useState<BrowserDownload[]>([])
+  /** Which webviews are ours, so another panel's downloads stay its own. */
+  const labelsRef = useRef(new Set<string>())
+  const [pageError, setPageError] = useState<BrowserPageError | null>(null)
+  const pageErrorRef = useRef<BrowserPageError | null>(null)
+  /**
+   * A navigation we know about but the document cannot show yet.
+   *
+   * Until a load commits, the *previous* document is what a poll reads, and
+   * it reports itself complete — so the poll must not be allowed to call a
+   * load finished on its own while one of these is outstanding.
+   */
+  const navigationPendingRef = useRef(false)
+  const navigationPendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /**
+   * Whether the shell answers "is this page loading?" directly.
+   *
+   * Platforms that send navigation events answer `null` once, and are never
+   * asked again; the ones that do not are asked every poll.
+   */
+  const nativeLoadingRef = useRef(true)
+  const markNavigationPending = useCallback((pending: boolean) => {
+    navigationPendingRef.current = pending
+    if (navigationPendingTimerRef.current) {
+      clearTimeout(navigationPendingTimerRef.current)
+      navigationPendingTimerRef.current = null
+    }
+    if (pending) {
+      setLoading(true)
+      // A navigation that never lands — a server that accepts and then says
+      // nothing — must not leave the indicator spinning for the session.
+      navigationPendingTimerRef.current = setTimeout(() => {
+        navigationPendingRef.current = false
+        setLoading(false)
+      }, 45_000)
+    }
+  }, [])
+  // The engine's error page replaces the address that failed, so the only
+  // record of what the user actually asked for is the one we keep.
+  const requestedUrlRef = useRef(new Map<string, string>())
+  /** What to show for a tab: never the engine's internal error scheme. */
+  const displayUrlFor = useCallback((tabId: string, committed: string) => (
+    isBrowserErrorUrl(committed)
+      ? requestedUrlRef.current.get(tabId) ?? committed
+      : committed
+  ), [])
 
   activeIdRef.current = activeTabId
   visibleRef.current = visible
@@ -263,6 +410,9 @@ export function useDirectBrowserTabs({
           action: 'instrument',
           params: {},
         })
+        // The page owns the keyboard once it has focus, so the panel's own
+        // shortcuts only exist if the shell hands them back. Idempotent.
+        await invokeFor('app_browser_webview_bind_shortcuts', label).catch(() => {})
         return
       } catch (error) {
         lastError = error
@@ -358,9 +508,74 @@ export function useDirectBrowserTabs({
     return null
   }, [invokeFor, waitForDocumentNavigation])
 
+  /**
+   * Take over a WebView another surface let go of, rather than loading its
+   * address again into a new one. The page keeps everything a reload would
+   * cost: scroll position, form state, whatever it is signed into.
+   */
+  const adoptTab = useCallback(async (): Promise<DirectBrowserTab | null> => {
+    const offer = claimBrowserTab(sessionId, instanceId)
+    if (!offer) return null
+    // Hold the same guard a creation does, so a second call — React runs
+    // mount effects twice in development — cannot start building a WebView
+    // beside the one being adopted.
+    creatingRef.current = true
+    setCreating(true)
+    try {
+      const { Webview } = await import('@tauri-apps/api/webview')
+      const webview = await Webview.getByLabel(offer.label).catch(() => null)
+      // The page can be gone by now — the window closed, the surface that
+      // offered it crashed. Falling through creates a fresh one instead.
+      if (!webview) return null
+      const id = `${Date.now().toString(36)}-${counterRef.current++}`
+      webviewsRef.current.set(id, webview)
+      labelsRef.current.add(offer.label)
+      // Left marked hidden on purpose: the viewport sync only moves a view
+      // it believes is not already showing where it wants it, and this one
+      // is still sitting over the box it came from.
+      visibilityRef.current.set(id, false)
+      boundsRef.current = null
+      lastCreateErrorRef.current = null
+      const tab = { id, label: offer.label, url: offer.url }
+      tabsRef.current = [...tabsRef.current, tab]
+      setTabs(tabsRef.current)
+      activeIdRef.current = id
+      setActiveTabId(id)
+      return tab
+    } finally {
+      creatingRef.current = false
+      setCreating(false)
+    }
+  }, [instanceId, sessionId])
+
+  /**
+   * Stop managing a tab without closing its page, and offer it to the
+   * surface named by *claimant* — a workbench tab id.
+   */
+  const releaseTab = useCallback((id: string, claimant: string): boolean => {
+    const tab = tabsRef.current.find((item) => item.id === id)
+    const webview = webviewsRef.current.get(id)
+    if (!tab || !webview) return false
+    webviewsRef.current.delete(id)
+    visibilityRef.current.delete(id)
+    labelsRef.current.delete(tab.label)
+    requestedUrlRef.current.delete(id)
+    const remaining = tabsRef.current.filter((item) => item.id !== id)
+    tabsRef.current = remaining
+    setTabs(remaining)
+    if (activeIdRef.current === id) {
+      activeIdRef.current = remaining[0]?.id ?? null
+      setActiveTabId(remaining[0]?.id ?? null)
+    }
+    offerBrowserTab(sessionId, claimant, { label: tab.label, url: tab.url })
+    return true
+  }, [sessionId])
+
   const createTab = useCallback(async (initialUrl = NEW_TAB_URL) => {
     if (!supported || !enabled || creatingRef.current) return
     if (singleTab && tabsRef.current.length > 0) return tabsRef.current[0]
+    const adopted = await adoptTab()
+    if (adopted) return adopted
     const viewport = viewportRef.current
     // A WebView cannot be created without somewhere to put it. Returning
     // here used to be the end of the story: the auto-create effect only
@@ -479,6 +694,7 @@ export function useDirectBrowserTabs({
       }
       createStageRef.current = 'the WebView to be positioned'
       webviewsRef.current.set(id, webview)
+      labelsRef.current.add(label)
       if (!visibleRef.current) await webview.hide().catch(() => {})
       visibilityRef.current.set(id, visibleRef.current)
       boundsRef.current = null
@@ -514,7 +730,7 @@ export function useDirectBrowserTabs({
         setCreating(false)
       }
     }
-  }, [devtools, enabled, instanceId, onError, profileMode, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
+  }, [adoptTab, devtools, enabled, instanceId, onError, profileMode, sessionId, singleTab, supported, viewportRef, waitForPageReady, zoom])
 
   useEffect(() => {
     if (!supported || !enabled || tabs.length > 0 || creating) return
@@ -585,6 +801,13 @@ export function useDirectBrowserTabs({
 
   const navigate = useCallback(async (url: string) => {
     if (!activeTab) return
+    // Optimistic rather than poll-driven: the first poll after this is up to
+    // half a second away, and a click that shows nothing for half a second is
+    // the exact complaint a progress indicator exists to answer.
+    markNavigationPending(true)
+    pageErrorRef.current = null
+    setPageError(null)
+    requestedUrlRef.current.set(activeTab.id, url)
     try {
       const before = await invokeFor<BrowserRuntimeStatus>(
         'app_browser_webview_agent_action',
@@ -598,23 +821,32 @@ export function useDirectBrowserTabs({
         activeTab.url,
         before.documentId ?? null,
       )
-      tabsRef.current = tabsRef.current.map((tab) => tab.id === activeTab.id ? { ...tab, url: committedUrl } : tab)
+      const shownUrl = displayUrlFor(activeTab.id, committedUrl)
+      tabsRef.current = tabsRef.current.map((tab) => tab.id === activeTab.id ? { ...tab, url: shownUrl } : tab)
       setTabs(tabsRef.current)
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error))
+    } finally {
+      markNavigationPending(false)
+      setLoading(false)
     }
-  }, [activeTab, invokeFor, onError, waitForNavigation])
+  }, [activeTab, displayUrlFor, invokeFor, markNavigationPending, onError, waitForNavigation])
 
   const command = useCallback(async (
     action: 'back' | 'forward' | 'reload' | 'focus' | 'print' | 'devtools',
   ) => {
     if (!activeTab) return
+    if (action === 'back' || action === 'forward' || action === 'reload') {
+      markNavigationPending(true)
+      pageErrorRef.current = null
+      setPageError(null)
+    }
     try {
       await invokeFor('app_browser_webview_command', activeTab.label, { action })
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error))
     }
-  }, [activeTab, invokeFor, onError])
+  }, [activeTab, invokeFor, markNavigationPending, onError])
 
   const clearBrowsingData = useCallback(async () => {
     if (!activeTab) return
@@ -624,6 +856,52 @@ export function useDirectBrowserTabs({
       backwards: null,
     })
   }, [activeTab, invokeFor])
+
+  /**
+   * What the page itself says it has been granted.
+   *
+   * The engine keeps no list we can read, but the page can be asked — and
+   * its answer is the one that matters, because it is what the site sees.
+   */
+  const readSitePermissions = useCallback(async (): Promise<BrowserSitePermission[]> => {
+    const tab = tabsRef.current.find((item) => item.id === activeIdRef.current)
+    if (!tab) return []
+    const result = await invokeFor<unknown>(
+      'app_browser_webview_agent_action',
+      tab.label,
+      {
+        action: 'evaluate',
+        params: { script: SITE_PERMISSIONS_SCRIPT, await_promise: true },
+      },
+    ).catch(() => null)
+    if (!Array.isArray(result)) return []
+    return result.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return []
+      const { name, state } = entry as { name?: unknown; state?: unknown }
+      if (typeof name !== 'string' || typeof state !== 'string') return []
+      return [{ name, state: state as BrowserSitePermission['state'] }]
+    })
+  }, [invokeFor])
+
+  /**
+   * Device emulation from the panel's own chrome.
+   *
+   * Deliberately the agent's code path rather than a parallel one: what a
+   * person selects here and what an agent asks for have to mean the same
+   * thing, or a screenshot taken after either would be of a different page.
+   */
+  const setViewportPreset = useCallback(async (
+    preset: BrowserViewportPreset | null,
+  ) => {
+    try {
+      await agentHandlerRef.current(
+        preset ? 'resize' : 'reset_viewport',
+        preset ? { preset } : {},
+      )
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error))
+    }
+  }, [onError])
 
   const find = useCallback(async (query: string, backwards = false) => {
     if (!activeTab || !query) return
@@ -651,17 +929,17 @@ export function useDirectBrowserTabs({
     const webview = webviewsRef.current.get(tabId)
     if (!viewport || !webview) throw new Error('Desktop browser is unavailable')
     const rect = viewport.getBoundingClientRect()
-    const layout = browserViewportLayout({
+    const { layout, zoomFactor } = browserViewportPlan({
       x: rect.left,
       y: rect.top,
       width: rect.width,
       height: rect.height,
-    }, viewportOverrideRef.current)
+    }, viewportOverrideRef.current, fitWidthRef.current, zoom, minFitScaleRef.current)
     const { LogicalPosition, LogicalSize } = await import('@tauri-apps/api/dpi')
     await Promise.all([
       webview.setPosition(new LogicalPosition(layout.x, layout.y)),
       webview.setSize(new LogicalSize(layout.width, layout.height)),
-      webview.setZoom(viewportOverrideRef.current ? layout.scale : zoom / 100),
+      webview.setZoom(zoomFactor),
     ])
     viewportScaleRef.current = layout.scale
     boundsRef.current = {
@@ -754,6 +1032,12 @@ export function useDirectBrowserTabs({
     if (action === 'navigate') {
       const url = typeof params.url === 'string' ? params.url : ''
       if (!url) throw new Error('navigate requires a URL')
+      requestedUrlRef.current.set(tab.id, url)
+      if (tab.id === activeIdRef.current) {
+        markNavigationPending(true)
+        pageErrorRef.current = null
+        setPageError(null)
+      }
       const before = await invokeFor<BrowserRuntimeStatus>(
         'app_browser_webview_agent_action',
         tab.label,
@@ -767,13 +1051,14 @@ export function useDirectBrowserTabs({
         before.documentId ?? null,
       )
       tabsRef.current = tabsRef.current.map((item) => item.id === tab.id
-        ? { ...item, url: committedUrl }
+        ? { ...item, url: displayUrlFor(tab.id, committedUrl) }
         : item)
       setTabs(tabsRef.current)
       await invokeFor('app_browser_webview_agent_action', tab.label, {
         action: 'instrument',
         params: {},
       })
+      if (tab.id === activeIdRef.current) markNavigationPending(false)
       return `Navigated to ${url}`
     }
     if (action === 'back' || action === 'forward' || action === 'reload') {
@@ -831,20 +1116,23 @@ export function useDirectBrowserTabs({
       throw new Error(`Timeout waiting for browser condition${selector ? `: ${selector}` : ''}`)
     }
     if (action === 'resize') {
-      const presets: Record<string, [number, number]> = {
-        mobile: [375, 812],
-        tablet: [768, 1024],
-        desktop: [1280, 800],
-      }
-      const preset = typeof params.preset === 'string' ? presets[params.preset] : undefined
-      let width = preset?.[0] ?? Number(params.width)
-      let height = preset?.[1] ?? Number(params.height)
+      const preset = typeof params.preset === 'string'
+        ? BROWSER_VIEWPORT_PRESETS[params.preset as BrowserViewportPreset]
+        : undefined
+      let width = preset?.width ?? Number(params.width)
+      let height = preset?.height ?? Number(params.height)
       if (!Number.isFinite(width) || !Number.isFinite(height)) {
         throw new Error('resize requires a preset or width and height')
       }
-      const orientation = params.orientation === 'landscape' ? 'landscape' : 'portrait'
-      if (orientation === 'landscape' && height > width) [width, height] = [height, width]
-      if (orientation === 'portrait' && width > height) [width, height] = [height, width]
+      // Only rotate when an orientation was actually asked for. Treating the
+      // absence of one as "portrait" turned every landscape size on its side,
+      // so the desktop preset came back as an 800x1280 window.
+      const requested = params.orientation === 'landscape' || params.orientation === 'portrait'
+        ? params.orientation
+        : null
+      if (requested === 'landscape' && height > width) [width, height] = [height, width]
+      if (requested === 'portrait' && width > height) [width, height] = [height, width]
+      const orientation = requested ?? (width >= height ? 'landscape' : 'portrait')
       const presetMobile = params.preset === 'mobile' || params.preset === 'tablet'
       const mobile = typeof params.mobile === 'boolean' ? params.mobile : presetMobile
       const touch = typeof params.touch === 'boolean' ? params.touch : presetMobile
@@ -889,8 +1177,9 @@ export function useDirectBrowserTabs({
       if (!Number.isFinite(percent)) throw new Error('zoom requires a percent')
       const webview = webviewsRef.current.get(tab.id)
       if (!webview) throw new Error('Desktop browser is unavailable')
-      const scale = viewportOverrideRef.current ? viewportScaleRef.current : 1
-      await webview.setZoom((percent / 100) * scale)
+      // Already 1 when nothing is scaling the view, so this covers an agent
+      // device viewport and a fit-width one without asking which is in force.
+      await webview.setZoom((percent / 100) * viewportScaleRef.current)
       return `Set in-app browser zoom to ${Math.round(percent)}%`
     }
     if (action === 'print') {
@@ -1024,7 +1313,7 @@ export function useDirectBrowserTabs({
     throw new Error(
       `${action} is not supported by the direct desktop browser yet`,
     )
-  }, [applyAgentViewport, closeAll, closeTab, createTab, invokeFor, onRequestNewTab, selectTab, singleTab, waitForDocumentNavigation, waitForNavigation, waitForPossibleDocumentNavigation])
+  }, [applyAgentViewport, closeAll, closeTab, createTab, displayUrlFor, invokeFor, markNavigationPending, onRequestNewTab, selectTab, singleTab, waitForDocumentNavigation, waitForNavigation, waitForPossibleDocumentNavigation])
 
   agentHandlerRef.current = executeAgentCommand
 
@@ -1046,12 +1335,117 @@ export function useDirectBrowserTabs({
     )
   }, [enabled, instanceId, sessionId, supported])
 
+  // Load state belongs to the tab that was loading, not to the panel: leaving
+  // one mid-navigation must not spin a progress bar over the next one.
+  useEffect(() => {
+    setLoading(false)
+    pageErrorRef.current = null
+    setPageError(null)
+  }, [activeTabId])
+
+  // The pending-navigation guard arms a timer; a panel that closes first
+  // would otherwise leave it to fire into a component that is gone.
+  useEffect(() => () => {
+    if (navigationPendingTimerRef.current) {
+      clearTimeout(navigationPendingTimerRef.current)
+      navigationPendingTimerRef.current = null
+    }
+    navigationPendingRef.current = false
+  }, [])
+
+  /**
+   * Downloads the page started.
+   *
+   * Kept per panel rather than per tab: a file keeps downloading after the
+   * tab that asked for it is gone, and losing the record with the tab is how
+   * a download becomes a file you cannot find.
+   */
+  useEffect(() => {
+    if (!supported || !enabled) return
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event')
+      const stop = await listen<BrowserDownload & { label: string }>(
+        'browser-download',
+        (event) => {
+          const { label, ...download } = event.payload
+          if (!labelsRef.current.has(label)) return
+          setDownloads((current) => {
+            const next = current.filter((item) => item.id !== download.id)
+            next.unshift(download)
+            return next.slice(0, 20)
+          })
+        },
+      )
+      if (disposed) stop()
+      else unlisten = stop
+    })()
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [enabled, supported])
+
+  /**
+   * The shell's own navigation events, where the platform provides them.
+   *
+   * Polling the document only sees a load once it has committed: while the
+   * engine is waiting for a slow server the old page is still there, still
+   * reporting "complete". These events cover that wait; the poll remains the
+   * fallback for the platforms that do not send them.
+   */
+  useEffect(() => {
+    if (!supported || !activeTab) return
+    const label = activeTab.label
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void (async () => {
+      const { listen } = await import('@tauri-apps/api/event')
+      const stop = await listen<{ label: string; loading: boolean }>(
+        'browser-navigation',
+        (event) => {
+          if (event.payload.label !== label) return
+          markNavigationPending(event.payload.loading)
+          if (event.payload.loading) {
+            pageErrorRef.current = null
+            setPageError(null)
+          } else {
+            setLoading(false)
+          }
+        },
+      )
+      if (disposed) stop()
+      else unlisten = stop
+    })()
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
+  }, [activeTab, markNavigationPending, supported])
+
+  // Zoom and fit-width both change only the zoom factor, never the bounds, so
+  // the geometry synchronizer below sees nothing to do — this is where those
+  // two settings actually reach the view.
   useEffect(() => {
     const webview = webviewsRef.current.get(activeTabId ?? '')
-    const scale = viewportOverrideRef.current ? viewportScaleRef.current : 1
-    const effectiveZoom = viewportOverrideRef.current ? scale : zoom / 100
-    if (webview) void webview.setZoom(effectiveZoom).catch(() => {})
-  }, [activeTabId, zoom])
+    if (!webview) return
+    const element = viewportRef.current
+    const rect = element?.getBoundingClientRect()
+    const container = rect
+      ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+      : boundsRef.current
+    if (!container) return
+    const { layout, zoomFactor } = browserViewportPlan(
+      container,
+      viewportOverrideRef.current,
+      fitWidth,
+      zoom,
+      minFitScaleRef.current,
+    )
+    viewportScaleRef.current = layout.scale
+    void webview.setZoom(zoomFactor).catch(() => {})
+  }, [activeTabId, fitWidth, viewportRef, zoom])
 
   useEffect(() => {
     if (!supported || !activeTab || !visible) return
@@ -1061,7 +1455,7 @@ export function useDirectBrowserTabs({
       if (disposed || polling || pageDialog || pagePermission) return
       polling = true
       try {
-        const [dialogs, popups, permissions] = await Promise.all([
+        const [dialogs, popups, permissions, status] = await Promise.all([
           invokeFor<BrowserPageDialog[]>(
             'app_browser_webview_agent_action',
             activeTab.label,
@@ -1077,7 +1471,51 @@ export function useDirectBrowserTabs({
             activeTab.label,
             { action: 'permission_requests', params: {} },
           ),
+          invokeFor<BrowserRuntimeStatus>(
+            'app_browser_webview_agent_action',
+            activeTab.label,
+            { action: 'status', params: {} },
+          ),
         ])
+        // A page the engine could not load is a document like any other, so
+        // nothing reports it as a failure — the tab just ends up on the
+        // engine's own error page, under its own scheme.
+        if (isBrowserErrorUrl(status?.url)) {
+          if (!pageErrorRef.current) {
+            const detail = await invokeFor<unknown>(
+              'app_browser_webview_agent_action',
+              activeTab.label,
+              { action: 'evaluate', params: { script: BROWSER_ERROR_DETAIL_SCRIPT } },
+            ).catch(() => null)
+            const next = {
+              url: requestedUrlRef.current.get(activeTab.id) ?? '',
+              detail: typeof detail === 'string' && detail ? detail : null,
+            }
+            pageErrorRef.current = next
+            setPageError(next)
+          }
+          navigationPendingRef.current = false
+          setLoading(false)
+        } else {
+          if (pageErrorRef.current) {
+            pageErrorRef.current = null
+            setPageError(null)
+          }
+          // Only the document can prove a load *started*; only we know one is
+          // still outstanding, so the poll may never clear that on its own.
+          let isLoading = status?.readyState === 'loading' || navigationPendingRef.current
+          // Platforms without navigation events can still be asked directly,
+          // and their answer covers the wait the document cannot see.
+          if (nativeLoadingRef.current) {
+            const native = await invokeFor<boolean | null>(
+              'app_browser_webview_is_loading',
+              activeTab.label,
+            ).catch(() => null)
+            if (typeof native === 'boolean') isLoading = native || navigationPendingRef.current
+            else nativeLoadingRef.current = false
+          }
+          setLoading(isLoading)
+        }
         for (const popup of Array.isArray(popups) ? popups : []) {
           const popupKey = `${activeTab.label}:${popup.id}:${popup.ts}`
           if (seenPopupKeysRef.current.has(popupKey)) continue
@@ -1158,12 +1596,12 @@ export function useDirectBrowserTabs({
         const rect = viewport.getBoundingClientRect()
         const cssVisible = getComputedStyle(viewport).visibility !== 'hidden'
         const shouldShow = visible && cssVisible && rect.width >= 2 && rect.height >= 2
-        const layout = browserViewportLayout({
+        const { layout, zoomFactor } = browserViewportPlan({
           x: rect.left,
           y: rect.top,
           width: rect.width,
           height: rect.height,
-        }, viewportOverrideRef.current)
+        }, viewportOverrideRef.current, fitWidthRef.current, zoom, minFitScaleRef.current)
         viewportScaleRef.current = layout.scale
         const bounds = {
           x: layout.x,
@@ -1182,7 +1620,7 @@ export function useDirectBrowserTabs({
             await Promise.all([
               webview.setPosition(new LogicalPosition(bounds.x, bounds.y)),
               webview.setSize(new LogicalSize(bounds.width, bounds.height)),
-              webview.setZoom(viewportOverrideRef.current ? layout.scale : zoom / 100),
+              webview.setZoom(zoomFactor),
             ])
           }
           if (visibilityRef.current.get(id) !== show) {
@@ -1235,9 +1673,11 @@ export function useDirectBrowserTabs({
     // `viewportOverride` for a device-size emulation.
   }, [
     activeTabId,
+    fitWidth,
     pageDialog,
     pagePermission,
     supported,
+    syncKey,
     tabs,
     viewportOverride,
     viewportRef,
@@ -1252,7 +1692,13 @@ export function useDirectBrowserTabs({
     if (!supported || !activeTab || !visible) return
     const timer = window.setInterval(() => {
       void invokeFor<string>('app_browser_webview_url', activeTab.label)
-        .then((url) => {
+        .then((reported) => {
+          // Keep the address someone typed in the address bar. The engine
+          // replaces it with its own error scheme, which is not a page anyone
+          // asked for and not something they can edit and retry.
+          const url = isBrowserErrorUrl(reported)
+            ? requestedUrlRef.current.get(activeTab.id) ?? reported
+            : reported
           setTabs((current) => current.map((tab) => tab.id === activeTab.id && tab.url !== url
             ? { ...tab, url }
             : tab))
@@ -1296,8 +1742,15 @@ export function useDirectBrowserTabs({
     pagePermission,
     resolvePagePermission,
     viewportOverride,
+    setViewportPreset,
+    readSitePermissions,
+    loading,
+    downloads,
+    clearDownloads: () => setDownloads([]),
+    pageError,
     dismissPageDialog: () => setPageDialog(null),
     createTab,
+    releaseTab,
     selectTab,
     closeTab,
     navigate,
@@ -1305,6 +1758,76 @@ export function useDirectBrowserTabs({
     find,
     clearBrowsingData,
     closeAll,
+  }
+}
+
+/**
+ * The viewport a narrow panel should pretend to be.
+ *
+ * A docked browser is routinely 600–900px wide, which is a tablet to every
+ * responsive site — so what the user verifies is not the layout they ship.
+ * Laying the page out at ``targetWidth`` and scaling the whole view down to
+ * the panel's width restores the desktop layout at a readable-if-small size.
+ *
+ * The height is derived from the same scale rather than fixed, so the scaled
+ * view covers the panel exactly: no letterboxing, and no page area hidden
+ * outside the panel.
+ */
+export function browserFitOverride(
+  container: Pick<NativeBounds, 'width' | 'height'>,
+  targetWidth: number | null,
+  minScale: number = MIN_FIT_SCALE,
+): BrowserViewportOverride | null {
+  if (!targetWidth || !Number.isFinite(targetWidth) || targetWidth <= 0) return null
+  const width = Math.max(1, container.width)
+  const height = Math.max(1, container.height)
+  // Wide enough already — a real 1:1 viewport beats a scaled one.
+  if (width >= targetWidth) return null
+  const scale = width / targetWidth
+  // Past this the desktop layout is technically correct and practically
+  // unreadable, so a genuinely narrow panel keeps the layout it earns — a
+  // preview, which is for watching rather than reading, sets this lower.
+  if (scale < minScale) return null
+  return {
+    width: Math.round(targetWidth),
+    height: Math.max(1, Math.round(height / scale)),
+  }
+}
+
+export interface BrowserViewportPlan {
+  layout: BrowserViewportLayout
+  /** The viewport actually in force — an agent's, ours, or none. */
+  override: BrowserViewportOverride | null
+  /** Zoom factor (1 = 100%) that realizes `layout` in the native view. */
+  zoomFactor: number
+}
+
+/**
+ * Resolve the one native geometry both callers must agree on: the animation
+ * -frame synchronizer and the agent's own viewport commands. They used to
+ * compute it separately, which is how the two could disagree about scale.
+ */
+export function browserViewportPlan(
+  container: NativeBounds,
+  agentOverride: BrowserViewportOverride | null,
+  fitWidth: number | null,
+  zoomPercent: number,
+  minFitScale: number = MIN_FIT_SCALE,
+): BrowserViewportPlan {
+  const override = agentOverride ?? browserFitOverride(container, fitWidth, minFitScale)
+  const layout = browserViewportLayout(container, override)
+  const zoomFraction = zoomPercent / 100
+  return {
+    layout,
+    override,
+    // An agent's device viewport *is* an emulation: its scale owns the zoom,
+    // and a user zoom on top would silently change the width being tested.
+    // Fit-width is our own framing, so the zoom control still applies to it.
+    zoomFactor: agentOverride
+      ? layout.scale
+      : override
+        ? layout.scale * zoomFraction
+        : zoomFraction,
   }
 }
 

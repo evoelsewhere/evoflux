@@ -9,7 +9,7 @@ mod workspace;
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -48,6 +48,9 @@ struct AppState {
     tray_status: Arc<Mutex<Option<MenuItem<Wry>>>>,
     tray_session: Arc<Mutex<Option<MenuItem<Wry>>>>,
     active_window_label: Arc<Mutex<String>>,
+    /// Browser webviews whose keyboard shortcuts are already forwarded.
+    /// Registering twice would deliver every shortcut twice.
+    browser_shortcut_labels: Arc<Mutex<HashSet<String>>>,
     /// Current webview zoom factor, mutated by the View > Zoom menu
     /// items. Session-only — not persisted across restarts.
     zoom: Arc<Mutex<f64>>,
@@ -207,6 +210,15 @@ const TRAY_SESSION_MAX_LEN: usize = 60;
 /// Delay automatic checks until the main window and local backend have had
 /// time to finish their first paint/startup work.
 const AUTOMATIC_UPDATE_CHECK_DELAY: Duration = Duration::from_secs(8);
+
+/// Give up on a download that has stopped arriving.
+///
+/// A stalled GitHub connection used to leave the dialog waiting forever with
+/// nothing to read and no way out — the modal disables its own dismissal
+/// while an install runs. This is deliberately generous: it is a stall
+/// detector, not a speed limit, and it resets on every byte received.
+const UPDATE_DOWNLOAD_STALL_LIMIT: Duration = Duration::from_secs(90);
+const UPDATE_STALL_POLL: Duration = Duration::from_secs(5);
 
 /// Apply platform-specific window chrome.
 ///
@@ -1405,6 +1417,511 @@ async fn app_browser_webview_command(
         _ => return Err(format!("Unsupported browser command: {action}")),
     }
     .map_err(|error| format!("Browser command failed: {error}"))
+}
+
+/// Browser chrome shortcuts, and what the app should do with each.
+///
+/// A child WebView owns the keyboard while a page has focus: it consumes
+/// these combinations and never lets them reach the window, so the panel's
+/// own handlers — and the app's menu accelerators — simply never ran while
+/// someone was reading a page. The platform has to hand them back.
+#[cfg(target_os = "windows")]
+fn browser_shortcut_for(virtual_key: u32, ctrl: bool, shift: bool, alt: bool) -> Option<&'static str> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        VK_F, VK_L, VK_LEFT, VK_R, VK_RETURN, VK_RIGHT, VK_T, VK_W,
+    };
+
+    if alt {
+        return match virtual_key {
+            key if key == VK_LEFT.0 as u32 => Some("back"),
+            key if key == VK_RIGHT.0 as u32 => Some("forward"),
+            _ => None,
+        };
+    }
+    if !ctrl {
+        return None;
+    }
+    match virtual_key {
+        key if key == VK_L.0 as u32 && !shift => Some("address-bar"),
+        key if key == VK_F.0 as u32 && !shift => Some("find"),
+        key if key == VK_T.0 as u32 && !shift => Some("new-tab"),
+        key if key == VK_W.0 as u32 && !shift => Some("close-tab"),
+        key if key == VK_R.0 as u32 && !shift => Some("reload"),
+        key if key == VK_RETURN.0 as u32 && shift => Some("toggle-maximized"),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Serialize)]
+struct BrowserShortcutEvent {
+    label: String,
+    shortcut: String,
+}
+
+#[derive(Clone, Serialize)]
+struct BrowserNavigationEvent {
+    label: String,
+    loading: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BrowserDownloadEvent {
+    label: String,
+    id: u64,
+    url: String,
+    path: String,
+    total_bytes: i64,
+    received_bytes: i64,
+    /// "started" | "in_progress" | "completed" | "interrupted"
+    state: String,
+}
+
+/// The browser views this process knows about, by native pointer.
+///
+/// macOS has no per-webview accelerator event: keys are intercepted for the
+/// whole application, so the handler has to work out whether the key was
+/// pressed inside one of our pages before it may claim it.
+#[cfg(target_os = "macos")]
+static BROWSER_NATIVE_VIEWS: std::sync::Mutex<Vec<(usize, String)>> =
+    std::sync::Mutex::new(Vec::new());
+
+#[cfg(target_os = "macos")]
+static BROWSER_KEY_MONITOR: AtomicBool = AtomicBool::new(false);
+
+/// Which of our pages the key window's first responder sits inside.
+#[cfg(target_os = "macos")]
+fn focused_browser_view_label(mtm: objc2_foundation::MainThreadMarker) -> Option<String> {
+    use objc2::rc::Retained;
+    use objc2_app_kit::{NSApplication, NSView};
+
+    let app = NSApplication::sharedApplication(mtm);
+    let window = app.keyWindow()?;
+    let responder = window.firstResponder()?;
+    let mut view: Option<Retained<NSView>> = responder.downcast::<NSView>().ok();
+    let known = BROWSER_NATIVE_VIEWS.lock().ok()?;
+    while let Some(current) = view {
+        let address = Retained::as_ptr(&current) as usize;
+        if let Some((_, label)) = known.iter().find(|(pointer, _)| *pointer == address) {
+            return Some(label.clone());
+        }
+        view = unsafe { current.superview() };
+    }
+    None
+}
+
+/// Install the one application-wide key monitor, the first time a browser
+/// page asks for its shortcuts back.
+#[cfg(target_os = "macos")]
+fn install_browser_key_monitor(app: AppHandle, mtm: objc2_foundation::MainThreadMarker) {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSEvent, NSEventMask, NSEventModifierFlags};
+    use std::ptr::NonNull;
+
+    if BROWSER_KEY_MONITOR.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let handler = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
+        let event: &NSEvent = unsafe { event.as_ref() };
+        let pass_through = || (event as *const NSEvent).cast_mut();
+
+        let flags = event.modifierFlags();
+        let Some(characters) = event.charactersIgnoringModifiers() else {
+            return pass_through();
+        };
+        let Some(shortcut) = browser_shortcut_for_key(
+            &characters.to_string().to_lowercase(),
+            flags.contains(NSEventModifierFlags::Command),
+            flags.contains(NSEventModifierFlags::Shift),
+            flags.contains(NSEventModifierFlags::Option),
+        ) else {
+            return pass_through();
+        };
+        let Some(label) = focused_browser_view_label(mtm) else {
+            return pass_through();
+        };
+        // A view that outlived its webview would otherwise keep claiming keys
+        // for a page that no longer exists.
+        if app.get_webview(&label).is_none() {
+            if let Ok(mut views) = BROWSER_NATIVE_VIEWS.lock() {
+                views.retain(|(_, known)| known != &label);
+            }
+            return pass_through();
+        }
+        let _ = app.emit(
+            "browser-shortcut",
+            BrowserShortcutEvent {
+                label,
+                shortcut: shortcut.to_string(),
+            },
+        );
+        // Claimed: neither the page nor the app document sees this key.
+        std::ptr::null_mut()
+    });
+    let _monitor = unsafe {
+        NSEvent::addLocalMonitorForEventsMatchingMask_handler(NSEventMask::KeyDown, &handler)
+    };
+    // The monitor is deliberately never removed: it lives as long as the app,
+    // like the browser panel's right to its own shortcuts.
+    std::mem::forget(_monitor);
+}
+
+/// The same shortcut table as Windows, keyed by what the key produces rather
+/// than by a virtual-key code.
+#[cfg(target_os = "macos")]
+fn browser_shortcut_for_key(
+    key: &str,
+    command: bool,
+    shift: bool,
+    option: bool,
+) -> Option<&'static str> {
+    // Cmd+[ / Cmd+] are the platform's own history shortcuts; Option+arrow is
+    // what a Windows user's muscle memory reaches for. Both are cheap to keep.
+    if command {
+        return match key {
+            "l" if !shift => Some("address-bar"),
+            "f" if !shift => Some("find"),
+            "t" if !shift => Some("new-tab"),
+            "w" if !shift => Some("close-tab"),
+            "r" if !shift => Some("reload"),
+            "[" if !shift => Some("back"),
+            "]" if !shift => Some("forward"),
+            "\r" if shift => Some("toggle-maximized"),
+            _ => None,
+        };
+    }
+    if option {
+        return match key {
+            // NSLeftArrowFunctionKey / NSRightArrowFunctionKey
+            "\u{f702}" => Some("back"),
+            "\u{f703}" => Some("forward"),
+            _ => None,
+        };
+    }
+    None
+}
+
+/// Downloads are identified by the panel, not by the engine: the engine's
+/// operation object is a COM pointer, which is not something an event payload
+/// can carry to a React list.
+#[cfg(target_os = "windows")]
+fn next_browser_download_id() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
+
+/// Read one of WebView2's out-parameter strings and release it.
+#[cfg(target_os = "windows")]
+fn read_webview2_string(
+    read: impl FnOnce(*mut windows::core::PWSTR) -> windows::core::Result<()>,
+) -> String {
+    use windows::Win32::System::Com::CoTaskMemFree;
+
+    let mut value = windows::core::PWSTR::null();
+    if read(&mut value).is_err() || value.is_null() {
+        return String::new();
+    }
+    let text = unsafe { value.to_string() }.unwrap_or_default();
+    unsafe { CoTaskMemFree(Some(value.as_ptr() as *const _)) };
+    text
+}
+
+/// Forward browser chrome shortcuts pressed inside `label` back to the app UI.
+///
+/// Idempotent: the frontend calls it whenever it (re)instruments a tab, and a
+/// second registration would deliver every key twice.
+#[tauri::command]
+async fn app_browser_webview_bind_shortcuts(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+    label: String,
+) -> Result<(), String> {
+    {
+        // Read-only here on purpose. Marking it bound before the registration
+        // succeeds means a failure is permanent: the retry sees the label
+        // already present and returns without ever attaching a handler.
+        let bound = state.browser_shortcut_labels.lock().await;
+        if bound.contains(&label) {
+            return Ok(());
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use webview2_com::{
+            AcceleratorKeyPressedEventHandler, DownloadStartingEventHandler,
+            NavigationCompletedEventHandler, NavigationStartingEventHandler,
+            StateChangedEventHandler,
+        };
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            ICoreWebView2_4, COREWEBVIEW2_DOWNLOAD_STATE,
+            COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED, COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED,
+            COREWEBVIEW2_KEY_EVENT_KIND, COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN,
+        };
+        use windows::core::Interface;
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT,
+        };
+
+        let webview = app_browser_webview(&app, &label)?;
+        let handler_app = app.clone();
+        let handler_label = label.clone();
+        // One clone per handler: each is moved into a callback that outlives
+        // this call, and the caller still needs the label afterwards.
+        let event_app = app.clone();
+        let event_label = label.clone();
+        webview
+            .with_webview(move |platform| {
+                let controller = platform.controller();
+                let mut token = 0;
+                let handler = AcceleratorKeyPressedEventHandler::create(Box::new(
+                    move |_sender, args| {
+                        let Some(args) = args else { return Ok(()) };
+                        let mut kind = COREWEBVIEW2_KEY_EVENT_KIND::default();
+                        if unsafe { args.KeyEventKind(&mut kind) }.is_err()
+                            || kind != COREWEBVIEW2_KEY_EVENT_KIND_KEY_DOWN
+                        {
+                            return Ok(());
+                        }
+                        let mut virtual_key = 0u32;
+                        if unsafe { args.VirtualKey(&mut virtual_key) }.is_err() {
+                            return Ok(());
+                        }
+                        // The high bit is "currently down"; the low bit is the
+                        // toggle state, which would make Caps Lock look like Ctrl.
+                        let down = |key| unsafe { GetKeyState(key) } < 0;
+                        let Some(shortcut) = browser_shortcut_for(
+                            virtual_key,
+                            down(VK_CONTROL.0 as i32),
+                            down(VK_SHIFT.0 as i32),
+                            down(VK_MENU.0 as i32),
+                        ) else {
+                            return Ok(());
+                        };
+                        // Claim it so the page does not also act on it — a
+                        // browser owns these combinations, not the site.
+                        let _ = unsafe { args.SetHandled(true) };
+                        let _ = handler_app.emit(
+                            "browser-shortcut",
+                            BrowserShortcutEvent {
+                                label: handler_label.clone(),
+                                shortcut: shortcut.to_string(),
+                            },
+                        );
+                        Ok(())
+                    },
+                ));
+                let _ = unsafe { controller.add_AcceleratorKeyPressed(&handler, &mut token) };
+
+                // Load state, from the only place that knows it. Polling the
+                // document cannot see a navigation that has not committed yet
+                // — the previous page is still there, still "complete" — which
+                // is exactly the wait a progress indicator is for.
+                let Ok(core) = (unsafe { controller.CoreWebView2() }) else {
+                    return;
+                };
+                let starting_app = event_app.clone();
+                let starting_label = event_label.clone();
+                let mut starting_token = 0i64;
+                let starting = NavigationStartingEventHandler::create(Box::new(
+                    move |_sender, _args| {
+                        let _ = starting_app.emit(
+                            "browser-navigation",
+                            BrowserNavigationEvent {
+                                label: starting_label.clone(),
+                                loading: true,
+                            },
+                        );
+                        Ok(())
+                    },
+                ));
+                let _ = unsafe { core.add_NavigationStarting(&starting, &mut starting_token) };
+
+                let completed_app = event_app.clone();
+                let completed_label = event_label.clone();
+                let mut completed_token = 0i64;
+                let completed = NavigationCompletedEventHandler::create(Box::new(
+                    move |_sender, _args| {
+                        let _ = completed_app.emit(
+                            "browser-navigation",
+                            BrowserNavigationEvent {
+                                label: completed_label.clone(),
+                                loading: false,
+                            },
+                        );
+                        Ok(())
+                    },
+                ));
+                let _ = unsafe { core.add_NavigationCompleted(&completed, &mut completed_token) };
+
+                // Downloads. The engine's own download flyout is drawn inside
+                // the page area of a webview that has no chrome of its own, so
+                // it lands on top of the site with no way to reach it later.
+                // Claiming the event replaces it with the panel's own list.
+                if let Ok(core4) = core.cast::<ICoreWebView2_4>() {
+                    let download_app = event_app.clone();
+                    let download_label = event_label.clone();
+                    let mut download_token = 0i64;
+                    let downloads = DownloadStartingEventHandler::create(Box::new(
+                        move |_sender, args| {
+                            let Some(args) = args else { return Ok(()) };
+                            let Ok(operation) = (unsafe { args.DownloadOperation() }) else {
+                                return Ok(());
+                            };
+                            let id = next_browser_download_id();
+                            let url = read_webview2_string(|value| unsafe {
+                                operation.Uri(value)
+                            });
+                            let path = read_webview2_string(|value| unsafe {
+                                operation.ResultFilePath(value)
+                            });
+                            let mut total = 0i64;
+                            let _ = unsafe { operation.TotalBytesToReceive(&mut total) };
+                            let _ = unsafe { args.SetHandled(true) };
+                            let _ = download_app.emit(
+                                "browser-download",
+                                BrowserDownloadEvent {
+                                    label: download_label.clone(),
+                                    id,
+                                    url: url.clone(),
+                                    path: path.clone(),
+                                    total_bytes: total,
+                                    received_bytes: 0,
+                                    state: "started".to_string(),
+                                },
+                            );
+
+                            let state_app = download_app.clone();
+                            let state_label = download_label.clone();
+                            let state_url = url.clone();
+                            let state_path = path.clone();
+                            let state_operation = operation.clone();
+                            let mut state_token = 0i64;
+                            let changed = StateChangedEventHandler::create(Box::new(
+                                move |_sender, _args| {
+                                    let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
+                                    let _ = unsafe { state_operation.State(&mut state) };
+                                    let mut received = 0i64;
+                                    let _ = unsafe {
+                                        state_operation.BytesReceived(&mut received)
+                                    };
+                                    // The engine can rename around a clash
+                                    // after the download starts, and the old
+                                    // path would reveal nothing.
+                                    let current_path = read_webview2_string(|value| unsafe {
+                                        state_operation.ResultFilePath(value)
+                                    });
+                                    let path = if current_path.is_empty() {
+                                        state_path.clone()
+                                    } else {
+                                        current_path
+                                    };
+                                    let name = match state {
+                                        COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED => "completed",
+                                        COREWEBVIEW2_DOWNLOAD_STATE_INTERRUPTED => "interrupted",
+                                        _ => "in_progress",
+                                    };
+                                    let _ = state_app.emit(
+                                        "browser-download",
+                                        BrowserDownloadEvent {
+                                            label: state_label.clone(),
+                                            id,
+                                            url: state_url.clone(),
+                                            path,
+                                            total_bytes: total,
+                                            received_bytes: received,
+                                            state: name.to_string(),
+                                        },
+                                    );
+                                    Ok(())
+                                },
+                            ));
+                            let _ = unsafe {
+                                operation.add_StateChanged(&changed, &mut state_token)
+                            };
+                            Ok(())
+                        },
+                    ));
+                    let _ = unsafe { core4.add_DownloadStarting(&downloads, &mut download_token) };
+                }
+            })
+            .map_err(|error| format!("Could not bind browser shortcuts: {error}"))?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let webview = app_browser_webview(&app, &label)?;
+        let handler_app = app.clone();
+        let handler_label = label.clone();
+        webview
+            .with_webview(move |platform| {
+                let Some(mtm) = objc2_foundation::MainThreadMarker::new() else {
+                    return;
+                };
+                let view = platform.inner() as usize;
+                if let Ok(mut views) = BROWSER_NATIVE_VIEWS.lock() {
+                    views.retain(|(pointer, _)| *pointer != view);
+                    views.push((view, handler_label.clone()));
+                }
+                install_browser_key_monitor(handler_app.clone(), mtm);
+            })
+            .map_err(|error| format!("Could not bind browser shortcuts: {error}"))?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // No platform hook here yet: the panel's shortcuts only work while
+        // the app's own UI has focus, and load state comes from polling.
+        let _ = &app;
+    }
+    {
+        let mut bound = state.browser_shortcut_labels.lock().await;
+        bound.insert(label.clone());
+    }
+    Ok(())
+}
+
+/// Whether the engine still has a navigation in flight.
+///
+/// Windows reports this through events; macOS has no equivalent we subscribe
+/// to, so the panel asks — which is still better than the document poll,
+/// because a load that has not committed leaves the previous document in
+/// place, reporting itself complete. `None` means "this platform answers with
+/// events; stop asking".
+#[tauri::command]
+async fn app_browser_webview_is_loading(
+    app: AppHandle,
+    label: String,
+) -> Result<Option<bool>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_web_kit::WKWebView;
+
+        let webview = app_browser_webview(&app, &label)?;
+        let (sender, receiver) = oneshot::channel();
+        let sender = Arc::new(std::sync::Mutex::new(Some(sender)));
+        webview
+            .with_webview(move |platform| {
+                let loading = unsafe {
+                    let wk_webview: &WKWebView = &*platform.inner().cast();
+                    wk_webview.isLoading()
+                };
+                if let Ok(mut guard) = sender.lock() {
+                    if let Some(sender) = guard.take() {
+                        let _ = sender.send(loading);
+                    }
+                }
+            })
+            .map_err(|error| format!("Could not read the browser load state: {error}"))?;
+        let loading = tokio::time::timeout(Duration::from_secs(5), receiver)
+            .await
+            .map_err(|_| "Timed out reading the browser load state".to_string())?
+            .map_err(|_| "Browser load state channel closed".to_string())?;
+        return Ok(Some(loading));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (&app, &label);
+        Ok(None)
+    }
 }
 
 #[tauri::command]
@@ -2886,6 +3403,32 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             }};
                             globalThis.__evofluxBrowserRuntime = runtime;
                         }}
+                        // Re-asserted on every pass, not once per document. The
+                        // shell's own dialog plugin installs an `alert` of its
+                        // own at document start — after ours — so a page's
+                        // dialogs would go to the app's native dialog instead of
+                        // this panel's record, where nothing can show or answer
+                        // them. Ours has to be the last one installed.
+                        {{
+                            const runtime = globalThis.__evofluxBrowserRuntime;
+                            const note = (entry) => {{
+                                runtime.dialogs.push(entry);
+                                while (runtime.dialogs.length > 100) runtime.dialogs.shift();
+                            }};
+                            globalThis.alert = (message) => {{
+                                note({{ id: runtime.nextDialogId++, ts: Date.now(), type: 'alert', message: String(message), response: 'accepted' }});
+                            }};
+                            globalThis.confirm = (message) => {{
+                                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                                note({{ id: runtime.nextDialogId++, ts: Date.now(), type: 'confirm', message: String(message), response: accepted ? 'accepted' : 'dismissed' }});
+                                return accepted;
+                            }};
+                            globalThis.prompt = (message, defaultValue = '') => {{
+                                const accepted = runtime.dialogBehavior.behavior === 'accept';
+                                note({{ id: runtime.nextDialogId++, ts: Date.now(), type: 'prompt', message: String(message), default_value: String(defaultValue), response: accepted ? 'accepted' : 'dismissed' }});
+                                return accepted ? String(runtime.dialogBehavior.promptText ?? defaultValue) : null;
+                            }};
+                        }}
                         return {{ ready: true }};
                     }}
 
@@ -2893,8 +3436,19 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         const runtime = globalThis.__evofluxBrowserRuntime;
                         if (!runtime) throw new Error('Browser observability is not initialized');
                         runtime.emulation ||= {{}};
+                        // Remember what we are shadowing. `devicePixelRatio` and
+                        // friends are own properties of the real window, so the
+                        // reset below cannot simply delete them: that removes the
+                        // genuine accessor for the rest of the document's life and
+                        // every later `devicePixelRatio` read throws.
+                        runtime.emulationOriginals ||= [];
                         const define = (target, key, value) => {{
-                            try {{ Object.defineProperty(target, key, {{ configurable: true, get: () => value }}); }} catch {{}}
+                            try {{
+                                if (!runtime.emulationOriginals.some((entry) => entry.target === target && entry.key === key)) {{
+                                    runtime.emulationOriginals.push({{ target, key, descriptor: Object.getOwnPropertyDescriptor(target, key) || null }});
+                                }}
+                                Object.defineProperty(target, key, {{ configurable: true, get: () => value }});
+                            }} catch {{}}
                         }};
                         const width = Math.max(1, Number(params.width) || innerWidth);
                         const height = Math.max(1, Number(params.height) || innerHeight);
@@ -2917,9 +3471,13 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
 
                     if (action === 'reset_emulation') {{
                         const runtime = globalThis.__evofluxBrowserRuntime;
-                        for (const [target, keys] of [[globalThis, ['devicePixelRatio']], [screen, ['width', 'height', 'availWidth', 'availHeight']], [navigator, ['maxTouchPoints', 'userAgent']]]) {{
-                            for (const key of keys) {{ try {{ delete target[key]; }} catch {{}} }}
+                        for (const entry of (runtime && runtime.emulationOriginals) || []) {{
+                            try {{
+                                if (entry.descriptor) Object.defineProperty(entry.target, entry.key, entry.descriptor);
+                                else delete entry.target[entry.key];
+                            }} catch {{}}
                         }}
+                        if (runtime) runtime.emulationOriginals = [];
                         document.documentElement.style.colorScheme = '';
                         if (runtime) runtime.emulation = null;
                         dispatchEvent(new Event('resize'));
@@ -4061,6 +4619,31 @@ enum AppUpdateCheckResult {
     },
 }
 
+/// How far along an update is, for the dialog that is waiting on it.
+///
+/// The download was already measured — it just never left the tray tooltip,
+/// so the dialog showed a spinner labelled "Installing…" from the moment the
+/// button was pressed until the app restarted. On a slow connection that is
+/// several minutes of a window that looks identical to a hung one.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "phase", rename_all = "snake_case")]
+enum AppUpdateProgress {
+    Downloading {
+        downloaded: u64,
+        /// Absent when the server sends no Content-Length; the bar then has
+        /// to say "so far" rather than a percentage.
+        total: Option<u64>,
+    },
+    Verifying,
+    Installing,
+}
+
+fn emit_update_progress(app: &AppHandle, progress: AppUpdateProgress) {
+    if let Err(error) = app.emit("app-update-progress", progress) {
+        log::debug!("desktop: could not deliver update progress to the app UI: {error}");
+    }
+}
+
 /// Prepare release notes for the in-app update dialog.
 ///
 /// Release notes are truncated to ~600 characters with an ellipsis so a
@@ -4229,24 +4812,49 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
         Ok(Some(update)) => update,
         Ok(None) => {
             update_tray_status(app, "Status: Running");
+            log::warn!("desktop: update vanished between the check and the install");
             return Err(anyhow!(
                 "The update is no longer available. Check again for the latest version."
             ));
         }
         Err(error) => {
             update_tray_status(app, "Status: Running");
+            log::error!("desktop: update install could not re-read release metadata: {error:#}");
             return Err(error).context("check GitHub release update metadata");
         }
     };
+    log::info!(
+        "desktop: installing update {} over {} from {}",
+        update.version,
+        update.current_version,
+        update.download_url
+    );
 
     let progress_app = app.clone();
     let finish_app = app.clone();
     let mut downloaded_bytes = 0usize;
     let mut reported_mb = usize::MAX;
-    let bytes = match update
-        .download(
+    let mut reported_percent = u8::MAX;
+    emit_update_progress(
+        app,
+        AppUpdateProgress::Downloading {
+            downloaded: 0,
+            total: None,
+        },
+    );
+    // Every byte that arrives stamps this. The watchdog below reads it to
+    // tell a slow download from a dead one — a distinction the dialog could
+    // not make, and neither could the log, which said nothing at all.
+    let started = std::time::Instant::now();
+    let last_byte_at = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let watchdog_stamp = last_byte_at.clone();
+    let download = update.download(
             move |chunk_length, total_bytes| {
                 downloaded_bytes = downloaded_bytes.saturating_add(chunk_length);
+                last_byte_at.store(
+                    started.elapsed().as_millis() as u64,
+                    Ordering::Relaxed,
+                );
                 let downloaded_mb = downloaded_bytes / (1024 * 1024);
                 if downloaded_mb != reported_mb {
                     reported_mb = downloaded_mb;
@@ -4255,29 +4863,97 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
                         &format_download_progress(downloaded_mb, total_bytes),
                     );
                 }
+                // A chunk is a few kilobytes: emitting one event each would
+                // be thousands of them for a bar that has a hundred states.
+                // Report when the whole number of percent changes, and each
+                // megabyte when there is no total to divide by.
+                let percent = total_bytes
+                    .filter(|total| *total > 0)
+                    .map(|total| ((downloaded_bytes as u64 * 100) / total).min(100) as u8);
+                let worth_saying = match percent {
+                    Some(value) => value != reported_percent,
+                    None => downloaded_mb as u8 != reported_percent,
+                };
+                if worth_saying {
+                    reported_percent = percent.unwrap_or(downloaded_mb as u8);
+                    emit_update_progress(
+                        &progress_app,
+                        AppUpdateProgress::Downloading {
+                            downloaded: downloaded_bytes as u64,
+                            total: total_bytes.filter(|total| *total > 0),
+                        },
+                    );
+                }
             },
             move || {
                 update_tray_status(&finish_app, "Status: Verifying update…");
+                emit_update_progress(&finish_app, AppUpdateProgress::Verifying);
             },
-        )
-        .await
-    {
-        Ok(bytes) => bytes,
+        );
+
+    // Race the download against a watchdog rather than awaiting it outright.
+    // A connection that dies mid-transfer does not fail — it simply stops
+    // producing bytes, and `download` waits on it for as long as the OS
+    // will, which is how a modal with no dismiss button becomes permanent.
+    tokio::pin!(download);
+    let bytes = loop {
+        tokio::select! {
+            result = &mut download => break result,
+            _ = tokio::time::sleep(UPDATE_STALL_POLL) => {
+                let idle = started
+                    .elapsed()
+                    .saturating_sub(Duration::from_millis(
+                        watchdog_stamp.load(Ordering::Relaxed),
+                    ));
+                if idle > UPDATE_DOWNLOAD_STALL_LIMIT {
+                    update_tray_status(app, "Status: Running");
+                    log::error!(
+                        "desktop: update download stalled with no data for {}s",
+                        idle.as_secs()
+                    );
+                    return Err(anyhow!(
+                        "The download stopped responding after {}s with no data. \
+                         Check the network connection and try again.",
+                        idle.as_secs()
+                    ));
+                }
+            }
+        }
+    };
+    let bytes = match bytes {
+        Ok(bytes) => {
+            log::info!(
+                "desktop: update downloaded and verified, {} bytes in {}s",
+                bytes.len(),
+                started.elapsed().as_secs()
+            );
+            bytes
+        }
         Err(error) => {
             update_tray_status(app, "Status: Update failed");
             update_tray_status(app, "Status: Running");
+            log::error!("desktop: update download or verification failed: {error:#}");
             return Err(error).context("download or verify desktop update");
         }
     };
 
     update_tray_status(app, "Status: Installing update…");
+    emit_update_progress(app, AppUpdateProgress::Installing);
     persist_active_window_state(app);
     {
         let state: tauri::State<'_, AppState> = app.state();
         state.quitting.store(true, Ordering::SeqCst);
     }
     shutdown_sidecar_now(app).await;
+    // The sidecar's Python interpreter lives *inside* the install directory,
+    // and it spawns children of its own — one process per MCP server. Killing
+    // the parent leaves those running, holding open the very files the
+    // installer has to replace, and a Windows installer that cannot replace a
+    // file does not stop: it leaves a half-updated install behind. The job
+    // object they were all put into kills the whole tree in one call.
+    sidecar::terminate_process_tree();
 
+    log::info!("desktop: handing off to the platform installer");
     if let Err(error) = update.install(bytes) {
         log::error!("desktop: update installation failed, restarting current version: {error:#}");
         app.restart();
@@ -5469,6 +6145,7 @@ fn main() {
         tray_status: Arc::new(Mutex::new(None)),
         tray_session: Arc::new(Mutex::new(None)),
         active_window_label: Arc::new(Mutex::new(MAIN_WINDOW.to_string())),
+        browser_shortcut_labels: Arc::new(Mutex::new(HashSet::new())),
         zoom: Arc::new(Mutex::new(ZOOM_DEFAULT)),
     };
 
@@ -5520,6 +6197,8 @@ fn main() {
             app_browser_webview_command,
             app_browser_webview_url,
             app_browser_webview_agent_action,
+            app_browser_webview_bind_shortcuts,
+            app_browser_webview_is_loading,
             set_tray_session,
             workspace::list_workspace_files,
             workspace::read_workspace_file,

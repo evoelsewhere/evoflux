@@ -130,31 +130,17 @@ class TaskSpec(BaseModel):
         default="auto",
         description="Task complexity used for adaptive reasoning and verification.",
     )
-    trace_run_id: str | None = Field(
+    asdd_change_id: str | None = Field(
         default=None,
-        description="EASD Development Run UUID for this mission.",
-    )
-    trace_spec_hash: str | None = Field(
-        default=None,
-        min_length=64,
-        max_length=64,
-        description="Exact accepted EASD specification hash.",
-    )
-    trace_plan_hash: str | None = Field(
-        default=None,
-        min_length=64,
-        max_length=64,
-        description="Exact accepted EASD implementation plan hash.",
-    )
-    plan_mission_id: str | None = Field(
-        default=None,
-        min_length=2,
-        max_length=64,
-        description="Stable mission ID from the accepted EASD plan.",
+        max_length=80,
+        description="ASDD change slug this mission serves.",
     )
     acceptance_criteria: list[str] = Field(
         default_factory=list,
-        description="EASD acceptance criterion IDs owned by this mission.",
+        description=(
+            "Requirement names from the change's approved deltas that this "
+            "mission owns."
+        ),
     )
     evidence_policy: dict = Field(
         default_factory=dict,
@@ -162,25 +148,17 @@ class TaskSpec(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _trace_fields_are_complete(self) -> "TaskSpec":
-        base_values = (
-            bool(self.trace_run_id),
-            bool(self.trace_spec_hash),
-            bool(self.acceptance_criteria),
-        )
-        plan_values = (bool(self.trace_plan_hash), bool(self.plan_mission_id))
-        if any((*base_values, *plan_values)) and not all(base_values):
+    def _asdd_fields_are_complete(self) -> "TaskSpec":
+        # A change slug and the requirements it owns travel together: a mission
+        # bound to a change but owning nothing cannot be verified, and
+        # requirements with no change name nothing the repository can resolve.
+        if bool(self.asdd_change_id) != bool(self.acceptance_criteria):
             raise ValueError(
-                "EASD delegation requires trace_run_id, trace_spec_hash, and "
-                "acceptance_criteria together"
-            )
-        if any(plan_values) and not all(plan_values):
-            raise ValueError(
-                "Planned EASD delegation requires trace_plan_hash and "
-                "plan_mission_id together; direct flow omits both"
+                "ASDD delegation requires asdd_change_id and acceptance_criteria "
+                "together"
             )
         if len(set(self.acceptance_criteria)) != len(self.acceptance_criteria):
-            raise ValueError("EASD acceptance_criteria must be unique")
+            raise ValueError("ASDD acceptance_criteria must be unique")
         return self
 
 
@@ -254,24 +232,18 @@ def format_delegation_message(
         formatted_lines.append(
             f"**Target repositories:** {', '.join(spec.target_repos)}"
         )
-    if spec.trace_run_id:
+    if spec.asdd_change_id:
         formatted_lines.extend(
             [
-                f"**EASD run:** {spec.trace_run_id}",
-                f"**EASD spec:** {spec.trace_spec_hash}",
-                "**EASD acceptance criteria:** " + ", ".join(spec.acceptance_criteria),
-                "**EASD contract:** Report every assigned criterion in the final "
-                "team_handoff criteria_results. Record any scope/spec drift in "
-                "deviations; do not silently expand the contract.",
+                f"**ASDD change:** `{spec.asdd_change_id}` — read its folder under "
+                "the repository's ASDD catalogue before starting.",
+                "**Owned requirements:** " + ", ".join(spec.acceptance_criteria),
+                "**ASDD contract:** Report every owned requirement in the final "
+                "team_handoff criteria_results, naming it exactly as the delta "
+                "spells it. Work outside the approved deltas is drift: say so "
+                "rather than widening the contract.",
             ]
         )
-        if spec.trace_plan_hash and spec.plan_mission_id:
-            formatted_lines.extend(
-                [
-                    f"**EASD plan:** {spec.trace_plan_hash}",
-                    f"**EASD plan mission:** {spec.plan_mission_id}",
-                ]
-            )
     allocation = spec.worktree_allocation
     if isinstance(allocation, dict):
         repositories = [
@@ -429,35 +401,28 @@ def make_team_delegate_tool(
                 )
             ),
         ] = "auto",
-        trace_run_id: Annotated[
+        asdd_change_id: Annotated[
             str | None,
             Field(
                 description=(
-                    "Optional EASD Development Run UUID. When provided, "
-                    "Spec identity and acceptance_criteria are required; planned "
-                    "flow additionally supplies Plan hash and mission ID."
+                    "Optional ASDD change slug. When provided, "
+                    "acceptance_criteria must name the requirements this "
+                    "mission owns from that change's approved deltas."
                 )
             ),
         ] = None,
-        trace_spec_hash: Annotated[
-            str | None,
-            Field(description="Exact accepted EASD specification SHA-256 hash."),
-        ] = None,
-        trace_plan_hash: Annotated[
-            str | None,
-            Field(description="Exact accepted EASD plan SHA-256 hash."),
-        ] = None,
-        plan_mission_id: Annotated[
-            str | None,
-            Field(description="Stable mission ID from the accepted EASD plan."),
-        ] = None,
         acceptance_criteria: Annotated[
             list[str],
-            Field(description="EASD criterion IDs this mission owns."),
+            Field(
+                description=(
+                    "Requirement names this mission owns, exactly as the "
+                    "change's delta spells them."
+                )
+            ),
         ] = [],  # noqa: B006
         evidence_policy: Annotated[
             dict,
-            Field(description="Optional EASD mission evidence requirements."),
+            Field(description="Optional ASDD mission evidence requirements."),
         ] = {},  # noqa: B006
     ) -> str:
         """Delegate a structured task with explicit acceptance criteria."""
@@ -579,10 +544,7 @@ def make_team_delegate_tool(
                 resolved_isolation=resolved_isolation,
                 target_repos=list(target_repos),
                 complexity=complexity,
-                trace_run_id=trace_run_id,
-                trace_spec_hash=trace_spec_hash,
-                trace_plan_hash=trace_plan_hash,
-                plan_mission_id=plan_mission_id,
+                asdd_change_id=asdd_change_id,
                 acceptance_criteria=list(acceptance_criteria),
                 evidence_policy=dict(evidence_policy),
             )

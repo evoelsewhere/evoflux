@@ -18,8 +18,10 @@ from app.services.problems_service import (
     dismiss_problem,
     list_problems,
     publish_problems,
+    restore_problem,
     serialize_problem,
     suppress_problem,
+    suppression_blast_radius,
 )
 
 router = APIRouter(prefix="/workspace/problems")
@@ -42,7 +44,13 @@ def _response(workspace: Path, *, include_resolved: bool) -> ProblemsResponse:
         counts["total"] += 1
     return ProblemsResponse(
         problems=[
-            ProblemResponse.model_validate(serialize_problem(row)) for row in rows
+            ProblemResponse.model_validate(
+                {
+                    **serialize_problem(row),
+                    "suppression_count": suppression_blast_radius(workspace, row.id),
+                }
+            )
+            for row in rows
         ],
         counts=counts,
     )
@@ -75,6 +83,16 @@ async def suppress_workspace_problem(
 ) -> ProblemResponse:
     try:
         problem = suppress_problem(_workspace(workspace), problem_id)
+    except ProblemError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ProblemResponse.model_validate(serialize_problem(problem))
+
+
+@router.post("/{problem_id}/restore", response_model=ProblemResponse)
+async def restore_workspace_problem(problem_id: str, workspace: str) -> ProblemResponse:
+    """Undo a dismissal or a suppression."""
+    try:
+        problem = restore_problem(_workspace(workspace), problem_id)
     except ProblemError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return ProblemResponse.model_validate(serialize_problem(problem))

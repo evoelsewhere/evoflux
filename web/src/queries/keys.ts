@@ -144,18 +144,15 @@ export const queryKeys = {
         ? (['projects', 'detail', id, 'code-context-data'] as const)
         : (['projects', 'detail', id, 'code-context-data', nodeLimit, edgeLimit] as const),
   },
-  easd: {
+  asdd: {
     setup: (workspace: string, projectId?: string | null) =>
-      ['easd', 'setup', workspace, projectId ?? null] as const,
-    runtimeMigration: (workspace: string, projectId?: string | null) =>
-      ['easd', 'runtime-migration', workspace, projectId ?? null] as const,
-    runs: () => ['easd', 'runs'] as const,
-    list: (workspace: string, projectId?: string | null) =>
-      ['easd', 'runs', workspace, projectId ?? null] as const,
-    detail: (runId: string) => ['easd', 'runs', runId] as const,
-    trace: (runId: string) => ['easd', 'runs', runId, 'trace'] as const,
-    recovery: (runId: string) => ['easd', 'runs', runId, 'recovery'] as const,
-    publication: (runId: string) => ['easd', 'runs', runId, 'publication'] as const,
+      ['asdd', 'setup', workspace, projectId ?? null] as const,
+    changes: (workspace: string, projectId?: string | null) =>
+      ['asdd', 'changes', workspace, projectId ?? null] as const,
+    detail: (workspace: string, changeId: string) =>
+      ['asdd', 'changes', workspace, changeId] as const,
+    spec: (workspace: string, capability: string) =>
+      ['asdd', 'specs', workspace, capability] as const,
   },
   git: {
     reviews: (scope?: string) =>

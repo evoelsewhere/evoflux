@@ -32,6 +32,7 @@ const problems: ProblemsResponse = {
       details: null,
       fix: { workspace_edit: { changes: {} } },
       suppression_key: 'lsp:reportArgumentType',
+      suppression_count: 1,
       provenance: { producer: 'pyright' },
       session_id: 'session-1',
       status: 'open',
@@ -55,6 +56,7 @@ const problems: ProblemsResponse = {
       details: null,
       fix: null,
       suppression_key: 'plugin:invalid-manifest',
+      suppression_count: 3,
       provenance: {},
       session_id: null,
       status: 'open',
@@ -91,13 +93,54 @@ describe('ProblemsPanel', () => {
     const send = vi.fn()
     render(<ProblemsPanel workspace="/repo" active onSendToAgent={send} />)
 
-    expect(screen.getByText('1 errors · 1 warnings')).toBeInTheDocument()
+    expect(screen.getByText('1 error · 1 warning')).toBeInTheDocument()
     expect(screen.getByText('Argument has the wrong type')).toBeInTheDocument()
     expect(screen.getByText('Plugin manifest')).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!)
     expect(mocks.mutate).toHaveBeenCalledWith({ id: 'lsp-1', action: 'dismiss' })
     fireEvent.click(screen.getAllByRole('button', { name: /Send to agent/ })[0]!)
     expect(send).toHaveBeenCalledWith(expect.stringContaining('Investigate and fix'))
+  })
+
+  it('asks before suppressing a rule that hides other rows', () => {
+    render(<ProblemsPanel workspace="/repo" active />)
+
+    // The plugin row's key covers three rows, so the first click warns.
+    const suppress = screen.getAllByRole('button', { name: /Suppress/ })[1]!
+    fireEvent.click(suppress)
+    expect(mocks.mutate).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Hide all 3\?/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Hide all 3\?/ }))
+    expect(mocks.mutate).toHaveBeenCalledWith({ id: 'plugin-1', action: 'suppress' })
+  })
+
+  it('suppresses a rule that covers only its own row at once', () => {
+    render(<ProblemsPanel workspace="/repo" active />)
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Suppress/ })[0]!)
+    expect(mocks.mutate).toHaveBeenCalledWith({ id: 'lsp-1', action: 'suppress' })
+  })
+
+  it('separates drafting a message from sending one', () => {
+    const send = vi.fn()
+    const draft = vi.fn()
+    render(
+      <ProblemsPanel
+        workspace="/repo"
+        active
+        onSendToAgent={send}
+        onAddToComposer={draft}
+      />,
+    )
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Add to plan/ })[0]!)
+    expect(draft).toHaveBeenCalledWith(expect.stringContaining('implementation plan'))
+    expect(send).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Send to agent/ })[0]!)
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(draft).toHaveBeenCalledTimes(1)
   })
 
   it('stages a structured fix as a guarded ChangeSet', async () => {

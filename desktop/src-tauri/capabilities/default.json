@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability set for the main window.",
-  "windows": ["main", "main-*"],
+  "description": "Default capability set for the app's own webview. Scoped by webview rather than window on purpose: a window pattern grants these permissions to every webview inside that window, and the in-app browser's pages are child webviews of 'main', so any page it loaded from an allowed remote URL (a previewed dev server) could invoke the app's file and backend commands. The browser's webviews are labelled 'browser-*' and match nothing here.",
+  "webviews": ["main", "main-*"],
   "local": true,
   "remote": {
     "urls": [
@@ -19,6 +19,7 @@
     "core:window:allow-set-theme",
     "core:webview:default",
     "core:webview:allow-create-webview",
+    "core:window:allow-set-focus",
     "core:webview:allow-set-webview-position",
     "core:webview:allow-set-webview-size",
     "core:webview:allow-set-webview-focus",
@@ -54,6 +55,8 @@
     "allow-app-browser-webview-command",
     "allow-app-browser-webview-url",
     "allow-app-browser-webview-agent-action",
+    "allow-app-browser-webview-bind-shortcuts",
+    "allow-app-browser-webview-is-loading",
     "allow-set-tray-session",
     "allow-list-workspace-files",
     "allow-read-workspace-file",

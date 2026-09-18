@@ -1,5 +1,11 @@
 export const SIDE_PANEL_LAYOUT = {
   maxViewportRatio: 0.42,
+  /**
+   * Surfaces that render someone else's page — the in-app browser — rather
+   * than our own chrome. A chat-sized share turns every site into its
+   * tablet layout, so they get a larger one.
+   */
+  contentViewportRatio: 0.62,
   minPrimaryWidth: 480,
   shellChromeWidth: 32,
 } as const
@@ -13,6 +19,8 @@ interface ResponsiveSidePanelInput {
   maxWidth: number
   canOverlay: boolean
   inFlow: boolean
+  /** Share of the viewport this panel may claim. Defaults to `maxViewportRatio`. */
+  viewportRatio?: number
 }
 
 export interface ResponsiveSidePanelLayout {
@@ -30,13 +38,14 @@ export function getResponsiveSidePanelLayout({
   maxWidth,
   canOverlay,
   inFlow,
+  viewportRatio = SIDE_PANEL_LAYOUT.maxViewportRatio,
 }: ResponsiveSidePanelInput): ResponsiveSidePanelLayout {
   if (!inFlow) return { overlay: false, maxWidth }
 
   const safeViewportWidth = Math.max(0, Math.round(viewportWidth))
   const sidebarFootprint = sidebarCollapsed || sidebarOverlay ? 0 : sidebarWidth
   const availableForPanel = Math.floor(Math.min(
-    safeViewportWidth * SIDE_PANEL_LAYOUT.maxViewportRatio,
+    safeViewportWidth * viewportRatio,
     safeViewportWidth
       - sidebarFootprint
       - SIDE_PANEL_LAYOUT.minPrimaryWidth

@@ -19,12 +19,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 import sqlalchemy as sa
 from pydantic import SecretStr
 
 import app
+from app.core import schema_version
 from app.core.config import settings
-from app.core.schema_version import SCHEMA_HEAD
+from app.core.schema_version import RETIRED_REVISIONS, SCHEMA_HEAD
 
 
 def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
@@ -76,48 +78,20 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "memory_fact_evidence",
             "memory_extraction_states",
         } <= set(inspector.get_table_names())
+        # ASDD keeps a change in the repository, so the database holds no copy
+        # of it and no unique index binding one to a chat session.
         assert {
             "trace_runs",
             "trace_spec_revisions",
             "trace_plan_revisions",
             "trace_evidence",
             "trace_deviations",
-        } <= set(inspector.get_table_names())
-        active_run_index = next(
-            index
-            for index in inspector.get_indexes("trace_runs")
-            if index["name"] == "uq_trace_runs_active_session"
-        )
-        assert active_run_index["unique"] == 1
-        with engine.connect() as conn:
-            active_run_index_sql = conn.execute(
-                sa.text(
-                    "SELECT sql FROM sqlite_master WHERE type='index' "
-                    "AND name='uq_trace_runs_active_session'"
-                )
-            ).scalar_one()
-        assert "authoring" in active_run_index_sql
-        assert "planning" in active_run_index_sql
-        assert "reviewing" in active_run_index_sql
-        run_columns = {column["name"] for column in inspector.get_columns("trace_runs")}
-        assert "intent" in run_columns
-        assert "active_plan_revision_id" in run_columns
+        }.isdisjoint(inspector.get_table_names())
         delegation_columns = {
             column["name"] for column in inspector.get_columns("delegation_tasks")
         }
-        assert "trace_run_id" in delegation_columns
-        deviation_columns = {
-            column["name"] for column in inspector.get_columns("trace_deviations")
-        }
-        assert "spec_hash" in deviation_columns
-        revision_columns = {
-            column["name"] for column in inspector.get_columns("trace_spec_revisions")
-        }
-        assert "authoring" in revision_columns
-        plan_columns = {
-            column["name"] for column in inspector.get_columns("trace_plan_revisions")
-        }
-        assert {"spec_hash", "plan", "authoring", "content_hash"} <= plan_columns
+        assert "trace_run_id" not in delegation_columns
+        assert "asdd_change_id" in delegation_columns
         assert "session_goals" in inspector.get_table_names()
         assert {
             "code_nodes",
@@ -265,84 +239,6 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
                 sa.text("SELECT version_num FROM alembic_version")
             ).scalar()
         assert version == SCHEMA_HEAD
-    finally:
-        engine.dispose()
-
-
-def test_legacy_easd_revision_60_migrates_forward_without_data_loss(
-    tmp_path, monkeypatch
-):
-    from alembic import command
-    from alembic.config import Config
-
-    db_path = tmp_path / "legacy-easd-60.sqlite"
-    monkeypatch.setattr(
-        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
-    )
-
-    ini = Path(app.__file__).resolve().parent / "alembic.ini"
-    cfg = Config(str(ini))
-    command.upgrade(cfg, "00000055")
-
-    run_id = uuid4().hex
-    now = datetime.now(timezone.utc)
-    engine = sa.create_engine(f"sqlite:///{db_path}")
-    try:
-        with engine.begin() as conn:
-            conn.execute(
-                sa.text(
-                    "INSERT INTO trace_runs "
-                    "(id, workspace, title, status, risk_tier, created_at, updated_at) "
-                    "VALUES (:id, :workspace, :title, :status, :risk_tier, "
-                    ":created_at, :updated_at)"
-                ),
-                {
-                    "id": run_id,
-                    "workspace": "/tmp/legacy-easd",
-                    "title": "Preserve this run",
-                    "status": "accepted",
-                    "risk_tier": "standard",
-                    "created_at": now,
-                    "updated_at": now,
-                },
-            )
-            conn.execute(sa.text("DROP INDEX uq_trace_runs_active_session"))
-            conn.execute(
-                sa.text(
-                    "CREATE UNIQUE INDEX uq_trace_runs_active_session "
-                    "ON trace_runs (session_id) "
-                    "WHERE session_id IS NOT NULL AND status IN "
-                    "('authoring', 'planning', 'active', 'reviewing', 'verifying')"
-                )
-            )
-            conn.execute(sa.text("UPDATE alembic_version SET version_num = '00000060'"))
-    finally:
-        engine.dispose()
-
-    command.upgrade(cfg, "head")
-
-    engine = sa.create_engine(f"sqlite:///{db_path}")
-    try:
-        with engine.connect() as conn:
-            version = conn.execute(
-                sa.text("SELECT version_num FROM alembic_version")
-            ).scalar_one()
-            preserved_title = conn.execute(
-                sa.text("SELECT title FROM trace_runs WHERE id = :id"),
-                {"id": run_id},
-            ).scalar_one()
-            active_run_index_sql = conn.execute(
-                sa.text(
-                    "SELECT sql FROM sqlite_master WHERE type='index' "
-                    "AND name='uq_trace_runs_active_session'"
-                )
-            ).scalar_one()
-
-        assert version == SCHEMA_HEAD
-        assert preserved_title == "Preserve this run"
-        assert "'accepted'" in active_run_index_sql
-        assert "'plan_review'" in active_run_index_sql
-        assert "'planned'" in active_run_index_sql
     finally:
         engine.dispose()
 
@@ -875,5 +771,76 @@ def test_foreign_key_repair_applies_declared_cascade_and_set_null(
                 )
             ).fetchall()
             assert delegations == [("8" * 32, None), ("9" * 32, None)]
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("retired", sorted(RETIRED_REVISIONS))
+def test_a_database_left_on_a_retired_revision_still_starts(
+    tmp_path, monkeypatch, retired: str
+):
+    """Deleting a migration must not strand the databases stamped with it.
+
+    Revisions 00000055-00000062 built the EASD `trace_*` tables and are gone.
+    Alembic cannot resolve a stamp it has no file for, so without the repair the
+    app refuses to start on data that is perfectly fine.
+    """
+
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / f"retired-{retired}.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    monkeypatch.setattr(schema_version, "current_sqlite_path", lambda: str(db_path))
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000054")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            # What the retired revisions left behind.
+            conn.execute(sa.text("CREATE TABLE trace_runs (id TEXT PRIMARY KEY)"))
+            conn.execute(
+                sa.text("ALTER TABLE delegation_tasks ADD COLUMN trace_run_id BLOB")
+            )
+            conn.execute(
+                sa.text(
+                    "CREATE INDEX ix_delegation_tasks_trace_run_id "
+                    "ON delegation_tasks (trace_run_id)"
+                )
+            )
+            conn.execute(
+                sa.text("UPDATE alembic_version SET version_num = :version"),
+                {"version": retired},
+            )
+    finally:
+        engine.dispose()
+
+    status = schema_version.inspect_database_schema()
+    assert status.compatible is True
+    schema_version.ensure_database_revision_is_supported(status)
+
+    # No explicit repair call: Alembic's own env.py has to do it, or
+    # `make migrate` and a bare `alembic upgrade head` stay broken.
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.connect() as conn:
+            version = conn.execute(
+                sa.text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+        inspector = sa.inspect(engine)
+        columns = {
+            column["name"] for column in inspector.get_columns("delegation_tasks")
+        }
+
+        assert version == SCHEMA_HEAD
+        assert "trace_runs" not in inspector.get_table_names()
+        assert "trace_run_id" not in columns
+        assert "asdd_change_id" in columns
     finally:
         engine.dispose()

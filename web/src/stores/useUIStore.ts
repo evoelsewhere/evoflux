@@ -16,6 +16,7 @@ import { immer } from 'zustand/middleware/immer'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 
 const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
+const WORKBENCH_MAXIMIZED_KEY = STORAGE_KEYS.panels.workbenchMaximized
 
 export type WorkbenchTool =
   | 'overview'
@@ -31,7 +32,7 @@ export type WorkbenchTool =
   | 'source-control'
   | 'pull-requests'
   | 'problems'
-  | 'easd'
+  | 'asdd'
 
 export interface WorkbenchTab {
   id: string
@@ -71,7 +72,7 @@ const SESSION_SCOPED_TOOLS: ReadonlySet<WorkbenchTool> = new Set([
   'source-control',
   'pull-requests',
   'problems',
-  'easd',
+  'asdd',
 ])
 // 'wiki', 'scheduler' and 'plugins' mean the same thing in every session,
 // so their tabs stay put across a switch.
@@ -109,19 +110,9 @@ export interface WorkspaceFileRequest {
   path: string
 }
 
-export interface EasdChatRequest {
+export interface AsddChangeOpenRequest {
   id: number
-  sessionId: string
-  workspace: string
-  projectId: string | null
-  prompt: string | null
-  autoSend: boolean
-  phase: 'authoring' | 'planning' | 'implementation' | 'review' | 'verification'
-}
-
-export interface EasdRunOpenRequest {
-  id: number
-  runId: string
+  changeId: string
 }
 
 interface WorkbenchState {
@@ -134,6 +125,8 @@ interface WorkbenchState {
   activeWorkbenchTool: WorkbenchTool | null
   workbenchOpen: boolean
   workbenchMaximized: boolean
+  /** Sessions whose agent pages are open in stacked floating previews. */
+  browserPipSessionIds: string[]
   pullRequestsScope: PullRequestsScope
   gitWorkspaceView: GitWorkspaceView
 }
@@ -141,8 +134,7 @@ interface WorkbenchState {
 const MULTI_INSTANCE_TOOLS = new Set<WorkbenchTool>(['terminal', 'browser'])
 let workbenchTabSequence = 0
 let workspaceFileRequestSequence = 0
-let easdChatRequestSequence = 0
-let easdRunOpenRequestSequence = 0
+let asddChangeOpenRequestSequence = 0
 
 function newWorkbenchTab(
   tool: WorkbenchTool,
@@ -196,6 +188,12 @@ export function sessionWorkbenchTabs(state: {
 function activateTab(state: WorkbenchState, tab: WorkbenchTab | undefined): void {
   state.activeWorkbenchTabId = tab?.id ?? null
   state.activeWorkbenchTool = tab?.tool ?? null
+  // Maximize is a posture someone chose, not per-tab state. The dock drops it
+  // whenever it has nothing to show — including at startup, where the
+  // workbench is empty — so the remembered choice has to be re-applied the
+  // moment it has something to show again, or a full-width browser never
+  // comes back after a restart.
+  state.workbenchMaximized = tab ? storedWorkbenchMaximized : false
 }
 
 function lastTabForTool(
@@ -317,6 +315,25 @@ function persistSidebarWidth(width: number): void {
   }
 }
 
+/** The last posture the user chose explicitly, not the dock's current one. */
+let storedWorkbenchMaximized = loadWorkbenchMaximized()
+
+function loadWorkbenchMaximized(): boolean {
+  try {
+    return localStorage.getItem(WORKBENCH_MAXIMIZED_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function persistWorkbenchMaximized(maximized: boolean): void {
+  try {
+    localStorage.setItem(WORKBENCH_MAXIMIZED_KEY, String(maximized))
+  } catch {
+    // ignore storage failures
+  }
+}
+
 function loadSidebarCollapsed(): boolean {
   try {
     return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
@@ -356,12 +373,10 @@ interface UIStore extends WorkbenchState {
   sideChatRequest: string | null
   /** One-shot request from a transcript artifact link to preview a workspace file. */
   workspaceFileRequest: WorkspaceFileRequest | null
-  /** One-shot handoff from an EASD run to its linked Coding chat. */
-  easdChatRequest: EasdChatRequest | null
-  /** One-shot request from a successful EASD tool result to its Run detail. */
-  easdRunOpenRequest: EasdRunOpenRequest | null
-  /** Run currently selected in the EASD workbench. */
-  easdSelectedRunId: string | null
+  /** One-shot request to open one ASDD change in the Agent Spec-Driven panel. */
+  asddChangeOpenRequest: AsddChangeOpenRequest | null
+  /** Change currently selected in the Agent Spec-Driven workbench. */
+  asddSelectedChangeId: string | null
   createWorkbenchTab: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
   restoreWorkbenchTabs: (
     tool: WorkbenchTool,
@@ -381,6 +396,9 @@ interface UIStore extends WorkbenchState {
   closeWorkbench: () => void
   showWorkbenchLauncher: () => void
   toggleWorkbenchMaximized: () => void
+  openBrowserPip: (sessionId: string) => void
+  focusBrowserPip: (sessionId: string) => void
+  closeBrowserPip: (sessionId?: string) => void
   toggleWiki: () => void
   toggleScheduler: () => void
   togglePullRequests: () => void
@@ -407,11 +425,9 @@ interface UIStore extends WorkbenchState {
   clearSideChatRequest: () => void
   requestWorkspaceFile: (sessionId: string, path: string) => void
   clearWorkspaceFileRequest: (requestId?: number) => void
-  requestEasdChat: (request: Omit<EasdChatRequest, 'id'>) => void
-  clearEasdChatRequest: (requestId?: number) => void
-  requestEasdRunOpen: (runId: string) => void
-  clearEasdRunOpenRequest: (requestId?: number) => void
-  setEasdSelectedRunId: (runId: string | null) => void
+  requestAsddChangeOpen: (changeId: string) => void
+  clearAsddChangeOpenRequest: (requestId?: number) => void
+  setAsddSelectedChangeId: (changeId: string | null) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -422,7 +438,10 @@ export const useUIStore = create<UIStore>()(
     _activeTabBySession: {},
     activeWorkbenchTool: null,
     workbenchOpen: false,
+    // Starts cleared because the workbench starts empty; `activateTab`
+    // re-applies the remembered posture as soon as there is a tab.
     workbenchMaximized: false,
+    browserPipSessionIds: [],
     pullRequestsScope: 'session',
     gitWorkspaceView: 'changes',
     createWorkbenchTab: (tool, options = {}) => set((state) => {
@@ -539,10 +558,35 @@ export const useUIStore = create<UIStore>()(
       activateTab(state, undefined)
       state.workbenchMaximized = false
     }),
-    toggleWorkbenchMaximized: () => set((state) => {
-      if (state.activeWorkbenchTabId) {
-        state.workbenchMaximized = !state.workbenchMaximized
+    openBrowserPip: (sessionId) => set((state) => {
+      if (!state.browserPipSessionIds.includes(sessionId)) {
+        state.browserPipSessionIds.push(sessionId)
       }
+    }),
+    focusBrowserPip: (sessionId) => set((state) => {
+      if (!state.browserPipSessionIds.includes(sessionId)) return
+      state.browserPipSessionIds = [
+        ...state.browserPipSessionIds.filter((id) => id !== sessionId),
+        sessionId,
+      ]
+    }),
+    closeBrowserPip: (sessionId) => set((state) => {
+      if (sessionId === undefined) {
+        state.browserPipSessionIds = []
+      } else {
+        state.browserPipSessionIds = state.browserPipSessionIds.filter(
+          (id) => id !== sessionId,
+        )
+      }
+    }),
+    toggleWorkbenchMaximized: () => set((state) => {
+      if (!state.activeWorkbenchTabId) return
+      state.workbenchMaximized = !state.workbenchMaximized
+      // Only an explicit toggle updates what is remembered. The automatic
+      // clears — workbench closed, last tab gone — are about having nothing
+      // to show, and must not erase the choice for the next launch.
+      storedWorkbenchMaximized = state.workbenchMaximized
+      persistWorkbenchMaximized(storedWorkbenchMaximized)
     }),
     // Compatibility entry points used by desktop commands, sidebar actions,
     // and streamed tool calls. They now all target the shared workbench.
@@ -632,29 +676,20 @@ export const useUIStore = create<UIStore>()(
       if (requestId !== undefined && state.workspaceFileRequest?.id !== requestId) return
       state.workspaceFileRequest = null
     }),
-    easdChatRequest: null,
-    requestEasdChat: (request) => set((state) => {
-      easdChatRequestSequence += 1
-      state.easdChatRequest = { id: easdChatRequestSequence, ...request }
+    asddChangeOpenRequest: null,
+    asddSelectedChangeId: null,
+    requestAsddChangeOpen: (changeId) => set((state) => {
+      asddChangeOpenRequestSequence += 1
+      state.asddChangeOpenRequest = { id: asddChangeOpenRequestSequence, changeId }
+      state.asddSelectedChangeId = changeId
+      addOrActivateTool(state, 'asdd')
     }),
-    clearEasdChatRequest: (requestId) => set((state) => {
-      if (requestId !== undefined && state.easdChatRequest?.id !== requestId) return
-      state.easdChatRequest = null
+    clearAsddChangeOpenRequest: (requestId) => set((state) => {
+      if (requestId !== undefined && state.asddChangeOpenRequest?.id !== requestId) return
+      state.asddChangeOpenRequest = null
     }),
-    easdRunOpenRequest: null,
-    easdSelectedRunId: null,
-    requestEasdRunOpen: (runId) => set((state) => {
-      easdRunOpenRequestSequence += 1
-      state.easdRunOpenRequest = { id: easdRunOpenRequestSequence, runId }
-      state.easdSelectedRunId = runId
-      addOrActivateTool(state, 'easd')
-    }),
-    clearEasdRunOpenRequest: (requestId) => set((state) => {
-      if (requestId !== undefined && state.easdRunOpenRequest?.id !== requestId) return
-      state.easdRunOpenRequest = null
-    }),
-    setEasdSelectedRunId: (runId) => set((state) => {
-      state.easdSelectedRunId = runId
+    setAsddSelectedChangeId: (changeId) => set((state) => {
+      state.asddSelectedChangeId = changeId
     }),
   }))
 )

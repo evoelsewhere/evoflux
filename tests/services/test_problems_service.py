@@ -11,7 +11,9 @@ from app.services.problems_service import (
     dismiss_problem,
     list_problems,
     publish_problems,
+    restore_problem,
     suppress_problem,
+    suppression_blast_radius,
 )
 
 
@@ -84,3 +86,142 @@ def test_problem_path_must_stay_inside_repository(tmp_path: Path):
             scope="security:scan",
             problems=[ProblemInput(message="outside", path="../outside.py")],
         )
+
+
+def test_supersedes_prefix_retires_sibling_scopes(tmp_path: Path):
+    """A per-run scope must not strand the previous run's findings.
+
+    Producers that hash a command or a content digest into the scope land
+    every run in a scope of its own, so the plain same-scope sweep never
+    reaches the run before it.
+    """
+    publish_problems(
+        tmp_path,
+        source="test",
+        scope="shell:test:aaaa",
+        problems=[ProblemInput(message="boom", path="a.py", line=1)],
+        supersedes_prefix="shell:test:",
+    )
+    assert len(list_problems(tmp_path)) == 1
+
+    publish_problems(
+        tmp_path,
+        source="test",
+        scope="shell:test:bbbb",
+        problems=[],
+        supersedes_prefix="shell:test:",
+    )
+    assert list_problems(tmp_path) == []
+
+
+def test_supersedes_prefix_leaves_other_sources_alone(tmp_path: Path):
+    publish_problems(
+        tmp_path,
+        source="lsp",
+        scope="lsp:a.py",
+        problems=[ProblemInput(message="kept", path="a.py", line=1)],
+    )
+    publish_problems(
+        tmp_path,
+        source="test",
+        scope="shell:test:bbbb",
+        problems=[],
+        supersedes_prefix="shell:test:",
+    )
+    assert [row.message for row in list_problems(tmp_path)] == ["kept"]
+
+
+def test_restore_reopens_a_dismissed_problem(tmp_path: Path):
+    rows = publish_problems(
+        tmp_path,
+        source="lsp",
+        scope="lsp:a.py",
+        problems=[ProblemInput(message="boom", path="a.py", line=1)],
+    )
+    dismiss_problem(tmp_path, rows[0].id)
+    assert list_problems(tmp_path) == []
+
+    restore_problem(tmp_path, rows[0].id)
+    assert [row.message for row in list_problems(tmp_path)] == ["boom"]
+
+
+def test_restore_lifts_the_whole_suppression(tmp_path: Path):
+    """Suppression is workspace-wide, so undoing it has to be too."""
+    rows = publish_problems(
+        tmp_path,
+        source="static",
+        scope="static:ruff:a.py",
+        problems=[
+            ProblemInput(message="unused", path="a.py", line=1, code="F401"),
+            ProblemInput(message="unused", path="b.py", line=9, code="F401"),
+        ],
+    )
+    suppress_problem(tmp_path, rows[0].id)
+    assert list_problems(tmp_path) == []
+
+    restore_problem(tmp_path, rows[0].id)
+    assert len(list_problems(tmp_path)) == 2
+
+    # A later run of the same producer must not re-suppress them.
+    publish_problems(
+        tmp_path,
+        source="static",
+        scope="static:ruff:a.py",
+        problems=[ProblemInput(message="unused", path="a.py", line=1, code="F401")],
+    )
+    assert len(list_problems(tmp_path)) == 1
+
+
+def test_suppression_blast_radius_counts_what_would_vanish(tmp_path: Path):
+    rows = publish_problems(
+        tmp_path,
+        source="static",
+        scope="static:ruff:a.py",
+        problems=[
+            ProblemInput(message="unused", path="a.py", line=1, code="F401"),
+            ProblemInput(message="unused", path="b.py", line=9, code="F401"),
+            ProblemInput(message="long line", path="c.py", line=3, code="E501"),
+        ],
+    )
+    assert suppression_blast_radius(tmp_path, rows[0].id) == 2
+
+
+def test_decisions_survive_a_restart(tmp_path: Path):
+    """Findings are republished by producers; decisions are not."""
+    inputs = [
+        ProblemInput(message="unused", path="a.py", line=1, code="F401"),
+        ProblemInput(message="long line", path="b.py", line=3, code="E501"),
+    ]
+    rows = publish_problems(
+        tmp_path, source="static", scope="static:ruff:a.py", problems=inputs
+    )
+    dismiss_problem(tmp_path, rows[0].id)
+    suppress_problem(tmp_path, rows[1].id)
+    assert list_problems(tmp_path) == []
+
+    # A restart keeps nothing in memory; the producer publishes again.
+    clear_problems()
+    publish_problems(
+        tmp_path, source="static", scope="static:ruff:a.py", problems=inputs
+    )
+    assert list_problems(tmp_path) == []
+    statuses = {
+        row.code: row.status
+        for row in list_problems(tmp_path, include_resolved=True)
+    }
+    assert statuses == {"F401": "dismissed", "E501": "suppressed"}
+
+
+def test_restore_survives_a_restart(tmp_path: Path):
+    inputs = [ProblemInput(message="unused", path="a.py", line=1, code="F401")]
+    rows = publish_problems(
+        tmp_path, source="static", scope="static:ruff:a.py", problems=inputs
+    )
+    dismiss_problem(tmp_path, rows[0].id)
+    restore_problem(tmp_path, rows[0].id)
+
+    clear_problems()
+    publish_problems(
+        tmp_path, source="static", scope="static:ruff:a.py", problems=inputs
+    )
+    assert len(list_problems(tmp_path)) == 1

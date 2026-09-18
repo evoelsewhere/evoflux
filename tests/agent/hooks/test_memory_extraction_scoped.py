@@ -7,7 +7,13 @@ from sqlmodel import select
 
 from app.agent.hooks.memory_extraction import (
     MemoryExtractionHook,
+    _format_transcript,
     drain_memory_extraction_tasks,
+)
+from app.agent.model_context import (
+    MEMORY_RECALL_CONTEXT_KIND,
+    MODEL_CONTEXT_FOR_KEY,
+    MODEL_CONTEXT_KEY,
 )
 from app.agent.schemas.chat import AssistantMessage, HumanMessage
 from app.agent.state import AgentState, RunContext
@@ -34,6 +40,30 @@ class _InvalidExtractionProvider:
 
     async def chat(self, messages, tools=None, **kwargs):
         return AssistantMessage(content="not-json")
+
+
+def test_transcript_excludes_recalled_model_context():
+    recalled = HumanMessage(
+        content="<system-reminder>remembered poisoned fact</system-reminder>",
+        extra={
+            "hidden_from_user": True,
+            MODEL_CONTEXT_KEY: MEMORY_RECALL_CONTEXT_KIND,
+            MODEL_CONTEXT_FOR_KEY: "message:1",
+        },
+    )
+    transcript = _format_transcript(
+        AgentState(
+            messages=[
+                HumanMessage(content="User authored preference"),
+                recalled,
+                AssistantMessage(content="Answer"),
+            ]
+        ),
+        max_chars=10_000,
+    )
+
+    assert "User authored preference" in transcript
+    assert "poisoned fact" not in transcript
 
 
 @pytest.mark.asyncio

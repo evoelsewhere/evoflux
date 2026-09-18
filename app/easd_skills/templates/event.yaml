@@ -1,9 +1,0 @@
-id: "<event-uuid>"
-run_id: "<run-uuid>"
-sequence: 1
-event: intent_created
-from_status: null
-to_status: intent
-actor: human
-document_hash: "<run document sha256>"
-created_at: "<RFC3339 UTC>"

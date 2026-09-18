@@ -386,10 +386,68 @@ async def test_expanded_control_and_debug_actions_are_forwarded(monkeypatch) -> 
         "await_promise": True,
         "timeout_ms": 15_000,
     }
+    # No orientation is sent unless one was asked for: the surface rotates the
+    # viewport to match whatever it receives, so a default here turned every
+    # landscape request — the desktop preset included — on its side.
     assert requests[8][1] == {
         "preset": "mobile",
         "color_scheme": "dark",
         "device_scale_factor": 1.0,
-        "orientation": "portrait",
     }
     assert requests[9][1] == {}
+
+
+@pytest.mark.asyncio
+async def test_status_only_batch_does_not_mount_a_browser(monkeypatch) -> None:
+    """A batch of nothing but questions must not open a browser.
+
+    ``status`` and ``get_tabs`` are what a caller polls with, and mounting
+    for them put a preview over whatever the user was reading.
+    """
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: False)
+    monkeypatch.setattr(direct_browser_bridge, "is_available", lambda _sid: True)
+
+    async def request_mount(_sid: str) -> bool:
+        raise AssertionError("a question asked the desktop to mount a browser")
+
+    monkeypatch.setattr(direct_browser_bridge, "request_mount", request_mount)
+
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "status"}, {"action": "get_tabs"}],
+    )
+
+    assert isinstance(result, str)
+    assert "No tabs open." in result
+
+
+@pytest.mark.asyncio
+async def test_one_real_action_still_mounts_the_browser(monkeypatch) -> None:
+    """Mixing a question with real work keeps the mount."""
+    mounted = False
+    monkeypatch.setattr(direct_browser_bridge, "is_available", lambda _sid: True)
+    monkeypatch.setattr(
+        direct_browser_bridge, "is_connected", lambda _sid: mounted
+    )
+
+    async def request_mount(_sid: str) -> bool:
+        nonlocal mounted
+        mounted = True
+        return True
+
+    async def wait_connected(_sid: str) -> bool:
+        return True
+
+    async def request(_sid: str, action: str, params: dict):
+        return f"direct:{action}"
+
+    monkeypatch.setattr(direct_browser_bridge, "request_mount", request_mount)
+    monkeypatch.setattr(direct_browser_bridge, "wait_connected", wait_connected)
+    monkeypatch.setattr(direct_browser_bridge, "request", request)
+
+    await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "status"}, {"action": "navigate", "url": "https://e.com"}],
+    )
+
+    assert mounted is True

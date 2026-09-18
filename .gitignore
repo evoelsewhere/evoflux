@@ -222,6 +222,8 @@ workspace/
 **/.evoflux/state/
 .local/state/
 **/.evoflux/team_state.json
+# One user's decisions about their own Problems panel, not the repo's.
+**/.evoflux/problems-decisions.json
 **/.evoflux/worktrees/
 **/.evoflux/wiki/
 **/.evoflux/workspace/

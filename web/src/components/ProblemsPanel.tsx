@@ -4,7 +4,10 @@ import {
   AlertTriangle,
   Ban,
   CheckCircle2,
+  Eye,
+  EyeOff,
   Info,
+  Undo2,
   Loader2,
   MessageSquarePlus,
   RefreshCw,
@@ -36,6 +39,33 @@ function SeverityIcon({ severity }: { severity: ProblemSeverity }) {
   return <Info size={14} className="text-(--color-info)" />
 }
 
+const SEVERITY_ORDER: ProblemSeverity[] = ['error', 'warning', 'info', 'hint']
+
+/** "1 errors" read as a bug in the counter rather than a count of one. */
+function pluralize(severity: ProblemSeverity, count: number): string {
+  if (severity === 'info') return 'info'
+  return count === 1 ? severity : `${severity}s`
+}
+
+/**
+ * Describe the list actually on screen.
+ *
+ * The header used to read the workspace-wide counts while the list below
+ * it was filtered by source, so narrowing to Plugin showed two rows under
+ * a summary counting all seventeen. It also named only errors and
+ * warnings, so a panel holding nothing but hints announced itself as
+ * empty above a list that was not.
+ */
+function countLabel(rows: CodingProblem[]): string {
+  if (rows.length === 0) return 'Nothing open'
+  const totals = { error: 0, warning: 0, info: 0, hint: 0 }
+  for (const row of rows) totals[row.severity] += 1
+  return SEVERITY_ORDER
+    .filter((severity) => totals[severity] > 0)
+    .map((severity) => `${totals[severity]} ${pluralize(severity, totals[severity])}`)
+    .join(' · ')
+}
+
 function problemPrompt(problem: CodingProblem, verb: string): string {
   const location = problem.path
     ? `${problem.path}${problem.line ? `#L${problem.line}` : ''}`
@@ -47,22 +77,36 @@ export function ProblemsPanel({
   workspace,
   active,
   onOpenFile,
+  onAddToComposer,
   onSendToAgent,
 }: {
   workspace: string
   active: boolean
-  onOpenFile?: (path: string) => void
+  /** A problem knows where it is; opening its file should land there. */
+  onOpenFile?: (path: string, line?: number) => void
+  /** Put a prompt in the composer for the user to review and send. */
+  onAddToComposer?: (prompt: string) => void
+  /** Send a prompt to the agent now. */
   onSendToAgent?: (prompt: string) => void
 }) {
   const [source, setSource] = useState<ProblemSource | 'all'>('all')
-  const query = useProblemsQuery(workspace, active)
+  // Dismissing and suppressing used to be one-way trips with no view of
+  // what had been hidden, so a mistaken click was unrecoverable and
+  // invisible at once.
+  const [showResolved, setShowResolved] = useState(false)
+  /** Row whose Suppress button is waiting for a second, informed click. */
+  const [confirmSuppress, setConfirmSuppress] = useState<string | null>(null)
+  const query = useProblemsQuery(workspace, active, showResolved)
   const decision = useProblemDecisionMutation(workspace)
   const setChangeSet = useChangeSetStore((state) => state.setActive)
   const pushToast = useToastStore((state) => state.push)
+  const all = useMemo(() => query.data?.problems ?? [], [query.data?.problems])
   const rows = useMemo(
-    () => (query.data?.problems ?? []).filter((problem) => source === 'all' || problem.source === source),
-    [query.data?.problems, source],
+    () => all.filter((problem) => source === 'all' || problem.source === source),
+    [all, source],
   )
+  const totalOpen = all.filter((problem) => problem.status === 'open').length
+  const hiddenCount = rows.length - rows.filter((problem) => problem.status === 'open').length
 
   const stageFix = async (problem: CodingProblem) => {
     if (!problem.fix) return
@@ -95,9 +139,22 @@ export function ProblemsPanel({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-(--color-text)">Problems</p>
           <p className="text-[11px] text-(--color-text-muted)">
-            {query.data?.counts.error ?? 0} errors · {query.data?.counts.warning ?? 0} warnings
+            {countLabel(rows.filter((problem) => problem.status === 'open'))}
+            {hiddenCount > 0 ? ` · ${hiddenCount} hidden` : ''}
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowResolved((current) => !current)}
+          aria-pressed={showResolved}
+          title={showResolved ? 'Hide dismissed and suppressed' : 'Show dismissed and suppressed'}
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-lg hover:bg-(--bg-key)',
+            showResolved ? 'text-(--color-accent)' : 'text-(--color-text-muted)',
+          )}
+        >
+          {showResolved ? <Eye size={13} /> : <EyeOff size={13} />}
+        </button>
         <button
           type="button"
           onClick={() => { void query.refetch() }}
@@ -146,19 +203,38 @@ export function ProblemsPanel({
         ) : rows.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
             <CheckCircle2 size={22} className="text-(--color-success)" />
-            <p className="text-sm text-(--color-text)">No open problems</p>
-            <p className="text-xs text-(--color-text-muted)">A clean panel does not replace behavioral verification.</p>
+            {/* A filter hiding every row is not a clean repository, and
+                saying so sent people away believing work was finished. */}
+            <p className="text-sm text-(--color-text)">
+              {source === 'all'
+                ? 'No open problems'
+                : `No ${SOURCE_LABELS[source]} problems`}
+            </p>
+            <p className="text-xs text-(--color-text-muted)">
+              {source === 'all'
+                ? 'A clean panel does not replace behavioral verification.'
+                : `${totalOpen} open in other sources.`}
+            </p>
+            {source !== 'all' && (
+              <button
+                type="button"
+                onClick={() => setSource('all')}
+                className="mt-1 rounded-md bg-(--bg-key) px-2.5 py-1.5 text-xs text-(--color-text-2) hover:bg-(--color-border)"
+              >
+                Show all sources
+              </button>
+            )}
           </div>
         ) : (
           <ul className="divide-y divide-(--color-border-subtle)">
             {rows.map((problem) => (
-              <li key={problem.id} className="group px-3 py-2.5 hover:bg-(--bg-key)/45">
+              <li key={problem.id} className={cn('group px-3 py-2.5 hover:bg-(--bg-key)/45', problem.status !== 'open' && 'opacity-60')}>
                 <div className="flex items-start gap-2">
                   <span className="mt-0.5"><SeverityIcon severity={problem.severity} /></span>
                   <button
                     type="button"
                     disabled={!problem.path}
-                    onClick={() => problem.path && onOpenFile?.(problem.path)}
+                    onClick={() => problem.path && onOpenFile?.(problem.path, problem.line ?? undefined)}
                     className="min-w-0 flex-1 text-left disabled:cursor-default"
                   >
                     <span className="block text-xs leading-5 text-(--color-text)">{problem.title ?? problem.message}</span>
@@ -166,6 +242,7 @@ export function ProblemsPanel({
                     <span className="mt-1 block truncate font-mono text-[10px] text-(--color-text-subtle)">
                       {problem.path ?? problem.scope}{problem.line ? `:${problem.line}:${problem.column ?? 1}` : ''}
                       {' · '}{SOURCE_LABELS[problem.source]}{problem.code ? ` · ${problem.code}` : ''}
+                      {problem.status !== 'open' ? ` · ${problem.status}` : ''}
                     </span>
                   </button>
                 </div>
@@ -173,14 +250,49 @@ export function ProblemsPanel({
                   {problem.fix && (
                     <button type="button" onClick={() => { void stageFix(problem) }} className="rounded-md px-2 py-1 text-[10px] text-(--color-accent) hover:bg-(--bg-key)">Fix</button>
                   )}
-                  {onSendToAgent && (
-                    <>
-                      <button type="button" onClick={() => onSendToAgent(problemPrompt(problem, 'Add to the implementation plan and address'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><MessageSquarePlus size={10} /> Add to plan</button>
-                      <button type="button" onClick={() => onSendToAgent(problemPrompt(problem, 'Investigate and fix'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><Send size={10} /> Send to agent</button>
-                    </>
+                  {onAddToComposer && (
+                    <button type="button" title="Draft a message asking the agent to plan this — you send it" onClick={() => onAddToComposer(problemPrompt(problem, 'Add to the implementation plan and address'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><MessageSquarePlus size={10} /> Add to plan</button>
                   )}
-                  <button type="button" onClick={() => decision.mutate({ id: problem.id, action: 'dismiss' })} className="rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)">Dismiss</button>
-                  <button type="button" onClick={() => decision.mutate({ id: problem.id, action: 'suppress' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><Ban size={10} /> Suppress</button>
+                  {onSendToAgent && (
+                    <button type="button" title="Send this to the agent now" onClick={() => onSendToAgent(problemPrompt(problem, 'Investigate and fix'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><Send size={10} /> Send to agent</button>
+                  )}
+                  {/* One decision at a time: the row stays on screen until
+                      the refetch lands, so an eager second click used to
+                      fire a second request against it. */}
+                  {problem.status === 'open' ? (
+                    <>
+                      <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'dismiss' })} className="rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50">Dismiss</button>
+                      {/* Suppression is keyed by rule, not by row, so one
+                          click can silence a code across the whole
+                          repository. Say the number, then ask again. */}
+                      <button
+                        type="button"
+                        disabled={decision.isPending}
+                        title={`Hides every ${problem.code ?? problem.source} problem in this workspace`}
+                        onClick={() => {
+                          if (problem.suppression_count > 1 && confirmSuppress !== problem.id) {
+                            setConfirmSuppress(problem.id)
+                            return
+                          }
+                          setConfirmSuppress(null)
+                          decision.mutate({ id: problem.id, action: 'suppress' })
+                        }}
+                        className={cn(
+                          'flex items-center gap-1 rounded-md px-2 py-1 text-[10px] hover:bg-(--bg-key) disabled:opacity-50',
+                          confirmSuppress === problem.id
+                            ? 'bg-(--color-warning)/15 text-(--color-warning)'
+                            : 'text-(--color-text-muted)',
+                        )}
+                      >
+                        <Ban size={10} />
+                        {confirmSuppress === problem.id
+                          ? `Hide all ${problem.suppression_count}?`
+                          : 'Suppress'}
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'restore' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-accent) hover:bg-(--bg-key) disabled:opacity-50"><Undo2 size={10} /> Restore</button>
+                  )}
                 </div>
               </li>
             ))}

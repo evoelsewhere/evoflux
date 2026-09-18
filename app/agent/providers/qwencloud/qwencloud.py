@@ -269,8 +269,10 @@ class _QwenCloudResponsesHandler(ResponsesHandler):
         elif thinking_level:
             body["reasoning"] = {"effort": thinking_level}
 
-    def parse_response(self, data: dict) -> AssistantMessage:
-        message = super().parse_response(data)
+    def parse_response(
+        self, data: dict, *, probe_scope: str | None = None
+    ) -> AssistantMessage:
+        message = super().parse_response(data, probe_scope=probe_scope)
         if message.reasoning_content:
             return message
 

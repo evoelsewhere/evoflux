@@ -144,8 +144,8 @@ class _CopilotCompletionsHandler(CompletionsHandler):
         """Dynamic wire headers: ``x-initiator`` and vision support."""
         return _copilot_request_headers(self.headers, merged)
 
-    def _usage_from_openai(self, u: Any) -> Usage:
-        usage = super()._usage_from_openai(u)
+    def _usage_from_openai(self, u: Any, *, probe_scope: str | None = None) -> Usage:
+        usage = super()._usage_from_openai(u, probe_scope=probe_scope)
         # Copilot quirk: reasoning_tokens at the top level of usage.
         # Fall back to OpenAI's nested location if missing.
         thoughts = getattr(u, "reasoning_tokens", None) or None

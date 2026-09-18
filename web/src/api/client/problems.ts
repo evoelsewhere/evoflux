@@ -1,4 +1,4 @@
-import type { CodingProblem, ProblemsResponse } from '../types'
+import type { CodingProblem, ProblemDecision, ProblemsResponse } from '../types'
 import { apiUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
 
@@ -24,7 +24,7 @@ export async function getProblems(
 async function updateProblem(
   workspace: string,
   problemId: string,
-  action: 'dismiss' | 'suppress',
+  action: ProblemDecision,
 ): Promise<CodingProblem> {
   const suffix = `/${encodeURIComponent(problemId)}/${action}`
   const res = await fetch(problemsUrl(workspace, suffix), { method: 'POST' })
@@ -38,4 +38,9 @@ export function dismissProblem(workspace: string, problemId: string): Promise<Co
 
 export function suppressProblem(workspace: string, problemId: string): Promise<CodingProblem> {
   return updateProblem(workspace, problemId, 'suppress')
+}
+
+/** Undo a dismissal, or lift a suppression for every row sharing its key. */
+export function restoreProblem(workspace: string, problemId: string): Promise<CodingProblem> {
+  return updateProblem(workspace, problemId, 'restore')
 }

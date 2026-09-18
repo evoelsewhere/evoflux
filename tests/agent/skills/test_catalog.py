@@ -304,6 +304,49 @@ async def test_catalog_hook_ranks_from_latest_user_turn(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_runtime_catalog_can_keep_system_prefix_query_stable(monkeypatch):
+    records = {
+        "work-writing": _record("work-writing", "Draft substantial knowledge work."),
+        "work-research": _record(
+            "work-research", "Research and verify a sourced report."
+        ),
+    }
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.skill.discover_skill_records_runtime",
+        lambda **_kwargs: records,
+    )
+    monkeypatch.setattr(
+        "app.agent.hooks.skill_catalog.get_model_limits",
+        lambda _model: SimpleNamespace(context_length=128_000),
+    )
+    hook = SkillCatalogHook(
+        mode="work",
+        model_id="test:model",
+        preferred_skills=("work-writing",),
+        cache_stable=True,
+    )
+    ctx = SimpleNamespace(agent_name="agent")
+
+    first_state = AgentState(messages=[HumanMessage(content="Research the report")])
+    second_state = AgentState(messages=[HumanMessage(content="Draft the plan")])
+    first = await hook.before_model(
+        ctx,
+        first_state,
+        ModelRequest(messages=tuple(first_state.messages), system_prompt="Base"),
+    )
+    second = await hook.before_model(
+        ctx,
+        second_state,
+        ModelRequest(messages=tuple(second_state.messages), system_prompt="Base"),
+    )
+
+    assert first is not None and second is not None
+    assert first.system_prompt == second.system_prompt
+    assert first_state.metadata["skill_catalog"]["query_ranked"] == []
+    assert second_state.metadata["skill_catalog"]["query_ranked"] == []
+
+
+@pytest.mark.asyncio
 async def test_integrated_code_navigation_is_visible_without_body_preload(
     monkeypatch,
 ):
@@ -320,7 +363,7 @@ async def test_integrated_code_navigation_is_visible_without_body_preload(
     )
 
     assert updated is not None
-    assert "coding-investigation" in updated.system_prompt
+    assert "coding-investigate" in updated.system_prompt
     assert "Never pass request prose" not in updated.system_prompt
     assert "loaded_skills" not in state.metadata
     assert state.messages == [state.messages[0]]

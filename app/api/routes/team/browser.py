@@ -100,8 +100,19 @@ async def run_direct_browser_agent_command(
     session_id: str,
     body: DirectBrowserCommandRequest,
 ) -> DirectBrowserCommandResponse:
-    from app.services.direct_browser_bridge import direct_browser_bridge
+    from app.services.direct_browser_bridge import (
+        SURFACE_FREE_ACTIONS,
+        direct_browser_bridge,
+        offline_action_result,
+    )
 
+    # A question about the browser must not conjure one. Asking whether a
+    # page is open used to open a page, so anything polling this endpoint
+    # kept re-mounting the preview over whatever the user was reading.
+    if body.action in SURFACE_FREE_ACTIONS and not direct_browser_bridge.is_connected(
+        session_id
+    ):
+        return DirectBrowserCommandResponse(result=offline_action_result(body.action))
     await _ensure_mounted(session_id)
     try:
         result = await direct_browser_bridge.request(

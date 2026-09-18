@@ -186,6 +186,7 @@ class TestDefaultDeferredTools:
         registry = _default_tool_registry()
         expected_core = {
             "ask_user",
+            "document_preview",
             "edit",
             "glob",
             "grep",
@@ -206,10 +207,13 @@ class TestDefaultDeferredTools:
             granted = set(tier_tools(registry, mode=mode, role="lead"))
             granted.update({"skill", "todo_manage", "schedule_task", "note"})
             eager = {name for name in granted if not registry[name].deferred}
-            assert 12 <= len(eager) <= 18
+            assert 12 <= len(eager) <= 19
             expected = set(expected_core)
             if mode == "coding":
-                expected.add("code_context")
+                # Coding-only: repository navigation, and parking out-of-scope
+                # work, which has to be reachable the moment the lead notices
+                # something rather than after a load_tool round trip.
+                expected.update({"code_context", "spawn_task"})
             assert eager == expected
 
     def test_work_mode_excludes_every_code_context_tool(self):
@@ -251,10 +255,9 @@ class TestDefaultDeferredTools:
         assert eager == {
             "ask_user",
             "code_context",
+            "document_preview",
             "edit",
-            "easd_submit_plan",
-            "easd_submit_review",
-            "easd_submit_specification",
+            "spawn_task",
             "glob",
             "grep",
             "get_goal",

@@ -83,3 +83,13 @@ def test_linux_capture_dependency_matches_ubuntu_22_pipewire_baseline() -> None:
         targets['cfg(not(target_os = "linux"))']["dependencies"]["xcap"]["version"]
         == "0.9.8"
     )
+
+
+def test_macos_dmg_verification_retries_transient_runner_failures() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "verified=false" in source
+    assert "for attempt in 1 2 3 4 5" in source
+    assert 'hdiutil verify "$dmg_path"' in source
+    assert "sleep 5" in source
+    assert '[[ "$verified" != "true" ]]' in source
