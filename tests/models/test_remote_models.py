@@ -73,7 +73,7 @@ async def test_notify_scope_round_trips_a_non_default_value(session, remote_conn
 
 
 @pytest.mark.asyncio
-async def test_new_pairing_defaults_response_mode_to_summary(session, remote_connection):
+async def test_new_pairing_defaults_response_mode_to_live(session, remote_connection):
     pairing = RemotePairing(
         connection_id=remote_connection.id,
         principal_id="user-1",
@@ -83,7 +83,7 @@ async def test_new_pairing_defaults_response_mode_to_summary(session, remote_con
     session.add(pairing)
     await session.commit()
     await session.refresh(pairing)
-    assert pairing.response_mode == "summary"
+    assert pairing.response_mode == "live"
 
 
 @pytest.mark.asyncio
