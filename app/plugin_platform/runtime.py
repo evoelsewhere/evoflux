@@ -355,6 +355,34 @@ class PluginMCPRuntime:
             self._last_good.pop(key, None)
         return MCPConfig(servers=servers), descriptors
 
+    async def stop_installation(self, installation_id: str) -> None:
+        """Tear down every runner this installation owns, ahead of a file op.
+
+        A stdio server's child process holds its ``cwd`` (the install root)
+        open for as long as it runs. Windows refuses to rename or delete a
+        directory while any process has it locked, so uninstall/update must
+        stop these runners *before* touching the filesystem — refreshing
+        afterward, as ``_after_mutation`` does, is too late on that platform.
+        """
+
+        async with self._refresh_lock:
+            owned = [
+                descriptor
+                for descriptor in self._descriptors
+                if descriptor.installation_id == installation_id
+            ]
+            for descriptor in owned:
+                await self._manager.remove_runner(descriptor.runtime_name)
+            self._descriptors = [
+                descriptor
+                for descriptor in self._descriptors
+                if descriptor.installation_id != installation_id
+            ]
+            for key in [
+                key for key in self._last_good if key[0] == installation_id
+            ]:
+                self._last_good.pop(key, None)
+
     async def refresh(self, *, force: bool = False) -> None:
         async with self._refresh_lock:
             config, descriptors = self._build_config()
