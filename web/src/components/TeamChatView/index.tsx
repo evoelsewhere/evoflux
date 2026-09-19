@@ -343,7 +343,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const [codingFileViewerLine, setCodingFileViewerLine] = useState<number | null>(null)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
   const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
-  const [showActivity, setShowActivity] = useState(false)
   const [todosOpen, setTodosOpen] = useState(false)
   const [showMobileActions, setShowMobileActions] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
@@ -1046,13 +1045,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       toggleWorkbenchTool('files')
     }
   }, [isMobile, mode, workspace, sessionIdState, setSidebarCollapsed, toggleWorkbenchTool])
-
-  const handleActivityToggle = useCallback(() => {
-    setShowActivity((value) => {
-      const nextOpen = !value
-      return nextOpen
-    })
-  }, [])
 
   const handlePermissionModeChange = useCallback(async (newMode: import('@/api/types').PermissionMode) => {
     const previous = useTeamStore.getState().sessionPermissionMode
@@ -1974,8 +1966,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     <>
       <ChatTrailingPanels
         onQuoteComment={handlePlanQuoteComment}
-        showActivity={showActivity}
-        onCloseActivity={() => setShowActivity(false)}
         workspace={workspace}
         mode={mode}
         onOpenChangedFile={(path) => {
@@ -2354,8 +2344,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             sessionId={sessionIdState}
             onWiki={toggleWiki}
             wikiActive={workbenchOpen && wikiOpen && activeWorkbenchTool === 'wiki'}
-            onActivity={handleActivityToggle}
-            activityActive={showActivity}
             workspaceSelector={mode === 'work' ? (
               <WorkFolderSelector
                 sessionId={validWorkSessionId}

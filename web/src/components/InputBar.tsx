@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { Activity, ArrowUp, ChevronDown, File, Folder, ListTodo, Loader2, MessageCircle, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, File, Folder, ListTodo, Loader2, MessageCircle, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
@@ -200,8 +200,6 @@ interface InputBarProps {
   sessionId?: string | null
   onWiki?: () => void
   wikiActive?: boolean
-  onActivity?: () => void
-  activityActive?: boolean
   /** Optional mode-specific control rendered with the composer's left actions. */
   workspaceSelector?: React.ReactNode
   permissionMode?: import('@/api/types').PermissionMode
@@ -284,8 +282,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   todos,
   todosOpen = false,
   onTodosOpenChange,
-  onActivity,
-  activityActive,
   workspaceSelector,
   permissionMode,
   onPermissionModeChange,
@@ -1904,17 +1900,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                     {/* Left: content & navigation actions */}
                     {!shellMode && attachmentsEnabled && attachEl}
                     {/* Wiki moved to topbar */}
-                    {onActivity && (
-                      <button
-                        type="button"
-                        onClick={(e) => { stopClick(e); onActivity() }}
-                        aria-label="Team activity log"
-                        title="Team activity log"
-                        className={cn(actionBtnClass, activityActive && 'bg-(--bg-key) text-(--color-text)')}
-                      >
-                        <Activity size={14} aria-hidden="true" />
-                      </button>
-                    )}
                     {workspaceSelector}
                   </div>
 
