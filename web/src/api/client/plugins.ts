@@ -2,6 +2,7 @@
 
 import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import type {
   PluginInspection,
   PluginCredentialState,
@@ -143,7 +144,7 @@ export async function packPlugin(path: string): Promise<{ path: string }> {
 
 export async function listPluginWorkspace(root: string): Promise<PluginWorkspaceEntry[]> {
   const response = await fetch(
-    `${apiBaseUrl()}/plugins/workspace/tree?root=${encodeURIComponent(root)}`,
+    `${apiBaseUrl()}/plugins/workspace/tree?root=${encodeURIComponent(stripExtendedPathPrefix(root))}`,
   )
   if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/workspace/tree')
   return response.json()
@@ -153,7 +154,7 @@ export async function readPluginWorkspaceFile(
   root: string,
   path: string,
 ): Promise<PluginWorkspaceFileResponse> {
-  const params = new URLSearchParams({ root, path })
+  const params = new URLSearchParams({ root: stripExtendedPathPrefix(root), path })
   const response = await fetch(`${apiBaseUrl()}/plugins/workspace/file?${params}`)
   if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/workspace/file')
   return response.json()

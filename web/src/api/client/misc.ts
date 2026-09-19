@@ -3,6 +3,7 @@
  */
 
 import { apiBaseUrl } from '../base-url'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import { parseDetailOrThrow } from './_shared'
 import type {
   DiagnosticsActionResult,
@@ -44,7 +45,7 @@ export async function teamStatus(
   mode?: 'coding' | null,
 ): Promise<TeamStatusResponse | null> {
   const params = new URLSearchParams()
-  if (workspace) params.set('workspace', workspace)
+  if (workspace) params.set('workspace', stripExtendedPathPrefix(workspace))
   if (workspace && mode) params.set('mode', mode)
   const query = params.toString()
   const res = await fetch(`${apiBaseUrl()}/team/agents${query ? `?${query}` : ''}`)

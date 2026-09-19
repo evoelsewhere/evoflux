@@ -1,10 +1,11 @@
 import type { CodingProblem, ProblemDecision, ProblemsResponse } from '../types'
 import { apiUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 
 function problemsUrl(workspace: string, suffix = '', includeResolved = false): string {
   const params = new URLSearchParams({
-    workspace,
+    workspace: stripExtendedPathPrefix(workspace),
     include_resolved: String(includeResolved),
   })
   return apiUrl(`/team/workspace/problems${suffix}?${params}`)

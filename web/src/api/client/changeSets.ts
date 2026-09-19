@@ -1,9 +1,10 @@
 import type { ChangeSetCreateRequest, ChangeSetFileContent, ChangeSetResponse } from '../types'
 import { apiUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 
 function changeSetUrl(workspace: string, suffix = ''): string {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   return apiUrl(`/team/workspace/change-sets${suffix}?${params}`)
 }
 

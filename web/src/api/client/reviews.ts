@@ -1,6 +1,7 @@
 import { apiBaseUrl } from '../base-url'
 import { withTokenParam } from '../auth'
 import { parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import type {
   CodeReviewsResponse,
   CodeReviewActionInput,
@@ -44,7 +45,7 @@ export async function getCodeReviews(
 ): Promise<CodeReviewsResponse> {
   const params = new URLSearchParams()
   if (scope.projectId) params.set('project_id', scope.projectId)
-  else if (scope.workspace) params.set('workspace', scope.workspace)
+  else if (scope.workspace) params.set('workspace', stripExtendedPathPrefix(scope.workspace))
   if (scope.state) params.set('state', scope.state)
   const query = params.size > 0 ? `?${params.toString()}` : ''
   const res = await fetch(`${apiBaseUrl()}/team/reviews${query}`)
