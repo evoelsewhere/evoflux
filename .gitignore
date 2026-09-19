@@ -281,3 +281,6 @@ desktop/EvoFlux.key.pub
 MiMo-Code/
 # Local dev state.
 /.local/
+
+.superpowers/
+.worktrees/

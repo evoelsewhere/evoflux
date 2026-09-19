@@ -1813,6 +1813,50 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     openAction: { type: 'settings', path: 'browser' },
   },
   {
+    id: 'remote-access-telegram',
+    category: 'settings',
+    title: 'Remote access (Telegram)',
+    summary:
+      'Control EvoFlux from your phone through a Telegram bot. Pair with a code, receive task updates, approve or reject gates, and run actions — all without opening the desktop.',
+    keywords: [
+      'remote', 'telegram', 'phone', 'mobile', 'pairing', 'bot',
+      'connect phone', 'pair code', '/pair', '/unpair',
+    ],
+    tricks: [
+      'One-time setup: create a Telegram bot via BotFather, paste the token in Settings \u2192 Remote access.',
+      'Pair your phone: click "Generate pairing code" on the desktop, then send /pair <code> in the bot chat.',
+      'Alternative pairing: use a deep link or QR code if the code flow is not available.',
+      '/pair connects your phone; /unpair disconnects it.',
+      'The bot shows current-task text, gate prompts with inline buttons, and completion summaries.',
+      'Rate limits protect against flood abuse; unpairing revokes access immediately.',
+      'Bot token is stored in the OS credential vault, never in the database.',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Remote access lets you interact with EvoFlux from your phone through a Telegram bot you own. After a one-time token setup, you pair your phone by entering a short numeric code in the bot chat. The bot then relays task updates, permission gates, and action menus so you can stay productive without sitting at the desktop.',
+      },
+      {
+        type: 'p',
+        text: 'To pair: open Settings \u2192 Remote access, click "Generate pairing code", then type /pair followed by the8-digit code in your Telegram bot chat. The code expires in10 minutes. For a fallback, click "Having trouble?" to use a deep link or QR code instead.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'The /pair command is the primary phone-pairing method. No QR scanning or link tapping needed.',
+          'If the code expires, generate a new one — only one code is active at a time.',
+          'Send /help in the bot chat to see all available commands.',
+          'Unpairing from the phone (/unpair) or the desktop (Settings \u2192 Remove) revokes access immediately.',
+        ],
+      }
+    ],
+    related: [
+      'settings-safety',
+      'troubleshooting-connection',
+    ],
+    openAction: { type: 'settings', path: 'remote-access' },
+  },
+  {
     id: 'providers-settings',
     category: 'settings',
     title: 'Providers and models (BYOM)',
@@ -2801,5 +2845,82 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'browser-webbridge'
 ],
     openAction: { type: 'settings', path: 'diagnostics' },
+  },
+  {
+    id: 'remote-access',
+    category: 'settings',
+    title: 'Remote access',
+    summary:
+      'Control EvoFlux from your phone through a personal Telegram bot. Receive task updates, approve permissions, and resolve gates without sitting at the desktop. Each computer needs its own bot.',
+    keywords: [
+      'remote',
+      'telegram',
+      'bot',
+      'phone',
+      'mobile',
+      'pair',
+      'pairing',
+      'unpair',
+      'remote access',
+      'truy cập từ xa',
+      'điện thoại',
+      'リモート',
+      'テレグラム',
+      'ボット',
+      'スマホ'
+],
+    setup:
+      'Create a Telegram bot via BotFather, copy the token, open Settings → Remote access, paste the token, and click Connect. Open the pairing link on your phone and tap Start in the bot chat.',
+    tricks: [
+      'Each computer installation needs its own Telegram bot — do not share one bot across machines.',
+      'EvoFlux must stay running on the desktop for the bot to work. Messages sent while EvoFlux is stopped do not run later.',
+      'Bot chats leave the machine — all outbound text is redacted for secrets and PII, but the conversation lives on Telegram servers.',
+      'Allow once is the maximum permission granted remotely. There is no Always option from the phone.',
+      'Use /help in the bot chat to list available commands.',
+      'Use /status to see which session the bot is paired to and whether the agent is active.',
+      'Use /new to start a fresh session from the phone.',
+      'Use /stop to halt all working agents immediately.',
+      'Use /unpair to disconnect the phone from the desktop. You can also remove the connection from Settings → Remote access on the desktop.',
+      'Gate messages (permission, question, plan) arrive with inline buttons — tap to resolve without typing.'
+],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Remote access lets you control EvoFlux from a phone through a personal Telegram bot. When the agent needs your input — a permission decision, a question, or a plan review — the bot sends you a message with inline buttons. You tap to approve or reject, and the session continues. Task completions arrive as text summaries so you know when to check back.',
+      },
+      {
+        type: 'p',
+        text: 'The bridge is outbound-only: EvoFlux polls Telegram for your replies but never opens an inbound listener. Your bot token is stored in the OS credential vault (keyring), not in the database or config files. All outbound text passes through redaction so secrets and PII do not reach Telegram.',
+      },
+      {
+        type: 'p',
+        text: 'Setup steps: (1) Open Telegram and search for @BotFather. (2) Send /newbot and follow the prompts. (3) Copy the bot token. (4) In EvoFlux, open Settings → Remote access. (5) Paste the token and click Connect. (6) The UI shows a pairing link — open it on your phone. (7) Tap Start in the bot chat. The pairing is now active.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'EvoFlux must be running for the bot to respond. Messages sent while stopped are not queued.',
+          'Each computer needs its own bot. Two machines cannot share one bot token.',
+          'Bot chats are stored on Telegram servers — treat them as external.',
+          'Maximum remote permission is Allow once. Always is not available from the phone.',
+          'Commands: /help, /status, /new, /stop, /unpair, /actions.',
+          'Gate messages use inline buttons — no typing needed to approve or reject.'
+],
+      },
+      {
+        type: 'p',
+        text: 'To revoke: on the desktop, go to Settings → Remote access → Remove. On the phone, send /unpair to the bot. Both sides are disconnected and the pairing token is invalidated.',
+      },
+      {
+        type: 'p',
+        text: 'Common mistakes: sharing one bot across multiple computers; leaving EvoFlux closed and expecting the bot to queue messages; assuming remote approvals can set Always rules; sending sensitive data in the bot chat without checking redaction settings.',
+      }
+],
+    related: [
+      'settings-safety',
+      'permissions-modes',
+      'troubleshooting-connection'
+],
+    openAction: { type: 'settings', path: 'remote-access' },
   }
 ]

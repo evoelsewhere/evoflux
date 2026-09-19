@@ -8,6 +8,8 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "run_dev.py"
 SPEC = importlib.util.spec_from_file_location("run_dev", SCRIPT)
@@ -56,9 +58,32 @@ def test_supervisor_stops_siblings_when_a_service_fails(tmp_path: Path) -> None:
     )
 
     assert run_dev.supervise([long_running, failing]) == 7
-    assert marker.read_text() == "yes"
+
+    if sys.platform == "win32":
+        # Windows has no process-group signal that reaches an arbitrary
+        # SIGTERM handler (CTRL_BREAK_EVENT only reaches a SIGBREAK
+        # handler) — the supervisor force-kills the whole tree instead
+        # (see signal_process_group's docstring), so there is no graceful
+        # marker to check here. The meaningful assertion already
+        # happened above: supervise() returned 7 instead of hanging on
+        # the "long" service's sleep(30).
+        pass
+    else:
+        assert marker.read_text() == "yes"
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason=(
+        "os.kill(getpid(), SIGINT) maps to GenerateConsoleCtrlEvent"
+        "(CTRL_C_EVENT) on Windows, which the OS broadcasts to every"
+        " process attached to the current console — including this test"
+        " process itself, outside of run_dev.py's own control — rather"
+        " than delivering a signal this test can scope to just the child"
+        " it spawned. Crashes the interpreter instead of exercising"
+        " run_dev.py's own SIGINT handling."
+    ),
+)
 def test_supervisor_maps_interrupt_to_130(tmp_path: Path) -> None:
     service = run_dev.Service(
         name="long",

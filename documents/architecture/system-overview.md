@@ -96,6 +96,14 @@ transcript and then resume live streaming.
 - **Integration:** global MCP, plugin MCP, provider adapters, WebBridge, and
   Conductor have separate configuration and lifecycle boundaries.
 
+## Remote adapter trust boundary
+
+The remote adapter is an outbound-only polling bridge — it connects to the
+Telegram API but never listens for inbound connections. Tokens live in the OS
+credential vault (keyring), never in the database or environment variables. The
+adapter uses a stream observer pattern to project outbound events (current task,
+gates, completion) into Telegram chats while applying full redaction.
+
 ## Source-of-truth map
 
 | Contract | Owner |

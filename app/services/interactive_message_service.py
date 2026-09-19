@@ -12,7 +12,11 @@ from app.core.runtime_settings import follow_up_delivery_default
 from app.models.chat import ChatSession, SessionMessage
 from app.services import agent_service, team_manager
 from app.services.agent_service import NoTeamConfigured, RawAttachment
-from app.services.chat_service import cleanup_reverted_tail, save_queued_user_message
+from app.services.chat_service import (
+    cleanup_reverted_tail,
+    get_channel_source,
+    save_queued_user_message,
+)
 
 
 @dataclass(frozen=True)
@@ -50,8 +54,8 @@ async def find_interactive_message_by_source(
         )
     ).all()
     for row in rows:
-        source = (row.extra or {}).get("webbridge_source")
-        if isinstance(source, dict) and source.get("key") == source_key:
+        source_entry = get_channel_source(row.extra)
+        if source_entry is not None and source_entry[1].get("key") == source_key:
             return row
     return None
 
@@ -138,10 +142,10 @@ async def submit_persisted_interactive_message(
                     db, session_id=session.id, source_key=source_key
                 )
             if persisted_message is not None and source_request_hash:
-                source = (persisted_message.extra or {}).get("webbridge_source")
+                source_entry = get_channel_source(persisted_message.extra)
                 if (
-                    isinstance(source, dict)
-                    and source.get("request_hash") != source_request_hash
+                    source_entry is not None
+                    and source_entry[1].get("request_hash") != source_request_hash
                 ):
                     raise InteractiveMessageConflict(
                         "Idempotency-Key was already used for another message."
@@ -149,7 +153,8 @@ async def submit_persisted_interactive_message(
             await cleanup_reverted_tail(db, session.id)
 
         if persisted_message is not None:
-            source = (persisted_message.extra or {}).get("webbridge_source") or {}
+            source_entry = get_channel_source(persisted_message.extra)
+            source = source_entry[1] if source_entry is not None else {}
             if source.get("state") == "delivered":
                 return InteractiveMessageResult(
                     status="accepted",

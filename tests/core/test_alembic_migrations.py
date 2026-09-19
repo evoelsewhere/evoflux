@@ -189,6 +189,51 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             if index.get("unique")
         }
         assert "uq_webbridge_tab_bindings_pairing_session" in binding_unique_indexes
+        assert {"remote_connections", "remote_pairings"} <= set(
+            inspector.get_table_names()
+        )
+        remote_connection_columns = {
+            column["name"] for column in inspector.get_columns("remote_connections")
+        }
+        assert {
+            "id",
+            "adapter",
+            "label",
+            "enabled",
+            "adapter_principal_id",
+            "adapter_username",
+            "created_at",
+            "updated_at",
+        } <= remote_connection_columns
+        remote_pairing_columns = {
+            column["name"] for column in inspector.get_columns("remote_pairings")
+        }
+        assert {
+            "id",
+            "connection_id",
+            "principal_id",
+            "destination_id",
+            "label",
+            "display",
+            "active_session_id",
+            "created_at",
+            "last_seen_at",
+        } <= remote_pairing_columns
+        remote_pairing_fks = inspector.get_foreign_keys("remote_pairings")
+        connection_fk = next(
+            fk for fk in remote_pairing_fks if fk["referred_table"] == "remote_connections"
+        )
+        assert connection_fk["options"].get("ondelete", "").upper() == "CASCADE"
+        session_fk = next(
+            fk for fk in remote_pairing_fks if fk["referred_table"] == "chat_sessions"
+        )
+        assert session_fk["options"].get("ondelete", "").upper() == "SET NULL"
+        remote_pairing_unique = {
+            tuple(sorted(constraint["column_names"]))
+            for constraint in inspector.get_unique_constraints("remote_pairings")
+        }
+        assert ("connection_id", "principal_id") in remote_pairing_unique
+        assert ("connection_id", "destination_id") in remote_pairing_unique
         with engine.connect() as conn:
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")

@@ -779,17 +779,27 @@ async def save_queued_user_message(
     )
 
 
+def get_channel_source(extra: dict | None) -> tuple[str, dict] | None:
+    """Return channel idempotency metadata, including legacy WebBridge rows."""
+    for key in ("interactive_source", "webbridge_source"):
+        source = (extra or {}).get(key)
+        if isinstance(source, dict) and source.get("key"):
+            return key, source
+    return None
+
+
 async def mark_channel_source_delivered(db: AsyncSession, row: SessionMessage) -> bool:
     """Mark a source-keyed channel row after its delivery boundary succeeds."""
     extra = dict(row.extra or {})
-    source = extra.get("webbridge_source")
-    if not isinstance(source, dict) or not source.get("key"):
+    source_entry = get_channel_source(extra)
+    if source_entry is None:
         return False
+    source_key, source = source_entry
     if source.get("state") == "delivered":
         return False
     source = dict(source)
     source["state"] = "delivered"
-    extra["webbridge_source"] = source
+    extra[source_key] = source
     row.extra = extra
     db.add(row)
     await db.flush()
@@ -1600,9 +1610,7 @@ async def get_team_history(
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
-def _restore_reasoning_items(
-    msg: "AssistantMessage", extra: dict | None
-) -> None:
+def _restore_reasoning_items(msg: "AssistantMessage", extra: dict | None) -> None:
     """Put the provider's reasoning items back on a rehydrated turn.
 
     They ride in ``extra`` because the field itself is excluded from the

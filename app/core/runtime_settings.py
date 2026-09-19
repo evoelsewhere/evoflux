@@ -206,6 +206,23 @@ class BuiltInBrowserSettings(BaseModel):
     allow_agent_permission_accept: bool = False
 
 
+class RemoteSettings(BaseModel):
+    """Explicit outbound-data policy for the ``remote`` channel.
+
+    Connection enablement, adapter kind, and bot identity live on the
+    ``RemoteConnection`` database record (``app/models/remote.py``), not
+    here — this section only carries the redaction policy applied to every
+    user- and agent-derived field before it reaches a paired phone. The
+    default is the safe one: redaction and standard PII masking are on,
+    unlike the sandbox's own outbound policy, which defaults off.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    outbound_data_policy: Literal["block", "redact", "off"] = "redact"
+    outbound_pii_policy: Literal["off", "standard", "strict"] = "standard"
+
+
 class ConductorSettings(BaseModel):
     """Connection and enforcement policy for the organization control plane."""
 
@@ -294,6 +311,7 @@ class RuntimeSettings(BaseModel):
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
     team_spawn: TeamSpawnModeSettings = Field(default_factory=TeamSpawnModeSettings)
     follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)
+    remote: RemoteSettings = Field(default_factory=RemoteSettings)
 
 
 def follow_up_delivery_default() -> str:

@@ -18,6 +18,7 @@ import { NewAgentPage } from '@/routes/settings.agents.new'
 import { AgentsListPage } from '@/routes/settings.agents'
 import { AppearanceSettingsPage } from '@/routes/settings.appearance'
 import { BackendConnectionPage } from '@/routes/settings.connection'
+import { RemoteAccessSettingsPage } from '@/routes/settings.remote-access'
 import { DiagnosticsPage } from '@/routes/settings.diagnostics'
 import { SettingsHubPage } from '@/routes/settings.index'
 import { McpServerDetailPage } from '@/routes/settings.mcp.$name'
@@ -104,6 +105,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'memory') return <MemorySettingsPage />
   if (section === 'context') return <ContextSettingsPage />
   if (section === 'connection') return <BackendConnectionPage />
+  if (section === 'remote-access') return <RemoteAccessSettingsPage />
   if (section === 'version-control') return <VersionControlSettingsPage />
   if (section === 'providers') return <ProvidersSettingsPage />
   if (section === 'language-servers') return <LanguageServersSettingsPage />

@@ -26,6 +26,7 @@ from app.api.routes.mcp import router as mcp_router
 from app.api.routes.observability import router as observability_router
 from app.api.routes.plugins import router as plugins_router
 from app.api.routes.quote import router as quote_router
+from app.api.routes.remote import router as remote_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.skills import router as skills_router
@@ -146,6 +147,18 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
     except Exception as exc:  # noqa: BLE001
         logger.error("optional_service_start_failed service=scheduler error={}", exc)
     _log_startup_timing("scheduler", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
+        # Lazy by design (AC-1): with no enabled, credentialed remote
+        # connection this imports nothing under app.remote.telegram and
+        # starts no task — see app/remote/runtime.py.
+        from app.remote.runtime import remote_runtime
+
+        await remote_runtime.start()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("optional_service_start_failed service=remote error={}", exc)
+    _log_startup_timing("remote", phase_started, process_started)
 
     phase_started = perf_counter()
     try:
@@ -297,6 +310,9 @@ async def lifespan(app: FastAPI):
     await dream_scheduler.stop()
     await task_scheduler.stop()
     await team_manager.stop()
+    from app.remote.runtime import remote_runtime
+
+    await remote_runtime.stop()
     from app.conductor import conductor_service
 
     await conductor_service.stop()
@@ -391,6 +407,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
     app.include_router(plugins_router, prefix="/api/plugins", tags=["plugins"])
     app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
+    app.include_router(remote_router, prefix="/api/remote", tags=["remote"])
     app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
     app.include_router(dream_router, prefix="/api", tags=["dream"])
     app.include_router(

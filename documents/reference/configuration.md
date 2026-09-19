@@ -69,6 +69,7 @@ of committed repository files.
 | `browser` | built-in browser domain and action permissions |
 | `webbridge` | enable/domain/evaluate, sharing, retention and interaction policy |
 | `conductor` | connection, intervals, enforcement and managed identity metadata |
+| `remote` | `outbound_data_policy` (`block` / `redact` / `off`, default `redact`), `outbound_pii_policy` (`off` / `standard` / `strict`, default `standard`) |
 
 Unknown keys are ignored for forward compatibility; known values are validated
 before atomic save. Models use `provider:model`.
