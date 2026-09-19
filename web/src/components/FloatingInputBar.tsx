@@ -46,8 +46,6 @@ interface FloatingInputBarProps {
   sessionId?: string | null
   onWiki?: () => void
   wikiActive?: boolean
-  onActivity?: () => void
-  activityActive?: boolean
   workspaceSelector?: React.ReactNode
   // Forwarded to InputBar through the rest spread below, like the other
   // composer props — declared here so the call site stays type-checked.

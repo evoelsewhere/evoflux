@@ -3,7 +3,7 @@
  * (extracted, unchanged, from its layout).
  *
  *   - ``ChatTrailingPanels`` — rendered after <main> inside AppShell's body
- *     row: PlanReviewPanel, Activity, BrowserViewer, TerminalPanel.
+ *     row: PlanReviewPanel, BrowserViewer, TerminalPanel.
  *     Coding workspace / file viewer live in ``fullHeightTrailing`` (same
  *     slot as Work's WorkspaceFilesPanel) so they cover the right corner
  *     beside the main card instead of sitting under the topbar.
@@ -14,20 +14,14 @@
  *
  * Props-driven; every conditional and the exact DOM order are preserved.
  */
-import { AnimatePresence } from 'framer-motion'
 import { PlanReviewPanel } from '../PlanReviewPanel'
 import { ChangesReviewPanel } from '../ChangesReviewPanel'
 import { ChangeSetReviewPanel } from '../ChangeSetReviewPanel'
-import { ActivityPanel } from '../ActivityPanel'
 import { CommandPalette, type Command } from '../CommandPalette'
 import { RunInputsDialog, type RunInputsRequest } from '../RunInputsDialog'
-import { SidePanel } from '@/components/shell/SidePanel'
-import { STORAGE_KEYS } from '@/lib/storage-keys'
 
 interface ChatTrailingPanelsProps {
   onQuoteComment: (quote: string, comment: string) => void
-  showActivity: boolean
-  onCloseActivity: () => void
   workspace?: string | null
   mode?: 'work' | 'coding'
   onOpenChangedFile?: (path: string) => void
@@ -36,8 +30,6 @@ interface ChatTrailingPanelsProps {
 // Side panels rendered after <main> inside AppShell's body row.
 export function ChatTrailingPanels({
   onQuoteComment,
-  showActivity,
-  onCloseActivity,
   workspace,
   mode = 'work',
   onOpenChangedFile,
@@ -51,26 +43,6 @@ export function ChatTrailingPanels({
         onOpenFile={onOpenChangedFile}
       />
       <ChangeSetReviewPanel />
-      <AnimatePresence>
-        {showActivity && (
-          <SidePanel
-            key="activity-panel"
-            storageKey={STORAGE_KEYS.panels.activity}
-            defaultWidth={280}
-            minWidth={240}
-            maxWidth={480}
-            title="Activity"
-            onClose={onCloseActivity}
-            closeLabel="Close activity panel"
-            resizeLabel="Resize activity panel"
-            className="bg-(--bg-page)"
-          >
-            <div className="min-h-0 flex-1">
-              <ActivityPanel />
-            </div>
-          </SidePanel>
-        )}
-      </AnimatePresence>
     </>
   )
 }
