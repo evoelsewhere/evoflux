@@ -611,6 +611,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     (s) => s.activeAgent ? s.agentStreams[s.activeAgent]?.currentBlocks.length ?? 0 : 0,
   )
   const hasActiveStream     = useTeamStore((s) => Boolean(s.activeAgent && s.agentStreams[s.activeAgent]))
+  const hasLeadStream       = useTeamStore((s) => Boolean(s.leadName && s.agentStreams[s.leadName]))
   const activeGoal          = useTeamStore((s) => s.activeGoal)
 
   // Per-purpose narrowed subscriptions — the full ``agentStreams`` map gets a
@@ -2135,8 +2136,12 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             </Button>
           </div>
         )}
-        {/* Content area */}
-        {showHistorySkeleton ? (
+        {/* Agent view always shows the lead agent's transcript. */}
+        {(() => {
+          const agentViewAgent = effectiveViewMode === 'agent' ? leadName : activeAgent
+          const hasAgentViewStream = effectiveViewMode === 'agent' ? hasLeadStream : hasActiveStream
+
+          return showHistorySkeleton ? (
           historySkeleton
         ) : effectiveViewMode === 'monitor' ? (
           <Suspense fallback={<PanelLoadingFallback />}>
@@ -2231,18 +2236,18 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               </div>
             </div>
           </div>
-        ) : activeAgent && hasActiveStream ? (
+        ) : agentViewAgent && hasAgentViewStream ? (
           <ActiveAgentTranscript
-            activeAgent={activeAgent}
-            isContinuing={isContinuing && activeAgent === leadName}
-            isLead={activeAgent === leadName}
+            activeAgent={agentViewAgent}
+            isContinuing={isContinuing && agentViewAgent === leadName}
+            isLead={agentViewAgent === leadName}
             onContinue={continueTeam}
             onAddSelectionToChat={handleAddSelectionToChat}
             onRequestSelectionDetails={handleRequestSelectionDetails}
             onSendToSideChat={handleSendToSideChat}
             turnChanges={
               mode === 'coding'
-                && activeAgent === leadName
+                && agentViewAgent === leadName
                 && turnChanges?.sessionId === sessionIdState
                 ? turnChanges
                 : null
@@ -2285,7 +2290,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           </div>
         ) : sessionId && !isConnected ? (
           historySkeleton
-        ) : null}
+        ) : null
+        })()}
 
         <SuggestedTaskDock />
         <PermissionApprovalModal />
