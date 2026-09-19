@@ -7,6 +7,7 @@
 
 import { apiBaseUrl } from '../base-url'
 import { fetchWithTimeout, parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import type {
   PreviewActionResponse,
   PreviewTargetListResponse,
@@ -21,7 +22,7 @@ export async function getPreviewTargets(
   signal?: AbortSignal,
 ): Promise<PreviewTargetListResponse> {
   const res = await fetchWithTimeout(
-    `${apiBaseUrl()}/team/preview/targets?workspace=${encodeURIComponent(workspace)}`,
+    `${apiBaseUrl()}/team/preview/targets?workspace=${encodeURIComponent(stripExtendedPathPrefix(workspace))}`,
     { headers: { Accept: 'application/json' }, signal },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'getPreviewTargets')

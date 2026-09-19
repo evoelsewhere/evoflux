@@ -2,6 +2,7 @@
 
 import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import type {
   CodeGraphFreshnessPolicy,
   CodeGraphFreshnessResponse,
@@ -76,7 +77,7 @@ interface RawQuery {
 }
 
 function statusParams(workspace: string): URLSearchParams {
-  return new URLSearchParams({ workspace })
+  return new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
 }
 
 async function rawStatus(workspace: string): Promise<RawStatus> {

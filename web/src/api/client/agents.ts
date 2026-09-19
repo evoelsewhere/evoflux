@@ -4,6 +4,7 @@
 
 import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import type {
   AgentListResponse,
   AgentDetail,
@@ -36,7 +37,7 @@ function skillDiscoveryQuery(scope?: SkillDiscoveryScope): string {
     const workspace = rawWorkspace.trim()
     if (!workspace || seen.has(workspace)) continue
     seen.add(workspace)
-    params.append('workspace', workspace)
+    params.append('workspace', stripExtendedPathPrefix(workspace))
   }
   if (scope?.mode) params.set('mode', scope.mode)
   const query = params.toString()
@@ -240,7 +241,7 @@ export async function deleteSkill(
 
 export async function listCommands(workspace?: string | null): Promise<CommandListResponse> {
   const params = new URLSearchParams()
-  if (workspace) params.set('workspace', workspace)
+  if (workspace) params.set('workspace', stripExtendedPathPrefix(workspace))
   const query = params.toString()
   const res = await fetch(`${apiBaseUrl()}/commands${query ? `?${query}` : ''}`)
   if (!res.ok) await parseDetailOrThrow(res, 'listCommands')
@@ -257,7 +258,7 @@ export async function renderCommand(
   // separator so e.g. ``git/commit`` survives intact.
   const encoded = name.split('/').map(encodeURIComponent).join('/')
   const params = new URLSearchParams()
-  if (workspace) params.set('workspace', workspace)
+  if (workspace) params.set('workspace', stripExtendedPathPrefix(workspace))
   const query = params.toString()
   const res = await fetch(`${apiBaseUrl()}/commands/${encoded}/render${query ? `?${query}` : ''}`, {
     method: 'POST',
@@ -271,7 +272,7 @@ export async function renderCommand(
 // ── /snippets ───────────────────────────────────────────────────────────────
 
 export async function listSnippets(workspace: string): Promise<SnippetListResponse> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(`${apiBaseUrl()}/snippets?${params.toString()}`)
   if (!res.ok) await parseDetailOrThrow(res, 'listSnippets')
   return res.json()
@@ -279,7 +280,7 @@ export async function listSnippets(workspace: string): Promise<SnippetListRespon
 
 export async function renderSnippet(name: string, workspace: string): Promise<SnippetRenderResponse> {
   const encoded = name.split('/').map(encodeURIComponent).join('/')
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(`${apiBaseUrl()}/snippets/${encoded}/render?${params.toString()}`, {
     method: 'POST',
   })

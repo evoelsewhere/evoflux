@@ -5,6 +5,7 @@
 
 import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import type {
   WorkflowDetail,
   WorkflowExecutionDetail,
@@ -16,7 +17,7 @@ import type {
 function withWorkspace(base: string, workspace?: string | null): string {
   if (!workspace) return base
   const separator = base.includes('?') ? '&' : '?'
-  return `${base}${separator}workspace=${encodeURIComponent(workspace)}`
+  return `${base}${separator}workspace=${encodeURIComponent(stripExtendedPathPrefix(workspace))}`
 }
 
 export async function listWorkflows(
