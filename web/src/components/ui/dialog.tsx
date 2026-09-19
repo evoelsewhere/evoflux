@@ -56,6 +56,7 @@ function DialogContent({
       <DialogOverlay blur={overlayBlur} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
+        data-no-drag
         className={cn(
           "fixed top-1/2 left-1/2 z-(--z-modal) grid max-h-[calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-1rem)] w-full max-w-[calc(100%-1rem)] -translate-x-1/2 -translate-y-1/2 gap-3 overflow-y-auto rounded-lg border border-(--color-border) bg-(--bg-card) p-3 text-sm text-(--color-text) duration-(--motion-instant) outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className

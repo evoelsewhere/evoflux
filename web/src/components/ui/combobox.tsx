@@ -142,6 +142,7 @@ export function Combobox({
       <ComboboxPrimitive.Portal>
         <ComboboxPrimitive.Positioner side="bottom" align="start" sideOffset={4} className="z-(--z-modal)">
           <ComboboxPrimitive.Popup
+            data-no-drag
             style={
               rich
                 ? {

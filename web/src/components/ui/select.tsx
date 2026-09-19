@@ -92,6 +92,7 @@ function SelectContent({
       >
         <SelectPrimitive.Popup
           data-slot="select-content"
+          data-no-drag
           data-align-trigger={alignItemWithTrigger}
           className={cn(
             "relative isolate z-(--z-modal) max-h-(--available-height) w-(--anchor-width) max-w-[calc(100vw-1rem)] min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border border-(--color-border-strong) bg-(--bg-page) p-1 text-(--color-text) shadow-(--shadow-popover) duration-(--motion-instant) data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
