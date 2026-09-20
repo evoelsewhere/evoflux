@@ -24,7 +24,6 @@ import { useUIStore } from '@/stores/useUIStore'
 import { OpenWithMenu } from '@/components/workbench/OpenWithMenu'
 import {
   FocusViewIcon,
-  MonitorViewIcon,
   SidePanelIcon,
   SplitViewIcon,
 } from '@/components/ui/layout-icons'
@@ -107,18 +106,8 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const contextMax = modelEntry?.context_length ?? undefined
   const summaryTrigger = modelEntry?.summary_trigger_tokens
   const canCompactContext = Boolean(sessionId && props.activeAgent === leadName)
-  const viewModeLabel =
-    props.viewMode === 'agent'
-      ? 'Agent'
-      : props.viewMode === 'split'
-        ? 'Split'
-        : 'Monitor'
-  const ViewModeIcon =
-    props.viewMode === 'agent'
-      ? FocusViewIcon
-      : props.viewMode === 'split'
-        ? SplitViewIcon
-        : MonitorViewIcon
+  const viewModeLabel = props.viewMode === 'agent' ? 'Agent' : 'Split'
+  const ViewModeIcon = props.viewMode === 'agent' ? FocusViewIcon : SplitViewIcon
   const handleWorkbenchToggle = () => {
     if (!workbenchOpen && props.mode === 'coding' && props.workspace && activeWorkbenchTool === null) {
       openWorkbenchTool('overview')
@@ -278,14 +267,6 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
               <SplitViewIcon size={15} />
               <span>Split</span>
               {props.viewMode === 'split' && <Check size={13} className="ml-auto text-(--color-accent)" />}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={props.isMobile}
-              onClick={() => props.onViewModeChange('monitor')}
-            >
-              <MonitorViewIcon size={15} />
-              <span>Monitor</span>
-              {props.viewMode === 'monitor' && <Check size={13} className="ml-auto text-(--color-accent)" />}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

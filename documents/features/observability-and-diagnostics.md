@@ -10,7 +10,7 @@ The session SSE stream carries structured events for model deltas, reasoning,
 tool calls/results, agent status, delegations, todos, handoffs, usage, plan and
 permission requests, questions, goals, workflows, queues, compaction and final
 completion/error. The React team store projects these into transcript blocks,
-Activity/Monitor views and progress controls.
+Activity views and progress controls.
 
 ### Live turn status
 
