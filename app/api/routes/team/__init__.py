@@ -3,6 +3,7 @@
 Router groups (split across modules to keep each file focused on one
 resource):
 
+- :mod:`app.api.routes.team.app_search` — POST /search-app
 - :mod:`app.api.routes.team.chat` — POST /chat, GET /{sid}/stream,
   GET /agents, GET /sessions, DELETE /sessions/{sid}, GET /{sid}/history
 - :mod:`app.api.routes.team.files` — GET /{sid}/uploads/{filename},
@@ -26,6 +27,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.api.routes.team import (
+    app_search,
     browser,
     change_sets,
     editor,
@@ -63,6 +65,8 @@ router.include_router(folders.router)
 router.include_router(preview.router)
 # Literal /suggested-tasks/* paths, same reason.
 router.include_router(suggested_tasks.router)
+# Literal /search-app, ahead of chat.py's parameterised session routes.
+router.include_router(app_search.router)
 router.include_router(chat.router)
 router.include_router(files.router)
 router.include_router(change_sets.router)

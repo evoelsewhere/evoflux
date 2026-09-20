@@ -114,7 +114,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Sau khi có provider, gửi một tin Work ngắn (“ping — reply with ok”) để verify streaming end-to-end trước khi mở repo lớn.',
       'Trong Coding, click repo chỉ focus workspace; dùng + / New chat để tạo session. Focus một mình không bao giờ mở transcript.',
       'Trong Coding, mở repo hoặc project từ sidebar rồi bắt đầu session trên workspace đó.',
-      'Mở Guidelines bất cứ lúc nào từ nút Help trên sidebar (modal này); Ctrl+P vẫn là command palette — dành cho action nhanh, không phải docs.',
+      'Mở Guidelines bất cứ lúc nào từ nút Help trên sidebar (modal này); Ctrl+P vẫn là command palette — tìm cả action lẫn nội dung của bạn (phiên, tin nhắn, Memory, repo, tập tin), không phải docs.',
       'HealthDot xanh mà chat vẫn fail → mở Settings → Diagnostics trước khi reinstall; check subsystem thường đủ, không cần wipe sạch.',
       'Đừng dán credential BYOM vào transcript; chỉ cấu hình trong Settings → Providers.'
 ],
@@ -2617,13 +2617,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Quên binding thì ưu tiên command palette (Ctrl+P) — hầu hết action search theo tên. Guidelines (Help) tách riêng để palette search còn tập trung command. Graph và Review dựa workbench bar hoặc palette vì không có global shortcut riêng.',
+        text: 'Quên binding thì ưu tiên command palette (Ctrl+P) — hầu hết action search theo tên, và cùng ô đó tìm luôn phiên chat, tin nhắn cũ, trang Memory, project, repository, nhiệm vụ theo lịch, agent và skill (thêm tập tin/symbol của repo khi đang mở workspace Coding). Guidelines (Help) tách riêng vì đó là tài liệu, không phải nội dung của bạn. Graph và Review dựa workbench bar hoặc palette vì không có global shortcut riêng.',
       },
       {
         type: 'tips',
         items: [
           'Nút Help — modal Guidelines (docs)',
-          'Ctrl+P — command palette (actions)',
+          'Ctrl+P — command palette (actions + nội dung của bạn)',
           'Nhãn ⌘P / ⌥⌘S — cũ; dùng Ctrl+F / Ctrl+;',
           'Ctrl+V — xoay view bị suppress lúc paste',
           'Ctrl+R — chỉ refresh session Work',

@@ -110,6 +110,18 @@ export interface WorkspaceFileRequest {
   path: string
 }
 
+export interface WikiFileRequest {
+  id: number
+  path: string
+}
+
+/** One-shot request to point the Coding sidebar at a project or repository. */
+export interface CodingScopeRequest {
+  id: number
+  projectId: string | null
+  workspace: string | null
+}
+
 export interface AsddChangeOpenRequest {
   id: number
   changeId: string
@@ -134,6 +146,8 @@ interface WorkbenchState {
 const MULTI_INSTANCE_TOOLS = new Set<WorkbenchTool>(['terminal', 'browser'])
 let workbenchTabSequence = 0
 let workspaceFileRequestSequence = 0
+let wikiFileRequestSequence = 0
+let codingScopeRequestSequence = 0
 let asddChangeOpenRequestSequence = 0
 
 function newWorkbenchTab(
@@ -373,6 +387,10 @@ interface UIStore extends WorkbenchState {
   sideChatRequest: string | null
   /** One-shot request from a transcript artifact link to preview a workspace file. */
   workspaceFileRequest: WorkspaceFileRequest | null
+  /** One-shot request to open one Memory page — set by a palette search hit. */
+  wikiFileRequest: WikiFileRequest | null
+  /** One-shot request to select a Coding project or repository in the sidebar. */
+  codingScopeRequest: CodingScopeRequest | null
   /** One-shot request to open one ASDD change in the Agent Spec-Driven panel. */
   asddChangeOpenRequest: AsddChangeOpenRequest | null
   /** Change currently selected in the Agent Spec-Driven workbench. */
@@ -425,6 +443,10 @@ interface UIStore extends WorkbenchState {
   clearSideChatRequest: () => void
   requestWorkspaceFile: (sessionId: string, path: string) => void
   clearWorkspaceFileRequest: (requestId?: number) => void
+  requestWikiFile: (path: string) => void
+  clearWikiFileRequest: (requestId?: number) => void
+  requestCodingScope: (scope: { projectId?: string | null; workspace?: string | null }) => void
+  clearCodingScopeRequest: (requestId?: number) => void
   requestAsddChangeOpen: (changeId: string) => void
   clearAsddChangeOpenRequest: (requestId?: number) => void
   setAsddSelectedChangeId: (changeId: string | null) => void
@@ -675,6 +697,29 @@ export const useUIStore = create<UIStore>()(
     clearWorkspaceFileRequest: (requestId) => set((state) => {
       if (requestId !== undefined && state.workspaceFileRequest?.id !== requestId) return
       state.workspaceFileRequest = null
+    }),
+    wikiFileRequest: null,
+    requestWikiFile: (path) => set((state) => {
+      wikiFileRequestSequence += 1
+      state.wikiFileRequest = { id: wikiFileRequestSequence, path }
+      addOrActivateTool(state, 'wiki')
+    }),
+    clearWikiFileRequest: (requestId) => set((state) => {
+      if (requestId !== undefined && state.wikiFileRequest?.id !== requestId) return
+      state.wikiFileRequest = null
+    }),
+    codingScopeRequest: null,
+    requestCodingScope: ({ projectId = null, workspace = null }) => set((state) => {
+      codingScopeRequestSequence += 1
+      state.codingScopeRequest = {
+        id: codingScopeRequestSequence,
+        projectId,
+        workspace,
+      }
+    }),
+    clearCodingScopeRequest: (requestId) => set((state) => {
+      if (requestId !== undefined && state.codingScopeRequest?.id !== requestId) return
+      state.codingScopeRequest = null
     }),
     asddChangeOpenRequest: null,
     asddSelectedChangeId: null,

@@ -1,9 +1,13 @@
 /**
- * CommandPalette — Ctrl+P command search overlay.
+ * CommandPalette — Ctrl+P search overlay for the whole application.
  *
- * Shows a searchable list of commands. Each command has a label, description,
- * keyboard shortcut hint, and an action callback. Activated/dismissed from
- * the parent via the `onClose` prop.
+ * Two sources feed one list. `commands` holds the actions the app can perform
+ * (pure data, matched locally on label, description, group and keywords).
+ * `searchCommands` is the asynchronous content search — sessions, messages,
+ * Memory, projects, scheduled tasks, agents, skills and, in a Coding
+ * workspace, repository files and symbols. Each command carries a label,
+ * description, optional shortcut hint and an action callback. Activated and
+ * dismissed from the parent via the `onClose` prop.
  */
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
@@ -22,6 +26,8 @@ export interface Command {
   id: string
   label: string
   description?: string
+  /** Right-aligned trailing note — a result's date, never an action. */
+  meta?: string
   shortcut?: string
   /** Optional category for grouping */
   group?: string
@@ -106,15 +112,27 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
     const byId = new Map<string, Command>(
       local.map((command) => [command.id, command]),
     )
-    for (const command of remoteCommands) byId.set(command.id, command)
+    // Remote rows carry user content in label/description — never translated —
+    // but their group header is app chrome and follows the UI locale.
+    for (const command of remoteCommands) {
+      byId.set(command.id, {
+        ...command,
+        group: command.group ? t(command.group) : undefined,
+      })
+    }
     return [...byId.values()]
-  }, [localizedCommands, query, remoteCommands])
+  }, [localizedCommands, query, remoteCommands, t])
+
+  // A late result set can be shorter than the one the user was arrowing
+  // through, which used to leave the highlight past the end — no visible
+  // selection, and Enter doing nothing. Clamp on the way out instead.
+  const activeIndex = filtered.length > 0 ? Math.min(activeIdx, filtered.length - 1) : 0
 
   // Scroll active item into view
   useEffect(() => {
-    const el = listRef.current?.querySelector(`[data-idx="${activeIdx}"]`) as HTMLElement | null
+    const el = listRef.current?.querySelector(`[data-idx="${activeIndex}"]`) as HTMLElement | null
     el?.scrollIntoView({ block: 'nearest' })
-  }, [activeIdx])
+  }, [activeIndex])
 
   const run = useCallback(
     (cmd: Command) => {
@@ -131,17 +149,17 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setActiveIdx((i) => Math.min(i + 1, filtered.length - 1))
+      setActiveIdx(Math.min(activeIndex + 1, filtered.length - 1))
       return
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault()
-      setActiveIdx((i) => Math.max(i - 1, 0))
+      setActiveIdx(Math.max(activeIndex - 1, 0))
       return
     }
     if (e.key === 'Enter') {
       e.preventDefault()
-      const cmd = filtered[activeIdx]
+      const cmd = filtered[activeIndex]
       if (cmd) run(cmd)
       return
     }
@@ -183,7 +201,9 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
           exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.97, y: -8 * preset.distance }}
           transition={reducedMotionTransition(Boolean(prefersReducedMotion), preset.spring)}
           onClick={(e) => e.stopPropagation()}
-          className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-2xl"
+          /* Wider than a command-only palette needed: rows now carry message
+             excerpts and repository paths, which read badly at 28rem. */
+          className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-2xl sm:max-w-2xl"
           role="dialog"
           aria-modal="true"
           aria-label="Command palette"
@@ -200,9 +220,9 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
                 setQuery(e.target.value)
                 setActiveIdx(0)
               }}
-              placeholder="Search commands…"
+              placeholder="Search sessions, messages, files, settings…"
               className="flex-1 bg-transparent text-sm text-(--color-text) placeholder-(--color-text-muted) outline-none"
-              aria-label="Search commands"
+              aria-label="Search everything"
             />
             {query && (
               <button
@@ -218,11 +238,19 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
           </div>
 
           {/* Command list */}
-          <div ref={listRef} className="max-h-80 overflow-y-auto py-1.5">
+          <div
+            ref={listRef}
+            aria-busy={searching}
+            className="max-h-80 overflow-y-auto py-1.5 sm:max-h-[26rem]"
+          >
             {filtered.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-(--color-text-muted)">
-                No commands match "{query}"
-              </p>
+              searching ? (
+                <SearchSkeleton count={5} still={Boolean(prefersReducedMotion)} />
+              ) : (
+                <p className="px-4 py-6 text-center text-sm text-(--color-text-muted)">
+                  Nothing matches "{query}"
+                </p>
+              )
             ) : (
               rows.map((row, i) => {
                 if (row.type === 'header') {
@@ -235,7 +263,7 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
                     </p>
                   )
                 }
-                const isActive = row.idx === activeIdx
+                const isActive = row.idx === activeIndex
                 return (
                   <CommandRow
                     key={row.cmd.id}
@@ -249,6 +277,10 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
                 )
               })
             )}
+            {/* Results are already on screen but more are still coming. */}
+            {filtered.length > 0 && searching && (
+              <SearchSkeleton count={2} still={Boolean(prefersReducedMotion)} />
+            )}
           </div>
 
           {/* Footer hint */}
@@ -259,11 +291,33 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
             <span className="text-xs text-(--color-text-muted)">run</span>
             <kbd className="rounded-xs border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-muted)">Esc</kbd>
             <span className="text-xs text-(--color-text-muted)">close</span>
-            {searching && <span className="ml-auto text-xs text-(--color-accent)">Searching repository…</span>}
+            {searching && <span className="ml-auto text-xs text-(--color-accent)">Searching…</span>}
           </div>
         </motion.div>
       </motion.div>
     </AnimatePresence>
+  )
+}
+
+/** Row-shaped placeholders while a search is in flight. */
+const SKELETON_WIDTHS = ['72%', '54%', '83%', '61%', '46%']
+
+function SearchSkeleton({ count, still }: { count: number; still: boolean }) {
+  return (
+    <div aria-hidden="true" data-testid="palette-skeleton">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="flex flex-col gap-2 px-4 py-3">
+          {/* Two bars per row, matching a result's label and description. */}
+          <div
+            className={`h-3.5 rounded-xs bg-(--bg-key) ${still ? '' : 'animate-pulse'}`}
+            style={{ width: SKELETON_WIDTHS[i % SKELETON_WIDTHS.length] }}
+          />
+          <div
+            className={`h-2.5 w-1/4 rounded-xs bg-(--bg-key) ${still ? '' : 'animate-pulse'}`}
+          />
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -313,13 +367,21 @@ function CommandRow({ cmd, idx, isActive, mouseY, onRun, onActivate }: CommandRo
         }`}
       >
         <div className="min-w-0 flex-1">
-          <span className="block text-sm font-medium">{cmd.label}</span>
+          {/* Content rows carry whole message excerpts — keep every row one
+              line so the list stays scannable. */}
+          <span className="block truncate text-sm font-medium">{cmd.label}</span>
           {cmd.description && (
             <span className="block truncate text-xs text-(--color-text-muted)">
               {cmd.description}
             </span>
           )}
         </div>
+        {cmd.meta && (
+          // Least important column: a phone-width row keeps the label instead.
+          <span className="hidden shrink-0 text-[11px] leading-none text-(--color-text-subtle) sm:block">
+            {cmd.meta}
+          </span>
+        )}
         {cmd.shortcut && (
           <kbd className="shrink-0 rounded-xs border border-(--color-border) bg-(--bg-page) px-1.5 py-1 font-sans text-[11px] font-medium leading-none tracking-normal text-(--color-text-muted)">
             {formatShortcutLabel(cmd.shortcut)}

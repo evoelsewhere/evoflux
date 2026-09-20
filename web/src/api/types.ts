@@ -503,6 +503,32 @@ export interface SearchEverywhereResponse {
   items: SearchEverywhereItem[]
 }
 
+/** Application-level search — everything the app owns, outside a repository. */
+export type AppSearchKind =
+  | 'session'
+  | 'message'
+  | 'project'
+  | 'workspace'
+  | 'memory'
+  | 'scheduled_task'
+  | 'agent'
+  | 'skill'
+
+export interface AppSearchItem {
+  id: string
+  kind: AppSearchKind
+  label: string
+  description: string
+  /** Session the palette should open — the owning lead for a message hit. */
+  session_id: string | null
+  path: string | null
+  metadata: Record<string, unknown> | null
+}
+
+export interface AppSearchResponse {
+  items: AppSearchItem[]
+}
+
 export interface LanguageServerDetectedRepository {
   workspace: string
   name: string
