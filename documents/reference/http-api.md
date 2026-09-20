@@ -62,7 +62,10 @@ The `/api/team` router includes:
 - code-index status/index/query/graph per Coding project;
 - terminal and direct-browser WebSockets;
 - managed processes and `preview` dev-server targets/start/stop;
-- Side Chat messages and stream.
+- Side Chat messages and stream;
+- command-palette search: workspace-scoped
+  `POST /api/team/workspace/search-everywhere` and application-wide
+  `POST /api/team/search-app`.
 
 Use the OpenAPI document rather than copying request/response field definitions
 from this overview.

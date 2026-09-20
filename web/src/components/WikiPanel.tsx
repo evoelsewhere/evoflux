@@ -25,7 +25,7 @@
  * run completes.
  */
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft,
@@ -54,6 +54,7 @@ import {
   useDeleteWikiFileMutation,
 } from '@/queries'
 import { useMotionPreset } from '@/lib/motion'
+import { useUIStore } from '@/stores/useUIStore'
 import { cn } from '@/lib/utils'
 import type { WikiFileInfo } from '@/api/types'
 import { getIntlLocale, translate } from '@/i18n'
@@ -97,6 +98,17 @@ export function WikiPanel({ open, onClose, embedded = false }: WikiPanelProps) {
     setSelectedPath(path)
     if (isMobile) setMobilePane('editor')
   }
+
+  // A Memory hit in the command palette opens this panel and names the page
+  // it matched; land on that page instead of the empty tree.
+  const wikiFileRequest = useUIStore((s) => s.wikiFileRequest)
+  useEffect(() => {
+    if (!open || !wikiFileRequest) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- paired with the external store write below
+    setSelectedPath(wikiFileRequest.path)
+    if (isMobile) setMobilePane('editor')
+    useUIStore.getState().clearWikiFileRequest(wikiFileRequest.id)
+  }, [isMobile, open, wikiFileRequest])
 
   const handleBack = () => {
     setMobilePane('tree')

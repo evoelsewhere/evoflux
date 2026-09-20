@@ -1039,6 +1039,21 @@ export function CodingSidebar({
     );
   }, [activeStandaloneWorkspace, standaloneWorkspacesKey]);
 
+  // A project or repository hit in the command palette asks the sidebar to
+  // scope itself the way clicking that row would.
+  const codingScopeRequest = useUIStore((s) => s.codingScopeRequest);
+  useEffect(() => {
+    if (!codingScopeRequest) return;
+    if (codingScopeRequest.projectId) {
+      setSelectedProjectId(codingScopeRequest.projectId);
+      writeLastCodingProject(codingScopeRequest.projectId);
+    }
+    if (codingScopeRequest.workspace) {
+      setSelectedWorkspacePath(codingScopeRequest.workspace);
+    }
+    useUIStore.getState().clearCodingScopeRequest(codingScopeRequest.id);
+  }, [codingScopeRequest]);
+
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedWorkspaceScope =

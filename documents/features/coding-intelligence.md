@@ -92,7 +92,11 @@ network, where npm and uv finish well inside 180s.
 ## Search Everywhere and editor context
 
 Search Everywhere combines bounded file/symbol/text sources for command-palette
-navigation. Editor AI actions first build a preview of selected file/range,
+navigation. The palette searches the application alongside the repository:
+sessions and their dialogue, Coding projects and repositories, Memory pages,
+scheduled tasks, agents and skills answer in Work mode as well, while the
+repository sources need an authorized workspace. Editor AI actions first build
+a preview of selected file/range,
 diagnostics and repository context; resulting mutations use ChangeSets and
 stale-base checks rather than direct hidden writes.
 
@@ -103,7 +107,11 @@ The exact live-edit contract is in
 
 Primary code: `app/services/code_index/`, `app/agent/tools/builtin/code_context.py`,
 `app/agent/lsp_manager.py`, language-server/editor/Problems/search services and
-routes, and graph/editor/Problems React components.
+routes (`app/services/search_everywhere_service.py` for the repository,
+`app/services/app_search_service.py` for the application), and
+graph/editor/Problems React components with
+`web/src/components/TeamChatView/useGlobalSearch.ts` merging both searches into
+the palette.
 
 The parser contract has dedicated tests per language plus runtime, mutation and
 symbol-coverage gates. LSP, ChangeSet, editor, Problems, graph and Search

@@ -117,7 +117,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Cold start shows Welcome until the sidecar and team registry are ready — wait before retrying chat or hunting “empty team” bugs.',
       'After a provider is connected, send a short Work message (“ping — reply with ok”) to verify streaming end-to-end before opening a large repo.',
       'In Coding, clicking a repo focuses the workspace; use + / New chat to create a session. Focus alone never starts a transcript.',
-      'Open Guidelines anytime from the sidebar Help button (this modal); the command palette stays on Ctrl+P and is for actions, not docs.',
+      'Open Guidelines anytime from the sidebar Help button (this modal); the command palette stays on Ctrl+P and searches actions plus your own content (sessions, messages, Memory, repos, files), not docs.',
       'If HealthDot is green but chat fails, open Settings → Diagnostics before reinstalling — subsystem checks often beat a full wipe.',
       'Keep BYOM credentials out of chat transcripts; configure them only under Settings → Providers.'
 ],
@@ -2674,13 +2674,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Prefer the command palette (Ctrl+P) when you forget a binding — most actions are searchable by name. Guidelines (Help) stays separate so palette search remains command-focused. Graph and Review rely on the workbench bar or palette because they have no dedicated global shortcut.',
+        text: 'Prefer the command palette (Ctrl+P) when you forget a binding — most actions are searchable by name, and the same box searches your sessions, past messages, Memory pages, projects, repositories, scheduled tasks, agents and skills (plus repository files and symbols once a Coding workspace is open). Guidelines (Help) stays separate: it is documentation, not your content. Graph and Review rely on the workbench bar or palette because they have no dedicated global shortcut.',
       },
       {
         type: 'tips',
         items: [
           'Help button — Guidelines modal (docs)',
-          'Ctrl+P — command palette (actions)',
+          'Ctrl+P — command palette (actions + your content)',
           '⌘P / ⌥⌘S labels — stale; use Ctrl+F / Ctrl+;',
           'Ctrl+V — view cycle suppressed while pasting',
           'Ctrl+R — Work sessions refresh only',
