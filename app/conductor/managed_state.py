@@ -88,6 +88,20 @@ class ManagedResourceStore:
             self._write(document)
             return document
 
+    def forget(self) -> ManagedResourceDocument:
+        """Drop the whole document after its resources are gone locally.
+
+        Only a disconnect that removed the managed copies may call this. The
+        document is what tells a later sync a resource is already applied, so
+        forgetting it while the files are still on disk would make the next
+        connection re-apply over material it no longer knows it owns.
+        """
+
+        with self._lock:
+            empty = ManagedResourceDocument()
+            self._write(empty)
+            return empty
+
     def _write(self, document: ManagedResourceDocument) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         payload = document.model_dump_json(indent=2) + "\n"

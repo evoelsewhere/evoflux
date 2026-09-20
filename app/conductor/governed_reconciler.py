@@ -38,7 +38,11 @@ from app.core.skill_settings import (
     skill_settings_id,
 )
 from app.core.version import VERSION
-from app.plugin_platform.installer import install_plugin
+from app.plugin_platform.installer import (
+    PluginInstallError,
+    install_plugin,
+    uninstall_plugin,
+)
 from app.plugin_platform.registry import (
     get_installation,
     replace_installation,
@@ -684,6 +688,87 @@ class GovernedResourceReconciler:
                         removed_skill = True
         if removed_skill:
             team_manager.invalidate_skill_cache()
+
+    def purge_project(self, project_id: str) -> list[str]:
+        """Remove everything this project installed and forget it ever did.
+
+        `deactivate_project` unmounts a namespace the installation may mount
+        again, so it disables a Plugin and spares a copy someone has edited.
+        This is the exit instead: a person asked for the organization's
+        resources to be gone, so a Plugin is uninstalled with its data root,
+        and an edited Skill or Team goes too rather than being left behind as
+        an untracked copy of governed material.
+
+        Returns what it removed, for the disconnect summary. One resource that
+        will not delete must not strand the rest, so a failure is logged and
+        left out of the list rather than raised.
+        """
+
+        document = self.store.load()
+        if document.project_id != project_id:
+            return []
+        removed: list[str] = []
+        removed_skill = False
+        for record in document.resources:
+            label = f"{record.kind}/{record.slug}"
+            if record.kind == "plugin":
+                installation_ids = [
+                    item
+                    for item in (
+                        record.plugin_installation_id,
+                        record.previous_plugin_installation_id,
+                    )
+                    if item is not None
+                ]
+                uninstalled = False
+                for installation_id in installation_ids:
+                    if get_installation(installation_id) is None:
+                        continue
+                    try:
+                        uninstall_plugin(installation_id, remove_data=True)
+                        uninstalled = True
+                    except (KeyError, PluginInstallError, OSError) as exc:
+                        logger.warning(
+                            "conductor_purge_plugin_failed installation={} error={}",
+                            installation_id,
+                            exc,
+                        )
+                if uninstalled:
+                    removed.append(label)
+            elif record.kind == "agent_team":
+                deleted = False
+                for target in record.local_agent_targets:
+                    try:
+                        agent_fs.delete_agent(target)
+                        deleted = True
+                    except agent_fs.AgentFsNotFoundError:
+                        pass
+                    except OSError as exc:
+                        logger.warning(
+                            "conductor_purge_team_failed agent={} error={}", target, exc
+                        )
+                if deleted:
+                    removed.append(label)
+            elif record.kind == "skill":
+                skills_root = agent_fs.skills_dir().resolve()
+                target = (skills_root / record.slug).resolve()
+                if target.is_relative_to(skills_root) and target.exists():
+                    import shutil
+
+                    shutil.rmtree(target, ignore_errors=True)
+                    removed_skill = True
+                    removed.append(label)
+                delete_skill_runtime_settings(
+                    skill_settings_id(
+                        source="global-EvoFlux",
+                        root=agent_fs.skills_dir(),
+                        stem=record.slug,
+                    )
+                )
+        if removed_skill:
+            team_manager.invalidate_skill_cache()
+        self.store.forget()
+        return removed
 
     def _record(
         self,

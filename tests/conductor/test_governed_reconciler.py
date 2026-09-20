@@ -1158,3 +1158,100 @@ async def test_report_mode_still_offers_a_real_update_after_an_untouched_apply(
     )
 
     assert unchanged.observed_state == "in_sync"
+
+
+@pytest.mark.asyncio
+async def test_purge_removes_a_managed_skill_even_after_a_local_edit(
+    governed_dirs: Path,
+) -> None:
+    # `deactivate_project` spares an edited copy because the same installation
+    # may mount the namespace again. A purge is someone leaving on purpose, so
+    # leaving the edit behind would keep governed material under an untracked
+    # copy the organization can no longer update or withdraw.
+    content = (
+        "---\nname: managed-skill\ndescription: Managed workflow\n---\n"
+        "Use the managed workflow.\n"
+    )
+    payload = {"files": [{"path": "SKILL.md", "content": content}]}
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    change = _change("skill", hashlib.sha256(raw).hexdigest(), len(raw))
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": payload,
+            "artifact_key": None,
+        }
+    )
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    reconciler = GovernedResourceReconciler(store)
+    await reconciler.reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+    skill_root = governed_dirs / "config" / "skills" / "managed-skill"
+    (skill_root / "SKILL.md").write_text(content + "Local edit.\n", encoding="utf-8")
+
+    removed = reconciler.purge_project("project-1")
+
+    assert removed == ["skill/managed-skill"]
+    assert not skill_root.exists()
+    document = store.load()
+    assert document.resources == []
+    assert document.project_id is None
+
+
+@pytest.mark.asyncio
+async def test_purge_uninstalls_a_managed_plugin_instead_of_disabling_it(
+    governed_dirs: Path,
+) -> None:
+    plugin_json = json.dumps(
+        {
+            "$schema": PLUGIN_SCHEMA_ID,
+            "name": "managed-plugin",
+            "version": "0.1.0",
+            "extensions": {},
+        }
+    )
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("plugin.json", plugin_json)
+    artifact = archive.getvalue()
+    digest = hashlib.sha256(artifact).hexdigest()
+    change = _change("plugin", digest, len(artifact))
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": {"files": [{"path": "plugin.json", "content": plugin_json}]},
+            "artifact_key": f"sha256/{digest[:2]}/{digest}",
+        }
+    )
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    reconciler = GovernedResourceReconciler(store)
+    staged = await reconciler.reconcile_page(
+        FakeClient(version, artifact),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+    installation_id = staged[0].plugin_installation_id
+    assert installation_id and get_installation(installation_id) is not None
+
+    removed = reconciler.purge_project("project-1")
+
+    assert removed == ["plugin/managed-plugin"]
+    assert get_installation(installation_id) is None
+    assert store.load().resources == []
+
+
+def test_purge_ignores_a_project_this_installation_does_not_hold(
+    governed_dirs: Path,
+) -> None:
+    store = ManagedResourceStore(governed_dirs / "state" / "conductor")
+    store.replace_project("project-1")
+
+    assert GovernedResourceReconciler(store).purge_project("project-2") == []
+    assert store.load().project_id == "project-1"

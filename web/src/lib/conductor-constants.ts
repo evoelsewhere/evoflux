@@ -9,6 +9,19 @@ export const CONDUCTOR_ACTION = {
 
 export type ConductorAction = (typeof CONDUCTOR_ACTION)[keyof typeof CONDUCTOR_ACTION]
 
+/** What a disconnect leaves behind. Mirrors `DisconnectResources` server-side. */
+export const CONDUCTOR_DISCONNECT_RESOURCES = {
+  /** Unmount the namespace: a control-plane move, not someone leaving. */
+  UNMOUNT: 'unmount',
+  /** Go on using what is installed as ordinary local material. */
+  KEEP: 'keep',
+  /** Take the organization's Agents, Skills and Plugins with it. */
+  PURGE: 'purge',
+} as const
+
+export type ConductorDisconnectResources =
+  (typeof CONDUCTOR_DISCONNECT_RESOURCES)[keyof typeof CONDUCTOR_DISCONNECT_RESOURCES]
+
 export const CONDUCTOR_ENFORCEMENT = {
   ENFORCE: 'enforce',
   REPORT: 'report',

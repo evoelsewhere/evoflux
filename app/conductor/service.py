@@ -38,6 +38,7 @@ from app.conductor.constants.telemetry import (
     TelemetryField,
 )
 from app.conductor.models import (
+    DisconnectResources,
     ManagedResourceRecord,
     RegistrationRequest,
     TelemetryDeliverySummary,
@@ -335,11 +336,31 @@ class ConductorService:
         await self.restart()
         return self.status
 
-    async def disconnect(self) -> ConductorStatus:
+    async def disconnect(
+        self, *, resources: DisconnectResources = "unmount"
+    ) -> ConductorStatus:
+        """Drop the connection, and decide what the organization leaves behind.
+
+        `unmount` is what a control-plane move needs and stays the default: the
+        namespace stops being mounted, but a Plugin is only disabled and an
+        edited copy is kept, because the same installation may come back.
+        Someone leaving on purpose says which they want instead — `purge` to
+        take the organization's resources with it, `keep` to go on using what
+        is already installed as ordinary local material.
+        """
+
         await self.stop()
         current_project_id = self._config().project_id
-        if current_project_id:
-            self._governed_reconciler.deactivate_project(current_project_id)
+        if current_project_id and resources != "keep":
+            if resources == "purge":
+                removed = self._governed_reconciler.purge_project(current_project_id)
+                logger.info(
+                    "conductor_disconnect_purged project={} resources={}",
+                    current_project_id,
+                    len(removed),
+                )
+            else:
+                self._governed_reconciler.deactivate_project(current_project_id)
         self._credentials().delete()
         self._telemetry_store.clear()
         clear_usage()
