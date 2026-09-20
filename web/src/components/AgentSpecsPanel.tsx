@@ -444,11 +444,11 @@ function NewChangeForm({
   const [risk, setRisk] = useState<AsddRisk | ''>('')
   const [capabilities, setCapabilities] = useState('')
   const [changeId, setChangeId] = useState('')
-  // A project can hold several repositories; only the ones already set up for
-  // ASDD are valid targets. Defaults to whichever repository the panel is
-  // currently showing, but a Coding Project lets the author redirect it.
+  // A project can hold several repositories, and the panel only reaches this
+  // form once every one of them is installed, so all of them are valid
+  // targets. Defaults to whichever repository the panel is currently showing,
+  // but a Coding Project lets the author redirect it.
   const [targetWorkspace, setTargetWorkspace] = useState(workspace)
-  const installedRepositories = repositories.filter((repository) => repository.installed)
   const create = useCreateAsddChangeMutation(targetWorkspace, projectId)
   const failure = errorText(create.error)
 
@@ -494,7 +494,7 @@ function NewChangeForm({
         </p>
       </div>
 
-      {installedRepositories.length > 1 && (
+      {repositories.length > 1 && (
         <label className="flex flex-col gap-1">
           <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-(--color-text-subtle)">
             Repository
@@ -503,14 +503,15 @@ function NewChangeForm({
             value={targetWorkspace}
             ariaLabel="Target repository"
             onValueChange={setTargetWorkspace}
-            options={installedRepositories.map((repository) => ({
+            options={repositories.map((repository) => ({
               value: repository.path,
               label: repositoryLabel(repository),
             }))}
           />
           <span className="text-[10px] leading-4 text-(--color-text-subtle)">
-            This Coding Project has {installedRepositories.length} repositories set up for
-            Agent Spec-Driven. The change folder is written to whichever one you pick here.
+            This Coding Project has {repositories.length} repositories set up for
+            Agent Spec-Driven. A change may edit any of them; the change folder itself
+            is written to whichever one you pick here.
           </span>
         </label>
       )}
@@ -1286,10 +1287,13 @@ export function AgentSpecsPanel({
   }, [workspace])
 
   const setup = useAsddSetupQuery(activeWorkspace, projectId, active)
-  // A catalogue belongs to one repository, so this session is usable as soon as
-  // its own repository is installed. Gating on the whole project would lock a
-  // ready repository behind a sibling nobody has set up yet.
-  const ready = setup.data?.workspace_ready ?? false
+  // Every repository in scope, not just the one this session opened on. A
+  // change in a Coding Project routinely edits siblings, and the new-change
+  // form can only offer a repository that is already set up — so a
+  // half-installed project silently files every change wherever the session
+  // happened to start. Setup stays up until the project is whole, and after
+  // that the target repository is a choice the author actually gets to make.
+  const ready = setup.data?.ready ?? false
   const changes = useAsddChangesQuery(activeWorkspace, projectId, active && ready)
   const detail = useAsddChangeQuery(activeWorkspace, openChangeId, active && ready)
 

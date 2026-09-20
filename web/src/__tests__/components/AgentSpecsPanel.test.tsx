@@ -198,9 +198,10 @@ describe('Agent Spec-Driven setup', () => {
     expect(screen.getByRole('button', { name: /Set up 2 repositories/ })).toBeInTheDocument()
   })
 
-  it('opens a ready workspace even when a sibling repository is not', () => {
-    // A catalogue belongs to one repository. Gating on the whole project
-    // locked a set-up repository behind a sibling nobody had installed.
+  it('holds the project on setup while a sibling repository is not installed', () => {
+    // The new-change form can only offer a repository that is set up. Letting
+    // one ready repository through would file every change into it by default,
+    // with no sign the siblings were ever candidates.
     mocks.setup.mockReturnValue(idle(setupResponse({
       repositories: [
         repository(),
@@ -210,8 +211,9 @@ describe('Agent Spec-Driven setup', () => {
 
     panel()
 
-    expect(screen.queryByRole('heading', { name: 'Set up Agent Spec-Driven' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Add user authentication/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Set up Agent Spec-Driven' })).toBeInTheDocument()
+    expect(screen.getByText('1/2 ready')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Set up repository/ })).toBeInTheDocument()
   })
 
   it('names what an unhealthy repository is missing', () => {
@@ -750,26 +752,25 @@ describe('Agent Spec-Driven new change form', () => {
     expect(screen.queryByRole('combobox', { name: 'Target repository' })).not.toBeInTheDocument()
   })
 
-  it('offers a repository picker limited to the installed repositories of a multi-repo project', async () => {
+  it('offers a repository picker over every repository of a multi-repo project', async () => {
     mocks.setup.mockReturnValue(idle(setupResponse({
       project_id: 'project-1',
       repositories: [
         repository({ path: '/repo', name: 'repo' }),
         repository({ path: '/other', name: 'other', display_name: 'Other service' }),
-        // Not installed yet — cannot receive a change, so it must not appear.
-        repository({ path: '/third', name: 'third', status: 'not_initialized', installed: false }),
+        repository({ path: '/third', name: 'third' }),
       ],
     })))
 
     openForm({ projectId: 'project-1' })
 
     expect(screen.getByText('Repository')).toBeInTheDocument()
-    expect(screen.getByText(/2 repositories set up/)).toBeInTheDocument()
+    expect(screen.getByText(/3 repositories set up/)).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Target repository' }))
     expect(await screen.findByRole('option', { name: 'repo' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Other service' })).toBeInTheDocument()
-    expect(screen.queryByRole('option', { name: 'third' })).not.toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'third' })).toBeInTheDocument()
   })
 
   it('creates the change in the repository chosen from the picker, not the default one', async () => {
