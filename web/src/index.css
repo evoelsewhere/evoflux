@@ -729,14 +729,19 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
     0 10px 30px rgb(0 0 0 / 5%);
 }
 
-/* DWM already composites and blurs the Windows 11 Mica backdrop. Applying a
- * second WebView backdrop-filter produces an opaque grey slab and rendering
- * artifacts, most visibly when Settings replaces the regular app shell. */
-html[data-native-sidebar-glass="windows"] [data-sidebar-card],
-html[data-native-sidebar-glass="windows"] [data-settings-sidebar] {
-  background: color-mix(in srgb, var(--bg-page) 52%, transparent);
+/* Where the OS supplies the material — Mica on Windows, under-window
+ * background on macOS — the sidebar shows it plain, exactly as the title bar
+ * above it does. A tint of our own on top read as a film over one continuous
+ * backdrop: the same wallpaper appeared clean behind the title bar and veiled
+ * an inch below it. The compositor has already blurred what is behind, so a
+ * second WebView backdrop-filter buys nothing and on Windows produces an
+ * opaque grey slab, most visibly when Settings replaces the app shell. */
+html[data-native-sidebar-glass] [data-sidebar-card],
+html[data-native-sidebar-glass] [data-settings-sidebar] {
+  background: transparent;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+  box-shadow: none;
 }
 
 /* No borders on sidebar cards — seamless glass surface. */
