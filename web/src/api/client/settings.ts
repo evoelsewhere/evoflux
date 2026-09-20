@@ -2,6 +2,10 @@
  * EvoFlux API client — settings group: sandbox, title, multimodal, providers, OAuth.
  */
 
+import {
+  CONDUCTOR_DISCONNECT_RESOURCES,
+  type ConductorDisconnectResources,
+} from '@/lib/conductor-constants'
 import { apiBaseUrl } from '../base-url'
 import { readSSE } from '../sse'
 import type { SSECallbacks } from '../sse'
@@ -332,8 +336,14 @@ export async function connectConductor(enrollmentToken: string): Promise<Conduct
   return res.json()
 }
 
-export async function disconnectConductor(): Promise<ConductorStatus> {
-  const res = await fetch(`${apiBaseUrl()}/settings/conductor/disconnect`, { method: 'POST' })
+export async function disconnectConductor(
+  resources: ConductorDisconnectResources = CONDUCTOR_DISCONNECT_RESOURCES.UNMOUNT,
+): Promise<ConductorStatus> {
+  const res = await fetch(`${apiBaseUrl()}/settings/conductor/disconnect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resources }),
+  })
   if (!res.ok) await parseDetailOrThrow(res, 'POST /settings/conductor/disconnect')
   return res.json()
 }

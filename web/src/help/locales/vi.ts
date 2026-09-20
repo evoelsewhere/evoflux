@@ -114,7 +114,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Sau khi có provider, gửi một tin Work ngắn (“ping — reply with ok”) để verify streaming end-to-end trước khi mở repo lớn.',
       'Trong Coding, click repo chỉ focus workspace; dùng + / New chat để tạo session. Focus một mình không bao giờ mở transcript.',
       'Trong Coding, mở repo hoặc project từ sidebar rồi bắt đầu session trên workspace đó.',
-      'Mở Guidelines bất cứ lúc nào từ nút Help trên sidebar (modal này); Ctrl+P vẫn là command palette — dành cho action nhanh, không phải docs.',
+      'Mở Guidelines bất cứ lúc nào từ nút Help trên sidebar (modal này); Ctrl+P vẫn là command palette — tìm cả action lẫn nội dung của bạn (phiên, tin nhắn, Memory, repo, tập tin), không phải docs.',
       'HealthDot xanh mà chat vẫn fail → mở Settings → Diagnostics trước khi reinstall; check subsystem thường đủ, không cần wipe sạch.',
       'Đừng dán credential BYOM vào transcript; chỉ cấu hình trong Settings → Providers.'
 ],
@@ -255,14 +255,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'chat',
     title: 'Lead và specialist',
     summary:
-      'Lead sở hữu transcript bạn thấy; specialist bật theo nhu cầu và làm song song qua mailbox dùng chung. Đổi Agent, Split, Monitor trong khi theo dõi context budget bar để run dài vẫn cứu được.',
+      'Lead sở hữu transcript bạn thấy; specialist bật theo nhu cầu và làm song song qua mailbox dùng chung. Đổi giữa Agent và Split trong khi theo dõi context budget bar để run dài vẫn cứu được.',
     keywords: [
       'lead',
       'specialist',
       'team',
       'agent',
       'split',
-      'monitor',
       'mailbox',
       'Ctrl+V',
       'context budget',
@@ -277,7 +276,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ctrl+V xoay Agent ↔ Split trên desktop (tắt khi field đang focus dùng paste).',
       'Command palette có Next / Previous Agent khi worker đang chạy — nhanh hơn lục identity dropdown.',
       'Auto-split có thể mở khi specialist activate để bạn theo dõi mà không tìm view menu.',
-      'Monitor cho overview hoạt động cả đội khi nhiều worker live.',
       'Context budget bar trên workbench dùng context_length và summary_trigger_tokens của model — /compact sớm nếu thanh leo.',
       'Cấu hình model, skill, tool, permission từng agent trong Settings → Agents.',
       'Dùng Lead selector trên topbar để chọn Work hoặc Coding lead cho session đang idle. Mỗi option chỉ liệt kê member thuộc lead đó; không thể switch khi team đang chạy.',
@@ -297,7 +295,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'View: Agent (focus một agent), Split (Lead + worker cạnh nhau), Monitor (overview hoạt động). Dùng identity dropdown trên workbench để nhảy agent, hoặc palette Next/Previous Agent. Ctrl+V toggle Agent ↔ Split trên desktop. Bật auto-split thì khi specialist activate có thể tự mở Split.',
+        text: 'View: Agent (focus một agent) và Split (Lead + worker cạnh nhau). Dùng identity dropdown trên workbench để nhảy agent, hoặc palette Next/Previous Agent. Ctrl+V toggle Agent ↔ Split trên desktop. Bật auto-split thì khi specialist activate có thể tự mở Split.',
       },
       {
         type: 'p',
@@ -308,18 +306,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Agent — focus sâu một transcript (Lead hoặc specialist đã chọn).',
           'Split — xem Lead và worker song song.',
-          'Monitor — overview khi nhiều agent đang chạy.',
           'Team scope theo work / coding trong Settings → Agents.',
           'Mailbox — kết quả specialist có cấu trúc; Lead tổng hợp cho bạn.'
 ],
       },
       {
         type: 'p',
-        text: 'Task đa agent từng bước: (1) nêu outcome và ràng buộc cho Lead, (2) để specialist activate (hoặc yêu cầu research/coding song song), (3) sang Split hoặc Monitor theo dõi, (4) trả lời ask-user prompt kịp, (5) khi context bar leo thì /compact hoặc /new trước khi đổ attachment lớn tiếp.',
+        text: 'Task đa agent từng bước: (1) nêu outcome và ràng buộc cho Lead, (2) để specialist activate (hoặc yêu cầu research/coding song song), (3) sang Split theo dõi, (4) trả lời ask-user prompt kịp, (5) khi context bar leo thì /compact hoặc /new trước khi đổ attachment lớn tiếp.',
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: paste log khổng lồ vào Lead trong khi specialist đang tóm cùng file; đánh Ctrl+V khi composer đang focus (paste thắng); chờ Monitor hiện Coding Review PR (đó là workbench tool khác); để Agent view đứng trên specialist rồi thắc mắc tin nhắn bị “bơ” — chuyển về Lead.',
+        text: 'Sai thường gặp: paste log khổng lồ vào Lead trong khi specialist đang tóm cùng file; đánh Ctrl+V khi composer đang focus (paste thắng); để Agent view đứng trên specialist rồi thắc mắc tin nhắn bị “bơ” — chuyển về Lead.',
       },
       {
         type: 'tips',
@@ -2620,13 +2617,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Quên binding thì ưu tiên command palette (Ctrl+P) — hầu hết action search theo tên. Guidelines (Help) tách riêng để palette search còn tập trung command. Graph và Review dựa workbench bar hoặc palette vì không có global shortcut riêng.',
+        text: 'Quên binding thì ưu tiên command palette (Ctrl+P) — hầu hết action search theo tên, và cùng ô đó tìm luôn phiên chat, tin nhắn cũ, trang Memory, project, repository, nhiệm vụ theo lịch, agent và skill (thêm tập tin/symbol của repo khi đang mở workspace Coding). Guidelines (Help) tách riêng vì đó là tài liệu, không phải nội dung của bạn. Graph và Review dựa workbench bar hoặc palette vì không có global shortcut riêng.',
       },
       {
         type: 'tips',
         items: [
           'Nút Help — modal Guidelines (docs)',
-          'Ctrl+P — command palette (actions)',
+          'Ctrl+P — command palette (actions + nội dung của bạn)',
           'Nhãn ⌘P / ⌥⌘S — cũ; dùng Ctrl+F / Ctrl+;',
           'Ctrl+V — xoay view bị suppress lúc paste',
           'Ctrl+R — chỉ refresh session Work',

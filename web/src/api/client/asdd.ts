@@ -8,6 +8,7 @@
 
 import { apiBaseUrl } from '../base-url'
 import { ApiValidationError, parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import type {
   AsddApproveArtifact,
   AsddArchiveResult,
@@ -71,7 +72,7 @@ export async function getAsddSetup(
   workspace: string,
   projectId?: string | null,
 ): Promise<AsddSetupResponse> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   if (projectId) params.set('project_id', projectId)
   const response = await fetch(`${apiBaseUrl()}/asdd/setup?${params}`)
   return asddResponse(response, 'getAsddSetup')
@@ -92,7 +93,7 @@ export async function listAsddChanges(
   workspace: string,
   projectId?: string | null,
 ): Promise<AsddChangeList> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   if (projectId) params.set('project_id', projectId)
   const response = await fetch(`${apiBaseUrl()}/asdd/changes?${params}`)
   return asddResponse(response, 'listAsddChanges')
@@ -102,7 +103,7 @@ export async function getAsddChange(
   workspace: string,
   changeId: string,
 ): Promise<AsddChangeDetail> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const response = await fetch(
     `${apiBaseUrl()}/asdd/changes/${encodeURIComponent(changeId)}?${params}`,
   )
@@ -129,7 +130,7 @@ export async function deleteAsddChange(
   workspace: string,
   changeId: string,
 ): Promise<void> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const response = await fetch(
     `${apiBaseUrl()}/asdd/changes/${encodeURIComponent(changeId)}?${params}`,
     { method: 'DELETE' },
@@ -217,7 +218,7 @@ export async function getAsddSpec(
   workspace: string,
   capability: string,
 ): Promise<AsddSpec> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const response = await fetch(
     `${apiBaseUrl()}/asdd/specs/${encodeURIComponent(capability)}?${params}`,
   )

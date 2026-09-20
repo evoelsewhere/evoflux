@@ -4,6 +4,24 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-09-19
+
+### Fixed
+
+- Fixed plugin uninstall and update failures on Windows caused by access
+  restrictions during replacement.
+- Normalized Windows extended-length workspace paths before sending them to
+  the sidecar and frontend API clients.
+- Fixed portal popups being misclassified as title-bar drag regions.
+- Restored the lead agent transcript in Agent view mode.
+
+### Improved
+
+- Added multi-folder selection and parent-directory opening to Coding projects.
+- Allowed new ASDD changes from multi-repository Coding projects to target a
+  selected repository.
+- Simplified team activity UI wiring and clarified turn loading feedback.
+
 ## [2.0.4] - 2026-09-17
 
 ### Changed — EASD is now ASDD, and a change lives in the repository
@@ -372,6 +390,8 @@ EvoFlux 1.0.0 is the first stable release.
 For the curated release overview, see
 [`documents/releases/v1.0.0.md`](documents/releases/v1.0.0.md).
 
+[2.0.5]: https://github.com/evoelsewhere/evoflux/compare/v2.0.4...v2.0.5
+[2.0.4]: https://github.com/evoelsewhere/evoflux/compare/v2.0.3...v2.0.4
 [2.0.2]: https://github.com/evoelsewhere/evoflux/compare/v2.0.1...v2.0.2
 [2.0.3]: https://github.com/evoelsewhere/evoflux/compare/v2.0.2...v2.0.3
 [2.0.1]: https://github.com/evoelsewhere/evoflux/compare/v2.0.0...v2.0.1

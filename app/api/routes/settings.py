@@ -37,6 +37,7 @@ from app.core.runtime_settings import (
 if TYPE_CHECKING:
     from app.agent.providers.catalog import ProviderEntry
 from app.api.schemas.settings import (
+    ConductorDisconnectRequest,
     ConductorEnrollmentRequest,
     ConductorSettingsBody,
     ContextSettingsBody,
@@ -147,12 +148,15 @@ async def connect_conductor(body: ConductorEnrollmentRequest) -> dict:
 
 
 @router.post("/conductor/disconnect")
-async def disconnect_conductor() -> dict:
+async def disconnect_conductor(
+    body: ConductorDisconnectRequest | None = None,
+) -> dict:
     from app.conductor import conductor_service
     from app.conductor.client import CredentialStoreError
 
+    request = body or ConductorDisconnectRequest()
     try:
-        status = await conductor_service.disconnect()
+        status = await conductor_service.disconnect(resources=request.resources)
     except CredentialStoreError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return status.model_dump(mode="json")

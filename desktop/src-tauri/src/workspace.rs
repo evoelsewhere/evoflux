@@ -9,6 +9,25 @@ use serde::Serialize;
 use std::path::Path;
 use walkdir::WalkDir;
 
+/// Strip the Windows extended-length path prefix (``//?/`` or ``\\?\``).
+///
+/// Windows uses these prefixes to bypass the 260-character MAX_PATH limit.
+/// The Rust standard library handles them transparently in `canonicalize()`,
+/// but they should not leak to the frontend where they cause URL-encoding
+/// issues in the Tauri webview.
+///
+/// Returns the path unchanged on non-Windows platforms or when no prefix is
+/// present.
+fn strip_extended_path_prefix(path: &str) -> String {
+    if path.starts_with("//?/") {
+        path[4..].to_string()
+    } else if path.starts_with("\\\\?\\") {
+        path[4..].to_string()
+    } else {
+        path.to_string()
+    }
+}
+
 /// A single directory entry for lazy loading.
 #[derive(Serialize, Clone)]
 pub struct DirEntry {
@@ -93,7 +112,7 @@ pub fn list_workspace_files(
             session_id,
             files: vec![],
             truncated: false,
-            workspace_root: root,
+            workspace_root: strip_extended_path_prefix(&root),
         });
     }
 
@@ -181,7 +200,7 @@ pub fn list_workspace_files(
         session_id,
         files,
         truncated,
-        workspace_root: root,
+        workspace_root: strip_extended_path_prefix(&root),
     })
 }
 
@@ -196,6 +215,7 @@ pub fn list_workspace_files(
 /// - Returns at most 500 entries per directory.
 #[tauri::command]
 pub fn list_directory(root: String, path: String) -> Result<DirListingResult, String> {
+    let root = strip_extended_path_prefix(&root);
     let root_path = Path::new(&root);
     if !root_path.is_dir() {
         return Err("Workspace root does not exist".into());
@@ -326,6 +346,7 @@ pub fn open_workspace_file_with_handle(
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
 
+    let root = strip_extended_path_prefix(&root);
     let root_path = Path::new(&root);
     if !root_path.is_dir() {
         return Err("Workspace root does not exist".into());
@@ -357,6 +378,7 @@ pub fn open_workspace_file_with_handle(
 pub fn open_workspace_root_with_handle(app: tauri::AppHandle, root: String) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
 
+    let root = strip_extended_path_prefix(&root);
     let root_path = Path::new(&root);
     if !root_path.is_dir() {
         return Err("Workspace root does not exist".into());
@@ -381,6 +403,7 @@ pub fn reveal_workspace_path_with_handle(
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
 
+    let root = strip_extended_path_prefix(&root);
     let root_path = Path::new(&root);
     if !root_path.is_dir() {
         return Err("Workspace root does not exist".into());
@@ -433,6 +456,7 @@ pub fn reveal_workspace_path_with_handle(
 /// passing large binary payloads through the Tauri IPC boundary as raw bytes.
 #[tauri::command]
 pub fn read_workspace_file(root: String, path: String) -> Result<String, String> {
+    let root = strip_extended_path_prefix(&root);
     let root_path = Path::new(&root);
     if !root_path.is_dir() {
         return Err("Workspace root does not exist".into());
@@ -496,6 +520,7 @@ static WATCHERS: once_cell::sync::Lazy<WatcherRegistry> =
 /// - Only watches regular files (not directories).
 #[tauri::command]
 pub fn start_file_watcher(app: AppHandle, root: String) -> Result<(), String> {
+    let root = strip_extended_path_prefix(&root);
     let root_path = Path::new(&root);
     if !root_path.is_dir() {
         return Err("Workspace root does not exist".into());
@@ -629,6 +654,7 @@ pub fn start_file_watcher(app: AppHandle, root: String) -> Result<(), String> {
 /// Stop watching a workspace directory.
 #[tauri::command]
 pub fn stop_file_watcher(root: String) -> Result<(), String> {
+    let root = strip_extended_path_prefix(&root);
     let root_path = Path::new(&root);
     let root_resolved = root_path
         .canonicalize()

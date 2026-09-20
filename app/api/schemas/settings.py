@@ -154,6 +154,23 @@ class ConductorEnrollmentRequest(BaseModel):
     enrollment_token: str = Field(min_length=1, max_length=4096)
 
 
+class ConductorDisconnectRequest(BaseModel):
+    """What the person leaving wants done with the organization's resources.
+
+    The default is what a caller that never chose has always got: unmount the
+    namespace, leaving a Plugin installed but disabled and an edited copy
+    untouched. `keep` and `purge` are the two answers the disconnect dialog
+    offers, so leaving is never a guess about what happens to local material.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Mirrors `DisconnectResources` in `app/conductor/models.py`. Spelt out
+    # here because this module is imported before the conductor package and
+    # must not pull it in.
+    resources: Literal["unmount", "keep", "purge"] = "unmount"
+
+
 class ProviderInfo(BaseModel):
     """One catalog row enriched with the user's current configuration state."""
 

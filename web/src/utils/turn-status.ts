@@ -19,6 +19,9 @@ export type LiveTurnActivityKind =
   | 'responding'
   | 'waiting'
   | 'preparing'
+  | 'routing'
+  | 'retrying'
+  | 'queued'
 
 export interface LiveTurnActivity {
   kind: LiveTurnActivityKind
@@ -128,11 +131,10 @@ function lastAgentBlock(blocks: ContentBlock[]): ContentBlock | null {
 export function liveTurnActivity(
   blocks: ContentBlock[],
   phase: 'ingress' | 'model_calling' | null,
-  modelName: string | null,
 ): LiveTurnActivity {
   const waiting: LiveTurnActivity = {
     kind: 'waiting',
-    label: `Waiting for ${modelName ?? 'the model'}…`,
+    label: 'Working',
     toolName: null,
   }
   const last = lastAgentBlock(blocks)
@@ -142,19 +144,15 @@ export function liveTurnActivity(
     return { kind: 'tool', label: activeToolLabel(toolName, last.toolArgs), toolName }
   }
   if (!last) {
-    // Nothing has come back yet: either EvoFlux is still assembling the turn
-    // or the request is already out with the provider.
     return phase === 'model_calling'
       ? waiting
-      : { kind: 'preparing', label: 'Preparing…', toolName: null }
+      : { kind: 'preparing', label: 'Preparing', toolName: null }
   }
   if (last.type === 'thinking') {
-    return { kind: 'thinking', label: 'Thinking…', toolName: null }
+    return { kind: 'thinking', label: 'Thinking', toolName: null }
   }
   if (last.type === 'text') {
-    return { kind: 'responding', label: 'Responding…', toolName: null }
+    return { kind: 'responding', label: 'Responding', toolName: null }
   }
-  // A finished tool, or any other completed block — the model has the turn
-  // again and has not streamed anything back.
   return waiting
 }

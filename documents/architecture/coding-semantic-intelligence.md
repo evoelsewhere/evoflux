@@ -157,8 +157,37 @@ is bound to the working-file hash captured in the reviewed conflict evidence.
 
 ## Search Everywhere
 
-The command palette merges local actions/settings/agents with asynchronous
-repository results for files, folders, symbols, text/code, Git branches and
-commits, Problems, skills, workflows, and recent files. Caller-shaped natural
-language queries are routed to code graph traversal; known navigation phrases
-can route directly to the corresponding action.
+The command palette merges local actions/settings/agents with two asynchronous
+searches that run in parallel behind one debounce and share the palette's
+abort signal.
+
+`POST /api/team/workspace/search-everywhere` covers the authorized workspace:
+files, folders, symbols, text/code, Git branches and commits, Problems, skills,
+workflows, and recent files. Caller-shaped natural language queries are routed
+to code graph traversal; known navigation phrases can route directly to the
+corresponding action.
+
+`POST /api/team/search-app` covers what the application itself owns and needs
+no workspace, so it answers in Work mode too: sessions, the dialogue inside
+them, Coding projects and repositories, Memory pages, scheduled tasks, agent
+definitions and skills. Every source is bounded (row caps per source, a
+round-robin merge so one loud source cannot crowd the rest) and file-backed
+sources run in worker threads. Database sources share the request session and
+run sequentially; a failing source degrades to no rows rather than emptying the
+palette. Message hits resolve to the top-level session that owns them, since a
+team member's sub-session is never listed on its own. SQL `LIKE` prefilters
+fold ASCII only, so every row is re-checked with a Unicode case fold before it
+is returned.
+
+Each row opens the surface that owns it, on that surface's own route: a Work
+session navigates to `/{session}` and a Coding one to
+`/coding/{project|repository}/{session}`, so a chat never loads under the wrong
+mode's chrome; a project or repository navigates to `/coding/{focus}` and
+scopes the sidebar; a Memory page opens in the Memory panel; an agent or skill
+opens its editor in Settings.
+
+Dialogue results are per conversation, not per message: matches collapse to one
+row for the chat that holds them, labelled with the chat and carrying the match
+count plus an excerpt (`N+` once the scan window is full). A chat whose title
+already matched is dropped from that group, since both rows would open the same
+place. Excerpts are stripped of Markdown scaffolding and HTML comments.

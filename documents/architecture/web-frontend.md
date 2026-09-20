@@ -41,7 +41,7 @@ cache rather than maintaining a second durable truth in component state.
 - transcript, streaming activity and agent switching;
 - composer, attachments, skills, snippets, commands and workflow invocation;
 - plan, permission and question interaction surfaces;
-- single, Split and Monitor layouts;
+- single and Split layouts;
 - a lazy workbench dock for files, editor, Git, graph, Problems, terminal,
   browser, wiki, scheduler, plugins, processes and Side Chat.
 

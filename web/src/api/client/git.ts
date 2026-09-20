@@ -4,6 +4,7 @@
 
 import { apiBaseUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import type {
   GitChangesResponse,
   GitCloneResult,
@@ -21,7 +22,7 @@ import type {
 } from '../types'
 
 function wsParam(workspace: string): URLSearchParams {
-  return new URLSearchParams({ workspace })
+  return new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
 }
 
 export async function getGitChanges(workspace: string): Promise<GitChangesResponse> {
@@ -414,7 +415,7 @@ export async function gitAbort(workspace: string): Promise<void> {
 }
 
 export async function getGitDiffView(workspace: string, path: string): Promise<{ diff: string }> {
-  const params = new URLSearchParams({ workspace, path })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace), path })
   const res = await fetch(`${apiBaseUrl()}/team/workspace/git/diff-view?${params}`)
   if (!res.ok) await parseDetailOrThrow(res, 'getGitDiffView')
   return res.json()

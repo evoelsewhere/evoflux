@@ -155,7 +155,45 @@ def test_disconnect_conductor_clears_connection(
 
     assert response.status_code == 200
     assert response.json() == payload
-    disconnect.assert_awaited_once_with()
+    # A caller that says nothing still unmounts, which is what the settings
+    # route does for itself when the control-plane URL changes.
+    disconnect.assert_awaited_once_with(resources="unmount")
+
+
+@pytest.mark.parametrize("choice", ["keep", "purge"])
+def test_disconnect_conductor_forwards_the_resource_choice(
+    monkeypatch: pytest.MonkeyPatch,
+    choice: str,
+) -> None:
+    from app.conductor import conductor_service
+
+    disconnect = AsyncMock(
+        return_value=SimpleNamespace(model_dump=lambda **_kwargs: {"state": "disconnected"})
+    )
+    monkeypatch.setattr(conductor_service, "disconnect", disconnect)
+
+    response = TestClient(_make_app()).post(
+        "/api/settings/conductor/disconnect", json={"resources": choice}
+    )
+
+    assert response.status_code == 200
+    disconnect.assert_awaited_once_with(resources=choice)
+
+
+def test_disconnect_conductor_rejects_an_unknown_resource_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import conductor_service
+
+    disconnect = AsyncMock()
+    monkeypatch.setattr(conductor_service, "disconnect", disconnect)
+
+    response = TestClient(_make_app()).post(
+        "/api/settings/conductor/disconnect", json={"resources": "delete-everything"}
+    )
+
+    assert response.status_code == 422
+    disconnect.assert_not_awaited()
 
 
 def test_pull_conductor_resource_is_an_explicit_server_action(

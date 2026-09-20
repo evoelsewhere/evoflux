@@ -115,7 +115,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'コールドスタートでは sidecar とチームレジストリが準備できるまで Welcome が表示されます — チャット再試行や「空のチーム」バグ探しの前に待ちましょう。',
       'プロバイダ接続後、大きなリポジトリを開く前に短い Work メッセージ（「ping — ok と返して」）でエンドツーエンドのストリーミングを検証します。',
       'Coding ではリポジトリをクリックするとワークスペースにフォーカスします。セッション作成は + / New chat です。フォーカスだけではトランスクリプトは始まりません。',
-      'Guidelines はサイドバーの Help ボタン（このモーダル）からいつでも開けます。コマンドパレットは Ctrl+P のまま — アクション用で、ドキュメント用ではありません。',
+      'Guidelines はサイドバーの Help ボタン（このモーダル）からいつでも開けます。コマンドパレットは Ctrl+P のまま — アクションに加えて自分のコンテンツ（セッション、メッセージ、Memory、リポジトリ、ファイル）も検索できますが、ドキュメント用ではありません。',
       'HealthDot が緑でもチャットが失敗する場合は、再インストール前に Settings → Diagnostics を開いてください — サブシステム検査の方が全面ワイプより効くことが多いです。',
       'BYOM 資格情報はチャットトランスクリプトに入れず、Settings → Providers だけで設定します。'
 ],
@@ -251,14 +251,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'chat',
     title: 'Lead と specialist',
     summary:
-      'Lead がユーザー向けトランスクリプトを所有し、specialist は需要に応じて起動し共有 mailbox で並列に働きます。Agent / Split / Monitor 表示を切り替えつつ、コンテキスト予算バーを見て長い実行を回復可能に保ちます。',
+      'Lead がユーザー向けトランスクリプトを所有し、specialist は需要に応じて起動し共有 mailbox で並列に働きます。Agent / Split 表示を切り替えつつ、コンテキスト予算バーを見て長い実行を回復可能に保ちます。',
     keywords: [
       'lead',
       'specialist',
       'team',
       'agent',
       'split',
-      'monitor',
       'mailbox',
       'Ctrl+V',
       'context budget',
@@ -275,7 +274,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Ctrl+V はデスクトップで Agent ↔ Split を循環（フォーカス中フィールドがペーストを使う間は無効）。',
       'コマンドパレットの Next / Previous Agent は worker が活きているとき便利 — identity ドロップダウンを探すより速い。',
       'auto-split が有効だと specialist 起動時に Split が開き、表示メニューを探さずに作業を眺められます。',
-      'Monitor 表示は多数の worker が生きているときのチーム横断アクティビティ概要です。',
       'workbench のコンテキスト予算バーはモデルの context_length と summary_trigger_tokens を使います — 上がったら早めに compact。',
       'モデル、スキル、ツール、権限は Settings → Agents でエージェントごとに設定。',
       'topbar の Lead selector で idle session の Work/Coding lead を選択します。各 option はその lead 所有 member だけを表示し、active work 中は switch できません。',
@@ -295,7 +293,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '表示モード: Agent（1 エージェントに集中）、Split（Lead + worker を並べる）、Monitor（アクティビティ概要）。workbench の identity ドロップダウン、またはパレットの Next/Previous Agent で移動。デスクトップでは Ctrl+V が Agent ↔ Split。auto-split 有効時は specialist 起動で Split が自動で開くことがあります。',
+        text: '表示モード: Agent（1 エージェントに集中）と Split（Lead + worker を並べる）。workbench の identity ドロップダウン、またはパレットの Next/Previous Agent で移動。デスクトップでは Ctrl+V が Agent ↔ Split。auto-split 有効時は specialist 起動で Split が自動で開くことがあります。',
       },
       {
         type: 'p',
@@ -306,18 +304,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           'Agent — 1 つのトランスクリプト（Lead または選択した specialist）に深く集中。',
           'Split — Lead と worker を並列ペインで監視。',
-          'Monitor — 多数エージェントが活きているときの概要。',
           'チームは Settings → Agents で work / coding にスコープ。',
           'Mailbox — 構造化された specialist 結果; Lead があなた向けに合成。'
 ],
       },
       {
         type: 'p',
-        text: 'マルチエージェントタスクの手順: (1) 成果と制約を Lead に述べる、(2) specialist を起動させる（または並列調査/コーディングを依頼）、(3) Split または Monitor で進捗を見る、(4) ask-user プロンプトに速やかに答える、(5) コンテキストバーが上がったら次の大きな添付ダンプ前に /compact または /new。',
+        text: 'マルチエージェントタスクの手順: (1) 成果と制約を Lead に述べる、(2) specialist を起動させる（または並列調査/コーディングを依頼）、(3) Split で進捗を見る、(4) ask-user プロンプトに速やかに答える、(5) コンテキストバーが上がったら次の大きな添付ダンプ前に /compact または /new。',
       },
       {
         type: 'p',
-        text: 'よくある失敗: specialist が同じファイルを要約している最中に巨大ログを Lead に貼る; composer フォーカス中に Ctrl+V と戦う（ペーストが勝つ）; Monitor に Coding Review PR が出ると期待する（別の workbench ツール）; Agent 表示で specialist を選んだまま「メッセージが無視される」と感じる — Lead に戻す。',
+        text: 'よくある失敗: specialist が同じファイルを要約している最中に巨大ログを Lead に貼る; composer フォーカス中に Ctrl+V と戦う（ペーストが勝つ）; Agent 表示で specialist を選んだまま「メッセージが無視される」と感じる — Lead に戻す。',
       },
       {
         type: 'tips',
@@ -2646,13 +2643,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'バインディングを忘れたらコマンドパレット（Ctrl+P）を優先 — 大半のアクションは名前で検索可能。Guidelines（Help）は別のままなのでパレット検索はコマンド中心。Graph と Review は専用グローバルショートカットがないため workbench バーまたはパレットに依存。',
+        text: 'バインディングを忘れたらコマンドパレット（Ctrl+P）を優先 — 大半のアクションは名前で検索でき、同じ入力欄からセッション、過去のメッセージ、Memory ページ、プロジェクト、リポジトリ、スケジュールされたタスク、エージェント、スキル（Coding ワークスペースを開いていればリポジトリのファイルやシンボルも）を検索できます。Guidelines（Help）はドキュメントであり自分のコンテンツではないため別のままです。Graph と Review は専用グローバルショートカットがないため workbench バーまたはパレットに依存。',
       },
       {
         type: 'tips',
         items: [
           'Help ボタン — Guidelines モーダル（ドキュメント）',
-          'Ctrl+P — コマンドパレット（アクション）',
+          'Ctrl+P — コマンドパレット（アクション＋自分のコンテンツ）',
           '⌘P / ⌥⌘S ラベル — 古い; Ctrl+F / Ctrl+; を使う',
           'Ctrl+V — ペースト中は表示循環が抑止',
           'Ctrl+R — Work セッション更新のみ',

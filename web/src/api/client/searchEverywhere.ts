@@ -1,6 +1,7 @@
 import type { SearchEverywhereResponse } from '../types'
 import { apiUrl } from '../base-url'
 import { parseDetailOrThrow } from './_shared'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 
 export async function searchEverywhere(
   workspace: string,
@@ -8,7 +9,7 @@ export async function searchEverywhere(
   limit = 50,
   signal?: AbortSignal,
 ): Promise<SearchEverywhereResponse> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(apiUrl(`/team/workspace/search-everywhere?${params}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },

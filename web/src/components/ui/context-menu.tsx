@@ -43,6 +43,7 @@ function ContextMenuContent({
       <ContextMenuPrimitive.Positioner className="isolate z-(--z-modal) outline-none">
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"
+          data-no-drag
           className={cn(POPUP_CLASS, className)}
           {...props}
         />
@@ -134,6 +135,7 @@ function ContextMenuSubContent({ className, ...props }: MenuPrimitive.Popup.Prop
       >
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-sub-content"
+          data-no-drag
           className={cn(POPUP_CLASS, "min-w-40", className)}
           {...props}
         />

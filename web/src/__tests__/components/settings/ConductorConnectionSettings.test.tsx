@@ -121,16 +121,58 @@ describe('ConductorConnectionSettings', () => {
     expect(screen.getByText('E')).toBeVisible()
   })
 
-  it('disconnects explicitly and returns to connection inputs', async () => {
+  it('keeps the installed resources when that is the answer, and returns to connection inputs', async () => {
     mocks.getSettings.mockResolvedValue({ ...settings, url: 'http://127.0.0.1:4700' })
     mocks.getStatus.mockResolvedValue(connectedStatus)
     render(<ConductorConnectionSettings />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
 
-    await waitFor(() => expect(mocks.disconnect).toHaveBeenCalledTimes(1))
+    // Nothing may happen on the button alone: the same click used to delete
+    // managed Skills and disable managed Plugins with no warning.
+    expect(await screen.findByText(/Disconnect from Evo Platform/)).toBeVisible()
+    expect(mocks.disconnect).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep resources' }))
+
+    await waitFor(() => expect(mocks.disconnect).toHaveBeenCalledWith('keep'))
     expect(await screen.findByLabelText('V1 connection token')).toBeVisible()
     expect(screen.getByText('Disconnected')).toBeVisible()
+  })
+
+  it('counts what would be removed and asks the server to purge it', async () => {
+    mocks.getSettings.mockResolvedValue({ ...settings, url: 'http://127.0.0.1:4700' })
+    mocks.getStatus.mockResolvedValue({
+      ...connectedStatus,
+      resources: [
+        { kind: 'skill', slug: 'release-notes', state: 'in_sync' },
+        { kind: 'skill', slug: 'incident-review', state: 'in_sync' },
+        { kind: 'plugin', slug: 'release-auditor', state: 'in_sync' },
+      ],
+    })
+    render(<ConductorConnectionSettings />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
+    expect(await screen.findByText(/2 Skills and 1 Plugin/)).toBeVisible()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove all resources' }))
+
+    await waitFor(() => expect(mocks.disconnect).toHaveBeenCalledWith('purge'))
+  })
+
+  it('leaves the connection alone when the dialog is cancelled', async () => {
+    mocks.getSettings.mockResolvedValue({ ...settings, url: 'http://127.0.0.1:4700' })
+    mocks.getStatus.mockResolvedValue(connectedStatus)
+    render(<ConductorConnectionSettings />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() =>
+      expect(screen.queryByText(/Disconnect from Evo Platform/)).not.toBeInTheDocument(),
+    )
+    expect(mocks.disconnect).not.toHaveBeenCalled()
+    expect(screen.getByText(/Connected/)).toBeVisible()
   })
 
   it('renders an explicit empty state for an enrolled member', async () => {

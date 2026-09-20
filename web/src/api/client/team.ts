@@ -5,6 +5,7 @@
 import { apiBaseUrl, apiUrl } from '../base-url'
 import { withTokenParam } from '../auth'
 import { readSSE } from '../sse'
+import { stripExtendedPathPrefix } from '@/lib/workspace-path-utils'
 import type { SSECallbacks } from '../sse'
 import { fetchWithTimeout, parseDetailOrThrow } from './_shared'
 import type {
@@ -349,8 +350,7 @@ export async function listTeamAgents(
   sessionId?: string | null,
 ): Promise<TeamAgentsResponse> {
   const params = new URLSearchParams()
-  if (workspace) params.set('workspace', workspace)
-  // Which roster the workspace team uses — without it the backend assumes coding.
+  if (workspace) params.set('workspace', stripExtendedPathPrefix(workspace))
   if (workspace && mode) params.set('mode', mode)
   if (sessionId) params.set('session_id', sessionId)
   const query = params.toString()
@@ -367,7 +367,7 @@ export async function listTeamLeads(mode: 'work' | 'coding'): Promise<TeamLeadLi
 }
 
 export async function validateWorkspace(workspace: string): Promise<WorkspaceValidationResponse> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(`${apiBaseUrl()}/team/workspace/validate?${params}`)
   if (!res.ok) {
     const body = await res.json().catch(() => null)
@@ -395,7 +395,7 @@ export async function getCodingWorkspaceTree(): Promise<CodingWorkspaceTreeRespo
 }
 
 export async function listWorktrees(sourceWorkspace: string): Promise<WorktreeInfo[]> {
-  const params = new URLSearchParams({ source_workspace: sourceWorkspace })
+  const params = new URLSearchParams({ source_workspace: stripExtendedPathPrefix(sourceWorkspace) })
   const res = await fetch(`${apiBaseUrl()}/team/workspace/worktrees?${params}`)
   if (!res.ok) {
     const body = await res.json().catch(() => null)
@@ -436,7 +436,7 @@ export async function createWorktree(options: {
 }
 
 export async function listCodingWorkspaceFiles(workspace: string): Promise<CodingWorkspaceFilesResponse> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(`${apiBaseUrl()}/team/workspace/files/list?${params}`)
   if (!res.ok) await parseDetailOrThrow(res, 'listCodingWorkspaceFiles')
   return res.json()
@@ -446,7 +446,7 @@ export async function getCodingWorkspaceGitDiff(
   workspace: string,
   paths?: string[],
 ): Promise<WorkspaceGitDiffResponse> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   // Repeated ``paths`` params translate to FastAPI's
   // ``Query(list[str])`` — scoped diff response covering just these
   // entries, used by the SSE cache-invalidation bridge for surgical
@@ -460,7 +460,7 @@ export async function getCodingWorkspaceGitDiff(
 }
 
 export async function getCodingWorkspaceStatus(workspace: string): Promise<WorkspaceStatusResponse> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(`${apiBaseUrl()}/team/workspace/status?${params}`)
   if (!res.ok) await parseDetailOrThrow(res, 'getCodingWorkspaceStatus')
   return res.json()
@@ -476,7 +476,7 @@ export async function listTeamSessions(
   if (before) params.set('before', before)
   params.set('limit', String(limit))
   if (filters?.mode) params.set('mode', filters.mode)
-  if (filters?.workspace) params.set('workspace', filters.workspace)
+  if (filters?.workspace) params.set('workspace', stripExtendedPathPrefix(filters.workspace))
   if (filters?.project_id) params.set('project_id', filters.project_id)
   const res = await fetchWithTimeout(`${apiBaseUrl()}/team/sessions?${params}`, { signal })
   if (!res.ok) await parseDetailOrThrow(res, 'listTeamSessions')
@@ -826,20 +826,20 @@ export function workspaceDocumentPreviewUrl(sessionId: string, path: string): st
  *  path-traversal sequences (``../``) are rejected by the server.
  */
 export function codingWorkspaceFileUrl(workspace: string, path: string, options?: { download?: boolean }): string {
-  const params = new URLSearchParams({ workspace, path })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace), path })
   if (options?.download) params.set('download', '1')
   return withTokenParam(apiUrl(`/team/workspace/files/read?${params}`))
 }
 
 /** Build the URL for the backend-rendered document preview in Coding mode. */
 export function codingWorkspaceDocumentPreviewUrl(workspace: string, path: string): string {
-  const params = new URLSearchParams({ workspace, path })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace), path })
   return withTokenParam(apiUrl(`/team/workspace/files/preview?${params}`))
 }
 
 /** Write file content to the coding workspace via PUT. */
 export async function writeCodingWorkspaceFile(workspace: string, path: string, content: string): Promise<void> {
-  const params = new URLSearchParams({ workspace, path })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace), path })
   const res = await fetch(apiUrl(`/team/workspace/files/write?${params}`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -854,7 +854,7 @@ export async function createCodingWorkspaceEntry(
   path: string,
   kind: 'file' | 'directory',
 ): Promise<void> {
-  const params = new URLSearchParams({ workspace, path, kind })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace), path, kind })
   const res = await fetch(apiUrl(`/team/workspace/files/create?${params}`), { method: 'POST' })
   if (!res.ok) await parseDetailOrThrow(res, 'createCodingWorkspaceEntry')
 }
@@ -865,7 +865,7 @@ export async function moveCodingWorkspaceEntry(
   fromPath: string,
   toPath: string,
 ): Promise<void> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(apiUrl(`/team/workspace/files/move?${params}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -880,7 +880,7 @@ export async function copyCodingWorkspaceEntry(
   fromPath: string,
   toPath: string,
 ): Promise<void> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(apiUrl(`/team/workspace/files/copy?${params}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -895,7 +895,7 @@ export async function deleteCodingWorkspaceEntry(
   path: string,
   options?: { recursive?: boolean },
 ): Promise<void> {
-  const params = new URLSearchParams({ workspace, path })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace), path })
   if (options?.recursive) params.set('recursive', 'true')
   const res = await fetch(apiUrl(`/team/workspace/files/entry?${params}`), { method: 'DELETE' })
   if (!res.ok) await parseDetailOrThrow(res, 'deleteCodingWorkspaceEntry')
@@ -908,7 +908,7 @@ export async function getCodingWorkspaceDiagnostics(
   content: string,
   signal?: AbortSignal,
 ): Promise<CodingDiagnosticsResponse> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(apiUrl(`/team/workspace/lsp/diagnostics?${params}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -925,7 +925,7 @@ export async function getCodingWorkspaceSemanticResult(
   request: CodingSemanticRequest,
   signal?: AbortSignal,
 ): Promise<CodingSemanticResponse> {
-  const params = new URLSearchParams({ workspace })
+  const params = new URLSearchParams({ workspace: stripExtendedPathPrefix(workspace) })
   const res = await fetch(apiUrl(`/team/workspace/lsp/semantic?${params}`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
