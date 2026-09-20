@@ -32,11 +32,11 @@ describe('automatic Split layout', () => {
     })).toBe(false)
   })
 
-  it('does not override Monitor or mobile layouts', () => {
+  it('does not override a layout that is already Split, or a mobile one', () => {
     expect(shouldStartAutomaticSplit({
       previousActiveCount: 2,
       activeCount: 3,
-      viewMode: 'monitor',
+      viewMode: 'split',
       isMobile: false,
     })).toBe(false)
     expect(shouldStartAutomaticSplit({

@@ -2,10 +2,10 @@
  * TeamChatView — top-level layout for the team chat route.
  *
  * Owns:
- *   - View-mode state (``agent`` / ``split`` / ``monitor``).
+ *   - View-mode state (``agent`` / ``split``).
  *   - The composition: stores/queries wiring, one sidebar per mode, the
- *     ``AppShell`` frame, the view switch (AgentView / SplitWorkbench /
- *     MonitorView), the ``FloatingInputBar`` and keyboard shortcuts.
+ *     ``AppShell`` frame, the view switch (AgentView / SplitWorkbench), the
+ *     ``FloatingInputBar`` and keyboard shortcuts.
  *
  * Delegates:
  *   - ``WorkbenchBar``         — compact identity, tool tabs and layout menu.
@@ -148,9 +148,6 @@ const CodingSummaryPanel = lazy(() =>
     default: module.CodingSummaryPanel,
   })),
 )
-const loadMonitorView = () =>
-  import('../MonitorView').then((module) => ({ default: module.MonitorView }))
-const MonitorView = lazy(loadMonitorView)
 const SideChatPanel = lazy(() =>
   import('../SideChatPanel').then((module) => ({ default: module.SideChatPanel })),
 )
@@ -359,7 +356,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const [pendingCodeReviewStart, setPendingCodeReviewStart] =
     useState<PendingCodeReviewStart | null>(null)
 
-  // On mobile, always force agent view — split/monitor require a wide screen.
+  // On mobile, always force agent view — split requires a wide screen.
   // Also close any desktop-only panels when shrinking to mobile.
   const effectiveViewMode: ViewMode = isMobile ? 'agent' : viewMode
   const displayedViewMode: ViewMode = isMobile ? 'agent' : viewMode
@@ -395,7 +392,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     if (isMobile) return
     const preload = () => {
       void loadSplitWorkbench()
-      void loadMonitorView()
     }
     if (typeof window.requestIdleCallback === 'function') {
       const idleId = window.requestIdleCallback(preload, { timeout: 1_000 })
@@ -640,11 +636,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     const frame = requestAnimationFrame(() => setAutomaticSplitTransition(true))
     return () => cancelAnimationFrame(frame)
   }, [activeAgentCount, isMobile, viewMode])
-  // Only monitor/split views render every agent's stream — gate the
-  // whole-map subscription on the view mode so the default agent view
-  // stops re-rendering this shell on every token of every agent.
+  // Only the split view renders every agent's stream — gate the whole-map
+  // subscription on the view mode so the default agent view stops
+  // re-rendering this shell on every token of every agent.
   const gridAgentStreams = useTeamStore((s) =>
-    effectiveViewMode === 'split' || effectiveViewMode === 'monitor' ? s.agentStreams : null,
+    effectiveViewMode === 'split' ? s.agentStreams : null,
   )
   // Finalized lead blocks only change on turn boundaries — not per token.
   const leadBlocks = useTeamStore((s) => (s.leadName ? s.agentStreams[s.leadName]?.blocks : undefined))
@@ -2143,18 +2139,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
 
           return showHistorySkeleton ? (
           historySkeleton
-        ) : effectiveViewMode === 'monitor' ? (
-          <Suspense fallback={<PanelLoadingFallback />}>
-            <MonitorView
-              agentNames={agentNames}
-              leadName={leadName}
-              agentStreams={gridAgentStreams ?? EMPTY_AGENT_STREAMS}
-              onFocusAgent={(name) => {
-                setActiveAgent(name)
-                setViewMode(splitAgentNames.length > 1 ? 'split' : 'agent')
-              }}
-            />
-          </Suspense>
         ) : effectiveViewMode === 'split' && splitAgentNames.length > 0 ? (
           <div className="min-h-0 flex-1 p-3">
             <Suspense fallback={<PanelLoadingFallback />}>

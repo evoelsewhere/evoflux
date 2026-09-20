@@ -8,13 +8,9 @@
 
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import {
-  FocusViewIcon,
-  MonitorViewIcon,
-  SplitViewIcon,
-} from '@/components/ui/layout-icons'
+import { FocusViewIcon, SplitViewIcon } from '@/components/ui/layout-icons'
 
-export type ViewMode = 'agent' | 'split' | 'monitor'
+export type ViewMode = 'agent' | 'split'
 
 interface ModeDef {
   mode: ViewMode
@@ -25,7 +21,6 @@ interface ModeDef {
 const MODES: readonly ModeDef[] = [
   { mode: 'agent', label: 'Agent view', Icon: FocusViewIcon },
   { mode: 'split', label: 'Split view', Icon: SplitViewIcon },
-  { mode: 'monitor', label: 'Monitor view', Icon: MonitorViewIcon },
 ] as const
 
 export interface ViewToggleProps {

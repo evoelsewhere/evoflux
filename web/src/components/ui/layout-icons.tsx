@@ -32,13 +32,6 @@ export const SplitViewIcon = createLucideIcon('SplitView', [
   ],
 ])
 
-export const MonitorViewIcon = createLucideIcon('MonitorView', [
-  ['rect', { x: '3', y: '4', width: '8', height: '7', rx: '2', key: 'top-left' }],
-  ['rect', { x: '13', y: '4', width: '8', height: '7', rx: '2', key: 'top-right' }],
-  ['rect', { x: '3', y: '13', width: '8', height: '7', rx: '2', key: 'bottom-left' }],
-  ['rect', { x: '13', y: '13', width: '8', height: '7', rx: '2', key: 'bottom-right' }],
-])
-
 export const SidePanelIcon = createLucideIcon('SidePanel', [
   [
     'rect',

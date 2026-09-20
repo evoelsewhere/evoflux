@@ -262,14 +262,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'chat',
     title: 'Lead and specialists',
     summary:
-      'The Lead owns the user-facing transcript; specialists activate on demand and work in parallel through a shared mailbox. Switch Agent, Split, and Monitor views while watching the context budget bar so long runs stay recoverable.',
+      'The Lead owns the user-facing transcript; specialists activate on demand and work in parallel through a shared mailbox. Switch between Agent and Split views while watching the context budget bar so long runs stay recoverable.',
     keywords: [
       'lead',
       'specialist',
       'team',
       'agent',
       'split',
-      'monitor',
       'mailbox',
       'Ctrl+V',
       'context budget',
@@ -287,7 +286,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Ctrl+V cycles Agent ↔ Split on desktop (disabled while the focused field uses paste).',
       'Command palette has Next / Previous Agent when workers are active — faster than hunting the identity dropdown.',
       'Auto-split can open when specialists activate so you can watch them work without hunting the view menu.',
-      'Monitor view gives an overview of activity across the team when many workers are live.',
       'The context budget bar on the workbench uses the model’s context_length and summary_trigger_tokens — compact early if it climbs.',
       'Configure models, skills, tools, and permissions per agent in Settings → Agents.',
       'Use the topbar Lead selector to choose a Work or Coding lead for the current idle session. Each option lists only that lead’s owned members; switching is disabled during active work.',
@@ -307,7 +305,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'View modes: Agent (single focus on one agent), Split (Lead + workers side by side), Monitor (activity overview). Use the workbench identity dropdown to jump between agents, or palette Next/Previous Agent. Ctrl+V toggles Agent ↔ Split on desktop. When auto-split is enabled, activating specialists may open Split automatically.',
+        text: 'View modes: Agent (single focus on one agent) and Split (Lead + workers side by side). Use the workbench identity dropdown to jump between agents, or palette Next/Previous Agent. Ctrl+V toggles Agent ↔ Split on desktop. When auto-split is enabled, activating specialists may open Split automatically.',
       },
       {
         type: 'p',
@@ -318,18 +316,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Agent — deep focus on one transcript (Lead or a selected specialist).',
           'Split — watch Lead and workers in parallel panes.',
-          'Monitor — overview when many agents are active.',
           'Teams are scoped to work / coding in Settings → Agents.',
           'Mailbox — structured specialist results; Lead synthesizes for you.'
 ],
       },
       {
         type: 'p',
-        text: 'Step-by-step for a multi-agent task: (1) state the outcome and constraints to the Lead, (2) let specialists activate (or ask for parallel research/coding), (3) switch to Split or Monitor to watch progress, (4) answer ask-user prompts promptly, (5) when the context bar climbs, /compact or /new before the next large attachment dump.',
+        text: 'Step-by-step for a multi-agent task: (1) state the outcome and constraints to the Lead, (2) let specialists activate (or ask for parallel research/coding), (3) switch to Split to watch progress, (4) answer ask-user prompts promptly, (5) when the context bar climbs, /compact or /new before the next large attachment dump.',
       },
       {
         type: 'p',
-        text: 'Common mistakes: pasting huge logs into the Lead while specialists are already summarizing the same files; fighting Ctrl+V while the composer is focused (paste wins); expecting Monitor to show Coding Review PRs (that is a different workbench tool); leaving a specialist selected in Agent view and wondering why your messages feel ignored — switch back to the Lead.',
+        text: 'Common mistakes: pasting huge logs into the Lead while specialists are already summarizing the same files; fighting Ctrl+V while the composer is focused (paste wins); leaving a specialist selected in Agent view and wondering why your messages feel ignored — switch back to the Lead.',
       },
       {
         type: 'tips',

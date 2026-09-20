@@ -70,7 +70,7 @@ Team-native actions cover:
 - manage todos and durable delegation status.
 
 The lead verifies handoffs before synthesizing the user-facing result. The
-Monitor view exposes member state, activity and transcript without merging all
+Split view exposes member state, activity and transcript without merging all
 specialist context into the lead's model request.
 
 ## Follow-up messages while a turn runs
