@@ -17,6 +17,10 @@ from app.conductor.constants.resource import (
 
 ResourceKind = Literal["agent_team", "skill", "mcp", "plugin"]
 GovernedResourceKind = Literal["agent_team", "skill", "plugin"]
+#: What a disconnect does with the resources the organization installed:
+#: unmount them for a control-plane move, keep them as ordinary local
+#: material, or remove them outright.
+DisconnectResources = Literal["unmount", "keep", "purge"]
 ReleaseChannel = Literal["beta", "published"]
 ObservedResourceState = Literal[
     "pending",

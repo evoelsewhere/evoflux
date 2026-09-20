@@ -15,15 +15,25 @@ import {
 import { SettingsCallout, SettingsGroup, SettingsRow } from '@/components/settings/SettingsLayout'
 import { ManagedResourceUpdateBanner } from '@/components/settings/ManagedResourceUpdateBanner'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { SelectControl } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
   CONDUCTOR_ACTION,
+  CONDUCTOR_DISCONNECT_RESOURCES,
   CONDUCTOR_ENFORCEMENT,
   CONDUCTOR_RESOURCE_KIND,
   CONDUCTOR_RESOURCE_STATE,
   type ConductorAction,
+  type ConductorDisconnectResources,
 } from '@/lib/conductor-constants'
 
 export function ConductorConnectionSettings() {
@@ -38,6 +48,9 @@ export function ConductorConnectionSettings() {
   const [pendingAction, setPendingAction] = useState<ConductorAction | null>(null)
   const [pendingResourceId, setPendingResourceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Disconnecting is where organization-installed Agents, Skills and Plugins
+  // are decided, so the button asks before it does anything.
+  const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -270,10 +283,7 @@ export function ConductorConnectionSettings() {
                 variant="outline"
                 size="sm"
                 disabled={pending}
-                onClick={() => void run(
-                  CONDUCTOR_ACTION.DISCONNECT,
-                  async () => setStatus(await disconnectConductor()),
-                )}
+                onClick={() => setConfirmingDisconnect(true)}
               >
                 Disconnect
               </Button>
@@ -460,8 +470,121 @@ export function ConductorConnectionSettings() {
       {(error || status?.error) && (
         <SettingsCallout tone="error">{error || status?.error}</SettingsCallout>
       )}
+      <DisconnectDialog
+        open={confirmingDisconnect}
+        projectLabel={projectLabel}
+        resources={status?.resources ?? []}
+        busy={pendingAction === CONDUCTOR_ACTION.DISCONNECT}
+        onCancel={() => setConfirmingDisconnect(false)}
+        onDisconnect={(resources) => {
+          setConfirmingDisconnect(false)
+          void run(
+            CONDUCTOR_ACTION.DISCONNECT,
+            async () => setStatus(await disconnectConductor(resources)),
+          )
+        }}
+      />
     </>
   )
+}
+
+/**
+ * The choice a disconnect cannot make for the person making it.
+ *
+ * Leaving an organization is not the same act as swapping control planes: the
+ * Agents, Skills and Plugins it installed are on this machine, and either
+ * answer is wrong for somebody. So the dialog names both, says what each one
+ * costs, and keeps Cancel under Escape — there is no default button that
+ * quietly deletes anything.
+ */
+function DisconnectDialog({
+  open,
+  projectLabel,
+  resources,
+  busy,
+  onCancel,
+  onDisconnect,
+}: {
+  open: boolean
+  projectLabel: string | null | undefined
+  resources: ConductorStatus['resources']
+  busy: boolean
+  onCancel: () => void
+  onDisconnect: (resources: ConductorDisconnectResources) => void
+}) {
+  const installed = describeResourceCounts(resources)
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !busy) onCancel()
+      }}
+    >
+      <DialogContent showCloseButton={false} className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            Disconnect from {projectLabel || 'the organization control plane'}?
+          </DialogTitle>
+          <DialogDescription>
+            The stored connection token is deleted and this installation stops
+            receiving organization policy.{' '}
+            {installed
+              ? `It installed ${installed} here — choose what happens to them.`
+              : 'It has installed nothing here.'}
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="space-y-2.5 text-sm text-(--color-text-muted)">
+          <li>
+            <span className="font-medium text-(--color-text)">Keep resources</span> — they stay
+            installed and enabled, as ordinary local material that is yours from now on.
+          </li>
+          <li>
+            <span className="font-medium text-(--color-text)">Remove all resources</span> — every
+            managed Plugin is uninstalled along with its data, and the managed Agent and Skill
+            copies are deleted, including ones edited locally. This cannot be undone.
+          </li>
+        </ul>
+        <DialogFooter>
+          <Button variant="ghost" disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => onDisconnect(CONDUCTOR_DISCONNECT_RESOURCES.KEEP)}
+          >
+            Keep resources
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={busy}
+            onClick={() => onDisconnect(CONDUCTOR_DISCONNECT_RESOURCES.PURGE)}
+          >
+            Remove all resources
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** "2 Skills, 1 Team and 1 Plugin", or null when nothing was installed. */
+function describeResourceCounts(resources: ConductorStatus['resources']): string | null {
+  const labels: Record<string, [string, string]> = {
+    agent_team: ['Team', 'Teams'],
+    skill: ['Skill', 'Skills'],
+    plugin: ['Plugin', 'Plugins'],
+    mcp: ['MCP server', 'MCP servers'],
+  }
+  const parts = Object.entries(labels)
+    .map(([kind, [one, many]]) => {
+      const count = resources.filter((resource) => resource.kind === kind).length
+      return count === 0 ? null : `${count} ${count === 1 ? one : many}`
+    })
+    .filter((part): part is string => part !== null)
+  if (parts.length === 0) return null
+  if (parts.length === 1) return parts[0]
+  return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
 }
 
 function isValidConductorUrl(value: string) {

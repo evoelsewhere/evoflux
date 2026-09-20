@@ -6,7 +6,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -1148,3 +1148,53 @@ def test_a_release_without_a_bundle_manifest_still_verifies_the_payload_digest()
     raw["sha256"] = hashlib.sha256(b"wrong").hexdigest()
     with pytest.raises(ValueError, match="digest mismatch"):
         _verify_managed_payload(EffectiveResourceVersion.model_validate(raw))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("choice", "expected"),
+    [("unmount", ["deactivate"]), ("keep", []), ("purge", ["purge"])],
+)
+async def test_disconnect_performs_the_teardown_the_person_chose(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    choice: str,
+    expected: list[str],
+) -> None:
+    """Leaving an organization is not the same act as moving control plane.
+
+    `unmount` stays the default for a URL change, `keep` must not touch a
+    single local file, and `purge` is the only one allowed to delete anything.
+    """
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(tmp_path / "state"))
+    save_runtime_settings(
+        RuntimeSettings(
+            conductor=ConductorSettings(
+                enabled=False,
+                url="https://conductor.example",
+                project_id="project-1",
+            )
+        )
+    )
+    service = ConductorService(MemoryCredentialStore("evc_local_secret"))
+    calls: list[str] = []
+
+    class RecordingReconciler:
+        def deactivate_project(self, project_id: str) -> None:
+            assert project_id == "project-1"
+            calls.append("deactivate")
+
+        def purge_project(self, project_id: str) -> list[str]:
+            assert project_id == "project-1"
+            calls.append("purge")
+            return ["skill/managed-skill"]
+
+    monkeypatch.setattr(service, "_governed_reconciler", RecordingReconciler())
+
+    status = await service.disconnect(resources=cast(Any, choice))
+
+    assert calls == expected
+    assert status.state == "disconnected"
+    assert load_runtime_settings().conductor.project_id is None
