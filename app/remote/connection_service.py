@@ -30,7 +30,9 @@ from app.remote.contracts import (
     RemoteAdapterFactory,
     RemoteAdapterKind,
     RemoteAdapterValidationError,
+    RemoteProviderKind,
 )
+from app.remote.registry import DefaultRemoteAdapterRegistry, RemoteAdapterRegistry
 
 #: Vault service name every remote connection's credential is stored under.
 #: The account key is derived per connection as ``connection:<uuid>`` and
@@ -94,8 +96,14 @@ class RemoteConnectionService:
         *,
         adapter_factory: RemoteAdapterFactory,
         credential_store_factory: CredentialStoreFactory | None = None,
+        provider_registry: RemoteAdapterRegistry | None = None,
     ) -> None:
         self._adapter_factory = adapter_factory
+        self._provider_registry = provider_registry or DefaultRemoteAdapterRegistry(
+            telegram_validator=lambda token: adapter_factory.validate_token(
+                RemoteAdapterKind.TELEGRAM, token
+            ),
+        )
         self._credential_store_factory = (
             credential_store_factory or default_credential_store_factory
         )
@@ -113,28 +121,62 @@ class RemoteConnectionService:
         return await session.get(RemoteConnection, connection_id)
 
     async def create_connection(
-        self, session: AsyncSession, *, token: str, label: str
+        self,
+        session: AsyncSession,
+        *,
+        token: str,
+        label: str,
+        adapter: RemoteAdapterKind = RemoteAdapterKind.TELEGRAM,
+        endpoint_url: str | None = None,
+        provider: str | None = None,
     ) -> RemoteConnection:
-        """Validate *token*, vault it, then persist a new connection.
+        """Validate, vault, and persist one connection for *adapter*.
 
-        Raises :class:`RemoteConnectionConflictError` if a connection
-        already exists,
-        :class:`~app.remote.contracts.RemoteAdapterValidationError` if the
-        token does not resolve to a bot identity, or
-        :class:`RemoteCredentialError` if the vault save fails. In every
-        failure case, no connection record is created.
+        The credential remains named ``token`` for backward compatibility with
+        the Telegram API. Adapter selection is explicit at this service
+        boundary so future chatbot transports can provide their own validator
+        while retaining the same vault and persistence transaction.
         """
-        if await self.list(session):
+        existing = await self.list(session)
+        if any(connection.adapter == adapter.value for connection in existing):
             raise RemoteConnectionConflictError(
-                "This installation already has a configured remote connection."
+                f"A {adapter.value} remote connection is already configured."
             )
 
-        identity = await self._adapter_factory.validate_token(
-            RemoteAdapterKind.TELEGRAM, token
+        if not token.strip():
+            raise RemoteAdapterValidationError("The remote credential cannot be empty.")
+        normalized_provider = (
+            RemoteProviderKind(provider).value
+            if provider is not None
+            else (
+                RemoteProviderKind.IMSG.value
+                if adapter is RemoteAdapterKind.IMESSAGE
+                else None
+            )
         )
+        candidate = RemoteConnection(
+            adapter=adapter.value,
+            provider=normalized_provider,
+            endpoint_url=endpoint_url,
+            label=label,
+            enabled=False,
+            adapter_principal_id="",
+        )
+        try:
+            identity = await self._provider_registry.validate(candidate, token)
+        except (ValueError, RemoteAdapterValidationError) as exc:
+            if isinstance(exc, RemoteAdapterValidationError):
+                raise
+            raise RemoteAdapterValidationError(str(exc)) from exc
+        if identity.adapter is not adapter:
+            raise RemoteAdapterValidationError(
+                f"Adapter validation returned {identity.adapter.value}, expected {adapter.value}."
+            )
 
         connection = RemoteConnection(
-            adapter=identity.adapter.value,
+            adapter=adapter.value,
+            provider=normalized_provider,
+            endpoint_url=endpoint_url,
             label=label,
             enabled=False,
             adapter_principal_id=identity.principal_id,
@@ -175,9 +217,12 @@ class RemoteConnectionService:
                 f"Remote connection {connection_id} does not exist."
             )
 
-        identity = await self._adapter_factory.validate_token(
-            RemoteAdapterKind.TELEGRAM, token
-        )
+        try:
+            identity = await self._provider_registry.validate(connection, token)
+        except (ValueError, RemoteAdapterValidationError) as exc:
+            if isinstance(exc, RemoteAdapterValidationError):
+                raise
+            raise RemoteAdapterValidationError(str(exc)) from exc
 
         store = self._store(connection_id)
         try:

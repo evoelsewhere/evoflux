@@ -18,6 +18,18 @@ class RemoteConnection(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     adapter: str = Field(sa_column=Column(sa.String(32), nullable=False))
+    provider: str | None = Field(
+        default=None,
+        sa_column=Column(sa.String(32), nullable=True),
+    )
+    endpoint_url: str | None = Field(
+        default=None,
+        sa_column=Column(sa.String(2048), nullable=True),
+    )
+    inbound_watermark_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(TZDateTime(), nullable=True),
+    )
     label: str = Field(sa_column=Column(sa.String(120), nullable=False))
     enabled: bool = Field(
         default=False,

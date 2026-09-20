@@ -1857,7 +1857,28 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     openAction: { type: 'settings', path: 'remote-access' },
   },
   {
-    id: 'providers-settings',
+    id: 'remote-access-imessage',
+     category: 'settings',
+     title: 'Remote access (iMessage)',
+     summary: 'Use iMessage through native imsg or an explicit BlueBubbles provider.',
+     keywords: ['remote', 'imessage', 'imsg', 'bluebubbles', 'phone', 'pairing'],
+     tricks: [
+       'Choose iMessage in Settings → Remote access and select the provider explicitly.',
+       'Native imsg requires a Mac with Messages permissions and a reachable imsg RPC process.',
+       'BlueBubbles requires a server URL and credential; providers never switch silently.',
+       'Credentials stay in the OS vault and are never shown in status responses.',
+     ],
+     blocks: [
+       {
+         type: 'p',
+         text: 'The iMessage channel reuses EvoFlux pairing, authorization, redaction, gates, and rate limits. Use the protocol mock for RPC and restart tests; use a real Mac for Messages permissions and phone delivery.',
+       },
+     ],
+     related: ['settings-safety', 'troubleshooting-connection'],
+     openAction: { type: 'settings', path: 'remote-access' },
+   },
+   {
+     id: 'providers-settings',
     category: 'settings',
     title: 'Providers and models (BYOM)',
     summary:

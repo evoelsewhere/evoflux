@@ -15,7 +15,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.remote.contracts import RemoteConnectionState, RemoteErrorClass
+from app.remote.contracts import (
+    RemoteAdapterKind,
+    RemoteConnectionState,
+    RemoteErrorClass,
+    RemoteProviderKind,
+)
 
 __all__ = [
     "PairingCodeBody",
@@ -39,6 +44,9 @@ class RemoteConnectionCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str = Field(min_length=1, max_length=120)
+    adapter: RemoteAdapterKind = RemoteAdapterKind.TELEGRAM
+    provider: RemoteProviderKind | None = Field(default=None)
+    endpoint_url: str | None = Field(default=None, max_length=2048)
     token: str = Field(
         min_length=1,
         repr=False,
@@ -94,6 +102,7 @@ class RemoteConnectionStatusBody(BaseModel):
     phone_reachable: bool | None
     informational_drop_count: int
     high_priority_drop_count: int
+    capabilities: list[str] = Field(default_factory=list)
 
 
 class RemoteConnectionResponse(BaseModel):
@@ -106,6 +115,8 @@ class RemoteConnectionResponse(BaseModel):
 
     id: UUID
     adapter: str
+    provider: str | None
+    endpoint_url: str | None
     label: str
     enabled: bool
     adapter_principal_id: str

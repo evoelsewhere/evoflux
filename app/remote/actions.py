@@ -1469,16 +1469,10 @@ def _render_detail_cards(label: str, content: str) -> list[str]:
 
 
 def _redact_text(text: str) -> str:
-    """Apply remote-channel outbound redaction."""
-    try:
-        from app.agent.outbound_redaction import OutboundContext, protect_outbound_text
+    """Apply the shared remote-channel outbound redaction boundary."""
+    from app.remote.redaction import redact_remote_text
 
-        protected, _report = protect_outbound_text(
-            text, context=OutboundContext(channel="remote")
-        )
-        return protected
-    except Exception:
-        return text
+    return redact_remote_text(text)
 
 
 # ── Command validation ────────────────────────────────────────────────────────

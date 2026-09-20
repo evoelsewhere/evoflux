@@ -281,6 +281,5 @@ desktop/EvoFlux.key.pub
 MiMo-Code/
 # Local dev state.
 /.local/
-
-.superpowers/
-.worktrees/
+# Machine-local Cargo config (MSVC toolchain paths).
+desktop/src-tauri/.cargo/config.toml

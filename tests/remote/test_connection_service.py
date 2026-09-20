@@ -54,6 +54,19 @@ class FakeCredentialStore:
         self.deleted.append(self.values.pop("token", ""))
 
 
+class FakeProviderRegistry:
+    def __init__(self, adapter_factory: "FakeAdapterFactory") -> None:
+        self._adapter_factory = adapter_factory
+
+    async def validate(self, connection, credential: str):
+        return await self._adapter_factory.validate_token(
+            RemoteAdapterKind(connection.adapter), credential
+        )
+
+    def create(self, connection, credential: str, on_action):
+        raise AssertionError("adapter construction is not used by connection service")
+
+
 class FakeAdapterFactory:
     """Synchronous, in-process stand-in for ``RemoteAdapterFactory``."""
 
@@ -90,6 +103,11 @@ def adapter_factory() -> FakeAdapterFactory:
         principal_id="bot-2",
         username="another_bot",
     )
+    factory.identities["imessage-password"] = ValidatedRemoteIdentity(
+        adapter=RemoteAdapterKind.IMESSAGE,
+        principal_id="+15551234567",
+        username=None,
+    )
     return factory
 
 
@@ -106,6 +124,7 @@ def service(adapter_factory, credential_stores):
     return RemoteConnectionService(
         adapter_factory=adapter_factory,
         credential_store_factory=factory,
+        provider_registry=FakeProviderRegistry(adapter_factory),
     )
 
 
@@ -159,6 +178,22 @@ async def test_create_rejects_second_connection_with_conflict(session, service) 
 
     rows = (await session.exec(select(RemoteConnection))).all()
     assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_create_allows_one_connection_per_adapter_kind(session, service) -> None:
+    await service.create_connection(session, token="bot-token-1", label="Telegram")
+
+    connection = await service.create_connection(
+        session,
+        token="imessage-password",
+        label="iMessage",
+        adapter=RemoteAdapterKind.IMESSAGE,
+        endpoint_url="https://bluebubbles.example.test",
+    )
+
+    assert connection.adapter == RemoteAdapterKind.IMESSAGE.value
+    assert connection.endpoint_url == "https://bluebubbles.example.test"
 
 
 @pytest.mark.asyncio

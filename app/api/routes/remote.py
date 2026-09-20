@@ -108,6 +108,7 @@ async def _status_body(
         phone_reachable=status.phone_reachable,
         informational_drop_count=status.informational_drop_count,
         high_priority_drop_count=status.high_priority_drop_count,
+        capabilities=sorted(status.capabilities),
     )
 
 
@@ -117,6 +118,8 @@ async def _connection_response(
     return RemoteConnectionResponse(
         id=connection.id,
         adapter=connection.adapter,
+        provider=connection.provider,
+        endpoint_url=connection.endpoint_url,
         label=connection.label,
         enabled=connection.enabled,
         adapter_principal_id=connection.adapter_principal_id,
@@ -162,7 +165,12 @@ async def create_connection(
     """
     try:
         connection = await service.create_connection(
-            session, token=body.token, label=body.label
+            session,
+            token=body.token,
+            label=body.label,
+            adapter=body.adapter,
+            provider=body.provider,
+            endpoint_url=body.endpoint_url,
         )
     except RemoteConnectionConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

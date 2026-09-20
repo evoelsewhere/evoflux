@@ -13,16 +13,22 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 
 class RemoteAdapterKind(StrEnum):
-    """Bounded set of supported remote transports. Telegram is the only one
-    shipped in v1; the enum exists so a later adapter needs no schema
-    migration, only a new member."""
+    """Bounded set of supported remote transports."""
 
     TELEGRAM = "telegram"
+    IMESSAGE = "imessage"
+
+
+class RemoteProviderKind(StrEnum):
+    """Typed provider identities behind a remote adapter."""
+
+    IMSG = "imsg"
+    BLUEBUBBLES = "bluebubbles"
 
 
 class RemoteConnectionState(StrEnum):
@@ -151,6 +157,15 @@ class RemoteButton:
 
 
 @dataclass(frozen=True)
+class RemoteAttachment:
+    """A provider-neutral, URL-addressable outbound attachment."""
+
+    url: str
+    mime_type: str | None = None
+    filename: str | None = None
+
+
+@dataclass(frozen=True)
 class RemoteOutboundMessage:
     """One outbound message bound for a paired destination.
 
@@ -166,6 +181,8 @@ class RemoteOutboundMessage:
     destination_id: str
     text: str
     buttons: tuple[RemoteButton, ...] = field(default_factory=tuple)
+    reply_to_id: str | None = None
+    attachments: tuple[RemoteAttachment, ...] = field(default_factory=tuple)
     correlation_id: str | None = None
     priority: RemoteOutboundPriority = RemoteOutboundPriority.INFORMATIONAL
 
@@ -185,6 +202,7 @@ class RemoteAdapterStatus:
     phone_reachable: bool | None = None
     informational_drop_count: int = 0
     high_priority_drop_count: int = 0
+    capabilities: frozenset[str] = field(default_factory=frozenset)
 
 
 class RemoteAdapter(Protocol):
@@ -211,12 +229,22 @@ class RemoteAdapter(Protocol):
     def status(self) -> RemoteAdapterStatus: ...
 
 
+@runtime_checkable
+class RemotePairingAwareAdapter(RemoteAdapter, Protocol):
+    """Optional adapter lifecycle hook for restored remote pairings."""
+
+    def set_pairing(self, *, principal_id: str, destination_id: str) -> None: ...
+
+
 __all__ = [
     "RemoteAdapter",
     "RemoteAdapterFactory",
     "RemoteAdapterKind",
+    "RemoteProviderKind",
+    "RemotePairingAwareAdapter",
     "RemoteAdapterStatus",
     "RemoteAdapterValidationError",
+    "RemoteAttachment",
     "RemoteButton",
     "RemoteConnectionState",
     "RemoteErrorClass",

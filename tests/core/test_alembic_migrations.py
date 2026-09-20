@@ -202,6 +202,9 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "enabled",
             "adapter_principal_id",
             "adapter_username",
+            "provider",
+            "endpoint_url",
+            "inbound_watermark_at",
             "created_at",
             "updated_at",
         } <= remote_connection_columns
@@ -221,7 +224,9 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         } <= remote_pairing_columns
         remote_pairing_fks = inspector.get_foreign_keys("remote_pairings")
         connection_fk = next(
-            fk for fk in remote_pairing_fks if fk["referred_table"] == "remote_connections"
+            fk
+            for fk in remote_pairing_fks
+            if fk["referred_table"] == "remote_connections"
         )
         assert connection_fk["options"].get("ondelete", "").upper() == "CASCADE"
         session_fk = next(

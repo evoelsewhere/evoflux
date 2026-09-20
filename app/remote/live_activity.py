@@ -50,18 +50,10 @@ _SKILL_TOOL_NAME = "skill"
 
 
 def _redact(text: str) -> str:
-    """Best-effort outbound redaction — mirrors outbound.py's own
-    ``_redact_text`` (kept independent per this module's "no dependency on
-    app.remote state" purity goal; both wrap the same protection call)."""
-    try:
-        from app.agent.outbound_redaction import OutboundContext, protect_outbound_text
+    """Apply the shared remote-channel outbound redaction boundary."""
+    from app.remote.redaction import redact_remote_text
 
-        protected, _report = protect_outbound_text(
-            text, context=OutboundContext(channel="remote")
-        )
-        return protected
-    except Exception:
-        return text
+    return redact_remote_text(text)
 
 
 def _summarize_arguments(arguments: str | None) -> str:

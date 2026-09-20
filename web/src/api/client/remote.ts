@@ -42,11 +42,14 @@ export type RemoteConnectionStatus = {
   phone_reachable: boolean | null
   informational_drop_count: number
   high_priority_drop_count: number
+  capabilities: string[]
 }
 
 export type RemoteConnection = {
   id: string
   adapter: string
+  provider: string | null
+  endpoint_url: string | null
   label: string
   enabled: boolean
   adapter_principal_id: string
@@ -112,6 +115,9 @@ export async function listConnections(): Promise<RemoteConnection[]> {
 export async function createConnection(body: {
   label: string
   token: string
+  adapter?: 'telegram' | 'imessage'
+  provider?: 'imsg' | 'bluebubbles'
+  endpoint_url?: string | null
 }): Promise<RemoteConnection> {
   const res = await fetch(`${apiBaseUrl()}/remote/connections`, {
     method: 'POST',

@@ -95,7 +95,13 @@ export function useConnectionsQuery() {
 export function useCreateConnectionMutation() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (body: { label: string; token: string }) => createConnection(body),
+    mutationFn: (body: {
+      label: string
+      token: string
+      adapter?: 'telegram' | 'imessage'
+      provider?: 'imsg' | 'bluebubbles'
+      endpoint_url?: string | null
+    }) => createConnection(body),
     onSuccess: (data) => {
       client.setQueryData(queryKeys.remote.connections(), [data])
     },

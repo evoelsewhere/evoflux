@@ -28,10 +28,12 @@ from app.remote.connection_service import (
     RemoteConnectionService,
     default_credential_store_factory,
 )
+from app.remote.registry import DefaultRemoteAdapterRegistry, RemoteAdapterRegistry
 from app.remote.contracts import (
     RemoteAdapter,
     RemoteAdapterKind,
     RemoteAdapterStatus,
+    RemotePairingAwareAdapter,
     RemoteAdapterValidationError,
     RemoteConnectionState,
     RemoteInboundAction,
@@ -162,6 +164,7 @@ class RemoteRuntime:
         connection_service_factory: Callable[[], RemoteConnectionService] | None = None,
         credential_store_factory: CredentialStoreFactory | None = None,
         adapter_constructor: AdapterConstructor | None = None,
+        adapter_registry: RemoteAdapterRegistry | None = None,
     ) -> None:
         self._connection_service_factory = (
             connection_service_factory or _default_connection_service
@@ -170,6 +173,11 @@ class RemoteRuntime:
             credential_store_factory or default_credential_store_factory
         )
         self._adapter_constructor = adapter_constructor or _construct_telegram_adapter
+        self._adapter_registry = adapter_registry or DefaultRemoteAdapterRegistry(
+            telegram_constructor=lambda connection_id, token, on_action: (
+                self._adapter_constructor(connection_id, token, on_action)
+            )
+        )
 
         #: Serializes start/stop/reconcile so concurrent calls (e.g. two
         #: rapid route mutations) cannot both observe "nothing running" and
@@ -269,7 +277,11 @@ class RemoteRuntime:
             )
             return
 
-        adapter = self._adapter_constructor(connection.id, token, self._handle_action)
+        adapter = self._adapter_registry.create(
+            connection,
+            token,
+            self._handle_action,
+        )
         await adapter.start()
         self._adapter = adapter
         self._connection_id = connection.id
@@ -299,6 +311,12 @@ class RemoteRuntime:
                 )
             ).first()
         if pairing is not None:
+            if isinstance(adapter, RemotePairingAwareAdapter):
+                adapter.set_pairing(
+                    principal_id=pairing.principal_id,
+                    destination_id=pairing.destination_id,
+                )
+                await adapter.start()
             projection.set_active_pairing(
                 connection_id=str(pairing.connection_id),
                 destination_id=pairing.destination_id,

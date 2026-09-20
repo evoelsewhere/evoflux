@@ -30,6 +30,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { SelectControl } from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useConfirm } from '@/hooks/use-confirm'
 
@@ -67,6 +68,9 @@ export function RemoteAccessSettingsPage() {
 
 function UnconfiguredState() {
   const [token, setToken] = useState('')
+  const [adapter, setAdapter] = useState<'telegram' | 'imessage'>('telegram')
+  const [provider, setProvider] = useState<'imsg' | 'bluebubbles'>('imsg')
+  const [endpointUrl, setEndpointUrl] = useState('')
   const [label, setLabel] = useState('My phone')
   const createMut = useCreateConnectionMutation()
   const [error, setError] = useState<string | null>(null)
@@ -85,11 +89,21 @@ function UnconfiguredState() {
   async function handleConnect() {
     setError(null)
     if (!token.trim()) {
-      setError('Paste a bot token from @BotFather.')
+      setError(adapter === 'telegram' ? 'Paste a bot token from @BotFather.' : 'Enter the iMessage credential.')
+      return
+    }
+    if (adapter === 'imessage' && provider === 'bluebubbles' && !endpointUrl.trim()) {
+      setError('Enter the BlueBubbles server URL.')
       return
     }
     try {
-      await createMut.mutateAsync({ label: label.trim() || 'My phone', token: token.trim() })
+      await createMut.mutateAsync({
+        label: label.trim() || 'My phone',
+        token: token.trim(),
+        adapter,
+        provider: adapter === 'imessage' ? provider : undefined,
+        endpoint_url: adapter === 'imessage' ? endpointUrl.trim() || null : null,
+      })
       setToken('')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -144,10 +158,59 @@ function UnconfiguredState() {
           </div>
         </details>
 
+        <SettingsRow
+          label="Channel"
+          description="Choose the remote messaging transport."
+          control={
+            <SelectControl
+              value={adapter}
+              onValueChange={(value) => setAdapter(value as 'telegram' | 'imessage')}
+              ariaLabel="Remote channel"
+              options={[
+                { value: 'telegram', label: 'Telegram' },
+                { value: 'imessage', label: 'iMessage' },
+              ]}
+            />
+          }
+        />
+        {adapter === 'imessage' && (
+          <>
+            <SettingsRow
+              label="iMessage provider"
+              description="Use native imsg on macOS or the BlueBubbles fallback."
+              control={
+                <SelectControl
+                  value={provider}
+                  onValueChange={(value) => setProvider(value as 'imsg' | 'bluebubbles')}
+                  ariaLabel="iMessage provider"
+                  options={[
+                    { value: 'imsg', label: 'imsg (native)' },
+                    { value: 'bluebubbles', label: 'BlueBubbles' },
+                  ]}
+                />
+              }
+            />
+            {provider === 'bluebubbles' && (
+              <SettingsRow
+                label="BlueBubbles endpoint"
+                description="The BlueBubbles server URL."
+                control={
+                  <Input
+                    value={endpointUrl}
+                    onChange={(e) => setEndpointUrl(e.target.value)}
+                    placeholder="https://bluebubbles.example"
+                    aria-label="BlueBubbles endpoint"
+                  />
+                }
+              />
+            )}
+          </>
+        )}
+
         {/* ── Token input ── */}
         <SettingsRow
-          label="Bot token"
-          description="The token from @BotFather. Write-only — stored in your OS credential vault, never returned by the API."
+          label={adapter === 'telegram' ? 'Bot token' : 'iMessage credential'}
+          description={adapter === 'telegram' ? 'The token from @BotFather. Write-only — stored in your OS credential vault, never returned by the API.' : 'Write-only provider credential. Stored in your OS credential vault, never returned by the API.'}
           stacked
           control={
             <div className="flex flex-col gap-2">
@@ -247,8 +310,12 @@ function ConfiguredState({ connection }: { connection: RemoteConnection }) {
     <>
       <SettingsGroup title="Connection">
         <SettingsRow
-          label="Bot"
-          description={`@${connection.adapter_username || 'unknown'} (${connection.adapter})`}
+          label={connection.adapter === 'telegram' ? 'Bot' : 'Provider'}
+          description={
+            connection.adapter === 'telegram'
+              ? `@${connection.adapter_username || 'unknown'} (${connection.adapter})`
+              : `${connection.provider ?? 'imsg'} (${connection.adapter})`
+          }
           control={
             <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-[11px] text-(--color-text-muted)">
               {connection.adapter}
@@ -259,6 +326,15 @@ function ConfiguredState({ connection }: { connection: RemoteConnection }) {
           label="Label"
           description={connection.label}
           control={<ConnectionStateBadge state={state} />}
+        />
+        <SettingsRow
+          label="Capabilities"
+          description={
+            connection.status.capabilities.length > 0
+              ? connection.status.capabilities.join(', ')
+              : 'Provider capabilities are not available yet.'
+          }
+          control={<span className="text-xs text-muted-foreground">{connection.provider ?? connection.adapter}</span>}
         />
         <SettingsRow
           label="Enabled"
