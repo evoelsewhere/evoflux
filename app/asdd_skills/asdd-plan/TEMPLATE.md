@@ -50,8 +50,10 @@ different ways and recognize which one this is.
 - [ ] Run the repository's checks and record the result under `evidence/`.
 - [ ] Confirm every approved requirement has a scenario that was exercised.
 
-## 3. Documentation
+## 3. Catalogue and documentation
 
+- [ ] Record the storage choice as `architecture/decisions/0007-note-store.md`.
+- [ ] Update `reference/api.md` for the new `search` parameter.
 - [ ] Update the docs and changelog this repository expects.
 ```
 
@@ -64,3 +66,7 @@ requirement the delta is missing.
 - `## Open questions` is non-empty when `status: designed` is declared.
 - A rejected alternative carries no reason.
 - A task group has no requirement behind it.
+- A decision that would be expensive to reverse has no task writing it up under
+  `architecture/decisions/`, or a changed API, configuration, schema, event or
+  CLI flag has no task updating `reference/`. Those pages ship with this
+  change; only `specs/` waits for the archive.

@@ -59,6 +59,19 @@ A `cross_layer` or `critical` change needs a `kind: review` page with
 `result: passed` written by someone who did not implement the work. Record who
 reviewed it in the body.
 
+## Evidence, and what outlives it
+
+Evidence belongs to the change: it proves this change's requirements and
+retires with it into the archive. An investigation that would still be worth
+reading a year from now — a benchmark with numbers, a comparison, a
+reproduction — is also a dated page under `analysis/`, cited from the evidence
+rather than duplicated into it.
+
+Verification is also the last honest moment to check the pages the change was
+supposed to ship: if a task changed a surface and `reference/` still describes
+the old one, that is a failed verification, not a documentation chore. Say so
+with the same weight as a failing test.
+
 ## Tools
 
 - `shell` — run the repository's checks. `kind: machine` evidence means a

@@ -50,6 +50,20 @@ this change, and the proposal gate refuses until you do.
    clarifying question rather than guessing. Do not interrogate the user about
    low-impact details.
 
+## When the work was an investigation
+
+A proposal states a problem in a few paragraphs. When reaching it took real
+work — a benchmark, a comparison of three libraries, a reproduction nobody had
+managed before — that work is a page of its own at
+`analysis/YYYY-MM-DD-<topic>.md`, and the proposal cites it in one line rather
+than swallowing it.
+
+Write the page the way `analysis/README.md` asks: what was measured, how, and
+what it showed, against a dated revision. It is historical from the moment it
+is written — nothing later has to keep it true. Do not put findings a reader
+must treat as current there; those belong in `specs/`, `architecture/` or
+`reference/`, through this change.
+
 ## Write the proposal
 
 Write `changes/<change-id>/proposal.md` with these sections, keeping its front

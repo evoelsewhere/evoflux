@@ -47,9 +47,21 @@ falls back to raw reads and speculative globbing.
 #: release describing a format nothing checked and nobody was shown.
 ASDD_TEMPLATE_NAMES = ("proposal.md",)
 
+#: The catalogue's shape, as files rather than as instructions.
+#:
+#: A directory with a README that states what belongs in it, what does not, and
+#: how it changes is a contract an agent reads at the moment it is deciding
+#: where to write. An empty directory is not: it either does not survive a
+#: checkout or arrives with nothing to say. Adding an entry here also gives an
+#: already-installed repository an upgrade path, because a missing catalogue
+#: file is what turns a `ready` setup into `upgrade_required`.
 ASDD_SKELETON_FILES = (
     "project.md",
+    "architecture/README.md",
+    "architecture/decisions/README.md",
     "specs/README.md",
+    "reference/README.md",
+    "analysis/README.md",
     "changes/README.md",
 )
 

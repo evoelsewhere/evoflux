@@ -314,3 +314,71 @@ def test_reinstalling_rewrites_the_manifest_to_the_current_name(
 
     assert report["state"] == "ready"
     assert PRODUCT_NAME in manifest.read_text(encoding="utf-8")
+
+
+def test_setup_lays_out_the_whole_catalogue(repository: Path) -> None:
+    """Every durable kind of page has a home, and the home explains itself.
+
+    A directory with no README is a directory an agent has to guess the rules
+    of — and an empty one does not survive a checkout at all.
+    """
+    initialize(repository)
+    data = repository / DEFAULT_ASDD_DATA_DIRECTORY
+
+    assert (data / "project.md").is_file()
+    assert (data / "architecture" / "README.md").is_file()
+    assert (data / "architecture" / "decisions" / "README.md").is_file()
+    assert (data / "specs" / "README.md").is_file()
+    assert (data / "reference" / "README.md").is_file()
+    assert (data / "analysis" / "README.md").is_file()
+    assert (data / "changes" / "README.md").is_file()
+    assert (data / "changes" / "archive").is_dir()
+
+
+def test_project_md_maps_every_directory_it_creates(repository: Path) -> None:
+    """The map an agent reads first has to name what setup actually wrote."""
+    initialize(repository)
+    project = (repository / DEFAULT_ASDD_DATA_DIRECTORY / "project.md").read_text(
+        encoding="utf-8"
+    )
+
+    for directory in (
+        "architecture/",
+        "architecture/decisions/",
+        "specs/",
+        "reference/",
+        "analysis/",
+        "changes/",
+    ):
+        assert directory in project, f"project.md does not name {directory}"
+
+
+def test_a_repository_installed_before_the_catalogue_grew_upgrades(
+    repository: Path,
+) -> None:
+    """An existing install is offered the new directories, not left behind."""
+    initialize(repository)
+    data = repository / DEFAULT_ASDD_DATA_DIRECTORY
+    for name in ("architecture", "reference", "analysis"):
+        for path in sorted((data / name).rglob("*"), reverse=True):
+            path.unlink() if path.is_file() else path.rmdir()
+        (data / name).rmdir()
+    (data / "specs" / "README.md").write_text("# kept by hand\n", encoding="utf-8")
+
+    report = inspect_repository(target(repository))
+    assert report["state"] == "upgrade_required"
+    assert report["missing_catalogue_files"] == [
+        "architecture/README.md",
+        "architecture/decisions/README.md",
+        "reference/README.md",
+        "analysis/README.md",
+    ]
+
+    repaired = initialize(repository)
+
+    assert repaired["state"] == "ready"
+    assert (data / "architecture" / "decisions" / "README.md").is_file()
+    # An upgrade fills gaps; it does not overwrite what the repository edited.
+    assert (data / "specs" / "README.md").read_text(encoding="utf-8") == (
+        "# kept by hand\n"
+    )

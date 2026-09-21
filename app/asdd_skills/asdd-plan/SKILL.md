@@ -50,6 +50,18 @@ Write `changes/<change-id>/design.md`:
 
 `TEMPLATE.md`, beside this file, is the exact shape.
 
+## Decisions outlive the change
+
+`## Decisions` is where this design settles questions, and the durable ones do
+not belong to the change folder: a storage engine, a protocol, an ordering
+guarantee, a trust boundary. Each of those becomes an ADR under
+`architecture/decisions/`, numbered and shaped as that directory's `README.md`
+says — written during implementation, confirmed before the archive.
+
+Name them here as you decide them, so the tasks below can carry one task each.
+A decision found only by reading an archived change folder is a decision the
+next reader will re-litigate.
+
 ## Ask; do not defer
 
 An open question is not a section to fill in. It is work you owe the user
@@ -105,6 +117,13 @@ bottom:
 - Include a verification group that runs this repository's checks and records
   evidence, and a documentation group for the docs and changelog `project.md`
   asks for.
+- **Give every durable page its own task.** A change that alters an endpoint,
+  a config key, a schema, an event or a CLI flag carries a task to update
+  `reference/`; one that moves a process, storage, concurrency or trust
+  boundary carries a task to update `architecture/`; and each decision in
+  `## Decisions` that would be expensive to reverse carries a task to write the
+  ADR under `architecture/decisions/`. These ship in this change, not after it
+  — only `specs/` waits for the archive.
 - Do not tick a box. Boxes are ticked by the agent that does the work.
 
 Set `status: tasked` when the checklist is complete.

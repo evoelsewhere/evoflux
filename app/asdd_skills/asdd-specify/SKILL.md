@@ -72,6 +72,19 @@ Rules the archive step will enforce, so honor them now:
 - The same requirement name appears in exactly one section.
 - Omit a section entirely rather than leaving it empty.
 
+## A spec is behavior, not a surface
+
+A requirement says what the system guarantees; the exact field names, flags,
+defaults, status codes and payload shapes a caller has to type are
+`reference/`. Writing them into a scenario freezes a wire format into a
+behavioral contract, and the two then drift apart with nothing saying which one
+is wrong.
+
+Say "**THEN** the request is rejected and the reason names the offending
+field", and let the reference page carry the field's name and the code. When
+this change adds or alters such a surface, the plan gets a task to update the
+reference page in this same change — see rule 18.
+
 ## Write requirements that can be verified
 
 - One requirement states one obligation, in the form `The system SHALL <observable
