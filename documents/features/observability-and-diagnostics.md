@@ -41,6 +41,15 @@ event publishes. Between those events the line extends the last measured total
 with a character-length estimate so the counter keeps moving through a long
 call; the next usage event assigns over the estimate.
 
+"Per completed model call" is enforced at the call boundary rather than at the
+chunk. A usage block on a streaming chunk states the call's totals *to date*,
+and some providers — StepFun among them — put one on every chunk, so adding
+each block counted the same prompt dozens of times and turned a normal session
+into billions of tokens. The stream publisher folds a call's blocks together
+and records the result once, in `after_model`: the last block's prompt and
+completion, and the largest cache, thoughts and tool-use figures seen, because
+a provider may state those on one chunk and omit them from the next.
+
 Session-specific JSONL logs provide a local evidence trail per agent. Sensitive
 values are sanitized before tool/provider errors are logged or streamed.
 

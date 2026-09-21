@@ -30,8 +30,41 @@ from app.agent.schemas.events import (
     ToolStartEvent,
     UsageEvent,
 )
+from app.agent.schemas.chat import Usage
 from app.agent.turn_usage import record_turn_usage
 from app.services.stream_envelope import AnyStreamEvent, StreamEnvelope
+
+
+def _fold_call_usage(previous: Usage | None, current: Usage) -> Usage:
+    """Fold one more usage block into the one this model call has so far.
+
+    A usage block on a streaming chunk states the call's totals *to date*,
+    not that chunk's share, so the call's usage is the last block — with one
+    correction. Providers drop detail lines between blocks: StepFun reports
+    ``cached_tokens`` on its first block and omits it from its last, and a
+    call that read 4,224 tokens from cache would otherwise be recorded as
+    having read none. Every detail line is monotonic within a call, so the
+    largest value seen is the one that happened.
+    """
+    if previous is None:
+        return current
+
+    def _widest(name: str) -> int | None:
+        values = [
+            value
+            for value in (getattr(previous, name, None), getattr(current, name, None))
+            if isinstance(value, int)
+        ]
+        return max(values) if values else None
+
+    return current.model_copy(
+        update={
+            "cached_tokens": _widest("cached_tokens"),
+            "cache_write_tokens": _widest("cache_write_tokens"),
+            "thoughts_tokens": _widest("thoughts_tokens"),
+            "tool_use_tokens": _widest("tool_use_tokens"),
+        }
+    )
 
 
 def _catalog_model_id(model: Any, state: "AgentState") -> str | None:
@@ -106,6 +139,10 @@ class StreamPublisherHook(BaseAgentHook):
         self._usage_count = 0
         self._used_models: set[str] = set()
         self._current_model: str | None = None
+        # The in-flight model call's usage, folded across its chunks and
+        # recorded once when the call ends. See ``_fold_call_usage``.
+        self._pending_usage: Usage | None = None
+        self._pending_usage_model: str | None = None
 
     async def _push(self, event: AnyStreamEvent) -> None:
         """Fire-and-forget push to stream store. Never raises."""
@@ -153,10 +190,46 @@ class StreamPublisherHook(BaseAgentHook):
         request: "ModelRequest",
     ) -> None:
         self._model_started = time.monotonic()
+        self._pending_usage = None
+        self._pending_usage_model = None
+
+    async def _flush_call_usage(self) -> None:
+        """Record the finished model call's usage, once.
+
+        Called at the end of a model call rather than per chunk, so a
+        provider that repeats the call's totals on every chunk is counted
+        once. A call that produced no usage block records nothing.
+        """
+        usage = self._pending_usage
+        if usage is None:
+            return
+        self._pending_usage = None
+        model_id = self._pending_usage_model
+        self._pending_usage_model = None
+
+        snapshot = await record_turn_usage(usage, phase="main", model_id=model_id)
+        # Standalone hook tests and third-party integrations may invoke this
+        # hook without the team turn tracker. Preserve the historical
+        # main-call-only aggregate as a compatibility fallback.
+        if snapshot is not None:
+            return
+        self._total_prompt += usage.prompt_tokens or 0
+        self._total_completion += usage.completion_tokens or 0
+        for name, attribute in (
+            ("cached_tokens", "_total_cached"),
+            ("cache_write_tokens", "_total_cache_write"),
+            ("thoughts_tokens", "_total_thoughts"),
+            ("tool_use_tokens", "_total_tool_use"),
+        ):
+            value = getattr(usage, name, None)
+            if value is not None:
+                setattr(self, attribute, (getattr(self, attribute) or 0) + value)
+        self._usage_count += 1
 
     async def after_model(
         self, ctx: "RunContext", state: "AgentState", response: "AssistantMessage"
     ) -> None:
+        await self._flush_call_usage()
         started = (
             self._turn_started
             if self._turn_started is not None
@@ -207,32 +280,13 @@ class StreamPublisherHook(BaseAgentHook):
                     metadata=metadata,
                 )
             )
-            snapshot = await record_turn_usage(
-                u,
-                phase="main",
-                model_id=_catalog_model_id(model, state),
-            )
-            # Standalone hook tests and third-party integrations may invoke
-            # this hook without the team turn tracker. Preserve the historical
-            # main-call-only aggregate as a compatibility fallback.
-            if snapshot is None:
-                self._total_prompt += pt
-                self._total_completion += ct
-                cached = getattr(u, "cached_tokens", None)
-                if cached is not None:
-                    self._total_cached = (self._total_cached or 0) + cached
-                cache_write = getattr(u, "cache_write_tokens", None)
-                if cache_write is not None:
-                    self._total_cache_write = (
-                        self._total_cache_write or 0
-                    ) + cache_write
-                thoughts = getattr(u, "thoughts_tokens", None)
-                if thoughts is not None:
-                    self._total_thoughts = (self._total_thoughts or 0) + thoughts
-                tool_use = getattr(u, "tool_use_tokens", None)
-                if tool_use is not None:
-                    self._total_tool_use = (self._total_tool_use or 0) + tool_use
-                self._usage_count += 1
+            # Held, not recorded: the turn total adds one *completed call*,
+            # and a provider may state that call's totals on every chunk it
+            # sends. StepFun does, so recording here counted a 200K prompt
+            # once per chunk and reported a turn in the billions of tokens.
+            # ``after_model`` flushes what this fold arrives at.
+            self._pending_usage = _fold_call_usage(self._pending_usage, u)
+            self._pending_usage_model = _catalog_model_id(model, state)
 
         if not chunk.choices:
             return
@@ -510,6 +564,10 @@ class StreamPublisherHook(BaseAgentHook):
     async def after_agent(
         self, ctx: "RunContext", state: "AgentState", response: "AssistantMessage"
     ) -> None:
+        # A call whose ``after_model`` never ran — an abort, or a caller that
+        # drives the hook without that boundary — still had usage worth
+        # recording.
+        await self._flush_call_usage()
         # Me emit turn-total usage summary when multiple model calls were made
         if self._usage_count > 1 and (self._total_prompt or self._total_completion):
             await self._push(
@@ -538,3 +596,5 @@ class StreamPublisherHook(BaseAgentHook):
         self._usage_count = 0
         self._used_models = set()
         self._current_model = None
+        self._pending_usage = None
+        self._pending_usage_model = None

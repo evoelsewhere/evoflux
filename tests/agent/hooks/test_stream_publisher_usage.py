@@ -140,9 +140,11 @@ async def test_on_model_delta_emits_current_context_and_full_turn_total():
             new_callable=AsyncMock,
             side_effect=lambda _sid, event: pushed.append(event),
         ):
+            state = _make_state()
+            await hook.before_model(MagicMock(), state, MagicMock())
             await hook.on_model_delta(
                 MagicMock(),
-                _make_state(),
+                state,
                 _make_chunk_with_usage(
                     prompt=14_200,
                     completion=17,
@@ -152,6 +154,7 @@ async def test_on_model_delta_emits_current_context_and_full_turn_total():
                     model="model-a",
                 ),
             )
+            await hook.after_model(MagicMock(), state, MagicMock(extra=None))
     finally:
         end_turn_usage(token)
 
@@ -187,6 +190,7 @@ async def test_after_agent_emits_turn_total_after_multiple_usage_events():
         side_effect=lambda sid, ev: pushed.append(ev),
     ):
         state = _make_state()
+        await hook.before_model(MagicMock(), state, MagicMock())
         await hook.on_model_delta(
             MagicMock(),
             state,
@@ -199,6 +203,8 @@ async def test_after_agent_emits_turn_total_after_multiple_usage_events():
                 model="model-a",
             ),
         )
+        await hook.after_model(MagicMock(), state, MagicMock(extra=None))
+        await hook.before_model(MagicMock(), state, MagicMock())
         await hook.on_model_delta(
             MagicMock(),
             state,
@@ -211,6 +217,7 @@ async def test_after_agent_emits_turn_total_after_multiple_usage_events():
                 model="model-b",
             ),
         )
+        await hook.after_model(MagicMock(), state, MagicMock(extra=None))
         await hook.after_agent(MagicMock(), state, MagicMock())
 
     usage_events = [event for event in pushed if event.event == "usage"]
@@ -229,3 +236,58 @@ async def test_after_agent_emits_turn_total_after_multiple_usage_events():
         "agent": "lead",
         "models": ["model-a", "model-b"],
     }
+
+
+async def test_a_call_that_reports_usage_on_every_chunk_is_counted_once():
+    """One model call is one entry in the turn total, however it reports.
+
+    StepFun puts the call's running totals on *every* streaming chunk, not
+    only the last. Recording each one counted a 200K-token prompt once per
+    chunk — a 33-minute session reported 1.87 billion tokens at 99% cached.
+    """
+    hook = _make_hook(session_id="sess-1", agent_name="lead")
+    pushed = []
+    token = begin_turn_usage("sess-1", "lead")
+    try:
+        with patch(
+            "app.services.memory_stream_store.push_event",
+            new_callable=AsyncMock,
+            side_effect=lambda _sid, event: pushed.append(event),
+        ):
+            state = _make_state()
+            await hook.before_model(MagicMock(), state, MagicMock())
+            # The call's totals to date, restated on each chunk: the prompt
+            # is fixed, the completion grows, and the cache detail is only
+            # on the first block.
+            await hook.on_model_delta(
+                MagicMock(),
+                state,
+                _make_chunk_with_usage(
+                    prompt=4_431, completion=0, total=4_431, cached=4_224
+                ),
+            )
+            for completion in (30, 60, 93):
+                await hook.on_model_delta(
+                    MagicMock(),
+                    state,
+                    _make_chunk_with_usage(
+                        prompt=4_431,
+                        completion=completion,
+                        total=4_431 + completion,
+                    ),
+                )
+            await hook.after_model(MagicMock(), state, MagicMock(extra=None))
+    finally:
+        end_turn_usage(token)
+
+    totals = [
+        event.data
+        for event in pushed
+        if event.event == "usage" and event.data["metadata"].get("turn_total")
+    ]
+    assert len(totals) == 1
+    assert totals[0]["prompt_tokens"] == 4_431
+    assert totals[0]["completion_tokens"] == 93
+    # Carried from the first block, which is the only one that stated it.
+    assert totals[0]["cached_tokens"] == 4_224
+    assert totals[0]["metadata"]["calls"] == 1

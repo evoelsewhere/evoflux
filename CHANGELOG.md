@@ -14,6 +14,14 @@ All notable changes to EvoFlux are documented in this file.
   the levels StepFun publishes. StepFun cannot switch thinking off, so the
   off position leaves it at StepFun's own default.
 
+### Fixed
+
+- Turn token totals counted a model call once per streaming chunk when the
+  provider restated the call's usage on every chunk, which StepFun does: a
+  33-minute session reported 1.87 billion tokens. A call's usage is now
+  folded across its chunks and recorded once, when the call ends, and a
+  cache figure that appears on only one chunk is no longer lost.
+
 ## [2.0.5] - 2026-09-19
 
 ### Fixed
