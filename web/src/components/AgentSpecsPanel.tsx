@@ -91,6 +91,9 @@ const VIEW_OPTIONS = [
   { value: 'list', label: 'List' },
 ] as const
 
+/** Sentinel for "no repository filter" — the select speaks in strings. */
+const ALL_REPOSITORIES = '__all__'
+
 /** Board columns, each one phase of the cycle rather than one status. */
 const BOARD_COLUMNS: { title: string; statuses: string[] }[] = [
   { title: 'Propose', statuses: ['drafting', 'proposed'] },
@@ -673,7 +676,28 @@ function NewChangeForm({
 
 // ── Overview ─────────────────────────────────────────────────────────────
 
-function ChangeCard({ change, onOpen }: { change: AsddChange; onOpen: () => void }) {
+function RepositoryBadge({ name }: { name: string }) {
+  return (
+    <span
+      title={name}
+      className="flex min-w-0 items-center gap-1 rounded-full bg-(--bg-key)/70 px-1.5 py-0.5 text-[10px] font-medium text-(--color-text-2)"
+    >
+      <FolderGit2 size={9} className="shrink-0" />
+      <span className="truncate">{name}</span>
+    </span>
+  )
+}
+
+function ChangeCard({
+  change,
+  repository,
+  onOpen,
+}: {
+  change: AsddChange
+  /** Set only when the scope holds more than one repository. */
+  repository?: string
+  onOpen: () => void
+}) {
   const waiting = isAwaitingPerson(change.status)
   return (
     <button
@@ -713,9 +737,12 @@ function ChangeCard({ change, onOpen }: { change: AsddChange; onOpen: () => void
       <h3 className="mt-2 line-clamp-2 text-sm font-semibold leading-5 text-(--color-text)">
         {change.title}
       </h3>
-      <p className="mt-1 truncate font-mono text-[10px] text-(--color-text-subtle)">
-        {change.change_id}
-      </p>
+      <div className="mt-1 flex min-w-0 items-center gap-2">
+        <p className="min-w-0 flex-1 truncate font-mono text-[10px] text-(--color-text-subtle)">
+          {change.change_id}
+        </p>
+        {repository ? <RepositoryBadge name={repository} /> : null}
+      </div>
       {change.tasks_total > 0 && (
         <div className="mt-2 flex items-center gap-2">
           <div className="h-1 flex-1 overflow-hidden rounded-full bg-(--bg-key)">
@@ -744,6 +771,11 @@ function ChangesOverview({
   changes,
   archived,
   capabilities,
+  repositories,
+  repositoryFilter,
+  onRepositoryFilterChange,
+  pendingSetup,
+  onOpenSetup,
   view,
   onViewChange,
   onOpen,
@@ -755,24 +787,47 @@ function ChangesOverview({
   changes: AsddChange[]
   archived: string[]
   capabilities: string[]
+  repositories: AsddRepositorySetup[]
+  repositoryFilter: string | null
+  onRepositoryFilterChange: (value: string | null) => void
+  pendingSetup: number
+  onOpenSetup: () => void
   view: ChangesView
   onViewChange: (value: ChangesView) => void
-  onOpen: (changeId: string) => void
+  onOpen: (change: AsddChange) => void
   onNew: () => void
   onOpenCatalogue: () => void
   query: string
   onQueryChange: (value: string) => void
 }) {
+  // Only worth showing when there is a choice to make. A single-repository
+  // project is the common case and a select with one option in it is furniture.
+  const multiRepo = repositories.length > 1
+  const repositoryNames = useMemo(() => {
+    const names = new Map<string, string>()
+    for (const repository of repositories) {
+      names.set(repository.path, repositoryLabel(repository))
+    }
+    return names
+  }, [repositories])
+  const repositoryName = useCallback(
+    (path: string) => repositoryNames.get(path) ?? path.split(/[\\/]/).filter(Boolean).pop() ?? path,
+    [repositoryNames],
+  )
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    if (!needle) return changes
-    return changes.filter(
+    const inScope = repositoryFilter
+      ? changes.filter((change) => change.repository === repositoryFilter)
+      : changes
+    if (!needle) return inScope
+    return inScope.filter(
       (change) =>
         change.title.toLowerCase().includes(needle)
         || change.change_id.includes(needle)
         || change.capabilities.some((item) => item.includes(needle)),
     )
-  }, [changes, query])
+  }, [changes, query, repositoryFilter])
 
   const waiting = changes.filter((change) => isAwaitingPerson(change.status)).length
 
@@ -831,6 +886,24 @@ function ChangesOverview({
         </div>
 
         <div className="order-3 flex w-full items-center gap-2 @2xl/asdd:order-2 @2xl/asdd:ml-auto @2xl/asdd:w-auto">
+          {multiRepo ? (
+            <SelectControl
+              size="sm"
+              value={repositoryFilter ?? ALL_REPOSITORIES}
+              onValueChange={(value) =>
+                onRepositoryFilterChange(value === ALL_REPOSITORIES ? null : value)
+              }
+              ariaLabel="Filter by repository"
+              className="w-32 shrink-0"
+              options={[
+                { value: ALL_REPOSITORIES, label: 'All repositories' },
+                ...repositories.map((repository) => ({
+                  value: repository.path,
+                  label: repositoryLabel(repository),
+                })),
+              ]}
+            />
+          ) : null}
           <div className="relative min-w-0 flex-1 @2xl/asdd:w-32 @2xl/asdd:flex-none">
             <Search
               size={12}
@@ -852,6 +925,26 @@ function ChangesOverview({
           />
         </div>
       </div>
+
+      {/*
+        A repository still to set up is a banner, not a wall: the changes the
+        other repositories already hold are real work, and hiding them behind
+        this was how a project reported an empty board.
+      */}
+      {pendingSetup > 0 ? (
+        <button
+          type="button"
+          onClick={onOpenSetup}
+          className="flex w-full items-center gap-2 border-b border-(--color-border) bg-(--color-warning)/8 px-3 py-2 text-left text-[11px] text-(--color-text-muted) hover:bg-(--color-warning)/12"
+        >
+          <AlertTriangle size={13} className="shrink-0 text-(--color-warning)" />
+          <span className="min-w-0 flex-1">
+            {pendingSetup} {pendingSetup === 1 ? 'repository' : 'repositories'} in this project
+            {' '}have no ASDD directory yet — changes filed there will not appear here.
+          </span>
+          <span className="shrink-0 font-medium text-(--color-accent)">Set up</span>
+        </button>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto p-3">
         {filtered.length === 0 ? (
@@ -890,7 +983,8 @@ function ChangesOverview({
                       <ChangeCard
                         key={change.change_id}
                         change={change}
-                        onOpen={() => onOpen(change.change_id)}
+                        repository={multiRepo ? repositoryName(change.repository) : undefined}
+                        onOpen={() => onOpen(change)}
                       />
                     ))}
                   </div>
@@ -921,7 +1015,7 @@ function ChangesOverview({
               {filtered.map((change) => (
                 <tr
                   key={change.change_id}
-                  onClick={() => onOpen(change.change_id)}
+                  onClick={() => onOpen(change)}
                   className="cursor-pointer border-t border-(--color-border) align-top hover:bg-(--bg-key)/40"
                 >
                   <td className="px-2 py-1.5">
@@ -930,6 +1024,7 @@ function ChangesOverview({
                     </span>
                     <span className="block truncate font-mono text-[10px] text-(--color-text-subtle)">
                       {change.change_id}
+                      {multiRepo ? ` · ${repositoryName(change.repository)}` : ''}
                     </span>
                   </td>
                   <td className="px-2 py-1.5">
@@ -959,7 +1054,8 @@ function ChangesOverview({
               <ChangeCard
                 key={change.change_id}
                 change={change}
-                onOpen={() => onOpen(change.change_id)}
+                repository={multiRepo ? repositoryName(change.repository) : undefined}
+                onOpen={() => onOpen(change)}
               />
             ))}
           </div>
@@ -1265,9 +1361,14 @@ export function AgentSpecsPanel({
 }: AgentSpecsPanelProps) {
   const [view, setView] = useState<ChangesView>(loadView)
   const [query, setQuery] = useState('')
-  const [openChangeId, setOpenChangeId] = useState<string | null>(null)
+  // A change is opened by identity *and* by the repository it lives in. The
+  // board spans every repository in the project, so the session's own
+  // workspace says nothing about where the change being read is.
+  const [openChange, setOpenChange] = useState<{ id: string; repository: string } | null>(null)
   const [creating, setCreating] = useState(false)
   const [catalogue, setCatalogue] = useState(false)
+  const [repositoryFilter, setRepositoryFilter] = useState<string | null>(null)
+  const [setupOpen, setSetupOpen] = useState(false)
   // Normally just `workspace`. Creating a change against a sibling repository
   // (a Coding Project can hold several) redirects the panel to follow it, so
   // the overview and detail queries below read the repository the change
@@ -1284,18 +1385,27 @@ export function AgentSpecsPanel({
 
   useEffect(() => {
     setActiveWorkspace(workspace)
+    setRepositoryFilter(null)
   }, [workspace])
 
   const setup = useAsddSetupQuery(activeWorkspace, projectId, active)
   // Every repository in scope, not just the one this session opened on. A
   // change in a Coding Project routinely edits siblings, and the new-change
-  // form can only offer a repository that is already set up — so a
-  // half-installed project silently files every change wherever the session
-  // happened to start. Setup stays up until the project is whole, and after
-  // that the target repository is a choice the author actually gets to make.
+  // form can only offer a repository that is already set up.
+  //
+  // What the board needs is one *installed* repository, not a whole project.
+  // Gating it on the project being complete hid every change a set-up
+  // repository already had behind the setup screen for the one that was not:
+  // work that existed, was being edited, and reported an empty board.
+  const installedCount = setup.data?.installed_count ?? 0
   const ready = setup.data?.ready ?? false
-  const changes = useAsddChangesQuery(activeWorkspace, projectId, active && ready)
-  const detail = useAsddChangeQuery(activeWorkspace, openChangeId, active && ready)
+  const hasCatalogue = installedCount > 0
+  const changes = useAsddChangesQuery(activeWorkspace, projectId, active && hasCatalogue)
+  const detail = useAsddChangeQuery(
+    openChange?.repository ?? activeWorkspace,
+    openChange?.id ?? null,
+    active && hasCatalogue,
+  )
 
   if (!active) return null
 
@@ -1307,9 +1417,20 @@ export function AgentSpecsPanel({
     )
   }
 
-  if (!ready) {
+  // Nothing to show is the only reason to take the screen: with one
+  // repository installed there is a board, and the repositories still to set
+  // up are a banner on it rather than a wall in front of it.
+  if (!hasCatalogue || setupOpen) {
     return (
       <div className="@container/asdd h-full overflow-auto">
+        {setupOpen && hasCatalogue ? (
+          <div className="px-3 pt-3">
+            <Button type="button" size="sm" variant="ghost" onClick={() => setSetupOpen(false)}>
+              <ChevronLeft size={13} />
+              Back to changes
+            </Button>
+          </div>
+        ) : null}
         <SetupView workspace={activeWorkspace} projectId={projectId} setup={setup.data} />
       </div>
     )
@@ -1322,6 +1443,7 @@ export function AgentSpecsPanel({
           workspace={activeWorkspace}
           capabilities={changes.data?.capabilities ?? []}
           archived={changes.data?.archived ?? []}
+          repositories={changes.data?.repositories ?? []}
           onBack={() => setCatalogue(false)}
         />
       </div>
@@ -1339,37 +1461,37 @@ export function AgentSpecsPanel({
           onCreated={(changeId, changeWorkspace) => {
             setActiveWorkspace(changeWorkspace)
             setCreating(false)
-            setOpenChangeId(changeId)
+            setOpenChange({ id: changeId, repository: changeWorkspace })
           }}
         />
       </div>
     )
   }
 
-  if (openChangeId && detail.data) {
+  if (openChange && detail.data) {
     return (
       <div className="@container/asdd h-full">
         <ChangeDetail
-          workspace={activeWorkspace}
+          workspace={openChange.repository}
           projectId={projectId}
           detail={detail.data}
-          onBack={() => setOpenChangeId(null)}
+          onBack={() => setOpenChange(null)}
           onRunInChat={onRunInChat}
-          onDeleted={() => setOpenChangeId(null)}
-          onArchived={() => setOpenChangeId(null)}
+          onDeleted={() => setOpenChange(null)}
+          onArchived={() => setOpenChange(null)}
         />
       </div>
     )
   }
 
-  if (openChangeId && detail.isError) {
+  if (openChange && detail.isError) {
     return (
       <div className="@container/asdd flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
         <AlertTriangle size={18} className="text-(--color-warning)" />
         <p className="max-w-sm text-[11px] leading-4 text-(--color-text-muted)">
           {errorText(detail.error)}
         </p>
-        <Button type="button" size="sm" variant="ghost" onClick={() => setOpenChangeId(null)}>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setOpenChange(null)}>
           Back to changes
         </Button>
       </div>
@@ -1382,9 +1504,16 @@ export function AgentSpecsPanel({
         changes={changes.data?.changes ?? []}
         archived={changes.data?.archived ?? []}
         capabilities={changes.data?.capabilities ?? []}
+        repositories={setup.data.repositories}
+        repositoryFilter={repositoryFilter}
+        onRepositoryFilterChange={setRepositoryFilter}
+        pendingSetup={ready ? 0 : setup.data.repository_count - installedCount}
+        onOpenSetup={() => setSetupOpen(true)}
         view={view}
         onViewChange={setView}
-        onOpen={setOpenChangeId}
+        onOpen={(change) =>
+          setOpenChange({ id: change.change_id, repository: change.repository })
+        }
         onNew={() => setCreating(true)}
         onOpenCatalogue={() => setCatalogue(true)}
         query={query}

@@ -17,13 +17,20 @@ const mocks = vi.hoisted(() => ({
   remove: vi.fn(),
   create: vi.fn(),
   createArgs: vi.fn(),
+  detailArgs: vi.fn(),
   initialize: vi.fn(),
 }))
 
 vi.mock('@/queries', () => ({
   useAsddSetupQuery: () => mocks.setup(),
   useAsddChangesQuery: () => mocks.changes(),
-  useAsddChangeQuery: () => mocks.detail(),
+  // Records which repository the detail read was aimed at: a change in a
+  // sibling repository must be read from that repository, not from the one
+  // the session opened on.
+  useAsddChangeQuery: (workspace: string, changeId: string | null) => {
+    mocks.detailArgs(workspace, changeId)
+    return mocks.detail()
+  },
   useAsddSpecQuery: () => mocks.spec(),
   useApproveAsddArtifactMutation: () => mocks.approve(),
   useStartAsddActionMutation: () => mocks.startAction(),
@@ -198,10 +205,11 @@ describe('Agent Spec-Driven setup', () => {
     expect(screen.getByRole('button', { name: /Set up 2 repositories/ })).toBeInTheDocument()
   })
 
-  it('holds the project on setup while a sibling repository is not installed', () => {
-    // The new-change form can only offer a repository that is set up. Letting
-    // one ready repository through would file every change into it by default,
-    // with no sign the siblings were ever candidates.
+  it('shows the changes a set-up repository already has while a sibling waits', () => {
+    // Holding the whole board until every repository is installed hid work
+    // that existed: a project whose changes all live in the repository that
+    // *is* set up reported an empty board because a sibling was not. The
+    // repositories still to set up are a banner on the board instead.
     mocks.setup.mockReturnValue(idle(setupResponse({
       repositories: [
         repository(),
@@ -211,9 +219,23 @@ describe('Agent Spec-Driven setup', () => {
 
     panel()
 
+    expect(screen.getByRole('heading', { name: 'Changes' })).toBeInTheDocument()
+    expect(screen.getByText('Add user authentication')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /1 repository in this project/ })).toBeInTheDocument()
+  })
+
+  it('takes the screen only when no repository is set up at all', () => {
+    mocks.setup.mockReturnValue(idle(setupResponse({
+      repositories: [
+        repository({ status: 'not_initialized', installed: false }),
+        repository({ path: '/other', name: 'other', status: 'not_initialized', installed: false }),
+      ],
+    })))
+
+    panel()
+
     expect(screen.getByRole('heading', { name: 'Set up Agent Spec-Driven' })).toBeInTheDocument()
-    expect(screen.getByText('1/2 ready')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Set up repository/ })).toBeInTheDocument()
+    expect(screen.getByText('0/2 ready')).toBeInTheDocument()
   })
 
   it('names what an unhealthy repository is missing', () => {
@@ -841,5 +863,83 @@ describe('Agent Spec-Driven tolerates a hand-edited status', () => {
 
     expect(screen.getByText(/is not a phase this build knows/)).toBeInTheDocument()
     expect(screen.getByText(/is not one of/)).toBeInTheDocument()
+  })
+})
+
+describe('Agent Spec-Driven across a multi-repository project', () => {
+  const sibling: AsddChangeList['changes'][number] = {
+    ...change,
+    change_id: 'rotate-signing-keys',
+    repository: '/other',
+    title: 'Rotate the signing keys',
+  }
+
+  function multiRepoPanel() {
+    mocks.setup.mockReturnValue(idle(setupResponse({
+      scope: 'project',
+      project_id: 'p1',
+      repositories: [
+        repository(),
+        repository({ path: '/other', name: 'other', display_name: 'Other repo' }),
+      ],
+    })))
+    mocks.changes.mockReturnValue(idle({
+      workspace: '/repo',
+      project_id: 'p1',
+      changes: [change, sibling],
+      archived: [],
+      capabilities: ['user-auth'],
+      repositories: [
+        { path: '/repo', capabilities: ['user-auth'], archived: [] },
+        { path: '/other', capabilities: [], archived: [] },
+      ],
+    }))
+    return panel({ projectId: 'p1' })
+  }
+
+  it('lists the changes of every repository in the project', () => {
+    // The board used to read the repository the session opened on and nothing
+    // else, so a change filed next door was invisible from here.
+    multiRepoPanel()
+
+    expect(screen.getByText('Add user authentication')).toBeInTheDocument()
+    expect(screen.getByText('Rotate the signing keys')).toBeInTheDocument()
+  })
+
+  it('names the repository each change belongs to', () => {
+    multiRepoPanel()
+
+    expect(screen.getByText('repo')).toBeInTheDocument()
+    expect(screen.getByText('Other repo')).toBeInTheDocument()
+  })
+
+  it('narrows the board to one repository', async () => {
+    multiRepoPanel()
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter by repository' }))
+    const option = await screen.findByRole('option', { name: 'Other repo' })
+    fireEvent.mouseMove(option)
+    fireEvent.pointerDown(option, { pointerType: 'mouse' })
+    fireEvent.mouseUp(option)
+    fireEvent.click(option)
+
+    await waitFor(() => {
+      expect(screen.queryByText('Add user authentication')).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Rotate the signing keys')).toBeInTheDocument()
+  })
+
+  it('reads a change from the repository it lives in', () => {
+    multiRepoPanel()
+
+    fireEvent.click(screen.getByText('Rotate the signing keys'))
+
+    expect(mocks.detailArgs).toHaveBeenLastCalledWith('/other', 'rotate-signing-keys')
+  })
+
+  it('offers no repository filter when the scope is one repository', () => {
+    panel()
+
+    expect(screen.queryByRole('combobox', { name: 'Filter by repository' })).not.toBeInTheDocument()
   })
 })

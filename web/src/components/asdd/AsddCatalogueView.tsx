@@ -7,9 +7,10 @@
  * artifact the method treats as authoritative was the one thing the UI could
  * not show.
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Archive, ChevronLeft, FileText, Layers, Loader2 } from 'lucide-react'
 
+import type { AsddRepositoryListing } from '@/api/types'
 import { useAsddSpecQuery } from '@/queries'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -102,20 +103,38 @@ export function AsddCatalogueView({
   workspace,
   capabilities,
   archived,
+  repositories = [],
   onBack,
 }: {
   workspace: string
   capabilities: string[]
   archived: string[]
+  /**
+   * Which repository holds which spec. The lists above are merged across the
+   * whole scope, and a spec is a file in exactly one working tree — without
+   * this a sibling's capability would be read from the wrong repository and
+   * come back as "not found".
+   */
+  repositories?: AsddRepositoryListing[]
   onBack: () => void
 }) {
   const [tab, setTab] = useState<CatalogueTab>('capabilities')
   const [openCapability, setOpenCapability] = useState<string | null>(null)
 
+  const specOwner = useMemo(() => {
+    const owner = new Map<string, string>()
+    for (const repository of repositories) {
+      for (const capability of repository.capabilities) {
+        if (!owner.has(capability)) owner.set(capability, repository.path)
+      }
+    }
+    return owner
+  }, [repositories])
+
   if (openCapability) {
     return (
       <SpecView
-        workspace={workspace}
+        workspace={specOwner.get(openCapability) ?? workspace}
         capability={openCapability}
         onBack={() => setOpenCapability(null)}
       />

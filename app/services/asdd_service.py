@@ -13,6 +13,7 @@ never has to be told which run, revision or hash it is working on.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -169,6 +170,50 @@ def list_changes(catalogue: AsddCatalogue) -> dict[str, Any]:
         "changes": changes,
         "archived": catalogue.list_archived(),
         "capabilities": catalogue.list_capabilities(),
+    }
+
+
+def list_changes_across(roots: "Sequence[str]", *, workspace: str) -> dict[str, Any]:
+    """Every change in *roots*, as one listing.
+
+    A Coding project is several repositories and a change lives in exactly one
+    of them, so listing only the repository a session happened to open on
+    reports an empty board to someone whose changes are all next door. Each
+    change already names its own repository, so the merge needs no key of its
+    own — and a repository with no ASDD directory contributes nothing rather
+    than failing the listing, which is what lets a half-installed project show
+    the changes it does have.
+
+    Order follows *roots*, which is the project's own repository order; within
+    a repository the catalogue's own ordering stands.
+    """
+    changes: list[dict[str, Any]] = []
+    archived: list[str] = []
+    capabilities: set[str] = set()
+    repositories: list[dict[str, Any]] = []
+    for root in roots:
+        payload = list_changes(catalogue_for(root))
+        changes.extend(payload["changes"])
+        archived.extend(payload["archived"])
+        capabilities.update(payload["capabilities"])
+        # Kept per repository as well as merged: a capability's spec and an
+        # archived change live in exactly one working tree, so a reader that
+        # only had the merged names would ask the wrong repository for them.
+        repositories.append(
+            {
+                "path": payload["workspace"],
+                "capabilities": payload["capabilities"],
+                "archived": payload["archived"],
+            }
+        )
+    return {
+        "workspace": workspace,
+        "changes": changes,
+        # Archive names carry their own date prefix, so newest-first across
+        # repositories is the same sort the single-repository listing uses.
+        "archived": sorted(set(archived), reverse=True),
+        "capabilities": sorted(capabilities),
+        "repositories": repositories,
     }
 
 
