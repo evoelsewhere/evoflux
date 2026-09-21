@@ -487,7 +487,7 @@ function TelegramPairingRow({
   const linkMut = useIssuePairingLinkMutation()
   const [linkCopied, setLinkCopied] = useState(false)
 
-  // Auto-issue a pairing link once the adapter reaches "polling" and no
+  // Auto-issue a pairing link once the adapter reaches "pairing" or "polling" and no
   // pairing exists yet.  Uses a ref guard so the effect fires at most once
   // per connection session — avoids re-triggering on every render.
   const autoIssuedRef = useRef(false)
