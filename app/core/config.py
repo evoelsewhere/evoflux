@@ -101,6 +101,11 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: SecretStr | None = None
     XIAOMI_API_KEY: SecretStr | None = None
     XIAOMI_BASE_URL: str = ""
+    # StepFun publishes one API under four hosts — global and China open
+    # platforms, each with a ``step_plan`` subscription variant — so the base
+    # URL stays configurable and must match where the key was issued.
+    STEPFUN_API_KEY: SecretStr | None = None
+    STEPFUN_BASE_URL: str = ""
     MOONSHOT_API_KEY: SecretStr | None = None
     MOONSHOT_BASE_URL: str = "https://api.kimi.com/coding/v1"
     # K3 is entitlement-dependent: 256K for Moderato, up to 1M for

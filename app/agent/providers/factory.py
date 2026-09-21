@@ -69,6 +69,7 @@ from app.agent.providers.registry import (
 )
 from app.agent.providers.qwencloud import QwenCloudProvider  # noqa: F401
 from app.agent.providers.router9 import Router9Provider  # noqa: F401
+from app.agent.providers.stepfun import StepFunProvider  # noqa: F401
 from app.agent.providers.unconfigured import UnconfiguredProviderError
 from app.agent.providers.vertexai import VertexAIProvider
 from app.agent.providers.xai import XAIProvider  # noqa: F401
@@ -100,6 +101,7 @@ _PROVIDER_CLASS_NAMES: dict[str, str] = {
     "ollama": "OllamaProvider",
     "router9": "Router9Provider",
     "xiaomi": "XiaomiProvider",
+    "stepfun": "StepFunProvider",
     "fci": "FCIProvider",
     "kimi": "KimiCodeProvider",
     "qwencloud": "QwenCloudProvider",

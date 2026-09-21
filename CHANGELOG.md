@@ -4,6 +4,16 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- StepFun is now a supported provider. `stepfun:` models resolve to the
+  global open platform by default, with `STEPFUN_BASE_URL` selecting the
+  China host or either Step Plan subscription endpoint. Reasoning traces are
+  requested in the spelling EvoFlux renders (`reasoning_content`) rather
+  than StepFun's documented default, and the reasoning effort stays inside
+  the levels StepFun publishes. StepFun cannot switch thinking off, so the
+  off position leaves it at StepFun's own default.
+
 ## [2.0.5] - 2026-09-19
 
 ### Fixed

@@ -218,6 +218,11 @@ _OVERRIDES: dict[str, ProviderEntry] = {
         "kind": "api_key",
     },
     "sambanova": {"description": "SambaNova Cloud — fast Llama and Mistral inference."},
+    "stepfun": {
+        "description": "StepFun's Step models — reasoning, vision and video "
+        "input, tool calling. Point the base URL at the China host or a Step "
+        "Plan endpoint if that is where your key lives."
+    },
     "together": {
         "description": "Together AI — open models, fine-tuning, serverless inference."
     },

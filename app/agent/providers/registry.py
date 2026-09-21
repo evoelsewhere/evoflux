@@ -297,6 +297,20 @@ PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
         docs_url="https://xiaomimimo.com",
         browser_login=True,
     ),
+    "stepfun": ProviderConfig(
+        id="stepfun",
+        label="StepFun",
+        env_var="STEPFUN_API_KEY",
+        base_url_env_var="STEPFUN_BASE_URL",
+        # StepFun runs two open platforms on one account model: a global one
+        # (``.ai``) and a China one (``.com``), each with a subscription
+        # ``step_plan`` variant, all four listed separately by models.dev.
+        # The global row is the default because it is the one reachable
+        # without a mainland account; the other three are a base-URL change,
+        # and their model rows arrive through the sibling merge.
+        models_dev_id="stepfun-ai",
+        docs_url="https://platform.stepfun.ai",
+    ),
     "zai": ProviderConfig(
         id="zai",
         label="Z.AI GLM",
