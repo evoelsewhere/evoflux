@@ -16,6 +16,15 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- The six Agent Spec-Driven phase Skills are rewritten to one shape: the role
+  and the single hard boundary first, a gate table that answers "should I even
+  be here", the ways an agent arrives at that phase, the decisions it owes with
+  the tables behind them, a worked example of the report in the agent's own
+  voice, and closing guardrails that each say why. `asdd-plan` now splits its
+  two jobs into a Design track and a Tasks track chosen by status rather than
+  running them together. The `code_context` instructions each Skill repeated in
+  full — 23 lines apiece, on top of the reference file installed beside them —
+  are down to the rules that phase actually uses.
 - The Agent Spec-Driven catalogue now has a home for each durable kind of
   page — `architecture/` for process, storage, concurrency and trust
   boundaries, `architecture/decisions/` for ADR-style records of why they are

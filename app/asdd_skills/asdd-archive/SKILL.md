@@ -5,108 +5,151 @@ description: Check that a verified ASDD change is safe to fold into the capabili
 
 # Archive an ASDD change
 
-## Repository contract
+You are establishing that the fold will be correct, and saying exactly what it
+will produce. You are not performing it.
 
-Read `.evoflux/asdd/config.json`, then `.evoflux/asdd/RULES.md` and `project.md`
-in the resolved `data_directory`. Read the change's `proposal.md`, every
-`specs/<capability>/spec.md` under the change, the current catalogue spec for
-each of those capabilities, and every page under `evidence/`.
+**IMPORTANT: this phase writes nothing to the catalogue.** EvoFlux folds the
+deltas and moves the folder when the user clicks archive. You do not edit a
+capability spec, do not move the change folder, do not set `status: archived`,
+and do not touch `approvals`.
+
+The one exception is a gap you find below: a durable page this change owed but
+never wrote. Write that, in this change, before you report.
+
+---
 
 ## What archiving does
 
-Archiving folds each delta into `specs/<capability>/spec.md` and moves the
-change folder to `changes/archive/YYYY-MM-DD-<change-id>/`. It is the only way a
-capability spec changes, and it is not reversible by running something else — it
-is reversible only by a new change.
+Folds each `changes/<change-id>/specs/<capability>/spec.md` into the
+catalogue's `specs/<capability>/spec.md`, then moves the change folder to
+`changes/archive/YYYY-MM-DD-<change-id>/`.
 
-**EvoFlux performs the fold.** You do not edit catalogue specs and you do not
-move folders. Your job is to establish that the fold will be correct, and to say
-what it will produce.
+It is the only way a capability spec changes, and nothing undoes it except
+another change. That is why this phase exists: everything below is cheaper to
+check now than to reverse later.
+
+---
+
+## Read before you judge
+
+1. `.evoflux/asdd/config.json`, `.evoflux/asdd/RULES.md`,
+   `<data_directory>/project.md`.
+2. `changes/<change-id>/proposal.md` — the gates, the tier, the scope.
+3. Every delta under the change, **and the current catalogue spec for each of
+   those capabilities**. The fold compares the two; so do you.
+4. Every page under `evidence/`.
+5. `design.md` when present — its `## Decisions` is the list you check against
+   `architecture/decisions/`.
+
+---
+
+## Check the gate
+
+| Condition | What to do |
+|---|---|
+| `status: ready` | Check and report. The normal case. |
+| `status: verifying` | **Stop.** Verification has not returned a verdict; ask for `asdd-verify`. |
+| earlier | **Stop.** Name the phase that is actually open. |
+| `status: archived` | **Stop.** Already folded; the change is history. |
+
+---
 
 ## Check before the fold
 
 1. **Names resolve.** Every `MODIFIED` and `REMOVED` heading matches a
-   requirement in the current catalogue spec character for character. Every
+   requirement in the current catalogue spec **character for character**. Every
    `ADDED` heading matches nothing there. A capability with no spec yet is
-   normal: the fold creates it.
+   normal — the fold creates it.
 2. **Structure holds.** Every requirement has a statement and at least one
    scenario with a **WHEN** and a **THEN**.
 3. **Evidence covers the contract.** Every requirement in every delta has a
-   verdict under `evidence/`, and none of them is `failed`. Say which are
-   `inconclusive` and why that is acceptable, or that it is not.
+   verdict, and none is `failed`. Say which are `inconclusive` and why that is
+   acceptable — or that it is not.
 4. **Gates are stamped.** `approvals` or `auto_approvals` carries a timestamp
-   for proposal, specs, tasks, and — for `cross_layer` and `critical` —
-   design. Say which gates a person signed and which autopilot cleared; a
-   `cross_layer` or `critical` change must have `approvals.design` from the
-   user, not `auto_approvals.design`, and a passing `kind: review` page.
-5. **Tasks are settled.** Every task is ticked, or the unticked ones carry a
-   note explaining why they are not needed.
+   for proposal, specs and tasks, plus design at `cross_layer` and `critical`.
+   Say which a person signed and which autopilot cleared. **At those two tiers
+   the design must be `approvals.design` — the user's — and there must be a
+   passing independent `kind: review` page.**
+5. **Tasks are settled.** Every task is ticked, or an unticked one carries a
+   note saying why it is not needed.
+
+---
 
 ## The catalogue outside `specs/`
 
-The fold covers `specs/` and nothing else, so the durable pages this change
-owed are yours to confirm before you call the archive — once the folder moves,
-they read as though nobody ever needed them.
+The fold covers `specs/` and nothing else. Once the folder moves, a page this
+change owed but never wrote reads as though nobody ever needed it — so confirm
+these four, and **write what is missing before you report**:
 
-1. **Decisions are recorded.** Every entry in `design.md`'s `## Decisions` that
-   would be expensive to reverse exists as an ADR under
-   `architecture/decisions/`, numbered, dated, naming this change, with the
-   rejected alternative and its reason. A decision that lives only in a change
-   folder is a decision the next reader will find by archaeology.
-2. **Boundaries are current.** If the change moved a process, storage,
-   concurrency or trust boundary, the page under `architecture/` says so.
-3. **The surface is current.** If the change altered an endpoint, config key,
-   schema, event or CLI flag, `reference/` matches what shipped.
-4. **Investigations are filed.** Anything under `analysis/` this change
-   produced is dated and cited where it was used.
+| Check | Where |
+|---|---|
+| Every expensive-to-reverse entry in `design.md`'s `## Decisions` exists as a numbered ADR naming this change, with its rejected alternative | `architecture/decisions/` |
+| A moved process, storage, concurrency or trust boundary is described | `architecture/` |
+| A changed endpoint, config key, schema, event or CLI flag matches what shipped | `reference/` |
+| An investigation this change produced is dated and cited where it was used | `analysis/` |
 
-Write what is missing, in this change, before archiving. Do not archive around
-a gap and open a follow-up change to write the page: the change that made the
-statement true is the only one whose diff explains it.
+Do not archive around a gap and open a follow-up change to write the page. The
+change that made the statement true is the only one whose diff explains it.
 
-## Report the result
-
-Say, per capability, what the merged spec will contain: requirements added,
-requirements replaced and their old text, requirements dropped. Name any
-capability the fold will create for the first time. Then state plainly whether
-the change is safe to archive, and if not, the exact list of what has to happen
-first.
+---
 
 ## Tools
 
 - `shell` — `git status` and `git diff --stat` on the change folder and the
   capability specs, so the report describes the tree as it is rather than as
   the change folder claims.
-- `code_context` — see `references/code-context-contract.md`, for checking that
-  what the deltas contract is what the code now does.
+- `code_context` — spot-check that the merged contract still describes the
+  code: one `action="search"` per requirement, then `action="definition"` on
+  what it returns. A spec folded in while the behavior no longer matches is
+  worse than no spec. Use `action="impact"` when a `REMOVED` requirement
+  retires behavior, to name what still depends on it. Never bulk scan.
+  `references/code-context-contract.md` is normative and carries the full rules.
 
-This phase does not write to the repository and must not archive anything. The
-fold is the product's operation and the user starts it.
+The ASDD context block already names the catalogue and the open changes. Do not
+probe for them.
 
-## Code graph navigation
+---
 
-`code_context` is the primary discovery tool for this phase. The ASDD context
-block already names the catalogue and the open changes, so do not probe for them
-and do not sweep for build manifests to guess the toolchain.
+## Stop, and report
 
-- Spot-check that the merged contract still describes the code: one
-  `action="search"` per requirement, then `action="definition"` on what it
-  returns. A spec folded in while the behavior no longer matches is worse than
-  no spec.
-- Use `action="impact"` when a REMOVED requirement retires behavior, to name
-  what still depends on it.
+`TEMPLATE.md`, beside this file, is the exact shape. Say, per capability, what
+the merged spec will contain, then the verdict:
 
-Read `references/code-context-contract.md` for full action selection and
-interpretation rules. It is normative here. In short: call `code_context`
-with one `action="search"` to expose a declared identifier, then skip
-further search and call the exact-symbol action on that identifier; start
-at depth 1 unless the question is explicitly transitive; and never bulk
-scan. Keep `refresh=true` for the first indexed query and after any edit,
-and use `refresh=false` only for an immediate follow-up that intentionally
-reuses the returned index version. Do not repeat an unchanged query.
+```text
+add-note-search — safe to archive.
 
-## Stop condition
+note-search (new capability; the fold creates it)
+  + Find a note by title
+  + Search is case-insensitive
+  + Empty query returns nothing
 
-Stop after reporting. Do not edit catalogue specs, do not move the change
-folder, do not set `status: archived`, and do not touch `approvals`. Archiving
-is the user's action, taken in the UI once your report says it is safe.
+note-storage
+  ~ Note index is maintained — replaces "The index is rebuilt on write",
+    which no longer holds now that deletes update it incrementally
+  - Full reindex on boot
+
+Gates: proposal and specs signed by the user, tasks cleared by autopilot.
+Standard tier, so no design gate.
+Evidence: 4 pages, all passed.
+Catalogue: ADR 0007 present, reference/api.md current.
+
+Nothing blocks it.
+```
+
+When something does block it, replace the last line with what and why, one line
+each, naming the file the user has to fix.
+
+---
+
+## Guardrails
+
+- **Don't fold anything yourself.** Not a spec edit, not a folder move, not
+  `status: archived`. The fold is the product's and the user starts it.
+- **Don't report a gate as approved** without saying whether a person or
+  autopilot cleared it.
+- **Don't wave through an `inconclusive`.** Name it and say why it is
+  acceptable, or say it is not.
+- **Don't accept a name that nearly matches.** The fold compares character for
+  character, and a near miss fails after the user has clicked.
+- **Don't leave a durable page unwritten** and note it as follow-up work.
+  Write it here.
