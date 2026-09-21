@@ -14,6 +14,21 @@ All notable changes to EvoFlux are documented in this file.
   the levels StepFun publishes. StepFun cannot switch thinking off, so the
   off position leaves it at StepFun's own default.
 
+### Added
+
+- `asdd-explore`, a seventh Agent Spec-Driven Skill, fills a freshly installed
+  catalogue from the repository it was installed into. Setup wrote `project.md`
+  as placeholders and nothing ever filled it, while all six phase Skills read
+  it first — so a fresh install ran every phase against blank rules. Explore
+  reads what exists (`AGENTS.md`, README, build and test configuration, CI),
+  asks only what the repository cannot answer, and writes `project.md` with the
+  source beside each claim, plus the `architecture/` and `reference/` pages the
+  code already justifies. It writes no `specs/` and no ADR — the first would
+  contract whatever the code does today, bugs included, and the second states a
+  rejected alternative that does not survive in code — and it defers `AGENTS.md`
+  to `/init`, which already writes those properly. The board offers it until the
+  repository has been described.
+
 ### Changed
 
 - Autopilot now carries a change from phase to phase instead of only signing

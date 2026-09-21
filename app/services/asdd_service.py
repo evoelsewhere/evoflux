@@ -173,6 +173,48 @@ def list_changes(catalogue: AsddCatalogue) -> dict[str, Any]:
     }
 
 
+#: The Skill that fills a freshly installed catalogue. Not in `_PHASE_SKILLS`
+#: because it belongs to no change: there is nothing to propose about a
+#: repository already being what it is.
+EXPLORE_SKILL = "asdd-explore"
+
+
+def project_context_pending(catalogue: AsddCatalogue) -> bool:
+    """Whether `project.md` is still the placeholders setup shipped.
+
+    The skeleton writes its prompts in italics — `_What this repository
+    ships…_` — so an untouched file is recognisable without storing a flag
+    next to it. Every phase Skill reads this file first, which is exactly why
+    an install that never fills it is worth saying out loud.
+    """
+
+    try:
+        text = catalogue.project_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return True
+    return "_What this repository ships" in text
+
+
+def explore_prompt(catalogue: AsddCatalogue) -> str:
+    """The instruction that fills this catalogue from its own repository."""
+
+    base = catalogue.relative(catalogue.base_path)
+    lines = [
+        f"${EXPLORE_SKILL}",
+        "",
+        f"Fill the ASDD catalogue at `{base}` from this repository.",
+        "Read what already exists — every `AGENTS.md`, the README, the build "
+        "and test configuration, CI, the top-level layout — before asking "
+        "anything, then ask only what the repository cannot answer.",
+        f"Write `{catalogue.relative(catalogue.project_path)}`, and the "
+        f"`architecture/` and `reference/` pages the code already justifies. "
+        "Leave `specs/`, `analysis/` and `architecture/decisions/` empty, and "
+        "say why in your report.",
+        "Every claim cites where it came from. Change no product file.",
+    ]
+    return "\n".join(lines)
+
+
 def list_changes_across(roots: "Sequence[str]", *, workspace: str) -> dict[str, Any]:
     """Every change in *roots*, as one listing.
 

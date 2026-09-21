@@ -240,16 +240,40 @@ down as though it had been decided.
 
 ## Skills
 
-Setup installs six phase Skills into `.evoflux/skills/`:
+Setup installs seven Skills into `.evoflux/skills/`: one per phase, plus the
+one that runs before any phase does.
 
 | Skill | Phase | Produces |
 |---|---|---|
+| `asdd-explore` | — (bootstrap) | `project.md`, `architecture/`, `reference/` |
 | `asdd-propose` | scope | `proposal.md` |
 | `asdd-specify` | frame | `specs/<capability>/spec.md` |
 | `asdd-plan` | constrain | `design.md`, `tasks.md` |
 | `asdd-implement` | execute | the approved tasks |
 | `asdd-verify` | verify | `evidence/<id>.md` |
 | `asdd-archive` | consolidate | an archive readiness report |
+
+`asdd-explore` has no rail action, because it belongs to no change. Setup
+writes the catalogue's shape and leaves `project.md` as the placeholders it
+ships — the file every phase Skill reads first. Explore fills it from the
+repository: it reads what exists (`AGENTS.md`, the README, the build and test
+configuration, CI), asks only what the repository cannot answer, and writes
+each claim with the source beside it. It also writes the `architecture/` and
+`reference/` pages the code already justifies, capped so a catalogue does not
+become a directory listing.
+
+It writes no `specs/` and no ADR, and says why in its report. `specs/` is the
+normative layer, and seeding it from code would contract whatever the code does
+today, bugs included, with nobody having approved any of it; an ADR states the
+alternative that was rejected, and neither that nor its reason survives in the
+code. This is the one time `architecture/` and `reference/` are written outside
+a change, because there is no behavior change to propose — the repository
+already is what it is. Everything after it follows rule 18.
+
+Writing `AGENTS.md` is not this Skill's job. EvoFlux's `/init` command already
+does that across a repository, preserving human-authored notes, and every
+applicable file is injected into the agent's prompt automatically — explore
+cites those files rather than paraphrasing them into a second copy that drifts.
 
 ## Prior art
 

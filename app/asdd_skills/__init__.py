@@ -11,11 +11,20 @@ from __future__ import annotations
 
 from importlib.resources import files
 
-#: One Skill per phase of the Agent-Driven Development cycle: scope, frame,
-#: constrain, execute, verify, consolidate. The names double as the `draft_*`
-#: and `start_*` actions the UI rail offers, so a phase never exists in the
-#: product without a Skill that tells an agent how to carry it out.
+#: One Skill per phase of the Agent-Driven Development cycle — scope, frame,
+#: constrain, execute, verify, consolidate — plus the one that runs before the
+#: cycle does. The phase names double as the `draft_*` and `start_*` actions
+#: the UI rail offers, so a phase never exists in the product without a Skill
+#: that tells an agent how to carry it out.
+#:
+#: `asdd-explore` is deliberately not a phase and has no rail action: it
+#: belongs to no change. Setup writes the catalogue's shape and leaves
+#: `project.md` as placeholders that every later phase then reads as though
+#: they were this repository's rules. Explore fills them, and the
+#: `architecture/` and `reference/` pages the code already justifies, from the
+#: repository rather than from a form.
 ASDD_SKILL_NAMES = (
+    "asdd-explore",
     "asdd-propose",
     "asdd-specify",
     "asdd-plan",

@@ -786,3 +786,40 @@ async def test_the_listing_says_which_repository_owns_each_spec(
     }
     assert owners[str(Path(sibling).resolve())] == ["key-rotation"]
     assert owners[str(Path(workspace).resolve())] == []
+
+
+def test_setup_offers_to_describe_a_fresh_catalogue(
+    client: TestClient, workspace: str
+) -> None:
+    """Install writes project.md as placeholders; every phase reads it first."""
+    payload = install(client, workspace)
+
+    assert payload["project_context_pending"] is True
+    assert payload["explore_skill"] == "asdd-explore"
+    assert "$asdd-explore" in payload["explore_prompt"]
+    assert "documents/asdd" in payload["explore_prompt"]
+
+
+def test_a_described_repository_is_not_offered_the_tour(
+    client: TestClient, workspace: str
+) -> None:
+    install(client, workspace)
+    project = Path(workspace) / "documents" / "asdd" / "project.md"
+    project.write_text(
+        "# Project context for ASDD\n\n## Context\n\nA note-taking CLI.\n",
+        encoding="utf-8",
+    )
+
+    payload = client.get("/api/asdd/setup", params={"workspace": workspace}).json()
+
+    assert payload["project_context_pending"] is False
+    assert payload["explore_prompt"] == ""
+
+
+def test_an_uninstalled_repository_is_not_offered_the_tour(
+    client: TestClient, workspace: str
+) -> None:
+    """There is no catalogue to describe yet; setup is the offer that fits."""
+    payload = client.get("/api/asdd/setup", params={"workspace": workspace}).json()
+
+    assert payload["project_context_pending"] is False

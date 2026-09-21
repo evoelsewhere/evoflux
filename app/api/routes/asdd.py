@@ -34,14 +34,17 @@ from app.api.schemas.asdd import (
 )
 from app.services import coding_project_service, team_manager
 from app.services.asdd_service import (
+    EXPLORE_SKILL,
     AsddActionBlocked,
     archive,
     catalogue_for,
     create_change,
     detail_payload,
+    explore_prompt,
     list_changes_across,
     mark_ready,
     prepare_action,
+    project_context_pending,
     record_evidence,
     set_autopilot,
     spec_payload,
@@ -130,10 +133,34 @@ async def _repository_targets(
     return root, targets
 
 
+def _explore_offer(workspace: str, repositories: list[dict]) -> tuple[bool, str, str]:
+    """Whether this workspace still needs describing, and the prompt for it.
+
+    Only for an installed workspace: a catalogue that does not exist yet has
+    nothing to explore into, and setup is the offer the panel already makes.
+    """
+
+    installed = any(
+        item["installed"] and item["path"] == workspace for item in repositories
+    )
+    if not installed:
+        return False, "", ""
+    try:
+        catalogue = catalogue_for(workspace)
+        if not project_context_pending(catalogue):
+            return False, "", ""
+        return True, explore_prompt(catalogue), EXPLORE_SKILL
+    except (AsddStoreError, OSError, ValueError):
+        # A catalogue we cannot read is a setup problem, already reported by
+        # the row that owns it. Offering to explore it would be noise.
+        return False, "", ""
+
+
 def _setup_response(
     *, workspace: str, project_id: UUID | None, repositories: list[dict]
 ) -> AsddSetupResponse:
     installed_count = sum(item["installed"] for item in repositories)
+    pending, prompt, skill = _explore_offer(workspace, repositories)
     return AsddSetupResponse(
         scope="project" if project_id else "workspace",
         workspace=workspace,
@@ -147,6 +174,9 @@ def _setup_response(
         repositories=[
             AsddRepositorySetupOut.model_validate(item) for item in repositories
         ],
+        project_context_pending=pending,
+        explore_prompt=prompt,
+        explore_skill=skill,
     )
 
 
