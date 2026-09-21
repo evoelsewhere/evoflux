@@ -2610,6 +2610,11 @@ export interface AsddSetupResponse {
   repository_count: number
   installed_count: number
   repositories: AsddRepositorySetup[]
+  /** `project.md` is still the placeholders setup shipped. */
+  project_context_pending: boolean
+  /** Kickoff prompt for `asdd-explore`, ready to run in a chat. */
+  explore_prompt: string
+  explore_skill: string
 }
 
 export interface AsddRequirement {

@@ -32,23 +32,29 @@ and what it shows is exactly what a reviewer sees in a pull request.
 2. **Install** ASDD for the workspace or Coding Project. The repository-relative
    data directory defaults to `documents/asdd`. Setup writes
    `.evoflux/asdd/config.json`, `.evoflux/asdd/RULES.md`, the catalogue skeleton
-   and six Coding-only Skills under `.evoflux/skills/`. All of it is tracked.
-3. **New change** asks for a title, the problem, and what should be true when
+   and seven Coding-only Skills under `.evoflux/skills/`. All of it is tracked.
+3. **Explore** the repository into the catalogue it just got. `project.md`
+   ships as placeholders and every phase reads it first, so the board offers
+   `asdd-explore` until someone has described the repository: it fills
+   `project.md` with cited claims and writes the `architecture/` and
+   `reference/` pages the code justifies, leaving `specs/`, `analysis/` and
+   `architecture/decisions/` deliberately empty.
+4. **New change** asks for a title, the problem, and what should be true when
    it is done. The problem and the outcome are written straight into the
    proposal's `## Why` and `## What Changes`. The slug, the capabilities and the
    risk tier are the propose phase's to derive — the form keeps them behind a
    disclosure for when you want to set them yourself. The title becomes the
    change's slug: its folder name and the only name anything uses for it.
-4. Each phase offers a primary action on the rail. Running one returns a prompt
+5. Each phase offers a primary action on the rail. Running one returns a prompt
    naming the Skill and the change folder; the panel drops it into the chat you
    are looking at. No chat owns the change, so any chat can run any phase.
-5. The user approves the proposal, the specs, the design where the risk tier
+6. The user approves the proposal, the specs, the design where the risk tier
    requires one, and the tasks. Approving tasks is what authorizes product-file
    changes. With **autopilot** on, the agent makes that call itself at each
    gate and stops only where it decides a person is needed.
-6. Implementation ticks boxes in `tasks.md`. Verification writes pages under
+7. Implementation ticks boxes in `tasks.md`. Verification writes pages under
    `evidence/`. Neither can approve anything.
-7. **Archive** folds every delta into its capability spec and moves the folder
+8. **Archive** folds every delta into its capability spec and moves the folder
    to `changes/archive/YYYY-MM-DD-<change-id>/`.
 
 ## The action rail

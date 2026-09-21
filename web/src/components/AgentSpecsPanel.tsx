@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   ChevronLeft,
+  Compass,
   ChevronRight,
   FileText,
   FolderGit2,
@@ -134,6 +135,12 @@ const BUILDING_ONWARD: ReadonlySet<string> = new Set<string>([
   'ready',
   'archived',
 ])
+
+/** What to call the catalogue in a toast: its own directory. */
+function dataDirectoryLabel(setup: AsddSetupResponse): string {
+  const own = setup.repositories.find((item) => item.path === setup.workspace)
+  return own?.data_directory ?? 'the ASDD catalogue'
+}
 
 function loadView(): ChangesView {
   try {
@@ -776,6 +783,7 @@ function ChangesOverview({
   onRepositoryFilterChange,
   pendingSetup,
   onOpenSetup,
+  onExplore,
   view,
   onViewChange,
   onOpen,
@@ -792,6 +800,8 @@ function ChangesOverview({
   onRepositoryFilterChange: (value: string | null) => void
   pendingSetup: number
   onOpenSetup: () => void
+  /** Set while `project.md` is still the placeholders setup shipped. */
+  onExplore: (() => void) | null
   view: ChangesView
   onViewChange: (value: ChangesView) => void
   onOpen: (change: AsddChange) => void
@@ -925,6 +935,29 @@ function ChangesOverview({
           />
         </div>
       </div>
+
+      {/*
+        Setup wrote `project.md` as placeholders and every phase Skill reads it
+        first, so an installed catalogue nobody has described is one whose
+        rules are blank. Nothing else in the product says so.
+      */}
+      {onExplore ? (
+        <button
+          type="button"
+          onClick={onExplore}
+          className="flex w-full items-center gap-2 border-b border-(--color-border) bg-(--color-accent)/8 px-3 py-2 text-left text-[11px] text-(--color-text-muted) hover:bg-(--color-accent)/12"
+        >
+          <Compass size={13} className="shrink-0 text-(--color-accent)" />
+          <span className="min-w-0 flex-1">
+            <span className="font-medium text-(--color-text)">
+              This repository has not been described yet.
+            </span>{' '}
+            `project.md` is still the shipped placeholders, and every phase
+            reads it first.
+          </span>
+          <span className="shrink-0 font-medium text-(--color-accent)">Explore</span>
+        </button>
+      ) : null}
 
       {/*
         A repository still to set up is a banner, not a wall: the changes the
@@ -1509,6 +1542,17 @@ export function AgentSpecsPanel({
         onRepositoryFilterChange={setRepositoryFilter}
         pendingSetup={ready ? 0 : setup.data.repository_count - installedCount}
         onOpenSetup={() => setSetupOpen(true)}
+        onExplore={
+          setup.data.project_context_pending && setup.data.explore_prompt
+            ? () =>
+                onRunInChat?.({
+                  changeId: dataDirectoryLabel(setup.data),
+                  skill: setup.data.explore_skill,
+                  prompt: setup.data.explore_prompt,
+                  autoSend: false,
+                })
+            : null
+        }
         view={view}
         onViewChange={setView}
         onOpen={(change) =>

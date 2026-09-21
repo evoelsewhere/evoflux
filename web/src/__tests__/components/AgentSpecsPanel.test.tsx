@@ -84,6 +84,9 @@ function setupResponse(overrides: Partial<AsddSetupResponse> = {}): AsddSetupRes
     ready: repositories.every((item) => item.installed),
     repository_count: repositories.length,
     installed_count: repositories.filter((item) => item.installed).length,
+    project_context_pending: false,
+    explore_prompt: '',
+    explore_skill: '',
     ...overrides,
     repositories,
   }
@@ -941,5 +944,37 @@ describe('Agent Spec-Driven across a multi-repository project', () => {
     panel()
 
     expect(screen.queryByRole('combobox', { name: 'Filter by repository' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Agent Spec-Driven explore offer', () => {
+  it('offers to describe a repository whose project.md is untouched', () => {
+    // Setup writes project.md as placeholders and every phase reads it first,
+    // so an installed catalogue nobody has described has blank rules — and
+    // nothing else in the product says so.
+    const onRunInChat = vi.fn()
+    mocks.setup.mockReturnValue(idle(setupResponse({
+      project_context_pending: true,
+      explore_prompt: '$asdd-explore\n\nFill the ASDD catalogue…',
+      explore_skill: 'asdd-explore',
+    })))
+
+    panel({ onRunInChat })
+    fireEvent.click(screen.getByRole('button', { name: /has not been described yet/ }))
+
+    expect(onRunInChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skill: 'asdd-explore',
+        prompt: expect.stringContaining('$asdd-explore'),
+      }),
+    )
+  })
+
+  it('says nothing once the repository has been described', () => {
+    mocks.setup.mockReturnValue(idle(setupResponse({ project_context_pending: false })))
+
+    panel()
+
+    expect(screen.queryByText(/has not been described yet/)).not.toBeInTheDocument()
   })
 })

@@ -92,6 +92,14 @@ class AsddSetupResponse(BaseModel):
     repository_count: int
     installed_count: int
     repositories: list[AsddRepositorySetupOut]
+    #: Whether this workspace's `project.md` is still the placeholders setup
+    #: shipped. Every phase Skill reads that file first, so an installed
+    #: catalogue nobody has described is a catalogue whose rules are blank —
+    #: the panel offers `asdd-explore` rather than leaving it to be noticed.
+    project_context_pending: bool = False
+    #: The prompt that runs that exploration, ready to drop into a chat.
+    explore_prompt: str = ""
+    explore_skill: str = ""
 
 
 # --- changes -------------------------------------------------------------
