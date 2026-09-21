@@ -121,19 +121,19 @@ async def test_rpc_client_runs_protocol_mock_process() -> None:
     sent = await client.request(
         "send",
         params={
-            "chat_id": "chat-1",
+            "chat_identifier": "chat-1",
             "text": "hello",
             "reply_to": "msg-1",
             "attachments": [{"url": "https://example.test/a.jpg"}],
         },
     )
-    messages = await client.request("messages.list")
+    messages = await client.request("messages.after", params={"since_rowid": 0})
     await client.stop()
 
     assert status["ready"] is True
     assert "attachments" in status["features"]
     assert sent["reply_to"] == "msg-1"
-    assert messages["messages"][0]["chat_id"] == "chat-1"
+    assert messages["messages"][0]["chat_identifier"] == "chat-1"
 
 
 @pytest.mark.asyncio
@@ -146,15 +146,21 @@ async def test_rpc_mock_state_survives_process_restart_and_filters_watermark() -
             command=command, timeout=5, env={"MOCK_IMSG_STATE": state}
         )
         await first.start()
-        await first.request("send", params={"chat_id": "chat-1", "text": "old"})
+        await first.request(
+            "send", params={"chat_identifier": "chat-1", "text": "old"}
+        )
         await first.stop()
 
         second = IMessageRpcClient(
             command=command, timeout=5, env={"MOCK_IMSG_STATE": state}
         )
         await second.start()
-        await second.request("send", params={"chat_id": "chat-1", "text": "new"})
-        resumed = await second.request("messages.list", params={"after": "mock-1"})
+        await second.request(
+            "send", params={"chat_identifier": "chat-1", "text": "new"}
+        )
+        resumed = await second.request(
+            "messages.after", params={"since_rowid": 1}
+        )
         await second.stop()
 
     assert [item["text"] for item in resumed["messages"]] == ["new"]

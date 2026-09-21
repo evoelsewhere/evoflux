@@ -26,9 +26,9 @@ class RemoteConnection(SQLModel, table=True):
         default=None,
         sa_column=Column(sa.String(2048), nullable=True),
     )
-    inbound_watermark_at: datetime | None = Field(
+    inbound_watermark_cursor: str | None = Field(
         default=None,
-        sa_column=Column(TZDateTime(), nullable=True),
+        sa_column=Column(sa.String(64), nullable=True),
     )
     label: str = Field(sa_column=Column(sa.String(120), nullable=False))
     enabled: bool = Field(

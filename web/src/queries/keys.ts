@@ -207,5 +207,6 @@ export const queryKeys = {
     connection: (id: string) => ['remote', 'connections', id] as const,
     pairing: (id: string) => ['remote', 'connections', id, 'pairing'] as const,
     pairingLink: (id: string) => ['remote', 'connections', id, 'pairing-link'] as const,
+    pairingCode: (id: string) => ['remote', 'connections', id, 'pairing-code'] as const,
   },
 }

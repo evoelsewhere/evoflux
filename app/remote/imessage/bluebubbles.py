@@ -9,7 +9,11 @@ from urllib.parse import urljoin
 import httpx
 
 from app.remote.contracts import RemoteAttachment
-from app.remote.imessage.provider import IMessageProviderError
+from app.remote.imessage.provider import (
+    DEFAULT_QUERY_LIMIT,
+    IMessageProviderError,
+    MessagePage,
+)
 
 
 class BlueBubblesProvider:
@@ -39,14 +43,30 @@ class BlueBubblesProvider:
         return await self._request("api/v1/server")
 
     async def query_messages(
-        self, *, after: str | None = None
-    ) -> list[Mapping[str, Any]]:
+        self, *, since_cursor: str | None = None, limit: int = DEFAULT_QUERY_LIMIT
+    ) -> MessagePage:
+        """Catch up via BlueBubbles' own REST cursor.
+
+        Unlike imsg's ``messages.after``, BlueBubbles' query endpoint
+        returns no explicit next-cursor or has-more flag, so the highest
+        message identifier actually observed becomes the next cursor —
+        the same derivation the shared poller used to do itself before the
+        cursor contract moved behind this provider boundary.
+        """
         params: dict[str, str] = {"password": self._password}
-        if after is not None:
-            params["after"] = after
+        if since_cursor is not None:
+            params["after"] = since_cursor
         payload = await self._request("api/v1/message/query", params=params)
-        messages = payload.get("data", payload.get("messages", []))
-        return [message for message in messages if isinstance(message, dict)]
+        raw_messages = payload.get("data", payload.get("messages", []))
+        messages = [message for message in raw_messages if isinstance(message, dict)]
+        next_cursor = since_cursor
+        for message in messages:
+            candidate = message.get("guid") or message.get("id")
+            if isinstance(candidate, str) and (
+                next_cursor is None or candidate > next_cursor
+            ):
+                next_cursor = candidate
+        return MessagePage(messages=messages, next_cursor=next_cursor, has_more=False)
 
     async def send_text(
         self,

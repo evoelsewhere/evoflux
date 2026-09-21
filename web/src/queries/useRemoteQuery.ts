@@ -12,6 +12,7 @@ import {
   createConnection,
   getPairing,
   getRemoteSettings,
+  issuePairingCode,
   issuePairingLink,
   listConnections,
   patchConnection,
@@ -41,9 +42,13 @@ type ConnectionState = string
  * within seconds instead of waiting for a manual tab switch.
  */
 function adaptivePollInterval(state: ConnectionState | undefined): number {
+  // 'pairing' is iMessage's version of "waiting to become ready" — poll
+  // fast so the UI picks up the jump to 'polling' right after the phone's
+  // /pair <code> is verified, same as Telegram's 'starting'.
   switch (state) {
     case 'starting':
     case 'backoff':
+    case 'pairing':
       return POLL_TRANSITIONAL_MS
     case 'polling':
     case 'offline':
@@ -158,6 +163,34 @@ export function usePairingQuery(connectionId: string | undefined) {
 export function useIssuePairingLinkMutation() {
   return useMutation({
     mutationFn: (connectionId: string) => issuePairingLink(connectionId),
+  })
+}
+
+/**
+ * Issue (and cache) a phone-first pairing code for `connectionId`.
+ *
+ * Modeled as a query, not a mutation: a `useMutation`'s result lives only in
+ * that hook instance and is discarded on any remount (React 18 StrictMode's
+ * double-invoke in dev, Vite Fast Refresh, or a real remount) — which reads
+ * to the user as "stuck loading" the instant a remount happens to land right
+ * after the code was issued, since the freshly mounted instance starts a
+ * brand new, still-pending mutation with no memory of the previous one's
+ * result. A query's result lives in the shared `QueryClient` cache keyed by
+ * `connectionId`, so it survives a remount and the same code is reused
+ * instead of silently discarding a code the user may already be looking at.
+ *
+ * `staleTime` mirrors the server's ten-minute code TTL (with a margin) so a
+ * remount within that window never issues a second, unrelated code; call
+ * `refetch()` to deliberately request a fresh one (e.g. after expiry).
+ */
+export function usePairingCodeQuery(connectionId: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.remote.pairingCode(connectionId ?? ''),
+    queryFn: () => issuePairingCode(connectionId!),
+    enabled: !!connectionId && enabled,
+    staleTime: 9 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+    retry: false,
   })
 }
 

@@ -31,6 +31,7 @@ from app.remote.contracts import (
     RemoteInboundAction,
     RemoteOutboundMessage,
     RemoteOutboundPriority,
+    RemotePairingAwareAdapter,
 )
 from app.remote.pairing import (
     PairingCodeExpired,
@@ -842,8 +843,17 @@ class RemoteActionService:
         if removed:
             if self._projection is not None:
                 self._projection.clear_active_pairing()
+            is_pairing_aware = isinstance(self._adapter, RemotePairingAwareAdapter)
+            if isinstance(self._adapter, RemotePairingAwareAdapter):
+                self._adapter.clear_pairing()
+                await self._adapter.start()
+            reconnect_hint = (
+                "Open EvoFlux and generate a new code, then send /pair <code>."
+                if is_pairing_aware
+                else "Send /start to pair again."
+            )
             return RemoteActionResult(
-                status="ok", text="Phone unpaired. Send /start to pair again."
+                status="ok", text=f"Phone unpaired. {reconnect_hint}"
             )
         return RemoteActionResult(status="ok", text="No active pairing to remove.")
 
@@ -892,6 +902,17 @@ class RemoteActionService:
                 notify_scope=pairing.notify_scope,
                 principal_id=pairing.principal_id,
             )
+        # Adapters whose channel is bound to a fixed contact at construction
+        # time (iMessage) were running in discovery mode until now and must
+        # be told the real contact and restarted to actually deliver to it.
+        # Telegram's adapter does not implement this protocol, so this is a
+        # no-op there — matching its existing behavior exactly.
+        if isinstance(self._adapter, RemotePairingAwareAdapter):
+            self._adapter.set_pairing(
+                principal_id=pairing.principal_id,
+                destination_id=pairing.destination_id,
+            )
+            await self._adapter.start()
         return RemoteActionResult(status="pair_ok", text="Phone connected.")
 
     async def _cmd_actions(

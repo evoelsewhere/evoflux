@@ -231,9 +231,21 @@ class RemoteAdapter(Protocol):
 
 @runtime_checkable
 class RemotePairingAwareAdapter(RemoteAdapter, Protocol):
-    """Optional adapter lifecycle hook for restored remote pairings."""
+    """Optional adapter lifecycle hook for restored remote pairings.
+
+    Implemented by adapters whose channel is bound to one fixed contact at
+    construction time (iMessage), so pairing/unpairing must reconfigure and
+    restart the channel rather than being handled by an authorization check
+    alone (Telegram's model). Not implemented by :class:`RemoteAdapter`\\ s
+    that authorize per-message instead.
+    """
 
     def set_pairing(self, *, principal_id: str, destination_id: str) -> None: ...
+
+    def clear_pairing(self) -> None:
+        """Forget the bound contact so the next ``start()`` runs in
+        discovery mode again, ready to accept a fresh ``/pair <code>``."""
+        ...
 
 
 __all__ = [

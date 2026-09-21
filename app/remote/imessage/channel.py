@@ -27,8 +27,8 @@ class IMessageChannel:
         provider_factory: IMessageProviderFactory | None = None,
         endpoint_url: str | None = None,
         password: str | None = None,
-        paired_principal_id: str,
-        paired_destination_id: str,
+        paired_principal_id: str | None = None,
+        paired_destination_id: str | None = None,
         load_watermark: Callable[[], Awaitable[str | None]],
         save_watermark: Callable[[str], Awaitable[None]],
         on_action: ActionSink,
@@ -70,6 +70,10 @@ class IMessageChannel:
         attachments: Sequence[RemoteAttachment] = (),
     ) -> Mapping[str, object]:
         """Send only to the configured paired destination."""
+        if self._paired_destination_id is None:
+            raise RuntimeError(
+                "cannot send on an iMessage channel that has no paired destination yet"
+            )
         return await self._provider.send_text(
             chat_id=self._paired_destination_id,
             text=redact(text),

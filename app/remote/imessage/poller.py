@@ -12,6 +12,12 @@ MessageHandler = Callable[[dict[str, object]], Awaitable[None]]
 WatermarkLoader = Callable[[], Awaitable[str | None]]
 WatermarkSaver = Callable[[str], Awaitable[None]]
 
+#: Safety bound on pages drained in one tick — guards against a provider bug
+#: that reports `has_more=True` without ever advancing `next_cursor`. 25
+#: pages already covers a multi-thousand-message backlog at a provider's
+#: typical ~200-per-page default.
+_MAX_PAGES_PER_TICK = 25
+
 
 class IMessagePoller:
     def __init__(
@@ -33,7 +39,6 @@ class IMessagePoller:
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
         self._watermark: str | None = None
-        self._seen: set[str] = set()
 
     async def start(self) -> None:
         if self._task is not None and not self._task.done():
@@ -57,19 +62,7 @@ class IMessagePoller:
         backoff = self._interval
         while not self._stop.is_set():
             try:
-                messages = await self._provider.query_messages(after=self._watermark)
-                for message in messages:
-                    source_key = message.get("guid") or message.get("id")
-                    if (
-                        not isinstance(source_key, str)
-                        or source_key <= (self._watermark or "")
-                        or source_key in self._seen
-                    ):
-                        continue
-                    self._seen.add(source_key)
-                    await self._on_message(dict(message))
-                    self._watermark = source_key
-                    await self._save_watermark(source_key)
+                await self._drain()
                 backoff = self._interval
             except asyncio.CancelledError:
                 raise
@@ -81,3 +74,25 @@ class IMessagePoller:
                 await asyncio.wait_for(self._stop.wait(), timeout=self._interval)
             except asyncio.TimeoutError:
                 continue
+
+    async def _drain(self) -> None:
+        """Page through every message since the persisted cursor.
+
+        Each provider owns what its cursor means and what forward-progress
+        guarantee it makes (see `app/remote/imessage/provider.py`); imsg's
+        exclusive `since_rowid` never re-delivers a message once its cursor
+        has passed it, which is the only provider this poller is currently
+        verified against.
+        """
+        for _ in range(_MAX_PAGES_PER_TICK):
+            page = await self._provider.query_messages(since_cursor=self._watermark)
+            for message in page.messages:
+                await self._on_message(dict(message))
+            if page.next_cursor != self._watermark:
+                self._watermark = page.next_cursor
+                if self._watermark is not None:
+                    await self._save_watermark(self._watermark)
+            elif not page.messages:
+                return
+            if not page.has_more:
+                return

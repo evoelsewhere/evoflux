@@ -362,10 +362,15 @@ class PairingService:
             if not is_private_chat or is_bot_sender:
                 return _invalid
 
+            # Exclude a pending phone-first pairing code (empty
+            # principal_id) — it is not a completed pairing, and treating
+            # it as one would block a legitimate link-based consume on a
+            # connection that merely has an unrelated code outstanding.
             existing = (
                 await session.exec(
                     select(RemotePairing).where(
-                        RemotePairing.connection_id == principal.connection_id
+                        RemotePairing.connection_id == principal.connection_id,
+                        RemotePairing.principal_id != "",
                     )
                 )
             ).first()

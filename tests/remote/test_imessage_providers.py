@@ -37,9 +37,10 @@ async def test_bluebubbles_provider_queries_messages_without_exposing_response()
         client=client,
     )
 
-    messages = await provider.query_messages(after="m0")
+    page = await provider.query_messages(since_cursor="m0")
 
-    assert messages == [{"guid": "m1", "text": "hello"}]
+    assert page.messages == [{"guid": "m1", "text": "hello"}]
+    assert page.next_cursor == "m1"
     assert requests[0].url.params["password"] == "secret"
     await provider.stop()
 

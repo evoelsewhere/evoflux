@@ -44,13 +44,26 @@ class IMessageRemoteAdapter:
         self._paired_principal_id = principal_id
         self._paired_destination_id = destination_id
 
+    def clear_pairing(self) -> None:
+        self._paired_principal_id = None
+        self._paired_destination_id = None
+
     async def start(self) -> None:
-        if self._paired_principal_id is None or self._paired_destination_id is None:
-            self._status = RemoteAdapterStatus(
-                connection_id=self.connection_id,
-                state=RemoteConnectionState.PAIRING,
-            )
-            return
+        """Start (or restart) the channel.
+
+        Runs in discovery mode when no contact is bound yet — the poller is
+        live and reachable, but ``IMessageChannel``/``normalize_inbound``
+        recognize nothing from an unrecognized sender except a ``/pair
+        <code>`` attempt (see ``app/remote/imessage/inbound.py``). Reported
+        state stays ``PAIRING`` until a caller supplies a contact via
+        :meth:`set_pairing` and calls ``start`` again, which is idempotent:
+        an already-running channel (discovery or previously paired) is
+        stopped first so it is never leaked.
+        """
+        if self._channel is not None:
+            await self._channel.stop()
+            self._channel = None
+
         from app.remote.imessage.provider import IMessageProviderFactory
 
         self._channel = IMessageChannel(
@@ -82,29 +95,36 @@ class IMessageRemoteAdapter:
                     type(cleanup_exc).__name__,
                 )
             self._channel = None
+            is_paired = (
+                self._paired_principal_id is not None
+                and self._paired_destination_id is not None
+            )
             self._status = RemoteAdapterStatus(
                 connection_id=self.connection_id,
                 state=RemoteConnectionState.ERROR,
                 last_error_class=RemoteErrorClass.TRANSPORT,
-                paired=True,
+                paired=is_paired,
             )
             return
+        is_paired = (
+            self._paired_principal_id is not None
+            and self._paired_destination_id is not None
+        )
+        healthy = capabilities.health.value == "healthy"
+        if not healthy:
+            state = RemoteConnectionState.ERROR
+        elif is_paired:
+            state = RemoteConnectionState.POLLING
+        else:
+            state = RemoteConnectionState.PAIRING
         self._status = RemoteAdapterStatus(
             connection_id=self.connection_id,
-            state=(
-                RemoteConnectionState.POLLING
-                if capabilities.health.value == "healthy"
-                else RemoteConnectionState.ERROR
-            ),
-            last_successful_poll_at=datetime.now(UTC)
-            if capabilities.health.value == "healthy"
-            else None,
+            state=state,
+            last_successful_poll_at=datetime.now(UTC) if healthy else None,
             last_error_class=(
-                RemoteErrorClass.NONE
-                if capabilities.health.value == "healthy"
-                else RemoteErrorClass.UNKNOWN
+                RemoteErrorClass.NONE if healthy else RemoteErrorClass.UNKNOWN
             ),
-            paired=True,
+            paired=is_paired,
             capabilities=capabilities.features,
         )
 
@@ -139,7 +159,7 @@ class IMessageRemoteAdapter:
         return self._status
 
     async def _load_watermark(self) -> str | None:
-        """Load the connection's durable inbound receipt watermark."""
+        """Load the connection's durable, provider-opaque inbound cursor."""
         from sqlmodel import select
 
         from app.core.db import read_session_factory
@@ -151,27 +171,20 @@ class IMessageRemoteAdapter:
                     RemoteConnection.id == self.connection_id
                 )
             )
-        if connection is None or connection.inbound_watermark_at is None:
+        if connection is None:
             return None
-        return connection.inbound_watermark_at.isoformat()
+        return connection.inbound_watermark_cursor
 
     async def _save_watermark(self, value: str) -> None:
-        """Persist the latest receipt watermark without storing message content."""
-        from datetime import datetime
-
+        """Persist the latest provider cursor without storing message
+        content. Opaque here by design — see `app/remote/imessage/provider.py`."""
         from app.core.db import async_session_factory
         from app.models.remote import RemoteConnection
 
-        try:
-            watermark_at = datetime.fromisoformat(value)
-        except ValueError:
-            watermark_at = datetime.now(UTC)
-        if watermark_at.tzinfo is None:
-            watermark_at = watermark_at.replace(tzinfo=UTC)
         async with async_session_factory() as session:
             connection = await session.get(RemoteConnection, self.connection_id)
             if connection is None:
                 return
-            connection.inbound_watermark_at = watermark_at.astimezone(UTC)
+            connection.inbound_watermark_cursor = value
             session.add(connection)
             await session.commit()

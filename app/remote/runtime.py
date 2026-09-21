@@ -234,6 +234,11 @@ class RemoteRuntime:
         not mutate the returned instance's lifecycle."""
         return self._adapter
 
+    @property
+    def projection(self) -> "RemoteProjection | None":
+        """The currently running outbound projection, if any. Read-only."""
+        return self._projection
+
     def status(self, connection_id: UUID) -> RemoteAdapterStatus:
         """Safe, diagnosable status for *connection_id* (AC-34).
 
@@ -296,8 +301,11 @@ class RemoteRuntime:
         # Restore the active-pairing cache so notifications for sessions
         # started before this process restarted (or started on the desktop,
         # never explicitly register_session-ed) can still be routed. v1
-        # permits at most one pairing per connection (AC-3), so `.first()`
-        # is always the right — and only — row to cache.
+        # permits at most one *completed* pairing per connection (AC-3), so
+        # `.first()` is always the right row to cache — but a pending
+        # phone-first pairing code (empty principal_id) must be excluded,
+        # or restoring it would bind the iMessage adapter to an empty
+        # contact instead of leaving it in discovery mode.
         from sqlmodel import select
 
         from app.models.remote import RemotePairing
@@ -306,7 +314,8 @@ class RemoteRuntime:
             pairing = (
                 await pairing_session.exec(
                     select(RemotePairing).where(
-                        RemotePairing.connection_id == connection.id
+                        RemotePairing.connection_id == connection.id,
+                        RemotePairing.principal_id != "",
                     )
                 )
             ).first()

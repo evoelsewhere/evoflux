@@ -42,7 +42,7 @@ from app.remote.connection_service import (
 )
 from loguru import logger
 
-from app.remote.contracts import RemoteAdapterValidationError
+from app.remote.contracts import RemoteAdapterValidationError, RemotePairingAwareAdapter
 from app.remote.pairing import PairingService, pairing_service as _pairing_service
 from app.remote.runtime import TelegramAdapterFactory, remote_runtime
 
@@ -88,8 +88,19 @@ def _token_configured(connection_id: uuid.UUID) -> bool:
 async def _get_pairing(
     session: AsyncSession, connection_id: uuid.UUID
 ) -> RemotePairing | None:
+    """Return the completed pairing for *connection_id*, if any.
+
+    A pending phone-first pairing code (:meth:`PairingService.issue_pair_code`)
+    is stored as a placeholder ``RemotePairing`` row with an empty
+    ``principal_id`` until ``/pair <code>`` is verified. Excluding it here is
+    what lets the UI keep showing the code instead of jumping to "Paired"
+    the instant a code is issued.
+    """
     result = await session.exec(
-        select(RemotePairing).where(RemotePairing.connection_id == connection_id)
+        select(RemotePairing).where(
+            RemotePairing.connection_id == connection_id,
+            RemotePairing.principal_id != "",
+        )
     )
     return result.first()
 
@@ -328,6 +339,17 @@ async def revoke_pairing(
         except Exception:
             logger.debug("remote_unpair_notify_failed connection_id={}", connection_id)
     await pairing_service.unpair(session, connection_id)
+
+    # Adapters whose channel is bound to a fixed contact (iMessage) must be
+    # reset to discovery mode so the next generated pairing code can bind a
+    # (possibly different) contact. Telegram's adapter does not implement
+    # this protocol, so this is a no-op there.
+    adapter = remote_runtime.adapter
+    if isinstance(adapter, RemotePairingAwareAdapter):
+        adapter.clear_pairing()
+        await adapter.start()
+    if remote_runtime.projection is not None:
+        remote_runtime.projection.clear_active_pairing()
 
 
 @router.post(

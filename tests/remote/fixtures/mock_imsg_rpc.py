@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-FEATURES = ["messages.list", "send", "reply", "attachments"]
+FEATURES = ["messages.after", "send", "reply", "attachments"]
 MESSAGES: list[dict[str, object]] = []
 
 
@@ -46,20 +46,30 @@ def main() -> None:
             response(request_id, {"ready": True, "protocol_version": 1})
         elif method == "status":
             response(request_id, {"ready": True, "features": FEATURES})
-        elif method == "messages.list":
-            after = str(params.get("after") or "")
+        elif method == "messages.after":
+            # Rows are 1-indexed by position, matching the real RPC's
+            # ROWID-ordered, exclusive `since_rowid` cursor closely enough
+            # for a protocol-shape test: no persisted numeric id is needed
+            # since this mock never reorders or deletes `MESSAGES`.
+            since_rowid = int(params.get("since_rowid") or 0)
+            matched = [
+                (index, item)
+                for index, item in enumerate(MESSAGES, start=1)
+                if index > since_rowid
+            ]
+            next_rowid = matched[-1][0] if matched else since_rowid
             response(
                 request_id,
                 {
-                    "messages": [
-                        item for item in MESSAGES if str(item.get("guid", "")) > after
-                    ]
+                    "messages": [item for _, item in matched],
+                    "next_rowid": next_rowid,
+                    "has_more": False,
                 },
             )
         elif method == "send":
             record = {
                 "guid": f"mock-{len(MESSAGES) + 1}",
-                "chat_id": params.get("chat_id"),
+                "chat_identifier": params.get("chat_identifier"),
                 "text": params.get("text", ""),
                 "reply_to": params.get("reply_to"),
                 "attachments": params.get("attachments", []),

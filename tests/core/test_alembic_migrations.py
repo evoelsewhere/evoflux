@@ -204,7 +204,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "adapter_username",
             "provider",
             "endpoint_url",
-            "inbound_watermark_at",
+            "inbound_watermark_cursor",
             "created_at",
             "updated_at",
         } <= remote_connection_columns

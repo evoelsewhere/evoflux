@@ -38,6 +38,7 @@ import {
   useConnectionsQuery,
   useCreateConnectionMutation,
   useIssuePairingLinkMutation,
+  usePairingCodeQuery,
   usePairingQuery,
   usePatchConnectionMutation,
   useRemoveConnectionMutation,
@@ -351,7 +352,11 @@ function ConfiguredState({ connection }: { connection: RemoteConnection }) {
       </SettingsGroup>
 
       {enabled && (
-        <PairingSection connectionId={connection.id} state={state} />
+        <PairingSection
+          connectionId={connection.id}
+          adapter={connection.adapter}
+          state={state}
+        />
       )}
 
       <SettingsGroup title="Danger zone">
@@ -382,36 +387,116 @@ function ConfiguredState({ connection }: { connection: RemoteConnection }) {
 
 // ── Pairing section ──────────────────────────────────────────────────────────
 
+/**
+ * Per-adapter "ready to pair" state.
+ *
+ * Telegram's bot reaches `polling` (long-poll `getUpdates` healthy)
+ * independently of pairing — its `/start <token>` deep link is authorized
+ * by anyone holding the token, not by sender identity, so the channel can
+ * poll before anyone has linked. iMessage's channel is bound to one fixed
+ * contact and cannot resolve who that is until pairing happens, so it
+ * reports the distinct `pairing` state instead: the poller is already
+ * running in discovery mode (see `app/remote/imessage/inbound.py`), ready
+ * to recognize a `/pair <code>` attempt from any sender, but not yet
+ * `polling` a specific contact.
+ */
+function readyStateFor(adapter: string): RemoteConnectionState {
+  return adapter === 'imessage' ? 'pairing' : 'polling'
+}
+
 function PairingSection({
   connectionId,
+  adapter,
   state,
 }: {
   connectionId: string
+  adapter: string
   state: RemoteConnectionState
 }) {
   const pairingQ = usePairingQuery(connectionId)
-  const linkMut = useIssuePairingLinkMutation()
-  const revokeMut = useRevokePairingMutation()
-  const [linkCopied, setLinkCopied] = useState(false)
+  const readyState = readyStateFor(adapter)
+  const isReady = state === readyState
 
-  const paired = pairingQ.data != null
+  return (
+    <SettingsGroup title="Pairing">
+      {pairingQ.data ? (
+        <PairedRow connectionId={connectionId} pairing={pairingQ.data} />
+      ) : adapter === 'imessage' ? (
+        <ImessagePairingRow connectionId={connectionId} isReady={isReady} state={state} />
+      ) : (
+        <TelegramPairingRow connectionId={connectionId} isReady={isReady} state={state} />
+      )}
+    </SettingsGroup>
+  )
+}
+
+function PairedRow({
+  connectionId,
+  pairing,
+}: {
+  connectionId: string
+  pairing: NonNullable<ReturnType<typeof usePairingQuery>['data']>
+}) {
+  const revokeMut = useRevokePairingMutation()
+
+  async function handleRevoke() {
+    await revokeMut.mutateAsync(connectionId)
+  }
+
+  return (
+    <>
+      <SettingsRow
+        label="Paired device"
+        description={`${pairing?.display || pairing?.label || 'Unknown'} — last seen ${pairing ? formatRelativeTime(pairing.last_seen_at) : 'never'}`}
+        control={
+          <span className="flex items-center gap-1.5 text-xs text-(--color-success)">
+            <CheckCircle2 size={14} />
+            Paired
+          </span>
+        }
+      />
+      <SettingsRow
+        label="Unpair"
+        description="Remove this phone's access. You can pair again later."
+        control={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void handleRevoke()}
+            disabled={revokeMut.isPending}
+          >
+            Unpair
+          </Button>
+        }
+      />
+    </>
+  )
+}
+
+// ── Telegram: QR code / deep-link pairing ───────────────────────────────────
+
+function TelegramPairingRow({
+  connectionId,
+  isReady,
+  state,
+}: {
+  connectionId: string
+  isReady: boolean
+  state: RemoteConnectionState
+}) {
+  const linkMut = useIssuePairingLinkMutation()
+  const [linkCopied, setLinkCopied] = useState(false)
 
   // Auto-issue a pairing link once the adapter reaches "polling" and no
   // pairing exists yet.  Uses a ref guard so the effect fires at most once
   // per connection session — avoids re-triggering on every render.
   const autoIssuedRef = useRef(false)
   useEffect(() => {
-    if (
-      state === 'polling' &&
-      !paired &&
-      !autoIssuedRef.current &&
-      !linkMut.isPending &&
-      !linkMut.data
-    ) {
+    if (isReady && !autoIssuedRef.current && !linkMut.isPending && !linkMut.data) {
       autoIssuedRef.current = true
       linkMut.mutate(connectionId)
     }
-  }, [state, paired, connectionId, linkMut])
+  }, [isReady, connectionId, linkMut])
 
   async function handleGetLink() {
     setLinkCopied(false)
@@ -426,133 +511,208 @@ function PairingSection({
     }
   }
 
-  async function handleRevoke() {
-    await revokeMut.mutateAsync(connectionId)
+  return (
+    <SettingsRow
+      label="Connect phone"
+      description={
+        isReady
+          ? 'Scan the QR code with your phone camera to link Telegram — no typing needed.'
+          : `Waiting for adapter to connect (current state: ${state}).`
+      }
+      stacked
+      control={
+        <div className="flex flex-col gap-4">
+          {linkMut.data && (
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-(--color-border) bg-(--bg-key) p-4">
+              <QRCodeSVG
+                value={linkMut.data.url}
+                size={180}
+                bgColor="transparent"
+                fgColor="var(--color-text)"
+                level="M"
+              />
+              <p className="text-center text-sm text-(--color-text-muted)">
+                Scan with your phone camera, or tap the link below.
+              </p>
+              <div className="flex w-full items-center gap-2">
+                <a
+                  href={linkMut.data.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="min-w-0 flex-1 truncate text-sm text-(--color-accent) underline underline-offset-2"
+                >
+                  {linkMut.data.url}
+                </a>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  onClick={() => void handleCopyLink()}
+                  aria-label="Copy link"
+                >
+                  {linkCopied ? (
+                    <CheckCircle2 size={14} className="text-(--color-success)" />
+                  ) : (
+                    <Copy size={14} />
+                  )}
+                </Button>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  onClick={() => window.open(linkMut.data.url, '_blank')}
+                  aria-label="Open link"
+                >
+                  <ExternalLink size={14} />
+                </Button>
+              </div>
+              <p className="text-xs text-(--color-text-muted)">
+                Link expires {formatRelativeTime(linkMut.data.expires_at)}.
+              </p>
+            </div>
+          )}
+
+          {!linkMut.data && linkMut.isPending && (
+            <div className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-key) p-4 text-sm text-(--color-text-muted)">
+              <Loader2 className="size-4 animate-spin" />
+              Generating QR code...
+            </div>
+          )}
+
+          {!linkMut.data && !linkMut.isPending && (
+            <div className="flex flex-col gap-2">
+              <Button
+                variant="outline"
+                onClick={() => void handleGetLink()}
+                disabled={!isReady}
+              >
+                <Link2 className="mr-2 size-4" />
+                Generate pairing link
+              </Button>
+              {linkMut.isError && (
+                <p className="text-xs text-(--color-error)">
+                  {linkMut.error?.message ?? 'Could not generate link.'}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      }
+    />
+  )
+}
+
+// ── iMessage: phone-first pairing code ───────────────────────────────────────
+
+function ImessagePairingRow({
+  connectionId,
+  isReady,
+  state,
+}: {
+  connectionId: string
+  isReady: boolean
+  state: RemoteConnectionState
+}) {
+  const codeQ = usePairingCodeQuery(connectionId, isReady)
+  const [codeCopied, setCodeCopied] = useState(false)
+
+  async function handleRegenerate() {
+    setCodeCopied(false)
+    await codeQ.refetch()
+  }
+
+  async function handleCopyCode() {
+    if (codeQ.data?.code_display) {
+      await navigator.clipboard.writeText(codeQ.data.code_display.replace(/\s/g, ''))
+      setCodeCopied(true)
+    }
   }
 
   return (
-    <SettingsGroup title="Pairing">
-      {paired ? (
-        <>
-          <SettingsRow
-            label="Paired device"
-            description={`${pairingQ.data?.display || pairingQ.data?.label || 'Unknown'} — last seen ${pairingQ.data ? formatRelativeTime(pairingQ.data.last_seen_at) : 'never'}`}
-            control={
-              <span className="flex items-center gap-1.5 text-xs text-(--color-success)">
-                <CheckCircle2 size={14} />
-                Paired
-              </span>
-            }
-          />
-          <SettingsRow
-            label="Unpair"
-            description="Remove this phone's access. You can pair again later."
-            control={
+    <SettingsRow
+      label="Connect phone"
+      description={
+        isReady
+          ? 'From the phone you want to pair, send this code as an iMessage to this Mac: "/pair <code>".'
+          : `Waiting for the iMessage adapter to be ready (current state: ${state}).`
+      }
+      stacked
+      control={
+        <div className="flex flex-col gap-4">
+          {codeQ.data && (
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-(--color-border) bg-(--bg-key) p-4">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-2xl tracking-widest text-(--color-text)">
+                  {codeQ.data.code_display}
+                </span>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  onClick={() => void handleCopyCode()}
+                  aria-label="Copy code"
+                >
+                  {codeCopied ? (
+                    <CheckCircle2 size={14} className="text-(--color-success)" />
+                  ) : (
+                    <Copy size={14} />
+                  )}
+                </Button>
+              </div>
+              <p className="text-center text-sm text-(--color-text-muted)">
+                From your phone, send an iMessage to this Mac's iMessage
+                address:{' '}
+                <code className="rounded bg-(--color-surface-raised) px-1 py-0.5 font-mono text-xs">
+                  /pair {codeQ.data.code_display}
+                </code>
+              </p>
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-(--color-text-muted)">
+                  Code expires {formatRelativeTime(codeQ.data.expires_at)}.
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void handleRegenerate()}
+                  disabled={codeQ.isFetching}
+                >
+                  {codeQ.isFetching ? (
+                    <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                  ) : (
+                    <Link2 className="mr-1.5 size-3.5" />
+                  )}
+                  New code
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!codeQ.data && codeQ.isFetching && (
+            <div className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-key) p-4 text-sm text-(--color-text-muted)">
+              <Loader2 className="size-4 animate-spin" />
+              Generating pairing code...
+            </div>
+          )}
+
+          {!codeQ.data && !codeQ.isFetching && (
+            <div className="flex flex-col gap-2">
               <Button
                 variant="outline"
-                size="sm"
-                onClick={() => void handleRevoke()}
-                disabled={revokeMut.isPending}
+                onClick={() => void handleRegenerate()}
+                disabled={!isReady}
               >
-                Unpair
+                <Link2 className="mr-2 size-4" />
+                Generate pairing code
               </Button>
-            }
-          />
-        </>
-      ) : (
-        <>
-          <SettingsRow
-            label="Connect phone"
-            description={
-              state === 'polling'
-                ? 'Scan the QR code with your phone camera to link Telegram — no typing needed.'
-                : `Waiting for adapter to connect (current state: ${state}).`
-            }
-            stacked
-            control={
-              <div className="flex flex-col gap-4">
-                {/* ── QR code — primary pairing method ── */}
-                {linkMut.data && (
-                  <div className="flex flex-col items-center gap-3 rounded-lg border border-(--color-border) bg-(--bg-key) p-4">
-                    <QRCodeSVG
-                      value={linkMut.data.url}
-                      size={180}
-                      bgColor="transparent"
-                      fgColor="var(--color-text)"
-                      level="M"
-                    />
-                    <p className="text-center text-sm text-(--color-text-muted)">
-                      Scan with your phone camera, or tap the link below.
-                    </p>
-                    <div className="flex w-full items-center gap-2">
-                      <a
-                        href={linkMut.data.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="min-w-0 flex-1 truncate text-sm text-(--color-accent) underline underline-offset-2"
-                      >
-                        {linkMut.data.url}
-                      </a>
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        onClick={() => void handleCopyLink()}
-                        aria-label="Copy link"
-                      >
-                        {linkCopied ? (
-                          <CheckCircle2 size={14} className="text-(--color-success)" />
-                        ) : (
-                          <Copy size={14} />
-                        )}
-                      </Button>
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        onClick={() => window.open(linkMut.data.url, '_blank')}
-                        aria-label="Open link"
-                      >
-                        <ExternalLink size={14} />
-                      </Button>
-                    </div>
-                    <p className="text-xs text-(--color-text-muted)">
-                      Link expires {formatRelativeTime(linkMut.data.expires_at)}.
-                    </p>
-                  </div>
-                )}
-
-                {/* ── Loading spinner while auto-issuing ── */}
-                {!linkMut.data && linkMut.isPending && (
-                  <div className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-key) p-4 text-sm text-(--color-text-muted)">
-                    <Loader2 className="size-4 animate-spin" />
-                    Generating QR code...
-                  </div>
-                )}
-
-                {/* ── Manual link generation (when auto-issue hasn't fired or failed) ── */}
-                {!linkMut.data && !linkMut.isPending && (
-                  <div className="flex flex-col gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => void handleGetLink()}
-                      disabled={state !== 'polling'}
-                    >
-                      <Link2 className="mr-2 size-4" />
-                      Generate pairing link
-                    </Button>
-                    {linkMut.isError && (
-                      <p className="text-xs text-(--color-error)">
-                        {linkMut.error?.message ?? 'Could not generate link.'}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-              </div>
-            }
-          />
-        </>
-      )}
-    </SettingsGroup>
+              {codeQ.isError && (
+                <p className="text-xs text-(--color-error)">
+                  {codeQ.error instanceof Error
+                    ? codeQ.error.message
+                    : 'Could not generate code.'}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      }
+    />
   )
 }
 

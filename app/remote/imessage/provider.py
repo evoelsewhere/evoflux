@@ -3,10 +3,30 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from app.remote.contracts import RemoteAttachment, RemoteProviderKind
 from app.remote.imessage.rpc import IMessageRpcClient
+
+#: Default bounded page size for one catchup call.
+DEFAULT_QUERY_LIMIT = 200
+
+
+@dataclass(frozen=True)
+class MessagePage:
+    """One page of new messages plus an opaque forward cursor.
+
+    ``since_cursor``/``next_cursor`` are deliberately opaque strings at this
+    shared boundary: each concrete provider owns what the string actually
+    means (imsg encodes its numeric, exclusive ``since_rowid``; BlueBubbles
+    keeps its own native cursor) so the poller and the durable watermark
+    column never need to know which provider produced it.
+    """
+
+    messages: Sequence[Mapping[str, Any]]
+    next_cursor: str | None
+    has_more: bool
 
 
 class IMessageProvider(Protocol):
@@ -19,8 +39,8 @@ class IMessageProvider(Protocol):
     async def status(self) -> Mapping[str, Any]: ...
 
     async def query_messages(
-        self, *, after: str | None = None
-    ) -> list[Mapping[str, Any]]: ...
+        self, *, since_cursor: str | None = None, limit: int = DEFAULT_QUERY_LIMIT
+    ) -> MessagePage: ...
 
     async def send_text(
         self,

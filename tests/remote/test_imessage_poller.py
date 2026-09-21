@@ -10,6 +10,7 @@ from app.remote.contracts import RemoteAttachment
 
 from app.remote.imessage.capabilities import IMessageHealth, probe_provider
 from app.remote.imessage.poller import IMessagePoller
+from app.remote.imessage.provider import MessagePage
 
 
 class _Provider:
@@ -28,9 +29,15 @@ class _Provider:
         return {"features": ["messages", "send"]}
 
     async def query_messages(
-        self, *, after: str | None = None
-    ) -> list[Mapping[str, Any]]:
-        return [message for message in self.messages if message["guid"] > (after or "")]
+        self, *, since_cursor: str | None = None, limit: int = 200
+    ) -> MessagePage:
+        matched = [
+            message
+            for message in self.messages
+            if message["guid"] > (since_cursor or "")
+        ]
+        next_cursor = matched[-1]["guid"] if matched else since_cursor
+        return MessagePage(messages=matched, next_cursor=next_cursor, has_more=False)
 
     async def send_text(
         self,
@@ -68,7 +75,10 @@ async def test_poller_advances_and_persists_watermark() -> None:
     await poller.stop()
 
     assert seen == ["1", "2"]
-    assert saved == ["1", "2"]
+    # The cursor advances once per page, not once per message: a page's
+    # `next_cursor` already covers every message it carried, so persisting
+    # per message would be a redundant write for the same forward progress.
+    assert saved == ["2"]
     assert provider.started is True
     assert provider.stopped is True
 

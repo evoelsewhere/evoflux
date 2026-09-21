@@ -10,7 +10,7 @@ import pytest
 
 from app.remote.contracts import RemoteAttachment, RemoteInboundActionKind
 from app.remote.imessage.channel import IMessageChannel
-from app.remote.imessage.provider import IMessageProviderFactory
+from app.remote.imessage.provider import IMessageProviderFactory, MessagePage
 from app.remote.imessage.rpc import IMessageRpcClient
 
 
@@ -29,9 +29,13 @@ class _Provider:
         return {"features": ["messages", "send"]}
 
     async def query_messages(
-        self, *, after: str | None = None
-    ) -> list[Mapping[str, object]]:
-        return [item for item in self.messages if str(item["guid"]) > (after or "")]
+        self, *, since_cursor: str | None = None, limit: int = 200
+    ) -> MessagePage:
+        matched = [
+            item for item in self.messages if str(item["guid"]) > (since_cursor or "")
+        ]
+        next_cursor = str(matched[-1]["guid"]) if matched else since_cursor
+        return MessagePage(messages=matched, next_cursor=next_cursor, has_more=False)
 
     async def send_text(
         self,
@@ -70,7 +74,7 @@ async def test_channel_routes_inbound_and_outbound_end_to_end() -> None:
         {
             "guid": "m1",
             "sender": "+1555",
-            "chat_id": "chat-1",
+            "chat_identifier": "chat-1",
             "text": "status",
         }
     )
@@ -135,13 +139,13 @@ async def test_channel_runs_against_protocol_mock_and_delivers_capabilities() ->
         {
             "guid": "inbox-1",
             "sender": "phone:+1555",
-            "chat_id": "chat-1",
+            "chat_identifier": "chat-1",
             "text": "ping",
         },
         {
             "guid": "inbox-2",
             "sender": "phone:+1999",
-            "chat_id": "chat-1",
+            "chat_identifier": "chat-1",
             "text": "foreign",
         },
     ]

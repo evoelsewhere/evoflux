@@ -12,7 +12,7 @@ def test_normalizes_authorized_text() -> None:
         {
             "guid": "m1",
             "sender": "+1555",
-            "chat_id": "chat-1",
+            "chat_identifier": "chat-1",
             "text": "status",
             "sender_name": "Operator",
         },
@@ -24,6 +24,27 @@ def test_normalizes_authorized_text() -> None:
     assert action is not None
     assert action.kind is RemoteInboundActionKind.TEXT
     assert action.principal.display == "Operator"
+
+
+def test_numeric_chat_id_is_not_a_destination_fallback() -> None:
+    """imsg's `chat_id` is a numeric database rowid, not the portable string
+    identifier this module binds as `destination_id` — accepting it here
+    would have to coerce an int to a str, and comparing that coerced value
+    against `paired_destination_id` (always a `chat_identifier`/`chat_guid`
+    string) would never match a real pairing anyway."""
+    action = normalize_inbound(
+        {
+            "guid": "m1b",
+            "sender": "+1555",
+            "chat_id": 42,
+            "text": "status",
+        },
+        connection_id=uuid4(),
+        paired_principal_id="+1555",
+        paired_destination_id="chat-1",
+    )
+
+    assert action is None
 
 
 def test_normalizes_tapback_and_numbered_reply_as_callbacks() -> None:
