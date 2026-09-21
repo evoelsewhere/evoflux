@@ -5,124 +5,167 @@ description: Execute the approved task checklist of an ASDD change against its a
 
 # Implement an ASDD change
 
-## Repository contract
+You are executing an approved checklist against approved requirements. This is
+the only phase allowed to modify product files, and the approval on `tasks.md`
+is what allows it.
 
-Read `.evoflux/asdd/config.json`, then `.evoflux/asdd/RULES.md` and `project.md`
-in the resolved `data_directory`. Read the change's `proposal.md`, `tasks.md`,
-`design.md` when present, and every `specs/<capability>/spec.md` under the
-change. Read every applicable `AGENTS.md` in the repositories you will touch.
+**IMPORTANT: when the task and the requirement disagree, the requirement
+wins.** The task is a plan someone wrote; the requirement is the contract the
+user approved. Never weaken the requirement to fit the code, and never edit the
+approved delta to fit what you built.
 
-`TEMPLATE.md`, beside this file, is what this phase leaves behind — in the change folder and in the chat.
-
-Work only when `proposal.md` reads `status: implementing` and
-`approvals.tasks` or `auto_approvals.tasks` carries a timestamp. Approved tasks
-are the authorization to modify product files; without them, stop.
+---
 
-## Execute
+## Read before you write
 
-1. Take the first unchecked task whose dependencies are done. Do not skip ahead
-   to an easier one; the order encodes what keeps the repository working.
-2. Implement it against the requirement it names, not against the task's
-   wording. When the two disagree, the requirement wins — the task is a plan,
-   the requirement is the contract.
-3. Run the checks `project.md` names for the code you touched, before moving on.
-4. Tick the box in `tasks.md` only when the task is actually done and its checks
-   pass. A ticked box is what the product reads as progress, so ticking one
-   early is a lie the verification gate will act on.
-5. Record what you ran under `changes/<change-id>/evidence/` when a task
-   produced a real check result — command, exit status, and the part of the
-   output that shows the outcome.
+1. `.evoflux/asdd/config.json` — where the catalogue lives.
+2. `.evoflux/asdd/RULES.md` — normative; it outranks this Skill.
+3. `<data_directory>/project.md` — this repository's conventions and the checks
+   that prove a change works here.
+4. `changes/<change-id>/tasks.md` — the checklist, in order.
+5. `changes/<change-id>/proposal.md`, `design.md` when present, and every
+   `specs/<capability>/spec.md` under the change — what you are building
+   against.
+6. Every applicable `AGENTS.md` in the repositories you will touch.
 
-## Durable pages are part of the work, not paperwork
+`TEMPLATE.md`, beside this file, is what this phase leaves behind — in the
+change folder and in the chat.
 
-Some tasks change a surface or a boundary rather than only the code behind it.
-Those carry a page with them, written in this change:
+---
 
-- A changed endpoint, config key, schema, event or CLI flag → update the
-  matching page under `reference/`. It is the one document a caller will not
-  re-derive from the source, so a stale line there is a false statement.
-- A moved process, storage, concurrency or trust boundary → update the page
-  under `architecture/` that describes it.
-- A decision that would be expensive to reverse → an ADR under
-  `architecture/decisions/`, numbered and shaped as that directory's
-  `README.md` says, citing this change.
+## Check the gate before you touch a file
 
-Capability specs are the exception: they are deltas under the change and the
-archive folds them. Everything above is written directly, now. Read the target
-directory's `README.md` before adding a page to it.
+| Condition | What to do |
+|---|---|
+| `status: implementing` **and** `approvals.tasks` or `auto_approvals.tasks` is stamped | Execute. The normal case. |
+| No tasks approval | **Stop.** Approved tasks are the authorization to modify product files. |
+| `status` earlier than `implementing` | **Stop.** The plan is not finished; naming the open phase is more useful than starting. |
+| `status: verifying` or later | **Stop.** Implementation is done; reopening it silently undoes a verdict. |
 
-## When the plan is wrong
+---
 
-Implementation regularly discovers that the plan missed something. Handle it in
-the open:
+## The loop
 
-- **A task is impossible or unnecessary** — leave it unchecked, add a note under
-  it saying why, and report it. Do not delete it; the plan's history is part of
-  the record.
-- **Work is needed that no task covers** — add the task to `tasks.md` in its
-  dependency position, pointed at the requirement it serves, and say so.
-- **The requirement itself is wrong** — stop. Do not weaken the code to fit it
-  and do not edit the approved delta. Report what the code needs and let the
-  user decide whether to revise the change.
+1. **Take the first unchecked task whose dependencies are done.** Do not skip
+   ahead to an easier one — the order encodes what keeps the repository
+   working.
+2. **Implement it against the requirement it names**, not against the task's
+   wording.
+3. **Run the checks `project.md` names** for the code you touched, before
+   moving on. Not at the end; now.
+4. **Tick the box** only when the task is done and its checks pass. The product
+   reads a ticked box as progress, so ticking early is a lie the verification
+   gate will act on.
+5. **Record real check results** under `changes/<change-id>/evidence/` —
+   command, exit status, and the part of the output that shows the outcome.
+
+---
+
+## Some tasks carry a page
+
+A task that changes a surface or a boundary ships its documentation in this
+change, not after it:
+
+| What the task changed | What you write, now |
+|---|---|
+| An endpoint, config key, schema, event or CLI flag | the matching page under `reference/` |
+| A process, storage, concurrency or trust boundary | the page under `architecture/` describing it |
+| Something expensive to reverse | an ADR under `architecture/decisions/`, citing this change |
+
+Read the target directory's `README.md` before adding a page to it.
+
+Capability specs are the one exception: they are deltas under the change, and
+the archive folds them. Everything above is written directly.
+
+---
+
+## When the plan turns out to be wrong
+
+Implementation regularly discovers what planning missed. Handle it in the open:
+
+| What you found | What to do |
+|---|---|
+| A task is impossible or unnecessary | Leave it unchecked, note why under it, report it. Do not delete it — the plan's history is part of the record. |
+| Work is needed that no task covers | Add the task in its dependency position, pointed at the requirement it serves, and say so. |
+| **The requirement itself is wrong** | **Stop.** Do not bend the code to fit it and do not edit the approved delta. Report what the code needs and let the user decide whether to revise the change. |
+
+---
 
 ## Boundaries
 
-Change only what the tasks and the approved impact call for. Do not edit
-`specs/<capability>/spec.md` in the catalogue — a spec changes only when the
-change is archived. Never touch `approvals`.
+Change only what the tasks and the approved `## Impact` call for. Never edit a
+catalogue `specs/<capability>/spec.md` — that changes at the archive, and only
+then. Never write `approvals`.
 
-Without autopilot, do not advance `status` past `implementing`; verification is
-a separate phase the user starts.
+**Without autopilot**, do not advance `status` past `implementing`.
+Verification is a separate phase the user starts.
 
-With `autopilot: true`, carry it: once every task in `tasks.md` is ticked and
-the work matches the approved requirements, set `status: verifying` and go
-straight on to `asdd-verify`. Stop and write a `hold` instead — naming
-`gate: implementing` and the reason — when a task turned out to be wrong, when
-the implementation needs behaviour the approved delta does not describe, or
-when you had to touch something the proposal's impact section does not
-mention. A change that quietly grew past its own spec is the thing autopilot
-most needs to hand back.
+**With `autopilot: true`**, carry it: once every task is ticked and the work
+matches the approved requirements, set `status: verifying` and continue into
+`asdd-verify`. Write a `hold` naming `gate: implementing` instead when a task
+turned out to be wrong, when the implementation needs behavior the approved
+delta does not describe, or when you had to touch something the proposal's
+impact does not mention. A change that quietly grew past its own spec is
+exactly what autopilot should hand back.
+
+---
 
 ## Tools
 
 - `todo_manage` — mirror `tasks.md` at the start and tick both together. The
   checklist in the repository is what the product reads; the todo list is what
   keeps a long run from losing its place.
-- `code_context` and `lsp_definition` / `lsp_references` — before editing a
-  symbol, read its real declaration and its dependents. An edit made from a
-  grep hit is an edit made without its callers.
-- `shell` — run the repository's checks as you go, not only at the end.
+- `code_context` — before editing a symbol, read its real declaration with
+  `action="definition"` and its dependents with `action="callers"`; an edit
+  made from a grep hit is an edit made without its callers. Re-query with
+  `refresh=true` after an edit so the next task sees what you changed, and
+  reuse returned source instead of re-reading the file. Never bulk scan.
+  `references/code-context-contract.md` is normative and carries the full rules.
+- `lsp_definition` / `lsp_references` — the same question, answered by the
+  language server when the index is stale.
+- `shell` — run the repository's checks as you go.
 - `lsp_diagnostics` / `static_diagnostics` — after each group of edits. A task
   is not done while it leaves a new diagnostic behind.
-- `ask_user` — only when the approved delta turns out to be wrong or silent on
-  something you cannot proceed without. Prefer stopping and reporting: changing
-  direction mid-implementation is the user's call, not a question to work
-  around.
+- `ask_user` — only when the approved delta is wrong or silent on something you
+  cannot proceed without. Prefer stopping and reporting: changing direction
+  mid-implementation is the user's call, not a question to work around.
 
-## Code graph navigation
+The ASDD context block already names the catalogue and the open changes. Do not
+probe for them.
 
-`code_context` is the primary discovery tool for this phase. The ASDD context
-block already names the catalogue and the open changes, so do not probe for them
-and do not sweep for build manifests to guess the toolchain.
+---
 
-- Before editing a symbol, read its real declaration with `action="definition"`
-  and its dependents with `action="callers"`. An edit made from a grep hit is an
-  edit made without knowing who relies on it.
-- After an edit, re-query with `refresh=true` so the next task sees what you
-  actually changed.
-- Reuse returned definition and call-site source instead of re-reading the file.
+## Stop, and report
 
-Read `references/code-context-contract.md` for full action selection and
-interpretation rules. It is normative here. In short: call `code_context`
-with one `action="search"` to expose a declared identifier, then skip
-further search and call the exact-symbol action on that identifier; start
-at depth 1 unless the question is explicitly transitive; and never bulk
-scan. Keep `refresh=true` for the first indexed query and after any edit,
-and use `refresh=false` only for an immediate follow-up that intentionally
-reuses the returned index version. Do not repeat an unchanged query.
+Stop when every task you can complete is complete:
 
-## Stop condition
+```text
+add-note-search — 7 of 9 tasks done.
 
-Stop when every task you can complete is complete. Report which tasks are done,
-which are blocked and why, the checks you ran with their results, and any
-requirement you believe the implementation does not yet satisfy.
+Done: storage (3), endpoint (2), reference page (1), ADR 0007 (1).
+Checks: `uv run pytest tests/notes -q` 24 passed; `bun run test:unit` 659
+passed. Both recorded under evidence/.
+
+Blocked: task 8 "Rank by recency" — the delta says "recently opened" and
+nothing defines the window. Not guessing; it needs a decision.
+
+Unsatisfied: "Empty query returns nothing" holds for the API but not the CLI,
+which still prints the full list. That is task 9, not yet started.
+```
+
+Report which tasks are done, which are blocked and why, the checks you ran with
+their results, and any requirement you believe the implementation does not yet
+satisfy.
+
+---
+
+## Guardrails
+
+- **Don't tick a box early.** The product acts on it.
+- **Don't skip to an easier task.** The order is what keeps the tree working.
+- **Don't edit an approved delta** to match what you built. That is the change
+  rewriting its own contract.
+- **Don't edit a catalogue spec.** Archiving folds deltas; hands do not.
+- **Don't widen the change.** Anything outside the approved impact is a
+  follow-up change, or a `hold`.
+- **Don't leave a new diagnostic behind** and call the task done.

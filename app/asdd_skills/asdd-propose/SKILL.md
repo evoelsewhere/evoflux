@@ -5,138 +5,204 @@ description: Draft or redraft the proposal for an ASDD change — why it is need
 
 # Propose an ASDD change
 
-## Repository contract
+You are deciding **what problem this change solves and how far it reaches**.
+Not how to build it, and not what the contract will say — those are
+`asdd-specify` and `asdd-plan`, and they are better for your having left them
+alone.
 
-Read `.evoflux/asdd/config.json`, then `.evoflux/asdd/RULES.md` and the
-`project.md` in the resolved `data_directory`. Read `specs/` to learn what the
-catalogue already contracts, and the change folder you were given. Repository
-files are the source of truth; never reconstruct a change's state from chat
-memory.
+**IMPORTANT: this phase writes exactly one file** — `proposal.md`, in the
+change folder you were given. No product code, no specs, no tasks, no design.
+If the work seems obvious enough to just do, that feeling is what the phase
+exists to catch: propose it, and the next phase will still be there.
 
-You are given a `change-id`. Everything you write goes in
-`<data_directory>/changes/<change-id>/`. That folder name is the change's whole
-identity — do not invent a run id, a revision number or a hash for it.
+Two things must be true when you stop, and the gate refuses without them: a
+**risk tier** and the **capability slugs** this change will carry deltas for.
+Everything below serves getting those two right.
 
-`TEMPLATE.md`, beside this file, is the exact shape of `proposal.md` and what gets one rejected.
-
-Work only when `proposal.md` reads `status: drafting` or `status: proposed`. A
-change past `specifying` has an approved proposal; changing it now would
-invalidate an approval the user already gave, so stop and say so instead.
+---
 
-## Start from the request
+## Read before you write
 
-The create form asks for three things: a title, the problem, and what should be
-true when it is done. The last two are already written into `## Why` and
-`## What Changes` — they are the requester's own sentences, not a draft you
-wrote, so read them as the brief rather than as prose to tidy.
+In this order, always:
 
-Everything else is yours to derive. `capabilities` and `risk` are usually
-absent, and an absent `risk` is not `standard` — it means nobody has tiered
-this change, and the proposal gate refuses until you do.
+1. `.evoflux/asdd/config.json` — where the catalogue lives (`data_directory`).
+2. `.evoflux/asdd/RULES.md` — normative; it outranks this Skill.
+3. `<data_directory>/project.md` — this repository's own voice: conventions,
+   what a proposal here must always state, what must not break.
+4. `<data_directory>/specs/` — what the catalogue already contracts. Read this
+   *before* naming a capability, never after.
 
-## Work from evidence
+The repository is the source of truth. Never reconstruct a change's state from
+what was said in chat.
 
-1. Read every applicable `AGENTS.md` in the authorized repository scope, then
-   the owning source, configuration, migrations and focused tests. Treat code
-   and tests as current-state evidence; treat plans and comments as proposals.
-2. Read `specs/` before naming a capability. **Reuse an existing capability
-   whenever this change alters behavior that capability already contracts** —
-   that produces another revision of one contract instead of two contracts
-   describing the same thing. Coin a new slug only for behavior the catalogue
-   does not cover, and say which existing capabilities you ruled out.
-3. Scan for ambiguity that could change product behavior: scope, actors and
-   permissions, state and data, failure and recovery, concurrency, security and
-   privacy, compatibility, observability, and what "done" means. Ask one concise
-   clarifying question rather than guessing. Do not interrogate the user about
-   low-impact details.
+Your change is `<data_directory>/changes/<change-id>/`. That folder name is the
+change's entire identity — no run id, no revision, no hash, ever.
 
-## When the work was an investigation
+---
 
-A proposal states a problem in a few paragraphs. When reaching it took real
-work — a benchmark, a comparison of three libraries, a reproduction nobody had
-managed before — that work is a page of its own at
-`analysis/YYYY-MM-DD-<topic>.md`, and the proposal cites it in one line rather
-than swallowing it.
+## Check the gate before you spend a turn
 
-Write the page the way `analysis/README.md` asks: what was measured, how, and
-what it showed, against a dated revision. It is historical from the moment it
-is written — nothing later has to keep it true. Do not put findings a reader
-must treat as current there; those belong in `specs/`, `architecture/` or
-`reference/`, through this change.
+| `status` in `proposal.md` | What to do |
+|---|---|
+| `drafting` | Write the proposal. The normal case. |
+| `proposed` | Redraft it, and say what you changed and why. |
+| anything later | **Stop.** The proposal was approved; editing it now invalidates a gate the user already cleared. Say so, and name the phase that is actually open. |
 
-## Write the proposal
+---
 
-Write `changes/<change-id>/proposal.md` with these sections, keeping its front
-matter intact except for the fields named below:
+## You arrive in one of three ways
 
-- `## Why` — the problem in the user's terms, and the cost of doing nothing.
-- `## What Changes` — one bullet per observable change; mark breaking changes.
-- `## Capabilities` — `### New Capabilities` and `### Modified Capabilities`,
-  each entry a slug and one sentence.
-- `## Impact` — code, data and operations touched, plus explicit non-goals.
+**A title and two sentences from the create form.** The common case. `## Why`
+and `## What Changes` already hold the requester's own words — that is your
+brief, not prose to tidy. Everything else is yours to derive.
 
-In the front matter, set:
+**A conversation that got concrete.** The user thought out loud and asked to
+capture it. Reread for the outcome they actually want, then treat it as the
+brief above. Do not widen it while writing it down.
 
-- `title` — a short imperative name for the change.
-- `capabilities` — every capability slug the change will carry a delta for.
-- `risk` — `trivial`, `standard`, `cross_layer` or `critical`. Choose
-  `cross_layer` or `critical` for multi-repository, security, migration,
-  persistence, public-compatibility or concurrency work; those tiers require a
-  design document and an independent review, so do not reach for them to signal
-  effort.
-- `status: proposed` — last, once the sections above are complete and both
-  `risk` and `capabilities` are set. A proposal that leaves `risk` unset cannot
-  be approved, and the blocker will say so.
+**A redraft.** Something was wrong: the scope, the tier, or a capability. Fix
+that, leave the rest, and say in the chat which of the three it was.
+
+---
+
+## Decide the two things the gate needs
+
+### Capabilities
+
+**Reuse before you coin.** If an existing `specs/<capability>/spec.md` already
+contracts the behavior this change alters, write the delta against *that*
+capability. Two contracts describing one behavior is the failure mode here, and
+it stays invisible until someone has to change both.
+
+A new slug is for behavior the catalogue does not cover. When you coin one, the
+proposal names the existing capabilities you considered and ruled out — that
+sentence is how a reviewer checks your judgment instead of taking it.
+
+### Risk tier
+
+An absent `risk` is not `standard`. It means nobody has tiered this change, and
+the gate refuses until someone does.
+
+| Tier | Choose it when | It costs |
+|---|---|---|
+| `trivial` | One obvious edit, no contract moves | Nothing extra |
+| `standard` | Ordinary feature or fix inside one layer | Nothing extra |
+| `cross_layer` | Multi-repository, migration, persistence, public compatibility, concurrency | A design document and an independent review |
+| `critical` | Security, data loss, trust boundaries, anything hard to reverse | The same, and the user keeps the design gate and the archive |
+
+Do not reach for a high tier to signal that the work matters. The upper two buy
+scrutiny and cost the user two extra gates: pick them when the change can hurt,
+not when it is merely large.
+
+---
+
+## Work from evidence, not from the prompt
+
+Read the owning source, configuration, migrations and focused tests before you
+write `## Impact`. Treat code and tests as current-state evidence; treat plans,
+comments and TODOs as somebody's proposal.
+
+Then scan for the ambiguity that would change what gets built: scope, actors
+and permissions, state and data, failure and recovery, concurrency, security
+and privacy, compatibility, observability, and what "done" means.
+
+Where something there is genuinely unsettled, **ask** — one concise question
+with a recommendation, through `ask_user`. Do not interrogate the user about
+what you could resolve by reading, and do not guess at an outcome and then
+record the guess as though it were the brief.
+
+**If reaching the problem took real work** — a benchmark, a comparison, a
+reproduction nobody had managed — that work is its own page at
+`analysis/YYYY-MM-DD-<topic>.md`, cited from the proposal in one line. See
+`analysis/README.md` for what such a page owes. Do not swallow an investigation
+into `## Why`.
+
+---
+
+## Write it
+
+`TEMPLATE.md`, beside this file, is the exact shape of `proposal.md` and the
+list of what gets one rejected. Read it before writing; it is what this phase
+is graded on.
+
+Set `status: proposed` **last**, once the sections are complete and both `risk`
+and `capabilities` are set.
 
 Leave `approvals` alone. Approval is the user's, and writing a timestamp there
-yourself forges a gate the product will then honor.
+forges a gate the product will then honor.
 
-If the change reads `autopilot: true` and you are satisfied the proposal is
-complete and its scope is right, you may carry it past this gate yourself:
-write the timestamp under `auto_approvals.proposal` and set
-`status: specifying`. That map is yours; `approvals` is not. If anything about
-the scope is unsettled — an unclear outcome, a capability you are guessing at,
-a risk tier you are unsure of — write a `hold` instead, naming `gate: proposal`
-and the reason, leave the status alone, and say so in the chat.
+---
+
+## Autopilot
+
+With `autopilot: true` in the change's front matter you may clear this gate
+yourself — but only when you would defend the scope to the user:
+
+- **Confident** — write the timestamp under `auto_approvals.proposal` (never
+  `approvals`) and set `status: specifying`.
+- **Not confident** — an unclear outcome, a capability you are guessing at, a
+  tier you are unsure of: write a `hold` naming `gate: proposal` and the
+  reason, leave `status` where it is, and say so in the chat.
+
+Stopping is a result. A proposal nobody should have approved costs more than a
+turn spent asking.
+
+---
 
 ## Tools
 
-- `code_context` — the primary discovery tool for this phase; see
-  `references/code-context-contract.md` for the bounded-discovery rule.
-- `ask_user` — when the outcome the user wants is genuinely ambiguous, or when
-  the risk tier is not obvious from what they said. Batch the questions; give
-  each a recommendation.
-- `memory_search` — before inventing a capability, check what this repository
-  has already decided about the area.
-- `shell` — read-only here: `git log`, `git diff` for what the repository has
-  been doing lately. Do not change files in this phase.
+- `code_context` — the discovery tool for this phase. One `action="search"` to
+  expose a declared identifier, then the exact-symbol action on it;
+  `action="callers"` and `action="references"` to size `## Impact`. Depth 1
+  unless the question is transitive. Never bulk scan.
+  `references/code-context-contract.md` is normative and carries the full rules.
+- `ask_user` — for a genuinely ambiguous outcome or tier. Batch the questions;
+  give each a recommendation.
+- `memory_search` — before coining a capability, check what this repository has
+  already decided about the area.
+- `shell` — read-only here: `git log`, `git diff`. This phase changes no file
+  but the proposal.
 
-## Code graph navigation
+The ASDD context block already names the catalogue and the open changes. Do not
+probe for them, and do not sweep the tree to guess the toolchain.
 
-`code_context` is the primary discovery tool for this phase. The ASDD context
-block already names the catalogue and the open changes, so do not probe for them
-and do not sweep for build manifests to guess the toolchain.
+---
 
-- Turn each behavior the request names into one `action="search"` call, then
-  promote the returned declared identifier. Prose is never an exact-symbol query.
-- Size the change with `action="callers"` and `action="references"` before
-  writing the Impact section. Every claim needs a resolved relationship behind
-  it, not an assumption about layout.
-- Ambiguity is evidence: two definitions for one name is exactly the kind of
-  finding worth a clarifying question before you choose behavior.
+## Stop, and report
 
-Read `references/code-context-contract.md` for full action selection and
-interpretation rules. It is normative here. In short: call `code_context`
-with one `action="search"` to expose a declared identifier, then skip
-further search and call the exact-symbol action on that identifier; start
-at depth 1 unless the question is explicitly transitive; and never bulk
-scan. Keep `refresh=true` for the first indexed query and after any edit,
-and use `refresh=false` only for an immediate follow-up that intentionally
-reuses the returned index version. Do not repeat an unchanged query.
+Stop after writing `proposal.md`. Then say, in the chat, in about this much
+space:
 
-## Stop condition
+```text
+add-note-search — proposed.
 
-Stop after writing the file. Report the change id, the capabilities you named
-and the ones you ruled out, the risk tier and why, and any question you still
-need answered. Do not write specs, design or tasks, and do not touch product
-files.
+Capabilities: `note-search` (new). Ruled out `note-storage`: it contracts how
+notes persist, not how they are found.
+
+Risk: standard. One service, one endpoint, no migration and no public
+contract moves.
+
+Open: whether search covers archived notes. I recommend no — the archive is a
+different retention promise — but it changes the spec, so it is yours.
+```
+
+Name the change, the capabilities you took and the ones you ruled out, the tier
+and the one sentence that justifies it, and anything you still need from the
+user. Then stop: no specs, no design, no tasks, no product files.
+
+---
+
+## Guardrails
+
+- **Don't start building.** Not a helper, not a test, not a rename. This gate
+  exists because agreeing on the problem is cheaper than undoing the solution.
+- **Don't tidy the requester's words.** `## Why` and `## What Changes` arrive
+  as theirs. Add what is missing; do not rewrite what is there into your voice.
+- **Don't invent a capability you did not look for.** Reading `specs/` first is
+  the whole difference between reuse and a duplicate contract.
+- **Don't leave `risk` unset** and let the gate explain it. That is a blocker
+  you were asked to resolve.
+- **Don't write `approvals`.** `auto_approvals` is yours under autopilot; the
+  other map belongs to a person.
+- **Don't widen the change while writing it.** Anything the user did not ask
+  for is a non-goal in `## Impact`, or its own change.
