@@ -633,3 +633,71 @@ def test_refresh_models_dev_cache_survives_a_failed_fetch(
     assert model_registry.refresh_models_dev_cache() is False
     # A dead network must not empty the catalog the process is already serving.
     assert "openai:gpt-first" in model_registry.load_model_registry()
+
+
+def test_plan_rows_are_priced_at_the_vendors_api_rates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """models.dev leaves ``cost`` off a subscription row; EvoFlux fills it.
+
+    A plan seat buys a quota rather than tokens, so the catalog publishes no
+    price for one. Carried through, the endpoint would decide whether a turn
+    has a price at all — identical tokens against identical weights priced on
+    the pay-as-you-go row and blank on the plan row.
+    """
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache")
+    )
+    monkeypatch.setattr(
+        model_registry.settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config")
+    )
+    monkeypatch.setattr(model_registry.settings, "EVOFLUX_MODEL_REGISTRY_REFRESH", True)
+    monkeypatch.setattr(
+        model_registry,
+        "_provider_entries",
+        lambda include_plugins: [
+            {
+                "id": "vendor",
+                "models_dev_provider_id": "vendor-ai",
+                "env_var": "VENDOR_API_KEY",
+            }
+        ],
+    )
+    priced = {
+        "id": "flash",
+        "cost": {"input": 0.2, "output": 1.1, "cache_read": 0.04},
+        "limit": {"context": 256000, "output": 256000},
+    }
+    monkeypatch.setattr(
+        model_registry,
+        "_fetch_models_dev",
+        lambda: {
+            "vendor-ai": {
+                "id": "vendor-ai",
+                "env": ["VENDOR_API_KEY"],
+                "models": {"flash": priced},
+            },
+            # The plan row the vendor names after the region it serves, so
+            # it shares the curated id's prefix rather than the catalog
+            # row's — and lists a model the paid row does not.
+            "vendor-plan": {
+                "id": "vendor-plan",
+                "env": ["VENDOR_API_KEY"],
+                "models": {
+                    "flash": {"id": "flash", "limit": {"context": 256000}},
+                    "router": {"id": "router", "limit": {"context": 256000}},
+                },
+            },
+        },
+    )
+
+    assert get_model_cost("vendor:flash").input == 0.2
+    # The same model on the plan endpoint costs the same to run.
+    assert get_model_cost("vendor-plan:flash").input == 0.2
+    assert get_model_cost("vendor-plan:flash").output == 1.1
+    assert get_model_cost("vendor-plan:flash").cache_read == 0.04
+    # A model only the plan row lists has no price anywhere to borrow, and
+    # stays unpriced rather than being guessed at.
+    assert get_model_cost("vendor-plan:router").input is None
+    # It still reaches the curated provider, with its limits intact.
+    assert get_model_limits("vendor:router").context_length == 256000

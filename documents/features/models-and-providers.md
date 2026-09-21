@@ -73,15 +73,30 @@ Sibling metadata fills **gaps only**. A model the provider's own row
 describes always wins, because that row matches the endpoint EvoFlux
 resolves by default.
 
-That default is also what a turn is priced from, and on a plan endpoint the
-two disagree. Xiaomi's and StepFun's plan rows publish no per-token rates —
-a plan bills a subscription, not a token — while the pay-as-you-go rows they
-borrow their identity from do. A user pointing `STEPFUN_BASE_URL` at
-`/step_plan` therefore sees turns costed at open-platform rates: tokens that
-came out of a subscription, reported as money. Pricing reads the agent's
-configured `provider:model`, so no provider-side override can correct it;
-separating the plan into its own curated row, the way Kimi Code is separate
-from the Moonshot platform, is what would.
+Rates are the one thing filled the other way, from the provider's own row
+into its siblings. A price belongs to a model at a vendor, not to the door
+you came in through, and models.dev does not model it that way: it leaves
+`cost` off StepFun's two `step_plan` rows, because a plan seat buys a quota
+rather than tokens. Today those are the only blank rows in the catalogue —
+Xiaomi's three token plans, MiniMax's and Zhipu's coding plans all publish
+rates — so read literally, StepFun alone would have the endpoint decide
+whether a turn has a price at all: identical tokens against identical
+weights, costed on `stepfun:` and blank on `stepfun-ai-step-plan:`.
+
+A plan row inherits the open platform's rates instead. That is the number
+EvoFlux already promises everywhere else it meets a subscription — Codex,
+Copilot, Kimi, Ollama are all priced at what the same tokens would have cost
+at API rates, which is what makes a plan turn comparable with a paid one
+rather than free. Only a blank is filled: a vendor that prices its plan
+differently and says so keeps what it published, and a model that only a
+plan row lists — StepFun's `step-router-v1` — stays unpriced, because
+nothing here knows what it costs and a borrowed rate would read as fact.
+
+A vendor on two regional hosts names those rows after the host rather than
+after whichever one EvoFlux defaults to, so the variant test accepts the
+curated ID's own prefix as well as its catalog row's. That is the difference
+between `stepfun-ai-step-plan` and `stepfun-step-plan`, and only StepFun has
+it.
 
 ### Provider logos
 
