@@ -23,6 +23,10 @@ All notable changes to EvoFlux are documented in this file.
   repository in the project, filters by repository and names the owner of each
   change, reads and actions a change through the repository it lives in, and
   treats the repositories still to set up as a banner rather than a wall.
+- The Overview panel described the repository a Coding session opened on as
+  though it were the whole project — one branch, one set of changes, no sign
+  the others existed. It now names the repository it is describing and, in a
+  project, lets the reader switch between them.
 - Context compaction could not shrink a long session. The summariser replayed
   the raw transcript while ordinary turns send one with old tool results
   projected to receipts, so its request was about twice the size of the turn

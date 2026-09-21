@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -31,6 +31,17 @@ interface CodingSummaryPanelProps {
   sessionId: string | null
   open: boolean
   isWorking: boolean
+  /**
+   * Every repository in the Coding project, when the session belongs to one.
+   *
+   * A session opens on a single repository — the project's first, by insertion
+   * order — and this panel used to report that one as though it were the
+   * project. A two-repository project therefore showed one repository's branch,
+   * its changed files and its pull requests, with nothing saying the other
+   * existed. The repository is a choice here now, the way it already is in the
+   * Changes tool.
+   */
+  repositories?: { path: string; label: string }[]
   onOpenFile?: (path: string) => void
 }
 
@@ -121,9 +132,19 @@ export function CodingSummaryPanel({
   sessionId,
   open,
   isWorking,
+  repositories = [],
   onOpenFile,
 }: CodingSummaryPanelProps) {
-  const gitChanges = useGitChangesQuery(workspace, open)
+  // Defaults to the repository the session opened on, which is the one its
+  // terminal and file tree are rooted at — a sensible start, not a verdict.
+  const [selected, setSelected] = useState(workspace)
+  useEffect(() => {
+    setSelected(workspace)
+  }, [workspace])
+  const active = repositories.some((repository) => repository.path === selected)
+    ? selected
+    : workspace
+  const gitChanges = useGitChangesQuery(active, open)
   const {
     data: gitData,
     isFetching: gitIsFetching,
@@ -206,10 +227,10 @@ export function CodingSummaryPanel({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold text-(--color-text)">
-            {workspaceLabel(workspace)}
+            {workspaceLabel(active)}
           </span>
-          <span className="block truncate font-mono text-[10px] text-(--color-text-subtle)" title={workspace}>
-            {workspace}
+          <span className="block truncate font-mono text-[10px] text-(--color-text-subtle)" title={active}>
+            {active}
           </span>
         </span>
         <button
@@ -223,6 +244,42 @@ export function CodingSummaryPanel({
           <RefreshCw size={14} className={cn(refreshing && 'animate-spin')} />
         </button>
       </header>
+
+      {/*
+        Shown only when there is a choice. One repository needs no tabs, and a
+        project with several needs them: every row below reads the repository
+        named here, so the panel describes the one the reader picked rather
+        than the one the session happened to start in.
+      */}
+      {repositories.length > 1 ? (
+        <div
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-(--color-border) bg-(--bg-card)/20 px-3 py-2"
+          role="tablist"
+          aria-label="Project repository"
+        >
+          {repositories.map((repository) => {
+            const current = repository.path === active
+            return (
+              <button
+                key={repository.path}
+                type="button"
+                role="tab"
+                aria-selected={current}
+                title={repository.path}
+                onClick={() => setSelected(repository.path)}
+                className={cn(
+                  'focus-ring-control shrink-0 rounded-lg px-2 py-1 text-[11px] font-medium transition-colors',
+                  current
+                    ? 'bg-(--color-accent)/12 text-(--color-accent)'
+                    : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
+                )}
+              >
+                {repository.label}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         <div className="mx-auto w-full max-w-2xl space-y-5">
@@ -252,7 +309,7 @@ export function CodingSummaryPanel({
             <SummaryRow
               icon={Files}
               label="Local workspace"
-              detail={workspaceLabel(workspace)}
+              detail={workspaceLabel(active)}
               onClick={openTool('files')}
             />
             <SummaryRow
