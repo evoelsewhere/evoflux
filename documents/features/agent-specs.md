@@ -78,9 +78,34 @@ its reason, and the rail puts that above everything else.
 
 Autopilot carries implementation and verification as well — those are not
 gates, so the agent finishes the phase and moves the `status` on. The rail
-leads with **Continue** the whole way and keeps **Run implementation**, **Run
-verification** and **Mark ready** beside it, because autopilot is a default and
-not a lock. It stops at `ready`: archiving is a person's click at every tier.
+keeps **Continue**, **Run implementation**, **Run verification** and **Mark
+ready** beside each other, because autopilot is a default and not a lock.
+
+### The product presses Continue
+
+Clearing a gate and then stopping is not carrying a change: for a while
+autopilot meant the agent signed for itself and a person still clicked
+**Continue** between every phase, which is most of the work of driving it.
+
+A turn that ends now asks the question the Continue button asks —
+`_autopilot_next` on the change's status — and starts that phase instead of
+rendering a button. The binding is the transcript: a phase prompt says
+``Work on ASDD change `<id>``` and nothing else does, so the newest user
+message that matches names the change this chat is carrying. No second
+identifier, which rule 2 would forbid anyway.
+
+Whether a hop is allowed is the rail's decision, reused rather than
+reimplemented: autopilot off, a `hold`, an unmet gate or a standing blocker all
+come back as "no next phase" and end the chain. Two bounds are the loop's own.
+A hop that leaves the change exactly where it was — same status, same ticked
+tasks, same evidence — gets no successor, because a change that cannot advance
+would otherwise re-run its phase every turn. And a chain is capped at twelve
+hops, which covers a full cycle with implementation re-entering itself while
+tasks remain, and bounds a mistake to a turn count rather than a night. Anyone
+speaking in the session clears both.
+
+It still stops at `ready`: archiving folds the catalogue and is a person's
+click at every tier.
 
 A `cross_layer` or `critical` change keeps the design gate and the archive for
 the user whatever autopilot says, and the archive is refused outright if the

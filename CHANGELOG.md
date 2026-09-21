@@ -16,6 +16,16 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Autopilot now carries a change from phase to phase instead of only signing
+  its gates. An agent would clear `auto_approvals`, move the status on and
+  stop — every phase Skill says to stop — leaving the rail showing **Continue**
+  for a person to click, once per phase. A finished turn now asks the same
+  question that button asks and starts the next phase itself, binding the
+  session to the change through the phase prompt already in the transcript.
+  Whether a hop is allowed stays the rail's decision, so autopilot off, a
+  `hold`, an unmet gate or a blocker all end the chain; so do a hop that moved
+  nothing and a chain that reaches twelve hops. It still stops at `ready`,
+  because archiving is the user's click at every tier.
 - The six Agent Spec-Driven phase Skills are rewritten to one shape: the role
   and the single hard boundary first, a gate table that answers "should I even
   be here", the ways an agent arrives at that phase, the decisions it owes with

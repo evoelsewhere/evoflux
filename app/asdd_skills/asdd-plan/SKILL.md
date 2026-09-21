@@ -167,6 +167,10 @@ Set `status: tasked`. With `autopilot: true` you may clear this gate once the
 checklist covers every approved requirement: write `auto_approvals.tasks`
 (never `approvals`) and set `status: implementing`.
 
+Set the next status and stop there. The product reads it and starts the next
+phase itself — that is what autopilot means now, so there is no hop for you to
+make and no Continue for the user to click. A `hold` is what ends the chain.
+
 ---
 
 ## Tools

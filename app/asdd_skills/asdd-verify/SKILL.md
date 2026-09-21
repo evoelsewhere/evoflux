@@ -175,6 +175,10 @@ requirement with no evidence you could honestly write. **Reporting a
 requirement as verified because the code looks right is the failure this phase
 exists to prevent.**
 
+`ready` is where autopilot stops. The product carries a change from phase to
+phase on its own, but archiving folds the catalogue and that is the user's
+click at every tier — so set the status, report, and leave it there.
+
 ---
 
 ## Guardrails

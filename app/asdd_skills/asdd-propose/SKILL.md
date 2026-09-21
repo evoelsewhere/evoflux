@@ -147,6 +147,10 @@ yourself — but only when you would defend the scope to the user:
 Stopping is a result. A proposal nobody should have approved costs more than a
 turn spent asking.
 
+Set the next status and stop there. The product reads it and starts the next
+phase itself — that is what autopilot means now, so there is no hop for you to
+make and no Continue for the user to click. A `hold` is what ends the chain.
+
 ---
 
 ## Tools

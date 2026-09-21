@@ -100,13 +100,15 @@ then. Never write `approvals`.
 **Without autopilot**, do not advance `status` past `implementing`.
 Verification is a separate phase the user starts.
 
-**With `autopilot: true`**, carry it: once every task is ticked and the work
-matches the approved requirements, set `status: verifying` and continue into
-`asdd-verify`. Write a `hold` naming `gate: implementing` instead when a task
-turned out to be wrong, when the implementation needs behavior the approved
-delta does not describe, or when you had to touch something the proposal's
-impact does not mention. A change that quietly grew past its own spec is
-exactly what autopilot should hand back.
+**With `autopilot: true`**, once every task is ticked and the work matches the
+approved requirements, set `status: verifying` and stop. The product reads that
+status and starts verification itself — there is no hop for you to make.
+
+Write a `hold` naming `gate: implementing` instead when a task turned out to be
+wrong, when the implementation needs behavior the approved delta does not
+describe, or when you had to touch something the proposal's impact does not
+mention. A change that quietly grew past its own spec is exactly what autopilot
+should hand back, and a hold is what stops the chain.
 
 ---
 
