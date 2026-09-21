@@ -657,3 +657,132 @@ def test_an_untiered_proposal_cannot_be_approved(
 
     assert refused.status_code == 409
     assert refused.json()["detail"]["blockers"][0]["code"] == "risk_not_set"
+
+
+async def _project_with(paths: list[str], name: str = "Multi") -> str:
+    """Create a Coding project over *paths* and return its id."""
+    import app.core.db as _db
+    from app.services.coding_project_service import create_project
+
+    async with _db.async_session_factory() as db:
+        project = await create_project(db, name=name, workspace_paths=paths)
+        await db.commit()
+        return str(project.id)
+
+
+@pytest.fixture
+def sibling(tmp_path: Path) -> str:
+    root = tmp_path / "sibling"
+    root.mkdir()
+    (root / "README.md").write_text("# sibling\n", encoding="utf-8")
+    return str(root)
+
+
+@pytest.mark.asyncio
+async def test_a_project_lists_changes_from_every_repository(
+    client: TestClient, workspace: str, sibling: str
+) -> None:
+    """A change filed next door belongs to the same board.
+
+    The session opens on one repository; listing only that one reported an
+    empty board to a project whose work lives in a sibling.
+    """
+    project_id = await _project_with([workspace, sibling])
+    install(client, workspace)
+    install(client, sibling)
+    here = new_change(client, workspace, title="Add user authentication")["change"]
+    there = new_change(client, sibling, title="Rotate the signing keys")["change"]
+
+    listed = client.get(
+        "/api/asdd/changes", params={"workspace": workspace, "project_id": project_id}
+    )
+
+    assert listed.status_code == 200, listed.text
+    payload = listed.json()
+    ids = {change["change_id"] for change in payload["changes"]}
+    assert ids == {here["change_id"], there["change_id"]}
+    by_id = {change["change_id"]: change["repository"] for change in payload["changes"]}
+    assert by_id[there["change_id"]] == str(Path(sibling).resolve())
+
+
+@pytest.mark.asyncio
+async def test_a_repository_without_asdd_contributes_nothing_rather_than_failing(
+    client: TestClient, workspace: str, sibling: str
+) -> None:
+    """Half an installed project still shows the half that exists."""
+    project_id = await _project_with([workspace, sibling])
+    install(client, sibling)
+    there = new_change(client, sibling, title="Rotate the signing keys")["change"]
+
+    listed = client.get(
+        "/api/asdd/changes", params={"workspace": workspace, "project_id": project_id}
+    )
+
+    assert listed.status_code == 200, listed.text
+    assert [change["change_id"] for change in listed.json()["changes"]] == [
+        there["change_id"]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_capabilities_are_the_union_across_repositories(
+    client: TestClient, workspace: str, sibling: str
+) -> None:
+    project_id = await _project_with([workspace, sibling])
+    install(client, workspace)
+    install(client, sibling)
+    here = new_change(client, workspace)["change"]
+    there = new_change(client, sibling, title="Rotate the signing keys")["change"]
+    write_delta(workspace, here["change_id"], "user-auth")
+    write_delta(sibling, there["change_id"], "key-rotation")
+    for repo, change_id, capability in (
+        (workspace, here["change_id"], "user-auth"),
+        (sibling, there["change_id"], "key-rotation"),
+    ):
+        spec = Path(repo) / "documents" / "asdd" / "specs" / capability
+        spec.mkdir(parents=True, exist_ok=True)
+        (spec / "spec.md").write_text(DELTA, encoding="utf-8")
+
+    payload = client.get(
+        "/api/asdd/changes", params={"workspace": workspace, "project_id": project_id}
+    ).json()
+
+    assert payload["capabilities"] == ["key-rotation", "user-auth"]
+
+
+def test_a_standalone_workspace_still_lists_only_itself(
+    client: TestClient, workspace: str, sibling: str
+) -> None:
+    install(client, workspace)
+    install(client, sibling)
+    new_change(client, sibling, title="Rotate the signing keys")
+    mine = new_change(client, workspace)["change"]
+
+    payload = client.get("/api/asdd/changes", params={"workspace": workspace}).json()
+
+    assert [change["change_id"] for change in payload["changes"]] == [
+        mine["change_id"]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_listing_says_which_repository_owns_each_spec(
+    client: TestClient, workspace: str, sibling: str
+) -> None:
+    """Merged names need provenance: a spec is readable from one repo only."""
+    project_id = await _project_with([workspace, sibling])
+    install(client, workspace)
+    install(client, sibling)
+    spec = Path(sibling) / "documents" / "asdd" / "specs" / "key-rotation"
+    spec.mkdir(parents=True, exist_ok=True)
+    (spec / "spec.md").write_text(DELTA, encoding="utf-8")
+
+    payload = client.get(
+        "/api/asdd/changes", params={"workspace": workspace, "project_id": project_id}
+    ).json()
+
+    owners = {
+        item["path"]: item["capabilities"] for item in payload["repositories"]
+    }
+    assert owners[str(Path(sibling).resolve())] == ["key-rotation"]
+    assert owners[str(Path(workspace).resolve())] == []

@@ -16,6 +16,13 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- The Agent Spec-Driven board showed only the repository a session opened on,
+  so a Coding project whose changes live in a sibling repository reported an
+  empty board — and the panel hid it entirely behind setup until *every*
+  repository was installed. The board now lists the changes of every
+  repository in the project, filters by repository and names the owner of each
+  change, reads and actions a change through the repository it lives in, and
+  treats the repositories still to set up as a banner rather than a wall.
 - Context compaction could not shrink a long session. The summariser replayed
   the raw transcript while ordinary turns send one with old tool results
   projected to receipts, so its request was about twice the size of the turn

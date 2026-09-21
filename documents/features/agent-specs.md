@@ -85,6 +85,31 @@ design was cleared rather than signed.
 - A change's detail shows its proposal, deltas, design, tasks and evidence as
   the Markdown they are, plus the approval strip and the rail.
 
+### A project's board spans its repositories
+
+A change lives in exactly one repository, and a Coding project has several. The
+board lists every one of them: `GET /asdd/changes` takes the project and reads
+each member repository's catalogue, and every change already names the
+repository it came from, so the board needs no key of its own. With more than
+one repository in scope the panel offers a repository filter and names the
+owner on each row, and a change is read, actioned and archived through its own
+repository rather than through whichever one the session opened on.
+
+Listing them separately was how a project reported an empty board: a session
+opens on one repository — the project's first, by insertion order — and every
+change filed next door was invisible from it.
+
+Readiness is per repository for the same reason. One installed repository is
+enough for a board, and the repositories still to set up are a banner on it
+carrying the setup action. Holding the whole panel until every repository was
+installed hid work that already existed, which is the opposite of what the
+gate was for: what it protects is the **new-change** form, which still offers
+only repositories that are set up.
+
+The merged `capabilities` and `archived` counts come with a per-repository
+breakdown, because a spec is a file in one working tree — the catalogue reads
+each one from the repository that owns it.
+
 ## Delegation
 
 A delegated mission may name `asdd_change_id` and the requirements it owns,

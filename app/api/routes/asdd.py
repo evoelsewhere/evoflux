@@ -39,7 +39,7 @@ from app.services.asdd_service import (
     catalogue_for,
     create_change,
     detail_payload,
-    list_changes,
+    list_changes_across,
     mark_ready,
     prepare_action,
     record_evidence,
@@ -215,11 +215,23 @@ async def initialize_asdd_setup(
 
 @router.get("/changes", response_model=AsddChangeListResponse)
 async def list_asdd_changes(
+    db_factory: DbSessionFactory,
     workspace: str,
     project_id: UUID | None = None,
 ) -> AsddChangeListResponse:
-    catalogue = catalogue_for(_workspace(workspace))
-    payload = await asyncio.to_thread(list_changes, catalogue)
+    """Every change in scope: one repository, or a whole Coding project.
+
+    A project session opens on one of its repositories, and a change filed in
+    a sibling used to be invisible from it — the board read the session's
+    repository and nothing else, so a project whose work lives next door
+    looked like a project with no changes at all.
+    """
+    root, targets = await _repository_targets(
+        db_factory, workspace=workspace, project_id=project_id
+    )
+    payload = await asyncio.to_thread(
+        list_changes_across, [target.path for target in targets], workspace=root
+    )
     return AsddChangeListResponse(project_id=project_id, **payload)
 
 

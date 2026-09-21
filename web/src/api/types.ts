@@ -2553,12 +2553,20 @@ export interface AsddChangeDetail {
   evidence: AsddEvidence[]
 }
 
+export interface AsddRepositoryListing {
+  path: string
+  capabilities: string[]
+  archived: string[]
+}
+
 export interface AsddChangeList {
   workspace: string
   project_id: string | null
   changes: AsddChange[]
   archived: string[]
   capabilities: string[]
+  /** Per repository, for reads that resolve in one working tree (specs, archive). */
+  repositories: AsddRepositoryListing[]
 }
 
 export interface AsddChangeActionResult {

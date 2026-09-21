@@ -193,12 +193,27 @@ class AsddChangeDetailResponse(BaseModel):
     evidence: list[AsddEvidenceOut]
 
 
+class AsddRepositoryListingOut(BaseModel):
+    """What one repository in scope contributes to the listing.
+
+    The flat `capabilities` and `archived` below are the union across the
+    scope, which is what a count or a filter wants. A spec and an archived
+    change, though, live in one working tree — reading them needs to know
+    which, and that is what this carries.
+    """
+
+    path: str
+    capabilities: list[str]
+    archived: list[str]
+
+
 class AsddChangeListResponse(BaseModel):
     workspace: str
     project_id: UUID | None
     changes: list[AsddChangeOut]
     archived: list[str]
     capabilities: list[str]
+    repositories: list[AsddRepositoryListingOut] = []
 
 
 class AsddChangeCreateRequest(BaseModel):
