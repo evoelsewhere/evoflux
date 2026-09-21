@@ -191,6 +191,11 @@ def _sibling_providers() -> dict[str, tuple[str, ...]]:
         env_var = entry.get("env_var")
         if not isinstance(env_var, str) or not env_var:
             continue
+        # A vendor on two regional hosts names its plan rows after each host
+        # rather than after whichever one EvoFlux defaults to: StepFun's
+        # China plan is ``stepfun-step-plan`` while the curated provider
+        # points at ``stepfun-ai``. Both spellings name the same account.
+        prefixes = {f"{source}-", f"{provider_id}-"}
         related = [
             candidate
             for candidate in by_env.get(env_var, ())
@@ -200,7 +205,8 @@ def _sibling_providers() -> dict[str, tuple[str, ...]]:
             # the name has to mark the candidate as a variant of *this*
             # provider's row, which is the convention models.dev follows for
             # regional and plan endpoints (``xiaomi-token-plan-sgp``).
-            if candidate.startswith(f"{source}-") and candidate not in claimed
+            if any(candidate.startswith(prefix) for prefix in prefixes)
+            and candidate not in claimed
         ]
         if related:
             siblings[provider_id] = tuple(sorted(related))
@@ -226,6 +232,46 @@ def apply_sibling_model_aliases(registry: ModelRegistry) -> ModelRegistry:
                 target = f"{provider_id}:{key[len(prefix) :]}"
                 if target not in result:
                     result[target] = deepcopy(value)
+    return result
+
+
+def apply_sibling_model_costs(registry: ModelRegistry) -> ModelRegistry:
+    """Price a vendor's plan rows at that vendor's own API rates.
+
+    models.dev publishes no ``cost`` for a subscription row — a Step Plan
+    seat buys a quota rather than tokens, so there is no per-token price to
+    state — and the same model on the pay-as-you-go row of the same vendor
+    is priced normally. Carried through, that makes the endpoint decide
+    whether a turn has a price at all: ``stepfun:step-3.7-flash`` reports
+    what it cost and ``stepfun-ai-step-plan:step-3.7-flash`` reports
+    nothing, for identical tokens against identical weights.
+
+    EvoFlux prices subscriptions and says what the number means — see
+    ``estimate_cost``: what a turn reports is what those tokens would have
+    cost at API rates, not money leaving an account. A plan row is that
+    case exactly, so it inherits the rates rather than the blank.
+
+    Only a missing price is filled. A vendor that genuinely charges its plan
+    differently and publishes that keeps what it published, and a model only
+    a plan row lists stays unpriced, because nothing here knows what it
+    costs and a guess would read as fact.
+    """
+    result = dict(registry)
+    for provider_id, sources in _sibling_providers().items():
+        for source in sources:
+            prefix = f"{source}:"
+            for key in registry:
+                if not key.startswith(prefix):
+                    continue
+                if result[key].get("cost"):
+                    continue
+                donor = result.get(f"{provider_id}:{key[len(prefix) :]}")
+                rates = donor.get("cost") if donor else None
+                if not rates:
+                    continue
+                entry = deepcopy(result[key])
+                entry["cost"] = deepcopy(rates)
+                result[key] = entry
     return result
 
 
@@ -796,8 +842,10 @@ def load_model_registry() -> ModelRegistry:
         registry[key] = _deep_merge(registry.get(key, {}), value)
     registry = apply_model_registry_aliases(registry, overwrite=True)
     # Vendors that publish plan and regional variants as separate catalog
-    # rows: fill only the gaps, so a user pointed at a plan endpoint still
-    # gets real metadata for the models only that endpoint lists.
+    # rows: price them like the vendor's own API, then fill only the gaps,
+    # so a user pointed at a plan endpoint still gets real metadata for the
+    # models only that endpoint lists.
+    registry = apply_sibling_model_costs(registry)
     registry = apply_sibling_model_aliases(registry)
 
     # Reapply target-provider overrides after aliases so an explicit

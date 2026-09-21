@@ -72,6 +72,16 @@ All notable changes to EvoFlux are documented in this file.
   never read — the call is assembled from its index, id and function — so the
   field is now a plain string on the way in, for the non-streaming shape as
   well. What EvoFlux sends is unchanged.
+- A StepFun model cost nothing to run on a Step Plan row and something on the
+  open platform, for identical tokens against identical weights. models.dev
+  leaves `cost` off a subscription row — a plan seat buys a quota, not tokens
+  — and StepFun's two `step_plan` rows are the only blank ones in the whole
+  catalogue. They now inherit the vendor's own API rates, which is the number
+  EvoFlux already reports for every other subscription it meets. A model only
+  a plan row lists, such as `step-router-v1`, stays unpriced rather than
+  borrowing a rate nobody published. StepFun's China plan row also counts as a
+  variant of the curated provider now, so `step-router-v1` arrives with its
+  real name and limits instead of as a bare model ID.
 - The Agent Spec-Driven board showed only the repository a session opened on,
   so a Coding project whose changes live in a sibling repository reported an
   empty board — and the panel hid it entirely behind setup until *every*

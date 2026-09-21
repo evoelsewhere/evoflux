@@ -171,13 +171,12 @@ class TestStepFunThinking:
 
 
 class TestStepFunPricing:
-    """What the catalogue charges for, and what it deliberately does not.
+    """One price per model, whichever of StepFun's four rows serves it.
 
-    The open-platform rows carry rates; the ``step_plan`` rows carry none,
-    because a plan bills a subscription rather than a token. A plan user
-    configures this provider with a plan base URL, so their turns are still
-    priced from the open-platform row — see the Step Plan note in
-    ``documents/features/models-and-providers.md``.
+    A plan user configures this provider with a plan base URL, so their
+    turns resolve under ``stepfun:`` and are priced from the open-platform
+    row. Selecting a ``step_plan`` row directly now prices the same — see
+    the Step Plan note in ``documents/features/models-and-providers.md``.
     """
 
     def test_open_platform_models_are_priced(self) -> None:
@@ -213,17 +212,44 @@ class TestStepFunPricing:
         assert warm["input_usd"] < cold["input_usd"]
         assert warm["estimated_usd"] < cold["estimated_usd"]
 
-    def test_step_plan_rows_carry_no_rates(self) -> None:
+    def test_a_plan_row_costs_what_the_open_platform_charges(self) -> None:
+        """The endpoint must not decide whether a turn has a price.
+
+        models.dev publishes no rates for the ``step_plan`` rows, because a
+        plan bills a subscription rather than a token. Read literally that
+        leaves identical tokens against identical weights priced on one row
+        and blank on the other, so a plan row inherits the open platform's
+        rates — which is the number EvoFlux already promises for every
+        subscription provider.
+        """
+        from app.agent.usage import estimate_cost
+
+        payg = estimate_cost(
+            "stepfun:step-3.7-flash", input_tokens=10_000, output_tokens=500
+        )
+        for plan in ("stepfun-ai-step-plan", "stepfun-step-plan"):
+            priced = estimate_cost(
+                f"{plan}:step-3.7-flash", input_tokens=10_000, output_tokens=500
+            )
+            assert priced == payg
+
+    def test_a_model_only_a_plan_row_lists_stays_unpriced(self) -> None:
+        """No open-platform row prices ``step-router-v1``, so nothing does.
+
+        Borrowing a sibling model's rates would state a price as fact. The
+        model still resolves — it reaches the curated provider with its
+        limits — it just reports no cost.
+        """
+        from app.agent.providers.model_metadata import get_model_limits
         from app.agent.usage import estimate_cost
 
         assert (
             estimate_cost(
-                "stepfun-ai-step-plan:step-3.7-flash",
-                input_tokens=10_000,
-                output_tokens=500,
+                "stepfun:step-router-v1", input_tokens=10_000, output_tokens=500
             )
             is None
         )
+        assert get_model_limits("stepfun:step-router-v1").context_length == 256000
 
 
 # ============================================================================
