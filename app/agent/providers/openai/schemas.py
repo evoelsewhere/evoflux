@@ -23,7 +23,11 @@ class OpenAIFunctionCall(BaseModel):
 
 class OpenAIToolCall(BaseModel):
     id: str
-    type: Literal["function"] = "function"
+    # Requests always send "function"; the default supplies it because nothing
+    # constructs this with an explicit type. Plain `str` on the way in because
+    # the same model parses responses, and a provider that names the kind
+    # differently must not fail the turn over a field nothing reads.
+    type: str = "function"
     function: OpenAIFunctionCall
 
 
@@ -190,7 +194,11 @@ class OpenAIToolCallDelta(BaseModel):
 
     index: int
     id: str | None = None
-    type: Literal["function"] | None = None
+    # StepFun step-5-preview sends "" on the chunks that continue a tool call
+    # rather than repeating "function" or omitting the key. The kind is never
+    # read — the call is assembled from index, id and function — so a literal
+    # here only turns a cosmetic wire difference into a failed turn.
+    type: str | None = None
     function: OpenAIFunctionCallDelta | None = None
 
 

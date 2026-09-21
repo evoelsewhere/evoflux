@@ -65,6 +65,13 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- Any turn in which `stepfun:step-5-preview` called a tool died on a schema
+  error before the call could run. StepFun sends `type: ""` on the chunks that
+  continue a streaming tool call, where the shared OpenAI-compatible schema
+  accepted only `"function"` or nothing at all. The kind of a tool call is
+  never read — the call is assembled from its index, id and function — so the
+  field is now a plain string on the way in, for the non-streaming shape as
+  well. What EvoFlux sends is unchanged.
 - The Agent Spec-Driven board showed only the repository a session opened on,
   so a Coding project whose changes live in a sibling repository reported an
   empty board — and the panel hid it entirely behind setup until *every*
