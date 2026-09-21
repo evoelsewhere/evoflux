@@ -341,6 +341,11 @@ class AgentTeam:
         self.session_tags: frozenset[str] = session_tags or frozenset()
         self.extra_workspace_paths: list[str] = extra_workspace_paths or []
         self.read_only_paths: list[str] = read_only_paths or []
+        # ASDD autopilot chain state, per session: how many phases it has run
+        # without the user saying anything, and what the change looked like at
+        # the last hop. Runtime state on purpose — a restart is a fine reason
+        # to let a chain start over.
+        self._asdd_chain: dict[str, tuple[int, tuple[str, int, int]]] = {}
 
         self.mailbox = TeamMailbox(on_message=self._on_message)
 
@@ -413,6 +418,10 @@ class AgentTeam:
         path instead of letting it race the still-pending snapshot/persist work.
         """
         self._has_active_turn = True
+        # A person speaking ends whatever chain autopilot was on and starts
+        # its budget over: the cap exists to bound an unattended run, not to
+        # ration a session someone is sitting in.
+        self._asdd_chain.pop(self.lead.session_id or "", None)
 
     def release_user_turn_reservation(self) -> None:
         """Release a deferred ingress reservation that failed before activation."""
@@ -1465,6 +1474,12 @@ class AgentTeam:
             if await self._activate_goal_continuation(session_id):
                 return
 
+            # After the durable goal, because a goal is the user's standing
+            # instruction for the whole session and an ASDD change is one
+            # piece of work inside it.
+            if await self._activate_asdd_autopilot(session_id):
+                return
+
             try:
                 await self._emit_completion_notification(session_id)
                 await self._emit_turn_changes(session_id)
@@ -1703,6 +1718,153 @@ class AgentTeam:
             return True
 
         logger.info("team_goal_continued session_id={}", session_id)
+        return True
+
+    async def _last_asdd_change(self, session_uuid: UUID) -> str | None:
+        """The change the most recent phase prompt in this session named.
+
+        The binding is the transcript itself. A phase prompt says ``Work on
+        ASDD change `<id>``` and nothing else in the session does, so the
+        newest user message that matches names the change this chat is
+        carrying — no second identifier, and no session state to keep in sync
+        with the files (rule 2).
+
+        Only user messages count. An agent that mentions a change while
+        reporting on it is describing work, not being asked to do it.
+        """
+
+        from app.services.asdd_autopilot import change_id_in
+
+        db_factory = resolve_db_factory(self.lead.db_factory)
+        async with db_factory() as db:
+            rows = (
+                await db.exec(
+                    select(SessionMessage)
+                    .where(
+                        SessionMessage.session_id == session_uuid,
+                        SessionMessage.role == "user",
+                    )
+                    .order_by(col(SessionMessage.created_at).desc())
+                    .limit(8)
+                )
+            ).all()
+        for row in rows:
+            change_id = change_id_in(row.content)
+            if change_id:
+                return change_id
+        return None
+
+    async def _activate_asdd_autopilot(self, session_id: str) -> bool:
+        """Run the next ASDD phase for a change autopilot is carrying.
+
+        This is the Continue button, pressed by the product. Whether a hop is
+        allowed at all is the rail's decision, reused verbatim — autopilot
+        off, a `hold`, an unmet gate or a blocker all come back as "no next
+        phase" and end the chain.
+        """
+
+        if not self.workspace:
+            return False
+        try:
+            session_uuid = UUID(session_id)
+        except ValueError:
+            return False
+
+        from app.services.asdd_autopilot import next_hop, stop_reason
+
+        try:
+            change_id = await self._last_asdd_change(session_uuid)
+        except Exception as exc:  # noqa: BLE001 - never break the barrier
+            logger.warning(
+                "asdd_autopilot_lookup_failed session_id={} error={}", session_id, exc
+            )
+            return False
+        if not change_id:
+            return False
+
+        hops, previous = self._asdd_chain.get(session_id, (0, None))
+
+        try:
+            hop = await asyncio.to_thread(next_hop, self.workspace, change_id)
+        except Exception as exc:  # noqa: BLE001 - never break the barrier
+            logger.warning(
+                "asdd_autopilot_failed session_id={} change_id={} error={}",
+                session_id,
+                change_id,
+                exc,
+            )
+            return False
+        if hop is None:
+            self._asdd_chain.pop(session_id, None)
+            return False
+
+        stop = stop_reason(hops, previous, hop)
+        if stop is not None:
+            logger.info(
+                "asdd_autopilot_stopped session_id={} change_id={} reason={} hops={}",
+                session_id,
+                change_id,
+                stop,
+                hops,
+            )
+            self._asdd_chain.pop(session_id, None)
+            return False
+
+        try:
+            await stream_store.init_turn(session_id, keep_subscribers=True)
+        except Exception as exc:
+            logger.warning("team_init_asdd_turn_failed error={}", exc)
+            return False
+
+        directive_id: UUID | None = None
+        try:
+            db_factory = resolve_db_factory(self.lead.db_factory)
+            async with db_factory() as db:
+                directive = await save_message(
+                    db,
+                    session_uuid,
+                    HumanMessage(content=hop.prompt),
+                    exclude_from_context=False,
+                    extra={
+                        "command": "asdd_autopilot",
+                        "asdd_change_id": hop.change_id,
+                        "asdd_skill": hop.skill,
+                        "hidden_from_user": True,
+                        "hidden_from_summary": True,
+                    },
+                )
+                directive_id = directive.id
+                await db.commit()
+        except Exception as exc:  # noqa: BLE001 - preserve completion barrier
+            logger.warning(
+                "asdd_autopilot_directive_failed session_id={} error={}",
+                session_id,
+                exc,
+            )
+            return False
+
+        self._asdd_chain[session_id] = (hops + 1, hop.progress)
+        self._has_active_turn = True
+        try:
+            self.lead.activate_for_continuation()
+        except AlreadyWorkingError:
+            # Another activation won the race; drop the unused directive and
+            # let that turn's own boundary reassess the change.
+            if directive_id is not None:
+                async with db_factory() as db:
+                    stale = await db.get(SessionMessage, directive_id)
+                    if stale is not None:
+                        await db.delete(stale)
+                        await db.commit()
+            return True
+
+        logger.info(
+            "asdd_autopilot_advanced session_id={} change_id={} skill={} hop={}",
+            session_id,
+            hop.change_id,
+            hop.skill,
+            hops + 1,
+        )
         return True
 
     async def inject_synthetic_turn(self, session_id: str, prompt: str) -> str | None:

@@ -136,6 +136,10 @@ a delta and every requirement carries a scenario:
   invent is not clearly implied by the proposal. Leave `status` where it is and
   say so in the chat.
 
+Set the next status and stop there. The product reads it and starts the next
+phase itself — that is what autopilot means now, so there is no hop for you to
+make and no Continue for the user to click. A `hold` is what ends the chain.
+
 ---
 
 ## Tools
