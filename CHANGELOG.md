@@ -16,6 +16,16 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- Context compaction could not shrink a long session. The summariser replayed
+  the raw transcript while ordinary turns send one with old tool results
+  projected to receipts, so its request was about twice the size of the turn
+  that triggered it — a 404K-token compaction call plus a 30K output cap
+  against a 262K window, rejected with `context_length_exceeded` on all 137
+  attempts in one session while the context grew to 950 messages. Compaction
+  now sends the same projected prefix an ordinary turn sends, is budgeted
+  against the model's window (with the summary's own cap clamped to a quarter
+  of it), retries smaller when the endpoint rejects it anyway, and stops
+  attempting every turn once it has failed three times in a row.
 - Turn token totals counted a model call once per streaming chunk when the
   provider restated the call's usage on every chunk, which StepFun does: a
   33-minute session reported 1.87 billion tokens. A call's usage is now

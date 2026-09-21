@@ -50,6 +50,32 @@ Hooks add bounded behavior around the model and tools:
 Tool results are normalized and large outputs are offloaded. Provider-specific
 wire formats stay behind a generic message/tool/usage schema.
 
+### Compaction fits the window it is relieving
+
+Compaction replays the transcript as the provider-visible prefix, so its own
+request is bounded by the same context window the conversation just ran into.
+Three rules keep it inside:
+
+- It sends what an ordinary turn sends. The provider boundary replaces old,
+  bulky tool results with receipts, and the summariser applies the same
+  projection with the same recent-batch window — the prefix stays
+  cache-aligned, and it is the size the window was measured against rather
+  than a raw transcript twice as large.
+- It is budgeted against the model's published window, minus the summary's
+  own output cap and a margin. The configured cap is itself clamped to a
+  quarter of the window, so one setting cannot make compaction impossible on
+  a small-window model. What still does not fit is dropped oldest-first, and
+  the summary says so instead of implying it covered everything. A model
+  whose window the catalogue does not publish is left untrimmed.
+- If the endpoint rejects the request as too long anyway, it retries twice on
+  half the history — the estimate can be wrong, the endpoint cannot.
+
+After three consecutive failures a session stops attempting compaction every
+turn and says so in the log; an explicit force, or a restart, tries again.
+Without that guard a session whose compaction could not succeed spent several
+seconds and a full-history call per turn, forever, while its context kept
+growing.
+
 ## Lead and specialists
 
 The session-selected lead decides whether to handle work directly or spawn its
