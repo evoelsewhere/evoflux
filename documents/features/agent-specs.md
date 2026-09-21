@@ -14,6 +14,14 @@ Everything, in the repository. A change is
 `status` in its `proposal.md`. A capability's current contract is
 `<data_directory>/specs/<capability>/spec.md`.
 
+The catalogue has a home for each durable kind of page, and setup writes a
+`README.md` into every one saying what belongs there: `architecture/` for
+process, storage, concurrency and trust boundaries, `architecture/decisions/`
+for the ADR-style records of why they are where they are, `reference/` for the
+exact API, configuration, schema and CLI surface, and `analysis/` for dated
+investigations. Only `specs/` changes by archiving a delta; the rest ship in
+the same change as the code that makes them true.
+
 There is no database table behind any of it. The panel reads the working tree,
 and what it shows is exactly what a reviewer sees in a pull request.
 

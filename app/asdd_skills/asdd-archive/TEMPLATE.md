@@ -34,3 +34,7 @@ line each, naming the file the user has to fix.
   cleared it — for `cross_layer` and `critical` the design must be the user's.
 - It archives anything itself, sets `status: archived`, or edits a capability
   spec. The fold is the product's, and only the user starts it.
+- It reports the change as ready to fold while a decision from `design.md` has
+  no ADR under `architecture/decisions/`, or a surface the change altered is
+  still described the old way in `reference/`. The fold covers `specs/` and
+  nothing else, so those pages are gone the moment the folder moves.

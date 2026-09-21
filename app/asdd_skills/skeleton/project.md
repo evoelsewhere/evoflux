@@ -38,7 +38,15 @@ three sentences; agents read this first and reason from it._
 
 ## Catalogue
 
+- `project.md` — this file: the repository's own context and rules.
+- `architecture/` — process, storage, concurrency and trust boundaries.
+- `architecture/decisions/NNNN-<slug>.md` — durable decisions, ADR-style.
 - `specs/<capability>/spec.md` — the current contract for one behavior.
+- `reference/` — exact API, configuration, schema and CLI contracts.
+- `analysis/` — investigations, dated; historical rather than normative.
 - `changes/<change-id>/` — one proposed change and everything it needs.
 - `changes/archive/YYYY-MM-DD-<change-id>/` — changes already folded into the
   specs.
+
+Each directory holds a `README.md` stating what belongs in it. Read that one
+before writing a page into it.

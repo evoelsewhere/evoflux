@@ -42,6 +42,28 @@ what it will produce.
 5. **Tasks are settled.** Every task is ticked, or the unticked ones carry a
    note explaining why they are not needed.
 
+## The catalogue outside `specs/`
+
+The fold covers `specs/` and nothing else, so the durable pages this change
+owed are yours to confirm before you call the archive — once the folder moves,
+they read as though nobody ever needed them.
+
+1. **Decisions are recorded.** Every entry in `design.md`'s `## Decisions` that
+   would be expensive to reverse exists as an ADR under
+   `architecture/decisions/`, numbered, dated, naming this change, with the
+   rejected alternative and its reason. A decision that lives only in a change
+   folder is a decision the next reader will find by archaeology.
+2. **Boundaries are current.** If the change moved a process, storage,
+   concurrency or trust boundary, the page under `architecture/` says so.
+3. **The surface is current.** If the change altered an endpoint, config key,
+   schema, event or CLI flag, `reference/` matches what shipped.
+4. **Investigations are filed.** Anything under `analysis/` this change
+   produced is dated and cited where it was used.
+
+Write what is missing, in this change, before archiving. Do not archive around
+a gap and open a follow-up change to write the page: the change that made the
+statement true is the only one whose diff explains it.
+
 ## Report the result
 
 Say, per capability, what the merged spec will contain: requirements added,

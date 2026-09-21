@@ -72,3 +72,18 @@ change. Project Skills guide work but never override this contract.
 16. **Do not migrate knowledge implicitly.** Setup creates missing ASDD files
     only. Existing repository documentation stays where it is and stays
     authoritative until maintainers move it through an approved change.
+17. **Every durable page has one home, and the home decides the rules.** The
+    catalogue is not one pile of Markdown: `specs/` states behavior the system
+    guarantees, `architecture/` states the boundaries it is built from,
+    `architecture/decisions/` records why those boundaries are where they are,
+    `reference/` states the exact surface a caller types, and `analysis/`
+    records an investigation at a date. Each directory's `README.md` says what
+    belongs in it and what does not; read that before adding a page, and put
+    the page where it belongs rather than where the change happened to start.
+18. **Durable pages ship with the change that makes them true.** A change that
+    moves a boundary, decides something durable, or alters a public surface
+    updates `architecture/`, `architecture/decisions/` and `reference/` in the
+    same change as the code — not afterwards, and not in the change folder as
+    a copy. Only `specs/` waits for the archive, because only `specs/` is
+    approved as a delta. A reference page that lags its code is not an
+    omission; it is the product stating something untrue.

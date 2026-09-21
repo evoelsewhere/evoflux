@@ -78,8 +78,14 @@ class AsddContextHook(BaseAgentHook):
             "",
             f"This repository runs Agent Specification-Driven Development. Its "
             f"catalogue is `{catalogue.relative(catalogue.base_path)}`: "
-            f"`specs/<capability>/spec.md` is the current contract for a behavior, "
-            f"`changes/<change-id>/` is one proposed change. Read "
+            f"`specs/<capability>/spec.md` is the current contract for a "
+            f"behavior, `architecture/` the boundaries the system is built "
+            f"from and `architecture/decisions/` why they are there, "
+            f"`reference/` the exact API, configuration, schema and CLI "
+            f"surface, `analysis/` dated investigations, and "
+            f"`changes/<change-id>/` one proposed change. Each directory's "
+            f"`README.md` says what belongs in it — read that before writing a "
+            f"page into it, and read "
             f"`{catalogue.relative(catalogue.project_path)}` and "
             f"`{ASDD_MANIFEST.as_posix()}` before phase work.",
             "",

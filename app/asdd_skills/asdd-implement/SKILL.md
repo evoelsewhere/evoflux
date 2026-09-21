@@ -33,6 +33,24 @@ are the authorization to modify product files; without them, stop.
    produced a real check result — command, exit status, and the part of the
    output that shows the outcome.
 
+## Durable pages are part of the work, not paperwork
+
+Some tasks change a surface or a boundary rather than only the code behind it.
+Those carry a page with them, written in this change:
+
+- A changed endpoint, config key, schema, event or CLI flag → update the
+  matching page under `reference/`. It is the one document a caller will not
+  re-derive from the source, so a stale line there is a false statement.
+- A moved process, storage, concurrency or trust boundary → update the page
+  under `architecture/` that describes it.
+- A decision that would be expensive to reverse → an ADR under
+  `architecture/decisions/`, numbered and shaped as that directory's
+  `README.md` says, citing this change.
+
+Capability specs are the exception: they are deltas under the change and the
+archive folds them. Everything above is written directly, now. Read the target
+directory's `README.md` before adding a page to it.
+
 ## When the plan is wrong
 
 Implementation regularly discovers that the plan missed something. Handle it in

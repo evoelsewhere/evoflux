@@ -14,6 +14,21 @@ All notable changes to EvoFlux are documented in this file.
   the levels StepFun publishes. StepFun cannot switch thinking off, so the
   off position leaves it at StepFun's own default.
 
+### Changed
+
+- The Agent Spec-Driven catalogue now has a home for each durable kind of
+  page — `architecture/` for process, storage, concurrency and trust
+  boundaries, `architecture/decisions/` for ADR-style records of why they are
+  where they are, `reference/` for the exact API, configuration, schema and
+  CLI surface, and `analysis/` for dated investigations — each with a
+  `README.md` stating what belongs in it. The phase Skills write into them:
+  the plan phase gives every durable page its own task, implementation ships
+  the page with the code, and the archive phase refuses to fold a change whose
+  decisions and surfaces were never written down. Only `specs/` still waits
+  for the archive. An already-installed repository reports `upgrade_required`
+  and the existing Upgrade action adds the directories without touching
+  anything the repository edited.
+
 ### Fixed
 
 - The Agent Spec-Driven board showed only the repository a session opened on,

@@ -32,8 +32,12 @@ fail for a reason the user cannot see in `git status`.
 ```text
 <data_directory>/                     # `.evoflux/asdd/config.json` names it
 ├── project.md                        # this repository's context and rules
+├── architecture/                     # process, storage, concurrency, trust
+│   └── decisions/NNNN-<slug>.md      # ADR-style durable decisions
 ├── specs/
 │   └── <capability>/spec.md          # the behavior the system guarantees now
+├── reference/                        # exact API, configuration, schema, CLI
+├── analysis/YYYY-MM-DD-<topic>.md    # dated investigations, never normative
 └── changes/
     ├── <change-id>/
     │   ├── proposal.md               # why and what; front matter holds status
@@ -43,6 +47,15 @@ fail for a reason the user cannot see in `git status`.
     │   └── evidence/<id>.md          # what was run, and what it showed
     └── archive/YYYY-MM-DD-<change-id>/
 ```
+
+Every directory carries a `README.md` stating what belongs in it, what does
+not, and how it changes — written where an agent is deciding where to put a
+page rather than in a method document it may not have open.
+
+Only `specs/` waits for the archive, because only `specs/` is approved as a
+delta. `architecture/`, `architecture/decisions/` and `reference/` are written
+by the change that makes them true, in the same diff as the code; `analysis/`
+is dated and never corrected in place.
 
 ## The grammar
 
