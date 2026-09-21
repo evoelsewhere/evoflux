@@ -22,6 +22,20 @@ The dock lazy-loads panels and supports responsive overlay behavior. Split mode
 can show conversation, editor/workspace and auxiliary tools simultaneously;
 Monitor focuses on multi-agent progress.
 
+### Which repository a Coding panel describes
+
+A Coding session opens on one repository even when its project holds several:
+something has to be the agent's working directory, and the project's first
+member — by insertion order — is what the backend derives. That is a cwd, not a
+verdict about which repository matters, and a panel that presents it as the
+project is wrong.
+
+Overview therefore names the repository it is describing and, in a project,
+lets the reader switch: the branch, the changed files, the sync state and the
+workspace row all follow that choice. Changes and Review already carry their
+own repository selection. Terminal and the file tree stay rooted at the
+session's own repository, which is where the agent actually runs.
+
 ## Files and uploads
 
 Work uploads land under the session workspace so agent filesystem tools can use

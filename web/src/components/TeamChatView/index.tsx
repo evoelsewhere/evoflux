@@ -454,6 +454,16 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // Single source of truth for "what is this coding session about" wherever
   // the UI needs a short identity label (tray, mobile header, action sheet,
   // composer placeholder) — project name when project-scoped, else the repo.
+  // Every repository the Overview panel may describe. Empty outside a
+  // project: a standalone repository has nothing to switch between.
+  const overviewRepositories = useMemo(
+    () =>
+      (activeProject?.workspaces ?? []).map((item) => ({
+        path: item.path,
+        label: item.display_name || item.name || workspaceLabel(item.path),
+      })),
+    [activeProject?.workspaces],
+  )
   const codingIdentityLabel =
     mode === 'coding' && workspace
       ? projectIdState
@@ -1692,6 +1702,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                   sessionId={sessionIdState}
                   open={active}
                   isWorking={isTeamWorking}
+                  repositories={overviewRepositories}
                   onOpenFile={(path) => {
                     setCodingFileViewer({
                       path,
