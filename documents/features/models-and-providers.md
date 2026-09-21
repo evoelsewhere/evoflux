@@ -11,7 +11,7 @@ each:
 
 | Tier | Count | What it is |
 |---|---|---|
-| **Curated** | ~37 | A hand-written integration: OAuth or cloud credential flows, a wire dialect, attribution headers, a deliberate endpoint, a dedicated adapter class. Declared in `app/agent/providers/registry.py`. |
+| **Curated** | ~38 | A hand-written integration: OAuth or cloud credential flows, a wire dialect, attribution headers, a deliberate endpoint, a dedicated adapter class. Declared in `app/agent/providers/registry.py`. |
 | **Plugin** | any | Installed through the provider plugin registry. |
 | **Catalogue** | ~165 | Everything else models.dev lists that is reachable from a base URL and a bearer token. No code, no entry — the row, the credential form, the endpoint and model discovery are all derived. |
 
@@ -38,8 +38,8 @@ provider: Codex reads OpenAI's model rows through
 The long tail is not contacted when the settings page loads, and lists its
 models only when the user asks. Beyond saving 165 requests, several
 providers share one credential variable across regional and plan variants
-(`XIAOMI_API_KEY`, `MINIMAX_API_KEY`, `ZHIPU_API_KEY`), and a key must not
-be sent to a variant nobody selected.
+(`XIAOMI_API_KEY`, `STEPFUN_API_KEY`, `MINIMAX_API_KEY`, `ZHIPU_API_KEY`),
+and a key must not be sent to a variant nobody selected.
 
 ### Suggestion order
 
@@ -72,6 +72,16 @@ model but not its limits.
 Sibling metadata fills **gaps only**. A model the provider's own row
 describes always wins, because that row matches the endpoint EvoFlux
 resolves by default.
+
+That default is also what a turn is priced from, and on a plan endpoint the
+two disagree. Xiaomi's and StepFun's plan rows publish no per-token rates —
+a plan bills a subscription, not a token — while the pay-as-you-go rows they
+borrow their identity from do. A user pointing `STEPFUN_BASE_URL` at
+`/step_plan` therefore sees turns costed at open-platform rates: tokens that
+came out of a subscription, reported as money. Pricing reads the agent's
+configured `provider:model`, so no provider-side override can correct it;
+separating the plan into its own curated row, the way Kimi Code is separate
+from the Moonshot platform, is what would.
 
 ### Provider logos
 
@@ -234,6 +244,19 @@ EvoFlux owns only what no catalogue publishes:
   real.
 - **Adapter constraints** — controls a model documents that EvoFlux's own
   transport cannot express.
+- **Response-field spellings the endpoint lets the client pick.** The
+  catalogue records which field a reasoning trace arrives in, not that a
+  request can choose it. StepFun documents the trace as `reasoning`, with
+  `reasoning_format: "deepseek-style"` returning it as `reasoning_content`
+  instead — the field EvoFlux reads, since the response schemas ignore
+  unknown ones. Every StepFun request sends that format: the Step Plan
+  endpoint currently returns both spellings regardless, and pinning the
+  documented switch is what keeps that from being a dependency on one host's
+  behaviour. The same handler withholds an enum StepFun never published:
+  it documents `low`/`medium`/`high` and no off switch, so an explicit "do
+  not reason" sends no `reasoning_effort` rather than the `none` an
+  OpenAI-shaped endpoint would take. StepFun answers `none` with a 200 and
+  reasons anyway, so thinking cannot actually be switched off there.
 
 Provider envelopes and per-model metadata are both bundled
 (`provider_catalog.json` at ~42 KB, `model_registry.json` at ~4.4 MB) so a
@@ -361,6 +384,15 @@ Provider cache behavior remains adapter-specific:
   one trailing cache checkpoint. Other Bedrock families are left unchanged.
 - DeepSeek, Gemini/Vertex, QwenCloud, Z.AI and Xiaomi retain their provider-side
   implicit cache behavior and normalize their reported cache-hit tokens.
+- StepFun caches prefixes automatically and reports the hit in OpenAI's own
+  `prompt_tokens_details.cached_tokens` (and again at the top level), with
+  `prompt_tokens` counting the cached share — so it is read, and priced at
+  the catalogue's `cache_read` rate, with no adapter code. Verified live: a
+  4,431-token prompt replayed as 4,224 cached. The effort level is part of
+  what is cached, so switching a session between `low` and `high` starts a
+  new prefix. StepFun reports `reasoning_tokens: 0` even when it reasons;
+  the reasoning is inside `completion_tokens`, so the total is billed
+  correctly and only the separate thoughts line is missing.
 - Session-backed team runs persist a profile-scoped, ordered system/tool prefix
   snapshot and reuse it across turns; snapshots rotate only when the model
   profile or tool contract changes. Dynamic memory recall is persisted as
