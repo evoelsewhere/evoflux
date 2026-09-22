@@ -18,6 +18,30 @@ import { createStreamScheduler } from '@/api/stream-scheduler'
 import type { AgentStream, PendingMessage, TeamStore, TeamStoreState } from './types'
 import type { ContentBlock, MessageResponse, PermissionMode, TeamHistoryResponse } from '@/api/types'
 
+// The stream can die without either side knowing: a dropped fetch() fires
+// `onError`/`onDone` on the client while the backend keeps running the turn
+// unaware no one is attached (see memory_stream_store — attach state is
+// decoupled from the turn itself). Left alone, the UI sits on a stale
+// `isConnected: false` (or a stuck `isTeamWorking: true`) until the user
+// blurs and refocuses the tab, which is what actually reconnects today via
+// `useTeamSse`'s pageshow/visibilitychange listener. `_scheduleStreamReconnect`
+// gives that same recovery (reconcile truth via `loadSession`, then
+// `connectStream`) a chance to run on its own after an unexpected drop.
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let reconnectAttempt = 0
+const MAX_RECONNECT_ATTEMPTS = 6
+
+function clearScheduledStreamReconnect() {
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+}
+
+function reconnectDelayMs(attempt: number): number {
+  return Math.min(1000 * 2 ** attempt, 15_000)
+}
+
 function resetTurnUsage(stream: AgentStream) {
   stream.usage.turnPromptTokens = 0
   stream.usage.turnCompletionTokens = 0
@@ -1184,6 +1208,7 @@ export const useTeamStore = create<TeamStore>()(
       if (!sessionId) return new AbortController()
       const generation = get()._sessionGeneration
 
+      clearScheduledStreamReconnect()
       get()._abortController?.abort()
       const abort = new AbortController()
       // Clear gate UI before attach. Reconnect replay restores only still-
@@ -1214,6 +1239,10 @@ export const useTeamStore = create<TeamStore>()(
               if (type === 'desktop_notification') current._handleSSEEvent(type, data)
               return
             }
+            // Proof of life: data is actually flowing, so a prior drop is
+            // behind us — the next unexpected drop gets a full fresh backoff
+            // budget rather than picking up where an unrelated one left off.
+            reconnectAttempt = 0
             streamScheduler.push(type, data)
           },
           onParseError: (err) => {
@@ -1226,6 +1255,12 @@ export const useTeamStore = create<TeamStore>()(
             streamScheduler.flush()
             if (isTransientNetworkError(err) || !current.isTeamWorking) {
               set((draft) => { draft.isConnected = false })
+              // The fetch died (network blip, sleep/wake, proxy reset) —
+              // the backend turn keeps running regardless (its state isn't
+              // tied to whether anyone is attached), so without this the UI
+              // is stuck showing disconnected until the tab is blurred and
+              // refocused. Recover the same way that resume path does.
+              current._scheduleStreamReconnect(sessionId, generation)
               return
             }
             set((draft) => { draft.error = err.message; draft.isConnected = false })
@@ -1246,11 +1281,35 @@ export const useTeamStore = create<TeamStore>()(
                 draft.planApproval = null
               }
             })
+            // The response body ended without ever flipping `isTeamWorking`
+            // false, i.e. no `done`/`error` event was actually received —
+            // the connection was cut mid-turn rather than the turn ending.
+            // Reconcile with the backend instead of trusting a closed turn
+            // is a finished one.
+            if (current.isTeamWorking) current._scheduleStreamReconnect(sessionId, generation)
           },
         },
         abort.signal,
       )
       return abort
+    },
+
+    _scheduleStreamReconnect: (sessionId, generation) => {
+      clearScheduledStreamReconnect()
+      if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) return
+      const attempt = reconnectAttempt++
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        const current = get()
+        if (current.sessionId !== sessionId || current._sessionGeneration !== generation) return
+        if (current._unloading || current.isConnected) return
+        void current.loadSession(sessionId, current._workspace).then(() => {
+          const now = get()
+          if (now.sessionId !== sessionId || now._sessionGeneration !== generation) return
+          if (now._unloading || now.isConnected) return
+          now.connectStream()
+        })
+      }, reconnectDelayMs(attempt))
     },
 
     loadTeamStatus: async (
