@@ -171,6 +171,12 @@ export interface TeamStoreActions {
   sendGoalCommand: (command: string, objective?: string, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean }) => Promise<void>
   stopTeam: () => Promise<void>
   connectStream: () => AbortController
+  /**
+   * Recovers a stream that ended without a real terminal event (dropped
+   * fetch, not a finished turn): reconciles truth via ``loadSession`` then
+   * reopens with ``connectStream``, backing off on repeated failures.
+   */
+  _scheduleStreamReconnect: (sessionId: string, generation: number) => void
   loadTeamStatus: (
     workspace?: string | null,
     mode?: 'coding' | null,
