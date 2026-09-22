@@ -204,7 +204,6 @@ def _read_lead_provider(agents_dir: Path) -> str | None:
 
     # YAML frontmatter is delimited by ``---`` on its own line. Bail if
     # we don't see one within the first few lines — the file isn't shaped
-    # like an agent spec.
     lines = text.splitlines()
     if not lines or lines[0].strip() != "---":
         return None

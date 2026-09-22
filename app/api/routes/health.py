@@ -417,40 +417,6 @@ async def health_diagnostics(session: AsyncSession = Depends(get_session)) -> di
             _check("disk", "Disk Space", "warn", f"Could not read disk usage: {exc}")
         )
 
-    # ── 6. Code context ──────────────────────────────────────────────────────
-    try:
-        cache_root = Path(settings.EVOFLUX_CACHE_DIR) / "code-index"
-        has_index = any(cache_root.glob("*/code-context.sqlite3"))
-        if has_index:
-            checks.append(
-                _check(
-                    "code_context",
-                    "Code Context",
-                    "ok",
-                    "At least one repository index is cached",
-                )
-            )
-        else:
-            checks.append(
-                _check(
-                    "code_context",
-                    "Code Context",
-                    "warn",
-                    "No repositories indexed yet",
-                    hint="Run a code-context query from a coding workspace.",
-                )
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("diagnostics_code_context_failed error={}", exc)
-        checks.append(
-            _check(
-                "code_context",
-                "Code Context",
-                "warn",
-                f"Could not inspect the code-context cache: {exc}",
-            )
-        )
-
     # ── Summary ───────────────────────────────────────────────────────────────
     statuses_list = [c["status"] for c in checks]
     if "fail" in statuses_list:

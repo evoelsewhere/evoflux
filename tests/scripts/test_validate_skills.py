@@ -131,8 +131,7 @@ def test_validator_accepts_behavioral_trajectory_fields(tmp_path) -> None:
     )
     (skill_dir / "evals" / "trigger-cases.json").write_text(
         '[{"query":"Who calls parse?","should_trigger":true,'
-        '"expected_operation":"callers",'
-        '"expected_trajectory":["code_context"],'
+        '"expected_trajectory":["grep"],'
         '"forbidden_behaviors":["broad_grep"]},'
         '{"query":"Write docs","should_trigger":false}]'
     )
@@ -157,7 +156,6 @@ def test_validator_rejects_invalid_behavioral_trajectory_fields(tmp_path) -> Non
     )
     (skill_dir / "evals" / "trigger-cases.json").write_text(
         '[{"query":"Who calls parse?","should_trigger":true,'
-        '"expected_operation":"search",'
         '"expected_trajectory":[]},'
         '{"query":"Write docs","should_trigger":false}]'
     )
@@ -165,4 +163,4 @@ def test_validator_rejects_invalid_behavioral_trajectory_fields(tmp_path) -> Non
     result = validator.validate_skill(skill_dir, require_evals=True)
 
     assert result.valid is False
-    assert sum(item.code == "invalid-trigger-case" for item in result.findings) == 2
+    assert sum(item.code == "invalid-trigger-case" for item in result.findings) == 1

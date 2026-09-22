@@ -9,7 +9,7 @@ desktop/      Tauri/Rust shell, native capabilities and packaging
 seed/         First-install agent/config templates
 scripts/      Build, release, validation and smoke-test utilities
 tests/        Python backend, service, CLI and packaging tests
-documents/      Project documentation plus the repository-owned ASDD spec catalogue
+documents/      Project documentation and repository-owned records
 test-artifacts/  Checked-in visual evidence used by selected tests/reviews
 ```
 
@@ -26,11 +26,9 @@ test-artifacts/  Checked-in visual evidence used by selected tests/reviews
 | `app/agent/providers/` | Twenty provider adapters and model metadata |
 | `app/agent/tools/` | Built-in and multimodal tool registry |
 | `app/agent/skills/` | Skill discovery, catalog, resolution and activation |
-| `app/asdd_skills/` | Packaged ASDD phase Skills, core rules, catalogue skeleton and artifact templates installed only by setup |
 | `app/agent/mcp/` | User-global MCP configuration and runtime |
 | `app/plugin_platform/` | Portable Agent Plugin lifecycle and isolated MCP |
 | `app/services/` | Business logic shared by API, CLI and agents |
-| `app/services/code_index/` | Repository-local parsing, indexing and graph queries |
 | `app/workflow/` | Workflow schema, graph, runner and node handlers |
 | `app/scheduler/` | At/every/cron scheduling and team dispatch |
 | `app/conductor/` | Optional managed-resource control plane client |

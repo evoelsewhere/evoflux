@@ -25,7 +25,7 @@ vi.mock('@/queries', () => ({
         path: '/builtin/coding-investigation/SKILL.md',
         content: '---\nname: coding-investigation\ndescription: Investigate code.\n---\n',
         description: 'Navigate code.',
-        display_name: 'Navigate Code Graph',
+        display_name: 'Investigate Code',
         short_description: 'Trace exact symbols',
         default_prompt: 'Use $coding-investigation.',
         allow_implicit_invocation: true,

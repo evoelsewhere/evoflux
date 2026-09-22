@@ -7,7 +7,6 @@
 
 export * from './_shared'
 export * from './team'
-export * from './codeGraph'
 export * from './observability'
 export * from './misc'
 export * from './wiki'
@@ -27,5 +26,4 @@ export * from './gitAi'
 export * from './searchEverywhere'
 export * from './appSearch'
 export * from './languageServers'
-export * from './asdd'
 export * from './suggestedTasks'

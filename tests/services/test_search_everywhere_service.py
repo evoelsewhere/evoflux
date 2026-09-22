@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -9,7 +8,6 @@ import pytest
 from app.services.problems_service import ProblemInput, clear_problems, publish_problems
 from app.services.search_everywhere_service import (
     SearchEverywhereItem,
-    _code_items,
     search_everywhere,
 )
 
@@ -34,7 +32,6 @@ async def test_search_aggregates_repository_paths_and_problems(tmp_path: Path):
     )
     empty_async = AsyncMock(return_value=[])
     with (
-        patch("app.services.search_everywhere_service._code_items", empty_async),
         patch("app.services.search_everywhere_service._git_items", empty_async),
         patch("app.services.search_everywhere_service._skill_items", return_value=[]),
         patch(
@@ -61,35 +58,6 @@ async def test_search_aggregates_repository_paths_and_problems(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_natural_language_caller_query_uses_graph_action(tmp_path: Path):
-    symbol = SimpleNamespace(
-        id="symbol-1",
-        qualified_name="send_message",
-        name="send_message",
-        signature="send_message(value)",
-        kind="function",
-        file_path="app/messages.py",
-        line_start=10,
-        language="python",
-    )
-    result = SimpleNamespace(
-        matches=[symbol],
-        suggestions=[],
-        hits=[],
-        relations=[],
-        strategy="graph",
-    )
-    query = AsyncMock(return_value=result)
-    with patch("app.services.code_index.service.query_code_context", query):
-        rows = await _code_items(tmp_path, "tìm callers của send_message", 10)
-
-    assert rows[0].kind == "symbol"
-    assert rows[0].path == "app/messages.py"
-    assert query.await_args.kwargs["action"] == "callers"
-    assert query.await_args.kwargs["query"] == "send_message"
-
-
-@pytest.mark.asyncio
 async def test_search_deduplicates_and_respects_global_limit(tmp_path: Path):
     duplicate = SearchEverywhereItem(
         id="file:app.py",
@@ -100,7 +68,6 @@ async def test_search_deduplicates_and_respects_global_limit(tmp_path: Path):
     )
     async_rows = AsyncMock(return_value=[duplicate, duplicate])
     with (
-        patch("app.services.search_everywhere_service._code_items", async_rows),
         patch("app.services.search_everywhere_service._git_items", async_rows),
         patch(
             "app.services.search_everywhere_service._path_items",

@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ActivityTimeline } from '@/components/ActivityTimeline'
 import { AssistantTurnContent } from '@/components/AssistantTurnContent'
 import { segmentAssistantTurn } from '@/utils/activity-timeline'
-import { useUIStore } from '@/stores/useUIStore'
 import type { ContentBlock } from '@/api/types'
 
 function block(id: string, type: ContentBlock['type'], content = ''): ContentBlock {
@@ -25,7 +24,6 @@ beforeEach(() => {
       removeEventListener: vi.fn(),
     }),
   })
-  useUIStore.setState({ asddChangeOpenRequest: null, asddSelectedChangeId: null })
 })
 
 afterEach(() => {

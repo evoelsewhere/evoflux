@@ -26,8 +26,6 @@
 - **Bring your own model** through hosted, cloud, routed, or local providers.
 - **Repository-aware Coding** with code search, symbol relationships, LSP
   feedback, git workflows, and reviewable diffs.
-- **Spec-first delivery** through Agent Spec-Driven (ASDD), with user-approved
-  specifications, verification, and evidence-based convergence.
 - **Local control** with inspectable history, permissions, sandboxing, and
   outbound data protection.
 - **Memory, plugins, MCP, scheduling, and browser tooling** are available as
@@ -93,8 +91,6 @@ The README stays intentionally high-level. Detailed contracts and guides live
 under [`documents/`](documents/):
 
 - [Documentation index](documents/README.md)
-- [ASDD methodology](documents/reference/asdd-methodology.md)
-- [Evo Agent Specs guide](documents/guides/agent-specification-driven-development.md)
 - [Agent Plugins guide](documents/guides/agent-plugins.md)
 - [Coding architecture](documents/architecture/)
 - [Development guide](documents/development/README.md)
@@ -116,7 +112,7 @@ permissions, memory, and verification.
 ## Project layout
 
 ```text
-app/        FastAPI sidecar, agents, code context, memory, scheduler, MCP
+app/        FastAPI sidecar, agents, coding tools, memory, scheduler, MCP
 web/        React interface
 desktop/    Tauri shell and Python sidecar packaging
 seed/       Work and Coding blueprints, skills, and config

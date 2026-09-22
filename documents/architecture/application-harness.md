@@ -7,7 +7,7 @@ EvoFlux has one agent harness and exactly two application modes:
 | Mode | Workspace | Default outcome |
 |---|---|---|
 | Work | Session workspace/sandbox | Research, artifacts, browser and general execution |
-| Coding | Persisted repository or project | Source changes, verification, code-context and git workflows |
+| Coding | Persisted repository or project | Source changes, verification, LSP and git workflows |
 
 `AppMode` is the canonical runtime type. A new request selects a mode; after a
 session exists, its persisted mode and workspace are authoritative. A resume
@@ -40,7 +40,7 @@ validation, and GET routes are pure.
 
 Bundled skills are a curated, code-scoped catalog. Safe specialists participate
 directly in implicit resolution; there is no router skill or circular
-"skill-to-select-a-skill" bootstrap layer. Native `code_context` guidance is
+"skill-to-select-a-skill" bootstrap layer. Native file-search guidance is
 embedded in the Coding workflows that use it; there is no separate navigation
 skill competing with debugging, investigation, review, or delivery.
 
@@ -129,7 +129,7 @@ Request prose may rank eligible Tier-1 skill metadata with deterministic
 lexical/reciprocal-rank retrieval so relevant routing cards survive a tight
 catalog budget. Ranking never filters the eligible catalog, loads a skill, or
 leaves the skill-discovery boundary. In particular, request prose is never
-forwarded to repository search or structural navigation. The native `code_context` tool
+forwarded to repository search or structural navigation. Native file and LSP tools
 accepts a known exact symbol and one structural operation; schema and service
 boundaries enforce that contract independently. Coding skill bodies carry the
 operation-selection, ambiguity, cross-repository, and fallback discipline only

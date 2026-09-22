@@ -81,7 +81,6 @@ import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBr
 import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
-import type { AsddChatRequest } from '@/components/AgentSpecsPanel'
 import { useSideChat } from '../SideChatPanel/useSideChat'
 import type {
   AgentCapabilities as AgentCapabilitiesType,
@@ -182,11 +181,6 @@ const PluginCenterPanel = lazy(() =>
 const ProblemsPanel = lazy(() =>
   import('@/components/ProblemsPanel').then((module) => ({
     default: module.ProblemsPanel,
-  })),
-)
-const AgentSpecsPanel = lazy(() =>
-  import('@/components/AgentSpecsPanel').then((module) => ({
-    default: module.AgentSpecsPanel,
   })),
 )
 const loadSplitWorkbench = () =>
@@ -549,14 +543,12 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   useEffect(() => {
     if (!sessionIdState && mode !== 'coding') closeWorkbenchTool('files')
     if (mode !== 'coding') {
-      closeWorkbenchTool('graph')
       closeWorkbenchTool('source-control')
       closeWorkbenchTool('pull-requests')
       closeWorkbenchTool('problems')
     }
     if (mode === 'coding' && !workspace) {
       closeWorkbenchTool('files')
-      closeWorkbenchTool('graph')
       closeWorkbenchTool('source-control')
       closeWorkbenchTool('problems')
     }
@@ -1529,19 +1521,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       )
     : null
 
-  // An ASDD change belongs to the repository, not to a chat, so a phase always
-  // runs in the chat the user is looking at. There is nothing to navigate to
-  // and no session to reconcile — the prompt just lands in this input.
-  const handleAsddRunInChat = useCallback((request: AsddChatRequest) => {
-    inputRef.current?.setValue(request.prompt)
-    inputRef.current?.focus()
-    pushToast({
-      tone: 'info',
-      title: `${request.skill} prompt ready`,
-      description: `Review the kickoff prompt for ${request.changeId}, then send when ready.`,
-    })
-  }, [pushToast])
-
   // A page an agent opened has no tab in the workbench when the preview is
   // what the user asked for, so it hangs here instead — over the
   // conversation, as a card of its own.
@@ -1721,7 +1700,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               <CodingWorkspacePanel
                 workspace={workspace}
                 open
-                view="files"
                 embedded
                 selectedFilePath={codingFileViewer?.path ?? null}
                 selectedFile={codingFileViewer}
@@ -1732,28 +1710,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 onClose={() => closeWorkbenchTool('files')}
                 projectId={projectIdState}
               />
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="graph">
-              <CodingWorkspacePanel
-                workspace={workspace}
-                open
-                view="graph"
-                embedded
-                selectedFilePath={codingFileViewer?.path ?? null}
-                onFileSelect={handleCodingFileSelect}
-                onClose={() => closeWorkbenchTool('graph')}
-                projectId={projectIdState}
-              />
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="asdd">
-              {(_tab, active) => (
-                <AgentSpecsPanel
-                  workspace={workspace}
-                  projectId={projectIdState}
-                  active={active}
-                  onRunInChat={handleAsddRunInChat}
-                />
-              )}
             </WorkbenchSurface>
           </>
         )}

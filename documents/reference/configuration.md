@@ -45,10 +45,6 @@ Derived values:
 | `<data>/agent-plugins/` | Plugin Center | installed package registry and private data |
 | `<workspace>/.evoflux/workflows/*.yaml` | repository | project-local Coding Workflows |
 | `<workspace>/.evoflux/launch.json` | repository | preview/process launch definitions |
-| `<workspace>/.evoflux/asdd/config.json` | repository/ASDD setup | the catalogue path, the skills directory and the six installed Skill names |
-| `<workspace>/<data_directory>/` | repository | the ASDD catalogue: `project.md`, `specs/<capability>/spec.md` and `changes/` (default `documents/asdd`) |
-| `<source-workspace>/.evoflux/asdd/locks/` | machine-local | the per-repository catalogue write lock; linked Git worktrees resolve to this canonical source owner |
-| `<workspace>/.evoflux/skills/asdd-*/` | repository | Coding-only portable ASDD phase Skills installed by ASDD setup |
 
 Project `.env` is loaded first and `~/.config/evoflux/.env` overrides it.
 Process environment values follow Pydantic settings precedence. Keep secrets out
@@ -83,7 +79,6 @@ before atomic save. Models use `provider:model`.
 | `CORS_ORIGINS` | allowed development/external API origins |
 | `EVOFLUX_MODEL_REGISTRY_REFRESH` | allow refreshed `models.dev` metadata |
 | `EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS` | background `models.dev` re-fetch interval (24, minimum 1) |
-| `EVOFLUX_CODE_INDEX_EXECUTION` | `process` (production) or test/embedder `thread` |
 | `EVOFLUX_DESKTOP_TOKEN` | random desktop-shell bearer token |
 | `EVOFLUX_ACCESS_KEY` | external/LAN bearer fallback |
 | `EVOFLUX_BASH` | explicit Bash executable on Windows when auto-detection fails |

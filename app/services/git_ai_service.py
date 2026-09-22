@@ -46,7 +46,7 @@ _MAX_UNTRACKED_FILE_BYTES = 32_000
 _MAX_UNTRACKED_TOTAL_BYTES = 96_000
 _SYSTEM_PROMPT = """You are EvoFlux's explicit Git review engine. Return one
 JSON object and no Markdown fence. Ground every finding in the supplied diff,
-diagnostics, project rules, test evidence, or code-impact evidence. Do not
+diagnostics, project rules, or test evidence. Do not
 invent tests or claim verification passed. Conflict resolutions must return
 complete UTF-8 file contents and preserve both intended behaviors.
 PR drafts must describe only the committed source-to-target branch range in
@@ -55,7 +55,7 @@ the supplied evidence, including validation status without inventing results.
 Schema:
 {
   "kind": "review" | "text" | "pr" | "changes",
-  "summary": "short result",
+    "summary": "short result",
   "message": "commit message or explanation",
   "title": "PR title",
   "body": "PR description",
@@ -237,7 +237,6 @@ async def _evidence(
     )
     status = await run_git(str(workspace), "status", "--short", timeout=5)
     diagnostics = _diagnostic_evidence(workspace)
-    changed_paths = _status_paths(status.stdout)
     if action == "generate_commit_message":
         return {
             "status": status.stdout,
@@ -257,7 +256,6 @@ async def _evidence(
         "test_evidence": [
             item for item in diagnostics if item["source"] in {"test", "build"}
         ],
-        "code_impact": await _code_impact(workspace, changed_paths),
         "guidelines": _guidelines(workspace),
         "remote_context": _bounded_json(remote_context or {}),
     }
@@ -334,7 +332,6 @@ async def _pr_evidence(
         )
 
     diagnostics = _diagnostic_evidence(workspace)
-    changed_paths = [row for row in changed.stdout.splitlines() if row.strip()]
     return {
         "source_branch": source_branch,
         "source_sha": source_sha,
@@ -346,7 +343,6 @@ async def _pr_evidence(
         "test_evidence": [
             item for item in diagnostics if item["source"] in {"test", "build"}
         ],
-        "code_impact": await _code_impact(workspace, changed_paths),
         "guidelines": _guidelines(workspace),
     }
 
@@ -570,51 +566,6 @@ def _guarded_conflict_inputs(
     return inputs
 
 
-async def _code_impact(workspace: Path, paths: list[str]) -> list[dict[str, Any]]:
-    from app.services.code_index.models import RepositoryScope
-    from app.services.code_index.service import query_code_context
-
-    results: list[dict[str, Any]] = []
-    scope = (RepositoryScope(root=workspace, label=workspace.name),)
-    for path in paths[:8]:
-        try:
-            search = await query_code_context(
-                scopes=scope,
-                action="search",
-                query=Path(path).stem,
-                paths=[path],
-                limit=3,
-                refresh=True,
-            )
-        except (OSError, RuntimeError, ValueError):
-            continue
-        symbols = [hit.symbol for hit in search.hits if hit.symbol]
-        for symbol in symbols[:2]:
-            try:
-                impact = await query_code_context(
-                    scopes=scope,
-                    action="impact",
-                    query=symbol,
-                    depth=1,
-                    limit=8,
-                    refresh=False,
-                )
-            except (OSError, RuntimeError, ValueError):
-                continue
-            results.extend(
-                {
-                    "symbol": symbol,
-                    "kind": relation.kind,
-                    "source": relation.source.qualified_name,
-                    "target": relation.target.qualified_name,
-                    "path": relation.callsite_file,
-                    "line": relation.callsite_line,
-                }
-                for relation in impact.relations
-            )
-    return results[:40]
-
-
 def _guidelines(workspace: Path) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for relative in ("AGENTS.md", ".evoflux/review-guidelines.md", "SECURITY.md"):
@@ -630,17 +581,6 @@ def _guidelines(workspace: Path) -> list[dict[str, str]]:
             except (OSError, UnicodeDecodeError):
                 pass
     return rows
-
-
-def _status_paths(raw: str) -> list[str]:
-    paths: list[str] = []
-    for row in raw.splitlines():
-        value = row[3:].strip() if len(row) > 3 else ""
-        if " -> " in value:
-            value = value.split(" -> ", 1)[1]
-        if value:
-            paths.append(value)
-    return paths
 
 
 def _bounded_json(value: dict[str, Any]) -> dict[str, Any]:

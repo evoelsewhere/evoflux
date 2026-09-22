@@ -359,7 +359,6 @@ def _default_tool_registry() -> dict[str, Tool]:
     from app.agent.tools.builtin.load_tool import load_tool
     from app.agent.tools.builtin.memory_search import memory_search
     from app.agent.tools.builtin.note import note_tool
-    from app.agent.tools.builtin.code_context import code_context
     from app.agent.tools.builtin.plan import enter_plan_mode, exit_plan_mode
     from app.agent.tools.builtin.ask_user import ask_user
     from app.agent.tools.builtin.process import process_tool
@@ -403,7 +402,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "todo_manage": todo_manage,
         "memory_search": memory_search,
         "note": note_tool,
-        "code_context": code_context,
         "enter_plan_mode": enter_plan_mode,
         "exit_plan_mode": exit_plan_mode,
         "ask_user": ask_user,

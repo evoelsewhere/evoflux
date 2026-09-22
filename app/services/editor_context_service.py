@@ -6,7 +6,7 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from app.agent.tools.builtin.filesystem._ignore import is_gitignored
 from app.services.git_ops import run_git
@@ -44,9 +44,6 @@ class EditorContextEnvelope:
     cursor_symbol: str | None
     diagnostics: list[dict[str, Any]]
     git_hunks: str
-    related_symbols: list[dict[str, Any]]
-    callers: list[dict[str, Any]]
-    callees: list[dict[str, Any]]
     recent_agent_changes: dict[str, Any] | None
     relevant_terminal_failure: str | None
     project_instructions: list[dict[str, str]]
@@ -121,12 +118,6 @@ async def build_editor_context(
 
     attachments = _read_mentions(root, mention_paths or [], aiignore, provenance)
     instructions = _read_instruction_chain(root, path, provenance)
-    graph = await _graph_context(root, cursor_symbol)
-    if graph[0] or graph[1] or graph[2]:
-        provenance.append(
-            ContextProvenance(kind="related_symbols", source="code-context-index")
-        )
-
     recent_changes = None
     if session_id:
         from app.services.turn_changes import get_latest
@@ -162,77 +153,12 @@ async def build_editor_context(
         cursor_symbol=cursor_symbol,
         diagnostics=diagnostics[:200],
         git_hunks=git_hunks,
-        related_symbols=graph[0],
-        callers=graph[1],
-        callees=graph[2],
         recent_agent_changes=recent_changes,
         relevant_terminal_failure=terminal,
         project_instructions=instructions,
         attachments=attachments,
         provenance=provenance,
     )
-
-
-async def _graph_context(
-    workspace: Path, symbol: str | None
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    if not symbol or any(char.isspace() for char in symbol.strip()):
-        return [], [], []
-    from app.services.code_index.models import RepositoryScope
-    from app.services.code_index.service import query_code_context
-
-    scope = (RepositoryScope(root=workspace, label=workspace.name),)
-
-    async def query(action: Literal["neighborhood", "callers", "callees"]):
-        try:
-            return await query_code_context(
-                scopes=scope,
-                action=action,
-                query=symbol.strip(),
-                depth=1,
-                limit=8,
-                refresh=True,
-            )
-        except (OSError, RuntimeError, ValueError):
-            return None
-
-    neighborhood = await query("neighborhood")
-    callers = await query("callers")
-    callees = await query("callees")
-    return (
-        _serialize_graph(neighborhood),
-        _serialize_graph(callers),
-        _serialize_graph(callees),
-    )
-
-
-def _serialize_graph(result) -> list[dict[str, Any]]:
-    if result is None:
-        return []
-    rows: list[dict[str, Any]] = []
-    for symbol in [*result.matches, *result.suggestions]:
-        rows.append(
-            {
-                "kind": "symbol",
-                "name": symbol.name,
-                "qualified_name": symbol.qualified_name,
-                "path": symbol.file_path,
-                "line_start": symbol.line_start,
-                "line_end": symbol.line_end,
-                "signature": symbol.signature,
-            }
-        )
-    for relation in result.relations:
-        rows.append(
-            {
-                "kind": relation.kind,
-                "source": relation.source.qualified_name,
-                "target": relation.target.qualified_name,
-                "path": relation.callsite_file,
-                "line": relation.callsite_line,
-            }
-        )
-    return rows[:24]
 
 
 async def _git_hunks(workspace: Path, relative_path: str) -> str:

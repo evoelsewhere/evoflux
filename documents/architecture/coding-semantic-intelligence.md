@@ -3,8 +3,7 @@
 ## Scope
 
 Semantic intelligence is repository-local. A language-server process owns one
-repository root and rejects documents outside it. Cross-repository discovery
-remains the responsibility of `code_context`; semantic rename, code actions,
+repository root and rejects documents outside it. Semantic rename, code actions,
 formatting, diagnostics, and AI ChangeSets never silently expand their write
 scope to a sibling repository.
 
@@ -132,7 +131,6 @@ Guarded ChangeSet.
 
 - active file, document version, selection, and cursor symbol;
 - current diagnostics and Git hunks;
-- related symbols, callers, and callees from repository code context;
 - recent agent changes and selected terminal failure;
 - applicable `AGENTS.md` files;
 - explicitly mentioned files and bounded folder listings;
@@ -141,8 +139,8 @@ Guarded ChangeSet.
 `.aiignore` is enforced before content enters the envelope. Provider-bound
 messages pass through the existing outbound secret/PII policy. Source payloads
 are not written to application logs. The preview returns a digest of the exact
-envelope; execution is rejected if Git hunks, attachments, instructions, graph
-evidence, or other context changed before the user starts the action.
+envelope; execution is rejected if Git hunks, attachments, instructions, or
+other context changed before the user starts the action.
 
 ## Git AI
 
@@ -164,7 +162,7 @@ abort signal.
 `POST /api/team/workspace/search-everywhere` covers the authorized workspace:
 files, folders, symbols, text/code, Git branches and commits, Problems, skills,
 workflows, and recent files. Caller-shaped natural language queries are routed
-to code graph traversal; known navigation phrases can route directly to the
+to repository search; known navigation phrases can route directly to the
 corresponding action.
 
 `POST /api/team/search-app` covers what the application itself owns and needs

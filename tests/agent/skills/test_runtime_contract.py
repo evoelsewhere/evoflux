@@ -23,7 +23,7 @@ def _call(call_id: str, name: str, arguments: str = "{}") -> ToolCall:
     )
 
 
-def _record(tmp_path: Path, *, dependency: str = "code_context") -> SkillRecord:
+def _record(tmp_path: Path, *, dependency: str = "grep") -> SkillRecord:
     skill_dir = tmp_path / "investigate"
     skill_dir.mkdir(exist_ok=True)
     skill_file = skill_dir / "SKILL.md"
@@ -45,19 +45,19 @@ def _record(tmp_path: Path, *, dependency: str = "code_context") -> SkillRecord:
 @pytest.mark.asyncio
 async def test_activation_atomically_enables_declared_deferred_tools(tmp_path):
     record = _record(tmp_path)
-    state = AgentState(messages=[], tool_names=["skill", "code_context"])
+    state = AgentState(messages=[], tool_names=["skill", "grep"])
     state.metadata["deferred_tool_catalog"] = {
-        "code_context": DeferredToolEntry(summary="Navigate exact symbols.")
+        "grep": DeferredToolEntry(summary="Navigate exact symbols.")
     }
     state.metadata["activated_deferred_tools"] = set()
 
     content = await activate_skill_with_runtime(state, record)
 
     assert "Trace exact evidence" in content
-    assert state.metadata["activated_deferred_tools"] == {"code_context"}
+    assert state.metadata["activated_deferred_tools"] == {"grep"}
     assert state.metadata["skill_runtime_contracts"]["investigate"] == {
-        "required_tools": ("code_context",),
-        "activated_tools": ("code_context",),
+        "required_tools": ("grep",),
+        "activated_tools": ("grep",),
         "plugin_tools": (),
     }
 
@@ -113,7 +113,7 @@ async def test_runtime_hook_rehydrates_contract_from_durable_activation(
     record = _record(tmp_path)
     state = AgentState(
         messages=[AssistantMessage(content="seed")],
-        tool_names=["skill", "code_context"],
+        tool_names=["skill", "grep"],
     )
     content = await activate_skill_with_runtime(state, record)
     state.metadata.clear()
@@ -125,7 +125,7 @@ async def test_runtime_hook_rehydrates_contract_from_durable_activation(
     )
     state.metadata.clear()
     state.metadata["deferred_tool_catalog"] = {
-        "code_context": DeferredToolEntry(summary="Navigate exact symbols.")
+        "grep": DeferredToolEntry(summary="Navigate exact symbols.")
     }
     state.metadata["activated_deferred_tools"] = set()
     monkeypatch.setattr(
@@ -138,7 +138,7 @@ async def test_runtime_hook_rehydrates_contract_from_durable_activation(
         state,
     )
 
-    assert state.metadata["activated_deferred_tools"] == {"code_context"}
+    assert state.metadata["activated_deferred_tools"] == {"grep"}
     assert state.metadata["loaded_skills"][record.name] == content
 
 
@@ -157,7 +157,7 @@ async def test_runtime_contract_does_not_restrict_tool_calls_or_completion() -> 
         result = await hook.wrap_tool_call(
             ctx,
             state,
-            _call(str(index), "code_context", '{"symbol":"Service"}'),
+            _call(str(index), "grep", '{"symbol":"Service"}'),
             handler,
         )
         assert result == "executed"
@@ -169,5 +169,5 @@ async def test_runtime_contract_does_not_restrict_tool_calls_or_completion() -> 
     )
 
     assert edit_result == "executed"
-    assert executions == ["code_context"] * 12 + ["edit"]
+    assert executions == ["grep"] * 12 + ["edit"]
     assert feedback is None

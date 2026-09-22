@@ -30,7 +30,7 @@ Coding requires an authorized filesystem repository or a Coding project.
   scheduled tasks cannot silently retarget another repository.
 
 The default team favors coding, exploration, architecture and debate. Coding
-adds repository tree/editor, Git, code context, language-server, Problems,
+adds repository tree/editor, Git, language-server, Problems,
 ChangeSet and code-review surfaces.
 
 Workspace authorization rejects missing/non-directory paths, traversal and

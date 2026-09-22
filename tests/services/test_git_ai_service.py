@@ -77,17 +77,12 @@ async def test_self_review_publishes_ai_and_security_findings(repository: Path):
             )
         ),
     )
-    with patch(
-        "app.services.git_ai_service._code_impact",
-        new_callable=AsyncMock,
-        return_value=[{"symbol": "value"}],
-    ):
-        result = await run_git_ai_action(
-            workspace=repository,
-            provider=provider,
-            action="self_review",
-            session_id="session-1",
-        )
+    result = await run_git_ai_action(
+        workspace=repository,
+        provider=provider,
+        action="self_review",
+        session_id="session-1",
+    )
 
     assert len(result["findings"]) == 2
     assert {problem.source for problem in list_problems(repository)} == {
@@ -96,7 +91,6 @@ async def test_self_review_publishes_ai_and_security_findings(repository: Path):
     }
     prompt = provider.chat.await_args.args[0][1].content
     assert "value = 2" in prompt
-    assert "code_impact" in prompt
 
 
 @pytest.mark.asyncio
@@ -104,12 +98,7 @@ async def test_self_review_includes_untracked_text_content(repository: Path):
     marker = "UNTRACKED_REVIEW_MARKER = True\n"
     (repository / "new_module.py").write_text(marker, encoding="utf-8")
 
-    with patch(
-        "app.services.git_ai_service._code_impact",
-        new_callable=AsyncMock,
-        return_value=[],
-    ):
-        evidence = await _evidence(repository, "self_review", None, None)
+    evidence = await _evidence(repository, "self_review", None, None)
 
     assert evidence["status"].strip().endswith("new_module.py")
     assert evidence["untracked_files"] == [
@@ -145,20 +134,15 @@ async def test_pr_description_uses_committed_source_to_target_range(
         check=True,
     )
 
-    with patch(
-        "app.services.git_ai_service._code_impact",
-        new_callable=AsyncMock,
-        return_value=[],
-    ):
-        evidence = await _evidence(
-            repository,
-            "generate_pr_description",
-            None,
-            {
-                "source_branch": "feature/review-draft",
-                "target_branch": target_branch,
-            },
-        )
+    evidence = await _evidence(
+        repository,
+        "generate_pr_description",
+        None,
+        {
+            "source_branch": "feature/review-draft",
+            "target_branch": target_branch,
+        },
+    )
 
     assert evidence["source_branch"] == "feature/review-draft"
     assert evidence["target_branch"] == target_branch
@@ -207,17 +191,12 @@ async def test_generate_commit_message_returns_structured_text(repository: Path)
             )
         ),
     )
-    with patch(
-        "app.services.git_ai_service._code_impact",
-        new_callable=AsyncMock,
-        return_value=[],
-    ):
-        result = await run_git_ai_action(
-            workspace=repository,
-            provider=provider,
-            action="generate_commit_message",
-            session_id="session-1",
-        )
+    result = await run_git_ai_action(
+        workspace=repository,
+        provider=provider,
+        action="generate_commit_message",
+        session_id="session-1",
+    )
 
     assert result["message"] == "fix: update application value"
     prompt = provider.chat.await_args.args[0][1].content
@@ -297,18 +276,13 @@ async def test_non_conflict_action_cannot_return_file_changes(repository: Path):
             )
         ),
     )
-    with patch(
-        "app.services.git_ai_service._code_impact",
-        new_callable=AsyncMock,
-        return_value=[],
-    ):
-        with pytest.raises(ValueError, match="unexpected kind"):
-            await run_git_ai_action(
-                workspace=repository,
-                provider=provider,
-                action="self_review",
-                session_id="session-1",
-            )
+    with pytest.raises(ValueError, match="unexpected kind"):
+        await run_git_ai_action(
+            workspace=repository,
+            provider=provider,
+            action="self_review",
+            session_id="session-1",
+        )
 
 
 @pytest.mark.asyncio

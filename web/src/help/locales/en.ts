@@ -39,7 +39,7 @@ export const HELP_CATEGORIES_EN: HelpCategory[] = [
   {
     id: 'coding',
     label: 'Coding',
-    description: 'Repos, projects, git, graph, and PRs',
+    description: 'Repos, projects, git, source search, and PRs',
   },
   {
     id: 'memory',
@@ -155,7 +155,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'When to stay in Work vs jump modes: use Work for browser tasks, docs, and folder-organized research with no git lifecycle. Switch to Coding as soon as you need Changes, Graph, Review, worktrees, or AGENTS.md.',
+        text: 'When to stay in Work vs jump modes: use Work for browser tasks, docs, and folder-organized research with no git lifecycle. Switch to Coding as soon as you need Changes, Files, Review, worktrees, or AGENTS.md.',
       },
       {
         type: 'tips',
@@ -206,7 +206,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Collapsed sidebar disappears completely; use Ctrl+B or the floating sidebar button to restore it.',
       'Settings hides the mode switcher while you configure the app; leave Settings to switch modes again.',
       'Work is best for research, docs, browser tasks, and throwaway scripts; Coding for persistent repos.',
-      'Permission modes, slash commands, and most workbench tools work across modes; Overview / Graph / Changes / Review are Coding-scoped.',
+      'Permission modes, slash commands, and most workbench tools work across modes; Overview / Files / Changes / Review are Coding-scoped.',
       'Do not open a git monorepo in Work expecting Changes/Review — switch to Coding so source-control tools attach.',
       'Use Work folders + share_context for parallel research threads; use Coding projects when repos must stay linked.',
       'Mode memory is per mode, not per window — if you expected a blank Coding home, check whether an old workspace route was restored.'
@@ -222,13 +222,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Work sessions use a private session folder or another local folder you select; no persistent multi-repo project is required. Coding opens a git repo or multi-repo project; agents edit real trees with graph, git, worktrees, and PR review.',
+        text: 'Work sessions use a private session folder or another local folder you select; no persistent multi-repo project is required. Coding opens a git repo or multi-repo project; agents edit real trees with source search, git, worktrees, and PR review.',
       },
       {
         type: 'tips',
         items: [
           'Work — research, documents, browser tasks, quick scripts, folder-organized chats.',
-          'Coding — single repos, multi-repo projects, worktrees, graph, Changes, Review.',
+          'Coding — single repos, multi-repo projects, worktrees, source search, Changes, Review.',
           'Mode memory — last route per mode is restored when you switch back.',
           'Settings — mode switcher hidden until you leave the settings routes.'
 ],
@@ -655,7 +655,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Use attachments when the bytes matter: screenshots, PDFs, CSVs, small logs, design exports. Use quotes when the text already lives in the transcript or plan and you want surgical follow-up. Avoid attaching entire repositories — use @ mentions, Files, or Coding graph tools instead.',
+        text: 'Use attachments when the bytes matter: screenshots, PDFs, CSVs, small logs, design exports. Use quotes when the text already lives in the transcript or plan and you want surgical follow-up. Avoid attaching entire repositories — use @ mentions, Files, or Coding source search tools instead.',
       },
       {
         type: 'p',
@@ -685,7 +685,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'When not to attach — huge build artifacts, node_modules zips, full database dumps.',
-          'When to quote — disagreeing with one paragraph, revising one plan bullet, asking “explain this”.',
+          'When to quote — disagreeing with one parasource search, revising one plan bullet, asking “explain this”.',
           'Cross-feature: after /undo, review restored attachments before re-send.',
           'Cross-feature: WorkFolderSelector does not attach a folder; it retargets the session root.'
 ],
@@ -1009,7 +1009,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench tools',
     summary:
-      'Open Terminal, Browser, Files, Graph, Side chat, Memory, Scheduler, Changes, and Review beside chat — with platform-native shortcuts: Command on macOS, Ctrl on Windows/Linux.',
+      'Open Terminal, Browser, Files, Files, Side chat, Memory, Scheduler, Changes, and Review beside chat — with platform-native shortcuts: Command on macOS, Ctrl on Windows/Linux.',
     keywords: [
       'workbench',
       'panel',
@@ -1017,7 +1017,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'files',
       'dock',
       'overview',
-      'graph',
+      'source search',
       'Changes',
       'Review',
       'Ctrl+F',
@@ -1030,22 +1030,22 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'パネル'
 ],
     setup:
-      'Open a session first. Coding Overview, Graph, Changes, and Review need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
+      'Open a session first. Coding Overview, Files, Changes, and Review need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
     tricks: [
       'Open tools from the workbench bar, dock, or keyboard shortcuts listed below.',
       'Coding Overview appears only when a workspace is selected.',
       'Runtime shortcuts and labels adapt to the OS: Command on macOS, Ctrl on Windows/Linux.',
       'Live mappings: Files = Ctrl+F (label may show ⌘P); Side chat = Ctrl+; (label may show ⌥⌘S).',
-      'Graph and Review have no dedicated global shortcuts — use the workbench bar or command palette.',
+      'Files and Review have no dedicated global shortcuts — use the workbench bar or command palette.',
       'Terminal and Browser support multiple tab instances; other tools are single-instance toggles.',
-      'Changes (Ctrl+G) and Review are Coding-only; Graph needs a Coding workspace.',
+      'Changes (Ctrl+G) and Review are Coding-only; Files needs a Coding workspace.',
       'Toggle the same tool again to close it — the workbench is not a pile of permanent cards.',
       'When opening the workbench with a Coding workspace and no tool selected, Overview opens by default.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Overview, Terminal, Browser, Files, Graph, Side chat, Memory (wiki), Scheduler, Changes (source control), and Review (pull/merge requests). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
+        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Overview, Terminal, Browser, Files, Files, Side chat, Memory (wiki), Scheduler, Changes (source control), and Review (pull/merge requests). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
       },
       {
         type: 'p',
@@ -1071,7 +1071,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Terminal — run commands in the active workspace.',
           'Browser — in-app browser (enable in Settings → Browser).',
           'Files — workspace files and generated artifacts.',
-          'Graph — structural code graph (Coding).',
+          'Files — structural source search (Coding).',
           'Side chat — /btw parallel questions.',
           'Memory — wiki + pending notes.',
           'Scheduler — cron / one-shot tasks (panel only; /scheduler redirects home).',
@@ -1085,7 +1085,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: hunting Review in Work mode; expecting Graph without a focused Coding workspace; bookmarking `/scheduler`; trusting a ⌘P label for Files; opening ten Terminal tabs for one-liners better sent with ! in the composer.',
+        text: 'Common mistakes: hunting Review in Work mode; expecting Files without a focused Coding workspace; bookmarking `/scheduler`; trusting a ⌘P label for Files; opening ten Terminal tabs for one-liners better sent with ! in the composer.',
       },
       {
         type: 'tips',
@@ -1164,7 +1164,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step during a long Coding run: (1) select the confusing assistant paragraph, (2) Send to side chat, (3) ask “is this claiming X or Y?”, (4) if Y was wrong, return to the main composer with a corrective instruction or plan revise, (5) close Side chat.',
+        text: 'Step-by-step during a long Coding run: (1) select the confusing assistant parasource search, (2) Send to side chat, (3) ask “is this claiming X or Y?”, (4) if Y was wrong, return to the main composer with a corrective instruction or plan revise, (5) close Side chat.',
       },
       {
         type: 'p',
@@ -1220,7 +1220,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Switch to Coding (`/coding`) and add a repository or create a project. Configure worktree location under Settings → Sandbox (repository vs user_data). Run /init in a session once conventions should live in AGENTS.md.',
     tricks: [
       'Clicking a repo focuses it — it does not start a chat. Use + on Repos (or New chat) to create a session.',
-      'Projects span multiple repositories under one project_id; graph tools resolve cross-repo links automatically.',
+      'Projects span multiple repositories under one project_id; source search tools resolve cross-repo links automatically.',
       'Worktree location is controlled in Settings → Sandbox (repository vs user_data).',
       'Uncommitted source changes are not copied into new worktrees.',
       'Managed worktrees nest under the source repo in the sidebar tree.',
@@ -1233,7 +1233,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding mode manages git repositories, optional multi-repo projects, and managed worktrees. Agents edit real trees with Files, Graph, Terminal, Changes, and Review tools available beside chat. This is the mode for persistent engineering work.',
+        text: 'Coding mode manages git repositories, optional multi-repo projects, and managed worktrees. Agents edit real trees with Files, Files, Terminal, Changes, and Review tools available beside chat. This is the mode for persistent engineering work.',
       },
       {
         type: 'p',
@@ -1241,7 +1241,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Add a repo from the Coding sidebar. Click to focus; press + / New chat for a session. Create a Project to bind multiple repos. Spawn a worktree from the repo menu; choose repository-local vs user_data location in Settings → Sandbox. Use /init to scaffold or refresh AGENTS.md. Graph and Overview enable once a workspace is active.',
+        text: 'Add a repo from the Coding sidebar. Click to focus; press + / New chat for a session. Create a Project to bind multiple repos. Spawn a worktree from the repo menu; choose repository-local vs user_data location in Settings → Sandbox. Use /init to scaffold or refresh AGENTS.md. Files and Overview enable once a workspace is active.',
       },
       {
         type: 'tips',
@@ -1271,15 +1271,14 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'When to project — cross-repo types, shared contracts, multi-service changes.',
           'When not to project — one app repo with vendored code you rarely touch.',
-          'Cross-feature: graph cross-repo resolution needs a project_id.',
+          'Cross-feature: source search cross-repo resolution needs a project_id.',
           'Cross-feature: Review/Changes attach to the focused workspace.'
 ],
       }
 ],
     related: [
       'coding-git',
-      'coding-graph',
-      'slash-commands',
+            'slash-commands',
       'sandbox-settings',
       'modes-overview'
 ],
@@ -1381,157 +1380,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'plan-review'
 ],
     openAction: { type: 'workbench', tool: 'source-control' },
-  },
-  {
-    id: 'coding-graph',
-    category: 'coding',
-    title: 'Repository code context',
-    summary:
-      'Repository-local indexes combine source search, structural patterns, and exact symbol navigation. Use one code_context tool across every authorized repository.',
-    keywords: [
-      'code graph',
-      'symbols',
-      'cross-repo',
-      'index',
-      'code_context',
-      'tree-sitter',
-      'đồ thị mã',
-      'biểu tượng',
-      'コードグラフ',
-      'シンボル'
-],
-    setup:
-      'Coding workspace or project — the first query refreshes changed source components. Open Graph to inspect the current dynamic repository snapshot.',
-    tricks: [
-      'Coding skills progressively disclose one code_context workflow.',
-      'Use code_context search for discovery, grep for code shapes, and graph actions for one known exact symbol.',
-      'Open the Graph workbench tool to explore visually and reindex when needed.',
-      'Cross-repo relationships resolve dynamically from imports, module paths, and unique definitions; no resolver job or persisted guessed edge exists.',
-      'code_context graph actions cover definition, callers, callees, references, impact, and neighborhood.',
-      'Use refresh=true after edits and refresh=false only for immediate same-version follow-ups.',
-      'Ask structural questions (“who calls X?”) instead of “read the whole package.”',
-      'Multi-repo projects get cross-repo edges; standalone repos still benefit inside one tree.',
-      'The skill body is never injected by Coding mode, and raw request prose is never keyword-routed into a graph query.'
-],
-    blocks: [
-      {
-        type: 'p',
-        text: 'Each repository owns a local managed index of AST-aware chunks, symbols, relations, and FTS source. The native code_context tool queries those targets, and Graph renders a dynamic snapshot.',
-      },
-      {
-        type: 'p',
-        text: 'Whole-file dumps burn context. Graph-first navigation is token-efficient for “who calls X?” and cross-repo questions inside a project, while still allowing grep/LSP/tests when static resolution is insufficient. Treat the graph as a map, not as ground truth that replaces reading hot paths.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'code_context search — identifiers, literals, comments, and concepts',
-          'code_context grep — by-example structural matching',
-          'code_context definition/callers/callees — exact symbol navigation',
-          'code_context references/impact/neighborhood — bounded relationship traversal'
-],
-      },
-      {
-        type: 'p',
-        text: 'Open a Coding workspace and query code_context. The first query reconciles additions, updates, and deletions into repository-local targets. Multi-repo edges resolve over the current authorized target set when queried or visualized.',
-      },
-      {
-        type: 'p',
-        text: 'Step-by-step investigation: (1) discover an identifier with search or a code shape with grep, (2) call an exact-symbol action, (3) disambiguate duplicates by path or repository, (4) inspect limitations, and (5) verify dynamic behavior with tests, logs, or runtime evidence.',
-      },
-      {
-        type: 'p',
-        text: 'When to use graph vs grep: graph for typed symbols, call edges, and cross-file architecture; grep for error strings, comments, feature flags, YAML keys, and generated code the parser may skip. When not to trust graph alone: macros, heavy reflection, and templates that erase symbols at compile time.',
-      },
-      {
-        type: 'p',
-        text: 'Common mistakes: passing prose to an exact-symbol action, dumping directories into chat, querying unauthorized siblings, skipping refresh after external edits, or treating suggestions as resolved roots.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Cross-feature: pair graph hits with Changes to see if your edit set matches the call neighborhood.',
-          'Cross-feature: AGENTS.md can tell agents to prefer graph-first navigation.',
-          'Cross-feature: specialists inherit tools per Settings → Agents — ensure workers can search code.'
-],
-      }
-],
-    related: ['coding-workspaces', 'agents-settings', 'composer-power', 'coding-git'],
-    openAction: { type: 'workbench', tool: 'graph' },
-  },
-  {
-    id: 'agent-specs',
-    category: 'coding',
-    title: 'Agent Specification-Driven Development (ASDD)',
-    summary:
-      'Use Agent Spec-Driven to turn intent into a reviewable specification in your repository, approve each artifact before agents act on it, and archive a change into the capability catalogue when its evidence holds.',
-    keywords: [
-      'ASDD',
-      'Agent Spec-Driven',
-      'specification',
-      'SDD',
-      'ADD',
-      'OpenSpec',
-      'capability',
-      'requirement',
-      'scenario',
-      'evidence',
-      'archive',
-    ],
-    setup:
-      'Open a Coding workspace and install ASDD for every repository. Setup writes a catalogue, the core rules and six Coding-only Skills — all tracked, so anyone who clones the repository gets the method. Fill in project.md, then create a change and run the phases from the rail.',
-    tricks: [
-      'A change is a folder of Markdown in the repository. Its phase is the `status` field in `proposal.md`, its contract is the delta under `specs/<capability>/spec.md`, and its identity is the folder name.',
-      'Nothing binds a change to a chat. Several chats can work on one change, one chat can move between changes, and closing a chat strands nothing.',
-      'No operation asks you to restate a hash. There is no `expected_hash` at approval and no spec hash in a delegation.',
-      'Editing `proposal.md` by hand is legitimate — the file is the source of truth. If the status you write disagrees with the folder, the rail says so and changes neither side.',
-      'Reuse an existing capability whenever the change alters behavior it already contracts. That produces another revision of one contract instead of two describing the same thing.',
-      'A delta says only what changes: `## ADDED`, `## MODIFIED` and `## REMOVED Requirements`. Restating unchanged requirements hides the change inside its own context.',
-      'Every requirement carries at least one `#### Scenario:` with a `- **WHEN**` and a `- **THEN**`. A requirement without one cannot be approved or verified.',
-      'A `MODIFIED` or `REMOVED` heading must match a requirement in the current spec character for character; an `ADDED` heading must match nothing there. Archive enforces both.',
-      'Risk tiers: trivial and standard skip design; cross_layer and critical require a design document and a recorded independent review. Do not raise the tier to signal effort.',
-      'Approving tasks is what authorizes product-file changes. Nothing before that phase may touch product files.',
-      'Verification is read-only. It reports what it found; it does not fix it, because a pass that repairs its own findings is not a review.',
-      'Machine evidence comes only from a runtime CompletionContract. A member’s own account of what it checked is recorded as review evidence and labelled as such.',
-      'Archive folds every delta into `specs/<capability>/spec.md` and retires the folder to `changes/archive/YYYY-MM-DD-<change-id>/`. It is undone only by another change.',
-      'Use Board for phase, Table for comparison, or List for compact navigation. The filter spans title, slug and capability.',
-      'Setup never moves or copies existing documentation into the catalogue. Adoption is an explicit approved change.',
-    ],
-    blocks: [
-      {
-        type: 'p',
-        text: 'ASDD means Agent Specification-Driven Development. SDD keeps an executable, version-controlled specification as the single source of truth; ADD runs agent work in phases with defined gates and an execution log. ASDD keeps the specification in your repository and runs the phases against it.',
-      },
-      {
-        type: 'p',
-        text: 'Installation adds `.evoflux/asdd/config.json`, `RULES.md`, six Coding-only Skills, and a catalogue under the repository data folder (default `documents/asdd`): `project.md`, `specs/` and `changes/`. Everything it writes is tracked.',
-      },
-      {
-        type: 'p',
-        text: 'The Skills guide Propose, Specify, Plan, Implement, Verify and Archive. They hold no authority: the user approves the proposal, the specs, the design where the risk tier requires one, and the tasks, and the user archives.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Change — a folder in `changes/`, named by its slug.',
-          'Capability — a durable slug naming one behavior the system guarantees.',
-          'Requirement — one SHALL statement, with at least one scenario.',
-          'Delta — what this change adds, modifies or removes.',
-          'Evidence — a page saying what was run and what it showed.',
-          'Archive — folding the deltas into the capability specs.',
-        ],
-      },
-      {
-        type: 'p',
-        text: 'There is no optimistic concurrency. Two agents writing one file overwrite each other; a per-repository lock serializes the product’s own writes, and `git diff` shows the result. That is the trade for a method with no hashes and no session locks.',
-      },
-      {
-        type: 'p',
-        text: 'Common mistakes: coining a new capability for behavior an existing spec already contracts, writing a requirement with no scenario, naming a `MODIFIED` requirement that does not exist, editing a capability spec by hand instead of archiving a change, and approving specs before reading the delta.',
-      },
-    ],
-    related: ['coding-workspaces', 'permissions-modes', 'plan-review', 'coding-git', 'coding-graph'],
-    openAction: { type: 'workbench', tool: 'asdd' },
   },
   {
     id: 'memory-dream',
@@ -2339,7 +2187,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Cross-feature: activated Coding skills teach the workflow; native code_context validates and executes every retrieval action.',
+          'Cross-feature: activated Coding skills teach the workflow; native source search validates and executes every retrieval action.',
           'Cross-feature: workflows and skills both need scope validity to show in /.',
           'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.'
 ],
@@ -2348,8 +2196,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     related: [
       'composer-power',
       'permissions-modes',
-      'coding-graph',
-      'slash-commands'
+            'slash-commands'
 ],
     openAction: { type: 'settings', path: 'agents' },
   },
@@ -2674,7 +2521,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Prefer the command palette (Ctrl+P) when you forget a binding — most actions are searchable by name, and the same box searches your sessions, past messages, Memory pages, projects, repositories, scheduled tasks, agents and skills (plus repository files and symbols once a Coding workspace is open). Guidelines (Help) stays separate: it is documentation, not your content. Graph and Review rely on the workbench bar or palette because they have no dedicated global shortcut.',
+        text: 'Prefer the command palette (Ctrl+P) when you forget a binding — most actions are searchable by name, and the same box searches your sessions, past messages, Memory pages, projects, repositories, scheduled tasks, agents and skills (plus repository files and symbols once a Coding workspace is open). Guidelines (Help) stays separate: it is documentation, not your content. Git relies on the workbench bar or palette because it has no dedicated global shortcut.',
       },
       {
         type: 'tips',
@@ -2689,7 +2536,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: pressing Cmd+P on macOS expecting the palette; using Ctrl+R thinking it reloads the whole app; fighting Ctrl+V in the composer during paste; assuming Graph has a hidden hotkey; opening Help when you meant the palette (or vice versa).',
+        text: 'Common mistakes: pressing Cmd+P on macOS expecting the palette; using Ctrl+R thinking it reloads the whole app; fighting Ctrl+V in the composer during paste; assuming Files has a hidden hotkey; opening Help when you meant the palette (or vice versa).',
       },
       {
         type: 'tips',
@@ -2769,12 +2616,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Empty telemetry → observability extras disabled (often non-blocking)',
           'Goal stuck → inspect blocker streak, budget pause, or /goal:stop',
           '/scheduler 404-feeling → use Ctrl+S panel; route redirects home',
-          'Stale graph → reindex from Graph tool after huge external edits'
+          'Stale source search → reindex from Files tool after huge external edits'
 ],
       },
       {
         type: 'p',
-        text: 'Ordered checklist: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) mode-specific tools (Changes/Graph/Review only in Coding). Stop at the first failing layer.',
+        text: 'Ordered checklist: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) mode-specific tools (Changes/Files/Review only in Coding). Stop at the first failing layer.',
       },
       {
         type: 'p',

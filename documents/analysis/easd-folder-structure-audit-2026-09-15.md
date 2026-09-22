@@ -40,7 +40,6 @@ app/easd_skills/
 │   └── *.md    (feature, architecture, decision, reference, record)
 └── easd-{specify,plan,implement,review,verify}/
     ├── SKILL.md
-    └── references/code-context-contract.md
 
 # L2 — hợp đồng cài đặt
 .evoflux/

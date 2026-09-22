@@ -74,7 +74,6 @@ async def create_tasks(
     spec: dict,
     dependencies: list[str],
     deadline_at: datetime | None,
-    asdd_change_id: str | None = None,
 ) -> list[DelegationTask]:
     """Create one independently trackable task per recipient."""
     await _validate_path_claims(
@@ -127,7 +126,6 @@ async def create_tasks(
     for recipient in recipients:
         task = DelegationTask(
             lead_session_id=lead_session_id,
-            asdd_change_id=asdd_change_id,
             delegator=delegator,
             recipient=recipient,
             status="blocked" if blocked else "pending",

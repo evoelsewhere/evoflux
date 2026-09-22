@@ -10,10 +10,6 @@ from __future__ import annotations
 from app.core.skill_scope import ALL_SKILL_MODES, SkillMode
 
 BUNDLED_SKILL_MODES: dict[str, tuple[SkillMode, ...]] = {
-    "coding-change": ("coding",),
-    "coding-investigate": ("coding",),
-    "coding-operate": ("coding",),
-    "coding-verify": ("coding",),
     "data-analytics": ("work",),
     "design-blueprint": ALL_SKILL_MODES,
     "docx-official": ALL_SKILL_MODES,
@@ -25,7 +21,6 @@ BUNDLED_SKILL_MODES: dict[str, tuple[SkillMode, ...]] = {
     "plugin-development": ALL_SKILL_MODES,
     "plugin-installer": ALL_SKILL_MODES,
     "pptx-official": ALL_SKILL_MODES,
-    "review-pull-requests": ("coding",),
     "self-healing": ALL_SKILL_MODES,
     "skill-creator": ALL_SKILL_MODES,
     "skill-installer": ALL_SKILL_MODES,

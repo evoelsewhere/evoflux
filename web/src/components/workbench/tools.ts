@@ -7,12 +7,10 @@ import {
   Globe2,
   LayoutDashboard,
   MessageCirclePlus,
-  Network,
   ListTree,
   Blocks,
   CircleAlert,
   Terminal,
-  ListChecks,
   type LucideIcon,
 } from 'lucide-react'
 import type { WorkbenchTool } from '@/stores/useUIStore'
@@ -56,11 +54,6 @@ export const WORKBENCH_TOOLS: Record<
     icon: Files,
     shortcut: '^F',
   },
-  graph: {
-    label: 'Graph',
-    description: 'Explore code and cross-repository relationships',
-    icon: Network,
-  },
   'side-chat': {
     label: 'Side chat',
     description: 'Ask a focused question without interrupting the run',
@@ -101,11 +94,6 @@ export const WORKBENCH_TOOLS: Record<
     description: 'Review LSP, build, test, AI, security, and plugin findings',
     icon: CircleAlert,
   },
-  asdd: {
-    label: 'Agent Spec-Driven',
-    description: 'Propose, specify, build and archive changes against the repository spec catalogue (ASDD)',
-    icon: ListChecks,
-  },
 }
 
 export const WORKBENCH_TOOL_ORDER = Object.keys(WORKBENCH_TOOLS) as WorkbenchTool[]
@@ -120,13 +108,9 @@ export function isWorkbenchToolEnabled(
   if (tool === 'problems') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }
-  if (tool === 'asdd') {
-    return context.mode === 'coding' && Boolean(context.workspace)
-  }
   if (tool === 'source-control' || tool === 'pull-requests') {
     return context.mode === 'coding'
   }
-  if (tool === 'graph') return context.mode === 'coding' && Boolean(context.workspace)
   if (tool === 'files') return Boolean(context.sessionId || context.workspace)
   if (tool === 'browser') {
     return Boolean(context.sessionId) && isBuiltInBrowserEnabled()

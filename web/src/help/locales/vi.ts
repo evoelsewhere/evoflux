@@ -39,7 +39,7 @@ export const HELP_CATEGORIES_VI: HelpCategory[] = [
   {
     id: 'coding',
     label: 'Coding',
-    description: 'Repo, project, git, Graph và PR',
+    description: 'Repo, project, git, Files và PR',
   },
   {
     id: 'memory',
@@ -151,7 +151,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Khi nào ở Work, khi nào nhảy mode: Work cho browser task, docs, research theo folder, không cần vòng đời git. Sang Coding ngay khi cần Changes, Graph, Review, worktree hoặc AGENTS.md.',
+        text: 'Khi nào ở Work, khi nào nhảy mode: Work cho browser task, docs, research theo folder, không cần vòng đời git. Sang Coding ngay khi cần Changes, Files, Review, worktree hoặc AGENTS.md.',
       },
       {
         type: 'tips',
@@ -199,7 +199,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Sidebar biến mất hoàn toàn khi thu gọn; dùng Ctrl+B hoặc nút sidebar nổi để mở lại.',
       'Khi đang ở Settings, mode switcher bị ẩn; thoát Settings rồi mới đổi mode lại.',
       'Work hợp research, docs, browser task, script tạm; Coding cho repo bền.',
-      'Permission mode, slash và hầu hết workbench tool chạy xuyên mode; Overview / Graph / Changes / Review chỉ trong Coding.',
+      'Permission mode, slash và hầu hết workbench tool chạy xuyên mode; Overview / Files / Changes / Review chỉ trong Coding.',
       'Đừng mở git monorepo trong Work rồi chờ Changes/Review — sang Coding để tool source-control gắn vào.',
       'Work: folder + share_context cho research song song; Coding: project khi các repo phải gắn với nhau.',
       'Mode memory theo mode, không theo window — nếu tưởng về Coding home trống, kiểm tra xem route workspace cũ có bị restore không.'
@@ -215,13 +215,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Work dùng private session folder hoặc folder local bạn chọn; không bắt buộc multi-repo project. Coding mở git repo hoặc multi-repo project; agent sửa cây thật với Graph, git, worktree và PR review. ',
+        text: 'Work dùng private session folder hoặc folder local bạn chọn; không bắt buộc multi-repo project. Coding mở git repo hoặc multi-repo project; agent sửa cây thật với Files, git, worktree và PR review. ',
       },
       {
         type: 'tips',
         items: [
           'Work — research, document, browser task, script nhanh, chat theo folder.',
-          'Coding — single repo, multi-repo project, worktree, Graph, Changes, Review.',
+          'Coding — single repo, multi-repo project, worktree, Files, Changes, Review.',
           'Mode memory — last route mỗi mode được restore khi quay lại.',
           'Settings — mode switcher ẩn cho đến khi bạn rời settings route.'
 ],
@@ -636,7 +636,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Dùng attachment khi byte quan trọng: screenshot, PDF, CSV, log nhỏ, design export. Dùng quote khi text đã nằm trong transcript hoặc plan và bạn muốn follow-up chính xác. Đừng attach cả repository — dùng @ mention, Files hoặc Coding graph tool.',
+        text: 'Dùng attachment khi byte quan trọng: screenshot, PDF, CSV, log nhỏ, design export. Dùng quote khi text đã nằm trong transcript hoặc plan và bạn muốn follow-up chính xác. Đừng attach cả repository — dùng @ mention, Files hoặc Coding source search tool.',
       },
       {
         type: 'p',
@@ -980,7 +980,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench tools',
     summary:
-      'Mở Terminal, Browser, Files, Graph, Side chat, Memory, Scheduler, Changes và Review bên cạnh chat — shortcut tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
+      'Mở Terminal, Browser, Files, Files, Side chat, Memory, Scheduler, Changes và Review bên cạnh chat — shortcut tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
     keywords: [
       'workbench',
       'panel',
@@ -988,7 +988,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'files',
       'dock',
       'overview',
-      'graph',
+      'source search',
       'Changes',
       'Review',
       'Ctrl+F',
@@ -999,22 +999,22 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'bảng công cụ'
 ],
     setup:
-      'Mở session trước. Coding Overview, Graph, Changes và Review cần Coding workspace. Built-in Browser phải bật trong Settings → Browser trước khi Ctrl+T hữu ích.',
+      'Mở session trước. Coding Overview, Files, Changes và Review cần Coding workspace. Built-in Browser phải bật trong Settings → Browser trước khi Ctrl+T hữu ích.',
     tricks: [
       'Mở tool từ workbench bar, dock, hoặc shortcut bên dưới.',
       'Coding Overview chỉ hiện khi đã chọn workspace.',
       'Shortcut runtime và label tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
       'Mapping sống: Files = Ctrl+F (label có thể hiện ⌘P); Side chat = Ctrl+; (label có thể hiện ⌥⌘S).',
-      'Graph và Review không có global shortcut riêng — dùng workbench bar hoặc command palette.',
+      'Files và Review không có global shortcut riêng — dùng workbench bar hoặc command palette.',
       'Terminal và Browser hỗ trợ nhiều tab; tool khác là toggle single-instance.',
-      'Changes (Ctrl+G) và Review chỉ Coding; Graph cần Coding workspace.',
+      'Changes (Ctrl+G) và Review chỉ Coding; Files cần Coding workspace.',
       'Toggle cùng tool lần nữa để đóng — workbench không phải đống card vĩnh viễn.',
       'Mở workbench với Coding workspace mà chưa chọn tool thì Overview mở mặc định.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Workbench là surface tool bên phải (hoặc dock) cạnh chat. Tool: Overview, Terminal, Browser, Files, Graph, Side chat, Memory (wiki), Scheduler, Changes (source control) và Review (pull/merge request). Chat vẫn là chính; tool là mặt kiểm tra và hành động cách một shortcut.',
+        text: 'Workbench là surface tool bên phải (hoặc dock) cạnh chat. Tool: Overview, Terminal, Browser, Files, Files, Side chat, Memory (wiki), Scheduler, Changes (source control) và Review (pull/merge request). Chat vẫn là chính; tool là mặt kiểm tra và hành động cách một shortcut.',
       },
       {
         type: 'p',
@@ -1040,7 +1040,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Terminal — chạy lệnh trong workspace đang active.',
           'Browser — browser trong app (bật trong Settings → Browser).',
           'Files — file workspace và artifact sinh ra.',
-          'Graph — code graph cấu trúc (Coding).',
+          'Files — source search cấu trúc (Coding).',
           'Side chat — câu hỏi song song /btw.',
           'Memory — wiki + note pending.',
           'Scheduler — cron / one-shot (chỉ panel; /scheduler redirect home).',
@@ -1054,7 +1054,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: lục Review ở Work; chờ Graph khi chưa focus Coding workspace; bookmark `/scheduler`; tin nhãn ⌘P cho Files; mở mười tab Terminal cho one-liner nên gửi bằng ! trên composer.',
+        text: 'Sai thường gặp: lục Review ở Work; chờ Files khi chưa focus Coding workspace; bookmark `/scheduler`; tin nhãn ⌘P cho Files; mở mười tab Terminal cho one-liner nên gửi bằng ! trên composer.',
       },
       {
         type: 'tips',
@@ -1184,7 +1184,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Sang Coding (`/coding`) và thêm repository hoặc tạo project. Cấu hình vị trí worktree trong Settings → Sandbox (repository vs user_data). Chạy /init trong session khi convention nên sống trong AGENTS.md.',
     tricks: [
       'Click repo chỉ focus — không mở chat. Dùng + trên Repos (hoặc New chat) để tạo session.',
-      'Project gom nhiều repository dưới một project_id; graph tool resolve link cross-repo tự động.',
+      'Project gom nhiều repository dưới một project_id; source search tool resolve link cross-repo tự động.',
       'Vị trí worktree điều khiển trong Settings → Sandbox (repository vs user_data).',
       'Thay đổi source chưa commit không được copy vào worktree mới.',
       'Managed worktree nest dưới source repo trên cây sidebar.',
@@ -1197,7 +1197,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding mode quản git repository, multi-repo project tùy chọn và managed worktree. Agent sửa cây thật với Files, Graph, Terminal, Changes và Review cạnh chat. Đây là mode cho việc engineering bền.',
+        text: 'Coding mode quản git repository, multi-repo project tùy chọn và managed worktree. Agent sửa cây thật với Files, Files, Terminal, Changes và Review cạnh chat. Đây là mode cho việc engineering bền.',
       },
       {
         type: 'p',
@@ -1205,7 +1205,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Thêm repo từ sidebar Coding. Click để focus; + / New chat cho session. Tạo Project để bind nhiều repo. Spawn worktree từ menu repo; chọn repository-local vs user_data trong Settings → Sandbox. Dùng /init để scaffold hoặc refresh AGENTS.md. Graph và Overview bật khi workspace active.',
+        text: 'Thêm repo từ sidebar Coding. Click để focus; + / New chat cho session. Tạo Project để bind nhiều repo. Spawn worktree từ menu repo; chọn repository-local vs user_data trong Settings → Sandbox. Dùng /init để scaffold hoặc refresh AGENTS.md. Files và Overview bật khi workspace active.',
       },
       {
         type: 'tips',
@@ -1235,15 +1235,14 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Nên project — type cross-repo, contract dùng chung, đổi multi-service.',
           'Không nên project — một app repo với vendored code ít đụng.',
-          'Graph cross-repo cần project_id.',
+          'Files cross-repo cần project_id.',
           'Review/Changes gắn workspace đang focus.'
 ],
       }
 ],
     related: [
       'coding-git',
-      'coding-graph',
-      'slash-commands',
+            'slash-commands',
       'sandbox-settings',
       'modes-overview'
 ],
@@ -1342,157 +1341,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'plan-review'
 ],
     openAction: { type: 'workbench', tool: 'source-control' },
-  },
-  {
-    id: 'coding-graph',
-    category: 'coding',
-    title: 'Repository code context',
-    summary:
-      'Index riêng từng repository kết hợp source search, structural pattern và điều hướng exact symbol. Một tool code_context hoạt động trên toàn bộ repository được cấp quyền.',
-    keywords: [
-      'code graph',
-      'symbols',
-      'cross-repo',
-      'index',
-      'code_context',
-      'tree-sitter',
-      'đồ thị mã',
-      'biểu tượng'
-],
-    setup:
-      'Coding workspace hoặc project — query đầu tiên refresh các source component đã đổi. Mở Graph để xem snapshot động hiện tại.',
-    tricks: [
-      'Các Coding skill load dần một workflow code_context thống nhất.',
-      'Dùng code_context search để khám phá, grep để tìm code shape, và graph action cho exact symbol đã biết.',
-      'Mở Graph workbench để khám trực quan và reindex khi cần.',
-      'Quan hệ cross-repo được resolve động từ import, module path và unique definition; không có resolver job hay guessed edge lưu lâu dài.',
-      'Graph action của code_context gồm definition, callers, callees, references, impact và neighborhood.',
-      'Dùng refresh=true sau edit; chỉ dùng refresh=false cho follow-up ngay trên cùng version.',
-      'Hỏi câu cấu trúc (“ai gọi X?”) thay vì “đọc cả package”.',
-      'Multi-repo project có edge cross-repo; repo standalone vẫn lợi trong một cây.',
-      'Skill body không bao giờ bị inject theo Coding mode, và prose thô của request không bao giờ bị route bằng keyword thành graph query.'
-],
-    blocks: [
-      {
-        type: 'p',
-        text: 'Mỗi repository có managed index local chứa AST-aware chunk, symbol, relation và FTS source. Native code_context query các target này; Graph render snapshot động.',
-      },
-      {
-        type: 'p',
-        text: 'Đổ cả file đốt context. Điều hướng graph-first tiết token cho “ai gọi X?” và câu cross-repo trong project, vẫn cho phép grep/LSP/test khi static resolution không đủ. Coi graph là bản đồ — không phải ground truth thay việc đọc hot path.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'code_context search — identifier, literal, comment và concept',
-          'code_context grep — structural matching bằng ví dụ',
-          'code_context definition/callers/callees — điều hướng exact symbol',
-          'code_context references/impact/neighborhood — traverse quan hệ có giới hạn'
-],
-      },
-      {
-        type: 'p',
-        text: 'Mở Coding workspace rồi query code_context. Query đầu tiên reconcile file thêm, sửa, xóa vào target riêng từng repository. Edge multi-repo được resolve trên tập target đang được cấp quyền khi query hoặc visualize.',
-      },
-      {
-        type: 'p',
-        text: 'Điều tra từng bước: (1) tìm identifier bằng search hoặc code shape bằng grep, (2) gọi exact-symbol action, (3) disambiguate definition trùng bằng path/repository, (4) kiểm limitation, (5) verify hành vi dynamic bằng test, log hoặc runtime evidence.',
-      },
-      {
-        type: 'p',
-        text: 'Graph vs grep: graph cho typed symbol, call edge và kiến trúc cross-file; grep cho error string, comment, feature flag, YAML key và generated code parser có thể bỏ. Không tin graph một mình: macro, reflection nặng và template xóa symbol lúc compile.',
-      },
-      {
-        type: 'p',
-        text: 'Sai thường gặp: truyền prose vào exact-symbol action; đổ cả thư mục vào chat; query sibling không được cấp quyền; bỏ refresh sau external edit; hoặc coi suggestion là graph root đã resolve.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Ghép hit graph với Changes xem edit set có khớp call neighborhood không.',
-          'AGENTS.md có thể bảo agent ưu tiên graph-first.',
-          'Specialist kế thừa tool theo Settings → Agents — đảm bảo worker search được code.'
-],
-      }
-],
-    related: ['coding-workspaces', 'agents-settings', 'composer-power', 'coding-git'],
-    openAction: { type: 'workbench', tool: 'graph' },
-  },
-  {
-    id: 'agent-specs',
-    category: 'coding',
-    title: 'Agent Specification-Driven Development (ASDD)',
-    summary:
-      'Dùng Agent Spec-Driven để biến ý định thành một specification đọc được ngay trong repository, duyệt từng artifact trước khi agent hành động, và archive change vào catalogue capability khi bằng chứng đã đủ.',
-    keywords: [
-      'ASDD',
-      'Agent Spec-Driven',
-      'specification',
-      'đặc tả',
-      'SDD',
-      'ADD',
-      'OpenSpec',
-      'capability',
-      'requirement',
-      'scenario',
-      'evidence',
-      'bằng chứng',
-      'archive',
-    ],
-    setup:
-      'Mở một workspace Coding và cài ASDD cho từng repository. Setup ghi catalogue, bộ rule chuẩn tắc và sáu Skill chỉ dùng trong Coding — tất cả đều được version-control, nên ai clone repository cũng có sẵn phương pháp. Điền project.md, rồi tạo change và chạy từng pha trên action rail.',
-    tricks: [
-      'Một change là một thư mục Markdown trong repository. Pha của nó là trường `status` trong `proposal.md`, hợp đồng của nó là delta ở `specs/<capability>/spec.md`, và danh tính của nó chính là tên thư mục.',
-      'Không gì ràng buộc một change vào một chat. Nhiều chat cùng làm một change được, một chat đổi change tuỳ ý, và đóng chat không bỏ rơi thứ gì.',
-      'Không thao tác nào bắt bạn nhắc lại hash. Không còn `expected_hash` khi duyệt, không còn spec hash khi delegate.',
-      'Sửa tay `proposal.md` là hợp lệ — file mới là nguồn sự thật. Nếu status bạn ghi mâu thuẫn với thư mục, rail sẽ báo và không tự sửa bên nào.',
-      'Hãy dùng lại capability đã có mỗi khi change thay đổi hành vi mà capability đó đã đặc tả. Như vậy bạn có thêm một revision của một hợp đồng, thay vì hai hợp đồng nói cùng một chuyện.',
-      'Delta chỉ nói cái gì thay đổi: `## ADDED`, `## MODIFIED` và `## REMOVED Requirements`. Chép lại những requirement không đổi sẽ chôn thay đổi vào chính bối cảnh của nó.',
-      'Mỗi requirement có ít nhất một `#### Scenario:` kèm `- **WHEN**` và `- **THEN**`. Requirement thiếu scenario thì không duyệt và không verify được.',
-      'Tiêu đề `MODIFIED` hoặc `REMOVED` phải trùng từng ký tự với một requirement trong spec hiện hành; tiêu đề `ADDED` thì không được trùng cái nào. Bước archive kiểm tra cả hai.',
-      'Mức rủi ro: trivial và standard bỏ qua design; cross_layer và critical bắt buộc có design và một review độc lập được ghi nhận. Đừng nâng mức rủi ro chỉ để thể hiện công sức.',
-      'Duyệt tasks chính là thứ cho phép sửa file sản phẩm. Mọi pha trước đó không được đụng vào file sản phẩm.',
-      'Verify là read-only. Nó báo cái nó thấy chứ không sửa, vì một lượt vừa tìm lỗi vừa tự vá thì không còn là review.',
-      'Machine evidence chỉ đến từ CompletionContract của runtime. Lời tự thuật của một member về việc nó đã kiểm tra được ghi là review evidence và gắn nhãn rõ ràng.',
-      'Archive gộp mọi delta vào `specs/<capability>/spec.md` và chuyển thư mục sang `changes/archive/YYYY-MM-DD-<change-id>/`. Chỉ một change khác mới hoàn tác được.',
-      'Dùng Board để nhìn theo pha, Table để so sánh, List để duyệt gọn. Bộ lọc quét tiêu đề, slug và capability.',
-      'Setup không bao giờ di chuyển hay sao chép tài liệu sẵn có vào catalogue. Việc nhận nuôi tài liệu là một change được duyệt tường minh.',
-    ],
-    blocks: [
-      {
-        type: 'p',
-        text: 'ASDD là Agent Specification-Driven Development. SDD giữ một specification chạy được, được version-control, làm nguồn sự thật duy nhất; ADD chạy công việc của agent theo từng pha có cổng rõ ràng và có nhật ký thi hành. ASDD đặt specification ngay trong repository của bạn và chạy các pha đối chiếu với nó.',
-      },
-      {
-        type: 'p',
-        text: 'Cài đặt thêm `.evoflux/asdd/config.json`, `RULES.md`, sáu Skill chỉ dùng trong Coding, và một catalogue dưới thư mục dữ liệu của repository (mặc định `documents/asdd`): `project.md`, `specs/` và `changes/`. Mọi thứ nó ghi đều được version-control.',
-      },
-      {
-        type: 'p',
-        text: 'Các Skill hướng dẫn Propose, Specify, Plan, Implement, Verify và Archive. Chúng không nắm quyền: người dùng duyệt proposal, duyệt specs, duyệt design khi mức rủi ro đòi hỏi, duyệt tasks, và người dùng archive.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Change — một thư mục trong `changes/`, đặt tên bằng slug của nó.',
-          'Capability — một slug bền vững gọi tên một hành vi hệ thống bảo đảm.',
-          'Requirement — một mệnh đề SHALL, kèm ít nhất một scenario.',
-          'Delta — những gì change này thêm, sửa hoặc bỏ.',
-          'Evidence — một trang nói đã chạy gì và thấy gì.',
-          'Archive — gộp delta vào spec của capability.',
-        ],
-      },
-      {
-        type: 'p',
-        text: 'Không có optimistic concurrency. Hai agent ghi cùng một file sẽ đè nhau; một khoá theo repository tuần tự hoá phần ghi của chính sản phẩm, và `git diff` cho thấy kết quả. Đó là cái giá đổi lấy một phương pháp không hash và không khoá theo session.',
-      },
-      {
-        type: 'p',
-        text: 'Lỗi thường gặp: đặt capability mới cho hành vi mà một spec đã đặc tả, viết requirement không có scenario, đặt tên `MODIFIED` cho requirement không tồn tại, sửa tay spec của capability thay vì archive một change, và duyệt specs trước khi đọc delta.',
-      },
-    ],
-    related: ['coding-workspaces', 'permissions-modes', 'plan-review', 'coding-git', 'coding-graph'],
-    openAction: { type: 'workbench', tool: 'asdd' },
   },
   {
     id: 'memory-dream',
@@ -2290,7 +2138,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Coding skill đã activate hướng dẫn workflow; code_context native validate và thực thi mọi retrieval action.',
+          'Coding skill đã activate hướng dẫn workflow; source search native validate và thực thi mọi retrieval action.',
           'Workflow và skill đều cần scope hợp lệ mới hiện trong /.',
           'Rule Always của permission áp cả MCP tool — ưu tiên Once trước.'
 ],
@@ -2299,8 +2147,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     related: [
       'composer-power',
       'permissions-modes',
-      'coding-graph',
-      'slash-commands'
+            'slash-commands'
 ],
     openAction: { type: 'settings', path: 'agents' },
   },
@@ -2617,7 +2464,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Quên binding thì ưu tiên command palette (Ctrl+P) — hầu hết action search theo tên, và cùng ô đó tìm luôn phiên chat, tin nhắn cũ, trang Memory, project, repository, nhiệm vụ theo lịch, agent và skill (thêm tập tin/symbol của repo khi đang mở workspace Coding). Guidelines (Help) tách riêng vì đó là tài liệu, không phải nội dung của bạn. Graph và Review dựa workbench bar hoặc palette vì không có global shortcut riêng.',
+        text: 'Quên binding thì ưu tiên command palette (Ctrl+P) — hầu hết action search theo tên, và cùng ô đó tìm luôn phiên chat, tin nhắn cũ, trang Memory, project, repository, nhiệm vụ theo lịch, agent và skill (thêm tập tin/symbol của repo khi đang mở workspace Coding). Guidelines (Help) tách riêng vì đó là tài liệu, không phải nội dung của bạn. Git dựa workbench bar hoặc palette vì không có global shortcut riêng.',
       },
       {
         type: 'tips',
@@ -2632,7 +2479,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: Cmd+P trên macOS chờ palette; Ctrl+R tưởng reload cả app; đánh Ctrl+V trên composer lúc paste; tưởng Graph có hotkey ẩn; mở Help khi ý là palette (hoặc ngược lại).',
+        text: 'Sai thường gặp: Cmd+P trên macOS chờ palette; Ctrl+R tưởng reload cả app; đánh Ctrl+V trên composer lúc paste; tưởng Files có hotkey ẩn; mở Help khi ý là palette (hoặc ngược lại).',
       },
       {
         type: 'tips',
@@ -2709,12 +2556,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Telemetry trống → extras observability tắt (thường không chặn)',
           'Goal kẹt → xem blocker streak, budget pause, hoặc /goal:stop',
           '/scheduler cảm giác 404 → panel Ctrl+S; route redirect home',
-          'Graph cũ → reindex từ Graph tool sau edit ngoài lớn'
+          'Files cũ → reindex từ Files tool sau edit ngoài lớn'
 ],
       },
       {
         type: 'p',
-        text: 'Checklist theo thứ tự: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) tool theo mode (Changes/Graph/Review chỉ Coding). Dừng ở lớp fail đầu tiên.',
+        text: 'Checklist theo thứ tự: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) tool theo mode (Changes/Files/Review chỉ Coding). Dừng ở lớp fail đầu tiên.',
       },
       {
         type: 'p',

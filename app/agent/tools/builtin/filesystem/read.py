@@ -36,7 +36,7 @@ def _number_lines(text: str, start: int = 1) -> str:
     """Prefix each line with an 'NNNNN| ' line number (display-only metadata).
 
     Line numbers let the model cite file:line and correlate reads with
-    grep/lsp_diagnostics/code_context output. The prefix must never be echoed
+    grep/lsp_diagnostics output. The prefix must never be echoed
     back into edit old_string or write content — tool descriptions say so.
     """
     if not text:
@@ -130,7 +130,7 @@ async def _read_file(
             description=(
                 "File path. Relative paths resolve against the primary workspace. "
                 "For a file in an authorized non-primary repository, use the "
-                "absolute path shown by the repository map or code-context result."
+                "absolute path shown by the repository map or a prior search result."
             )
         ),
     ],

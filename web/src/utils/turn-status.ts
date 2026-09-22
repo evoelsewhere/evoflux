@@ -54,7 +54,6 @@ const ACTIVE_VERBS: Record<string, string> = {
   glob: 'Listing',
   ls: 'Listing',
   grep: 'Searching',
-  code_context: 'Querying',
   web_search: 'Searching',
   web_fetch: 'Fetching',
   browser_use: 'Browsing',

@@ -20,28 +20,8 @@ documents/
 `features/`, `architecture/` and `reference/` describe what ships today. The
 dated directories are historical and never override them.
 
-## Owned by Agent Spec-Driven
-
-```text
-documents/asdd/
-├── project.md                   # this repository's context and rules for agents
-├── specs/
-│   └── <capability>/spec.md     # the behavior the system guarantees now
-└── changes/
-    ├── <change-id>/             # one proposed change, with its own folder
-    └── archive/YYYY-MM-DD-<change-id>/
-```
-
-This subtree is the ASDD catalogue. `specs/` is normative: when code and a
-capability spec disagree, the code is wrong until a change says otherwise.
-A spec changes only when a change is archived — never by hand.
-
-See [ASDD methodology](reference/asdd-methodology.md) for the lifecycle and
-[Agent Spec-Driven](features/agent-specs.md) for the product surface.
-
 ## What does not belong here
 
-ASDD setup never moves or copies existing documentation into `documents/asdd/`.
 Adoption is an explicit approved change.
 
 Do not store credentials, absolute machine paths or lock state anywhere under

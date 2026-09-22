@@ -1,6 +1,6 @@
 """A clarifying question must never offer the same answer twice.
 
-Observed in a real ASDD specify phase: three of four questions rendered
+Observed in a real specification workflow: three of four questions rendered
 `options[2]` identical to `options[0]`, and the two-way question "in-memory
 state only, or persistence?" offered "Yes, in-memory only" twice — leaving no
 way to choose the second branch except free text. Selecting either duplicate

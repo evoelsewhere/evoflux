@@ -103,7 +103,7 @@ estimated USD is omitted.
 
 `GET /metrics` is the unprefixed Prometheus scrape target. Middleware measures
 end-to-end HTTP requests, including rejects by inner auth/size/security layers.
-Agent/team/database/code-index paths add focused counters and histograms where
+Agent/team/database paths add focused counters and histograms where
 operator action is useful.
 
 ## Health and diagnostics
