@@ -16,7 +16,11 @@ from mcp.types import CallToolResult
 from app.agent.mcp.config import HttpServerConfig, MCPConfig, StdioServerConfig
 from app.agent.mcp.manager import MCPRuntime
 from app.agent.tools.registry import Tool
-from app.plugin_platform.credentials import credential_environment
+from app.plugin_platform.credentials import (
+    credential_definition,
+    credential_environment,
+    credential_headers,
+)
 from app.plugin_platform.extensions import (
     LEGACY_MCP_EXTENSIONS,
     MCP_EXTENSION,
@@ -26,6 +30,7 @@ from app.plugin_platform.models import (
     PluginInspection,
     PluginInstallation,
     PluginMCPComponent,
+    PluginRunContext,
 )
 from app.plugin_platform.registry import (
     list_effective_installations,
@@ -43,6 +48,13 @@ def _runtime_server_name(installation_id: str, server_name: str) -> str:
     slug = _SERVER_SLUG_RE.sub("_", server_name).strip("_-") or "server"
     suffix = hashlib.sha256(server_name.encode("utf-8")).hexdigest()[:8]
     return f"plugin_{installation_id[:8]}_{slug[:40]}_{suffix}"
+
+
+def _credential_refs(inspection: PluginInspection) -> tuple[str, ...]:
+    definition = credential_definition(inspection)
+    if definition is None:
+        return ()
+    return tuple(field.key for field in definition.fields)
 
 
 def _expand(value: str, *, root: Path, data_root: Path) -> str:
@@ -130,7 +142,11 @@ def _native_server_config(
     if component.transport == "streamable-http":
         return HttpServerConfig(
             url=config["url"],
-            headers=dict(config.get("headers", {})),
+            headers=credential_headers(
+                installation.id,
+                inspection,
+                dict(config.get("headers", {})),
+            ),
             resolve_header_refs=False,
             follow_redirects=False,
             capabilities=capabilities,
@@ -145,9 +161,15 @@ class PluginMCPServerDescriptor:
     server_name: str
     runtime_name: str
     transport: str
+    content_sha256: str = ""
+    connection_profile_ids: tuple[str, ...] = ()
+    credential_refs: tuple[str, ...] = ()
+    run_context: PluginRunContext | None = None
 
 
-def build_plugin_mcp_config() -> tuple[MCPConfig, list[PluginMCPServerDescriptor]]:
+def build_plugin_mcp_config(
+    run_context: PluginRunContext | None = None,
+) -> tuple[MCPConfig, list[PluginMCPServerDescriptor]]:
     servers: dict[str, StdioServerConfig | HttpServerConfig] = {}
     descriptors: list[PluginMCPServerDescriptor] = []
     for installation in list_effective_installations(enabled_only=True):
@@ -170,6 +192,15 @@ def build_plugin_mcp_config() -> tuple[MCPConfig, list[PluginMCPServerDescriptor
                     server_name=component.name,
                     runtime_name=runtime_name,
                     transport=component.transport,
+                    content_sha256=installation.content_sha256,
+                    connection_profile_ids=tuple(installation.connection_profile_ids),
+                    credential_refs=_credential_refs(inspection),
+                    run_context=(
+                        run_context
+                        if run_context is not None
+                        and run_context.installation_id == installation.id
+                        else None
+                    ),
                 )
             )
     return MCPConfig(servers=servers), descriptors
@@ -335,6 +366,11 @@ class PluginMCPRuntime:
                         server_name=component.name,
                         runtime_name=runtime_name,
                         transport=component.transport,
+                        content_sha256=installation.content_sha256,
+                        connection_profile_ids=tuple(
+                            installation.connection_profile_ids
+                        ),
+                        credential_refs=_credential_refs(inspection),
                     )
                     self._last_good[key] = (native, descriptor)
                     servers[runtime_name] = native
@@ -378,9 +414,7 @@ class PluginMCPRuntime:
                 for descriptor in self._descriptors
                 if descriptor.installation_id != installation_id
             ]
-            for key in [
-                key for key in self._last_good if key[0] == installation_id
-            ]:
+            for key in [key for key in self._last_good if key[0] == installation_id]:
                 self._last_good.pop(key, None)
 
     async def refresh(self, *, force: bool = False) -> None:

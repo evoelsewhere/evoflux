@@ -48,6 +48,11 @@ def _read_document(*, strict: bool = False) -> PluginRegistryDocument:
             raise ValueError("plugin registry exceeds its size limit")
         raw = json.loads(path.read_text(encoding="utf-8"))
         document = PluginRegistryDocument.model_validate(raw)
+        if document.version == 1:
+            logger.info(
+                "plugin_registry_migrating path={} from_version=1 to_version=2", path
+            )
+            document = document.model_copy(update={"version": 2})
         persisted_builtins = [
             item for item in document.installations if item.source_type == "builtin"
         ]

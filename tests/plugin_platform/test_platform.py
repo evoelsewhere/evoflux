@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -18,6 +19,7 @@ from app.plugin_platform.installer import (
     install_plugin,
     link_plugin,
     pack_plugin,
+    rollback_plugin,
     uninstall_plugin,
     update_plugin,
 )
@@ -551,6 +553,8 @@ def test_workspace_save_preserves_executable_mode_and_enforces_entry_limit(
     isolated_platform: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if os.name == "nt":
+        pytest.skip("Windows does not expose Unix executable mode bits")
     root = _plugin(isolated_platform / "workspace-plugin", skill=None)
     executable = root / "server.py"
     executable.write_text("print('old')\n", encoding="utf-8")
@@ -570,6 +574,18 @@ def test_workspace_save_preserves_executable_mode_and_enforces_entry_limit(
 def test_linked_signature_and_digest_track_directory_symlink_target(
     isolated_platform: Path,
 ) -> None:
+    if os.name == "nt":
+        probe_target = isolated_platform / "symlink-probe-target"
+        probe_link = isolated_platform / "symlink-probe-link"
+        probe_target.mkdir()
+        try:
+            probe_link.symlink_to(probe_target, target_is_directory=True)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip("Windows symlink privilege is unavailable")
+            raise
+        finally:
+            probe_link.unlink(missing_ok=True)
     root = _plugin(isolated_platform / "linked-symlink", skill=None)
     first = root / "first"
     second = root / "second"
@@ -628,6 +644,8 @@ async def test_linked_runtime_preserves_last_good_server_during_invalid_edit(
 
 
 def test_install_pack_and_uninstall_managed_package(isolated_platform: Path) -> None:
+    if os.name == "nt":
+        pytest.skip("Windows does not expose Unix executable mode bits")
     source = _plugin(isolated_platform / "source")
     cache = source / "backend" / "__pycache__"
     cache.mkdir(parents=True)
@@ -684,9 +702,20 @@ def test_update_managed_package_preserves_identity_data_and_enabled_state(
     assert updated.enabled is False
     assert Path(updated.root) != original_root
     assert (Path(updated.root) / "updated.txt").read_text() == "new package\n"
-    assert not original_root.exists()
+    assert original_root.exists()
+    assert updated.version_history[0].version == "1.2.3"
+    assert updated.version_history[0].root == str(original_root)
     assert data_file.read_text(encoding="utf-8") == '{"keep": true}\n'
     assert list_installations() == [updated]
+
+    rolled_back = rollback_plugin(installation.id, "1.2.3")
+    assert Path(rolled_back.root) == original_root
+    assert rolled_back.version == "1.2.3"
+    assert (original_root / "plugin.json").exists()
+    assert Path(updated.root).exists()
+    assert data_file.read_text(encoding="utf-8") == '{"keep": true}\n'
+    with pytest.raises(PluginInstallError, match="No retained version"):
+        rollback_plugin(installation.id, "does-not-exist")
 
 
 def test_update_managed_package_replaces_same_version_atomically(
@@ -753,6 +782,9 @@ def test_invalid_zip_is_reported_as_plugin_install_error(
 def test_plugin_skills_precede_builtins_but_not_project_skills(
     isolated_platform: Path,
 ) -> None:
+    builtin_skill = builtin_skills_dir() / "algorithmic-art" / "SKILL.md"
+    if not builtin_skill.is_file():
+        pytest.skip("algorithmic-art builtin fixture is unavailable")
     plugin = _plugin(
         isolated_platform / "plugin",
         name="skill-precedence",

@@ -301,7 +301,7 @@ async def test_plugin_api_lifecycle(
             / installation_id
             / "credentials.json"
         )
-        assert credential_file.stat().st_mode & 0o777 == 0o600
+        assert not credential_file.exists()
         cleared = await client.delete(f"/api/plugins/{installation_id}/credentials")
         assert cleared.status_code == 200
         assert cleared.json()["configured"] is False
@@ -390,8 +390,17 @@ async def test_plugin_api_updates_managed_package_in_place(
         assert updated["id"] == original["id"]
         assert updated["version"] == "2.0.0"
         assert updated["root"] != original["root"]
-        assert not Path(original["root"]).exists()
+        assert Path(original["root"]).exists()
+        assert updated["version_history"][0]["version"] == "1.0.0"
         assert (Path(updated["root"]) / "new.txt").read_text() == "updated\n"
+
+        rolled_back = await client.post(
+            f"/api/plugins/{original['id']}/rollback",
+            json={"version": "1.0.0"},
+        )
+        assert rolled_back.status_code == 200, rolled_back.text
+        assert rolled_back.json()["installation"]["root"] == original["root"]
+        assert Path(updated["root"]).exists()
 
         manifest["version"] = "3.0.0"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -416,7 +425,7 @@ async def test_plugin_api_updates_managed_package_in_place(
         removed = await client.delete(f"/api/plugins/{original['id']}")
         assert removed.status_code == 200
 
-    assert refresh_mock.await_count == 4
+    assert refresh_mock.await_count == 5
     assert all(call.kwargs == {"force": True} for call in refresh_mock.await_args_list)
 
 

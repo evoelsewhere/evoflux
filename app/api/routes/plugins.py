@@ -21,6 +21,7 @@ from app.api.schemas.plugins import (
     PluginOperationResponse,
     PluginPackRequest,
     PluginPathResponse,
+    PluginRollbackRequest,
     PluginUpdateRequest,
     PluginWorkspaceDeleteRequest,
     PluginWorkspaceEntryRequest,
@@ -37,6 +38,7 @@ from app.plugin_platform import (
     link_plugin,
     list_effective_installations,
     pack_plugin,
+    rollback_plugin,
     set_enabled,
     uninstall_plugin,
     update_plugin,
@@ -230,6 +232,32 @@ async def upload_plugin_archive(
     finally:
         await archive.close()
         shutil.rmtree(temporary, ignore_errors=True)
+
+
+@router.post(
+    "/{installation_id}/rollback",
+    response_model=PluginOperationResponse,
+)
+async def rollback_plugin_version(
+    installation_id: str,
+    body: PluginRollbackRequest,
+) -> PluginOperationResponse:
+    from app.plugin_platform.runtime import plugin_mcp_runtime
+
+    try:
+        await plugin_mcp_runtime.stop_installation(installation_id)
+        installation = await asyncio.to_thread(
+            rollback_plugin,
+            installation_id,
+            body.version,
+        )
+        await _after_mutation()
+        return PluginOperationResponse(
+            installation=installation,
+            inspection=_inspection_for(installation),
+        )
+    except Exception as exc:
+        raise _http_error(exc) from exc
 
 
 @router.post(

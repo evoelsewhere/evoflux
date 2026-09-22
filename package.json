@@ -1,0 +1,7 @@
+{
+  "name": "evoflux-workspace",
+  "private": true,
+  "scripts": {
+    "typecheck": "bun run --cwd web typecheck"
+  }
+}

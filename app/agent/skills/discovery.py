@@ -38,6 +38,15 @@ MAX_SKILL_FILE_BYTES = 512 * 1024
 MAX_AGENT_METADATA_BYTES = 256 * 1024
 MAX_DEPENDENCY_RECORDS = 64
 RECOMMENDED_SKILL_LINES = 500
+
+
+def _safe_home() -> Path | None:
+    try:
+        return Path.home()
+    except RuntimeError:
+        return None
+
+
 AGENT_INTERFACE_FIELD_LIMITS = {
     "display_name": 128,
     "short_description": 1_024,
@@ -219,9 +228,11 @@ def standard_skill_roots(
             add(ancestor / ".opencode" / "skills")
 
     add(evoflux_global)
-    add(Path.home() / ".agents" / "skills")
-    add(Path.home() / ".claude" / "skills")
-    add(Path.home() / ".config" / "opencode" / "skills")
+    home = _safe_home()
+    if home is not None:
+        add(home / ".agents" / "skills")
+        add(home / ".claude" / "skills")
+        add(home / ".config" / "opencode" / "skills")
     add(Path("/etc/codex/skills"))
     add(builtin_skills_dir())
     return roots
@@ -329,12 +340,14 @@ def _source_for_root(root: Path) -> str:
         return "builtin"
     if resolved == Path("/etc/codex/skills"):
         return "admin-codex"
-    if resolved == (Path.home() / ".agents" / "skills").absolute():
-        return "global-agents"
-    if resolved == (Path.home() / ".claude" / "skills").absolute():
-        return "global-claude"
-    if resolved == (Path.home() / ".config" / "opencode" / "skills").absolute():
-        return "global-opencode"
+    home = _safe_home()
+    if home is not None:
+        if resolved == (home / ".agents" / "skills").absolute():
+            return "global-agents"
+        if resolved == (home / ".claude" / "skills").absolute():
+            return "global-claude"
+        if resolved == (home / ".config" / "opencode" / "skills").absolute():
+            return "global-opencode"
     parts = resolved.parts
     if len(parts) >= 2 and parts[-2:] == (".agents", "skills"):
         return "project-agents"

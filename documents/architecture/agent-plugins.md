@@ -122,7 +122,10 @@ Plugin Skills join the normal metadata-only catalog and load progressively throu
 
 Plugin MCP configuration is adapted in memory into a separate manager. It is
 never copied to or merged into the user's global `{CONFIG_DIR}/mcp.json`.
-Runtime servers appear in **Settings → MCP servers** with a `plugin` badge and
+Each server uses the stable `plugin_<installation-prefix>_<server-slug>_<hash>`
+namespace; descriptors retain the installation ID, package digest, connection
+profile IDs, and declared credential references. Runtime servers appear in
+**Settings → MCP servers** with a `plugin` badge and
 can be selected in an agent's `mcp` configuration. Loading a Skill contributed
 by a plugin also grants and activates the ready MCP tools from that same
 installation for the current run. Installation alone does not grant every
@@ -177,11 +180,13 @@ form without shipping product-specific UI:
 
 Supported field types are `text`, `secret`, `url`, and `boolean`. Open
 **Plugins → Credentials** on an installed plugin to configure them. Values are
-stored outside the portable package in
-`data/<installation-id>/credentials.json` with mode `0600`. Secret values are
-masked in API responses and injected only into that plugin's stdio MCP process
-using the declared environment-variable names. Saving or clearing the form
-refreshes the MCP runtime automatically.
+stored outside the portable package in the OS keychain or enterprise secret
+manager, with an encrypted `data/<installation-id>/credentials.json`
+compatibility backend when explicitly selected. Secret values are masked in API
+responses and injected only into that plugin's stdio MCP process or declared
+transport headers using approved references. Saving or clearing the form
+refreshes the MCP runtime automatically; expiry, revocation, scope mismatch,
+and unknown provenance fail closed.
 
 The earlier `evoflux.credentials` namespace remains a read-only compatibility
 alias. Canonical declarations win when both forms are present.

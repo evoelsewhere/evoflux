@@ -25,6 +25,12 @@ class PluginUpdateRequest(BaseModel):
     path: str = Field(min_length=1)
 
 
+class PluginRollbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = Field(min_length=1, max_length=80)
+
+
 class PluginCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -48,6 +48,27 @@ def _get_attr(value: Any, *names: str, default: Any = None) -> Any:
     return default
 
 
+def validate_mcp_tool(tool: Any) -> tuple[bool, str]:
+    """Validate an advertised MCP tool before it becomes host-visible."""
+    name = _get_attr(tool, "name", default="")
+    if not isinstance(name, str) or not name.strip() or len(name) > 128:
+        return False, "tool name is empty or too long"
+    schema = _get_attr(tool, "input_schema", "inputSchema")
+    if schema is None:
+        return True, ""
+    if not isinstance(schema, dict):
+        return False, "input schema is not an object"
+    if schema.get("type", "object") != "object":
+        return False, "input schema root must be an object"
+    properties = schema.get("properties", {})
+    required = schema.get("required", [])
+    if not isinstance(properties, dict) or not isinstance(required, list):
+        return False, "input schema properties/required are malformed"
+    if not all(isinstance(item, str) and item in properties for item in required):
+        return False, "input schema required fields are invalid"
+    return True, ""
+
+
 def _sanitize_schema(schema: dict[str, Any] | None) -> dict[str, Any]:
     """Coerce an MCP tool ``input_schema`` into the OpenAI function-call shape.
 

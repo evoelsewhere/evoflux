@@ -10,6 +10,7 @@ from app.plugin_platform.installer import (
     install_plugin,
     link_plugin,
     pack_plugin,
+    rollback_plugin,
     uninstall_plugin,
     update_plugin,
 )
@@ -31,6 +32,7 @@ __all__ = [
     "list_installations",
     "list_effective_installations",
     "pack_plugin",
+    "rollback_plugin",
     "set_enabled",
     "uninstall_plugin",
     "update_plugin",

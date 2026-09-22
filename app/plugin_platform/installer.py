@@ -13,7 +13,12 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
-from app.plugin_platform.models import PLUGIN_SCHEMA_ID, PluginInstallation
+from app.plugin_platform.models import (
+    PLUGIN_SCHEMA_ID,
+    PluginInstallation,
+    PluginProvenance,
+    PluginVersionRecord,
+)
 from app.plugin_platform.registry import (
     add_installation,
     get_installation,
@@ -190,6 +195,7 @@ def install_plugin(
     *,
     enabled: bool = True,
     source_ref: str | None = None,
+    provenance: PluginProvenance | None = None,
 ) -> PluginInstallation:
     source_path = Path(source).expanduser().absolute()
     from app.plugin_platform.builtins import path_is_builtin_plugin
@@ -241,6 +247,7 @@ def install_plugin(
             content_sha256=inspection.content_sha256,
             enabled=enabled,
             installed_at=now,
+            provenance=provenance or PluginProvenance(),
             updated_at=now,
         )
         try:
@@ -329,6 +336,20 @@ def update_plugin(
             os.replace(staged_package, final_path)
             installed_new = True
             now = datetime.now(UTC).isoformat()
+            history = list(current.version_history)
+            if current_root != final_path and current_root.exists():
+                history.append(
+                    PluginVersionRecord(
+                        version=current.version or "unknown",
+                        root=str(current_root),
+                        content_sha256=current.content_sha256,
+                        source_ref=current.source_ref,
+                        artifact_url=current.provenance.artifact_url,
+                        verification_state=current.provenance.verification_state,
+                        provenance=current.provenance,
+                        installed_at=current.installed_at,
+                    )
+                )
             updated = current.model_copy(
                 update={
                     "name": inspection.manifest.name,
@@ -338,6 +359,7 @@ def update_plugin(
                     "source_ref": source_ref or str(source_path.resolve()),
                     "content_sha256": inspection.content_sha256,
                     "updated_at": now,
+                    "version_history": history,
                 }
             )
             replace_installation(updated)
@@ -350,11 +372,80 @@ def update_plugin(
 
         if backup_path is not None:
             shutil.rmtree(backup_path, ignore_errors=True)
-        elif current_root != final_path:
-            shutil.rmtree(current_root, ignore_errors=True)
         return updated
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
+
+
+def rollback_plugin(installation_id: str, version: str) -> PluginInstallation:
+    """Restore a previously retained, verified installation version."""
+
+    current = get_installation(installation_id)
+    if current is None:
+        raise PluginInstallError(f"Unknown plugin installation: {installation_id}")
+    target_record = next(
+        (record for record in current.version_history if record.version == version),
+        None,
+    )
+    if target_record is None:
+        raise PluginInstallError(
+            f"No retained version {version!r} for plugin {current.name!r}."
+        )
+    current_root = Path(current.root).resolve()
+    target_root = Path(target_record.root).resolve()
+    managed_root = installed_root().resolve()
+    if (
+        target_root == current_root
+        or target_root.parent != current_root.parent
+        or not target_root.is_relative_to(managed_root)
+    ):
+        raise PluginInstallError("Retained plugin version is outside its managed root.")
+    if target_record.verification_state in {
+        "unverified",
+        "revoked",
+        "changed",
+        "failed",
+    }:
+        raise PluginInstallError("Retained plugin version failed provenance checks.")
+    if not target_root.is_dir():
+        raise PluginInstallError("Retained plugin version is missing.")
+
+    inspection = _require_valid(
+        target_root, data_root=plugin_data_root(installation_id)
+    )
+    if inspection.content_sha256 != target_record.content_sha256:
+        raise PluginInstallError("Retained plugin version content has changed.")
+
+    now = datetime.now(UTC).isoformat()
+    history = [
+        record for record in current.version_history if record.root != str(target_root)
+    ]
+    if current_root.is_dir():
+        history.append(
+            PluginVersionRecord(
+                version=current.version or "unknown",
+                root=str(current_root),
+                content_sha256=current.content_sha256,
+                source_ref=current.source_ref,
+                artifact_url=current.provenance.artifact_url,
+                verification_state=current.provenance.verification_state,
+                provenance=current.provenance,
+                installed_at=current.installed_at,
+            )
+        )
+    updated = current.model_copy(
+        update={
+            "version": inspection.manifest.version,
+            "description": inspection.manifest.description,
+            "root": str(target_root),
+            "source_ref": target_record.source_ref,
+            "content_sha256": target_record.content_sha256,
+            "provenance": target_record.provenance,
+            "updated_at": now,
+            "version_history": history,
+        }
+    )
+    return replace_installation(updated)
 
 
 def uninstall_plugin(

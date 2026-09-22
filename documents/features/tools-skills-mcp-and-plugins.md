@@ -92,10 +92,13 @@ an author who supplies a portable executable or remote endpoint. Static
 validation does not install dependencies or prove process readiness.
 
 New installations are disabled until the user reviews executable commands,
-remote hosts, environment-field names and declared capabilities. Plugin
-credentials and data live outside the package and survive in-place updates.
-Plugin MCP servers run in an installation-scoped manager and are never copied
-into global `mcp.json`.
+remote hosts, environment-field names and declared capabilities. Marketplace
+artifacts carry immutable SHA-256 identity and explicit publisher verification
+states; revoked, changed, invalid, unavailable and failed artifacts cannot be
+installed. Plugin credentials and data live outside the package, prefer the OS
+keychain, and survive in-place updates, retained-version rollback, rotation,
+expiry and revocation. Plugin MCP servers run in an installation-scoped
+manager and are never copied into global `mcp.json`.
 
 Plugin packages cannot inject frontend code or bypass permissions. Portable
 stdio and Streamable HTTP servers execute; legacy SSE declarations are

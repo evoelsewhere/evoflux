@@ -14,7 +14,7 @@ from loguru import logger
 
 from app.agent.mcp.config import HttpServerConfig, StdioServerConfig
 from app.agent.mcp.models import MCPServerRunner
-from app.agent.mcp.tools import MCPTool
+from app.agent.mcp.tools import MCPTool, validate_mcp_tool
 from app.agent.mcp.transport import MCPTransportFactory
 
 
@@ -35,15 +35,22 @@ async def run_server_session(
             tools_resp = await session.list_tools()
 
             runner.session = session
-            runner.tools = [
-                MCPTool(
-                    server_name=name,
-                    mcp_tool=tool,
-                    session_provider=lambda r=runner: r.session,
-                    server_capabilities=server_cfg.capabilities,
+            runner.tools = []
+            for tool in tools_resp.tools:
+                valid, reason = validate_mcp_tool(tool)
+                if not valid:
+                    logger.warning(
+                        "mcp_tool_rejected server={} reason={}", name, reason
+                    )
+                    continue
+                runner.tools.append(
+                    MCPTool(
+                        server_name=name,
+                        mcp_tool=tool,
+                        session_provider=lambda r=runner: r.session,
+                        server_capabilities=server_cfg.capabilities,
+                    )
                 )
-                for tool in tools_resp.tools
-            ]
             runner.status.state = "ready"
             runner.status.tool_names = [tool.name for tool in runner.tools]
             runner.status.started_at = datetime.now(UTC).isoformat()
