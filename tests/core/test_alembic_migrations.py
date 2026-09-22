@@ -78,8 +78,6 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             "memory_fact_evidence",
             "memory_extraction_states",
         } <= set(inspector.get_table_names())
-        # ASDD keeps a change in the repository, so the database holds no copy
-        # of it and no unique index binding one to a chat session.
         assert {
             "trace_runs",
             "trace_spec_revisions",
@@ -91,7 +89,7 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             column["name"] for column in inspector.get_columns("delegation_tasks")
         }
         assert "trace_run_id" not in delegation_columns
-        assert "asdd_change_id" in delegation_columns
+        assert "asdd_change_id" not in delegation_columns
         assert "session_goals" in inspector.get_table_names()
         assert {
             "code_nodes",
@@ -796,6 +794,6 @@ def test_a_database_left_on_a_retired_revision_still_starts(
         assert version == SCHEMA_HEAD
         assert "trace_runs" not in inspector.get_table_names()
         assert "trace_run_id" not in columns
-        assert "asdd_change_id" in columns
+        assert "asdd_change_id" not in columns
     finally:
         engine.dispose()

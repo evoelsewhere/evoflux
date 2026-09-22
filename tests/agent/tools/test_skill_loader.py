@@ -25,13 +25,6 @@ from app.agent.tools.builtin.skill import (
 )
 
 
-CODING_HUBS = (
-    "coding-change",
-    "coding-investigate",
-    "coding-operate",
-    "coding-verify",
-)
-
 
 # ---------------------------------------------------------------------------
 # _parse_frontmatter
@@ -1124,16 +1117,11 @@ class TestBuiltinSkills:
             "mcp-installer",
             "plugin-development",
             "plugin-installer",
-            "review-pull-requests",
         }.issubset(result)
         assert (_builtin_skills_dir() / "mcp-installer" / "mcp_apply.py").is_file()
 
     def test_builtin_catalog_is_curated_and_mode_scoped(self):
         assert set(discover_skills()) == {
-            "coding-change",
-            "coding-investigate",
-            "coding-operate",
-            "coding-verify",
             "data-analytics",
             "design-blueprint",
             "docx-official",
@@ -1145,7 +1133,6 @@ class TestBuiltinSkills:
             "plugin-development",
             "plugin-installer",
             "pptx-official",
-            "review-pull-requests",
             "self-healing",
             "skill-creator",
             "skill-installer",
@@ -1161,15 +1148,7 @@ class TestBuiltinSkills:
 
         assert {"super-research", "data-analytics"} <= work
         assert "plugin-development" in work
-        assert {
-            "coding-investigate",
-            "coding-change",
-            "coding-verify",
-            "coding-operate",
-            "review-pull-requests",
-        } <= coding
         assert "plugin-development" in coding
-        assert "coding-investigate" not in work
         assert "super-research" in coding
         assert {"docx-official", "xlsx-official", "pptx-official", "pdf-official"} <= (
             work & coding
@@ -1230,47 +1209,6 @@ class TestBuiltinSkills:
         assert "custom" not in skills_for_mode(discovered, "work")
         assert "custom" in skills_for_mode(discovered, "coding")
 
-    @pytest.mark.asyncio
-    async def test_load_and_list_reject_out_of_mode_builtin_skill(self):
-        result = await load_skill("coding-investigate", _mode="work")
-        assert "not available in work mode" in result
-
-        work_catalog = await load_skill(action="list", _mode="work")
-        assert "super-research" in work_catalog
-        assert "coding-investigate" not in work_catalog
-
-    @pytest.mark.asyncio
-    async def test_implicit_specialist_is_directly_visible_and_loadable(self):
-        state = SimpleNamespace(
-            metadata={}, messages_for_llm=[], tool_names=["code_context"]
-        )
-
-        specialist = await load_skill(
-            "coding-investigate", _mode="coding", _state=state
-        )
-        catalog = await load_skill(action="list", _mode="coding", _state=state)
-
-        assert '<skill_content name="coding-investigate"' in specialist
-        assert "coding-investigate" in catalog
-        assert "code-context-navigation" not in catalog
-        assert "`code_context`" in specialist
-        assert "references/workflows/investigate.md" in specialist
-
-        workflow = await load_skill(
-            action="read_resource",
-            skill_name="coding-investigate",
-            resource_path="references/workflows/investigate.md",
-            _mode="coding",
-            _state=state,
-        )
-        assert "`definition`, `callers`, `callees`" in workflow
-
-    @pytest.mark.asyncio
-    async def test_removed_code_context_skill_is_not_loadable(self):
-        result = await load_skill("code-context-navigation", _mode="coding")
-
-        assert "not found" in result
-
     def test_all_builtin_skills_follow_bundle_contract(self):
         """Keep bundled skills portable and compatible with progressive disclosure."""
         root = _builtin_skills_dir()
@@ -1281,278 +1219,6 @@ class TestBuiltinSkills:
             assert meta["name"] == skill_file.parent.name, skill_file
             assert isinstance(meta["description"], str) and meta["description"].strip()
             assert body.strip(), skill_file
-
-    def test_native_code_context_contract_is_stated_once_per_coding_hub(self):
-        """The indexed-query contract belongs to the hub, not to each workflow.
-
-        A hub is always loaded before the workflow it routes to, so stating the
-        contract once there keeps one copy authoritative. The second half of
-        this test is the half that matters: a workflow must NOT restate it, or
-        the copies drift apart again.
-        """
-        builtin = _builtin_skills_dir()
-        for owner in (*CODING_HUBS, "review-pull-requests"):
-            normalized = " ".join(
-                (builtin / owner / "SKILL.md").read_text(encoding="utf-8").split()
-            )
-            assert "`code_context`" in normalized, owner
-            assert "`refresh=true` for the first indexed query" in normalized, owner
-            assert "`refresh=false` only for an immediate follow-up" in normalized, (
-                owner
-            )
-
-        expected_owners = [
-            "coding-change/references/workflows/api-design.md",
-            "coding-change/references/workflows/implement.md",
-            "coding-change/references/workflows/migrate.md",
-            "coding-change/references/workflows/simplify.md",
-            "coding-investigate/references/workflows/browser-verify.md",
-            "coding-investigate/references/workflows/debug.md",
-            "coding-investigate/references/workflows/investigate.md",
-            "coding-operate/references/workflows/observability.md",
-            "coding-operate/references/workflows/performance.md",
-            "coding-verify/references/workflows/review.md",
-            "coding-verify/references/workflows/security.md",
-            "coding-verify/references/workflows/test.md",
-        ]
-        owners = [
-            body.relative_to(builtin).as_posix()
-            for body in sorted(builtin.glob("coding-*/references/workflows/*.md"))
-            if "code_context" in body.read_text(encoding="utf-8")
-        ]
-
-        assert owners == expected_owners
-        for owner in expected_owners:
-            normalized = " ".join((builtin / owner).read_text(encoding="utf-8").split())
-            assert "code_context" in normalized, owner
-            assert "skip" in normalized.casefold(), owner
-            for hoisted in (
-                "`refresh=true` for the first indexed query",
-                "`refresh=false` only for an immediate follow-up",
-                "shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find`",
-                "covered-range receipt is authoritative",
-                '`process(action="wait", wait_seconds=60)`',
-            ):
-                assert hoisted not in normalized, f"{owner} restates {hoisted!r}"
-
-        # One contract copy per hub, shared by every workflow that hub routes to.
-        contracts = {
-            (builtin / name / "references" / "code-context-contract.md").read_text(
-                encoding="utf-8"
-            )
-            for name in (
-                "coding-change",
-                "coding-investigate",
-                "coding-operate",
-                "coding-verify",
-                "review-pull-requests",
-            )
-        }
-        assert len(contracts) == 1
-        contract = contracts.pop()
-        assert "## Choose the action from the evidence you have" in contract
-        assert "`code_context` is the single indexed-code tool" in contract
-        assert "Cross-repository edges are resolved dynamically" in contract
-
-        # --- ASDD skill coverage ---
-        asdd_skills_dir = Path(".evoflux/skills")
-        expected_asdd_owners = [
-            "asdd-propose",
-            "asdd-specify",
-            "asdd-plan",
-            "asdd-implement",
-            "asdd-verify",
-            "asdd-archive",
-        ]
-        asdd_roots = [asdd_skills_dir / owner for owner in expected_asdd_owners]
-        asdd_owners = sorted(
-            [
-                skill_file.parent.name
-                for skill_file in asdd_skills_dir.glob("asdd-*/SKILL.md")
-                if "code_context" in skill_file.read_text(encoding="utf-8")
-            ]
-        )
-
-        assert asdd_owners == sorted(expected_asdd_owners)
-        for root in asdd_roots:
-            normalized = " ".join(
-                (root / "SKILL.md").read_text(encoding="utf-8").split()
-            )
-            assert "`code_context`" in normalized
-            assert "skip" in normalized.casefold()
-            assert "Keep `refresh=true` for the first indexed query" in normalized
-            assert "`refresh=false` only for an immediate follow-up" in normalized
-
-        asdd_contracts = {
-            (root / "references" / "code-context-contract.md").read_text(
-                encoding="utf-8"
-            )
-            for root in asdd_roots
-        }
-        assert len(asdd_contracts) == 1
-        asdd_contract = asdd_contracts.pop()
-        assert "## Choose the action from the evidence you have" in asdd_contract
-        assert "`code_context` is the single indexed-code tool" in asdd_contract
-        assert "Cross-repository edges are resolved dynamically" in asdd_contract
-
-    def test_coding_investigate_locks_graph_first_trajectory(self):
-        root = _builtin_skills_dir() / "coding-investigate"
-        skill = (root / "references" / "workflows" / "investigate.md").read_text(
-            encoding="utf-8"
-        )
-        normalized = " ".join(skill.split())
-        cases = json.loads(
-            (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
-        )
-
-        assert (
-            "Promotion from unknown-root to exact-symbol ends broad discovery"
-            in normalized
-        )
-        assert (
-            "the **next structural observation must be** `code_context`" in normalized
-        )
-        assert "repeat_broad_discovery_after_exact_anchor" in {
-            behavior
-            for case in cases
-            for behavior in case.get("forbidden_behaviors", [])
-        }
-        exact_callers = next(
-            case for case in cases if case.get("expected_operation") == "callers"
-        )
-        assert exact_callers["expected_trajectory"] == ["code_context"]
-
-    def test_coding_change_locks_bounded_phase_trajectory(self):
-        root = _builtin_skills_dir() / "coding-change"
-        skill = (root / "references" / "workflows" / "implement.md").read_text(
-            encoding="utf-8"
-        )
-        normalized = " ".join(skill.split())
-        cases = json.loads(
-            (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
-        )
-
-        assert "Phase 1 — Lock the contract and owner" in skill
-        assert "**Exit criterion:** one owning symbol/file" in normalized
-        assert "do not return to broad discovery" in normalized
-        assert (
-            "When the regression check and required surface checks pass, stop"
-            in normalized
-        )
-
-        forbidden = {
-            behavior
-            for case in cases
-            for behavior in case.get("forbidden_behaviors", [])
-        }
-        assert {
-            "shell_source_reread",
-            "bypass_observation_receipt",
-            "continue_discovery_after_test_seam",
-            "restart_discovery_after_diagnostic",
-            "unsolicited_adjacent_review_after_checks_pass",
-        } <= forbidden
-
-        bounded = next(
-            case
-            for case in cases
-            if case.get("expected_trajectory", [None])[0] == "lock_contract_and_owner"
-        )
-        assert bounded["expected_trajectory"][-1] == "stop"
-
-    def test_coding_specialists_share_bounded_execution_contracts(self):
-        expected_stop_evidence = {
-            ("coding-investigate", "debug"): (
-                "one falsifiable hypothesis explains the first bad state"
-            ),
-            ("coding-change", "migrate"): "Treat every rollout phase as a gate",
-            ("coding-operate", "performance"): "Compare with the same protocol",
-            ("coding-verify", "review"): "concrete trigger and changed causal path",
-            ("coding-verify", "security"): (
-                "one reachable attacker-to-operation boundary"
-            ),
-            ("coding-verify", "test"): (
-                "one proof obligation and the cheapest sufficient level"
-            ),
-        }
-
-        for (hub, workflow), stop_evidence in expected_stop_evidence.items():
-            root = _builtin_skills_dir() / hub
-            normalized = " ".join(
-                (root / "references" / "workflows" / f"{workflow}.md")
-                .read_text(encoding="utf-8")
-                .split()
-            )
-            cases = [
-                case
-                for case in json.loads(
-                    (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
-                )
-                if case.get("expected_workflow") == workflow
-            ]
-
-            assert cases, workflow
-            assert stop_evidence in normalized, workflow
-
-            forbidden = {
-                behavior
-                for case in cases
-                for behavior in case.get("forbidden_behaviors", [])
-            }
-            assert "shell_source_reread" in forbidden, workflow
-            assert "bypass_observation_receipt" in forbidden, workflow
-            trajectory = next(
-                case["expected_trajectory"]
-                for case in cases
-                if case.get("expected_trajectory")
-            )
-            assert trajectory[-1] in {"stop", "phase_stop"}, workflow
-
-    def test_coding_hubs_own_the_bounded_execution_contract(self):
-        """The observation limits are hub-level, so every workflow inherits them.
-
-        Each hub is loaded before the workflow it routes to, so these rules
-        reach the model exactly once per activation instead of once per
-        workflow file.
-        """
-        builtin = _builtin_skills_dir()
-        for hub in CODING_HUBS:
-            normalized = " ".join(
-                (builtin / hub / "SKILL.md").read_text(encoding="utf-8").split()
-            )
-            assert (
-                "shell `cat`, `sed`, `head`, `tail`, `nl`, `rg`, or `find`"
-                in normalized
-            ), hub
-            assert "covered-range receipt is authoritative" in normalized, hub
-            assert '`process(action="wait", wait_seconds=60)`' in normalized, hub
-            assert "Batch independent graph queries and reads" in normalized, hub
-
-    def test_coding_hubs_route_to_every_workflow_they_own(self):
-        """Each hub must name every workflow file it ships, and only those."""
-        builtin = _builtin_skills_dir()
-        for hub in CODING_HUBS:
-            root = builtin / hub
-            body = (root / "SKILL.md").read_text(encoding="utf-8")
-            shipped = {
-                path.relative_to(root).as_posix()
-                for path in (root / "references" / "workflows").glob("*.md")
-            }
-            assert shipped, hub
-            for relative in shipped:
-                assert relative in body, f"{hub} does not route to {relative}"
-            cases = json.loads(
-                (root / "evals" / "trigger-cases.json").read_text(encoding="utf-8")
-            )
-            routed = {
-                case["expected_workflow"]
-                for case in cases
-                if case.get("expected_workflow")
-            }
-            assert routed == {
-                relative.removeprefix("references/workflows/").removesuffix(".md")
-                for relative in shipped
-            }, hub
 
     def test_builtin_skill_resource_links_exist(self):
         resource_link = re.compile(
@@ -1587,45 +1253,6 @@ class TestBuiltinSkills:
         skill_dir = str((_builtin_skills_dir() / "mcp-installer").resolve())
         assert skill_dir in body
         assert "mcp_apply.py" in body
-
-
-class TestAsddSkills:
-    """Tests for ASDD skill structure, frontmatter, and scope."""
-
-    @pytest.fixture(autouse=True)
-    def _clear_cache(self):
-        _discover_skills_cached.cache_clear()
-        yield
-        _discover_skills_cached.cache_clear()
-
-    def _asdd_skill_dirs(self) -> list[Path]:
-        # Asserted non-empty so a rename cannot turn these into loops over
-        # nothing that still report green.
-        directories = sorted(Path(".evoflux/skills").glob("asdd-*"))
-        assert directories, "this repository should have ASDD skills installed"
-        return directories
-
-    def test_asdd_skill_files_have_correct_frontmatter(self):
-        for skill_dir in self._asdd_skill_dirs():
-            skill_file = skill_dir / "SKILL.md"
-            assert skill_file.exists(), f"Missing SKILL.md in {skill_dir}"
-            text = skill_file.read_text(encoding="utf-8")
-            meta, _ = _parse_frontmatter(text)
-            assert set(meta) == {"name", "description"}, skill_file
-            assert meta["name"] == skill_dir.name, skill_file
-            assert isinstance(meta["description"], str) and meta["description"], (
-                skill_file
-            )
-
-    def test_asdd_skill_scope_files(self):
-        for skill_dir in self._asdd_skill_dirs():
-            scope_file = skill_dir / ".evoflux.json"
-            assert scope_file.exists(), f"Missing .evoflux.json in {skill_dir}"
-            scope = json.loads(scope_file.read_text(encoding="utf-8"))
-            assert "modes" in scope, f"Missing 'modes' in {scope_file}"
-            assert scope["modes"] == ["coding"], (
-                f"Unexpected modes in {scope_file}: {scope['modes']}"
-            )
 
 
 # ---------------------------------------------------------------------------

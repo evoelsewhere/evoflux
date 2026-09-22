@@ -33,7 +33,6 @@ from app.agent.execution_policy import resolve_execution_policy
 from app.agent.checkpointer import SQLiteCheckpointer
 from app.agent.drift import detect_drift, stamp_agent_files
 from app.agent.hooks.cache_boundary import CacheBoundaryHook
-from app.agent.hooks.code_navigation_telemetry import CodeNavigationTelemetryHook
 from app.agent.hooks.continuation import ContinuationHook
 from app.agent.hooks.folder_context import FolderContextHook
 from app.agent.hooks.goal import GoalContextHook, GoalUsageHook
@@ -57,7 +56,6 @@ from app.agent.hooks.stream_publisher import StreamPublisherHook
 from app.agent.hooks.skill_catalog import SkillCatalogFinalizerHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
-from app.agent.hooks.asdd_context import AsddContextHook
 from app.agent.hooks.memory_extraction import build_memory_extraction_hook
 from app.agent.lifecycle import is_sleep_message
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
@@ -1463,15 +1461,6 @@ class TeamMemberBase(abc.ABC):
                         session_id=lead_session_id,
                     ),
                 )
-        if any(
-            "code_context_navigation" in tool.capabilities
-            for tool in self.agent._tools.values()
-        ):
-            pipeline.add(
-                HookStage.CAPABILITY,
-                "code-navigation-telemetry",
-                CodeNavigationTelemetryHook(),
-            )
         # Splice user-queued messages into the running turn — lead only, since
         # the user-facing queue lives on the lead's session.  Must precede
         # summarization so a freshly-injected message participates in window
@@ -1497,18 +1486,6 @@ class TeamMemberBase(abc.ABC):
                     ),
                 )
         if self._team.mode == "coding":
-            # No database here on purpose: ASDD reads the repository, so the
-            # hook works in a worktree, a fresh clone, and a session whose row
-            # is gone.
-            pipeline.add(
-                HookStage.SESSION_CONTEXT,
-                "asdd-context",
-                AsddContextHook(
-                    workspace=task_workspace.workspace,
-                    agent_name=self.name,
-                    role=self._role_label,
-                ),
-            )
             pipeline.add(
                 HookStage.WORKSPACE,
                 "workspace-context",
@@ -1566,7 +1543,7 @@ class TeamMemberBase(abc.ABC):
         # Summarization then receives the exact same finalized system prompt as
         # the main provider call instead of snapshotting an incomplete prefix.
         # cache-boundary must run first: it stamps everything built so far
-        # (role prompt, team protocol, goal/folder/ASDD context, workspace
+        # (role prompt, team protocol, goal/folder context, workspace
         # instructions) as the stable prefix before the final catalog tail.
         # Memory recall is an append-only hidden history message, so it does
         # not rewrite this system prefix.

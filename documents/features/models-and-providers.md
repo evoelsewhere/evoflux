@@ -423,35 +423,3 @@ Explicit Qwen/GPT-5.6 breakpoints and managed Gemini cached-content resources
 are not enabled automatically because cache writes can cost more than ordinary
 input when a prefix is not reused. Cache controls never change tool permission,
 outbound redaction or sandbox boundaries.
-
-## ASDD role guidance for GPT-5.6 family
-
-When the Codex OAuth catalogue exposes the GPT-5.6 family, ASDD benchmarks and
-high-assurance runs prefer:
-
-| Role | Model | Typical reasoning |
-|---|---|---|
-| Lead/convergence owner | `codex:gpt-5.6-sol` | high/xhigh |
-| Architect or independent verifier | `codex:gpt-5.6-sol` | high |
-| Builder mission | `codex:gpt-5.6-terra` | medium/high |
-| Narrow repeatable exploration | `codex:gpt-5.6-luna` or Terra | medium |
-
-This is a role policy, not hard-coded routing. Provider availability, visible
-models, per-agent configuration, capability validation, user overrides, and
-budget remain authoritative. Official OpenAI documentation recommends GPT-5.6
-for demanding multi-step agents, Terra for efficient read-heavy workers, and
-Luna for narrow repeatable work.
-
-## Source and tests
-
-Primary code: `app/agent/providers/registry.py` (provider resolution),
-`model_registry.py` (catalogue normalization), `model_metadata.py` (per-model
-resolution), `thinking.py` (effort translation), `catalog.py`, `factory.py`,
-`capabilities.py`, `model_discovery.py`, `registry_refresh.py` (background
-catalogue refresh), provider subpackages, Settings routes and model-picker
-components. `scripts/update_model_registry.py` regenerates the bundled
-snapshots.
-
-Every provider has adapter/factory tests; shared suites cover streaming,
-capability resolution, discovery, tool content, unconfigured providers and
-model metadata.

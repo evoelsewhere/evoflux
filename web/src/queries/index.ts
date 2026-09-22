@@ -119,20 +119,6 @@ export {
 } from './useProvidersQuery'
 export { queryKeys } from './keys'
 export {
-  useApproveAsddArtifactMutation,
-  useArchiveAsddChangeMutation,
-  useAsddChangeQuery,
-  useAsddChangesQuery,
-  useAsddSetupQuery,
-  useAsddSpecQuery,
-  useCreateAsddChangeMutation,
-  useDeleteAsddChangeMutation,
-  useInitializeAsddSetupMutation,
-  useMarkAsddChangeReadyMutation,
-  useSetAsddAutopilotMutation,
-  useStartAsddActionMutation,
-} from './useAsddQuery'
-export {
   useLanguageServersQuery,
   useDismissLanguageServerErrorMutation,
   useInstallLanguageServerMutation,

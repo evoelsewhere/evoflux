@@ -16,10 +16,10 @@ describe('getSkillCallPresentation', () => {
     expect(getSkillCallPresentation(JSON.stringify({
       action: 'read_resource',
       skill_name: 'coding-investigation',
-      resource_path: 'references/code-context-contract.md',
+      resource_path: 'references/workflows/investigate.md',
     }))).toMatchObject({
       completedLabel: 'Read skill resource',
-      headerTitle: 'coding-investigation · references/code-context-contract.md',
+      headerTitle: 'coding-investigation · references/workflows/investigate.md',
       family: 'skill-resource',
     })
   })

@@ -524,11 +524,6 @@ class AgentTeam:
         db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
         async with self._delegation_lock:
             async with db_factory() as db:
-                # An ASDD change is a folder in the repository, so there is
-                # nothing to validate against here: the slug is recorded, and
-                # the delta the mission names is what the review and verify
-                # phases read back.
-                change_id = spec.get("asdd_change_id")
                 tasks = await delegation_ledger.create_tasks(
                     db,
                     lead_session_id=lead_session_id,
@@ -537,7 +532,6 @@ class AgentTeam:
                     spec=spec,
                     dependencies=dependencies,
                     deadline_at=deadline_at,
-                    asdd_change_id=str(change_id) if change_id else None,
                 )
                 await db.commit()
             self.register_delegation(
@@ -546,43 +540,6 @@ class AgentTeam:
                 task_ids=[str(task.id) for task in tasks],
             )
         return tasks
-
-    async def _record_asdd_handoff_evidence(
-        self, task: DelegationTask, artifact: dict
-    ) -> None:
-        """Leave a page in the change folder saying what this mission proved.
-
-        Best-effort on purpose. The mission is already complete and its result
-        already persisted; failing the handoff because a Markdown page could not
-        be written would lose real work over a bookkeeping step.
-        """
-
-        if not task.asdd_change_id or not self.workspace:
-            return
-        from app.services.asdd_service import record_handoff_evidence
-
-        owned = [
-            str(item)
-            for item in task.spec.get("acceptance_criteria", [])
-            if isinstance(item, str) and item
-        ]
-        try:
-            await asyncio.to_thread(
-                record_handoff_evidence,
-                self.workspace,
-                change_id=task.asdd_change_id,
-                task_id=str(task.id),
-                recipient=task.recipient,
-                artifact=artifact,
-                owned_requirements=owned,
-            )
-        except (OSError, ValueError) as exc:
-            logger.warning(
-                "asdd_handoff_evidence_failed task_id={} change_id={} error={}",
-                task.id,
-                task.asdd_change_id,
-                exc,
-            )
 
     async def _ensure_delegation_worktree(self, task: DelegationTask) -> DelegationTask:
         """Allocate and durably bind an isolated pending task before dispatch."""
@@ -961,7 +918,6 @@ class AgentTeam:
                     recipient=recipient,
                     result=artifact,
                 )
-                await self._record_asdd_handoff_evidence(completed, artifact)
                 ready, failed = await delegation_ledger.release_ready_tasks(
                     db,
                     lead_session_id=lead_session_id,
@@ -1044,9 +1000,6 @@ class AgentTeam:
                     lead_session_id=lead_session_id,
                     task_id=task_id,
                     spec=updated_spec,
-                )
-                await self._record_asdd_handoff_evidence(
-                    completed, dict(completed.result or {})
                 )
                 ready, failed = await delegation_ledger.release_ready_tasks(
                     db,
@@ -3257,9 +3210,6 @@ class AgentTeam:
             make_todo_manage_tool(role),
             make_team_state_tool(agent_name),
         ]
-        # ASDD needs no typed submission tools. Every artifact it produces is a
-        # Markdown file the agent writes with the ordinary file tools, which is
-        # what keeps the repository the only place a change's state lives.
         if agent_name == self.lead.name:
             tools.append(make_team_manage_tool(self))
             tools.append(

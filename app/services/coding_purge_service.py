@@ -1,8 +1,8 @@
 """Destructive cleanup for removed Coding workspaces and projects.
 
 Repository source directories are user-owned and are never deleted. The
-service removes app-owned session state, database records, managed worktrees,
-and regeneratable code-index/graph caches so reopening starts cleanly.
+service removes app-owned session state, database records, and managed
+worktrees so reopening starts cleanly.
 """
 
 from __future__ import annotations
@@ -48,8 +48,6 @@ from app.models.workflow import (
 from app.scheduler.models import ScheduledTask
 from app.scheduler.scheduler import task_scheduler
 from app.services import agent_service, memory_stream_store, team_manager
-from app.services.code_index.jobs import project_index_jobs
-from app.services.code_index.project import repository_indexes
 from app.services.snapshot_service import snapshot_dir
 from app.services.terminal_service import terminal_manager
 from app.workflow.runner import runner as workflow_runner
@@ -244,11 +242,6 @@ async def _purge_session_files(files: SessionFiles) -> None:
         )
 
 
-async def _purge_repository_caches(paths: set[str]) -> None:
-    for path in sorted(paths):
-        await repository_indexes.purge(Path(path))
-
-
 async def purge_session(db: AsyncSession, session_id: UUID) -> bool:
     """Purge one chat session plus all child/side-chat state and files."""
     session = await db.get(ChatSession, session_id)
@@ -393,7 +386,6 @@ async def purge_workspace(db: AsyncSession, path: str) -> PurgeResult:
     await db.commit()
 
     await _purge_session_files(files)
-    await _purge_repository_caches(workspace_paths)
     for source_path, worktree_path in managed_worktrees:
         await _remove_managed_worktree(source_path, worktree_path)
     logger.info(
@@ -429,29 +421,7 @@ async def purge_project(db: AsyncSession, project_id: UUID) -> PurgeResult | Non
     if loaded is None:
         return None
     project, pairs = loaded
-    workspace_ids: set[UUID] = {workspace.id for _link, workspace in pairs}
     repository_paths = {workspace.path for _link, workspace in pairs}
-    shared_ids: set[UUID] = set()
-    if workspace_ids:
-        shared_ids = set(
-            (
-                await db.exec(
-                    select(CodingProjectWorkspace.workspace_id)
-                    .join(
-                        CodingProject,
-                        col(CodingProject.id) == col(CodingProjectWorkspace.project_id),
-                    )
-                    .where(
-                        col(CodingProjectWorkspace.workspace_id).in_(workspace_ids),
-                        CodingProjectWorkspace.project_id != project_id,
-                        col(CodingProject.deleted_at).is_(None),
-                    )
-                )
-            ).all()
-        )
-    purge_paths = {
-        workspace.path for _link, workspace in pairs if workspace.id not in shared_ids
-    }
     seed_ids = set(
         (
             await db.exec(
@@ -461,7 +431,6 @@ async def purge_project(db: AsyncSession, project_id: UUID) -> PurgeResult | Non
     )
     sessions = await _session_closure(db, seed_ids)
     session_ids: set[UUID] = {session.id for session in sessions}
-    await project_index_jobs.cancel(str(project_id))
     await _stop_session_runtime(session_ids)
     files = await _purge_session_rows(db, sessions, delete_scheduled_tasks=True)
 
@@ -488,7 +457,6 @@ async def purge_project(db: AsyncSession, project_id: UUID) -> PurgeResult | Non
     await db.commit()
 
     await _purge_session_files(files)
-    await _purge_repository_caches(purge_paths)
     logger.info(
         "coding_project_purged project_id={} sessions={}", project_id, len(session_ids)
     )
@@ -514,20 +482,6 @@ async def purge_project_workspace(
     if selected is None:
         return None
     link, workspace = selected
-    shared = (
-        await db.exec(
-            select(CodingProjectWorkspace)
-            .join(
-                CodingProject,
-                col(CodingProject.id) == col(CodingProjectWorkspace.project_id),
-            )
-            .where(
-                col(CodingProjectWorkspace.workspace_id) == workspace_id,
-                col(CodingProjectWorkspace.project_id) != project_id,
-                col(CodingProject.deleted_at).is_(None),
-            )
-        )
-    ).first()
     seed_ids = set(
         (
             await db.exec(
@@ -537,15 +491,12 @@ async def purge_project_workspace(
     )
     sessions = await _session_closure(db, seed_ids)
     session_ids: set[UUID] = {session.id for session in sessions}
-    await project_index_jobs.cancel(str(project_id))
     await _stop_session_runtime(session_ids)
     files = await _purge_session_rows(db, sessions, delete_scheduled_tasks=False)
     await db.delete(link)
     await db.commit()
 
     await _purge_session_files(files)
-    if shared is None:
-        await _purge_repository_caches({workspace.path})
     logger.info(
         "coding_project_workspace_purged project_id={} workspace={} sessions={}",
         project_id,

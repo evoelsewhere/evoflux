@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from uuid import uuid7  # ty: ignore[unresolved-import] - backported in app.__init__
 
 from loguru import logger
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 from app.agent.tools.registry import Tool
 
@@ -130,37 +130,6 @@ class TaskSpec(BaseModel):
         default="auto",
         description="Task complexity used for adaptive reasoning and verification.",
     )
-    asdd_change_id: str | None = Field(
-        default=None,
-        max_length=80,
-        description="ASDD change slug this mission serves.",
-    )
-    acceptance_criteria: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Requirement names from the change's approved deltas that this "
-            "mission owns."
-        ),
-    )
-    evidence_policy: dict = Field(
-        default_factory=dict,
-        description="Mission-specific evidence requirements copied into the contract.",
-    )
-
-    @model_validator(mode="after")
-    def _asdd_fields_are_complete(self) -> "TaskSpec":
-        # A change slug and the requirements it owns travel together: a mission
-        # bound to a change but owning nothing cannot be verified, and
-        # requirements with no change name nothing the repository can resolve.
-        if bool(self.asdd_change_id) != bool(self.acceptance_criteria):
-            raise ValueError(
-                "ASDD delegation requires asdd_change_id and acceptance_criteria "
-                "together"
-            )
-        if len(set(self.acceptance_criteria)) != len(self.acceptance_criteria):
-            raise ValueError("ASDD acceptance_criteria must be unique")
-        return self
-
 
 # ── Tool description ─────────────────────────────────────────────────────────
 
@@ -231,18 +200,6 @@ def format_delegation_message(
     if spec.target_repos:
         formatted_lines.append(
             f"**Target repositories:** {', '.join(spec.target_repos)}"
-        )
-    if spec.asdd_change_id:
-        formatted_lines.extend(
-            [
-                f"**ASDD change:** `{spec.asdd_change_id}` — read its folder under "
-                "the repository's ASDD catalogue before starting.",
-                "**Owned requirements:** " + ", ".join(spec.acceptance_criteria),
-                "**ASDD contract:** Report every owned requirement in the final "
-                "team_handoff criteria_results, naming it exactly as the delta "
-                "spells it. Work outside the approved deltas is drift: say so "
-                "rather than widening the contract.",
-            ]
         )
     allocation = spec.worktree_allocation
     if isinstance(allocation, dict):
@@ -401,29 +358,6 @@ def make_team_delegate_tool(
                 )
             ),
         ] = "auto",
-        asdd_change_id: Annotated[
-            str | None,
-            Field(
-                description=(
-                    "Optional ASDD change slug. When provided, "
-                    "acceptance_criteria must name the requirements this "
-                    "mission owns from that change's approved deltas."
-                )
-            ),
-        ] = None,
-        acceptance_criteria: Annotated[
-            list[str],
-            Field(
-                description=(
-                    "Requirement names this mission owns, exactly as the "
-                    "change's delta spells them."
-                )
-            ),
-        ] = [],  # noqa: B006
-        evidence_policy: Annotated[
-            dict,
-            Field(description="Optional ASDD mission evidence requirements."),
-        ] = {},  # noqa: B006
     ) -> str:
         """Delegate a structured task with explicit acceptance criteria."""
         from app.agent.mode.team.mailbox import Message
@@ -544,9 +478,6 @@ def make_team_delegate_tool(
                 resolved_isolation=resolved_isolation,
                 target_repos=list(target_repos),
                 complexity=complexity,
-                asdd_change_id=asdd_change_id,
-                acceptance_criteria=list(acceptance_criteria),
-                evidence_policy=dict(evidence_policy),
             )
         except ValueError as exc:
             return f"Error: {exc}"

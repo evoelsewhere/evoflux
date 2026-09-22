@@ -24,8 +24,7 @@ def test_app_import_keeps_optional_runtime_modules_lazy() -> None:
                 "print('app.agent.loader' in sys.modules); "
                 "print('app.agent.agent_loop.core' in sys.modules); "
                 "print('app.agent.tools.builtin.browser_use_tool' in sys.modules); "
-                "print('app.agent.tools.builtin.webbridge_tool' in sys.modules); "
-                "print('app.services.code_index.project' in sys.modules)"
+                "print('app.agent.tools.builtin.webbridge_tool' in sys.modules)"
             ),
         ],
         capture_output=True,
@@ -40,7 +39,6 @@ def test_app_import_keeps_optional_runtime_modules_lazy() -> None:
         "False",
         "False",
         "False",
-        "True",
     ]
 
 

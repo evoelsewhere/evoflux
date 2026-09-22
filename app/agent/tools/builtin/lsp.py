@@ -5,8 +5,8 @@ The contracts are deliberately distinct:
 - ``static_diagnostics`` — one-shot Ruff/tsc checks.
 - ``lsp_*`` — a persistent JSON-RPC language server using didOpen/didChange.
 
-These sit alongside ``code_context``: use it for callers/callees/references of a
-known symbol, and lsp_* for live correctness checks and location queries.
+Use these tools for live correctness checks and location queries in the active
+workspace.
 """
 
 from __future__ import annotations
@@ -382,7 +382,7 @@ async def _real_lsp_definition(
         client = await get_language_server(get_sandbox().workspace_root, target)
         locations = await client.definition(target, line, column)
     except LanguageServerUnavailable as exc:
-        return f"[Unavailable] {exc} Use code_context for a known symbol."
+        return f"[Unavailable] {exc} Use the source file and grep for a known symbol."
     return _format_lsp_locations(locations, "definition")
 
 
@@ -412,7 +412,7 @@ async def _real_lsp_references(
             include_declaration=include_declaration,
         )
     except LanguageServerUnavailable as exc:
-        return f"[Unavailable] {exc} Use code_context for a known symbol."
+        return f"[Unavailable] {exc} Use the source file and grep for a known symbol."
     return _format_lsp_locations(locations[:limit], "reference")
 
 

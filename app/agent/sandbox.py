@@ -97,7 +97,7 @@ class SandboxConfig:
         outbound_pii_policy: Literal["off", "standard", "strict"] | None = None,
         # Other repos in the same CodingProject, if this session is
         # project-scoped. Lets tools that call get_sandbox() (for example,
-        # code_context, which traverses every authorized repository)
+        # repository-aware tools, which may traverse every authorized repository)
         # see the full repo set without a model-facing "workspace_paths"
         # argument on every one of them.
         extra_workspace_paths: list[str] | None = None,

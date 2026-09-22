@@ -14,7 +14,6 @@ flowchart LR
     Runtime --> Providers[Model providers]
     Runtime --> Tools[Native, MCP and plugin tools]
     Sidecar --> AppDB[(Application SQLite)]
-    Sidecar --> RepoDB[(Per-repository code-index SQLite)]
     Sidecar --> Wiki[Markdown wiki]
     Sidecar --> State[Logs, traces and cache]
     Desktop --> Browser[Persistent in-app browser]
@@ -27,7 +26,7 @@ flowchart LR
 |---|---|---|
 | Tauri shell | Native windows, sidecar supervision, token handshake, tray, updater, persistent browser, packaging | Agent logic or application persistence |
 | React WebView | Navigation, chat/workbench UI, cached server state, streaming projections, Settings | Durable business rules |
-| FastAPI sidecar | API, agent loop, teams, tools, persistence, scheduler, workflows, code context, memory, MCP, policy | Native package lifecycle |
+| FastAPI sidecar | API, agent loop, teams, tools, persistence, scheduler, workflows, coding tools, memory, MCP, policy | Native package lifecycle |
 | Provider/MCP child processes | Provider requests or configured tool servers | EvoFlux authorization decisions |
 
 ## Startup and shutdown
@@ -43,7 +42,7 @@ sets up telemetry. MCP, plugin MCP, Conductor, agent validation, Scheduler, and
 Dream start as optional background services so the health endpoint becomes
 available without waiting for external I/O.
 
-Shutdown stops teams and schedulers, closes MCP runtimes and code indexes,
+Shutdown stops teams and schedulers, closes MCP runtimes,
 terminates managed processes/previews/language servers, drains memory-extraction
 tasks, disposes database engines, and flushes observability state.
 
@@ -90,9 +89,8 @@ transcript and then resume live streaming.
 - **Policy:** the model can propose actions, but tool permissions, sandbox
   roots, outbound redaction, workflow approval, and desktop/browser policies
   are enforced by the harness.
-- **Storage:** application records stay in the main database; repository index
-  data stays in cache-local per-repository databases; user knowledge remains
-  inspectable in scoped facts and Markdown wiki files.
+- **Storage:** application records stay in the main database; user knowledge
+  remains inspectable in scoped facts and Markdown wiki files.
 - **Integration:** global MCP, plugin MCP, provider adapters, WebBridge, and
   Conductor have separate configuration and lifecycle boundaries.
 

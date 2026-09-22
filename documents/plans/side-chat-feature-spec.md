@@ -634,7 +634,6 @@ const slashCommands: SlashCommand[] = [
 - `read` - Read files
 - `grep` - Search file contents
 - `glob` - Find files by pattern
-- `code_context` - Search indexed source, match structural patterns, and navigate symbol relationships
 - `code_path` - Trace dependency paths
 - `ls` - List directory contents
 - `memory_search` - Search memory

@@ -74,10 +74,6 @@ export const STORAGE_KEYS = {
     favorites: 'oa.enterprise.favorites',
   },
 
-  asdd: {
-    changesView: 'oa.asdd.changesView',
-  },
-
   desktopNotifications: {
     enabled: 'oa-desktop-notifications-enabled',
     soundEnabled: 'oa-desktop-notifications-sound-enabled',

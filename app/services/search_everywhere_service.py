@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import mimetypes
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -21,8 +20,6 @@ from app.services.problems_service import list_problems
 SearchKind = Literal[
     "file",
     "folder",
-    "symbol",
-    "code",
     "git_branch",
     "git_commit",
     "problem",
@@ -88,7 +85,6 @@ async def _parallel_sources(
     results = await asyncio.gather(
         asyncio.to_thread(_path_items, workspace, query, limit),
         asyncio.to_thread(_problem_items, workspace, query, limit),
-        _code_items(workspace, query, limit),
         _git_items(workspace, query, limit),
         asyncio.to_thread(_skill_items, workspace, query, limit),
         asyncio.to_thread(_workflow_items, workspace, query, limit),
@@ -142,75 +138,6 @@ def _path_items(workspace: Path, query: str, limit: int) -> list[SearchEverywher
             if len(rows) >= limit:
                 return rows
     return rows
-
-
-async def _code_items(
-    workspace: Path, query: str, limit: int
-) -> list[SearchEverywhereItem]:
-    from app.services.code_index.models import RepositoryScope
-    from app.services.code_index.service import query_code_context
-
-    caller_match = re.search(
-        r"(?:callers?|người gọi)\s+(?:of|của)?\s*[`'\"]?([A-Za-z_$][\w.$:]*)",
-        query,
-        re.IGNORECASE,
-    )
-    action = "callers" if caller_match else "search"
-    value = caller_match.group(1) if caller_match else query
-    result = await query_code_context(
-        scopes=(RepositoryScope(root=workspace, label=workspace.name),),
-        action=action,
-        query=value,
-        depth=1,
-        limit=limit,
-        refresh=True,
-    )
-    rows: list[SearchEverywhereItem] = []
-    for symbol in result.matches[:limit]:
-        rows.append(
-            SearchEverywhereItem(
-                id=f"symbol:{symbol.id}",
-                kind="symbol",
-                label=symbol.qualified_name or symbol.name,
-                description=symbol.signature or f"{symbol.kind} · {symbol.file_path}",
-                path=symbol.file_path,
-                line=symbol.line_start,
-                metadata={
-                    "language": symbol.language,
-                    "strategy": result.strategy,
-                    **_file_metadata(workspace, symbol.file_path),
-                },
-            )
-        )
-    for hit in result.hits[:limit]:
-        rows.append(
-            SearchEverywhereItem(
-                id=f"code:{hit.file_path}:{hit.line_start}:{hit.symbol or ''}",
-                kind="symbol" if hit.symbol else "code",
-                label=hit.symbol or f"{hit.file_path}:{hit.line_start}",
-                description=" ".join(hit.content.strip().split())[:240],
-                path=hit.file_path,
-                line=hit.line_start,
-                metadata={
-                    "language": hit.language,
-                    "score": hit.score,
-                    **_file_metadata(workspace, hit.file_path),
-                },
-            )
-        )
-    for relation in result.relations[:limit]:
-        rows.append(
-            SearchEverywhereItem(
-                id=f"relation:{relation.callsite_file}:{relation.callsite_line}:{relation.source.id}",
-                kind="code",
-                label=f"{relation.source.name} → {relation.target.name}",
-                description=f"{relation.kind} · {relation.callsite_file}:{relation.callsite_line}",
-                path=relation.callsite_file,
-                line=relation.callsite_line,
-                metadata=_file_metadata(workspace, relation.callsite_file),
-            )
-        )
-    return rows[:limit]
 
 
 async def _git_items(

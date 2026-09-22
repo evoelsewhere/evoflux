@@ -82,13 +82,6 @@ class CompletionVerificationHook(BaseAgentHook):
 
     async def before_agent(self, ctx, state) -> None:
         state.metadata.setdefault("_verification_changed_files", set())
-        if "_asdd_change_ids" in state.metadata:
-            # A repository running ASDD gets a git baseline, so changes made by
-            # a delegated member or a script still count toward this turn's
-            # verification rather than only the edits this agent made by tool.
-            state.metadata["_verification_git_baseline"] = await _git_baseline(
-                get_sandbox()
-            )
 
     async def wrap_tool_call(self, ctx, state, tool_call, handler) -> str:
         if tool_call.function.name == "team_handoff":
@@ -127,14 +120,7 @@ class CompletionVerificationHook(BaseAgentHook):
 
     async def _evaluate(self, ctx, state) -> str | None:
         raw_paths = set(state.metadata.get("_verification_changed_files") or set())
-        baseline = state.metadata.get("_verification_git_baseline")
-        if isinstance(baseline, dict):
-            raw_paths.update(await _git_changes_since(get_sandbox(), baseline))
-        planned_commands = tuple(
-            str(command)
-            for command in state.metadata.get("_asdd_verification_commands", [])
-            if isinstance(command, str) and command.strip()
-        )
+        planned_commands: tuple[str, ...] = ()
         if not raw_paths:
             return None
 
@@ -143,7 +129,7 @@ class CompletionVerificationHook(BaseAgentHook):
         scope_paths, scope_targets = _scope_changes(
             sandbox,
             changed_files,
-            state.metadata.get("_asdd_repository_roots"),
+            None,
         )
         repository_revision = await _git_revision(sandbox.workspace_root)
         artifact_hash = _artifact_hash(
@@ -520,124 +506,6 @@ def _scope_changes(
         ),
     )
 
-
-async def _git_baseline(sandbox) -> dict[str, dict[str, Any]]:
-    roots = [Path(path).resolve() for path in sandbox.allowed_workspace_roots]
-    snapshots = await asyncio.gather(*(_git_snapshot(root) for root in roots))
-    return {
-        str(root): snapshot
-        for root, snapshot in zip(roots, snapshots, strict=True)
-        if snapshot is not None
-    }
-
-
-async def _git_changes_since(sandbox, baseline: dict[object, object]) -> set[str]:
-    primary = sandbox.workspace_root.resolve()
-    changed: set[str] = set()
-    for root_raw, previous_raw in baseline.items():
-        if not isinstance(root_raw, str) or not isinstance(previous_raw, dict):
-            continue
-        root = Path(root_raw).resolve()
-        previous = cast(dict[str, Any], previous_raw)
-        current = await _git_snapshot(root)
-        if current is None:
-            continue
-        previous_files = previous.get("files")
-        current_files = current.get("files")
-        before = (
-            cast(dict[str, str], previous_files)
-            if isinstance(previous_files, dict)
-            else {}
-        )
-        after = (
-            cast(dict[str, str], current_files)
-            if isinstance(current_files, dict)
-            else {}
-        )
-        relative_paths = {
-            path
-            for path, fingerprint in after.items()
-            if before.get(path) != fingerprint
-        }
-        old_revision = previous.get("revision")
-        new_revision = current.get("revision")
-        if (
-            isinstance(old_revision, str)
-            and isinstance(new_revision, str)
-            and old_revision != new_revision
-        ):
-            committed = await _git_output(
-                root, "diff", "--name-only", "-z", f"{old_revision}..{new_revision}"
-            )
-            if committed is not None:
-                relative_paths.update(_nul_paths(committed))
-        for relative in relative_paths:
-            changed.add(
-                relative if root == primary else str((root / relative).resolve())
-            )
-    return changed
-
-
-async def _git_snapshot(root: Path) -> dict[str, Any] | None:
-    if not (root / ".git").exists():
-        return None
-    revision_raw, unstaged, staged, untracked = await asyncio.gather(
-        _git_output(root, "rev-parse", "HEAD"),
-        _git_output(root, "diff", "--name-only", "-z"),
-        _git_output(root, "diff", "--cached", "--name-only", "-z"),
-        _git_output(root, "ls-files", "--others", "--exclude-standard", "-z"),
-    )
-    if revision_raw is None:
-        return None
-    paths: set[str] = set()
-    for output in (unstaged, staged, untracked):
-        if output is not None:
-            paths.update(_nul_paths(output))
-    files = {
-        relative: await asyncio.to_thread(_file_fingerprint, root / relative)
-        for relative in paths
-    }
-    return {
-        "revision": revision_raw.decode("utf-8", errors="replace").strip(),
-        "files": files,
-    }
-
-
-async def _git_output(root: Path, *args: str) -> bytes | None:
-    git = shutil.which("git")
-    if not git:
-        return None
-    try:
-        sandbox = get_sandbox()
-        proc = await asyncio.create_subprocess_exec(
-            git,
-            "-C",
-            str(root),
-            *args,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-            env=_scrubbed_env(inherit=sandbox.inherit_shell_environment),
-        )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
-        return stdout if proc.returncode == 0 else None
-    except (OSError, TimeoutError):
-        return None
-
-
-def _nul_paths(output: bytes) -> set[str]:
-    return {
-        item.decode("utf-8", errors="replace") for item in output.split(b"\x00") if item
-    }
-
-
-def _file_fingerprint(path: Path) -> str:
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except FileNotFoundError:
-        return "<missing>"
-    except (IsADirectoryError, PermissionError, OSError) as exc:
-        return f"<unreadable:{type(exc).__name__}>"
 
 
 def _pytest_command_prefix(workspace: Path | None = None) -> list[str]:

@@ -17,7 +17,6 @@ from app.agent.providers.registry_refresh import (
 )
 from app.api.routes.agents import router as agents_router
 from app.api.routes.auth import router as auth_router
-from app.api.routes.code_context import router as code_context_router
 from app.api.routes.commands import router as commands_router
 from app.api.routes.diagnostics import router as diagnostics_router
 from app.api.routes.dream import router as dream_router
@@ -31,7 +30,6 @@ from app.api.routes.settings import router as settings_router
 from app.api.routes.skills import router as skills_router
 from app.api.routes.snippets import router as snippets_router
 from app.api.routes.team import router as team_router
-from app.api.routes.asdd import router as asdd_router
 from app.api.routes.wiki import router as wiki_router
 from app.api.routes.workflows import router as workflows_router
 from app.core.config import settings
@@ -281,11 +279,6 @@ async def lifespan(app: FastAPI):
     if not optional_startup_task.done():
         optional_startup_task.cancel()
     await asyncio.gather(optional_startup_task, return_exceptions=True)
-    from app.services.code_index.project import repository_indexes
-    from app.services.code_index.executor import shutdown_index_processes
-
-    repository_indexes.close_all()
-    shutdown_index_processes()
     webbridge_cleanup_task = getattr(app.state, "webbridge_cleanup_task", None)
     if webbridge_cleanup_task:
         webbridge_cleanup_task.cancel()
@@ -371,18 +364,12 @@ def create_app() -> FastAPI:
     # ── Routers (all under /api) ─────────────────────────────────────────────
     app.include_router(health_router, prefix="/api/health", tags=["health"])
     app.include_router(team_router, prefix="/api/team", tags=["team"])
-    app.include_router(asdd_router, prefix="/api/asdd", tags=["asdd"])
     app.include_router(quote_router, prefix="/api/quote", tags=["quote"])
     app.include_router(wiki_router, prefix="/api/wiki", tags=["wiki"])
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
     app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
     app.include_router(commands_router, prefix="/api/commands", tags=["commands"])
     app.include_router(workflows_router, prefix="/api/workflows", tags=["workflows"])
-    app.include_router(
-        code_context_router,
-        prefix="/api/code-context",
-        tags=["code-context"],
-    )
     app.include_router(snippets_router, prefix="/api/snippets", tags=["snippets"])
     app.include_router(
         observability_router, prefix="/api/observability", tags=["observability"]

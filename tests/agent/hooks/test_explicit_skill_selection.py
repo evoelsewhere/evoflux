@@ -67,23 +67,6 @@ async def test_openai_default_prompt_dollar_mention_loads_selected_skill():
     assert set(state.metadata["loaded_skills"]) == {"work-writing"}
 
 
-@pytest.mark.asyncio
-async def test_coding_investigate_default_prompt_loads_only_in_coding_mode():
-    state = _state(
-        HumanMessage(
-            content=("Use $coding-investigate to find callers of calculate_total.")
-        )
-    )
-    state.tool_names = ["code_context", "code_context"]
-
-    await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
-    assert len(state.messages) == 1
-
-    state.metadata["team_mode"] = "coding"
-    await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
-
-    assert set(state.metadata["loaded_skills"]) == {"coding-investigate"}
-
 
 @pytest.mark.asyncio
 async def test_directive_after_quote_context_uses_latest_user_message():
@@ -230,20 +213,6 @@ async def test_unknown_explicit_skill_is_non_destructive():
 
     assert len(state.messages) == 1
 
-
-@pytest.mark.asyncio
-async def test_explicit_skill_respects_application_mode():
-    state = _state(
-        HumanMessage(content="/skill:coding-investigate Trace enable_webbridge")
-    )
-    state.tool_names = ["code_context", "code_context"]
-
-    await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
-    assert len(state.messages) == 1
-
-    state.metadata["team_mode"] = "coding"
-    await ExplicitSkillSelectionHook().before_agent(_ctx(), state)
-    assert set(state.metadata["loaded_skills"]) == {"coding-investigate"}
 
 
 def test_nested_selector_uses_settings_notation():

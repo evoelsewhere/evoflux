@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Literal
 
 from pydantic import model_validator
 from pydantic.fields import Field
@@ -200,12 +199,6 @@ class Settings(BaseSettings):
     # is memoized per process, so without this a long-running server never sees
     # a model released after its own boot. Clamped to at least one hour.
     EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS: int = 24
-
-    # Repository index rebuilds are CPU/GIL heavy. Production isolates them
-    # in one worker process so API, SSE, and aiosqlite threads remain
-    # responsive. ``thread`` is retained for deterministic fault-injection
-    # tests and constrained embedders.
-    EVOFLUX_CODE_INDEX_EXECUTION: Literal["process", "thread"] = "process"
 
     # Agents directory — contains per-agent .md files.
     # Empty string means "derive from EVOFLUX_CONFIG_DIR" → ``{CONFIG_DIR}/agents``.

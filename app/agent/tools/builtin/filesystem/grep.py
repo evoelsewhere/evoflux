@@ -328,7 +328,7 @@ async def _grep_files(
     if _contains_line_break_expression(pattern):
         raise ValueError(
             "grep is line-oriented and cannot match newline expressions. "
-            "Search each line pattern separately or use a structural/code-context "
+            "Search each line pattern separately or use a scoped source search "
             "query for cross-line relationships."
         )
 

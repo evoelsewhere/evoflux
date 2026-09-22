@@ -2,9 +2,8 @@
 
 The coding editor and coding agents share this client.  It deliberately owns
 the complete semantic request surface that EvoFlux exposes instead of leaking
-server-specific JSON-RPC calls into routes or tools.  Every client is scoped to
-one repository; multi-repository federation belongs to the code-context layer,
-not to this process manager.
+server-specific JSON-RPC calls into routes or tools. Every client is scoped to
+one repository and is used directly by the active coding workspace.
 """
 
 from __future__ import annotations

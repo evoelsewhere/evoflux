@@ -44,7 +44,6 @@ Hooks add bounded behavior around the model and tools:
 - streaming, session JSONL and OpenTelemetry events;
 - post-edit diagnostics and Problems capture;
 - usage accounting, Goal state and background memory extraction.
-- the open ASDD changes in the repository, and the requirements a delegated
   mission owns.
 
 Tool results are normalized and large outputs are offloaded. Provider-specific

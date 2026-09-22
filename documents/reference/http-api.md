@@ -29,13 +29,11 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/diagnostics` | runtime/platform/path diagnostics | `diagnostics.py` |
 | `/api/team` | chat, sessions, files, terminal, projects and Coding workbench | `routes/team/` |
 | `/api/team/webbridge` | pairing, browser-panel chat, relay, bindings and Teach | `team/webbridge.py` |
-| `/api/asdd` | Agent Spec-Driven: changes, capability specs, approvals, evidence and archive | `asdd.py` |
 | `/api/agents` | agent registry and editable/runtime configuration | `agents.py` |
 | `/api/skills` | Skill discovery, CRUD and runtime settings | `skills.py` |
 | `/api/mcp` | global/plugin server status and global MCP lifecycle | `mcp.py` |
 | `/api/plugins` | package inspection/install/editor/credentials/lifecycle | `plugins.py` |
 | `/api/settings` | providers, sandbox, Git, browser and Conductor | `settings.py` |
-| `/api/code-context` | compatibility single-repository index/query/graph | `code_context.py` |
 | `/api/workflows` | definitions, approval, run and execution status | `workflows.py` |
 | `/api/scheduler` | task CRUD, pause/resume and trigger | `scheduler.py` |
 | `/api/wiki` | validated Markdown tree/file operations | `wiki.py` |
@@ -59,7 +57,6 @@ The `/api/team` router includes:
 - Coding projects, workspace authorization/tree/files and worktrees;
 - Git, Git AI, code reviews and Git server connections;
 - ChangeSets, editor actions/context, LSP/language-server and Problems;
-- code-index status/index/query/graph per Coding project;
 - terminal and direct-browser WebSockets;
 - managed processes and `preview` dev-server targets/start/stop;
 - Side Chat messages and stream;
@@ -69,56 +66,6 @@ The `/api/team` router includes:
 
 Use the OpenAPI document rather than copying request/response field definitions
 from this overview.
-
-## Agent Spec-Driven (ASDD)
-
-Agent Spec-Driven routes are Coding-scoped, and every one of them identifies a change
-by its slug. None takes a content hash, a revision id or a session id.
-
-- `GET /api/asdd/setup` returns per-repository installation state for a
-  workspace or Coding Project: `not_initialized`, `upgrade_required`, `ready` or
-  `invalid`, with the manifest, catalogue, rules and skills paths, the six
-  installed Skill names, and what is missing;
-- `POST /api/asdd/setup` installs or repairs. `data_directory` selects the
-  repository-relative catalogue (default `documents/asdd`). Repair needs
-  `overwrite=true` and never touches a change or a capability spec;
-- `GET /api/asdd/changes` lists open changes, archived entries and known
-  capabilities for one workspace. A change folder that cannot be read is omitted
-  and logged rather than failing the list;
-- `POST /api/asdd/changes` creates a change. The slug comes from `change_id` when
-  given, otherwise from the title; a collision against an open or archived change
-  is a `409`;
-- `GET /api/asdd/changes/{change_id}` returns the change, its action rail, and
-  its proposal, deltas, design, tasks and evidence as Markdown;
-- `POST /api/asdd/changes/{change_id}/approve/{artifact}` records a human
-  approval for `proposal`, `specs`, `design` or `tasks` and advances the status.
-  An approval the files do not support returns `409` with
-  `detail.code = asdd_action_blocked` and the blockers the rail already showed;
-- `POST /api/asdd/changes/{change_id}/autopilot` takes `{"enabled": bool}` and
-  writes `autopilot` into `proposal.md`. It is a property of the change, not of
-  a session, so any chat that opens the change afterwards inherits it. Turning
-  it off also clears any `hold`;
-- `POST /api/asdd/changes/{change_id}/actions/{action}` returns the prompt and
-  Skill that carry out one phase. It says nothing about where the work runs: the
-  client sends the prompt to whichever Coding chat is open. With autopilot on,
-  `action = autopilot_continue` resolves to whichever phase follows the gate the
-  change is standing at, and the prompt carries the autopilot protocol — write
-  `auto_approvals`, never `approvals`, and raise a `hold` instead of guessing;
-- `POST /api/asdd/changes/{change_id}/ready` and `/archive` mark a verified
-  change ready and fold its deltas into `specs/<capability>/spec.md`, moving the
-  folder to `changes/archive/YYYY-MM-DD-<change-id>/`. Both re-check every gate;
-- `POST /api/asdd/changes/{change_id}/evidence` appends one evidence page;
-- `DELETE /api/asdd/changes/{change_id}` removes an unarchived change folder;
-- `GET /api/asdd/specs` and `/api/asdd/specs/{capability}` read the capability
-  catalogue, parsed into requirements and scenarios.
-
-There is no ASDD stream endpoint. Agents change a catalogue by writing files, so
-no request reaches the server to broadcast; clients poll `GET /api/asdd/changes`
-and `GET /api/asdd/changes/{change_id}` while a panel is open.
-
-See [Agent Spec-Driven architecture](../architecture/agent-specs.md) for the storage,
-trust and concurrency rules, and
-[ASDD methodology](asdd-methodology.md) for the normative lifecycle.
 
 ## Asynchronous chat contract
 

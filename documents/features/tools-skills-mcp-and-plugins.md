@@ -12,7 +12,7 @@ The built-in registry covers:
 - filesystem read/search/edit/write/patch/remove;
 - shell, Python, managed processes and previews;
 - web search/fetch, persistent browser and WebBridge;
-- code context, LSP and code-review actions;
+- LSP, diagnostics, and code-review actions;
 - todos, notes, memory, goals, plans, scheduling and user questions;
 - worktrees and team delegation/message/handoff/rework/state;
 - Skill and deferred-tool loading;

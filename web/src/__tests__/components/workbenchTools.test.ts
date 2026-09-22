@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isWorkbenchToolEnabled, WORKBENCH_TOOLS } from '@/components/workbench/tools'
+import { isWorkbenchToolEnabled } from '@/components/workbench/tools'
 
 describe('workspace overview workbench tool', () => {
   it('is available for coding workspaces', () => {
@@ -32,31 +32,5 @@ describe('process manager workbench tool', () => {
       sessionId: null,
       workspace: null,
     })).toBe(true)
-  })
-})
-
-describe('Agent Spec-Driven workbench tool', () => {
-  it('is labelled with the product name, not the methodology', () => {
-    // The rail is narrow and the tab sits next to Files and Terminal, so it
-    // carries the product name. The methodology is spelled out in the panel.
-    expect(WORKBENCH_TOOLS.asdd.label).toBe('Agent Spec-Driven')
-  })
-
-  it('is available only in a Coding workspace', () => {
-    expect(isWorkbenchToolEnabled('asdd', {
-      mode: 'coding',
-      sessionId: 'session-1',
-      workspace: '/repo',
-    })).toBe(true)
-    expect(isWorkbenchToolEnabled('asdd', {
-      mode: 'coding',
-      sessionId: 'session-1',
-      workspace: null,
-    })).toBe(false)
-    expect(isWorkbenchToolEnabled('asdd', {
-      mode: 'work',
-      sessionId: 'session-1',
-      workspace: '/repo',
-    })).toBe(false)
   })
 })

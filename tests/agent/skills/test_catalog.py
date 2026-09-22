@@ -347,28 +347,6 @@ async def test_runtime_catalog_can_keep_system_prefix_query_stable(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_integrated_code_navigation_is_visible_without_body_preload(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        "app.agent.hooks.skill_catalog.get_model_limits",
-        lambda _model: SimpleNamespace(context_length=128_000),
-    )
-    hook = SkillCatalogHook(mode="coding", model_id="test:model")
-    state = AgentState(messages=[HumanMessage(content="Who calls calculate_total?")])
-    request = ModelRequest(messages=tuple(state.messages), system_prompt="Base")
-
-    updated = await hook.before_model(
-        SimpleNamespace(agent_name="agent"), state, request
-    )
-
-    assert updated is not None
-    assert "coding-investigate" in updated.system_prompt
-    assert "Never pass request prose" not in updated.system_prompt
-    assert "loaded_skills" not in state.metadata
-    assert state.messages == [state.messages[0]]
-
-
 @pytest.mark.asyncio
 async def test_configured_skill_is_preloaded_as_durable_activation(
     monkeypatch, tmp_path

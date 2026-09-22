@@ -104,7 +104,6 @@ being embedded in transcript JSON.
 | Conductor | Optional enrollment, heartbeat, resource sync and telemetry delivery |
 | WebBridge cleanup | Expires sessions, artifacts and relay state |
 | OTEL retention | Rolls and prunes local observability partitions |
-| Code-index workers | Spawned on demand and shut down when idle |
 
 Failures in optional startup services are logged and surfaced through status or
 diagnostics without making the critical loopback API unavailable.

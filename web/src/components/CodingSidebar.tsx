@@ -847,7 +847,6 @@ export function CodingSidebar({
     setSelectedWorkspacePath((current) => (current === path ? null : current));
     void setCodingWorkspaceVisibility(path, true)
       .then(() => {
-        queryClient.removeQueries({ queryKey: queryKeys.codeGraph.all(path) });
         queryClient.removeQueries({ queryKey: queryKeys.coding.all(path) });
         void queryClient.invalidateQueries({
           queryKey: queryKeys.team.sessions.all(),
@@ -2559,7 +2558,7 @@ export function CodingSidebar({
                 ? workspaceLabel(removeWorkspaceTarget)
                 : ""}
               &rdquo; will be removed from EvoFlux. All chat sessions, uploads,
-              snapshots, managed worktrees, and code graph/index data for it
+              snapshots and managed worktrees for it
               will be permanently deleted. The source repository stays on disk.
             </DialogDescription>
           </DialogHeader>
@@ -2597,7 +2596,7 @@ export function CodingSidebar({
                 ? workspaceLabel(removeProjectWorkspaceTarget.path)
                 : ""}
               &rdquo; resets all chat sessions for this project and deletes this
-              repository&apos;s code graph/index cache. Source files stay on disk.
+              repository&apos;s app-owned session data. Source files stay on disk.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="p-3">
@@ -2627,7 +2626,6 @@ export function CodingSidebar({
                   {
                     onSuccess: () => {
                       queryClient.removeQueries({
-                        queryKey: queryKeys.codeGraph.all(target.path),
                       });
                       clearLastCodingFocus(target.project.id);
                       if (isRemovingFromActiveProject) {
@@ -2667,7 +2665,7 @@ export function CodingSidebar({
             <DialogTitle>Delete project</DialogTitle>
             <DialogDescription>
               {deleteProjectTarget
-                ? `Delete ${deleteProjectTarget.name}? All project chat sessions, scheduled tasks, generated session data, and unshared code graph/index caches will be permanently deleted. Source repositories stay on disk and remain available in Workspaces.`
+                ? `Delete ${deleteProjectTarget.name}? All project chat sessions, scheduled tasks, generated session data, and managed worktrees will be permanently deleted. Source repositories stay on disk and remain available in Workspaces.`
                 : "Delete this project?"}
             </DialogDescription>
           </DialogHeader>
@@ -2691,11 +2689,6 @@ export function CodingSidebar({
                   currentProjectId === target.id || params.focusId === target.id;
                 deleteProjectMutation.mutate(target.id, {
                   onSuccess: () => {
-                    for (const workspace of target.workspaces ?? []) {
-                      queryClient.removeQueries({
-                        queryKey: queryKeys.codeGraph.all(workspace.path),
-                      });
-                    }
                     clearLastCodingFocus(target.id);
                     setExpandedProjects((current) => {
                       if (!current.has(target.id)) return current;

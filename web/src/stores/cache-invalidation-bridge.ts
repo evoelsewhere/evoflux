@@ -55,12 +55,10 @@ export function applyCacheInvalidations(
         invalidate(queryKeys.coding.files(event.workspace))
         invalidate(queryKeys.coding.diff(event.workspace))
         invalidate(queryKeys.coding.status(event.workspace))
-        invalidate(queryKeys.codeGraph.all(event.workspace))
         break
       case 'coding_workspace_paths':
         invalidate(queryKeys.coding.files(event.workspace))
         invalidate(queryKeys.coding.status(event.workspace))
-        invalidate(queryKeys.codeGraph.all(event.workspace))
         if (!pathUpdates.has(event.workspace)) pathUpdates.set(event.workspace, new Set())
         for (const path of event.paths) pathUpdates.get(event.workspace)?.add(path)
         break

@@ -11,7 +11,7 @@ workspaces. This separation is part of the sandbox and backup contract.
 | data | Application database, installed plugin registry/data, durable artifacts | Denied by default |
 | config | Agents, Skills, MCP, settings, sandbox, provider secrets | Policy-controlled; intended for user editing |
 | state | Logs, snapshots, OTEL, telemetry and Conductor queues | Denied by default |
-| cache | Code indexes, model metadata, OAuth cache, LSP packages, previews | Denied; regeneratable |
+| cache | Model metadata, OAuth cache, LSP packages, previews | Denied; regeneratable |
 | wiki | `USER.md`, knowledge pages, notes, imports and Dream logs | Allowed through bounded wiki/memory tools |
 | workspace | Work session roots and uploads | Active session root; Coding uses authorized repositories |
 
@@ -32,32 +32,11 @@ The main SQLModel/Alembic database stores:
 | Workflows | approvals, executions, node runs and gate requests |
 | Git/reviews | server connection metadata |
 | WebBridge | pairings, interactions, tab bindings, Teach drafts and replays |
-| Agent Spec-Driven (ASDD) | nothing; a change lives entirely in the repository, and a delegated mission records only its change slug |
 
 SQLite is the default embedded database and uses WAL, foreign keys, a bounded
 read pool and a single FIFO writer. Production startup automatically migrates
 and validates schema compatibility. Refer to
 [SQLite concurrency](sqlite-concurrency.md) for transaction rules.
-
-ASDD is the explicit exception to "product state lives in SQLite": it has no
-tables at all. A change is a folder of Markdown in the repository — its phase,
-its contract, its tasks and its evidence — and the database holds no copy that
-could disagree with it. `delegation_tasks.asdd_change_id` records which change
-asked for a mission, as a string rather than a foreign key. See
-[Agent Spec-Driven architecture](agent-specs.md).
-
-## Repository-local code indexes
-
-Each authorized repository has its own SQLite target under the cache root. It
-contains source fingerprints/snapshots, AST-aware chunks, deterministic local
-vectors, FTS rows, symbols, relations and current indexing errors. It is not
-part of the application database and can be rebuilt from repository source.
-
-Multi-repository project links are resolved dynamically across only the
-repositories authorized for the active project; no cross-repository guesses are
-persisted in application state.
-
-See [Coding-agent code context](coding-agent-code-context.md).
 
 ## Memory stores
 
@@ -77,8 +56,8 @@ rejected during extraction. See [Memory and Dream](../features/memory-and-dream.
 Work sessions place uploads and generated files under their session workspace.
 Large tool observations may be offloaded to data-backed session artifacts with
 references in the transcript. Session snapshots support revert/undo boundaries.
-Preview output, OAuth responses, model catalog responses, code indexes and
-language servers belong in cache because they can be recreated.
+Preview output, OAuth responses, model catalog responses, and language servers
+belong in cache because they can be recreated.
 
 Cleanup uses two-phase planning/application and optimistic metadata checks so a
 retention pass does not overwrite newer transcript metadata.

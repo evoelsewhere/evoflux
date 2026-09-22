@@ -14,7 +14,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Terminal, FileText, Search, Globe, Code2,
-  FolderOpen, GitBranch, Database, ChevronDown, ChevronUp,
+  FolderOpen, GitBranch, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolAttachments } from './ToolCall'
@@ -61,7 +61,6 @@ const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   glob: { icon: FolderOpen, verb: 'Listed', singular: 'directory', plural: 'directories' },
   ls: { icon: FolderOpen, verb: 'Listed', singular: 'directory', plural: 'directories' },
   grep: { icon: Search, verb: 'Searched', singular: 'search', plural: 'searches' },
-  code_context: { icon: Database, verb: 'Queried', singular: 'code-context call', plural: 'code-context calls' },
   browser_use: { icon: Globe, verb: 'Browsed', singular: 'browser call', plural: 'browser calls' },
   webbridge: { icon: Globe, verb: 'Browsed', singular: 'browser call', plural: 'browser calls' },
   git: { icon: GitBranch, verb: 'Ran', singular: 'Git call', plural: 'Git calls' },
@@ -87,7 +86,6 @@ const FILE_ACTIVITY_TOOLS = new Set([
   'glob',
   'ls',
   'grep',
-  'code_context',
 ])
 const BROWSER_ACTIVITY_TOOLS = new Set(['browser_use', 'webbridge'])
 const SHELL_ACTIVITY_TOOLS = new Set(['bash', 'shell', 'run_command'])
