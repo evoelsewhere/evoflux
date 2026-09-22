@@ -7,6 +7,8 @@ import type {
   PluginInspection,
   PluginCredentialState,
   PluginListResponse,
+  PluginMarketplaceItem,
+  PluginMarketplaceResponse,
   PluginOperationResponse,
   PluginWorkspaceEntry,
   PluginWorkspaceFileResponse,
@@ -16,6 +18,34 @@ import type {
 export async function listPlugins(): Promise<PluginListResponse> {
   const response = await fetch(`${apiBaseUrl()}/plugins`)
   if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins')
+  return response.json()
+}
+
+export async function listMarketplacePlugins(): Promise<PluginMarketplaceResponse> {
+  const response = await fetch(`${apiBaseUrl()}/plugins/marketplace`)
+  if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/marketplace')
+  return response.json()
+}
+
+export async function getMarketplacePlugin(name: string): Promise<PluginMarketplaceItem> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/marketplace/${encodeURIComponent(name)}`,
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/marketplace/:name')
+  return response.json()
+}
+
+export async function installMarketplacePlugin(
+  name: string,
+  version: string,
+  allowUnverified = false,
+): Promise<PluginOperationResponse> {
+  const response = await fetch(`${apiBaseUrl()}/plugins/marketplace/install`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, version, allow_unverified: allowUnverified }),
+  })
+  if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/marketplace/install')
   return response.json()
 }
 
@@ -55,6 +85,19 @@ export async function uploadPlugin(
     },
   )
   if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/upload')
+  return response.json()
+}
+
+export async function rollbackPlugin(
+  id: string,
+  version?: string,
+): Promise<PluginOperationResponse> {
+  const response = await fetch(`${apiBaseUrl()}/plugins/${encodeURIComponent(id)}/rollback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(version ? { version } : {}),
+  })
+  if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/:id/rollback')
   return response.json()
 }
 

@@ -228,6 +228,11 @@ class Settings(BaseSettings):
     # ``_`` are skipped so authors can stash helper modules alongside plugins.
     EVOFLUX_PLUGINS_DIRS: str = ""
 
+    # Optional static HTTPS marketplace registry used by the Plugin Center.
+    # Empty means marketplace discovery remains unavailable while local and
+    # linked plugin workflows continue to work.
+    EVOFLUX_PLUGIN_MARKETPLACE_URL: str = ""
+
     # Logging — defaults to INFO in production, DEBUG in development
     LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
 

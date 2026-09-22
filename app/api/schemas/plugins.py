@@ -6,7 +6,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.plugin_platform.models import PluginInspection, PluginInstallation
+from app.plugin_platform.marketplace import MarketplaceEntry
+from app.plugin_platform.models import (
+    PluginInspection,
+    PluginInstallation,
+    PluginTrustReview,
+)
 from app.plugin_platform.credentials import PluginCredentialState
 from app.conductor.models import ManagedResourceProvider
 
@@ -17,6 +22,14 @@ class PluginInstallRequest(BaseModel):
     path: str = Field(min_length=1)
     mode: Literal["install", "link"] = "install"
     enabled: bool = False
+
+
+class PluginMarketplaceInstallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=128)
+    version: str = Field(min_length=1, max_length=64)
+    allow_unverified: bool = False
 
 
 class PluginUpdateRequest(BaseModel):
@@ -69,12 +82,61 @@ class PluginLifecycleCapabilities(BaseModel):
     can_uninstall: bool = True
 
 
+PluginVerificationState = Literal[
+    "verified",
+    "unverified",
+    "revoked",
+    "changed",
+    "invalid",
+    "unavailable",
+    "failed",
+]
+PluginReadinessState = Literal[
+    "ready",
+    "disabled",
+    "blocked",
+    "missing-credentials",
+    "pending-approval",
+    "unavailable",
+    "failed",
+]
+
+
+class PluginReadiness(BaseModel):
+    state: PluginReadinessState
+    can_enable: bool = False
+    reasons: list[str] = Field(default_factory=list)
+    missing_credentials: list[str] = Field(default_factory=list)
+    pending_connections: list[str] = Field(default_factory=list)
+
+
+class PluginMarketplaceItem(BaseModel):
+    entry: MarketplaceEntry
+    installed: bool = False
+    installation_id: str | None = None
+    installed_version: str | None = None
+    verification_state: PluginVerificationState
+    trust_review: PluginTrustReview | None = None
+    readiness: PluginReadiness = Field(
+        default_factory=lambda: PluginReadiness(state="disabled")
+    )
+
+
+class PluginMarketplaceResponse(BaseModel):
+    items: list[PluginMarketplaceItem] = Field(default_factory=list)
+    provider_available: bool = True
+    provider_error: str | None = None
+
+
 class PluginListItem(BaseModel):
     installation: PluginInstallation
     inspection: PluginInspection
     credentials: PluginCredentialState
     capabilities: PluginLifecycleCapabilities = Field(
         default_factory=PluginLifecycleCapabilities
+    )
+    readiness: PluginReadiness = Field(
+        default_factory=lambda: PluginReadiness(state="disabled")
     )
     provider: ManagedResourceProvider | None = None
 

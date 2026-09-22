@@ -10,6 +10,7 @@ import {
   FileArchive,
   FolderInput,
   FolderPlus,
+  History,
   KeyRound,
   Loader2,
   MoreHorizontal,
@@ -24,6 +25,9 @@ import {
   createPlugin,
   importPlugin,
   inspectPlugin,
+  installMarketplacePlugin,
+  listMarketplacePlugins,
+  rollbackPlugin,
   listPlugins,
   packPlugin,
   setPluginEnabled,
@@ -37,6 +41,7 @@ import type {
   PluginInspection,
   PluginListItem,
   PluginListResponse,
+  PluginMarketplaceItem,
   PluginMcpRuntimeStatus,
   PluginOperationResponse,
 } from '@/api/types'
@@ -130,6 +135,10 @@ function conciseToolNames(server: PluginMcpRuntimeStatus): string {
     .join(', ')
 }
 
+function readinessLabel(state: NonNullable<PluginListItem['readiness']>['state']): string {
+  return state.replaceAll('-', ' ')
+}
+
 function PluginCard({
   item,
   servers,
@@ -140,6 +149,7 @@ function PluginCard({
   onOpen,
   onCredentials,
   onUpdate,
+  onRollback,
 }: {
   item: PluginListItem
   servers: PluginMcpRuntimeStatus[]
@@ -149,8 +159,9 @@ function PluginCard({
   onDelete: () => void
   onOpen: () => void
   onCredentials: () => void
-  onUpdate: () => void | Promise<void>
-}) {
+   onUpdate: () => void | Promise<void>
+   onRollback: () => void | Promise<void>
+ }) {
   const { installation, inspection } = item
   const displayName = installation.name
   const description = installation.description || 'Portable Agent Plugin'
@@ -199,6 +210,13 @@ function PluginCard({
     : configuredCredentialCount > 0
       ? 'credentials incomplete'
       : 'credentials missing'
+  const readiness = item.readiness ?? {
+    state: installation.enabled ? 'ready' as const : 'disabled' as const,
+    can_enable: true,
+    reasons: [],
+    missing_credentials: [],
+    pending_connections: [],
+  }
   const detailsId = `plugin-details-${installation.id}`
   const managed = installation.managed_by === 'conductor'
   const sourceLabel = installation.source_type === 'builtin'
@@ -311,7 +329,29 @@ function PluginCard({
                 <KeyRound size={12} /> {credentialLabel}
               </span>
             )}
+            <span
+              className={cn(
+                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium capitalize',
+                readiness.state === 'ready'
+                  ? 'bg-(--color-success-subtle) text-(--color-success)'
+                  : readiness.state === 'disabled'
+                    ? 'bg-(--color-surface-subtle) text-(--color-text-subtle)'
+                    : 'bg-(--color-warning-subtle) text-(--color-warning)',
+              )}
+              title={readiness.reasons.join(String.fromCharCode(10)) || undefined}
+            >
+              {readiness.state === 'ready' ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
+              {readinessLabel(readiness.state)}
+            </span>
           </div>
+          {readiness.reasons.length > 0 && (
+            <p className="mt-1 text-xs text-(--color-warning)" role="status">
+              {readiness.reasons.join(' · ')}
+              {readiness.pending_connections.length > 0 && (
+                <>: {readiness.pending_connections.join(', ')}</>
+              )}
+            </p>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2 self-center">
@@ -415,9 +455,9 @@ function PluginCard({
                 </span>
                 <Switch
                   checked={installation.enabled}
-                  disabled={busy || !item.capabilities.can_enable}
-                  aria-label={item.capabilities.can_enable
-                    ? `${installation.enabled ? 'Disable' : 'Enable'} ${displayName}`
+                   disabled={busy || !item.capabilities.can_enable || (!installation.enabled && !readiness.can_enable)}
+                   aria-label={item.capabilities.can_enable && (installation.enabled || readiness.can_enable)
+                     ? `${installation.enabled ? 'Disable' : 'Enable'} ${displayName}`
                     : managed
                       ? `${displayName} is managed by Conductor and read-only`
                       : `${displayName} is bundled and always enabled`}
@@ -442,12 +482,17 @@ function PluginCard({
                   {!managed && item.capabilities.can_pack && <DropdownMenuItem onClick={onPack}>
                     <FileArchive /> Pack archive
                   </DropdownMenuItem>}
-                  {!managed && item.capabilities.can_update && (
-                    <DropdownMenuItem onClick={onUpdate}>
-                      <RefreshCw /> Update package
-                    </DropdownMenuItem>
-                  )}
-                  {!managed && item.capabilities.can_uninstall && <DropdownMenuSeparator />}
+                   {!managed && item.capabilities.can_update && (
+                     <DropdownMenuItem onClick={onUpdate}>
+                       <RefreshCw /> Update package
+                     </DropdownMenuItem>
+                   )}
+                   {!managed && item.installation.source_type === 'installed' && (
+                     <DropdownMenuItem onClick={onRollback}>
+                       <History /> Roll back version
+                     </DropdownMenuItem>
+                   )}
+                   {!managed && item.capabilities.can_uninstall && <DropdownMenuSeparator />}
                   {!managed && item.capabilities.can_uninstall && <DropdownMenuItem variant="destructive" onClick={onDelete}>
                     <Trash2 /> Uninstall
                   </DropdownMenuItem>}
@@ -505,6 +550,11 @@ export function PluginCenterPanel() {
     queryKey: queryKeys.plugins.list(),
     queryFn: listPlugins,
     refetchInterval: 5_000,
+  })
+  const marketplaceQuery = useQuery({
+    queryKey: queryKeys.plugins.marketplace(),
+    queryFn: listMarketplacePlugins,
+    retry: false,
   })
 
   const refresh = async () => {
@@ -622,6 +672,24 @@ export function PluginCenterPanel() {
     })
   }
 
+  const rollback = (item: PluginListItem) => {
+    confirmAction({
+      title: `Roll back ${item.installation.name}?`,
+      description: 'The latest retained version will become active. Plugin data and disabled state are preserved.',
+      confirmLabel: 'Roll back',
+      onConfirm: () => void run(`rollback:${item.installation.id}`, async () => {
+        const result = await rollbackPlugin(item.installation.id)
+        setInspection(result.inspection)
+        await refresh()
+        pushToast({
+          tone: 'success',
+          title: `${result.installation.name} rolled back`,
+          description: result.installation.version ? `Version ${result.installation.version}` : undefined,
+        })
+      }),
+    })
+  }
+
   const createPackage = async () => {
     const parent = createParent.trim()
     const name = createName.trim()
@@ -650,6 +718,32 @@ export function PluginCenterPanel() {
       })
       setShowCreate(false)
       pushToast({ tone: 'success', title: 'Plugin scaffold created', description: result.path })
+    })
+  }
+
+  const installMarketplace = (item: PluginMarketplaceItem) => {
+    confirmAction({
+      title: `Install ${item.entry.name}@${item.entry.version}?`,
+      description: [
+        item.entry.description,
+        `Verification: ${item.verification_state}.`,
+        `Components: ${[...item.entry.skills, ...item.entry.mcp_servers].join(', ') || 'none'}.`,
+        'The plugin will be installed disabled until you review and enable it.',
+      ].join(' '),
+      confirmLabel: 'Install disabled',
+      onConfirm: () => void run(
+        `marketplace-install:${item.entry.name}`,
+        async () => {
+          const result = await installMarketplacePlugin(
+            item.entry.name,
+            item.entry.version,
+            item.verification_state === 'unverified',
+          )
+          stageTrustReview(result, 'installed')
+          await refresh()
+          await queryClient.invalidateQueries({ queryKey: queryKeys.plugins.marketplace() })
+        },
+      ),
     })
   }
 
@@ -834,6 +928,59 @@ export function PluginCenterPanel() {
             }}
           />
         </div>
+
+        {marketplaceQuery.isError ? (
+          <div className="mt-4 rounded-xl border border-(--color-border) bg-(--bg-card) p-4 text-sm text-(--color-text-subtle)">
+            Marketplace discovery is unavailable. Local and linked plugins remain available.
+          </div>
+        ) : marketplaceQuery.data?.items.length ? (
+          <section className="mt-4 rounded-xl border border-(--color-border) bg-(--bg-card) p-4" aria-label="Plugin marketplace">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-medium text-(--color-text)">Marketplace</h3>
+                <p className="mt-0.5 text-xs text-(--color-text-subtle)">
+                  Review provenance and requested capabilities before installing. New plugins stay disabled.
+                </p>
+              </div>
+              {marketplaceQuery.isFetching && <Loader2 className="animate-spin text-(--color-text-subtle)" size={16} />}
+            </div>
+            <div className="mt-3 grid gap-3 @lg/plugin-center:grid-cols-2">
+              {marketplaceQuery.data.items.map((item) => {
+                const installable = !item.installed && ['verified', 'unverified'].includes(item.verification_state)
+                return (
+                  <article key={`${item.entry.name}@${item.entry.version}`} className="rounded-lg border border-(--color-border) p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h4 className="truncate text-sm font-medium text-(--color-text)">{item.entry.name}</h4>
+                        <p className="text-xs text-(--color-text-subtle)">v{item.entry.version} · {item.verification_state}</p>
+                        <p className="text-[11px] text-(--color-text-subtle)">
+                          Publisher: {item.entry.publisher.id} · SHA-256: {item.entry.artifact.sha256.slice(0, 12)}…
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!installable || busy !== null}
+                        onClick={() => installMarketplace(item)}
+                      >
+                        {item.installed ? 'Installed' : 'Review & install'}
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-xs text-(--color-text-subtle)">{item.entry.description}</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-(--color-text-subtle)">
+                      {item.entry.compatible_clients.map((client) => (
+                        <span key={client} className="rounded-full bg-(--color-surface-subtle) px-2 py-0.5">{client}</span>
+                      ))}
+                      {item.entry.host_capabilities.map((capability) => (
+                        <span key={capability} className="rounded-full bg-(--color-warning-subtle) px-2 py-0.5 text-(--color-warning)">{capability}</span>
+                      ))}
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
 
         {pathPrompt && (
           <div className="mt-3 rounded-lg border border-(--color-border) bg-(--bg-card) p-3">
@@ -1032,8 +1179,9 @@ export function PluginCenterPanel() {
                   ),
                 })}
                 onOpen={() => setActiveView({ kind: 'editor', root: item.installation.root, name: item.installation.name })}
-                onCredentials={() => setActiveView({ kind: 'credentials', plugin: item })}
-                onUpdate={() => item.provider ? refresh() : chooseUpdate(item)}
+                 onCredentials={() => setActiveView({ kind: 'credentials', plugin: item })}
+                 onUpdate={() => item.provider ? refresh() : chooseUpdate(item)}
+                 onRollback={() => rollback(item)}
               />
             ))}
           </div>

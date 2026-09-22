@@ -2379,6 +2379,87 @@ export interface PluginMcpRuntimeStatus {
   started_at: string | null
 }
 
+export type PluginVerificationState =
+  | 'verified'
+  | 'unverified'
+  | 'revoked'
+  | 'changed'
+  | 'invalid'
+  | 'unavailable'
+  | 'failed'
+
+export type PluginReadinessState =
+  | 'ready'
+  | 'disabled'
+  | 'blocked'
+  | 'missing-credentials'
+  | 'pending-approval'
+  | 'unavailable'
+  | 'failed'
+
+export interface PluginReadiness {
+  state: PluginReadinessState
+  can_enable: boolean
+  reasons: string[]
+  missing_credentials: string[]
+  pending_connections: string[]
+}
+
+export interface PluginMarketplaceArtifact {
+  url: string
+  sha256: string
+  size: number | null
+}
+
+export interface PluginMarketplacePublisher {
+  id: string
+  signature_algorithm: string
+  public_key: string | null
+  signature: string | null
+}
+
+export interface PluginMarketplaceVerification {
+  state: PluginVerificationState
+  verified_at: string | null
+  reason: string | null
+}
+
+export interface PluginMarketplaceEntry {
+  npm_package: string
+  name: string
+  version: string
+  description: string
+  license: string
+  portable: boolean
+  portable_components: string[]
+  compatible_clients: string[]
+  host_capabilities: string[]
+  skills: string[]
+  mcp_servers: string[]
+  connections: Record<string, unknown>[]
+  artifact: PluginMarketplaceArtifact
+  publisher: PluginMarketplacePublisher
+  verification: PluginMarketplaceVerification
+  lifecycle: string
+  report_templates: Record<string, unknown>[]
+}
+
+export interface PluginMarketplaceItem {
+  entry: PluginMarketplaceEntry
+  installed: boolean
+  installation_id: string | null
+  installed_version: string | null
+  verification_state: PluginVerificationState
+  trust_review: PluginTrustReview | null
+  readiness: PluginReadiness
+}
+
+export interface PluginMarketplaceResponse {
+  items: PluginMarketplaceItem[]
+  provider_available: boolean
+  provider_error: string | null
+}
+
 export interface PluginListItem {
   installation: PluginInstallation
   inspection: PluginInspection
@@ -2390,6 +2471,7 @@ export interface PluginListItem {
     can_update: boolean
     can_uninstall: boolean
   }
+  readiness?: PluginReadiness
   provider?: ManagedResourceProvider | null
 }
 

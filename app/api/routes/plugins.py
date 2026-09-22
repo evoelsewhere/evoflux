@@ -17,6 +17,10 @@ from app.api.schemas.plugins import (
     PluginListItem,
     PluginLifecycleCapabilities,
     PluginListResponse,
+    PluginMarketplaceInstallRequest,
+    PluginMarketplaceItem,
+    PluginMarketplaceResponse,
+    PluginReadiness,
     PluginMcpRuntimeStatus,
     PluginOperationResponse,
     PluginPackRequest,
@@ -44,6 +48,11 @@ from app.plugin_platform import (
     update_plugin,
 )
 from app.plugin_platform.installer import MAX_ARCHIVE_BYTES
+from app.plugin_platform.marketplace import (
+    MarketplaceError,
+    MarketplaceProvider,
+    install_marketplace_plugin,
+)
 from app.plugin_platform.credentials import (
     PluginCredentialState,
     clear_credentials,
@@ -63,6 +72,7 @@ from app.plugin_platform.workspace import (
 from app.services import team_manager
 from app.conductor.provenance import managed_resource_provider_by_id
 from app.conductor.models import ManagedResourceProvider
+from app.core.config import settings
 
 
 router = APIRouter()
@@ -113,6 +123,90 @@ def _credential_state_for(
         )
 
 
+def _readiness_for(
+    installation: PluginInstallation,
+    inspection: PluginInspection,
+    credentials: PluginCredentialState,
+) -> PluginReadiness:
+    reasons: list[str] = []
+    missing_credentials = [
+        field.key
+        for field in credentials.fields
+        if field.required and not field.configured
+    ]
+    verification_state = installation.provenance.verification_state
+    if not inspection.valid:
+        reasons.append("plugin inspection failed")
+    if verification_state in {"revoked", "changed", "invalid", "failed"}:
+        reasons.append(f"artifact verification state is {verification_state}")
+    if verification_state == "unavailable":
+        reasons.append("artifact verification is unavailable")
+    pending_connections = [
+        connection.id
+        for connection in (
+            inspection.manifest.connections if inspection.manifest else []
+        )
+    ]
+    if credentials.error:
+        reasons.append("credential store is unavailable")
+    if missing_credentials:
+        reasons.append("required credentials are missing")
+    if pending_connections:
+        reasons.append("connection approval is required")
+
+    if not inspection.valid or verification_state in {
+        "revoked",
+        "changed",
+        "invalid",
+        "unavailable",
+        "failed",
+    }:
+        return PluginReadiness(
+            state="unavailable" if verification_state == "unavailable" else "blocked",
+            reasons=reasons,
+            missing_credentials=missing_credentials,
+            pending_connections=pending_connections,
+        )
+    if credentials.error:
+        return PluginReadiness(
+            state="unavailable",
+            reasons=reasons,
+            missing_credentials=missing_credentials,
+            pending_connections=pending_connections,
+        )
+    if missing_credentials:
+        return PluginReadiness(
+            state="missing-credentials",
+            reasons=reasons,
+            missing_credentials=missing_credentials,
+            pending_connections=pending_connections,
+        )
+    if pending_connections:
+        return PluginReadiness(
+            state="pending-approval",
+            reasons=reasons,
+            pending_connections=pending_connections,
+        )
+    if installation.enabled:
+        return PluginReadiness(state="ready", can_enable=True, reasons=reasons)
+    return PluginReadiness(state="disabled", can_enable=True, reasons=reasons)
+
+
+def _list_item_for(
+    installation: PluginInstallation,
+    inspection: PluginInspection,
+) -> PluginListItem:
+    credentials = _credential_state_for(installation, inspection)
+    return PluginListItem(
+        installation=installation,
+        inspection=inspection,
+        credentials=credentials,
+        capabilities=_capabilities_for(installation),
+        readiness=_readiness_for(installation, inspection, credentials),
+        provider=_managed_provider_for(installation),
+    )
+
+
 def _managed_provider_for(
     installation: PluginInstallation,
 ) -> ManagedResourceProvider | None:
@@ -142,7 +236,95 @@ async def _after_mutation() -> None:
 def _http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, KeyError):
         return HTTPException(status_code=404, detail="Plugin installation not found.")
+    if isinstance(exc, MarketplaceError):
+        return HTTPException(status_code=503, detail=str(exc))
     return HTTPException(status_code=422, detail=str(exc))
+
+
+def _marketplace_provider() -> MarketplaceProvider:
+    url = settings.EVOFLUX_PLUGIN_MARKETPLACE_URL.strip()
+    if not url:
+        raise HTTPException(
+            status_code=503, detail="Plugin marketplace is not configured."
+        )
+    return MarketplaceProvider(url)
+
+
+def _marketplace_item(entry, installations) -> PluginMarketplaceItem:
+    installed = next(
+        (
+            item
+            for item in installations
+            if item.name == entry.name and item.version == entry.version
+        ),
+        None,
+    )
+    return PluginMarketplaceItem(
+        entry=entry,
+        installed=installed is not None,
+        installation_id=installed.id if installed else None,
+        installed_version=installed.version if installed else None,
+        verification_state=entry.verification.state,
+        readiness=PluginReadiness(
+            state="ready" if installed and installed.enabled else "disabled",
+            can_enable=installed is not None
+            and entry.verification.state in {"verified", "unverified"},
+            reasons=[] if installed else ["install required"],
+        ),
+    )
+
+
+@router.get("/marketplace", response_model=PluginMarketplaceResponse)
+async def list_marketplace_plugins() -> PluginMarketplaceResponse:
+    provider = _marketplace_provider()
+    index = await provider.fetch_registry()
+    installations = await asyncio.to_thread(list_effective_installations)
+    return PluginMarketplaceResponse(
+        items=[_marketplace_item(entry, installations) for entry in index.plugins]
+    )
+
+
+@router.get("/marketplace/{name}", response_model=PluginMarketplaceItem)
+async def get_marketplace_plugin(name: str) -> PluginMarketplaceItem:
+    provider = _marketplace_provider()
+    index = await provider.fetch_registry()
+    entry = next((item for item in index.plugins if item.name == name), None)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Marketplace plugin not found.")
+    installations = await asyncio.to_thread(list_effective_installations)
+    return _marketplace_item(entry, installations)
+
+
+@router.post(
+    "/marketplace/install", response_model=PluginOperationResponse, status_code=201
+)
+async def install_marketplace_plugin_route(
+    body: PluginMarketplaceInstallRequest,
+) -> PluginOperationResponse:
+    provider = _marketplace_provider()
+    index = await provider.fetch_registry()
+    entry = next(
+        (
+            item
+            for item in index.plugins
+            if item.name == body.name and item.version == body.version
+        ),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Marketplace plugin not found.")
+    try:
+        installation = await install_marketplace_plugin(
+            provider,
+            entry,
+            enabled=False,
+            allow_unverified=body.allow_unverified,
+        )
+        inspection = await asyncio.to_thread(_inspection_for, installation)
+        await _after_mutation()
+        return PluginOperationResponse(installation=installation, inspection=inspection)
+    except Exception as exc:
+        raise _http_error(exc) from exc
 
 
 @router.get("", response_model=PluginListResponse)
@@ -155,13 +337,7 @@ async def list_plugins() -> PluginListResponse:
     )
     return PluginListResponse(
         plugins=[
-            PluginListItem(
-                installation=installation,
-                inspection=inspection,
-                credentials=_credential_state_for(installation, inspection),
-                capabilities=_capabilities_for(installation),
-                provider=_managed_provider_for(installation),
-            )
+            _list_item_for(installation, inspection)
             for installation, inspection in zip(installations, items, strict=True)
         ],
         mcp_servers=[

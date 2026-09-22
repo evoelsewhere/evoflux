@@ -183,6 +183,9 @@ export const queryKeys = {
   plugins: {
     all: () => ['plugins'] as const,
     list: () => ['plugins', 'list'] as const,
+    marketplace: () => ['plugins', 'marketplace'] as const,
+    marketplaceDetail: (name: string) => ['plugins', 'marketplace', name] as const,
+    readiness: (installationId: string) => ['plugins', 'readiness', installationId] as const,
     credentials: (installationId: string) =>
       ['plugins', 'credentials', installationId] as const,
   },
