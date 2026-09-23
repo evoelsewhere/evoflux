@@ -2,11 +2,23 @@
 
 Use `python-docx` when you are producing a document from prompt + data and there is no reference template. Everything below is standard, publicly documented API — nothing here relies on private extensions.
 
-Install once:
+Write the generator to a `.py` file in the workspace and run it with `uv run --with python-docx python your_generator.py` (`python-docx` pulls in `lxml`, which the theme-font recipe also uses).
 
-```bash
-python3 -m pip install --upgrade python-docx lxml
-```
+## Contents
+
+- Skeleton
+- Page setup
+- Named styles (the important part)
+- Runs — mixed formatting inside one paragraph
+- Lists
+- Tables
+- Images
+- Headers, footers, page numbers
+- Table of contents
+- Cross-references and bookmarks
+- Common pitfalls
+- Recipes: cover page, two-column section, callout box, theme font patch
+- Testing your generator
 
 ## Skeleton
 
@@ -361,17 +373,16 @@ For Japanese/Korean, use the platform's JP/KR system face instead (e.g. Yu Gothi
 Every generator should be runnable and produce a file with **exactly one call**:
 
 ```bash
-python your_generator.py --out out/report.docx --data data.json
+uv run --with python-docx python your_generator.py --out out/report.docx --data data.json
 ```
 
-Then run the four QA steps from `SKILL.md` — the ones you must never skip:
+Then run the QA checklist from `SKILL.md`. Its first two steps are:
 
 ```bash
-uv run python -c "import docx; docx.Document('out/report.docx')"
-uv run scripts/extract_text.py out/report.docx | grep -Ei "TODO|TBD|\{\{"
-uv run scripts/render_pdf.py out/report.docx
+uv run --with python-docx python scripts/audit.py out/report.docx
+uv run --with python-docx python scripts/extract_text.py out/report.docx | grep -Ei "TODO|TBD|\{\{"
 ```
 
-If the import check raises or the grep matches anything, treat it as a build
-failure and fix before shipping. (`render_pdf.py` prints the produced PDF
-path on success — inspect that PDF visually.)
+If the audit fails or the grep matches anything, treat it as a build
+failure and fix before shipping. Then check the rendered layout with the
+`document_preview` tool.

@@ -1,31 +1,29 @@
-"""Portable skill discovery, catalog rendering, and activation.
+"""Agent Skills: filesystem-based, progressively disclosed instructions.
 
-The package follows the Agent Skills progressive-disclosure contract:
-
-* discovery exposes only routing metadata;
-* implicit resolution validates one exact eligible workflow before the main
-  model call;
-* the model-visible catalog is bounded by the active model context window;
-* ``SKILL.md`` and bundled resources are read only after activation.
-
-The legacy ``app.agent.tools.builtin.skill`` module remains the public tool
-facade so saved agent configurations and third-party imports keep working.
+See ``documents/architecture/agent-skills.md``. The model sees only Skill
+metadata in the system prompt, reads ``SKILL.md`` with its ``read`` tool, and
+reads or runs bundled files with its ordinary file and shell tools.
 """
 
-from app.agent.skills.catalog import SkillCatalogRender, render_skill_catalog
-from app.agent.skills.discovery import (
-    SkillDiagnostic,
-    SkillRecord,
-    discover_skill_records,
+from app.agent.skills.models import Skill, SkillSource
+from app.agent.skills.registry import (
+    SkillCatalog,
+    SkillRoot,
+    discover_skills,
+    invalidate_skill_cache,
+    skill_roots,
 )
-from app.agent.skills.resolution import SkillResolutionDecision, resolve_skill
+from app.agent.skills.spec import SkillDiagnostic, parse_skill, validate_skill_text
 
 __all__ = [
-    "SkillCatalogRender",
+    "Skill",
+    "SkillCatalog",
     "SkillDiagnostic",
-    "SkillRecord",
-    "SkillResolutionDecision",
-    "discover_skill_records",
-    "render_skill_catalog",
-    "resolve_skill",
+    "SkillRoot",
+    "SkillSource",
+    "discover_skills",
+    "invalidate_skill_cache",
+    "parse_skill",
+    "skill_roots",
+    "validate_skill_text",
 ]

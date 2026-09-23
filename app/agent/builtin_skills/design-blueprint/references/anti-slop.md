@@ -6,6 +6,17 @@ Run through this list at the end of every blueprint. If a pattern hits, either (
 
 Structure: **the pattern** → **why it reads as slop** → **the move that clears it**.
 
+## Contents
+
+- Universal — appears across artifact types (U1–U8)
+- Slide-deck specific (S1–S5)
+- Landing page / web specific (W1–W6)
+- Poster / single-frame specific (P1–P4)
+- Chart / data-viz specific (C1–C5)
+- Dashboard / UI specific (D1–D4)
+- Voice / copy patterns (cross-artifact)
+- How to run the anti-slop pass
+
 ---
 
 ## Universal — appears across artifact types
@@ -22,12 +33,12 @@ Structure: **the pattern** → **why it reads as slop** → **the move that clea
 
 ### U3. Emoji as decoration
 **Pattern.** Section headers, feature lists, or callouts prefixed with an emoji (⚡🎯💡🚀). Present on every section.
-**Why it's slop.** ChatGPT-style formatting invaded design; emojis on headers signal "written by an LLM, styled by no one."
+**Why it's slop.** Chat-assistant formatting invaded design; emojis on headers signal "written by an LLM, styled by no one."
 **The move that clears it.** Remove. If you need visual anchors, use typography (an eyebrow label, a number, a rule). Reserve emoji for content it's actually functional in (a chat interface, a reaction feature, a social post preview).
 
 ### U4. Isometric 3D people illustrations
 **Pattern.** Purple/blue/orange gradients on rounded 3D-effect people at desks, high-fiving, on rockets, holding oversized icons.
-**Why it's slop.** Corporate illustration circa 2018–2022, still dominant in AI image generation. Read as "we bought this from a stock library."
+**Why it's slop.** A corporate-illustration default that AI image generation reproduces by reflex. Read as "we bought this from a stock library."
 **The move that clears it.** Real photography (with a real photographic style, not stock), or hand-drawn illustration in a defined style (line weight, palette, treatment consistent across all illustrations), or *no illustration*. "No illustration" is a real design choice and often the strongest one.
 
 ### U5. "Growing number stat" trios
@@ -47,7 +58,7 @@ Structure: **the pattern** → **why it reads as slop** → **the move that clea
 
 ### U8. Em-dash overuse
 **Pattern.** — Every — sentence — has — an em-dash — for — dramatic — effect.
-**Why it's slop.** Currently the strongest visual tell of LLM-written copy.
+**Why it's slop.** One of the strongest visual tells of LLM-written copy.
 **The move that clears it.** At most one em-dash per paragraph. Prefer commas or periods.
 
 ---
@@ -194,6 +205,6 @@ Fast pass. 60 seconds. Ask three questions of the blueprint you just wrote:
 
 1. **What's the most-common move in this design?** Whichever section, layout, or copy phrase you can imagine seeing on ten other websites this week — that's the candidate for revision.
 2. **Which decisions did I *not* make?** If a section, choice, or component just appeared without a Decision Trace, it's a default. Defaults are where slop lives.
-3. **What would the specific designer I embodied refuse?** Re-read their "refuses" list in `embody-modes.md`. Any hit is worth calling out.
+3. **What would the specific designer I embodied refuse?** Re-read their "refuses" list in [references/embody-modes.md](references/embody-modes.md) (also linked from SKILL.md Move 1). Any hit is worth calling out.
 
 If a hit is found, don't hide it. Either fix in place, or note it as a deliberate trade-off in the Decision Trace with the reason. Both are fine. Silent slop is not.

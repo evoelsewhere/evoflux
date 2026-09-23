@@ -4,6 +4,36 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Agent Skills now follow Anthropic's Agent Skills architecture
+  (documents/architecture/agent-skills.md). The system prompt lists each
+  Skill's name, description and `SKILL.md` location; the agent reads
+  `SKILL.md` with `read` when a task matches, reads referenced files on
+  demand and runs bundled scripts with `shell`. This is a clean break with no
+  compatibility layer:
+  - the `skill` tool, the per-turn resolver model call and the bounded,
+    query-ranked catalog are gone;
+  - `SKILL.md` frontmatter is the whole bundle contract (`name`,
+    `description`, `license`, `compatibility`, `metadata`, `allowed-tools`,
+    plus `disable-model-invocation` and `user-invocable`).
+    `agents/evoflux.yaml`, `agents/openai.yaml`, `.evoflux.json` and
+    in-bundle `evals/` are no longer read, and nested `parent/child` names
+    are no longer skills;
+  - Skills are no longer scoped to Work or Coding mode, and Settings keeps a
+    single on/off switch per Skill. Older `skill-settings.json` overrides
+    are ignored;
+  - `$skill-name` works anywhere in a message and may name several Skills;
+    `/skill:<name>` is removed. An agent's `skills:` field preloads those
+    Skills into its system prompt;
+  - discovery scans `.evoflux/skills`, `.agents/skills` and `.claude/skills`
+    in projects and the user directory, then plugins, then built-ins.
+    `.opencode/skills` and `/etc/codex/skills` are no longer scanned.
+  - Every bundled Skill was rewritten to the specification and the authoring
+    best practices; `data-analytics` folds its 17 nested workflows into
+    reference files, and the Codex-only Google Doc/Slides report workflows
+    are removed.
+
 ### Added
 
 - StepFun is now a supported provider. `stepfun:` models resolve to the

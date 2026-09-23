@@ -11,6 +11,7 @@ Maintainer scripts for sidecar packaging, model registry updates, and release ma
 ```
 build_sidecar.py          Build the desktop Python sidecar bundle
 update_model_registry.py  Refresh bundled model metadata from models.dev
+validate_skills.py        Check Agent Skills bundles (spec + best practices)
 ```
 
 ## Essential commands

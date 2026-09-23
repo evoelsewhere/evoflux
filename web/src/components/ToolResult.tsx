@@ -372,6 +372,7 @@ export function ToolResult({ toolName, result }: { toolName: string; result: str
   if (toolName === 'browser_use') {
     return <BrowserUseResult result={result} />
   }
-  // web_fetch, date, math, skill, etc.
+  // web_fetch, date, math, etc. (a Skill activation is a ``read`` and uses
+  // the file-read renderer above).
   return <GenericResult result={result} />
 }

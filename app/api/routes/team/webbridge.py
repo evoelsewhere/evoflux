@@ -31,7 +31,7 @@ import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import uuid
 from typing import Annotated, Any, Literal, cast
 from urllib.parse import unquote, urlsplit, urlunsplit
@@ -56,6 +56,8 @@ from sqlmodel import col, select
 from sse_starlette.sse import EventSourceResponse
 
 from app.agent.providers.thinking import accepts_thinking_level
+from app.agent.schemas.chat import FunctionCall, ToolCall
+from app.agent.skills.activation import READ_TOOL, SKILL_FILE_NAME, full_read_path
 from app.api.routes.team._helpers import _fast_tier
 from app.api.deps import DbSession, WriteDbSession
 from app.api.schemas.commands import CommandRenderRequest, CommandRenderResponse
@@ -1001,13 +1003,6 @@ _BROWSER_COMPOSER_BUILTINS: tuple[dict[str, Any], ...] = (
         "label": "goal:stop",
         "description": "Remove the session goal",
     },
-    {
-        "id": "skill",
-        "label": "skill:",
-        "description": "Choose a skill to use for this message",
-        "insert_text": "skill:",
-        "keep_input_open": True,
-    },
 )
 
 
@@ -1251,38 +1246,24 @@ async def get_browser_panel_composer_catalog(
         for item in discovered_commands.values()
     )
 
-    from app.api.routes import skills as skill_routes
+    from app.agent.skills.registry import discover_skills
     from app.api.routes import workflows as workflow_routes
 
-    skill_response = await skill_routes.list_skills(
-        workspace=[str(workspace)] if workspace else None,
-        mode=cast(Any, session.mode),
+    skill_catalog = await asyncio.to_thread(
+        discover_skills, [workspace] if workspace else []
     )
-    for skill in skill_response.skills:
-        if (
-            not skill.valid
-            or skill.user_invocable is False
-            or session.mode not in skill.modes
-        ):
-            continue
-        skill_name = skill.name.replace("/", ":")
-        directive = f"skill:{skill_name}"
-        starter = (skill.default_prompt or "").replace(f"${skill.name}", "").strip()
-        commands.append(
-            BrowserComposerCommand(
-                id=directive,
-                label=skill.display_name or skill_name,
-                description=(
-                    skill.short_description
-                    or skill.description
-                    or f"Load the {skill_name} skill"
-                ),
-                category="skill",
-                insert_text=f"{directive} {starter}" if starter else directive,
-                keep_input_open=True,
-                source=skill.source,
-            )
+    commands.extend(
+        BrowserComposerCommand(
+            id=f"skill:{skill.name}",
+            label=skill.name,
+            description=skill.description,
+            category="skill",
+            insert_text=f"${skill.name} ",
+            keep_input_open=True,
+            source=skill.source,
         )
+        for skill in skill_catalog.user_visible()
+    )
 
     workflow_response = await workflow_routes.list_workflows(
         db,
@@ -1622,32 +1603,31 @@ def _browser_panel_skill_presentation(
     tool_name: str,
     raw_arguments: Any,
 ) -> dict[str, str]:
-    """Expose only bounded display metadata for the built-in skill tool."""
-    if tool_name != "skill":
+    """Present a full ``read`` of a ``SKILL.md`` as a Skill activation.
+
+    Only the bounded Skill name (the ``SKILL.md`` parent directory) leaves the
+    sidecar; the read path itself is never forwarded to the browser.
+    """
+    if tool_name != READ_TOOL:
         return {}
-    arguments = raw_arguments
-    if isinstance(arguments, str):
-        try:
-            arguments = json.loads(arguments)
-        except (TypeError, json.JSONDecodeError):
-            return {}
-    if not isinstance(arguments, dict):
+    if isinstance(raw_arguments, dict):
+        arguments = json.dumps(raw_arguments)
+    elif isinstance(raw_arguments, str):
+        arguments = raw_arguments
+    else:
         return {}
-    skill_name = arguments.get("skill_name")
-    safe_name = (
-        skill_name.strip()
-        if isinstance(skill_name, str)
-        and _BROWSER_PANEL_SKILL_NAME.fullmatch(skill_name.strip())
-        else None
+    path = full_read_path(
+        ToolCall(id="", function=FunctionCall(name=tool_name, arguments=arguments))
     )
-    action = arguments.get("action")
-    if not isinstance(action, str) and safe_name:
-        action = "load"
-    safe_action = action if action in {"load", "read_resource", "list"} else None
-    return {
-        **({"skill_action": safe_action} if safe_action else {}),
-        **({"skill_name": safe_name} if safe_name else {}),
-    }
+    if path is None:
+        return {}
+    parts = PurePosixPath(path.replace("\\", "/")).parts
+    if len(parts) < 2 or parts[-1] != SKILL_FILE_NAME:
+        return {}
+    skill_name = parts[-2]
+    if not _BROWSER_PANEL_SKILL_NAME.fullmatch(skill_name):
+        return {}
+    return {"skill_action": "load", "skill_name": skill_name}
 
 
 def _browser_panel_tool_display_arguments(

@@ -952,10 +952,11 @@ def refresh_blueprints(team: "AgentTeam") -> None:
 
 
 def invalidate_skill_cache() -> None:
-    """Clear the ``discover_skills`` lru_cache so the next tool call
-    picks up skill content or mode-scope edits. No team reload needed.
-    """
-    from app.agent.tools.builtin.skill import _discover_skills_cached
+    """Clear the Skill discovery cache so the next run sees Skill edits.
 
-    _discover_skills_cached.cache_clear()
+    No team reload is needed: every run rediscovers its catalog.
+    """
+    from app.agent.skills.registry import invalidate_skill_cache as clear
+
+    clear()
     logger.info("team_manager_skill_cache_invalidated")

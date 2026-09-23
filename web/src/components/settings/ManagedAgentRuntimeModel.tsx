@@ -66,8 +66,8 @@ export function ManagedAgentRuntimeModel({
     () =>
       registry.data?.skills.map((item) => ({
         value: item.name,
-        label: item.display_name || item.name,
-        description: item.short_description || item.description,
+        label: item.name,
+        description: item.enabled ? item.description : `Disabled · ${item.description}`,
       })) ?? [],
     [registry.data?.skills],
   )

@@ -7,7 +7,6 @@ from .registry import Tool, tool
 
 _BUILTIN_EXPORTS = {
     "browser_use",
-    "discover_skills",
     "webbridge",
     "shell_tool",
     "process_tool",
@@ -15,7 +14,6 @@ _BUILTIN_EXPORTS = {
     "glob_files",
     "grep_files",
     "list_directory",
-    "load_skill",
     "patch_file",
     "read_file",
     "remove_path",
@@ -40,7 +38,6 @@ __all__ = [
     "tool",
     # builtin
     "browser_use",
-    "discover_skills",
     "webbridge",
     "shell_tool",
     "process_tool",
@@ -48,7 +45,6 @@ __all__ = [
     "glob_files",
     "grep_files",
     "list_directory",
-    "load_skill",
     "patch_file",
     "read_file",
     "remove_path",

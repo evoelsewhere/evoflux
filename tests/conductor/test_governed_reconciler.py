@@ -522,6 +522,9 @@ async def test_enforce_applies_evoflux_native_skill_bundle(
         "files": [
             {"path": "SKILL.md", "content": content},
             {"path": "references/guide.md", "content": "# Guide\n"},
+            # Release-level mode metadata: Skills have no mode scope, so it is
+            # neither honoured nor written into the bundle.
+            {"path": ".evoflux.json", "content": json.dumps({"modes": ["coding"]})},
         ]
     }
     raw = json.dumps(payload, separators=(",", ":")).encode()
@@ -548,9 +551,89 @@ async def test_enforce_applies_evoflux_native_skill_bundle(
     skill_root = governed_dirs / "config" / "skills" / "managed-skill"
     assert (skill_root / "SKILL.md").read_text() == content
     assert (skill_root / "references" / "guide.md").read_text() == "# Guide\n"
-    assert json.loads((skill_root / ".evoflux.json").read_text()) == {
-        "modes": ["work", "coding"]
-    }
+    assert not (skill_root / ".evoflux.json").exists()
+    assert sorted(
+        path.relative_to(skill_root).as_posix()
+        for path in skill_root.rglob("*")
+        if path.is_file()
+    ) == ["SKILL.md", "references/guide.md"]
+    assert result[0].modes == ["work", "coding"]
+
+
+def _skill_release(slug: str, content: str) -> tuple:
+    payload = {"files": [{"path": "SKILL.md", "content": content}]}
+    raw = json.dumps(payload, separators=(",", ":")).encode()
+    change = _change("skill", hashlib.sha256(raw).hexdigest(), len(raw)).model_copy(
+        update={"slug": slug}
+    )
+    version = EffectiveResourceVersion.model_validate(
+        {
+            **change.model_dump(exclude={"tombstone", "trust_required"}),
+            "release_channel": "published",
+            "payload": payload,
+            "artifact_key": None,
+        }
+    )
+    return change, version
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("slug", "content"),
+    [
+        # Unknown frontmatter field: strict validation rejects it.
+        (
+            "managed-skill",
+            "---\nname: managed-skill\ndescription: Managed.\nmodes: [work]\n---\n"
+            "Body.\n",
+        ),
+        # Frontmatter name does not match the slug directory.
+        ("managed-skill", "---\nname: other\ndescription: Managed.\n---\nBody.\n"),
+        # Slug is not a specification name.
+        ("Managed_Skill", "---\nname: Managed_Skill\ndescription: M.\n---\nBody.\n"),
+    ],
+)
+async def test_skill_release_is_validated_strictly(
+    governed_dirs: Path, slug: str, content: str
+) -> None:
+    change, version = _skill_release(slug, content)
+
+    result = await GovernedResourceReconciler(
+        ManagedResourceStore(governed_dirs / "state" / "conductor")
+    ).reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+
+    assert result[0].observed_state == "error"
+    assert not (governed_dirs / "config" / "skills" / slug).exists()
+
+
+@pytest.mark.asyncio
+async def test_skill_release_does_not_overwrite_user_owned_skill(
+    governed_dirs: Path,
+) -> None:
+    user_skill = governed_dirs / "config" / "skills" / "managed-skill"
+    user_skill.mkdir(parents=True)
+    (user_skill / "SKILL.md").write_text("mine", encoding="utf-8")
+    change, version = _skill_release(
+        "managed-skill",
+        "---\nname: managed-skill\ndescription: Managed.\n---\nBody.\n",
+    )
+
+    result = await GovernedResourceReconciler(
+        ManagedResourceStore(governed_dirs / "state" / "conductor")
+    ).reconcile_page(
+        FakeClient(version),
+        _page(change),
+        expected_project_id="project-1",
+        enforcement_mode="enforce",
+    )
+
+    assert result[0].observed_state == "ownership_conflict"
+    assert (user_skill / "SKILL.md").read_text(encoding="utf-8") == "mine"
 
 
 @pytest.mark.asyncio
@@ -881,21 +964,55 @@ def test_an_unresolvable_mcp_server_is_not_reported_as_applied(
     assert module.observed_state_now(record) == "dependency_missing"
 
 
+def _discovered_skills(
+    monkeypatch: pytest.MonkeyPatch, *names: str, disabled: tuple[str, ...] = ()
+) -> None:
+    from app.agent.skills.models import Skill
+    from app.agent.skills.registry import SkillCatalog
+
+    catalog = SkillCatalog(
+        {
+            name: Skill(
+                name=name,
+                description="Test skill.",
+                location=Path("/skills") / name / "SKILL.md",
+                root=Path("/skills"),
+                source="user",
+                enabled=name not in disabled,
+            )
+            for name in (*names, *disabled)
+        }
+    )
+    monkeypatch.setattr(
+        "app.agent.skills.registry.discover_skills", lambda *_a, **_k: catalog
+    )
+
+
 def test_an_unresolvable_skill_is_not_reported_as_applied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.agent.tools.builtin import skill as skill_tool
     from app.conductor import governed_reconciler as module
     from app.plugin_platform import runtime
 
     monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
-    monkeypatch.setattr(
-        skill_tool, "discover_skill_records_runtime", lambda mode: {"other"}
-    )
+    _discovered_skills(monkeypatch, "other")
     record = _applied_team_record(declared_skills=["release-audit"])
 
     assert module.unresolved_capabilities(record) == {"skills": ["release-audit"]}
     assert module.observed_state_now(record) == "dependency_missing"
+
+
+def test_a_disabled_skill_is_unresolved_and_an_enabled_one_resolves(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conductor import governed_reconciler as module
+    from app.plugin_platform import runtime
+
+    monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
+    _discovered_skills(monkeypatch, "release-audit", disabled=("triage",))
+    record = _applied_team_record(declared_skills=["release-audit", "triage"])
+
+    assert module.unresolved_capabilities(record) == {"skills": ["triage"]}
 
 
 def test_a_resolvable_mcp_server_keeps_the_applied_state(
@@ -930,18 +1047,19 @@ def test_the_inventory_names_what_could_not_be_resolved(
 ) -> None:
     """Conductor's installation table shows this string, so it has to name
     the capability rather than repeat the state."""
-    from app.agent.tools.builtin import skill as skill_tool
     from app.conductor import governed_reconciler as module
     from app.plugin_platform import runtime
 
     monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
-    monkeypatch.setattr(
-        skill_tool, "discover_skill_records_runtime", lambda mode: set()
-    )
+    _discovered_skills(monkeypatch)
     store = ManagedResourceStore(governed_dirs / "state" / "conductor")
     store.upsert(
         _applied_team_record(declared_skills=["release-audit"], declared_mcp=["github"])
     )
+    assert module.unresolved_capabilities(store.load().resources[0]) == {
+        "skills": ["release-audit"],
+        "mcp": ["github"],
+    }
 
     [item] = GovernedResourceReconciler(store).inventory()
 
@@ -953,14 +1071,11 @@ def test_the_inventory_names_what_could_not_be_resolved(
 def test_a_healthy_resource_reports_no_dependency_detail(
     governed_dirs: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from app.agent.tools.builtin import skill as skill_tool
     from app.conductor import governed_reconciler as module
     from app.plugin_platform import runtime
 
     monkeypatch.setattr(runtime, "all_mcp_server_names", lambda: [])
-    monkeypatch.setattr(
-        skill_tool, "discover_skill_records_runtime", lambda mode: set()
-    )
+    _discovered_skills(monkeypatch)
     store = ManagedResourceStore(governed_dirs / "state" / "conductor")
     store.upsert(_applied_team_record())
 
@@ -1193,11 +1308,15 @@ async def test_purge_removes_a_managed_skill_even_after_a_local_edit(
     )
     skill_root = governed_dirs / "config" / "skills" / "managed-skill"
     (skill_root / "SKILL.md").write_text(content + "Local edit.\n", encoding="utf-8")
+    from app.core.skill_settings import disabled_skill_names, set_skill_enabled
+
+    set_skill_enabled("managed-skill", False)
 
     removed = reconciler.purge_project("project-1")
 
     assert removed == ["skill/managed-skill"]
     assert not skill_root.exists()
+    assert "managed-skill" not in disabled_skill_names()
     document = store.load()
     assert document.resources == []
     assert document.project_id is None

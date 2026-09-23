@@ -74,21 +74,22 @@ export const queryKeys = {
     list: () => ['agentFiles', 'list'] as const,
     detail: (name: string) => ['agentFiles', 'detail', name] as const,
     // No-arg form is the invalidation prefix for every discovery scope.
-    registry: (workspaces?: readonly string[], mode?: string | null) =>
-      workspaces === undefined && mode === undefined
+    registry: (workspaces?: readonly string[]) =>
+      workspaces === undefined
         ? (['agentFiles', 'registry'] as const)
-        : (['agentFiles', 'registry', workspaces ?? [], mode ?? null] as const),
+        : (['agentFiles', 'registry', workspaces] as const),
   },
+  // No-arg forms are the invalidation prefixes for every discovery scope.
   skillFiles: {
     all: () => ['skillFiles'] as const,
-    list: (workspaces?: readonly string[], mode?: string | null) =>
-      workspaces === undefined && mode === undefined
+    list: (workspaces?: readonly string[]) =>
+      workspaces === undefined
         ? (['skillFiles', 'list'] as const)
-        : (['skillFiles', 'list', workspaces ?? [], mode ?? null] as const),
-    detail: (name: string, workspaces?: readonly string[], mode?: string | null) =>
-      workspaces === undefined && mode === undefined
+        : (['skillFiles', 'list', workspaces] as const),
+    detail: (name: string, workspaces?: readonly string[]) =>
+      workspaces === undefined
         ? (['skillFiles', 'detail', name] as const)
-        : (['skillFiles', 'detail', name, workspaces ?? [], mode ?? null] as const),
+        : (['skillFiles', 'detail', name, workspaces] as const),
   },
   commands: {
     list: (workspace?: string | null) => ['commands', 'list', workspace ?? null] as const,

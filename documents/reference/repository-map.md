@@ -25,7 +25,7 @@ test-artifacts/  Checked-in visual evidence used by selected tests/reviews
 | `app/agent/hooks/` | Context, memory, streaming, telemetry and post-edit stages |
 | `app/agent/providers/` | Twenty provider adapters and model metadata |
 | `app/agent/tools/` | Built-in and multimodal tool registry |
-| `app/agent/skills/` | Skill discovery, catalog, resolution and activation |
+| `app/agent/skills/` | Agent Skills: `SKILL.md` spec, discovery, prompt catalog, `$name` activation |
 | `app/agent/mcp/` | User-global MCP configuration and runtime |
 | `app/plugin_platform/` | Portable Agent Plugin lifecycle and isolated MCP |
 | `app/services/` | Business logic shared by API, CLI and agents |

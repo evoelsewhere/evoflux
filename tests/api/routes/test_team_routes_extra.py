@@ -970,7 +970,7 @@ class TestSerializeAgent:
         provider = MagicMock()
         agent = Agent(llm_provider=provider, name="bot", skills=["my-skill"])
         with patch(
-            "app.api.routes.team.chat.discover_skills",
+            "app.agent.skills.registry.discover_skills",
             side_effect=Exception("error"),
         ):
             result = _serialize_agent(agent)

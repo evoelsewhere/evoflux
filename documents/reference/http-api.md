@@ -30,7 +30,7 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/team` | chat, sessions, files, terminal, projects and Coding workbench | `routes/team/` |
 | `/api/team/webbridge` | pairing, browser-panel chat, relay, bindings and Teach | `team/webbridge.py` |
 | `/api/agents` | agent registry and editable/runtime configuration | `agents.py` |
-| `/api/skills` | Skill discovery, CRUD and runtime settings | `skills.py` |
+| `/api/skills` | Skill discovery, bundle CRUD and on/off switch | `skills.py` |
 | `/api/mcp` | global/plugin server status and global MCP lifecycle | `mcp.py` |
 | `/api/plugins` | package inspection/install/editor/credentials/lifecycle | `plugins.py` |
 | `/api/settings` | providers, sandbox, Git, browser and Conductor | `settings.py` |

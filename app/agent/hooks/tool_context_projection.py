@@ -15,6 +15,7 @@ from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
 from app.agent.schemas.chat import AssistantMessage, ChatMessage, ToolMessage
+from app.agent.skills.activation import is_skill_file_read
 
 if TYPE_CHECKING:
     from app.agent.state import (
@@ -25,10 +26,9 @@ if TYPE_CHECKING:
     )
 
 
-# Skill bodies are executable instructions and have their own exact-preservation
-# contract. Every other old text-only result is safe to project once it leaves
-# the recent working set; this also protects the harness when new tools appear.
-_NON_PROJECTABLE_TOOLS = frozenset({"skill"})
+# A read of a SKILL.md is a Skill activation: executable instructions with
+# their own exact-preservation contract. Every other old text-only result is
+# safe to project once it leaves the recent working set.
 _MIN_RESULT_CHARS = 1_200
 _RECEIPT_STATUS_CHARS = 160
 _RECEIPT_HEAD_CHARS = 180
@@ -114,6 +114,17 @@ def project_tool_results(
         for message in batches[compacted_batches:]
         for call in message.tool_calls or []
     }
+    results = {
+        message.tool_call_id: message
+        for message in messages
+        if isinstance(message, ToolMessage)
+    }
+    keep_call_ids.update(
+        call.id
+        for message in batches[:compacted_batches]
+        for call in message.tool_calls or []
+        if is_skill_file_read(call, results.get(call.id))
+    )
     projected: list[ChatMessage] = []
     original_chars = 0
     projected_chars = 0
@@ -122,7 +133,6 @@ def project_tool_results(
         if (
             isinstance(message, ToolMessage)
             and message.tool_call_id not in keep_call_ids
-            and message.name not in _NON_PROJECTABLE_TOOLS
             and not message.parts
             and len(message.content or "") > _MIN_RESULT_CHARS
         ):

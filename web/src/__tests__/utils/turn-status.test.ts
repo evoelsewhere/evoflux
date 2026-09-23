@@ -22,6 +22,13 @@ describe('activeToolLabel', () => {
       .toBe('Running git status')
   })
 
+  it('names the skill when a full read of SKILL.md activates it', () => {
+    expect(activeToolLabel('read', JSON.stringify({ path: '/skills/pdf/SKILL.md' })))
+      .toBe('Using skill pdf')
+    expect(activeToolLabel('read', JSON.stringify({ path: '/skills/pdf/SKILL.md', offset: 50 })))
+      .toBe('Reading SKILL.md')
+  })
+
   it('falls back to the verb alone when no argument is worth naming', () => {
     expect(activeToolLabel('read', undefined)).toBe('Reading…')
   })

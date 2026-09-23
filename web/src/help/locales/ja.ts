@@ -231,7 +231,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: Ctrl+B はすべてのモードで同じようにモードサイドバーをトグル。',
           '横断: Scheduler タスクは work または coding モードを明示 — タスク側で正しいモードを設定。',
-          '横断: Skills と workflows は Settings でモードスコープ可能; Coding 専用 workflow は Work では隠れます。'
+          '横断: workflows はモードスコープ可能で、Coding 専用 workflow は Work では隠れます。Skills は両モードで使えます。'
 ],
       },
       {
@@ -505,7 +505,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'composer',
     title: 'Composer の強力機能',
     summary:
-      '/、!、@、# スニペット、添付、引用選択、Work フォルダ指定、ネストスキル、RunInputsDialog 付きワークフローを使います。Undo は添付も復元するので、誤送信後も下書きを回復できます。',
+      '/、!、@、$ スキル、# スニペット、添付、引用選択、Work フォルダ指定、RunInputsDialog 付きワークフローを使います。Undo は添付も復元するので、誤送信後も下書きを回復できます。',
     keywords: [
       'composer',
       'mention',
@@ -516,6 +516,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'drag',
       'paste',
       'skill',
+      '$skill-name',
       'workflow',
       'RunInputsDialog',
       'WorkFolderSelector',
@@ -533,7 +534,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'メッセージを ! で始めるとシェルコマンドを実行（または /shell で bang モードを事前入力）。',
       '@ でアクティブワークスペースからランク付きファイル/フォルダパス参照を挿入。',
       'Coding では # でワークスペースまたはグローバルスニペットを composer に展開。',
-      'ネストスキルは /skill:parent:child（ネスト名ではコロンとスラッシュは互換）。',
+      '$ を打つとスキルを選べます。$skill-name はメッセージのどこに書いてもよく、複数指定できます（> 引用行とコードブロック内は除く）。',
       'ワークフローは必須時に RunInputsDialog を開き、生のスラッシュ文をチャットとして送りません。',
       'Undo は前のユーザーメッセージとその添付を composer に復元。',
       '添付が有効なら画像/ファイルのペーストや composer へのドラッグ&ドロップ。',
@@ -544,7 +545,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'composer は単なるテキストボックスではありません: スラッシュメニュー（/）、シェル bang（!）、パスメンション（@）、Coding スニペット（#）、ファイル添付、引用コンテキストチップ、Work セッション用 WorkFolderSelector、スキルディレクティブ、承認済みワークフロー。これらのアフォーダンスをマスターすることが、ツリーをプロンプトにダンプすることと精密に操縦することの差です。',
+        text: 'composer は単なるテキストボックスではありません: スラッシュメニュー（/）、シェル bang（!）、パスメンション（@）、スキルメンション（$）、Coding スニペット（#）、ファイル添付、引用コンテキストチップ、Work セッション用 WorkFolderSelector、承認済みワークフロー。これらのアフォーダンスをマスターすることが、ツリーをプロンプトにダンプすることと精密に操縦することの差です。',
       },
       {
         type: 'p',
@@ -552,12 +553,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '/ でコマンドメニュー（組み込み、/skill: 下のスキル、ワークフロー、カスタム .evoflux/commands/）。! 接頭辞でシェル。@ でパス選択。Coding では # がスニペット展開。ファイルをバーへ DnD またはペースト。Work セッションでは composer 近くの WorkFolderSelector でプライベート session folder または別ローカルディレクトリを指定。/undo 後、テキストと添付の両方が下書きに戻ります。',
+        text: '/ でコマンドメニュー（組み込み、ワークフロー、カスタム .evoflux/commands/）。$ でスキルを選択: エージェントは有効なスキルすべての名前と説明を把握しており、タスクが合えば自分で SKILL.md を読みますが、`$skill-name` と書くとそのスキルを今すぐ使わせられます。! 接頭辞でシェル。@ でパス選択。Coding では # がスニペット展開。ファイルをバーへ DnD またはペースト。Work セッションでは composer 近くの WorkFolderSelector でプライベート session folder または別ローカルディレクトリを指定。/undo 後、テキストと添付の両方が下書きに戻ります。',
       },
       {
         type: 'tips',
         items: [
-          '/ — スラッシュコマンド、スキル、ワークフロー、カスタムコマンド',
+          '/ — スラッシュコマンド、ワークフロー、カスタムコマンド',
+          '$ — スキル。位置は自由、1 メッセージに複数可',
           '! — 行の残りをシェルモード',
           '@ — ファイル/フォルダメンション',
           '# — スニペット（Coding ワークスペース）',
@@ -569,11 +571,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '精密な Coding 依頼の手順: (1) 重要なファイルを @、(2) 必要なときだけスクショやログを添付、(3) 成果とテストを述べる、(4) 任意で既知手順の /skill:…、(5) 権限モードを設定、(6) 送信。Work 調査: WorkFolderSelector を設定、ソース添付、前の回答を引用、それから依頼。',
+        text: '精密な Coding 依頼の手順: (1) 重要なファイルを @、(2) 必要なときだけスクショやログを添付、(3) 成果とテストを述べる、(4) 任意で既知手順の $skill-name、(5) 権限モードを設定、(6) 送信。Work 調査: WorkFolderSelector を設定、ソース添付、前の回答を引用、それから依頼。',
       },
       {
         type: 'p',
-        text: 'よくある失敗: 生の `/workflow name` テキストを送って動くと期待（ワークフローはメニュー/ダイアログ経由）; スペースでネストスキル（`:` / `/` を使う）; Work で # を使い Coding スニペットを期待; Providers 設定ではなく composer にシークレットを貼る; /undo が添付も復元することを忘れ、機微ファイルを不用意に再送。',
+        text: 'よくある失敗: 生の `/workflow name` テキストを送って動くと期待（ワークフローはメニュー/ダイアログ経由）; スキル名を大文字やスペース入りで書く（スキル名は小文字とハイフン。例: `$code-review`）; Work で # を使い Coding スニペットを期待; Providers 設定ではなく composer にシークレットを貼る; /undo が添付も復元することを忘れ、機微ファイルを不用意に再送。',
       },
       {
         type: 'tips',
@@ -586,7 +588,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'ワークフローは承認済みでセッションスコープ（work / coding）に有効でなければ隠れます。Skills は Settings → Skills で検証後にのみ /skill: 下に出ます。コマンドが欠ける場合は、スラッシュバグと決める前にスコープと検証を確認。',
+        text: 'ワークフローは承認済みでセッションスコープ（work / coding）に有効でなければ隠れます。$ ピッカーに出るのは、有効（valid）で Settings → Skills でオンになっており、ユーザー呼び出し可能なスキルだけです。コマンドやスキルが見つからない場合は、composer のバグと決める前にスコープ、検証、スキルのスイッチを確認。',
       }
 ],
     related: [
@@ -692,7 +694,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'slash',
     title: '組み込みスラッシュコマンド',
     summary:
-      'composer で / を打ち、stop、compact、undo、init、btw、goal、スキル、ワークフロー、`.evoflux/commands/` のカスタムコマンドを使います。組み込みは即実行; カスタムは通常挿入され引数を仕上げられます。',
+      'composer で / を打ち、stop、compact、undo、init、btw、goal、ワークフロー、`.evoflux/commands/` のカスタムコマンドを使います。組み込みは即実行; カスタムは通常挿入され引数を仕上げられます。スキルはスラッシュコマンドではなく $skill-name で使います。',
     keywords: [
       'slash',
       '/stop',
@@ -702,19 +704,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '/btw',
       '/goal',
       '/workflow',
-      '/skill',
       'command',
       '.evoflux/commands',
       'スラッシュ',
       'コマンド',
-      'スキル',
       'ワークフロー'
 ],
     tricks: [
       '組み込みは選択で即実行; カスタムは通常 textarea に挿入され $ARGUMENTS を付け足せます。',
-      '最長プレフィックス一致; ネストしたコマンド/スキル名では : と / は互換。',
+      '最長プレフィックス一致; ネストしたコマンド名では : と / は互換。',
       'カスタムコマンドはプロジェクトまたはグローバルの .evoflux/commands/（および互換 OpenCode パス）に置きます。',
-      'Skills は Settings → Skills で検証後にのみ /skill: 下に出ます。',
+      'スキルはスラッシュコマンドではありません: $ で選ぶか、メッセージのどこかに $skill-name と書きます。',
       'ワークフローはセッションスコープ（work / coding）で承認・有効でなければ隠れます。',
       'コンテキスト予算バーが上がったら早めに /compact — 失敗待ちはターンを無駄にします。',
       '/init は AGENTS.md 向けの Coding 志向; AGENTS.md 向けです。',
@@ -724,7 +724,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'スラッシュコマンドは一級の composer アクションです。組み込みはチーム実行を制御; goal サブコマンドは永続目標を管理; スキルとワークフローは構造化挙動を付与; ユーザー定義の Markdown/YAML コマンドはサーバー側で展開。メニューは検索可能 — 数文字打てば絞り込めます。',
+        text: 'スラッシュコマンドは一級の composer アクションです。組み込みはチーム実行を制御; goal サブコマンドは永続目標を管理; ワークフローは構造化された実行を起動; ユーザー定義の Markdown/YAML コマンドはサーバー側で展開。メニューは検索可能 — 数文字打てば絞り込めます。',
       },
       {
         type: 'p',
@@ -748,20 +748,19 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { cmd: '/goal:pause', desc: 'アクティブな Goal を一時停止' },
           { cmd: '/goal:resume', desc: '一時停止中の Goal を再開' },
           { cmd: '/goal:stop', desc: 'セッションの Goal を削除' },
-          { cmd: '/skill:…', desc: '次のメッセージにスキルを付与（ネスト: /skill:parent:child）' },
           { cmd: '/workflow <name>', desc: '承認済みワークフローを実行（RunInputsDialog が開く場合あり）' }
 ],
       },
       {
         type: 'p',
-        text: '/ でコマンドを絞り込み。組み込みを選ぶと実行、カスタム/スキル/ワークフローは挿入または起動。カスタムファイルはプロジェクトまたはグローバル EvoFlux 設定の `.evoflux/commands/` に置きます。ネスト名は最長プレフィックス優先; 区切りは `:` または `/`。ワークフローは RunInputsDialog を開くことがあり、生のスラッシュ行を通常チャットとしては送りません。',
+        text: '/ でコマンドを絞り込み。組み込みを選ぶと実行、カスタム/ワークフローは挿入または起動。カスタムファイルはプロジェクトまたはグローバル EvoFlux 設定の `.evoflux/commands/` に置きます。ネスト名は最長プレフィックス優先; 区切りは `:` または `/`。ワークフローは RunInputsDialog を開くことがあり、生のスラッシュ行を通常チャットとしては送りません。',
       },
       {
         type: 'tips',
         items: [
           '組み込み — 選択で実行',
           'カスタム — 通常は挿入; $ARGUMENTS を付け足す',
-          'Skill — Settings → Skills 検証後の /skill:',
+          'Skill — スラッシュコマンドではない; $skill-name と入力',
           'Workflow — スコープ + 承認が必要、さもなくば非表示',
           '最長プレフィックス — : または / での parent:child ネスト'
 ],
@@ -1799,7 +1798,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Runtime: enabled plugin の valid Skill は metadata catalog に入り、activate 時だけ本文が load されます。plugin Skill を load すると同じ installation の ready MCP tools がその run で利用可能になりますが permission は維持されます。Settings → Skills は discovery/validation、Settings → MCP servers は plugin badge、runtime state、tool names を表示します。runtime name には installation hash があるため、Skill 内では生成 prefix ではなく安定した server/tool suffix を案内します。',
+        text: 'Runtime: エージェントは有効な plugin Skill の名前と説明を他の Skill と同様に把握し、タスクが合うとき（または `$skill-name` と入力したとき）に SKILL.md を読みます。plugin Skill の SKILL.md が読まれると、同じ installation の ready MCP tools がその run で利用可能になりますが permission は維持されます。Settings → Skills は validation を表示し、plugin Skill を個別にオフにできます。Settings → MCP servers は plugin badge、runtime state、tool names を表示します。runtime name には installation hash があるため、Skill 内では生成 prefix ではなく安定した server/tool suffix を案内します。',
       },
       {
         type: 'p',
@@ -1809,12 +1808,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'tips',
         items: [
           'Install できない — inspection diagnostics を開き、fatal `plugin.json`、unsafe path、archive collision、symlink、size、digest error を修正。',
-          'Skill がない — installation を enable、`skills/<name>/SKILL.md` が直下で frontmatter が valid か、上位 project/user Skill に shadow されていないか確認。',
+          'Skill がない — installation を enable、`skills/<name>/SKILL.md` が直下で frontmatter が valid か、Settings → Skills でオンか、上位 project/user Skill に shadow されていないか確認。',
           'Settings に MCP がない — plugin enabled、`mcp.json` valid、transport が SSE ではなく stdio または Streamable HTTP か確認。',
           'MCP が error — runtime row を開き executable path、args、working directory、startup log、required credentials、stdio protocol 専用 stdout を確認。',
           'Credentials が unsupported — `plugin.json` に `org.evoelsewhere.evoflux.credentials.fields` を追加し Validate 後に戻る。',
           'Remote server が ready でない — URL/host と literal headers を確認。保存済み plugin credentials は Streamable HTTP へ意図的に注入されません。',
-          'Chat で tool が選ばれない — 対応 plugin Skill を activate するか agent に plugin MCP server を明示選択。install だけでは全 tool を grant しません。',
+          'Chat で tool が選ばれない — 対応 plugin Skill を使う（`$skill-name` と入力）か agent に plugin MCP server を明示選択。install だけでは全 tool を grant しません。',
           '変更が古い — Save/Validate、Plugin Center refresh、disable/enable で runtime を reconcile。'
 ],
       },
@@ -1875,11 +1874,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'code',
         language: 'markdown',
         caption: 'skills/release-audit/SKILL.md',
-        code: '---\nname: release-audit\ndescription: 公開前に release evidence、checks、risk を確認します。\n---\n\n# Release audit\n\n1. bounded evidence を収集。\n2. live data が必要なときだけ MCP tool を使用。\n3. fact、inference、不足 evidence を分離。\n4. 明示 authorization なしに publish/mutate しない。',
+        code: '---\nname: release-audit\ndescription: 公開前に release evidence、checks、risk を確認します。release の準備状況を聞かれたときや release checklist に触れられたときに使います。\n---\n\n# Release audit\n\n1. bounded evidence を収集。\n2. live data が必要なときだけ MCP tool を使用。\n3. fact、inference、不足 evidence を分離。\n4. 明示 authorization なしに publish/mutate しない。',
       },
       {
         type: 'p',
-        text: 'Skill name は Agent Skills naming contract に従います。description は discovery に使われるため正確に書きます。主 workflow は SKILL.md、大きな reference は必要時のみ load。EvoFlux runtime prefix は installation ごとに変わるため、MCP tool は安定 suffix で案内します。',
+        text: 'Skill は SKILL.md を持つフォルダです。`name` はフォルダ名と同じで、小文字・数字・単一ハイフンのみ、64 文字以内、"anthropic" や "claude" を含めません。`description`（1,024 文字以内、XML タグ不可）は三人称で、Skill が何をしていつ使うかを書きます — エージェントは SKILL.md を読むと決めるまで name と description しか見ません。SKILL.md は簡潔に保ち、大きな reference は 1 階層下のファイルにリンクして必要なときだけ読ませます。EvoFlux runtime prefix は installation ごとに変わるため、MCP tool は安定 suffix で案内します。',
       },
       {
         type: 'p',
@@ -1984,9 +1983,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'table',
         columns: ['Concern', 'Rule'],
         rows: [
-          ['Skill precedence', 'Project/user/admin > enabled plugins > EvoFlux built-ins。'],
+          ['Skill precedence', 'project と user の skill フォルダ > enabled plugins > EvoFlux built-ins。どの Skill も Settings → Skills でオフにできます。'],
           ['MCP configuration', 'Plugin は別 in-memory manager を使い global mcp.json を変更しない。'],
-          ['Agent availability', '明示 MCP selection または同 installation Skill activation で ready tools を run に追加。'],
+          ['Agent availability', '明示 MCP selection、または同 installation の Skill の SKILL.md を読むことで ready tools を run に追加。'],
           ['WebBridge', '明示 safe capability のみ non-browser server を WebBridge run に保持。'],
           ['Failure isolation', '不正 Skill/server は隔離、fatal manifest/package は reject。'],
         ],
@@ -2029,7 +2028,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           ['MCP error', 'command/args/cwd、credential、network/TLS', 'runtime error と trust/config 比較。'],
           ['Credentials unsupported', 'credential extension なし', 'fields を追加、Save、Validate、Refresh。'],
           ['Credentials incomplete', 'required field 不足、URL/type invalid', 'required を入力、設定済み secret の空欄は保持目的のみ。'],
-          ['Agent に tool がない', 'server not ready、未 select/activate', 'agent MCP 選択または同 plugin Skill activate。'],
+          ['Agent に tool がない', 'server not ready、未選択、または同 plugin Skill 未使用', 'agent MCP 選択または同 plugin Skill を使用（$skill-name）。'],
           ['Linked code が古い', '未 Save、runtime 未 reconcile', 'Save、Validate、Refresh、Disable/Enable。'],
           ['Update fail', 'replacement invalid、安全検査失敗', '新 package を update 前に inspect。'],
         ],
@@ -2092,7 +2091,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'settings',
     title: 'Agents、Skills、MCP',
     summary:
-      'Settings 下で Markdown エージェント、スキルパック、MCP サーバーを設定 — ツールはネイティブと同じ権限ルールを継承します。チームは work / coding にスコープされ、各モードに正しい specialist が出ます。',
+      'Settings 下で Markdown エージェント、スキル（SKILL.md を持つフォルダ）、MCP サーバーを設定 — ツールはネイティブと同じ権限ルールを継承します。チームは work / coding にスコープされ、各モードに正しい specialist が出ます。スキルは両モードで使えます。',
     keywords: [
       'agents',
       'skills',
@@ -2108,10 +2107,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ツール'
 ],
     setup:
-      'チームメンバーは Settings → Agents; パック検証は Settings → Skills; サーバー追加は Settings → MCP。チャットからは /skill: またはコマンドパレットの New Agent / New Skill ショートカット。',
+      'チームメンバーは Settings → Agents; 自分のスキルの作成・編集と各スキルのオン/オフは Settings → Skills; サーバー追加は Settings → MCP。チャットからは $skill-name でスキルを使い、コマンドパレットで New Agent / New Skill ショートカット。',
     tricks: [
       'エージェントは YAML frontmatter 付き .md — diff 可能でバージョン管理しやすい。',
-      'Settings → Skills では Work、Coding、Both ごとにスキルを作成・編集・表示・絞り込みでき、有効なスキルは一致するセッションの /skill: にだけ表示されます。',
+      'スキルは SKILL.md を持つフォルダです。エージェントは有効なスキルの名前と説明を把握し、タスクが合うと自分で SKILL.md を読みます。',
+      'メッセージのどこかに $skill-name と書くとスキルを明示的に使えます。複数指定も可能です。',
+      'Settings → Skills ではユーザーのスキルフォルダにスキルを作成・編集でき、組み込み・plugin・project を含むすべてのスキルにオン/オフのスイッチがあります。',
+      'エージェントの Skills フィールドはそのスキルをエージェントに事前読み込みし、最初から指示を持った状態で始めさせます。',
       'MCP ステータスドット: ready / starting / auth / error / stopped。',
       'MCP ツールはネイティブと同じ権限ルールを継承。',
       'チームは work / coding にスコープ。',
@@ -2123,7 +2125,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Agents は役割、モデル、ツール、システムプロンプトを定義します。Skills は /skill: 経由で需要に応じて読み込む指示パック。MCP サーバーは stdio、HTTP、または SSE で外部ツールを公開。合わせて、製品をフォークせずチーム挙動を形作ります。',
+        text: 'Agents は役割、モデル、ツール、システムプロンプトを定義します。Skills は SKILL.md と任意の reference ファイル・スクリプト・アセットを持つフォルダです: エージェントは有効なスキルの名前と説明を把握し、タスクが合うと SKILL.md を読み、指示が示すときだけ他のファイルを開きます。MCP サーバーは stdio、HTTP、または SSE で外部ツールを公開。合わせて、製品をフォークせずチーム挙動を形作ります。',
       },
       {
         type: 'p',
@@ -2131,13 +2133,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Settings → Agents でチームメンバー編集; Settings → Skills でパック検証; Settings → MCP でサーバー追加とステータスドット監視。チャットでは /skill: またはパレットの New Agent / New Skill。Lead 専用ツール（ask_user、plan mode、worktree ヘルパー）は specialist に付与されません。',
+        text: 'Settings → Agents でチームメンバー編集; Settings → Skills で自分のスキルの作成・編集、検証の確認、各スキルのオン/オフ; Settings → MCP でサーバー追加とステータスドット監視。チャットでは $skill-name でスキルを今すぐ使うか、パレットの New Agent / New Skill。エージェントの Skills フィールドはそのスキルをエージェントに事前読み込みします。Lead 専用ツール（ask_user、plan mode、worktree ヘルパー）は specialist に付与されません。',
       },
       {
         type: 'tips',
         items: [
           'Agents — .md + YAML frontmatter',
-          'Skills — 検証後の /skill:',
+          'Skills — SKILL.md フォルダ; $skill-name で使用; Settings でオン/オフ',
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
           'tools_opt_out — code-owned ツール既定を無効化',
@@ -2151,13 +2153,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: 無効スキルがスラッシュメニューに出ると期待; 頭の中で specialist に Lead 専用ツールを付与; MCP を error のままチャットを再試行; 公開レポにコミットしたエージェント markdown へシークレットを入れる; モードスコープを忘れ Coding specialist が Work に出ない。',
+        text: 'よくある失敗: 無効またはオフのスキルが $ ピッカーに出ると期待; スキルの説明を曖昧に書く（エージェントはそれを見て読むかどうかを決めます）; 頭の中で specialist に Lead 専用ツールを付与; MCP を error のままチャットを再試行; 公開レポにコミットしたエージェント markdown へシークレットを入れる; モードスコープを忘れ Coding specialist が Work に出ない。',
       },
       {
         type: 'tips',
         items: [
-          '横断: 有効化された Coding スキルが workflow を案内し、ネイティブ source search がすべての retrieval action を検証・実行します。',
-          '横断: workflows と skills はどちらも / に出るにはスコープ有効性が必要。',
+          '横断: Coding スキルが workflow を案内し、ネイティブ source search がすべての retrieval action を検証・実行します。',
+          '横断: workflows は / に出るにはスコープ有効性が必要、skills は $ に出るには valid かつオンである必要があります。',
           '横断: 権限 Always ルールは MCP ツールにも適用 — まず Once を優先。'
 ],
       }
@@ -2386,7 +2388,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           'Providers — API キー、OAuth、ローカルデーモン、モデルレジストリ',
           'Agents — チームメンバーごとのモデル、ツール、システムプロンプト',
-          'Skills — /skill: 用の指示パック',
+          'Skills — SKILL.md フォルダの作成/編集、各スキルのオン/オフ',
           'MCP servers — stdio / HTTP / SSE 外部ツール',
           'Memory — 長期 wiki + Dream スケジュール',
           'Connection — バンドル sidecar vs 外部 URL / アクセスキー',

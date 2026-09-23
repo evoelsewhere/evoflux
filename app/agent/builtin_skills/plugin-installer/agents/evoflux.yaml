@@ -1,6 +1,0 @@
-interface:
-  display_name: "Install Hook Plugins"
-  short_description: "Review and install raw single-file Python hooks"
-  default_prompt: "Use $plugin-installer to review and install this trusted raw Python hook URL."
-policy:
-  allow_implicit_invocation: false

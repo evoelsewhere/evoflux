@@ -1,166 +1,125 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from scripts import validate_skills as validator
 
 
-def test_validator_reports_deep_yaml_without_crashing(tmp_path) -> None:
-    skill_dir = tmp_path / "deep-yaml"
-    skill_dir.mkdir()
-    nested_yaml = "".join(("  " * index) + "a:\n" for index in range(500))
-    content = f"---\n{nested_yaml}---\nBody."
-    assert len(content.encode("utf-8")) < validator.MAX_SKILL_BYTES
-    (skill_dir / "SKILL.md").write_text(content)
-
-    result = validator.validate_skill(skill_dir)
-
-    assert result.valid is False
-    assert any(item.code == "invalid-frontmatter" for item in result.findings)
-
-
-def test_validator_reports_deep_agent_yaml_without_crashing(tmp_path) -> None:
-    skill_dir = tmp_path / "deep-agent"
-    (skill_dir / "agents").mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: deep-agent\ndescription: Validate metadata.\n---\nBody."
+def _skill(root: Path, name: str, body: str = "Read [forms.md](forms.md).") -> Path:
+    directory = root / name
+    directory.mkdir(parents=True)
+    (directory / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: Fills forms. Use for forms.\n---\n{body}\n",
+        encoding="utf-8",
     )
-    nested_yaml = "".join(("  " * index) + "a:\n" for index in range(500))
-    assert len(nested_yaml.encode("utf-8")) < validator.MAX_AGENT_METADATA_BYTES
-    (skill_dir / "agents" / "evoflux.yaml").write_text(nested_yaml)
-
-    result = validator.validate_skill(skill_dir)
-
-    assert result.valid is False
-    assert any(item.code == "invalid-agent-metadata" for item in result.findings)
+    return directory
 
 
-def test_validator_reports_deep_eval_json_without_crashing(
-    tmp_path, monkeypatch
-) -> None:
-    skill_dir = tmp_path / "deep-eval"
-    (skill_dir / "evals").mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: deep-eval\ndescription: Validate eval data.\n---\nBody."
-    )
-    (skill_dir / "evals" / "trigger-cases.json").write_text("{}")
-
-    def raise_recursion(_text):
-        raise RecursionError("nesting is too deep")
-
-    monkeypatch.setattr(validator.json, "loads", raise_recursion)
-
-    result = validator.validate_skill(skill_dir)
-
-    assert result.valid is False
-    assert any(item.code == "invalid-trigger-evals" for item in result.findings)
+def _codes(result: validator.SkillValidation) -> set[str]:
+    return {item.code for item in result.findings}
 
 
-def test_validator_caps_scandir_before_materializing_wide_bundle(
-    tmp_path, monkeypatch
-) -> None:
-    skill_dir = tmp_path / "wide"
-    skill_dir.mkdir()
-    for index in range(10):
-        (skill_dir / f"{index:02}.md").write_text(str(index))
+def test_clean_bundle_passes(tmp_path) -> None:
+    directory = _skill(tmp_path, "forms")
+    (directory / "forms.md").write_text("# Forms\nFill them.\n", encoding="utf-8")
 
-    real_scandir = validator.os.scandir
-    consumed = 0
+    result = validator.validate_skill(directory)
 
-    class GuardedScandir:
-        def __init__(self, path):
-            self._iterator = real_scandir(path)
-
-        def __enter__(self):
-            self._iterator.__enter__()
-            return self
-
-        def __exit__(self, *args):
-            return self._iterator.__exit__(*args)
-
-        def __iter__(self):
-            return self
-
-        def __next__(self):
-            nonlocal consumed
-            consumed += 1
-            if consumed > 4:
-                raise AssertionError("validator consumed beyond its hard cap")
-            return next(self._iterator)
-
-    monkeypatch.setattr(validator, "MAX_BUNDLE_ENTRIES", 3)
-    monkeypatch.setattr(validator.os, "scandir", GuardedScandir)
-    result = validator.SkillResult(name="wide", path=str(skill_dir / "SKILL.md"))
-
-    validator._validate_resources(skill_dir, result)
-
-    assert consumed <= 4
-    assert any(item.code == "bundle-entry-limit" for item in result.findings)
+    assert result.valid and result.findings == []
 
 
-def test_validator_accepts_aggregate_resources_above_former_20_mib_limit(
-    tmp_path,
-) -> None:
-    skill_dir = tmp_path / "large-bundle"
-    resources = skill_dir / "assets"
-    resources.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: large-bundle\ndescription: Validate a large bundle.\n---\nBody."
-    )
-    payload = b"x" * ((2 * 1024 * 1024) - 1)
-    for index in range(11):
-        (resources / f"{index:02}.bin").write_bytes(payload)
+def test_deep_yaml_is_reported_without_crashing(tmp_path) -> None:
+    directory = tmp_path / "deep"
+    directory.mkdir()
+    nested = "".join(("  " * index) + "a:\n" for index in range(500))
+    (directory / "SKILL.md").write_text(f"---\n{nested}---\nBody.", encoding="utf-8")
 
-    result = validator.validate_skill(skill_dir)
+    result = validator.validate_skill(directory)
 
-    assert result.resource_count == 11
-    assert not any(item.code == "bundle-too-large" for item in result.findings)
-    assert result.valid is True
+    assert not result.valid
 
 
-def test_validator_accepts_behavioral_trajectory_fields(tmp_path) -> None:
-    skill_dir = tmp_path / "investigate-code"
-    (skill_dir / "agents").mkdir(parents=True)
-    (skill_dir / "evals").mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: investigate-code\ndescription: Trace code behavior.\n---\n"
-        "Resolve an exact anchor, then use the graph."
-    )
-    (skill_dir / "agents" / "evoflux.yaml").write_text(
-        "interface:\n"
-        "  display_name: Investigate code\n"
-        "  short_description: Trace exact code behavior\n"
-    )
-    (skill_dir / "evals" / "trigger-cases.json").write_text(
-        '[{"query":"Who calls parse?","should_trigger":true,'
-        '"expected_trajectory":["grep"],'
-        '"forbidden_behaviors":["broad_grep"]},'
-        '{"query":"Write docs","should_trigger":false}]'
+def test_frontmatter_is_validated_strictly(tmp_path) -> None:
+    directory = tmp_path / "forms"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        "---\nname: other\ndescription: d\nx-custom: 1\n---\nBody\n", encoding="utf-8"
     )
 
-    result = validator.validate_skill(skill_dir, require_evals=True)
+    result = validator.validate_skill(directory)
 
-    assert result.valid is True
+    assert not result.valid
+    assert {"name-directory-mismatch", "unknown-field"} <= _codes(result)
 
 
-def test_validator_rejects_invalid_behavioral_trajectory_fields(tmp_path) -> None:
-    skill_dir = tmp_path / "investigate-code"
-    (skill_dir / "agents").mkdir(parents=True)
-    (skill_dir / "evals").mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: investigate-code\ndescription: Trace code behavior.\n---\n"
-        "Resolve an exact anchor, then use the graph."
-    )
-    (skill_dir / "agents" / "evoflux.yaml").write_text(
-        "interface:\n"
-        "  display_name: Investigate code\n"
-        "  short_description: Trace exact code behavior\n"
-    )
-    (skill_dir / "evals" / "trigger-cases.json").write_text(
-        '[{"query":"Who calls parse?","should_trigger":true,'
-        '"expected_trajectory":[]},'
-        '{"query":"Write docs","should_trigger":false}]'
+def test_control_plane_files_and_nested_skills_are_rejected(tmp_path) -> None:
+    directory = _skill(tmp_path, "forms", body="Body.")
+    (directory / "agents").mkdir()
+    (directory / "agents" / "evoflux.yaml").write_text("interface: {}\n")
+    (directory / "evals").mkdir()
+    (directory / "README.md").write_text("# Readme\n")
+    (directory / "references" / "inner").mkdir(parents=True)
+    (directory / "references" / "inner" / "SKILL.md").write_text(
+        "---\nname: inner\ndescription: d\n---\nx\n"
     )
 
-    result = validator.validate_skill(skill_dir, require_evals=True)
+    result = validator.validate_skill(directory)
 
-    assert result.valid is False
-    assert sum(item.code == "invalid-trigger-case" for item in result.findings) == 1
+    assert not result.valid
+    assert {"control-plane-file", "nested-skill"} <= _codes(result)
+
+
+def test_links_must_resolve_inside_the_bundle_and_stay_one_level_deep(tmp_path) -> None:
+    directory = _skill(
+        tmp_path,
+        "forms",
+        body="Read [a](references/a.md), [gone](missing.md), [up](../x.md), [bad](references\\a.md).",
+    )
+    (directory / "references").mkdir()
+    (directory / "references" / "a.md").write_text(
+        "See [b](references/b.md).\n", encoding="utf-8"
+    )
+    (directory / "references" / "b.md").write_text("Details.\n", encoding="utf-8")
+    (directory / "references" / "orphan.md").write_text("Unused.\n", encoding="utf-8")
+
+    result = validator.validate_skill(directory)
+
+    codes = _codes(result)
+    assert {
+        "missing-link-target",
+        "link-escapes-bundle",
+        "backslash-path",
+        "nested-reference",
+        "unlinked-reference",
+    } <= codes
+
+
+def test_long_reference_needs_contents_and_placeholders_are_rejected(tmp_path) -> None:
+    directory = _skill(
+        tmp_path,
+        "forms",
+        body='Run {SKILL_DIR}/x.py or skill(action="load"). [r](r.md)',
+    )
+    (directory / "r.md").write_text(
+        "\n".join(f"line {n}" for n in range(150)), encoding="utf-8"
+    )
+
+    result = validator.validate_skill(directory)
+
+    assert {"missing-contents", "host-placeholder", "skill-tool-call"} <= _codes(result)
+
+    (directory / "r.md").write_text(
+        "# R\n\n## Contents\n- A\n\n" + "\n".join(f"line {n}" for n in range(150)),
+        encoding="utf-8",
+    )
+    assert "missing-contents" not in _codes(validator.validate_skill(directory))
+
+
+def test_main_exit_codes(tmp_path, capsys) -> None:
+    _skill(tmp_path, "forms", body="Plain body.")
+
+    assert validator.main([str(tmp_path)]) == 0
+    assert validator.main([str(tmp_path / "missing")]) == 2
+    (tmp_path / "forms" / "README.md").write_text("x")
+    assert validator.main([str(tmp_path), "--json"]) == 1
+    assert '"control-plane-file"' in capsys.readouterr().out

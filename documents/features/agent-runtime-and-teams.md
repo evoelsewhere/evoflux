@@ -38,7 +38,7 @@ authorized calls, appends observations and continues until a final response.
 Hooks add bounded behavior around the model and tools:
 
 - workspace instructions, folder context and dynamic prompts;
-- explicit/automatic Skill resolution and lazy Skill bodies;
+- the Agent Skills catalog, `$skill-name` activation and preloaded Skills;
 - relevant scoped memory and wiki identity context;
 - title generation, context compaction and continuation;
 - streaming, session JSONL and OpenTelemetry events;

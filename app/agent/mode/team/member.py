@@ -53,7 +53,7 @@ from app.agent.hooks.otel import OpenTelemetryHook
 from app.agent.hooks.conductor_telemetry import ConductorTelemetryHook
 from app.conductor.constants.telemetry import CONDUCTOR_TELEMETRY_HOOK_NAME
 from app.agent.hooks.stream_publisher import StreamPublisherHook
-from app.agent.hooks.skill_catalog import SkillCatalogFinalizerHook
+from app.agent.hooks.skills import SkillsPromptFinalizerHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
 from app.agent.hooks.memory_extraction import build_memory_extraction_hook
@@ -184,7 +184,7 @@ LEAD_COMMUNICATION_RULES = """\
 LEAD_PROTOCOL = """\
 ## Lead workflow
 1. Frame the request. When a genuinely ambiguous choice would waste substantial work, call the blocking `ask_user` tool—not a plain-text question—and batch every needed question once; infer cheap, reversible details. Assess scope and use todo tiers consistently: `trivial` stays with you, `simple` normally has one straightforward owner, `multi_step` has one owner across several steps, and `complex` may need coordinated parallel members. If the user explicitly names which member(s) should handle the work or asks for it to be delegated/parallelized, that instruction sets the tier — delegate as asked instead of substituting your own trivial/simple judgment.
-2. **Load specialized workflows only on demand.** The visible tool schemas and your role instructions are sufficient for ordinary work. Use the `skill` tool progressively only when the task needs a specialized artifact or operational workflow; do not list or load skills as a generic first step.
+2. **Load specialized workflows only on demand.** The visible tool schemas and your role instructions are sufficient for ordinary work. Read a skill's SKILL.md only when the task matches its description in the Skills catalog; do not read skills as a generic first step.
 3. When delegating:
    - For multi-step work, create a todo plan first with first-class `dependencies`. Leave a member todo unassigned until its owner is live; once `team_delegate` returns a concrete handle, set `assigned_to` to that handle, never a bare blueprint or group expression. Do not spawn, delegate, or message owners of blocked tasks until their dependencies are complete.
    - Use the routing guide and `team_delegate(to=['<handle>'], goal=..., expected_output=..., constraints=[...])`; assign independent streams in parallel and keep serialized work queued intentionally.
@@ -245,7 +245,7 @@ MEMBER_PROTOCOL = """\
     - **When you receive a structured delegation:** retain its delegation **Task ID** and pass it as `task_id` in every partial/final `team_handoff`. This UUID is distinct from a todo `task_id`. Your deliverable MUST satisfy the stated **Expected output** and respect all **Constraints**. Use the **Goal** as your north star and **Context** as starting knowledge. Do not deviate from the spec — if you believe the spec is wrong or unclear, ask the lead via `team_message` before proceeding.
     - **When you receive a rejection (`❌ REJECTED`):** retain the same delegation **Task ID**, read **Reason** and **Issues** carefully, and address EVERY listed issue. Follow the **Suggestions** — they are actionable fixes, not optional hints. Then re-deliver via `team_handoff(task_id='<same UUID>', ...)` with improvements. Do NOT argue with the rejection or repeat the same output — fix the problems.
 2. If the instruction names a todo task, call `todo_manage(actions=[{{"action":"claim","task_id":"..."}}])` before starting. If the claim is blocked, respond `<sleep>` and wait for the dependency owner to finish instead of starting early.
-3. **Use skills progressively.** Start from the visible tool schemas and this role contract. List or load a skill only when the task needs a specialized workflow that those surfaces do not already define; never load skills speculatively.
+3. **Use skills progressively.** Start from the visible tool schemas and this role contract. Read a skill's SKILL.md only when the task needs a specialized workflow that those surfaces do not already define; never read skills speculatively.
 4. Do your work (research, write, calculate, etc.).
 5. If you need help or input from any teammate, call `team_message(to=[teammate_name])`, then `<sleep>` — the answer arrives next wake.
 6. **Deliver output via `team_handoff`** (not `team_message`) to the task's delegator, always passing the delegation `task_id` shown in the task brief. Use `status: "partial"` for incremental batches and `status: "final"` for the complete deliverable. Fill `findings` with key points, `evidence` with supporting data, and `confidence` with your self-assessed certainty (0.0–1.0). For tasks declared with `depends_on`, the runtime forwards your final artifact to downstream owners.
@@ -1409,7 +1409,7 @@ class TeamMemberBase(abc.ABC):
         )
         pipeline.add(HookStage.BASE_CONTEXT, "team-protocol", team_prompt_hook)
         # Query-dependent context is registered later, at PROMPT_FINALIZATION,
-        # alongside the skill-catalog finalizer — see the cache-boundary hook
+        # alongside the skills-prompt finalizer — see the cache-boundary hook
         # registration below for why.
         memory_context_hook = (
             MemoryContextHook(
@@ -1559,8 +1559,8 @@ class TeamMemberBase(abc.ABC):
         )
         pipeline.add(
             HookStage.PROMPT_FINALIZATION,
-            "skill-catalog-finalizer",
-            SkillCatalogFinalizerHook(),
+            "skills-prompt-finalizer",
+            SkillsPromptFinalizerHook(),
         )
 
         prefix_snapshot_hook = None

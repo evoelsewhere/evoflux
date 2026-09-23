@@ -142,6 +142,9 @@ exclude = ["tests", "**/__pycache__", ".venv"]
 
 [tool.ruff]
 target-version = "py313"
+# Skill evaluation scenarios are data: their toy programs are deliberately
+# imperfect inputs for the Skill under test.
+extend-exclude = ["tests/fixtures/skill-evals"]
 
 [tool.ruff.lint.per-file-ignores]
 # Imports after truststore.inject_into_ssl() / apply_ssl_patch() are intentional.

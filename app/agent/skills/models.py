@@ -1,4 +1,4 @@
-"""Typed records shared by the skill registry and its consumers."""
+"""The in-memory record of one discovered Skill."""
 
 from __future__ import annotations
 
@@ -6,113 +6,57 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from app.agent.skills.spec import SkillDiagnostic
 
-SkillDiagnosticSeverity = Literal["warning", "error"]
 
-
-@dataclass(frozen=True)
-class SkillDiagnostic:
-    """One actionable validation or discovery diagnostic."""
-
-    code: str
-    message: str
-    severity: SkillDiagnosticSeverity = "warning"
-
-    def as_dict(self) -> dict[str, str]:
-        return {
-            "code": self.code,
-            "message": self.message,
-            "severity": self.severity,
-        }
+SkillSource = Literal["project", "user", "plugin", "builtin"]
 
 
 @dataclass
-class SkillRecord:
-    """Canonical metadata for one selected skill implementation.
+class Skill:
+    """Level-1 metadata plus the location the model reads for Level 2.
 
-    ``body`` is intentionally absent. Discovery must stay at Tier 1; callers
-    read ``skill_file`` only when the skill is activated.
+    The body is deliberately not stored: activation reads ``location`` from
+    disk, so an edited Skill is picked up without re-discovery.
     """
 
     name: str
     description: str
-    skill_file: Path
+    location: Path
     root: Path
-    source: str
-    modes: tuple[str, ...] = ("work", "coding")
-    display_name: str | None = None
-    short_description: str | None = None
-    default_prompt: str | None = None
-    icon_small: str | None = None
-    icon_large: str | None = None
-    brand_color: str | None = None
-    allow_implicit_invocation: bool = True
+    source: SkillSource
+    plugin_id: str | None = None
+    license: str | None = None
+    compatibility: str | None = None
+    metadata: dict[str, str] = field(default_factory=dict)
+    allowed_tools: str | None = None
+    disable_model_invocation: bool = False
     user_invocable: bool = True
-    settings_id: str = ""
-    settings_editable: bool = True
-    settings_overridden: bool = False
-    valid: bool = True
+    enabled: bool = True
     editable: bool = False
     symlinked: bool = False
-    resource_count: int = 0
-    dependencies: tuple[dict, ...] = ()
     diagnostics: list[SkillDiagnostic] = field(default_factory=list)
-    shadowed_paths: list[str] = field(default_factory=list)
-    alternates: list["SkillRecord"] = field(default_factory=list, repr=False)
+    shadowed: list[Path] = field(default_factory=list)
 
     @property
-    def skill_dir(self) -> Path:
-        return self.skill_file.parent
+    def directory(self) -> Path:
+        return self.location.parent
 
-    def add_diagnostic(
-        self,
-        code: str,
-        message: str,
-        *,
-        severity: SkillDiagnosticSeverity = "warning",
-    ) -> None:
-        self.diagnostics.append(
-            SkillDiagnostic(code=code, message=message, severity=severity)
-        )
-        if severity == "error":
-            self.valid = False
+    @property
+    def valid(self) -> bool:
+        return not any(item.severity == "error" for item in self.diagnostics)
 
-    def as_legacy_dict(self) -> dict:
-        """Return the dict shape used by existing APIs and tests."""
+    @property
+    def model_visible(self) -> bool:
+        """Listed in the model's ``<available_skills>`` catalog."""
 
-        try:
-            relative_file = self.skill_file.relative_to(self.root).as_posix()
-        except ValueError:
-            relative_file = self.skill_file.name
-        first_error = next(
-            (item.message for item in self.diagnostics if item.severity == "error"),
-            None,
-        )
-        return {
-            "name": self.name,
-            "description": self.description,
-            "modes": list(self.modes),
-            "file": relative_file,
-            "dir": str(self.skill_dir),
-            "root": str(self.root),
-            "source": self.source,
-            "display_name": self.display_name or self.name,
-            "short_description": self.short_description or self.description,
-            "default_prompt": self.default_prompt,
-            "icon_small": self.icon_small,
-            "icon_large": self.icon_large,
-            "brand_color": self.brand_color,
-            "allow_implicit_invocation": self.allow_implicit_invocation,
-            "user_invocable": self.user_invocable,
-            "settings_id": self.settings_id,
-            "settings_editable": self.settings_editable,
-            "settings_overridden": self.settings_overridden,
-            "valid": self.valid,
-            "error": first_error,
-            "editable": self.editable,
-            "symlinked": self.symlinked,
-            "resource_count": self.resource_count,
-            "dependencies": list(self.dependencies),
-            "diagnostics": [item.as_dict() for item in self.diagnostics],
-            "shadowed_paths": list(self.shadowed_paths),
-        }
+        return self.valid and self.enabled and not self.disable_model_invocation
+
+    @property
+    def user_visible(self) -> bool:
+        """Offered in the ``$`` picker and activated by ``$name``."""
+
+        return self.valid and self.enabled and self.user_invocable
+
+
+__all__ = ["Skill", "SkillSource"]

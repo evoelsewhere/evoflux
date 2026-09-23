@@ -1,50 +1,57 @@
-"""Tests for /api/skills HTTP routes."""
+"""Tests for the ``/api/skills`` routes (Agent Skills management)."""
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.api.routes import skills as skills_routes
+from app.agent.skills import registry
+from app.agent.skills.registry import SkillRoot, invalidate_skill_cache
 from app.api.routes.skills import router as skills_router
 from app.conductor.models import ManagedResourceProvider
-from app.services import team_manager
+from app.core.skill_settings import disabled_skill_names, skill_settings_path
+from app.services import skills_service, team_manager
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
-def fs_dirs(tmp_path: Path, monkeypatch):
-    """Redirect AGENTS_DIR and SKILLS_DIR to an isolated tmp tree."""
+def roots(tmp_path: Path, monkeypatch) -> dict[str, Path]:
+    """Isolate every skills root: user, home, plugin and built-in."""
     from app.core.config import settings
+    import app.plugin_platform.skills as plugin_skills
 
-    agents = tmp_path / "agents"
-    skills = tmp_path / "skills"
-    config = tmp_path / "config"
-    agents.mkdir()
-    skills.mkdir()
-    config.mkdir()
-    monkeypatch.setattr(settings, "AGENTS_DIR", str(agents))
-    monkeypatch.setattr(settings, "SKILLS_DIR", str(skills))
-    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(config))
-    from app.agent.tools.builtin import skill as skill_module
-
-    monkeypatch.setattr(skill_module, "_iter_skill_roots", lambda: [skills])
-    skill_module._discover_skills_cached.cache_clear()
-    return agents, skills
+    user = tmp_path / "config" / "skills"
+    home = tmp_path / "home"
+    builtin = tmp_path / "builtin"
+    plugin = tmp_path / "plugin" / "skills"
+    for path in (user, home, builtin, plugin):
+        path.mkdir(parents=True)
+    monkeypatch.setattr(settings, "SKILLS_DIR", str(user))
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setattr(registry, "builtin_skills_dir", lambda: builtin)
+    monkeypatch.setattr(
+        plugin_skills,
+        "plugin_skill_roots",
+        lambda: [SkillRoot(plugin, "plugin", plugin_id="demo-plugin")],
+    )
+    monkeypatch.setattr(skills_service, "managed_resource_providers", lambda: {})
+    invalidate_skill_cache()
+    yield {"user": user, "home": home, "builtin": builtin, "plugin": plugin}
+    invalidate_skill_cache()
 
 
 @pytest.fixture
-async def client(fs_dirs):
+async def client(roots):
     app = FastAPI()
     app.include_router(skills_router, prefix="/api/skills")
-    # Clear any team state that may linger from parallel tests
     await team_manager.stop()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://t") as c:
@@ -52,1365 +59,660 @@ async def client(fs_dirs):
     await team_manager.stop()
 
 
-# ── Sample skill content ───────────────────────────────────────────────────────
-
-VALID_SKILL = """\
----
-name: research
-description: A research skill.
----
-Do research.
-"""
-
-MISMATCHED_NAME_SKILL = """\
----
-name: other
-description: Mismatch.
----
-Body.
-"""
-
-NON_DICT_FRONTMATTER_SKILL = """\
----
-- item1
-- item2
----
-Body.
-"""
-
-NON_STRING_DESC_SKILL = """\
----
-name: research
-description: 42
----
-Body.
-"""
-
-INVALID_YAML_SKILL = """\
----
-name: research
-description: [unclosed
----
-Body.
-"""
-
-MISSING_NAME_SKILL = """\
----
-description: Missing name.
----
-Body.
-"""
-
-EMPTY_DESCRIPTION_SKILL = """\
----
-name: research
-description: ""
----
-Body.
-"""
+def skill_text(
+    name: str, description: str = "Does research on a topic.", **extra
+) -> str:
+    lines = [f"name: {name}", f"description: {description}"]
+    lines.extend(f"{key}: {value}" for key, value in extra.items())
+    return "---\n" + "\n".join(lines) + "\n---\n\nFollow these steps.\n"
 
 
-def _managed_provider() -> ManagedResourceProvider:
+def write_skill(root: Path, name: str, content: str | None = None) -> Path:
+    directory = root / name
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "SKILL.md").write_text(
+        content if content is not None else skill_text(name),
+        encoding="utf-8",
+        newline="",
+    )
+    return directory
+
+
+def _provider() -> ManagedResourceProvider:
     return ManagedResourceProvider(
         project_id="project-1",
         project_name="Platform Core",
         resource_id="skill-1",
         version_id="skill-version-3",
         version="0.3.0",
-        release_channel="beta",
-        observed_state="update_pending",
+        observed_state="applied",
     )
 
 
-# ── _parse_skill unit tests (via POST /api/skills validation) ─────────────────
+# ── List ──────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_create_invalid_yaml_returns_422(client):
-    resp = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": INVALID_YAML_SKILL},
+async def test_list_returns_every_source_sorted_with_metadata(client, roots):
+    write_skill(roots["user"], "research")
+    (roots["user"] / "research" / "notes.md").write_text("n", encoding="utf-8")
+    write_skill(roots["builtin"], "pdf-tools")
+    write_skill(roots["plugin"], "deploy")
+    write_skill(roots["user"], "broken", "---\nname: broken\n---\n\nBody\n")
+
+    response = await client.get("/api/skills")
+
+    assert response.status_code == 200
+    rows = response.json()["skills"]
+    assert [row["name"] for row in rows] == [
+        "broken",
+        "deploy",
+        "pdf-tools",
+        "research",
+    ]
+    by_name = {row["name"]: row for row in rows}
+    research = by_name["research"]
+    assert research["source"] == "user"
+    assert research["editable"] is True
+    assert research["valid"] is True
+    assert research["enabled"] is True
+    assert research["resource_count"] == 1
+    assert research["location"] == str(
+        (roots["user"] / "research" / "SKILL.md").absolute()
     )
-    assert resp.status_code == 422
-    assert "frontmatter" in resp.json()["detail"].lower()
+    assert by_name["deploy"]["source"] == "plugin"
+    assert by_name["deploy"]["plugin_id"] == "demo-plugin"
+    assert by_name["deploy"]["editable"] is False
+    assert by_name["pdf-tools"]["source"] == "builtin"
+    assert by_name["pdf-tools"]["editable"] is False
+    broken = by_name["broken"]
+    assert broken["valid"] is False
+    assert any(item["code"] == "missing-description" for item in broken["diagnostics"])
+    assert "mode" not in research and "modes" not in research
 
 
 @pytest.mark.asyncio
-async def test_create_non_dict_frontmatter_returns_422(client):
-    resp = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": NON_DICT_FRONTMATTER_SKILL},
+async def test_list_reports_frontmatter_fields_and_shadowing(client, roots):
+    write_skill(
+        roots["user"],
+        "research",
+        skill_text(
+            "research",
+            license="MIT",
+            compatibility="Needs git",
+            **{"allowed-tools": "read shell", "disable-model-invocation": "true"},
+        ),
     )
-    assert resp.status_code == 422
-    assert "mapping" in resp.json()["detail"].lower()
+    write_skill(roots["builtin"], "research")
+
+    rows = (await client.get("/api/skills")).json()["skills"]
+
+    [row] = rows
+    assert row["source"] == "user"
+    assert row["license"] == "MIT"
+    assert row["compatibility"] == "Needs git"
+    assert row["allowed_tools"] == "read shell"
+    assert row["model_invocable"] is False
+    assert row["user_invocable"] is True
+    assert row["shadowed_paths"] == [
+        str((roots["builtin"] / "research" / "SKILL.md").absolute())
+    ]
 
 
 @pytest.mark.asyncio
-async def test_create_non_string_description_returns_422(client):
-    resp = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": NON_STRING_DESC_SKILL},
-    )
-    assert resp.status_code == 422
-    assert "description" in resp.json()["detail"].lower()
+async def test_list_includes_project_skills_for_workspace(client, roots, tmp_path):
+    workspace = tmp_path / "repo"
+    (workspace / ".git").mkdir(parents=True)
+    write_skill(workspace / ".agents" / "skills", "project-flow")
+    write_skill(roots["user"], "project-flow", skill_text("project-flow", "User copy."))
+
+    without = (await client.get("/api/skills")).json()["skills"]
+    with_workspace = (
+        await client.get("/api/skills", params={"workspace": str(workspace)})
+    ).json()["skills"]
+
+    assert [row["source"] for row in without] == ["user"]
+    [row] = with_workspace
+    assert row["source"] == "project"
+    assert row["editable"] is True
+    assert row["description"] == "Does research on a topic."
 
 
 @pytest.mark.asyncio
-async def test_create_name_mismatch_returns_422(client):
-    resp = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": MISMATCHED_NAME_SKILL},
+async def test_list_rejects_missing_workspace(client, tmp_path):
+    response = await client.get(
+        "/api/skills", params={"workspace": str(tmp_path / "missing")}
     )
-    assert resp.status_code == 422
-    assert "other" in resp.json()["detail"]
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_skips_nested_skill_files(client, roots):
+    directory = write_skill(roots["user"], "suite")
+    write_skill(directory / "references", "inner")
+
+    rows = (await client.get("/api/skills")).json()["skills"]
+
+    assert [row["name"] for row in rows] == ["suite"]
+    assert rows[0]["resource_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_marks_conductor_managed_skill_read_only(client, roots, monkeypatch):
+    write_skill(roots["user"], "governed")
+    monkeypatch.setattr(
+        skills_service,
+        "managed_resource_providers",
+        lambda: {("skill", "governed"): _provider()},
+    )
+
+    [row] = (await client.get("/api/skills")).json()["skills"]
+
+    assert row["editable"] is False
+    assert row["provider"]["project_name"] == "Platform Core"
+
+
+@pytest.mark.asyncio
+async def test_managed_provenance_ignores_shadowing_project_skill(
+    client, roots, monkeypatch, tmp_path
+):
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    write_skill(roots["user"], "governed")
+    write_skill(workspace / ".evoflux" / "skills", "governed")
+    monkeypatch.setattr(
+        skills_service,
+        "managed_resource_providers",
+        lambda: {("skill", "governed"): _provider()},
+    )
+
+    [row] = (
+        await client.get("/api/skills", params={"workspace": str(workspace)})
+    ).json()["skills"]
+
+    assert row["source"] == "project"
+    assert row["provider"] is None
+    assert row["editable"] is True
+
+
+# ── Detail ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_detail_returns_content_and_bundle_files(client, roots):
+    directory = write_skill(roots["user"], "research")
+    (directory / "references").mkdir()
+    (directory / "references" / "guide.md").write_text("# Guide\n", encoding="utf-8")
+    (directory / "logo.bin").write_bytes(b"\x00\x01\x02")
+
+    response = await client.get("/api/skills/research")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["content"] == skill_text("research")
+    files = {item["path"]: item for item in body["files"]}
+    assert files["references/guide.md"]["content"] == "# Guide\n"
+    assert files["references/guide.md"]["editable"] is True
+    assert files["logo.bin"]["content"] is None
+    assert files["logo.bin"]["editable"] is False
+    assert body["bundle_truncated"] is False
+    assert body["resource_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_detail_of_builtin_marks_files_read_only(client, roots):
+    directory = write_skill(roots["builtin"], "pdf-tools")
+    (directory / "forms.md").write_text("forms", encoding="utf-8")
+
+    body = (await client.get("/api/skills/pdf-tools")).json()
+
+    assert body["editable"] is False
+    assert body["files"][0]["editable"] is False
+
+
+@pytest.mark.asyncio
+async def test_detail_unknown_skill_is_404(client):
+    assert (await client.get("/api/skills/missing")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_detail_oversized_skill_is_413(client, roots):
+    directory = roots["user"] / "huge"
+    directory.mkdir()
+    (directory / "SKILL.md").write_text(
+        skill_text("huge") + "x" * (600 * 1024), encoding="utf-8"
+    )
+
+    assert (await client.get("/api/skills/huge")).status_code == 413
+
+
+# ── Create ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_writes_bundle_in_user_root(client, roots, monkeypatch):
+    calls: list[int] = []
+    original = team_manager.invalidate_skill_cache
+    monkeypatch.setattr(
+        team_manager,
+        "invalidate_skill_cache",
+        lambda: (calls.append(1), original())[1],
+    )
+    payload = {
+        "name": "research",
+        "content": skill_text("research"),
+        "files": [
+            {"path": "references/guide.md", "content": "# Guide\n"},
+            {
+                "path": "assets/logo.bin",
+                "content": base64.b64encode(b"\x00\x01").decode(),
+                "encoding": "base64",
+            },
+        ],
+    }
+
+    response = await client.post("/api/skills", json=payload)
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["name"] == "research"
+    assert body["source"] == "user"
+    assert body["editable"] is True
+    assert sorted(item["path"] for item in body["files"]) == [
+        "assets/logo.bin",
+        "references/guide.md",
+    ]
+    directory = roots["user"] / "research"
+    assert (directory / "SKILL.md").read_text(encoding="utf-8") == skill_text(
+        "research"
+    )
+    assert (directory / "assets" / "logo.bin").read_bytes() == b"\x00\x01"
+    assert not (directory / ".evoflux.json").exists()
+    assert calls == [1]
+    listed = (await client.get("/api/skills")).json()["skills"]
+    assert [row["name"] for row in listed] == ["research"]
+
+
+@pytest.mark.asyncio
+async def test_create_existing_skill_is_409(client, roots):
+    write_skill(roots["user"], "research")
+
+    response = await client.post(
+        "/api/skills", json={"name": "research", "content": skill_text("research")}
+    )
+
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_create_into_non_empty_directory_is_409(client, roots):
+    (roots["user"] / "research").mkdir()
+    (roots["user"] / "research" / "stray.txt").write_text("x", encoding="utf-8")
+
+    response = await client.post(
+        "/api/skills", json={"name": "research", "content": skill_text("research")}
+    )
+
+    assert response.status_code == 409
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "content, expected",
+    "name",
+    ["Research", "my_skill", "-lead", "a--b", "claude-helper", "x" * 65, "a/b", ".."],
+)
+async def test_create_rejects_non_spec_names(client, roots, name):
+    response = await client.post(
+        "/api/skills", json={"name": name, "content": skill_text(name)}
+    )
+
+    assert response.status_code == 422
+    assert not any(roots["user"].iterdir())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content", "fragment"),
     [
-        ("Instructions without frontmatter.", "name"),
-        (MISSING_NAME_SKILL, "name"),
-        (EMPTY_DESCRIPTION_SKILL, "description"),
+        ("no frontmatter\n", "frontmatter"),
+        ("---\n- a\n- b\n---\n\nBody\n", "mapping"),
+        ("---\nname: research\ndescription: [unclosed\n---\n\nBody\n", "yaml"),
+        ("---\ndescription: Missing name.\n---\n\nBody\n", "name"),
+        ('---\nname: research\ndescription: ""\n---\n\nBody\n', "description"),
+        ("---\nname: research\ndescription: Fine.\n---\n", "empty"),
+        (skill_text("other"), "does not match"),
+        (skill_text("research", "Uses <b>tags</b>."), "xml"),
+        (skill_text("research", "d" * 1025), "exceeds"),
+        (skill_text("research", modes="[work]"), "not supported"),
+        (skill_text("research", metadata="{a: 1}"), "metadata"),
     ],
 )
-async def test_create_rejects_runtime_invalid_required_metadata(
-    client, content, expected
-):
+async def test_create_validates_strictly(client, roots, content, fragment):
     response = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": content},
+        "/api/skills", json={"name": "research", "content": content}
     )
 
-    assert response.status_code == 422
-    assert expected in response.json()["detail"].lower()
-
-
-# ── GET /api/skills ───────────────────────────────────────────────────────────
+    assert response.status_code == 422, response.text
+    assert fragment in response.json()["detail"].lower()
+    assert not (roots["user"] / "research").exists()
 
 
 @pytest.mark.asyncio
-async def test_list_skills_empty(client):
-    resp = await client.get("/api/skills")
-    assert resp.status_code == 200
-    skills = resp.json()["skills"]
-    assert skills == []
-
-
-@pytest.mark.asyncio
-async def test_list_skills_returns_created_skill(client):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
-    resp = await client.get("/api/skills")
-    assert resp.status_code == 200
-    skills = resp.json()["skills"]
-    research = next(item for item in skills if item["name"] == "research")
-    assert research["valid"] is True
-    assert research["built_in"] is False
-    assert research["editable"] is True
-    assert research["source"] == "global-EvoFlux"
-
-
-@pytest.mark.asyncio
-async def test_conductor_managed_skill_is_read_only(fs_dirs, client):
-    _, skills_dir = fs_dirs
-    skill_dir = skills_dir / "managed"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text(VALID_SKILL.replace("research", "managed"))
-    (skill_dir / ".evoflux.json").write_text(
-        json.dumps(
-            {
-                "managed_by": "conductor",
-                "resource_id": "11111111-1111-1111-1111-111111111111",
-                "resource_version": "1.0.0",
-            }
-        )
-    )
-
-    listed = await client.get("/api/skills")
-    row = next(item for item in listed.json()["skills"] if item["name"] == "managed")
-    assert row["editable"] is False
-
-    update = await client.put(
-        "/api/skills/managed",
-        json={
-            "name": "managed",
-            "content": VALID_SKILL.replace("research", "managed"),
-        },
-    )
-    delete = await client.delete("/api/skills/managed")
-    assert update.status_code == 403
-    assert delete.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_managed_skill_exposes_provider_and_blocks_bundle_mutation(
-    client, fs_dirs, monkeypatch: pytest.MonkeyPatch
-):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
-    provider = _managed_provider()
-    monkeypatch.setattr(
-        skills_routes,
-        "managed_resource_providers",
-        lambda: {("skill", "research"): provider},
-    )
-    monkeypatch.setattr(
-        skills_routes,
-        "managed_resource_provider",
-        lambda kind, slug: provider if (kind, slug) == ("skill", "research") else None,
-    )
-
-    listed = await client.get("/api/skills")
-    row = next(
-        skill for skill in listed.json()["skills"] if skill["name"] == "research"
-    )
-    assert row["editable"] is False
-    assert row["source"] == "conductor"
-    assert row["settings_editable"] is False
-    assert row["provider"]["project_name"] == "Platform Core"
-    assert row["provider"]["observed_state"] == "update_pending"
-
-    detail = await client.get("/api/skills/research")
-    assert detail.json()["editable"] is False
-    assert all(file["editable"] is False for file in detail.json()["files"])
-
-    updated = await client.put(
-        "/api/skills/research",
-        json={"name": "research", "content": VALID_SKILL},
-    )
-    deleted = await client.delete("/api/skills/research")
-    runtime_update = await client.patch(
-        "/api/skills/research",
-        json={
-            "settings_id": row["settings_id"],
-            "modes": ["work"],
-            "allow_implicit_invocation": False,
-            "user_invocable": False,
-        },
-    )
-
-    assert updated.status_code == 403
-    assert deleted.status_code == 403
-    assert runtime_update.status_code == 403
-    assert (fs_dirs[1] / "research" / "SKILL.md").read_text() == VALID_SKILL
-
-
-@pytest.mark.asyncio
-async def test_create_and_update_skill_mode_scope(client, fs_dirs):
-    _, skills_dir = fs_dirs
-    created = await client.post(
-        "/api/skills",
-        json={
-            "name": "research",
-            "content": VALID_SKILL,
-            "modes": ["coding"],
-        },
-    )
-
-    assert created.status_code == 201
-    assert created.json()["modes"] == ["coding"]
-    sidecar = skills_dir / "research" / ".evoflux.json"
-    assert sidecar.read_text() == '{\n  "modes": [\n    "coding"\n  ]\n}\n'
-    assert all(file["path"] != ".evoflux.json" for file in created.json()["files"])
-
-    listed = await client.get("/api/skills")
-    research = next(
-        item for item in listed.json()["skills"] if item["name"] == "research"
-    )
-    assert research["modes"] == ["coding"]
-
-    updated = await client.put(
-        "/api/skills/research",
-        json={
-            "name": "research",
-            "content": VALID_SKILL,
-            "modes": ["coding", "work"],
-        },
-    )
-    assert updated.status_code == 200
-    assert updated.json()["modes"] == ["work", "coding"]
-    assert not sidecar.exists()
-
-
-@pytest.mark.asyncio
-async def test_builtin_runtime_settings_override_and_reset_without_bundle_write(
-    client, fs_dirs, monkeypatch
-):
-    from app.agent.tools.builtin import skill as skill_module
-    from app.core.config import settings
-
-    builtin_root = skills_routes._builtin_skills_root()
-    skill_dir = builtin_root / "self-healing"
-    skill_bytes = (skill_dir / "SKILL.md").read_bytes()
-    metadata_bytes = (skill_dir / "agents" / "evoflux.yaml").read_bytes()
-    monkeypatch.setattr(skill_module, "_iter_skill_roots", lambda: [builtin_root])
-    skill_module._discover_skills_cached.cache_clear()
-
-    before = await client.get("/api/skills/self-healing", params={"mode": "work"})
-    assert before.status_code == 200
-    detail = before.json()
-    assert detail["editable"] is False
-    assert detail["settings_editable"] is True
-    assert detail["settings_overridden"] is False
-
-    updated = await client.patch(
-        "/api/skills/self-healing",
-        params={"mode": "work"},
-        json={
-            "settings_id": detail["settings_id"],
-            "modes": ["coding"],
-            "allow_implicit_invocation": True,
-            "user_invocable": False,
-        },
-    )
-
-    assert updated.status_code == 200
-    assert updated.json()["modes"] == ["coding"]
-    assert updated.json()["allow_implicit_invocation"] is True
-    assert updated.json()["user_invocable"] is False
-    assert updated.json()["settings_overridden"] is True
-    assert (skill_dir / "SKILL.md").read_bytes() == skill_bytes
-    assert (skill_dir / "agents" / "evoflux.yaml").read_bytes() == metadata_bytes
-    assert (Path(settings.EVOFLUX_CONFIG_DIR) / "skill-settings.json").is_file()
-
-    hidden_from_work = await client.get(
-        "/api/skills/self-healing", params={"mode": "work"}
-    )
-    visible_in_coding = await client.get(
-        "/api/skills/self-healing", params={"mode": "coding"}
-    )
-    assert hidden_from_work.status_code == 404
-    assert visible_in_coding.status_code == 200
-
-    # Reset remains target-specific even though the override removed this
-    # skill from the request's Work projection.
-    reset = await client.delete(
-        "/api/skills/self-healing",
-        params={"mode": "work", "settings_id": detail["settings_id"]},
-    )
-    assert reset.status_code == 200
-    assert reset.json()["modes"] == ["work", "coding"]
-    assert reset.json()["allow_implicit_invocation"] is False
-    assert reset.json()["user_invocable"] is True
-    assert reset.json()["settings_overridden"] is False
-    assert not (Path(settings.EVOFLUX_CONFIG_DIR) / "skill-settings.json").exists()
-
-
-@pytest.mark.asyncio
-async def test_runtime_settings_reject_stale_variant_id(client):
-    created = await client.post(
-        "/api/skills", json={"name": "research", "content": VALID_SKILL}
-    )
-    settings_id = created.json()["settings_id"]
-    replacement = "0" if settings_id[-1] != "0" else "1"
-
-    response = await client.patch(
-        "/api/skills/research",
-        json={
-            "settings_id": f"{settings_id[:-1]}{replacement}",
-            "modes": ["work"],
-            "allow_implicit_invocation": False,
-            "user_invocable": False,
-        },
-    )
-
-    assert response.status_code == 409
-    assert "changed source or precedence" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_body_only_update_preserves_source_modes_under_runtime_override(
-    client, fs_dirs
-):
-    _, skills_dir = fs_dirs
-    created = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": VALID_SKILL, "modes": ["work"]},
-    )
-    assert created.status_code == 201
-    settings_id = created.json()["settings_id"]
-    sidecar = skills_dir / "research" / ".evoflux.json"
-    source_modes = sidecar.read_bytes()
-
-    overridden = await client.patch(
-        "/api/skills/research",
-        params={"mode": "work"},
-        json={
-            "settings_id": settings_id,
-            "modes": ["coding"],
-            "allow_implicit_invocation": False,
-            "user_invocable": True,
-        },
-    )
-    assert overridden.status_code == 200
-
-    updated = await client.put(
-        "/api/skills/research",
-        params={"mode": "coding"},
-        json={
-            "name": "research",
-            "content": VALID_SKILL.replace("Do research.", "Updated body."),
-        },
-    )
-
-    assert updated.status_code == 200
-    assert updated.json()["modes"] == ["coding"]
-    assert updated.json()["settings_overridden"] is True
-    assert sidecar.read_bytes() == source_modes
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("modes", [[], ["work", "work"], ["unsupported"]])
-async def test_create_rejects_invalid_mode_scope(client, modes):
-    response = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": VALID_SKILL, "modes": modes},
-    )
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_list_skills_includes_opencode_skill(
-    client, fs_dirs, tmp_path, monkeypatch
-):
-    _, EVOFLUX_skills = fs_dirs
-    opencode_skills = tmp_path / "home" / ".config" / "opencode" / "skills"
-    skill_dir = opencode_skills / "research"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text(VALID_SKILL)
-
-    from app.agent.tools.builtin import skill as skill_module
-
-    monkeypatch.setattr(
-        skill_module, "_iter_skill_roots", lambda: [EVOFLUX_skills, opencode_skills]
-    )
-    monkeypatch.setattr(
-        skills_routes.Path, "home", classmethod(lambda cls: tmp_path / "home")
-    )
-    skill_module._discover_skills_cached.cache_clear()
-
-    resp = await client.get("/api/skills")
-
-    assert resp.status_code == 200
-    skills = resp.json()["skills"]
-    research = next(item for item in skills if item["name"] == "research")
-    assert research["description"] == "A research skill."
-    assert research["valid"] is True
-    assert research["error"] is None
-    assert research["built_in"] is False
-    assert research["editable"] is True
-    assert research["source"] == "global-opencode"
-    assert research["modes"] == ["work", "coding"]
-
-
-@pytest.mark.asyncio
-async def test_list_skills_labels_project_EVOFLUX_source(
-    client, fs_dirs, tmp_path, monkeypatch
-):
-    workspace = tmp_path / "workspace"
-    project_skills = workspace / ".evoflux" / "skills"
-    skill_file = project_skills / "oad" / "commit" / "SKILL.md"
-    skill_file.parent.mkdir(parents=True)
-    skill_file.write_text(
-        "---\nname: oad/commit\ndescription: Commit workflow.\n---\nBody."
-    )
-    EVOFLUX_skills = fs_dirs[1]
-
-    from app.agent.tools.builtin import skill as skill_module
-
-    monkeypatch.setattr(
-        skill_module, "_iter_skill_roots", lambda: [project_skills, EVOFLUX_skills]
-    )
-    monkeypatch.setattr(skill_module, "_project_root", lambda: workspace)
-    skill_module._discover_skills_cached.cache_clear()
-
-    resp = await client.get("/api/skills")
-
-    assert resp.status_code == 200
-    skills = resp.json()["skills"]
-    commit = next(item for item in skills if item["name"] == "oad/commit")
-    assert commit["description"] == "Commit workflow."
-    assert commit["valid"] is True
-    assert commit["editable"] is True
-    assert commit["source"] == "project-EvoFlux"
-    assert commit["modes"] == ["work", "coding"]
-    assert {item["code"] for item in commit["diagnostics"]} >= {
-        "legacy-name",
-        "nested-legacy-skill",
-    }
-
-
-@pytest.mark.asyncio
-async def test_list_skills_labels_project_opencode_source(
-    client, fs_dirs, tmp_path, monkeypatch
-):
-    workspace = tmp_path / "workspace"
-    project_skills = workspace / ".opencode" / "skills"
-    skill_file = project_skills / "research" / "SKILL.md"
-    skill_file.parent.mkdir(parents=True)
-    skill_file.write_text(VALID_SKILL)
-    EVOFLUX_skills = fs_dirs[1]
-
-    from app.agent.tools.builtin import skill as skill_module
-
-    monkeypatch.setattr(
-        skill_module, "_iter_skill_roots", lambda: [project_skills, EVOFLUX_skills]
-    )
-    monkeypatch.setattr(skill_module, "_project_root", lambda: workspace)
-    skill_module._discover_skills_cached.cache_clear()
-
-    resp = await client.get("/api/skills")
-
-    assert resp.status_code == 200
-    research = next(
-        item for item in resp.json()["skills"] if item["name"] == "research"
-    )
-    assert research["source"] == "project-opencode"
-
-
-@pytest.mark.asyncio
-async def test_workspace_catalog_matches_mode_aware_runtime_collision(
-    client, fs_dirs, tmp_path
-):
-    _, global_skills = fs_dirs
-    workspace = tmp_path / "repo"
-    (workspace / ".git").mkdir(parents=True)
-    project_skill = workspace / ".evoflux" / "skills" / "shared"
-    project_skill.mkdir(parents=True)
-    (project_skill / "SKILL.md").write_text(
-        "---\nname: shared\ndescription: Coding variant.\n---\nProject coding body.\n"
-    )
-    (project_skill / ".evoflux.json").write_text('{"modes":["coding"]}\n')
-    global_skill = global_skills / "shared"
-    global_skill.mkdir()
-    (global_skill / "SKILL.md").write_text(
-        "---\nname: shared\ndescription: Work variant.\n---\nGlobal work body.\n"
-    )
-    (global_skill / ".evoflux.json").write_text('{"modes":["work"]}\n')
-
-    params = [("workspace", str(workspace))]
-    listed = await client.get("/api/skills", params=params)
-    row = next(item for item in listed.json()["skills"] if item["name"] == "shared")
-    assert row["description"] == "Coding variant."
-    assert row["modes"] == ["work", "coding"]
-    assert {item["code"] for item in row["diagnostics"]} >= {"mode-specific-collision"}
-
-    synthetic_update = await client.patch(
-        "/api/skills/shared",
-        params=params,
-        json={
-            "settings_id": row["settings_id"],
-            "modes": ["work"],
-            "allow_implicit_invocation": False,
-            "user_invocable": True,
-        },
-    )
-    assert synthetic_update.status_code == 409
-    assert "Choose an explicit mode" in synthetic_update.json()["detail"]
-
-    work = await client.get("/api/skills/shared", params=[*params, ("mode", "work")])
-    coding = await client.get(
-        "/api/skills/shared", params=[*params, ("mode", "coding")]
-    )
-    assert "Global work body" in work.json()["content"]
-    assert "Project coding body" in coding.json()["content"]
-    assert work.json()["settings_id"] != coding.json()["settings_id"]
-
-    coding_update = await client.patch(
-        "/api/skills/shared",
-        params=[*params, ("mode", "coding")],
-        json={
-            "settings_id": coding.json()["settings_id"],
-            "modes": ["coding"],
-            "allow_implicit_invocation": False,
-            "user_invocable": False,
-        },
-    )
-    assert coding_update.status_code == 200
-    assert coding_update.json()["settings_overridden"] is True
-
-    work_after = await client.get(
-        "/api/skills/shared", params=[*params, ("mode", "work")]
-    )
-    coding_after = await client.get(
-        "/api/skills/shared", params=[*params, ("mode", "coding")]
-    )
-    assert work_after.json()["modes"] == ["work"]
-    assert work_after.json()["allow_implicit_invocation"] is True
-    assert work_after.json()["user_invocable"] is True
-    assert work_after.json()["settings_overridden"] is False
-    assert coding_after.json()["modes"] == ["coding"]
-    assert coding_after.json()["allow_implicit_invocation"] is False
-    assert coding_after.json()["user_invocable"] is False
-    assert coding_after.json()["settings_overridden"] is True
-
-
-@pytest.mark.asyncio
-async def test_reset_targets_overridden_variant_after_lower_collision_is_revealed(
-    client, fs_dirs, tmp_path
-):
-    _, global_skills = fs_dirs
-    workspace = tmp_path / "repo"
-    (workspace / ".git").mkdir(parents=True)
-    project_skill = workspace / ".evoflux" / "skills" / "shared"
-    project_skill.mkdir(parents=True)
-    (project_skill / "SKILL.md").write_text(
-        "---\nname: shared\ndescription: Project variant.\n---\nProject body.\n"
-    )
-    global_skill = global_skills / "shared"
-    global_skill.mkdir()
-    (global_skill / "SKILL.md").write_text(
-        "---\nname: shared\ndescription: Global variant.\n---\nGlobal body.\n"
-    )
-    (global_skill / ".evoflux.json").write_text('{"modes":["coding"]}\n')
-    params = [("workspace", str(workspace)), ("mode", "coding")]
-
-    project = await client.get("/api/skills/shared", params=params)
-    assert "Project body" in project.json()["content"]
-    project_settings_id = project.json()["settings_id"]
-    hidden = await client.patch(
-        "/api/skills/shared",
-        params=params,
-        json={
-            "settings_id": project_settings_id,
-            "modes": ["work"],
-            "allow_implicit_invocation": True,
-            "user_invocable": True,
-        },
-    )
-    assert hidden.status_code == 200
-
-    revealed = await client.get("/api/skills/shared", params=params)
-    assert "Global body" in revealed.json()["content"]
-    assert revealed.json()["settings_id"] != project_settings_id
-
-    reset = await client.delete(
-        "/api/skills/shared",
-        params=[*params, ("settings_id", project_settings_id)],
-    )
-    assert reset.status_code == 200
-    assert "Project body" in reset.json()["content"]
-    assert reset.json()["settings_overridden"] is False
-
-    restored = await client.get("/api/skills/shared", params=params)
-    assert "Project body" in restored.json()["content"]
-    assert restored.json()["settings_id"] == project_settings_id
-
-
-@pytest.mark.asyncio
-async def test_workspace_symlinked_skill_root_is_read_only(client, tmp_path):
-    workspace = tmp_path / "repo"
-    (workspace / ".agents").mkdir(parents=True)
-    outside = tmp_path / "outside-skills"
-    skill_dir = outside / "linked"
-    skill_dir.mkdir(parents=True)
-    skill_file = skill_dir / "SKILL.md"
-    skill_file.write_text(
-        "---\nname: linked\ndescription: Linked skill.\n---\nOriginal.\n"
-    )
-    (workspace / ".agents" / "skills").symlink_to(outside, target_is_directory=True)
-
-    params = [("workspace", str(workspace)), ("mode", "coding")]
-    listed = await client.get("/api/skills", params=params)
-    linked = next(item for item in listed.json()["skills"] if item["name"] == "linked")
-    assert linked["symlinked"] is True
-    assert linked["editable"] is False
-
-    response = await client.put(
-        "/api/skills/linked",
-        params=params,
-        json={
-            "name": "linked",
-            "content": "---\nname: linked\ndescription: Changed.\n---\nChanged.\n",
-        },
-    )
-    assert response.status_code == 403
-    assert "Original" in skill_file.read_text()
-
-
-@pytest.mark.asyncio
-async def test_delete_opencode_skill_removes_source_file(
-    client, fs_dirs, tmp_path, monkeypatch
-):
-    EVOFLUX_skills = fs_dirs[1]
-    opencode_skills = tmp_path / "home" / ".config" / "opencode" / "skills"
-    skill_file = opencode_skills / "research" / "SKILL.md"
-    skill_file.parent.mkdir(parents=True)
-    skill_file.write_text(VALID_SKILL)
-
-    from app.agent.tools.builtin import skill as skill_module
-
-    monkeypatch.setattr(
-        skill_module, "_iter_skill_roots", lambda: [EVOFLUX_skills, opencode_skills]
-    )
-    monkeypatch.setattr(
-        skills_routes.Path, "home", classmethod(lambda cls: tmp_path / "home")
-    )
-    skill_module._discover_skills_cached.cache_clear()
-
-    resp = await client.delete("/api/skills/research")
-
-    assert resp.status_code == 200
-    assert not skill_file.exists()
-
-
-@pytest.mark.asyncio
-async def test_list_skills_includes_read_error(client, fs_dirs, monkeypatch):
-    """A skill whose file is unreadable shows up as invalid instead of crashing."""
-    _, skills_dir = fs_dirs
-    # Manually create a skill directory but make read_skill raise
-    (skills_dir / "broken").mkdir()
-    (skills_dir / "broken" / "SKILL.md").write_text("content")
-
-    original_open = Path.open
-
-    def bad_open(path, *args, **kwargs):
-        if path.name == "SKILL.md" and path.parent.name == "broken":
-            raise OSError("permission denied")
-        return original_open(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", bad_open)
-
-    resp = await client.get("/api/skills")
-    assert resp.status_code == 200
-    skills = resp.json()["skills"]
-    broken = next(s for s in skills if s["name"] == "broken")
-    assert broken["valid"] is False
-    assert "permission denied" in broken["error"]
-
-
-# ── GET /api/skills/{name} ────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_get_skill_not_found_returns_404(client):
-    resp = await client.get("/api/skills/missing")
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_get_skill_bad_name_returns_400(client):
-    # Names with spaces/special chars fail _validate_name → AgentFsPathError → 400
-    resp = await client.get("/api/skills/bad%20name")
-    assert resp.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_get_skill_returns_detail(client):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
-    resp = await client.get("/api/skills/research")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["name"] == "research"
-    assert data["description"] == "A research skill."
-    assert "Do research" in data["content"]
-    assert data["files"] == []
-
-
-@pytest.mark.asyncio
-async def test_detail_rejects_oversized_skill_without_unbounded_read(client, fs_dirs):
-    _, skills_dir = fs_dirs
-    skill_dir = skills_dir / "huge"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: huge\ndescription: Huge.\n---\n" + ("x" * (512 * 1024))
-    )
-
-    listed = await client.get("/api/skills")
-    row = next(item for item in listed.json()["skills"] if item["name"] == "huge")
-    assert row["valid"] is False
-    assert row["settings_editable"] is False
-
-    detail = await client.get("/api/skills/huge")
-    assert detail.status_code == 413
-
-
-@pytest.mark.asyncio
-async def test_invalid_skill_rejects_runtime_settings_without_persisting(
-    client, fs_dirs
-):
-    from app.core.config import settings
-
-    skill_dir = fs_dirs[1] / "broken"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        "---\nname: broken\ndescription: [invalid\n---\nBody.\n"
-    )
-    listed = await client.get("/api/skills")
-    row = next(item for item in listed.json()["skills"] if item["name"] == "broken")
-    assert row["valid"] is False
-    assert row["settings_editable"] is False
-
-    response = await client.patch(
-        "/api/skills/broken",
-        json={
-            "settings_id": row["settings_id"],
-            "modes": ["coding"],
-            "allow_implicit_invocation": False,
-            "user_invocable": False,
-        },
-    )
-
-    assert response.status_code == 422
-    assert "Fix its bundle diagnostics" in response.json()["detail"]
-    assert not (Path(settings.EVOFLUX_CONFIG_DIR) / "skill-settings.json").exists()
-
-    scoped_detail = await client.get("/api/skills/broken", params={"mode": "coding"})
-    assert scoped_detail.status_code == 200
-    assert scoped_detail.json()["settings_editable"] is False
-    assert scoped_detail.json()["error"] is not None
-
-    repaired_content = (
-        "---\nname: broken\ndescription: Repaired skill.\n---\nFixed body.\n"
-    )
-    repaired = await client.put(
-        "/api/skills/broken",
-        params={"mode": "coding"},
-        json={"name": "broken", "content": repaired_content},
-    )
-    assert repaired.status_code == 200
-    assert repaired.json()["error"] is None
-    assert repaired.json()["settings_editable"] is True
-
-
-@pytest.mark.asyncio
-async def test_management_detail_prefers_invalid_winner_over_runtime_fallback(
-    client, fs_dirs, tmp_path
-):
-    workspace = tmp_path / "repo"
-    (workspace / ".git").mkdir(parents=True)
-    project_skill = workspace / ".evoflux" / "skills" / "shared"
-    project_skill.mkdir(parents=True)
-    (project_skill / "SKILL.md").write_text(
-        "---\nname: shared\ndescription: [invalid\n---\nBroken project body.\n"
-    )
-    global_skill = fs_dirs[1] / "shared"
-    global_skill.mkdir()
-    (global_skill / "SKILL.md").write_text(
-        "---\nname: shared\ndescription: Global fallback.\n---\nGlobal body.\n"
-    )
-    management_params = [("workspace", str(workspace))]
-    runtime_params = [*management_params, ("mode", "coding")]
-
-    management_list = await client.get("/api/skills", params=management_params)
-    managed = next(
-        item for item in management_list.json()["skills"] if item["name"] == "shared"
-    )
-    assert managed["valid"] is False
-    assert managed["settings_editable"] is False
-
-    management_detail = await client.get("/api/skills/shared", params=management_params)
-    assert management_detail.status_code == 200
-    assert "Broken project body" in management_detail.json()["content"]
-    assert management_detail.json()["settings_editable"] is False
-    assert management_detail.json()["error"] is not None
-
-    runtime_list = await client.get("/api/skills", params=runtime_params)
-    listed = next(
-        item for item in runtime_list.json()["skills"] if item["name"] == "shared"
-    )
-    assert listed["description"] == "Global fallback."
-    assert listed["valid"] is True
-
-    runtime_detail = await client.get("/api/skills/shared", params=runtime_params)
-    assert runtime_detail.status_code == 200
-    assert "Global body" in runtime_detail.json()["content"]
-    assert runtime_detail.json()["error"] is None
-    assert runtime_detail.json()["settings_editable"] is True
-
-
-@pytest.mark.asyncio
-async def test_create_and_update_skill_bundle(client, fs_dirs):
-    create = await client.post(
-        "/api/skills",
-        json={
-            "name": "research",
-            "content": VALID_SKILL,
-            "files": [
-                {
-                    "path": "references/method.md",
-                    "content": "# Method\n",
-                    "encoding": "utf-8",
-                },
-                {
-                    "path": "scripts/run.py",
-                    "content": "cHJpbnQoJ29rJykK",
-                    "encoding": "base64",
-                },
-            ],
-        },
-    )
-    assert create.status_code == 201
-    files = {file["path"]: file for file in create.json()["files"]}
-    assert files["references/method.md"]["content"] == "# Method\n"
-    assert files["scripts/run.py"]["content"] == "print('ok')\n"
-
-    update = await client.put(
-        "/api/skills/research",
-        json={
-            "name": "research",
-            "content": VALID_SKILL,
-            "files": [
-                {
-                    "path": "references/guide.md",
-                    "content": "# Guide\n",
-                    "encoding": "utf-8",
-                }
-            ],
-            "deleted_files": ["references/method.md"],
-        },
-    )
-    assert update.status_code == 200
-    paths = {file["path"] for file in update.json()["files"]}
-    assert paths == {"references/guide.md", "scripts/run.py"}
-    skills_dir = fs_dirs[1]
-    assert not (skills_dir / "research" / "references" / "method.md").exists()
-
-
-@pytest.mark.asyncio
-async def test_skill_bundle_rejects_traversal_and_reserved_skill_file(client):
-    for path in ("../outside.md", "references\\outside.md", "nested/SKILL.md"):
-        response = await client.post(
-            "/api/skills",
-            json={
-                "name": "research",
-                "content": VALID_SKILL,
-                "files": [{"path": path, "content": "bad"}],
-            },
-        )
-        assert response.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_imported_legacy_sub_skill_crud_routes_accept_slash_name(client, fs_dirs):
-    content = "---\nname: git/commit\ndescription: Commit helper.\n---\nCommit body.\n"
-    skill_file = fs_dirs[1] / "git" / "commit" / "SKILL.md"
-    skill_file.parent.mkdir(parents=True)
-    skill_file.write_text(content)
-
-    detail = await client.get("/api/skills/git/commit")
-    assert detail.status_code == 200
-    assert detail.json()["name"] == "git/commit"
-
-    updated = content.replace("Commit helper.", "Updated helper.")
-    update = await client.put(
-        "/api/skills/git/commit",
-        json={"name": "git/commit", "content": updated},
-    )
-    assert update.status_code == 200
-    assert update.json()["description"] == "Updated helper."
-
-    delete = await client.delete("/api/skills/git/commit")
-    assert delete.status_code == 200
-    assert delete.json() == {"name": "git/commit"}
-
-
-@pytest.mark.asyncio
-async def test_nested_settings_skill_can_reset_runtime_and_delete_bundle(
-    client, fs_dirs
-):
-    content = (
-        "---\nname: foo/settings\ndescription: Legacy settings helper.\n"
-        "---\nNested body.\n"
-    )
-    skill_file = fs_dirs[1] / "foo" / "settings" / "SKILL.md"
-    skill_file.parent.mkdir(parents=True)
-    skill_file.write_text(content)
-
-    detail = await client.get("/api/skills/foo/settings")
-    assert detail.status_code == 200
-    settings_id = detail.json()["settings_id"]
-    overridden = await client.patch(
-        "/api/skills/foo/settings",
-        json={
-            "settings_id": settings_id,
-            "modes": ["coding"],
-            "allow_implicit_invocation": False,
-            "user_invocable": False,
-        },
-    )
-    assert overridden.status_code == 200
-    assert overridden.json()["settings_overridden"] is True
-
-    reset = await client.delete(
-        "/api/skills/foo/settings", params={"settings_id": settings_id}
-    )
-    assert reset.status_code == 200
-    assert reset.json()["settings_overridden"] is False
-    assert skill_file.is_file()
-
-    deleted = await client.delete("/api/skills/foo/settings")
-    assert deleted.status_code == 200
-    assert deleted.json() == {"name": "foo/settings"}
-    assert not skill_file.exists()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("name", ["GitCommit", "git_commit", "git/commit"])
-async def test_create_rejects_nonportable_skill_names(client, name):
-    content = f"---\nname: {name}\ndescription: Legacy identity.\n---\nBody.\n"
-
-    response = await client.post(
-        "/api/skills",
-        json={"name": name, "content": content},
-    )
-
-    assert response.status_code == 422
-    assert "lowercase" in response.json()["detail"]
-
-
-# ── POST /api/skills ──────────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_create_skill_success(client):
-    resp = await client.post(
-        "/api/skills", json={"name": "research", "content": VALID_SKILL}
-    )
-    assert resp.status_code == 201
-    data = resp.json()
-    assert data["name"] == "research"
-    assert data["description"] == "A research skill."
-
-
-@pytest.mark.asyncio
-async def test_create_skill_conflict_returns_409(client):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
-    resp = await client.post(
-        "/api/skills", json={"name": "research", "content": VALID_SKILL}
-    )
-    assert resp.status_code == 409
-
-
-@pytest.mark.asyncio
-async def test_create_skill_bad_path_returns_400(client, monkeypatch):
-    from app.services.agent_fs import AgentFsPathError
-
-    monkeypatch.setattr(
-        skills_routes,
-        "_stage_skill_bundle",
-        lambda *a, **kw: (_ for _ in ()).throw(AgentFsPathError("bad")),
-    )
-    resp = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": VALID_SKILL},
-    )
-    assert resp.status_code == 400
-
-
-# ── PUT /api/skills/{name} ────────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_update_skill_name_mismatch_returns_422(client):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
-    resp = await client.put(
-        "/api/skills/research",
-        json={"name": "other", "content": VALID_SKILL},
-    )
-    assert resp.status_code == 422
-    assert "research" in resp.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_update_skill_invalid_content_returns_422(client):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
-    resp = await client.put(
-        "/api/skills/research",
-        json={"name": "research", "content": INVALID_YAML_SKILL},
-    )
-    assert resp.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_create_skill_rejects_empty_instruction_body(client):
+@pytest.mark.parametrize(
+    "path", ["../escape.md", "/abs.md", "nested/SKILL.md", "SKILL.md", "a\\b.md", ""]
+)
+async def test_create_rejects_unsafe_bundle_paths(client, roots, path):
     response = await client.post(
         "/api/skills",
         json={
-            "name": "empty",
-            "content": "---\nname: empty\ndescription: Empty workflow.\n---\n",
-        },
-    )
-
-    assert response.status_code == 422
-    assert "instructions must not be empty" in response.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_update_skill_success(client):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
-    updated = VALID_SKILL.replace("A research skill.", "Updated description.")
-    resp = await client.put(
-        "/api/skills/research",
-        json={"name": "research", "content": updated},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["description"] == "Updated description."
-
-
-@pytest.mark.asyncio
-async def test_update_skill_bundle_is_transactional_on_invalid_resource(
-    client, fs_dirs
-):
-    _, skills_dir = fs_dirs
-    created = await client.post(
-        "/api/skills",
-        json={
             "name": "research",
-            "content": VALID_SKILL,
-            "modes": ["coding"],
-            "files": [
-                {
-                    "path": "references/original.md",
-                    "content": "original resource\n",
-                }
-            ],
-        },
-    )
-    assert created.status_code == 201
-    skill_dir = skills_dir / "research"
-    before_skill = (skill_dir / "SKILL.md").read_bytes()
-    before_resource = (skill_dir / "references" / "original.md").read_bytes()
-    before_scope = (skill_dir / ".evoflux.json").read_bytes()
-
-    response = await client.put(
-        "/api/skills/research",
-        json={
-            "name": "research",
-            "content": VALID_SKILL.replace("Do research.", "Changed body."),
-            "modes": ["work"],
-            "files": [
-                {
-                    "path": "scripts/bad.bin",
-                    "content": "not valid base64!",
-                    "encoding": "base64",
-                }
-            ],
+            "content": skill_text("research"),
+            "files": [{"path": path, "content": "x"}],
         },
     )
 
     assert response.status_code == 400
-    assert (skill_dir / "SKILL.md").read_bytes() == before_skill
-    assert (skill_dir / "references" / "original.md").read_bytes() == before_resource
-    assert (skill_dir / ".evoflux.json").read_bytes() == before_scope
-    assert not (skill_dir / "scripts" / "bad.bin").exists()
+    assert not (roots["user"] / "research").exists()
+    assert not (roots["user"] / "escape.md").exists()
 
 
 @pytest.mark.asyncio
-async def test_create_and_update_accept_bundle_above_former_20_mib_limit(
-    client, fs_dirs
-):
-    _, skills_dir = fs_dirs
-    payload = "x" * ((2 * 1024 * 1024) - 1)
-    created = await client.post(
+async def test_create_rejects_invalid_base64_without_partial_bundle(client, roots):
+    response = await client.post(
         "/api/skills",
         json={
             "name": "research",
-            "content": VALID_SKILL,
-            "files": [
-                {"path": f"assets/{index:02}.txt", "content": payload}
-                for index in range(11)
-            ],
+            "content": skill_text("research"),
+            "files": [{"path": "a.bin", "content": "***", "encoding": "base64"}],
         },
     )
-    assert created.status_code == 201
-    skill_dir = skills_dir / "research"
-    assert (
-        sum(path.stat().st_size for path in (skill_dir / "assets").iterdir())
-        > 20 * 1024 * 1024
-    )
+
+    assert response.status_code == 400
+    assert list(roots["user"].iterdir()) == []
+
+
+# ── Update ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_update_replaces_content_and_applies_file_changes(client, roots):
+    directory = write_skill(roots["user"], "research")
+    (directory / "old.md").write_text("old", encoding="utf-8")
+    (directory / "keep.md").write_text("keep", encoding="utf-8")
+    new_content = skill_text("research", "Researches topics in depth.")
 
     response = await client.put(
         "/api/skills/research",
         json={
-            "name": "research",
-            "content": VALID_SKILL.replace("Do research.", "Changed body."),
-            "files": [{"path": "assets/additional.txt", "content": payload}],
+            "content": new_content,
+            "files": [{"path": "references/new.md", "content": "new"}],
+            "deleted_files": ["old.md"],
         },
     )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["description"] == "Researches topics in depth."
+    assert body["content"] == new_content
+    assert sorted(item["path"] for item in body["files"]) == [
+        "keep.md",
+        "references/new.md",
+    ]
+    assert not (directory / "old.md").exists()
+    assert (directory / "SKILL.md").read_text(encoding="utf-8") == new_content
+
+
+@pytest.mark.asyncio
+async def test_update_project_skill_in_place(client, tmp_path):
+    workspace = tmp_path / "repo"
+    directory = write_skill(workspace / ".claude" / "skills", "flow")
+    new_content = skill_text("flow", "Runs the flow.")
+
+    response = await client.put(
+        "/api/skills/flow",
+        params={"workspace": str(workspace)},
+        json={"content": new_content},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["source"] == "project"
+    assert (directory / "SKILL.md").read_text(encoding="utf-8") == new_content
+
+
+@pytest.mark.asyncio
+async def test_update_requires_matching_frontmatter_name(client, roots):
+    write_skill(roots["user"], "research")
+
+    response = await client.put(
+        "/api/skills/research", json={"content": skill_text("other")}
+    )
+
+    assert response.status_code == 422
+    assert (roots["user"] / "research" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ) == skill_text("research")
+
+
+@pytest.mark.asyncio
+async def test_update_invalid_content_leaves_bundle_untouched(client, roots):
+    directory = write_skill(roots["user"], "research")
+    (directory / "keep.md").write_text("keep", encoding="utf-8")
+
+    response = await client.put(
+        "/api/skills/research",
+        json={
+            "content": "---\nname: research\n---\n\nBody\n",
+            "deleted_files": ["keep.md"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert (directory / "keep.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_update_rejects_traversal_in_deleted_files(client, roots):
+    write_skill(roots["user"], "research")
+    victim = roots["user"] / "victim.md"
+    victim.write_text("x", encoding="utf-8")
+
+    response = await client.put(
+        "/api/skills/research",
+        json={"content": skill_text("research"), "deleted_files": ["../victim.md"]},
+    )
+
+    assert response.status_code == 400
+    assert victim.exists()
+
+
+@pytest.mark.asyncio
+async def test_update_builtin_and_plugin_are_403(client, roots):
+    write_skill(roots["builtin"], "pdf-tools")
+    write_skill(roots["plugin"], "deploy")
+
+    builtin = await client.put(
+        "/api/skills/pdf-tools", json={"content": skill_text("pdf-tools")}
+    )
+    plugin = await client.put(
+        "/api/skills/deploy", json={"content": skill_text("deploy")}
+    )
+
+    assert builtin.status_code == 403
+    assert plugin.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_symlinked_skill_is_403(client, roots, tmp_path):
+    target = write_skill(tmp_path / "elsewhere", "linked")
+    try:
+        (roots["user"] / "linked").symlink_to(target, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks are not available")
+
+    listed = (await client.get("/api/skills")).json()["skills"]
+    response = await client.put(
+        "/api/skills/linked", json={"content": skill_text("linked")}
+    )
+
+    assert listed[0]["symlinked"] is True
+    assert listed[0]["editable"] is False
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_managed_skill_is_403(client, roots, monkeypatch):
+    write_skill(roots["user"], "governed")
+    monkeypatch.setattr(
+        skills_service,
+        "managed_resource_providers",
+        lambda: {("skill", "governed"): _provider()},
+    )
+
+    response = await client.put(
+        "/api/skills/governed", json={"content": skill_text("governed")}
+    )
+
+    assert response.status_code == 403
+    assert "Platform Core" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_update_unknown_skill_is_404(client):
+    response = await client.put(
+        "/api/skills/missing", json={"content": skill_text("missing")}
+    )
+    assert response.status_code == 404
+
+
+# ── Enable / disable ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_disable_and_enable_user_skill(client, roots):
+    write_skill(roots["user"], "research")
+
+    disabled = await client.patch("/api/skills/research", json={"enabled": False})
+
+    assert disabled.status_code == 200
+    assert disabled.json()["enabled"] is False
+    assert disabled_skill_names() == frozenset({"research"})
+    payload = json.loads(skill_settings_path().read_text(encoding="utf-8"))
+    assert payload == {"version": 2, "disabled": ["research"]}
+    listed = (await client.get("/api/skills")).json()["skills"]
+    assert listed[0]["enabled"] is False
+
+    enabled = await client.patch("/api/skills/research", json={"enabled": True})
+
+    assert enabled.json()["enabled"] is True
+    assert disabled_skill_names() == frozenset()
+
+
+@pytest.mark.asyncio
+async def test_read_only_skills_can_be_toggled(client, roots, monkeypatch):
+    write_skill(roots["builtin"], "pdf-tools")
+    write_skill(roots["plugin"], "deploy")
+    write_skill(roots["user"], "governed")
+    monkeypatch.setattr(
+        skills_service,
+        "managed_resource_providers",
+        lambda: {("skill", "governed"): _provider()},
+    )
+
+    for name in ("pdf-tools", "deploy", "governed"):
+        response = await client.patch(f"/api/skills/{name}", json={"enabled": False})
+        assert response.status_code == 200, name
+        assert response.json()["enabled"] is False
+        assert response.json()["editable"] is False
+
+    assert disabled_skill_names() == frozenset({"pdf-tools", "deploy", "governed"})
+
+
+@pytest.mark.asyncio
+async def test_toggle_invalid_skill_is_allowed(client, roots):
+    write_skill(roots["user"], "broken", "---\nname: broken\n---\n\nBody\n")
+
+    response = await client.patch("/api/skills/broken", json={"enabled": False})
 
     assert response.status_code == 200
-    assert "Changed body." in (skill_dir / "SKILL.md").read_text()
-    assert (skill_dir / "assets" / "additional.txt").stat().st_size == len(payload)
+    assert response.json()["valid"] is False
 
 
 @pytest.mark.asyncio
-async def test_update_skill_bad_path_returns_400(client, monkeypatch):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
+async def test_toggle_unknown_skill_is_404(client):
+    response = await client.patch("/api/skills/missing", json={"enabled": False})
+    assert response.status_code == 404
 
-    def bad_write(*_args, **_kwargs):
-        raise OSError("bad")
 
-    monkeypatch.setattr(skills_routes, "_atomic_write", bad_write)
-    resp = await client.put(
-        "/api/skills/research",
-        json={"name": "research", "content": VALID_SKILL},
+# ── Delete ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_delete_removes_bundle_and_disabled_entry(client, roots):
+    directory = write_skill(roots["user"], "research")
+    (directory / "references").mkdir()
+    (directory / "references" / "guide.md").write_text("g", encoding="utf-8")
+    await client.patch("/api/skills/research", json={"enabled": False})
+
+    response = await client.delete("/api/skills/research")
+
+    assert response.status_code == 200
+    assert response.json() == {"name": "research"}
+    assert not directory.exists()
+    assert disabled_skill_names() == frozenset()
+    assert (await client.get("/api/skills")).json()["skills"] == []
+
+
+@pytest.mark.asyncio
+async def test_delete_reveals_shadowed_skill(client, roots):
+    write_skill(roots["user"], "research")
+    write_skill(roots["builtin"], "research")
+
+    await client.delete("/api/skills/research")
+
+    [row] = (await client.get("/api/skills")).json()["skills"]
+    assert row["source"] == "builtin"
+
+
+@pytest.mark.asyncio
+async def test_delete_read_only_skills_is_403(client, roots, monkeypatch):
+    write_skill(roots["builtin"], "pdf-tools")
+    write_skill(roots["plugin"], "deploy")
+    managed = write_skill(roots["user"], "governed")
+    monkeypatch.setattr(
+        skills_service,
+        "managed_resource_providers",
+        lambda: {("skill", "governed"): _provider()},
     )
-    assert resp.status_code == 400
 
+    for name in ("pdf-tools", "deploy", "governed"):
+        assert (await client.delete(f"/api/skills/{name}")).status_code == 403
 
-# ── DELETE /api/skills/{name} ─────────────────────────────────────────────────
+    assert (roots["builtin"] / "pdf-tools").exists()
+    assert managed.exists()
 
 
 @pytest.mark.asyncio
-async def test_delete_skill_success(client, fs_dirs):
+async def test_delete_unknown_skill_is_404(client):
+    assert (await client.delete("/api/skills/missing")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_mutations_invalidate_skill_cache(client, roots, monkeypatch):
+    calls: list[str] = []
+    original = team_manager.invalidate_skill_cache
+
+    def spy() -> None:
+        calls.append("invalidate")
+        original()
+
+    monkeypatch.setattr(team_manager, "invalidate_skill_cache", spy)
     await client.post(
-        "/api/skills",
-        json={
-            "name": "research",
-            "content": VALID_SKILL,
-            "files": [
-                {
-                    "path": "references/guide.md",
-                    "content": "# Guide\n",
-                }
-            ],
-        },
+        "/api/skills", json={"name": "research", "content": skill_text("research")}
     )
-    resp = await client.delete("/api/skills/research")
-    assert resp.status_code == 200
-    assert resp.json() == {"name": "research"}
-    assert not (fs_dirs[1] / "research").exists()
-
-
-@pytest.mark.asyncio
-async def test_delete_skill_removes_runtime_override_before_recreate(client, fs_dirs):
-    created = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": VALID_SKILL, "modes": ["coding"]},
+    await client.put(
+        "/api/skills/research", json={"content": skill_text("research", "Updated.")}
     )
-    assert created.status_code == 201
-    settings_id = created.json()["settings_id"]
+    await client.patch("/api/skills/research", json={"enabled": False})
+    await client.delete("/api/skills/research")
 
-    updated = await client.patch(
-        "/api/skills/research",
-        json={
-            "settings_id": settings_id,
-            "modes": ["work"],
-            "allow_implicit_invocation": False,
-            "user_invocable": False,
-        },
-    )
-    assert updated.status_code == 200
-    assert updated.json()["settings_overridden"] is True
-
-    deleted = await client.delete("/api/skills/research")
-    assert deleted.status_code == 200
-    settings_path = fs_dirs[1].parent / "config" / "skill-settings.json"
-    assert not settings_path.exists() or settings_id not in settings_path.read_text()
-
-    recreated = await client.post(
-        "/api/skills",
-        json={"name": "research", "content": VALID_SKILL, "modes": ["coding"]},
-    )
-    assert recreated.status_code == 201
-    assert recreated.json()["modes"] == ["coding"]
-    assert recreated.json()["allow_implicit_invocation"] is True
-    assert recreated.json()["user_invocable"] is True
-    assert recreated.json()["settings_overridden"] is False
-
-
-@pytest.mark.asyncio
-async def test_delete_builtin_skill_returns_403(client, monkeypatch):
-    from app.agent.tools.builtin import skill as skill_module
-
-    monkeypatch.setattr(
-        skill_module,
-        "_iter_skill_roots",
-        lambda: [skills_routes._builtin_skills_root()],
-    )
-    skill_module._discover_skills_cached.cache_clear()
-
-    resp = await client.delete("/api/skills/self-healing")
-    assert resp.status_code == 403
-    assert "read-only" in resp.json()["detail"]
-
-
-@pytest.mark.asyncio
-async def test_delete_skill_not_found_returns_404(client):
-    resp = await client.delete("/api/skills/missing")
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_delete_skill_bad_path_returns_400(client, monkeypatch):
-    await client.post("/api/skills", json={"name": "research", "content": VALID_SKILL})
-
-    def bad_delete(*_args, **_kwargs):
-        raise OSError("bad")
-
-    monkeypatch.setattr(skills_routes, "_delete_skill_bundle", bad_delete)
-    resp = await client.delete("/api/skills/research")
-    assert resp.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_symlinked_skill_is_read_only_and_cannot_escape_crud(
-    client, fs_dirs, tmp_path
-):
-    skills_root = fs_dirs[1]
-    outside = tmp_path / "outside-target"
-    outside.mkdir()
-    outside_skill = outside / "SKILL.md"
-    outside_skill.write_text(
-        "---\nname: linked\ndescription: Linked external skill.\n---\nOutside body."
-    )
-    (skills_root / "linked").symlink_to(outside, target_is_directory=True)
-    from app.agent.tools.builtin import skill as skill_module
-
-    skill_module._discover_skills_cached.cache_clear()
-
-    listed = await client.get("/api/skills")
-    row = next(item for item in listed.json()["skills"] if item["name"] == "linked")
-    assert row["symlinked"] is True
-    assert row["editable"] is False
-
-    update = await client.put(
-        "/api/skills/linked",
-        json={
-            "name": "linked",
-            "content": "---\nname: linked\ndescription: Changed.\n---\nChanged.",
-        },
-    )
-    delete = await client.delete("/api/skills/linked")
-
-    assert update.status_code == 403
-    assert delete.status_code == 403
-    assert "Outside body." in outside_skill.read_text()
-
-
-# ── Cache invalidation — no team reload, drift detection picks up changes ─────
-
-
-@pytest.mark.asyncio
-async def test_create_skill_invalidates_cache_without_reloading_team(
-    client, monkeypatch, fs_dirs
-):
-    """Skill mutations must invalidate the discovery cache but never reload the team.
-
-    Mid-turn team reloads tear down in-flight tool execution.  Agents
-    instead pick up new/updated skills at the start of their next turn
-    via the config-stamp drift check.
-    """
-    invalidated: list[bool] = []
-    reload_called: list[bool] = []
-
-    monkeypatch.setattr(
-        team_manager,
-        "invalidate_skill_cache",
-        lambda: invalidated.append(True),
-    )
-    # Sentinel: if the route accidentally re-introduces a reload call,
-    # this will record it.
-    monkeypatch.setattr(
-        team_manager,
-        "reload",
-        AsyncMock(side_effect=lambda: reload_called.append(True)),
-    )
-
-    resp = await client.post(
-        "/api/skills", json={"name": "research", "content": VALID_SKILL}
-    )
-    assert resp.status_code == 201
-    assert resp.json()["name"] == "research"
-    assert invalidated == [True], "skill cache must be invalidated"
-    assert reload_called == [], "team must NOT be reloaded mid-turn"
+    assert calls == ["invalidate"] * 4

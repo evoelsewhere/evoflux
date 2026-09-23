@@ -480,9 +480,12 @@ def _memory_items(query: str, limit: int) -> list[AppSearchItem]:
 
 def _markdown_description(text: str, fallback: str) -> str:
     """Prefer a definition's frontmatter description, else its first prose line."""
-    from app.agent.skills.discovery import parse_frontmatter
+    from app.agent.skills.spec import SkillFormatError, split_frontmatter
 
-    metadata, body = parse_frontmatter(text)
+    try:
+        metadata, body = split_frontmatter(text)
+    except SkillFormatError:
+        metadata, body = {}, text
     description = metadata.get("description")
     if isinstance(description, str) and description.strip():
         return " ".join(description.split())[:240]
@@ -521,25 +524,22 @@ def _agent_items(query: str, limit: int) -> list[AppSearchItem]:
 
 
 def _skill_items(query: str, limit: int) -> list[AppSearchItem]:
-    from app.services.agent_fs import list_skills, read_skill
+    """Every discovered Skill (user, plugin and built-in), matched on metadata."""
+    from app.agent.skills.registry import discover_skills
 
     needle = query.casefold()
     items: list[AppSearchItem] = []
-    for name in list_skills()[:FILE_SCAN_LIMIT]:
-        try:
-            record = read_skill(name)
-        except (OSError, ValueError, FileNotFoundError):
-            continue
-        if not _matches(needle, name, record.content):
+    for skill in discover_skills().all()[:FILE_SCAN_LIMIT]:
+        if not _matches(needle, skill.name, skill.description):
             continue
         items.append(
             AppSearchItem(
-                id=f"app-skill:{name}",
+                id=f"app-skill:{skill.name}",
                 kind="skill",
-                label=name,
-                description=_markdown_description(record.content, "Agent skill"),
-                path=record.path,
-                metadata={"name": name},
+                label=skill.name,
+                description=" ".join(skill.description.split())[:240] or "Agent skill",
+                path=str(skill.location),
+                metadata={"name": skill.name, "source": skill.source},
             )
         )
         if len(items) >= limit:

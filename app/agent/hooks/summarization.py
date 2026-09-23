@@ -36,8 +36,8 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import math
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -53,7 +53,7 @@ from app.agent.outbound_redaction import (
 )
 from app.agent.providers.base import LLMProviderBase, get_qualified_model_id
 from app.agent.providers.model_metadata import get_model_limits
-from app.agent.skills.activation import is_skill_activation_content
+from app.agent.skills.activation import full_read_path, is_skill_file_read
 from app.agent.hooks.tool_context_projection import (
     keep_recent_batches_for_mode,
     project_tool_results,
@@ -308,9 +308,6 @@ def _is_context_overflow(exc: Exception) -> bool:
 # assistant/tool group, not only the skill result, so a mixed tool-call batch
 # cannot smuggle unrelated output into durable context.
 MAX_DURABLE_SKILL_BYTES = 100_000
-# Compatibility for extensions importing the old constant. Budget accounting
-# itself is byte-based below.
-MAX_DURABLE_SKILL_CHARS = MAX_DURABLE_SKILL_BYTES
 
 
 # ── Bundled summariser prompts ────────────────────────────────────────────
@@ -548,12 +545,11 @@ def _durable_skill_message_ids(
     *,
     max_bytes: int = MAX_DURABLE_SKILL_BYTES,
 ) -> set[int]:
-    """Return exact activation pairs that must survive summarisation.
+    """Return Skill activation pairs that must survive summarisation.
 
-    Resource reads and catalog listings are ordinary evidence and may be
-    compacted. Only successful ``action=load`` calls whose result contains the
-    canonical ``<skill_content>`` wrapper are durable. Newest activations win
-    when duplicate history exists.
+    A Skill activation is a successful full ``read`` of a ``SKILL.md``. Reads
+    of a Skill's other files are ordinary evidence and may be compacted. The
+    newest read of each ``SKILL.md`` wins when history repeats it.
     """
 
     tool_messages_by_call: dict[str, ToolMessage] = {
@@ -585,23 +581,11 @@ def _durable_skill_message_ids(
         durable_names: list[str] = []
         durable_results: list[ToolMessage] = []
         for call in message.tool_calls:
-            if call.function.name != "skill":
-                continue
-            try:
-                arguments = json.loads(call.function.arguments or "{}")
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if arguments.get("action", "load") != "load":
-                continue
-            name = arguments.get("skill_name")
             result = tool_messages_by_call.get(call.id)
-            if (
-                not isinstance(name, str)
-                or not name
-                or name in protected_names
-                or result is None
-                or not is_skill_activation_content(result.content, name)
-            ):
+            if result is None or not is_skill_file_read(call, result):
+                continue
+            name = os.path.normcase(full_read_path(call) or "")
+            if name in protected_names:
                 continue
             durable_names.append(name)
             durable_results.append(result)
@@ -1166,16 +1150,6 @@ class SummarizationHook(BaseAgentHook):
             is_summary=True,
         )
         state.messages.insert(first_kept_idx, summary_msg)
-        # Reconcile the ephemeral fast-path cache with exact activations that
-        # are still visible. If an old skill fell outside the durable budget,
-        # the next exact use may load it again instead of incorrectly claiming
-        # that paraphrased/hidden instructions remain active.
-        try:
-            from app.agent.tools.builtin.skill import _loaded_skills_from_messages
-
-            state.metadata["loaded_skills"] = _loaded_skills_from_messages(state)
-        except Exception as exc:  # noqa: BLE001 - compaction must remain available
-            logger.warning("skill_activation_reconcile_failed error={}", exc)
         # checkpointer.sync() (called by the loop after before_model)
         # persists the mutated state.messages.
 

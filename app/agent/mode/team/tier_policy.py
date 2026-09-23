@@ -40,7 +40,6 @@ _TRIVIAL_DENIED: frozenset[str] = frozenset(
         "browser_use",
         "webbridge",
         "schedule_task",
-        "skill",
     }
 )
 

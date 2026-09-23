@@ -12,6 +12,7 @@
  * turn again and nothing has streamed back yet — that is "waiting".
  */
 import type { ContentBlock } from '@/api/types'
+import { getSkillActivationName } from '@/components/ToolCall/skillPresentation'
 
 export type LiveTurnActivityKind =
   | 'tool'
@@ -60,7 +61,6 @@ const ACTIVE_VERBS: Record<string, string> = {
   webbridge: 'Browsing',
   git: 'Running git',
   recall: 'Checking memory',
-  skill: 'Loading skill',
   team_delegate: 'Delegating',
   team_message: 'Messaging',
 }
@@ -112,6 +112,9 @@ function toolTarget(args: string | undefined): string | null {
 }
 
 export function activeToolLabel(toolName: string, args: string | undefined): string {
+  // A full read of a SKILL.md activates that Skill.
+  const skillName = getSkillActivationName(toolName, args)
+  if (skillName) return `Using skill ${skillName}`
   const verb = ACTIVE_VERBS[toolName]
   const target = toolTarget(args)
   if (verb) return target ? `${verb} ${target}` : `${verb}…`

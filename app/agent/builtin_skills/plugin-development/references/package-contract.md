@@ -1,6 +1,6 @@
 # Portable package contract
 
-Use this reference for package structure, validation, packing, installation, and update semantics. The current EvoFlux implementation follows the portable core of Agent Plugins 1.0 and adds only declared EvoFlux extensions.
+Use this reference for package structure, validation, packing, installation, and update semantics. The EvoFlux implementation follows the portable core of Agent Plugins 1.0 and adds only declared EvoFlux extensions.
 
 ## Contents
 
@@ -10,7 +10,7 @@ Use this reference for package structure, validation, packing, installation, and
 - [Validation and isolation](#validation-and-isolation)
 - [Pack, install, update, and uninstall](#pack-install-update-and-uninstall)
 - [Storage ownership](#storage-ownership)
-- [Current boundary](#current-boundary)
+- [Supported boundary](#supported-boundary)
 
 ## Canonical package
 
@@ -66,21 +66,21 @@ Discover only immediate directories under `skills/`. Each directory must contain
 ```yaml
 ---
 name: release-audit
-description: Audit a release when the user asks for a readiness or evidence review.
+description: Audits a release for readiness and collects evidence. Use when the user asks for a release readiness review or release evidence.
 ---
 ```
 
-The frontmatter name must equal the directory name and use lowercase hyphen-case. The description must be nonempty and no longer than 1024 characters. The instruction body must be nonempty. `SKILL.md` is limited to 512 KiB.
+The frontmatter `name` must equal the directory name: 1–64 lowercase letters, digits, and single hyphens, without `anthropic` or `claude`. The `description` must be nonempty, third person, no longer than 1,024 characters, and free of XML tags. Optional keys are `license`, `compatibility` (at most 500 characters), `metadata` (string-to-string map), `allowed-tools`, `disable-model-invocation`, and `user-invocable`; any other key is ignored with a warning. The instruction body must be nonempty. `SKILL.md` is limited to 512 KiB. A Skill directory holds `SKILL.md` plus optional `references/`, `scripts/`, and `assets/`; it has no `agents/`, `evals/`, or `.evoflux.json` sidecar files.
 
-An invalid Skill is skipped without invalidating healthy sibling Skills or the package manifest. Plugin Skills enter the normal metadata-only catalog and are loaded on demand. Name precedence is deterministic:
+An invalid Skill is skipped without invalidating healthy sibling Skills or the package manifest. Plugin Skills enter the normal metadata-only catalog: the model sees `name`, `description`, and the absolute `SKILL.md` location and reads the file when a task matches. Name precedence is deterministic:
 
 ```text
-project/user/admin Skills > plugin Skills > built-in Skills
+project Skills > user Skills > plugin Skills > built-in Skills
 ```
 
 ## Validation and isolation
 
-Current limits:
+Limits:
 
 - `plugin.json`: 512 KiB;
 - `mcp.json`: 2 MiB;
@@ -142,8 +142,8 @@ agent-plugins/
 
 The registry uses atomic persistence. Staging and cache directories are implementation details; plugins must not depend on them. Plugins may write only installation-scoped mutable data provided through `${PLUGIN_DATA}`.
 
-## Current boundary
+## Supported boundary
 
-Current supported surface includes local archive import, local developer links, validation, scaffold, workspace editing, credentials, enable/disable, pack, managed update, uninstall, Skills, and MCP.
+The supported surface includes local archive import, local developer links, validation, scaffold, workspace editing, credentials, enable/disable, pack, managed update, uninstall, Skills, and MCP.
 
 Do not claim support for Git/registry import, signatures/provenance, custom commands or agents, arbitrary host code, rich connection types beyond declared credentials, or a plugin storage SDK.

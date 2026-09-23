@@ -74,6 +74,33 @@ def telemetry_delivery_payload(installation_id: str) -> dict[str, object]:
     }
 
 
+def _skill_activation(tmp_path: Path, state: AgentState, name: str) -> ToolCall:
+    """Give the run a catalog holding *name* and return a read of its SKILL.md.
+
+    A Skill activation is a full ``read`` of the catalog ``location``.
+    """
+    from app.agent.hooks.skills import CATALOG_KEY
+    from app.agent.skills.registry import SkillRoot, discover_skills
+
+    root = tmp_path / "activation-skills"
+    directory = root / name
+    directory.mkdir(parents=True)
+    (directory / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: Test skill.\n---\n\nSteps.\n",
+        encoding="utf-8",
+    )
+    catalog = discover_skills(roots=[SkillRoot(root, "user", editable=True)])
+    state.metadata[CATALOG_KEY] = catalog
+    skill = catalog.get(name)
+    assert skill is not None
+    return ToolCall(
+        id="skill-1",
+        function=FunctionCall(
+            name="read", arguments=json.dumps({"path": skill.location.as_posix()})
+        ),
+    )
+
+
 def _configure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installation_id: str
 ) -> None:
@@ -288,13 +315,7 @@ async def test_hook_attributes_managed_agent_and_skill_and_closes_request(
         ModelRequest(messages=(), system_prompt="private"),
         model_handler,
     )
-    tool_call = ToolCall(
-        id="skill-1",
-        function=FunctionCall(
-            name="skill",
-            arguments='{"action":"load","skill_name":"release-check"}',
-        ),
-    )
+    tool_call = _skill_activation(tmp_path, state, "release-check")
 
     async def tool_handler(_ctx, _state, _call) -> str:
         return "private skill instructions"
@@ -432,13 +453,7 @@ async def test_hook_closes_failed_request_once_with_resource_attribution(
     ctx = RunContext(session_id="session-1", run_id="request-1", agent_name="lead")
     state = AgentState(messages=[])
     await hook.before_agent(ctx, state)
-    tool_call = ToolCall(
-        id="skill-1",
-        function=FunctionCall(
-            name="skill",
-            arguments='{"action":"load","skill_name":"failing-skill"}',
-        ),
-    )
+    tool_call = _skill_activation(tmp_path, state, "failing-skill")
 
     async def failing_tool_handler(_ctx, _state, _call) -> str:
         raise RuntimeError("private failure")
@@ -597,20 +612,24 @@ async def test_managed_skill_usage_is_durable_and_content_free(
 ) -> None:
     skills = tmp_path / "skills"
     state = tmp_path / "state"
-    managed = skills / "research"
-    managed.mkdir(parents=True)
-    (managed / ".evoflux.json").write_text(
-        json.dumps(
-            {
-                "managed_by": "conductor",
-                "resource_id": "11111111-1111-1111-1111-111111111111",
-                "resource_version": "1.2.3",
-            }
-        ),
-        encoding="utf-8",
-    )
+    (skills / "research").mkdir(parents=True)
     monkeypatch.setattr(settings, "SKILLS_DIR", str(skills))
     monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(state))
+    # Provenance comes from the Conductor managed-resource store, never from
+    # a file inside the bundle.
+    ManagedResourceStore().upsert(
+        ManagedResourceRecord(
+            project_id=str(uuid.uuid4()),
+            resource_id="11111111-1111-1111-1111-111111111111",
+            version_id="1.2.3",
+            version="1.2.3",
+            release_channel="published",
+            kind="skill",
+            slug="research",
+            observed_state="applied",
+            observed_at=datetime.now(UTC),
+        )
+    )
 
     record_skill_usage("local-only")
     record_skill_usage("research", duration_ms=12)

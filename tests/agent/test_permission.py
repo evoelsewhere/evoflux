@@ -259,7 +259,6 @@ async def test_ask_mode_allows_safe_read_only_tools():
     await service.ask("read", ["/etc/hosts"])
     await service.ask("grep", ["pattern"])
     await service.ask("team_handoff", ["team_handoff"])
-    await service.ask("skill", ["skill"])
     await service.ask("load_tool", ["load_tool"])
     await service.ask("schedule_task", ["schedule_task"])
     assert service.list_pending() == []

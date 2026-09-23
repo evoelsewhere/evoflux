@@ -39,7 +39,7 @@ async def test_turn_usage_aggregates_phases_and_publishes_totals() -> None:
                     "cache": 500,
                     "cache_write": 200,
                 },
-                phase="skill_resolver",
+                phase="title",
                 model_id="codex:gpt-test",
             )
 
@@ -60,7 +60,7 @@ async def test_turn_usage_aggregates_phases_and_publishes_totals() -> None:
                     "calls": 1,
                     "models": ["codex:gpt-test"],
                 },
-                "skill_resolver": {
+                "title": {
                     "input": 2_800,
                     "output": 12,
                     "cache": 500,

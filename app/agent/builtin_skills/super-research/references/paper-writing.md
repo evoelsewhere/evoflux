@@ -1,18 +1,23 @@
 # Mode: Paper writing + citation audit / 写论文 & 引用校验
 
+## Contents
+
+- Part A: Writing — contract fields, the claim map baseline, the revision log, the drafting loop
+- Part B: Citation audit — contract fields, the mechanical audit, the context audit, the repair matrix, the audit report
+- Anti-patterns (both parts)
+- Final report
+
 Use when the user asks to write, polish, or verify the bibliography of an academic paper — "write a paper on X", "polish this draft", "check every citation", "查引用", "citation audit". Also usable standalone on an existing PDF/tex whose citations you don't trust.
 
 The failure mode this mode is designed against: fabricated references, and (worse) real papers cited for claims they don't actually make. A polished draft with a hallucinated bibliography looks perfect until a reviewer opens one of the papers you cited — then everything collapses. **Every citation in the final draft must trace to an API-returned record.**
 
 This mode has two parts. They can run together (writing a new paper) or independently (auditing someone else's).
 
-For section-level composition, read only the detailed guide that matches the
-requested section from `references/paper-writing/`: `abstract.md`,
-`introduction.md`, `related-work.md`, `method.md`, `experiments.md`, or
-`conclusion.md`. Use `paragraph-flow.md` for a sentence/paragraph polish,
-`paper-review.md` for adversarial pre-submission review, and `pdf-export.md`
-for LaTeX/PDF compilation. Do not preload these guides for unrelated paper
-work.
+For section-level composition, read only the section guide that matches the
+requested section; SKILL.md lists every guide under "Paper-writing section
+guides" (abstract, introduction, related work, method, experiments,
+conclusion, paragraph polish, adversarial review, PDF export). Do not preload
+these guides for unrelated paper work.
 
 ## Part A: Writing
 

@@ -334,7 +334,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         grep_files,
         list_directory,
         list_code_reviews,
-        load_skill,
         merge_code_review,
         patch_file,
         python_tool,
@@ -396,7 +395,6 @@ def _default_tool_registry() -> dict[str, Tool]:
         "rm": remove_path,
         "python": python_tool,
         "shell": shell_tool,
-        "skill": load_skill,
         "load_tool": load_tool,
         "schedule_task": schedule_task,
         "todo_manage": todo_manage,
@@ -459,11 +457,9 @@ def _build_agent(
     system_prompt = cfg.system_prompt
 
     from app.agent.tools.builtin.schedule import schedule_task as _schedule_task_tool
-    from app.agent.tools.builtin.skill import load_skill as _load_skill_tool
     from app.agent.tools.builtin.todo import todo_manage
 
-    _load_skill = tool_registry.get("skill", _load_skill_tool)
-    tools: list[Tool] = [_load_skill]
+    tools: list[Tool] = []
 
     # These tools are always available to the lead agent — not listed in frontmatter.
     if cfg.role == "lead":
@@ -478,7 +474,7 @@ def _build_agent(
     cfg.tools = list(dict.fromkeys(cfg.tools))
     cfg.mcp = list(dict.fromkeys(cfg.mcp))
     for tool_name in cfg.tools:
-        if tool_name in ("skill", "todo_manage", "schedule_task", "note"):
+        if tool_name in ("todo_manage", "schedule_task", "note"):
             continue
         if tool_name not in tool_registry:
             # Soft-skip: settings/self-healing edits and disabled-then-rebuild
@@ -594,34 +590,11 @@ def _build_agent(
         fallback_model_id=cfg.fallback_model,
     )
 
-    # Progressive skill disclosure has two complementary paths:
-    #
-    # * a bounded metadata catalog lets the model select by meaning without
-    #   request-to-query/keyword routing;
-    # * an explicit composer directive deterministically activates one skill.
-    #
-    # Full SKILL.md bodies stay out of the base prompt in both cases.
-    from app.agent.hooks.configured_skills import ConfiguredSkillsHook
-    from app.agent.hooks.explicit_skill_selection import ExplicitSkillSelectionHook
-    from app.agent.hooks.skill_catalog import SkillCatalogHook
-    from app.agent.hooks.skill_resolution import SkillResolutionHook
-    from app.agent.hooks.skill_runtime_contract import SkillRuntimeContractHook
+    # Agent Skills: metadata in the system prompt, SKILL.md read by the model
+    # with `read` (documents/architecture/agent-skills.md).
+    from app.agent.hooks.skills import SkillsHook
 
-    if cfg.skills:
-        agent.hooks.append(ConfiguredSkillsHook(cfg.skills, mode=mode))
-    agent.hooks.extend(
-        [
-            ExplicitSkillSelectionHook(),
-            SkillResolutionHook(mode=mode),
-            SkillRuntimeContractHook(mode=mode),
-            SkillCatalogHook(
-                mode=mode,
-                model_id=cfg.model,
-                preferred_skills=cfg.skills,
-                cache_stable=True,
-            ),
-        ]
-    )
+    agent.hooks.append(SkillsHook(preloaded=cfg.skills))
 
     # Stamp config dependencies for end-of-turn drift detection.
     if source_path is not None:

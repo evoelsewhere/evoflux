@@ -29,9 +29,11 @@ import {
   SquareTerminal,
   Globe2,
   FolderOpen,
+  Sparkles,
 } from 'lucide-react'
 import { ToolResult } from '../ToolResult'
 import { getToolDisplay } from './display'
+import { getSkillActivationName } from './skillPresentation'
 import { DiffView } from './DiffView'
 import { ReadView } from './ReadView'
 import { getDiffStats } from './diffUtils'
@@ -266,8 +268,9 @@ function completedToolLabel(name: string): string {
   }
 }
 
-function ToolActivityIcon({ name }: { name: string }) {
+function ToolActivityIcon({ name, skill = false }: { name: string; skill?: boolean }) {
   const props = { size: 13, strokeWidth: 1.7, 'aria-hidden': true as const }
+  if (skill) return <Sparkles {...props} />
   if (name === 'read' || name === 'read_file') return <FileText {...props} />
   if (name === 'write' || name === 'write_file' || name === 'edit' || name === 'edit_file' || name === 'patch') return <Pencil {...props} />
   if (name === 'grep') return <Search {...props} />
@@ -304,7 +307,6 @@ function toolActivityLabel(
     case 'edit': return `Editing ${target || 'file'}`
     case 'patch': return `Applying ${target || 'patch'}`
     case 'rm': return `Removing ${target || 'file'}`
-    case 'skill': return `Loading ${target || 'skill'}`
     case 'shell': return target || 'Running command'
     case 'python': return target || 'Running Python'
     case 'browser_use':
@@ -356,6 +358,10 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
     useMemo(() => getToolDisplay(name, args), [name, args])
   const usesDiffView = name === 'edit' || name === 'patch' || name === 'write'
   const usesReadView = name === 'read'
+  const isSkillActivation = useMemo(
+    () => getSkillActivationName(name, args ?? undefined) !== null,
+    [name, args],
+  )
   const diffStats = useMemo(
     () => ((usesDiffView || name === 'rm') && args ? getDiffStats(name, args, result) : null),
     [name, args, result, usesDiffView],
@@ -460,7 +466,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
         }
       >
         <span className={state === 'failed' ? 'shrink-0 text-(--color-error)' : 'shrink-0 text-(--color-text-subtle)'}>
-          <ToolActivityIcon name={displayName} />
+          <ToolActivityIcon name={displayName} skill={isSkillActivation} />
         </span>
         {/* Header content: tool-specific summary or fallback to tool name.
             Mono+600 per pencil dqwZw. */}

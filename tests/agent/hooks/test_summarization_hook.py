@@ -13,10 +13,10 @@ import pytest
 from app.agent.state import AgentState, ModelRequest, RunContext, UsageInfo
 from app.agent.state import build_model_chain
 from app.agent.hooks.pipeline import HookPipeline, HookStage
-from app.agent.hooks.skill_catalog import SkillCatalogFinalizerHook
+from app.agent.hooks.skills import SkillsPromptFinalizerHook
 from app.agent.hooks.summarization import (
     CODING_SUMMARY_PROMPT,
-    MAX_DURABLE_SKILL_CHARS,
+    MAX_DURABLE_SKILL_BYTES,
     SummarizationHook,
     _durable_skill_message_ids,
 )
@@ -34,7 +34,12 @@ from app.agent.turn_usage import (
     current_turn_usage_snapshot,
     end_turn_usage,
 )
-from app.agent.skills.catalog import SkillCatalogRender
+
+
+def _skill_read(name: str) -> FunctionCall:
+    """A full ``read`` of a SKILL.md — the shape of a Skill activation."""
+
+    return FunctionCall(name="read", arguments=f'{{"path": "/skills/{name}/SKILL.md"}}')
 
 
 # ---------------------------------------------------------------------------
@@ -758,7 +763,7 @@ async def test_summarization_usage_is_included_in_turn_total():
 
 @pytest.mark.asyncio
 async def test_prompt_finalization_precedes_summarization_snapshot():
-    finalizer = SkillCatalogFinalizerHook()
+    finalizer = SkillsPromptFinalizerHook()
     summarization = SummarizationHook(
         llm_provider=MagicMock(),
         summary_prompt="summarize",
@@ -772,7 +777,7 @@ async def test_prompt_finalization_precedes_summarization_snapshot():
     pipeline.add(HookStage.CONTEXT_CONTROL, "summarization", summarization)
     pipeline.add(
         HookStage.PROMPT_FINALIZATION,
-        "skill-catalog-finalizer",
+        "skills-prompt-finalizer",
         finalizer,
     )
     hooks = pipeline.build()
@@ -781,9 +786,8 @@ async def test_prompt_finalization_precedes_summarization_snapshot():
         messages=[HumanMessage(content="old"), HumanMessage(content="new")],
         usage=UsageInfo(last_prompt_tokens=999),
     )
-    state.metadata["_skill_catalog_render"] = SkillCatalogRender(
-        text="## Skills\n- research: Research facts.",
-        included=("research",),
+    state.metadata["_skills_prompt"] = (
+        "## Skills\n<available_skills></available_skills>"
     )
     for hook in hooks:
         await hook.before_agent(ctx, state)
@@ -1818,23 +1822,13 @@ def test_oversized_first_skill_activation_is_outside_durable_budget():
     skill_asst = AssistantMessage(
         content=None,
         tool_calls=[
-            ToolCall(
-                id="call_oversized_skill",
-                function=FunctionCall(
-                    name="skill",
-                    arguments='{"action":"load","skill_name":"oversized"}',
-                ),
-            )
+            ToolCall(id="call_oversized_skill", function=_skill_read("oversized"))
         ],
     )
     skill_result = ToolMessage(
         tool_call_id="call_oversized_skill",
-        name="skill",
-        content=(
-            '<skill_content name="oversized">'
-            + "x" * MAX_DURABLE_SKILL_CHARS
-            + "</skill_content>"
-        ),
+        name="read",
+        content="00001| ---\n" + "x" * MAX_DURABLE_SKILL_BYTES,
     )
 
     assert _durable_skill_message_ids([skill_asst, skill_result]) == set()
@@ -1844,13 +1838,7 @@ def test_mixed_skill_tool_group_charges_every_output_to_durable_budget():
     mixed = AssistantMessage(
         content=None,
         tool_calls=[
-            ToolCall(
-                id="call_skill",
-                function=FunctionCall(
-                    name="skill",
-                    arguments='{"action":"load","skill_name":"compact"}',
-                ),
-            ),
+            ToolCall(id="call_skill", function=_skill_read("compact")),
             ToolCall(
                 id="call_shell",
                 function=FunctionCall(name="shell", arguments='{"cmd":"large"}'),
@@ -1858,9 +1846,7 @@ def test_mixed_skill_tool_group_charges_every_output_to_durable_budget():
         ],
     )
     skill_result = ToolMessage(
-        tool_call_id="call_skill",
-        name="skill",
-        content='<skill_content name="compact">Small.</skill_content>',
+        tool_call_id="call_skill", name="read", content="00001| Small."
     )
     shell_result = ToolMessage(
         tool_call_id="call_shell",
@@ -1878,13 +1864,7 @@ def test_mixed_skill_tool_group_is_preserved_atomically_when_within_budget():
     mixed = AssistantMessage(
         content=None,
         tool_calls=[
-            ToolCall(
-                id="call_skill",
-                function=FunctionCall(
-                    name="skill",
-                    arguments='{"action":"load","skill_name":"compact"}',
-                ),
-            ),
+            ToolCall(id="call_skill", function=_skill_read("compact")),
             ToolCall(
                 id="call_shell",
                 function=FunctionCall(name="shell", arguments='{"cmd":"pwd"}'),
@@ -1892,9 +1872,7 @@ def test_mixed_skill_tool_group_is_preserved_atomically_when_within_budget():
         ],
     )
     skill_result = ToolMessage(
-        tool_call_id="call_skill",
-        name="skill",
-        content='<skill_content name="compact">Small.</skill_content>',
+        tool_call_id="call_skill", name="read", content="00001| Small."
     )
     shell_result = ToolMessage(
         tool_call_id="call_shell", name="shell", content="/workspace"
@@ -1918,23 +1896,12 @@ async def test_skill_tool_messages_preserved_through_summarisation(mock_provider
 
     skill_asst = AssistantMessage(
         content=None,
-        tool_calls=[
-            ToolCall(
-                id="call_skill_1",
-                function=FunctionCall(
-                    name="skill",
-                    arguments='{"action":"load","skill_name":"guidelines"}',
-                ),
-            )
-        ],
+        tool_calls=[ToolCall(id="call_skill_1", function=_skill_read("guidelines"))],
     )
     skill_result = ToolMessage(
         tool_call_id="call_skill_1",
-        name="skill",
-        content=(
-            '<skill_content name="guidelines" revision="abc">\n'
-            "# Guidelines\nLong skill instructions body...\n</skill_content>"
-        ),
+        name="read",
+        content="00001| ---\n00002| name: guidelines\n00005| Long skill instructions body...",
     )
     other_asst = AssistantMessage(
         content=None,

@@ -1,45 +1,43 @@
 import { describe, expect, it } from 'vitest'
 
-import { getSkillCallPresentation } from './skillPresentation'
+import { getSkillActivationName, getSkillCallPresentation } from './skillPresentation'
+
+const read = (args: Record<string, unknown>) => JSON.stringify(args)
 
 describe('getSkillCallPresentation', () => {
-  it('labels activation separately from resource access', () => {
-    expect(getSkillCallPresentation(JSON.stringify({
-      action: 'load',
-      skill_name: 'coding-investigation',
-    }))).toMatchObject({
-      completedLabel: 'Loaded skill',
-      headerTitle: 'coding-investigation',
-      family: 'skill-load',
-    })
-
-    expect(getSkillCallPresentation(JSON.stringify({
-      action: 'read_resource',
-      skill_name: 'coding-investigation',
-      resource_path: 'references/workflows/investigate.md',
-    }))).toMatchObject({
-      completedLabel: 'Read skill resource',
-      headerTitle: 'coding-investigation · references/workflows/investigate.md',
-      family: 'skill-resource',
+  it('presents a full read of SKILL.md as a skill activation', () => {
+    expect(
+      getSkillCallPresentation('read', read({ path: '/home/u/.evoflux/skills/pdf/SKILL.md' })),
+    ).toEqual({
+      skillName: 'pdf',
+      completedLabel: 'Used skill',
+      activityLabel: 'Using skill pdf',
+      headerTitle: 'pdf',
+      family: 'skill',
     })
   })
 
-  it('treats omitted action with a skill name as the default load action', () => {
-    expect(getSkillCallPresentation(JSON.stringify({
-      skill_name: 'pdf',
-    }))).toMatchObject({
-      kind: 'load',
-      completedLabel: 'Loaded skill',
-    })
+  it('accepts Windows paths and an explicit offset of 1', () => {
+    expect(
+      getSkillActivationName(
+        'read',
+        read({ path: 'C:\\Users\\me\\.claude\\skills\\code-review\\SKILL.md', offset: 1 }),
+      ),
+    ).toBe('code-review')
+    expect(
+      getSkillActivationName('read', read({ path: '/s/pdf/SKILL.md', offset: null, limit: null })),
+    ).toBe('pdf')
   })
 
-  it('labels catalog listing without inventing a skill name', () => {
-    expect(getSkillCallPresentation(JSON.stringify({ action: 'list' }))).toEqual({
-      kind: 'list',
-      completedLabel: 'Listed skills',
-      activityLabel: 'Listing skills',
-      headerTitle: null,
-      family: 'skill-list',
-    })
+  it('ignores partial reads, other files, and other tools', () => {
+    expect(getSkillActivationName('read', read({ path: '/s/pdf/SKILL.md', offset: 40 }))).toBeNull()
+    expect(getSkillActivationName('read', read({ path: '/s/pdf/SKILL.md', limit: 20 }))).toBeNull()
+    expect(getSkillActivationName('read', read({ path: '/s/pdf/reference.md' }))).toBeNull()
+    expect(getSkillActivationName('read', read({ path: 'SKILL.md' }))).toBeNull()
+    expect(getSkillActivationName('read', read({ path: '/s/pdf/skill.md' }))).toBeNull()
+    expect(getSkillActivationName('write', read({ path: '/s/pdf/SKILL.md' }))).toBeNull()
+    expect(getSkillActivationName('skill', read({ skill_name: 'pdf' }))).toBeNull()
+    expect(getSkillActivationName('read', 'not json')).toBeNull()
+    expect(getSkillActivationName('read', undefined)).toBeNull()
   })
 })

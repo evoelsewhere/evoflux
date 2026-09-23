@@ -8,7 +8,6 @@ from typing import Any
 from app.agent.config import AgentConfig, apply_tool_opt_outs
 from app.core.app_mode import AppMode, parse_app_mode
 
-_IMPLICIT_TOOLS = ("skill",)
 _LEAD_IMPLICIT_TOOLS = ("todo_manage", "schedule_task", "note")
 
 
@@ -52,9 +51,7 @@ def compile_agent_config(
                 config.name, profile["prompt"], config.system_prompt
             )
 
-    implicit = [*_IMPLICIT_TOOLS]
-    if config.role == "lead":
-        implicit.extend(_LEAD_IMPLICIT_TOOLS)
+    implicit = list(_LEAD_IMPLICIT_TOOLS) if config.role == "lead" else []
     granted = (
         tier_tools(tool_registry, mode=resolved_mode, role=config.role)
         if tool_registry is not None

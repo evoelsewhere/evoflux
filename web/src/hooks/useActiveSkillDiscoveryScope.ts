@@ -1,14 +1,14 @@
 import { useMemo } from 'react'
 
 import type { SkillDiscoveryScope } from '@/api/client'
-import type { SkillMode } from '@/api/types'
 import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { useTeamStore } from '@/stores/useTeamStore'
 
-/** Scope skill discovery to every active project repo, or the current single repo. */
-export function useActiveSkillDiscoveryScope(
-  mode?: SkillMode | null,
-): SkillDiscoveryScope {
+/**
+ * Scope skill discovery to every active project repo, or the current single
+ * repo. Skills are available in every mode, so the scope is workspaces only.
+ */
+export function useActiveSkillDiscoveryScope(): SkillDiscoveryScope {
   const activeWorkspace = useTeamStore((state) => state._workspace)
   const projectId = useTeamStore((state) => state.projectId)
   const project = useProjectQuery(projectId)
@@ -19,8 +19,7 @@ export function useActiveSkillDiscoveryScope(
         : activeWorkspace
           ? [activeWorkspace]
           : [],
-      mode: mode ?? null,
     }),
-    [activeWorkspace, mode, project.data],
+    [activeWorkspace, project.data],
   )
 }

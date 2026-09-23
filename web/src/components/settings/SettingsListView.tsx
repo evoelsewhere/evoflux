@@ -61,6 +61,11 @@ export interface ListViewRow {
   /** Optional trailing content (e.g. status dot). */
   trailing?: ReactNode
   /**
+   * Interactive control rendered beside the row (outside its navigation
+   * button, so it can itself be a button, e.g. an enable switch).
+   */
+  action?: ReactNode
+  /**
    * Selection checkbox shown before the title. Omit both to render no
    * checkbox at all (the default — most list pages don't need selection).
    */
@@ -310,16 +315,21 @@ function ListRow({
   )
 
   const rowClassName = 'not-last:border-b not-last:border-(--color-border-subtle)'
-  const content = row.onToggleSelect ? (
+  const content = row.onToggleSelect || row.action ? (
     <div className="flex items-start">
-      <label className="flex h-11 shrink-0 cursor-pointer items-center pl-4">
-        <Checkbox
-          checked={!!row.selected}
-          onCheckedChange={() => row.onToggleSelect?.()}
-          aria-label={`Select ${row.title}`}
-        />
-      </label>
+      {row.onToggleSelect && (
+        <label className="flex h-11 shrink-0 cursor-pointer items-center pl-4">
+          <Checkbox
+            checked={!!row.selected}
+            onCheckedChange={() => row.onToggleSelect?.()}
+            aria-label={`Select ${row.title}`}
+          />
+        </label>
+      )}
       <div className="min-w-0 flex-1">{body}</div>
+      {row.action && (
+        <div className="flex min-h-11 shrink-0 items-center py-3 pr-4">{row.action}</div>
+      )}
     </div>
   ) : (
     body

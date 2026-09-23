@@ -1,14 +1,18 @@
 ---
 name: plugin-installer
-description: Install or update a trusted single-file EvoFlux agent-loop plugin from a raw Python URL into the user plugin directory. Use only when the user explicitly supplies a URL for a legacy hook plugin; do not use for plugin authoring, package/archive installation, skills, MCP servers, or project dependencies.
+description: Reviews and installs or updates a trusted single-file EvoFlux agent-loop hook plugin from a raw Python (.py) URL into the user plugin directory, and lists, disables, or removes installed hook files. Use when the user explicitly supplies an https URL to a raw Python hook plugin and asks to install or update it. Not for Agent Plugin packages or .evoplugin archives, plugin authoring, skills, MCP servers, or project dependencies.
+disable-model-invocation: true
 ---
 
 # Install a single-file EvoFlux plugin
 
 Plugins run in-process with agent permissions. Treat installation as executable
 code review, not ordinary file download. The supported runtime contract is one
-`.py` file under `{EVOFLUX_CONFIG_DIR}/plugins/` exporting either
-`async def plugin()` or `class Plugin(BaseAgentHook)`.
+`.py` file in the `plugins/` subdirectory of the EvoFlux configuration
+directory (its absolute path is stated in the Skills section of the system
+prompt), exporting either `async def plugin()` or
+`class Plugin(BaseAgentHook)`. Below, "the plugin directory" means that
+`plugins/` subdirectory.
 
 ## State machine
 
@@ -35,27 +39,27 @@ workflow.
 ### 3. RESOLVE COLLISION
 
 If the target exists, read it and show the material diff. An explicit request
-to “update” authorizes replacement only after the fetched code and diff have
+to "update" authorizes replacement only after the fetched code and diff have
 been shown; an ambiguous install collision requires confirmation. Preserve the
 existing file when validation or approval fails.
 
 ### 4. INSTALL
 
-Write exactly one file to
-`{EVOFLUX_CONFIG_DIR}/plugins/<validated-basename>.py`. Do not create package
-directories, install dependencies, or touch unrelated plugins.
+Write exactly one file, `<validated-basename>.py`, into the plugin directory.
+Do not create package directories, install dependencies, or touch unrelated
+plugins.
 
 ### 5. VERIFY
 
 Read the installed file back, confirm its hash/content matches the reviewed
-payload, and validate that the entry point remains present. Legacy hook plugins
-are cached per agent/role, so report that a runtime restart is required before
-the new or replaced hook is reliably active. Never claim activation merely
-from a successful write.
+payload, and validate that the entry point remains present. Hook plugins are
+cached per agent/role, so report that a runtime restart is required before the
+new or replaced hook is reliably active. Never claim activation merely from a
+successful write.
 
 ## Other operations
 
-- List: inspect `.py` files in `{EVOFLUX_CONFIG_DIR}/plugins/`, excluding
+- List: inspect `.py` files in the plugin directory, excluding
   leading-underscore disabled files.
 - Disable/remove: perform only when explicitly requested, identify the exact
   file first, and prefer a recoverable leading-underscore rename when suitable.

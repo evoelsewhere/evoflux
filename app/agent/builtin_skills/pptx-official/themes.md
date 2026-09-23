@@ -1,4 +1,14 @@
-# Colour themes by subject
+# Themes, palettes, and typography
+
+## Contents
+
+- The roles
+- The themes: Boardroom, Ledger, Lab Notebook, Terminal, Launch, Clinic, Classroom, Dashboard, Statute, Field
+- Choosing
+- Applying it
+- Quick three-colour palettes
+- Typography defaults and pairings
+- Slide sizes
 
 Pick the theme from what the deck is *about* and where it will be read, then
 name the choice in the plan so the user can reject it before generation. Never
@@ -130,3 +140,72 @@ from the library is the fastest way to make a themed deck look untouched.
 Check the result rather than trusting these numbers: run `document_preview`
 after generating and confirm the text you expect is present and inside its
 box. Contrast holds by construction, but only if the palette was applied.
+
+## Quick three-colour palettes
+
+The themes above are the default. These simpler palettes suit a user who
+names a mood or a single brand accent the themes do not cover. They are not
+contrast-checked: verify text contrast (4.5:1 for body, 3:1 for titles)
+before using one.
+
+| Palette             | Primary   | Secondary | Accent    | Feels like            |
+|---------------------|-----------|-----------|-----------|-----------------------|
+| Deep navy           | `1F3A5F`  | `C8D3E6`  | `F3B23E`  | Executive / finance   |
+| Forest              | `2C5F2D`  | `97BC62`  | `F5F5F5`  | Environment / land    |
+| Terracotta          | `B85042`  | `E7E8D1`  | `A7BEAE`  | Editorial / consumer  |
+| Cobalt & sand       | `12457A`  | `E9DFC7`  | `E97A5C`  | Design / product      |
+| Charcoal minimal    | `1F1F1F`  | `F2F2F2`  | `E63946`  | Serious, minimal      |
+| Teal / mint         | `0D9488`  | `5EEAD4`  | `1F1F1F`  | Modern SaaS           |
+| Berry & cream       | `6D2E46`  | `A26769`  | `ECE2D0`  | Publishing / food     |
+| Solar               | `F0A202`  | `1D3557`  | `F1FAEE`  | Optimistic tech       |
+
+Two rules:
+
+1. Never give all colors equal weight. The primary dominates (60-70%);
+   secondary fills the space; accent is used **sparingly** for the one thing
+   that should catch the eye.
+2. Dark backgrounds work well for title, transition, and closing slides —
+   commit to dark or commit to light for the body slides, do not zig-zag.
+
+Avoid pure black on pure white — `#F7F5F0` cream on `#1F1F1F` ink reads
+softer under a projector.
+
+## Typography defaults and pairings
+
+Safe starting point:
+
+| Element              | Font          | Size    | Weight  | Notes |
+|----------------------|---------------|---------|---------|-------|
+| Slide title          | Calibri / Segoe UI | 32-40pt | Bold    | One line — wrap = rework the title |
+| Section header       | Calibri       | 24-28pt | Bold    | On dedicated divider slides |
+| Body / bullets       | Calibri       | 18-22pt | Regular | Never below 18pt for a room; 14pt for on-screen decks |
+| Stat callout         | Calibri Light | 60-96pt | Bold    | The number, then the label below at 14-18pt |
+| Caption / footer     | Calibri       | 10-12pt | Regular | Muted gray `#7A7A7A` |
+| Code / mono          | Consolas / Cascadia Code | 16-20pt | Regular | Left aligned, no word wrap |
+
+Pair a header face with personality against a clean, boring body face:
+
+| Header             | Body            | Feels like        |
+|--------------------|------------------|-------------------|
+| Calibri Light      | Calibri          | Default / safe    |
+| Georgia            | Calibri          | Editorial         |
+| Cambria            | Calibri          | Print / academic  |
+| Segoe UI Semibold  | Segoe UI         | Product / SaaS    |
+| Trebuchet MS       | Calibri          | Casual / warm     |
+| Impact             | Arial            | Bold headline     |
+| Palatino           | Garamond         | Long-form serif   |
+| Consolas           | Calibri          | Technical         |
+
+Fonts are not embedded in the file; a face missing on the viewer's machine is
+substituted and line breaks drift. Prefer faces that ship with the target
+platform.
+
+## Slide sizes
+
+| Aspect | Width × Height (inches) | Pixels @ 96 DPI | When to use |
+|--------|-------------------------|------------------|-------------|
+| 16:9 widescreen (default) | 13.333 × 7.5    | 1280 × 720       | Almost every new deck |
+| 16:10                      | 13.333 × 8.333  | 1280 × 800       | Older projectors; some corporate templates |
+| 4:3 standard               | 10.0   × 7.5    | 960  × 720       | Academia, legacy templates, printed handouts |
+| A4 landscape               | 11.69  × 8.27   | 1123 × 794       | Print-first decks (EU) |
+| Letter landscape           | 11.0   × 8.5    | 1056 × 816       | Print-first decks (US) |

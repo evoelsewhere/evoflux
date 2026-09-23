@@ -40,7 +40,30 @@ def quiet_file_sources(monkeypatch):
         "app.services.memory.search_memory_files", lambda query, **kwargs: []
     )
     monkeypatch.setattr("app.services.agent_fs.list_agents", lambda: [])
-    monkeypatch.setattr("app.services.agent_fs.list_skills", lambda: [])
+    _set_skills(monkeypatch, [])
+
+
+def _set_skills(monkeypatch, skills) -> None:
+    from app.agent.skills.registry import SkillCatalog
+
+    catalog = SkillCatalog({skill.name: skill for skill in skills})
+    monkeypatch.setattr(
+        "app.agent.skills.registry.discover_skills", lambda *_a, **_k: catalog
+    )
+
+
+def _skill(name: str, description: str, source: str = "user"):
+    from pathlib import Path
+
+    from app.agent.skills.models import Skill
+
+    return Skill(
+        name=name,
+        description=description,
+        location=Path("/skills") / name / "SKILL.md",
+        root=Path("/skills"),
+        source=source,  # type: ignore[arg-type]
+    )
 
 
 @pytest.mark.asyncio
@@ -310,16 +333,7 @@ async def test_memory_agent_and_skill_sources_are_included(session, monkeypatch)
             content="---\ndescription: Reviews Atlas changes\n---\nbody\n",
         ),
     )
-    monkeypatch.setattr(agent_fs, "list_skills", lambda: ["atlas-release"])
-    monkeypatch.setattr(
-        agent_fs,
-        "read_skill",
-        lambda name: agent_fs.SkillFileRecord(
-            name=name,
-            path=f"/skills/{name}/SKILL.md",
-            content="---\ndescription: Cuts an Atlas release\n---\nbody\n",
-        ),
-    )
+    _set_skills(monkeypatch, [_skill("atlas-release", "Cuts an Atlas release")])
 
     items = await search_app(session, "atlas")
     kinds = {item.kind for item in items}
@@ -328,3 +342,27 @@ async def test_memory_agent_and_skill_sources_are_included(session, monkeypatch)
     assert memory_item.path == "topics/atlas.md"
     # Memory pages open with bookkeeping comments — a row shows the prose.
     assert memory_item.description == "Atlas ships weekly"
+
+
+@pytest.mark.asyncio
+async def test_skills_come_from_every_discovered_source(session, monkeypatch):
+    _set_skills(
+        monkeypatch,
+        [
+            _skill("atlas-builtin", "Bundled Atlas helper", source="builtin"),
+            _skill("atlas-plugin", "Plugin Atlas helper", source="plugin"),
+            _skill("other", "Mentions atlas only in its description"),
+            _skill("unrelated", "Nothing to see"),
+        ],
+    )
+
+    items = [
+        item for item in await search_app(session, "atlas") if item.kind == "skill"
+    ]
+
+    assert [item.label for item in items] == ["atlas-builtin", "atlas-plugin", "other"]
+    first = items[0]
+    assert first.id == "app-skill:atlas-builtin"
+    assert first.description == "Bundled Atlas helper"
+    assert first.path is not None and first.path.endswith("SKILL.md")
+    assert first.metadata == {"name": "atlas-builtin", "source": "builtin"}

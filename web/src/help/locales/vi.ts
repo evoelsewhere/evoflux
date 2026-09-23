@@ -235,7 +235,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Ctrl+B toggle sidebar giống nhau ở mọi mode.',
           'Scheduler task nhắm work hoặc coding mode tường minh — chọn đúng mode trên task.',
-          'Skill và workflow có thể scope theo mode trong Settings; workflow chỉ Coding sẽ ẩn ở Work.'
+          'Workflow có thể scope theo mode nên workflow chỉ Coding sẽ ẩn ở Work; Skill dùng được ở cả hai mode.'
 ],
       },
       {
@@ -505,7 +505,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'composer',
     title: 'Composer — tính năng mạnh',
     summary:
-      'Dùng /, !, @, # snippet, attachment, quote selection, Work folder targeting, skill lồng nhau và workflow với RunInputsDialog. Undo cũng khôi phục attachment — draft còn cứu được sau lần send hỏng.',
+      'Dùng /, !, @, $ skill, # snippet, attachment, quote selection, Work folder targeting và workflow với RunInputsDialog. Undo cũng khôi phục attachment — draft còn cứu được sau lần send hỏng.',
     keywords: [
       'composer',
       'mention',
@@ -516,6 +516,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'drag',
       'paste',
       'skill',
+      '$skill-name',
       'workflow',
       'RunInputsDialog',
       'WorkFolderSelector',
@@ -532,7 +533,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Bắt đầu tin bằng ! để chạy shell (hoặc chọn /shell để prefill bang mode).',
       'Gõ @ để chèn path file/folder xếp hạng từ workspace đang active.',
       'Ở Coding, gõ # để bung workspace hoặc global snippet vào composer.',
-      'Skill lồng dùng /skill:parent:child (`:` và `/` đổi cho nhau được với tên nested).',
+      'Gõ $ để chọn skill; $tên-skill đặt ở vị trí nào trong tin cũng được và có thể ghi nhiều skill (trừ dòng quote > và code block).',
       'Workflow mở RunInputsDialog khi cần tham số và không bao giờ gửi raw slash text như chat thường.',
       'Undo khôi phục user message trước và cả attachment vào composer.',
       'Paste ảnh/file hoặc kéo-thả lên composer khi attachment được bật.',
@@ -543,7 +544,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Composer không chỉ là ô text: slash menu (/), shell bang (!), path mention (@), Coding snippet (#), file attachment, chip quote, WorkFolderSelector cho session Work, skill directive và workflow đã duyệt. Nắm các affordance này là khác biệt giữa đổ cả cây vào prompt và lái chính xác.',
+        text: 'Composer không chỉ là ô text: slash menu (/), shell bang (!), path mention (@), skill mention ($), Coding snippet (#), file attachment, chip quote, WorkFolderSelector cho session Work và workflow đã duyệt. Nắm các affordance này là khác biệt giữa đổ cả cây vào prompt và lái chính xác.',
       },
       {
         type: 'p',
@@ -551,12 +552,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Gõ / mở command menu (built-in, skill dưới /skill:, workflow, custom .evoflux/commands/). Prefix ! cho shell. Dùng @ chọn path. Ở Coding, # bung snippet. Kéo-thả hoặc paste file lên bar. Session Work: WorkFolderSelector gần composer để trỏ private session folder hoặc thư mục local khác. Sau /undo, cả text và attachment về draft.',
+        text: 'Gõ / mở command menu (built-in, workflow, custom .evoflux/commands/). Gõ $ để chọn skill: agent vốn đã thấy tên và mô tả của mọi skill đang bật và tự đọc SKILL.md khi việc khớp, còn `$tên-skill` bắt agent dùng skill đó ngay. Prefix ! cho shell. Dùng @ chọn path. Ở Coding, # bung snippet. Kéo-thả hoặc paste file lên bar. Session Work: WorkFolderSelector gần composer để trỏ private session folder hoặc thư mục local khác. Sau /undo, cả text và attachment về draft.',
       },
       {
         type: 'tips',
         items: [
-          '/ — slash command, skill, workflow, custom command',
+          '/ — slash command, workflow, custom command',
+          '$ — skill; vị trí bất kỳ, nhiều skill mỗi tin',
           '! — shell mode cho phần còn lại của dòng',
           '@ — mention file/folder',
           '# — snippet (Coding workspace)',
@@ -568,11 +570,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Ask Coding chính xác từng bước: (1) @ các file quan trọng, (2) attach screenshot hoặc log chỉ khi cần, (3) nêu outcome và test, (4) tùy chọn /skill:… cho quy trình quen, (5) set permission mode, (6) send. Research Work: set WorkFolderSelector, attach nguồn, quote câu trả lời trước, rồi hỏi.',
+        text: 'Ask Coding chính xác từng bước: (1) @ các file quan trọng, (2) attach screenshot hoặc log chỉ khi cần, (3) nêu outcome và test, (4) tùy chọn $tên-skill cho quy trình quen, (5) set permission mode, (6) send. Research Work: set WorkFolderSelector, attach nguồn, quote câu trả lời trước, rồi hỏi.',
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: gửi raw `/workflow name` mong nó chạy (workflow launch qua menu/dialog); nest skill bằng space thay vì `:` / `/`; dùng # ở Work chờ snippet Coding; paste secret vào composer thay vì cấu hình Providers; quên /undo cũng restore attachment — gửi lại cẩn nếu file nhạy cảm.',
+        text: 'Sai thường gặp: gửi raw `/workflow name` mong nó chạy (workflow launch qua menu/dialog); gõ tên skill có chữ hoa hoặc dấu cách (tên skill là chữ thường nối bằng gạch ngang, ví dụ `$code-review`); dùng # ở Work chờ snippet Coding; paste secret vào composer thay vì cấu hình Providers; quên /undo cũng restore attachment — gửi lại cẩn nếu file nhạy cảm.',
       },
       {
         type: 'tips',
@@ -585,7 +587,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Workflow phải được approve và hợp scope session (work / coding) nếu không sẽ ẩn. Skill hiện dưới /skill: chỉ sau khi validate trong Settings → Skills. Command thiếu → kiểm scope và validation trước khi đổ lỗi slash.',
+        text: 'Workflow phải được approve và hợp scope session (work / coding) nếu không sẽ ẩn. Picker $ chỉ liệt kê skill hợp lệ, đang bật trong Settings → Skills và cho phép người dùng gọi. Thiếu command hoặc skill → kiểm scope, validation và công tắc của skill trước khi đổ lỗi composer.',
       }
 ],
     related: [
@@ -689,7 +691,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'slash',
     title: 'Slash command có sẵn',
     summary:
-      'Gõ / trong composer cho stop, compact, undo, init, btw, goal, skill, workflow và custom command từ .evoflux/commands/. Built-in chạy ngay; custom thường insert để bạn điền argument.',
+      'Gõ / trong composer cho stop, compact, undo, init, btw, goal, workflow và custom command từ .evoflux/commands/. Built-in chạy ngay; custom thường insert để bạn điền argument. Skill dùng $tên-skill chứ không phải slash command.',
     keywords: [
       'slash',
       '/stop',
@@ -699,7 +701,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       '/btw',
       '/goal',
       '/workflow',
-      '/skill',
       'command',
       '.evoflux/commands',
       'lệnh',
@@ -707,9 +708,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
 ],
     tricks: [
       'Built-in chạy ngay khi chọn; custom thường insert vào textarea để bạn nối $ARGUMENTS.',
-      'Khớp longest-prefix; `:` và `/` đổi cho nhau với tên command/skill nested.',
+      'Khớp longest-prefix; `:` và `/` đổi cho nhau với tên command nested.',
       'Custom command nằm dưới project hoặc global .evoflux/commands/ (và path OpenCode tương thích).',
-      'Skill hiện dưới /skill: chỉ sau khi validate trong Settings → Skills.',
+      'Skill không phải slash command: gõ $ để chọn, hoặc viết $tên-skill ở bất kỳ đâu trong tin.',
       'Workflow phải approve và hợp scope session (work / coding) nếu không sẽ ẩn.',
       '/compact sớm khi context budget bar leo — chờ failure phí một lượt.',
       '/init hướng Coding cho AGENTS.md; nó hướng tới AGENTS.md.',
@@ -719,7 +720,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Slash command là lối tắt chính trên composer. Built-in điều khiển team run; goal subcommand quản objective bền; skill và workflow gắn hành vi có cấu trúc; command Markdown/YAML do bạn định nghĩa được server bung ra. Menu có search — gõ vài chữ để lọc.',
+        text: 'Slash command là lối tắt chính trên composer. Built-in điều khiển team run; goal subcommand quản objective bền; workflow chạy quy trình có cấu trúc; command Markdown/YAML do bạn định nghĩa được server bung ra. Menu có search — gõ vài chữ để lọc.',
       },
       {
         type: 'p',
@@ -743,20 +744,19 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { cmd: '/goal:pause', desc: 'Tạm dừng Goal đang active' },
           { cmd: '/goal:resume', desc: 'Tiếp tục Goal đã pause' },
           { cmd: '/goal:stop', desc: 'Gỡ Goal khỏi session' },
-          { cmd: '/skill:…', desc: 'Gắn skill cho tin tiếp (nested: /skill:parent:child)' },
           { cmd: '/workflow <name>', desc: 'Chạy workflow đã duyệt (có thể mở RunInputsDialog)' }
 ],
       },
       {
         type: 'p',
-        text: 'Gõ / để lọc command. Chọn built-in để chạy, hoặc custom/skill/workflow để insert hoặc launch. Đặt file custom dưới `.evoflux/commands/` trong project hoặc config EvoFlux global. Tên nested ưu tiên longest prefix; dùng `:` hoặc `/` làm separator. Workflow có thể mở RunInputsDialog và không gửi raw slash line như chat thường.',
+        text: 'Gõ / để lọc command. Chọn built-in để chạy, hoặc custom/workflow để insert hoặc launch. Đặt file custom dưới `.evoflux/commands/` trong project hoặc config EvoFlux global. Tên nested ưu tiên longest prefix; dùng `:` hoặc `/` làm separator. Workflow có thể mở RunInputsDialog và không gửi raw slash line như chat thường.',
       },
       {
         type: 'tips',
         items: [
           'Built-in — chạy ngay khi chọn',
           'Custom — thường insert; nối $ARGUMENTS',
-          'Skill — /skill: sau Settings → Skills validation',
+          'Skill — không phải slash command; gõ $tên-skill',
           'Workflow — cần scope + approval nếu không sẽ ẩn',
           'Longest prefix — nest parent:child với : hoặc /'
 ],
@@ -1780,7 +1780,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Runtime: Skill hợp lệ của plugin enabled đi vào metadata catalog và chỉ load khi activate. Khi load một plugin Skill, MCP tools ready cùng installation được đưa vào run đó nhưng vẫn chịu permission. Settings → Skills cho biết discovery/validation; Settings → MCP servers hiển thị runtime badge plugin và tool names. Runtime name chứa installation hash nên hướng dẫn trong Skill phải nhắc stable server/tool suffix, không copy generated prefix.',
+        text: 'Runtime: agent thấy tên và mô tả của mỗi plugin Skill hợp lệ đang bật như mọi Skill khác và đọc SKILL.md khi việc khớp (hoặc khi bạn gõ `$tên-skill`). Khi SKILL.md của một plugin Skill được đọc, MCP tools ready cùng installation được đưa vào run đó nhưng vẫn chịu permission. Settings → Skills cho biết validation và cho phép tắt riêng từng plugin Skill; Settings → MCP servers hiển thị runtime badge plugin và tool names. Runtime name chứa installation hash nên hướng dẫn trong Skill phải nhắc stable server/tool suffix, không copy generated prefix.',
       },
       {
         type: 'p',
@@ -1790,12 +1790,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'tips',
         items: [
           'Không install được — mở inspection diagnostics; sửa lỗi fatal `plugin.json`, unsafe path, archive collision, symlink, size hoặc digest.',
-          'Không thấy Skill — enable installation; kiểm tra `skills/<name>/SKILL.md` nằm đúng một cấp, frontmatter hợp lệ và không bị project/user Skill có precedence cao hơn shadow.',
+          'Không thấy Skill — enable installation; kiểm tra `skills/<name>/SKILL.md` nằm đúng một cấp, frontmatter hợp lệ, đang bật trong Settings → Skills và không bị project/user Skill có precedence cao hơn shadow.',
           'Không thấy MCP trong Settings — kiểm tra plugin enabled, `mcp.json` valid và transport là stdio hoặc Streamable HTTP, không phải SSE.',
           'MCP báo error — mở rộng runtime row; kiểm executable path, args, working directory, startup log, credentials bắt buộc và bảo đảm stdout chỉ dành cho stdio protocol.',
           'Credentials báo unsupported — thêm `org.evoelsewhere.evoflux.credentials.fields` vào `plugin.json`, Validate rồi quay lại.',
           'Remote server chưa ready — kiểm URL/host và literal headers; stored plugin credentials cố ý không inject vào Streamable HTTP.',
-          'Chat không chọn tool — activate Skill tương ứng hoặc chọn plugin MCP server rõ ràng trong agent; cài đặt một mình không grant toàn bộ tool.',
+          'Chat không chọn tool — dùng plugin Skill tương ứng (gõ `$tên-skill`) hoặc chọn plugin MCP server rõ ràng trong agent; cài đặt một mình không grant toàn bộ tool.',
           'Thay đổi chưa cập nhật — Save/Validate lại, refresh Plugin Center rồi disable/enable để reconcile runtime.'
 ],
       },
@@ -1856,11 +1856,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'code',
         language: 'markdown',
         caption: 'skills/release-audit/SKILL.md',
-        code: '---\nname: release-audit\ndescription: Kiểm tra evidence, checks và risk trước khi publish release.\n---\n\n# Release audit\n\n1. Thu thập evidence có giới hạn.\n2. Chỉ gọi MCP tool khi cần dữ liệu live.\n3. Tách fact, inference và evidence còn thiếu.\n4. Không publish hay mutate release nếu chưa được authorize rõ ràng.',
+        code: '---\nname: release-audit\ndescription: Kiểm tra evidence, checks và risk trước khi publish release. Dùng khi người dùng hỏi release đã sẵn sàng chưa hoặc nhắc tới release checklist.\n---\n\n# Release audit\n\n1. Thu thập evidence có giới hạn.\n2. Chỉ gọi MCP tool khi cần dữ liệu live.\n3. Tách fact, inference và evidence còn thiếu.\n4. Không publish hay mutate release nếu chưa được authorize rõ ràng.',
       },
       {
         type: 'p',
-        text: 'Tên Skill phải đúng Agent Skills naming contract. Description cần chính xác vì dùng cho discovery. Giữ workflow chính trong SKILL.md, chỉ load reference lớn khi cần. Nhắc MCP tool bằng stable suffix vì EvoFlux thêm runtime prefix riêng theo installation.',
+        text: 'Skill là một thư mục có SKILL.md. `name` trùng tên thư mục: chữ thường, chữ số và gạch ngang đơn, tối đa 64 ký tự, không chứa "anthropic" hay "claude". `description` (tối đa 1.024 ký tự, không có thẻ XML) viết ở ngôi thứ ba, nói Skill làm gì và khi nào dùng — agent chỉ thấy name và description cho tới khi quyết định đọc SKILL.md. Giữ SKILL.md gọn và link file reference lớn ở đúng một cấp để chúng chỉ được đọc khi cần. Nhắc MCP tool bằng stable suffix vì EvoFlux thêm runtime prefix riêng theo installation.',
       },
       {
         type: 'p',
@@ -1965,9 +1965,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'table',
         columns: ['Concern', 'Rule'],
         rows: [
-          ['Skill precedence', 'Project/user/admin override plugin enabled; plugin enabled override EvoFlux built-in.'],
+          ['Skill precedence', 'Thư mục skill của project và user override plugin enabled; plugin enabled override EvoFlux built-in. Skill nào cũng tắt được trong Settings → Skills.'],
           ['MCP configuration', 'Plugin dùng manager in-memory riêng, không sửa global mcp.json.'],
-          ['Agent availability', 'Explicit MCP selection hoặc activate Skill cùng installation đưa ready tools vào run.'],
+          ['Agent availability', 'Explicit MCP selection, hoặc đọc SKILL.md của một Skill cùng installation, đưa ready tools vào run.'],
           ['WebBridge', 'Chỉ capability an toàn khai báo rõ mới giữ non-browser server trong WebBridge run.'],
           ['Failure isolation', 'Skill/server hỏng bị cô lập; manifest/package fatal sẽ reject package.'],
         ],
@@ -2010,7 +2010,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           ['MCP error', 'Sai command/args/cwd, thiếu credential, network/TLS', 'Mở runtime error và so với trust/config.'],
           ['Credentials unsupported', 'Không có credential extension', 'Thêm fields extension, Save, Validate, Refresh.'],
           ['Credentials incomplete', 'Thiếu required field hoặc URL/type sai', 'Điền field; secret đã config để trống chỉ khi muốn giữ nguyên.'],
-          ['Agent không thấy tool', 'Server chưa ready hoặc chưa select/activate', 'Chọn MCP cho agent hoặc activate Skill cùng plugin.'],
+          ['Agent không thấy tool', 'Server chưa ready, chưa được chọn, hoặc chưa dùng Skill cùng plugin', 'Chọn MCP cho agent hoặc dùng Skill cùng plugin ($tên-skill).'],
           ['Linked code stale', 'File chưa Save hoặc runtime chưa reconcile', 'Save, Validate, Refresh, Disable/Enable.'],
           ['Update fail', 'Replacement invalid hoặc package safety fail', 'Inspect package mới trước update; giữ installation cũ.'],
         ],
@@ -2073,7 +2073,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'settings',
     title: 'Agents, Skills và MCP',
     summary:
-      'Cấu hình Markdown agent, skill pack và MCP server trong Settings — tool kế thừa cùng rule permission như tool native. Team scope theo work / coding để specialist đúng mode hiện đúng chỗ.',
+      'Cấu hình Markdown agent, Skill (thư mục có SKILL.md) và MCP server trong Settings — tool kế thừa cùng rule permission như tool native. Team scope theo work / coding để specialist đúng mode hiện đúng chỗ; Skill dùng được ở cả hai mode.',
     keywords: [
       'agents',
       'skills',
@@ -2090,10 +2090,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Skills'
 ],
     setup:
-      'Settings → Agents cho thành viên team; Settings → Skills để validate pack; Settings → MCP để thêm server. Từ chat, dùng /skill: hoặc command palette cho shortcut New Agent / New Skill.',
+      'Settings → Agents cho thành viên team; Settings → Skills để tạo, sửa skill của bạn và bật/tắt bất kỳ skill nào; Settings → MCP để thêm server. Từ chat, gõ $tên-skill để dùng một skill, hoặc dùng command palette cho shortcut New Agent / New Skill.',
     tricks: [
       'Agent là file .md với YAML frontmatter — diff và version được.',
-      'Settings → Skills cho phép tạo, sửa, hiển thị và lọc theo Work, Coding hoặc Both; skill hợp lệ chỉ hiện dưới /skill: trong session đúng mode.',
+      'Skill là thư mục có SKILL.md. Agent thấy tên và mô tả của mọi skill đang bật và tự đọc SKILL.md khi việc khớp.',
+      'Gõ $tên-skill ở bất kỳ đâu trong tin để dùng skill một cách rõ ràng; có thể ghi nhiều skill.',
+      'Settings → Skills tạo và sửa skill trong thư mục skill của người dùng, và có công tắc bật/tắt cho mọi skill, kể cả built-in, plugin và project.',
+      'Trường Skills của một agent preload các skill đó vào agent, nên agent bắt đầu với sẵn hướng dẫn của chúng.',
       'Chấm trạng thái MCP: ready / starting / auth / error / stopped.',
       'MCP tool chịu cùng rule permission như tool native.',
       'Team scope theo work / coding.',
@@ -2105,7 +2108,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Agent định nghĩa role, model, tool và system prompt. Skill là instruction pack load theo nhu cầu qua /skill:. MCP server phơi tool ngoài qua stdio, HTTP hoặc SSE. Cùng nhau là cách bạn định hình hành vi đội mà không fork sản phẩm.',
+        text: 'Agent định nghĩa role, model, tool và system prompt. Skill là thư mục có SKILL.md cùng file reference, script và asset tùy chọn: agent thấy tên và mô tả của mỗi skill đang bật, đọc SKILL.md khi việc khớp và chỉ mở các file khác khi hướng dẫn chỉ tới. MCP server phơi tool ngoài qua stdio, HTTP hoặc SSE. Cùng nhau là cách bạn định hình hành vi đội mà không fork sản phẩm.',
       },
       {
         type: 'p',
@@ -2113,13 +2116,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Settings → Agents để sửa thành viên team; Settings → Skills để validate pack; Settings → MCP để thêm server và xem chấm trạng thái. Từ chat, gõ /skill: hoặc mở palette cho New Agent / New Skill. Tool chỉ Lead (ask_user, plan mode, worktree helper) không bao giờ cấp cho specialist.',
+        text: 'Settings → Agents để sửa thành viên team; Settings → Skills để tạo, sửa skill của bạn, xem validation và bật/tắt bất kỳ skill nào; Settings → MCP để thêm server và xem chấm trạng thái. Từ chat, gõ $tên-skill để dùng skill ngay, hoặc mở palette cho New Agent / New Skill. Trường Skills của agent preload các skill đó vào agent. Tool chỉ Lead (ask_user, plan mode, worktree helper) không bao giờ cấp cho specialist.',
       },
       {
         type: 'tips',
         items: [
           'Agents — .md + YAML frontmatter',
-          'Skills — /skill: sau validation',
+          'Skills — thư mục SKILL.md; $tên-skill để dùng; bật/tắt trong Settings',
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
           'tools_opt_out — tắt default tool code-owned',
@@ -2133,13 +2136,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: chờ skill invalid trong slash menu; “cấp” specialist tool chỉ Lead trong đầu; để MCP lỗi rồi retry chat; nhét secret vào agent markdown commit public; quên mode scope nên Coding specialist không bao giờ hiện ở Work.',
+        text: 'Sai thường gặp: chờ skill invalid hoặc đã tắt xuất hiện trong picker $; viết mô tả skill mơ hồ (agent dựa vào đó để quyết định có đọc skill không); “cấp” specialist tool chỉ Lead trong đầu; để MCP lỗi rồi retry chat; nhét secret vào agent markdown commit public; quên mode scope nên Coding specialist không bao giờ hiện ở Work.',
       },
       {
         type: 'tips',
         items: [
-          'Coding skill đã activate hướng dẫn workflow; source search native validate và thực thi mọi retrieval action.',
-          'Workflow và skill đều cần scope hợp lệ mới hiện trong /.',
+          'Coding skill hướng dẫn workflow; source search native validate và thực thi mọi retrieval action.',
+          'Workflow cần scope hợp lệ mới hiện trong /; skill cần hợp lệ và đang bật mới hiện trong $.',
           'Rule Always của permission áp cả MCP tool — ưu tiên Once trước.'
 ],
       }
@@ -2364,7 +2367,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Providers — API key, OAuth, daemon local, model registry',
           'Agents — model, tool, system prompt theo thành viên team',
-          'Skills — instruction pack cho /skill:',
+          'Skills — tạo/sửa thư mục SKILL.md, bật/tắt bất kỳ skill nào',
           'MCP servers — tool ngoài stdio / HTTP / SSE',
           'Memory — wiki dài hạn + lịch Dream',
           'Connection — sidecar đóng gói vs URL ngoài / access key',
