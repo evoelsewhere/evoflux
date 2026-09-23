@@ -18,6 +18,8 @@ export const STORAGE_KEYS = {
   pinnedSessions: 'oa.pinnedSessions',
   /** Version of the exact Office renderer whose install offer the user hid. */
   officeRuntimeOfferHidden: 'oa.officeRuntime.offerHidden',
+  /** "false" stops documents an agent creates from opening their preview. */
+  autoOpenGeneratedDocuments: 'oa.documents.autoOpenGenerated',
   modeRoutes: {
     work: 'oa-last-route-work',
     coding: 'oa-last-route-coding',

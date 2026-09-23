@@ -547,6 +547,7 @@ function PreviewArea({
   fileTreeVisible = false,
   onToggleFileTree,
   onBackToTree,
+  onLiveDeckChange,
 }: {
   sessionId: string
   file: WorkspaceFileInfo
@@ -557,6 +558,7 @@ function PreviewArea({
   fileTreeVisible?: boolean
   onToggleFileTree?: () => void
   onBackToTree?: () => void
+  onLiveDeckChange?: (live: boolean) => void
 }) {
   const kind = workspaceFileKind(file)
   const extension = workspaceFileExtension(file.name)
@@ -674,7 +676,14 @@ function PreviewArea({
           />
         ) : isWorkspaceDocumentKind(kind) ? (
           <Suspense fallback={<RichPreviewLoading label="document" />}>
-            <DocumentPreview key={`${file.path}:${file.mtime}`} sessionId={sessionId} file={file} />
+            {/* Keyed by path only: a saved change refreshes the open viewer in
+                place (keeping its slide and scroll) instead of remounting it. */}
+            <DocumentPreview
+              key={file.path}
+              sessionId={sessionId}
+              file={file}
+              onLiveDeckChange={onLiveDeckChange}
+            />
           </Suspense>
         ) : (
           <BinaryPreview file={file} />
@@ -1134,7 +1143,23 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
     setMobilePane('tree')
   }
 
+  // A deck an agent is building takes the whole panel; the tree comes back
+  // once it is finished, unless the user toggled it in the meantime. Not
+  // persisted: the stored preference stays the user's own choice.
+  const restoreTreeAfterLiveRef = useRef(false)
+  const handleLiveDeckChange = (live: boolean) => {
+    if (live) {
+      if (!desktopTreeVisible) return
+      restoreTreeAfterLiveRef.current = true
+      setDesktopTreeVisible(false)
+    } else if (restoreTreeAfterLiveRef.current) {
+      restoreTreeAfterLiveRef.current = false
+      setDesktopTreeVisible(true)
+    }
+  }
+
   const toggleDesktopTree = () => {
+    restoreTreeAfterLiveRef.current = false
     setDesktopTreeVisible((visible) => {
       const next = !visible
       try { localStorage.setItem(TREE_VISIBILITY_KEY, String(next)) } catch { /* ignore */ }
@@ -1607,6 +1632,7 @@ export function WorkspaceFilesPanel({ open, sessionId, onClose, embedded = false
                 fileTreeVisible={showTree}
                 onToggleFileTree={embedded && !isSinglePane && !showTree ? toggleDesktopTree : undefined}
                 onBackToTree={embedded && isSinglePane ? handleBackToTree : undefined}
+                onLiveDeckChange={handleLiveDeckChange}
               />
             ) : (
               <div className="relative h-full">

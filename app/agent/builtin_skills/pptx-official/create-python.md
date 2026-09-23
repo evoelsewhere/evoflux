@@ -68,6 +68,36 @@ title_slide.placeholders[1].text = "What shipped, what slipped, what's next"
 prs.save("review.pptx")
 ```
 
+## Live build
+
+Build the deck one slide at a time so the user sees it take shape. Create
+the file from the outline first — it opens in the preview straight away with
+a placeholder per planned slide:
+
+```bash
+uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx \
+  --title "Q3 Product Review" --title "What shipped" --title "What's next"
+```
+
+Then write each slide as its own function and save after every one with
+`LiveDeck` (atomic saves; the preview redraws each time):
+
+```python
+import sys
+sys.path.insert(0, "<skill>/scripts")      # this skill's scripts directory
+from deck_live import LiveDeck
+
+live = LiveDeck("review.pptx")
+prs = live.open()                           # 16:9, no slides yet
+for build in (cover, shipped, next_steps):  # one function per outline slide
+    build(prs)                              # add exactly one slide
+    live.save(prs)
+live.finish(prs)                            # marks the deck complete
+```
+
+Keep the order and count of `--title`s equal to the slides you add. Run the
+QA steps after `finish`.
+
 ## Text on a slide
 
 ```python

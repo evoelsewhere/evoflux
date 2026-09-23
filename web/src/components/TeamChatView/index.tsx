@@ -92,6 +92,7 @@ import type {
 import { useTeamCommands } from './useTeamCommands'
 import { useGlobalSearch } from './useGlobalSearch'
 import { useTeamSse } from './useTeamSse'
+import { useGeneratedDocumentWatcher } from '@/hooks/useGeneratedDocumentWatcher'
 import { useSlashCommandRegistry } from './useSlashCommandRegistry'
 import { useMobileEdgeSwipes } from './useMobileEdgeSwipes'
 import { VIEW_MODES, type ViewMode } from './types'
@@ -783,6 +784,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     workspace,
     enabled: fileRefsEnabled && (mode === 'coding' ? Boolean(workspace) : Boolean(sessionIdState)),
   })
+
+  // Live previews for Office files the agent writes in a Work session
+  // workspace (Coding repositories have their own watchers).
+  useGeneratedDocumentWatcher(mode === 'coding' ? null : sessionIdState)
 
   // ── Init / reconnect ───────────────────────────────────────────────────────
 

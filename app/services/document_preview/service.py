@@ -23,6 +23,11 @@ from typing import Any
 
 from loguru import logger
 
+from app.services.document_preview.live_deck import (
+    DeckPlan,
+    deck_is_live,
+    read_deck_plan,
+)
 from app.services.document_preview.xlsx_formula import (
     FormulaEvaluation,
     evaluate_workbook_formulas,
@@ -66,6 +71,10 @@ _OFFICE_RUNTIME_SUFFIXES = frozenset({".docx", ".xlsx", ".pptx"})
 def _renderer_identity(source: Path) -> str:
     """Name the engine that renders ``source`` so switching engines re-renders."""
     if source.suffix.lower() not in _OFFICE_RUNTIME_SUFFIXES:
+        return "native"
+    if deck_is_live(source):
+        # A deck under construction is re-rendered on every save; the exact
+        # renderer (seconds per conversion) takes over once it is finished.
         return "native"
     runtime = installed_runtime_for_preview()
     return f"libreoffice-{runtime.version}" if runtime is not None else "native"
@@ -4702,6 +4711,9 @@ def _render_pptx(source: Path) -> str:
     slide_height = int(presentation.slide_height or 0)
     if slide_width <= 0 or slide_height <= 0:
         raise ValueError("Presentation has invalid slide dimensions")
+    plan = read_deck_plan(source)
+    live = plan is not None and not plan.done
+    status_attribute = ' data-slide-status="done"' if live else ""
     rendered_slides: list[str] = []
     for slide_number, slide in enumerate(presentation.slides, start=1):
         palette = _pptx_theme_palette(slide)
@@ -4727,13 +4739,24 @@ def _render_pptx(source: Path) -> str:
                 f'data-preview-notes="{html.escape(notes, quote=True)}">'
                 f"{escaped_notes}</span>"
             )
+        # The newest finished slide of a live deck lands with a short animation.
+        fresh = live and slide_number == len(presentation.slides)
         rendered_slides.append(
             f'<article class="slide-wrap" data-preview-item '
             f'data-preview-label="{html.escape(label, quote=True)}" '
-            f'data-preview-title="{html.escape(title, quote=True)}">'
+            f'data-preview-title="{html.escape(title, quote=True)}"{status_attribute}'
+            f"{' data-slide-fresh' if fresh else ''}>"
             f'<div class="slide-number">{slide_number}</div>'
             f'<section class="slide" style="aspect-ratio:{ratio};background:{background}">'
             f"{''.join(shapes)}</section>{notes_metadata}</article>"
+        )
+    if live and plan is not None:
+        rendered_slides.extend(
+            _pending_slide_skeletons(
+                plan,
+                first=len(rendered_slides),
+                ratio=f"{slide_width}/{slide_height}",
+            )
         )
 
     css = """
@@ -4770,7 +4793,148 @@ def _render_pptx(source: Path) -> str:
     font-size:.9cqw;color:#6b7280}
     .slide-notes-metadata{display:none!important}
     """
-    return _page(title=source.name, body="".join(rendered_slides), css=css)
+    body = "".join(rendered_slides)
+    if live:
+        css += _LIVE_SLIDE_CSS
+        body = f'<main data-deck-live="true">{body}</main>'
+    return _page(title=source.name, body=body, css=css)
+
+
+_LIVE_SLIDE_CSS = """
+.slide-skeleton{display:flex;flex-direction:column;gap:3.2cqw;padding:6% 7%;
+background:#fff;font-family:Arial,sans-serif}
+.sk-head{display:flex;flex-direction:column;align-items:flex-start;gap:1.4cqw}
+.sk-chip{display:inline-flex;align-items:center;gap:.8cqw;padding:.55cqw 1.3cqw;
+border-radius:99px;font:600 1.25cqw/1 Arial,sans-serif;letter-spacing:.02em;
+color:#5f6368;background:#f1f3f4}
+.sk-title{margin:0;max-width:100%;font:700 3.6cqw/1.15 Arial,sans-serif;
+color:#3c4043;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sk-body{flex:1;min-height:0;display:flex;gap:5cqw;align-items:stretch}
+.sk-text{flex:1.3;display:flex;flex-direction:column;justify-content:center;gap:1.6cqw}
+.sk-visual{flex:1;display:flex;align-items:flex-end;justify-content:space-around;
+gap:1.4cqw;padding:2cqw 2cqw 0;border-bottom:.25cqw solid #dadce0}
+.sk-visual span{flex:1;height:var(--h);border-radius:.6cqw .6cqw 0 0;background:#e8eaed;
+transform-origin:bottom}
+.slide-skeleton .bar{border-radius:.6cqw;background:#ececec;transform-origin:left}
+.slide-skeleton .bar.title{height:3.8cqw;width:55%}
+.slide-skeleton .bar.subtitle{height:2cqw;width:32%}
+.slide-skeleton .bar.line{height:1.4cqw;width:var(--w)}
+.sk-progress{position:absolute;left:0;right:0;bottom:0;height:.7cqw;background:#e8eaed;
+display:flex}.sk-progress .done{background:#1a73e8}.sk-progress .now{
+background:linear-gradient(90deg,#8ab4f8,#d2e3fc,#8ab4f8);background-size:200% 100%;
+animation:sk-flow 1.2s linear infinite}
+
+[data-slide-status="building"] .slide{outline:2px solid #1a73e8;outline-offset:3px;
+animation:sk-glow 2.2s ease-in-out infinite}
+[data-slide-status="building"] .slide-skeleton{background:
+radial-gradient(#1a73e81f 1px,transparent 1.2px) 0 0/2.4cqw 2.4cqw,#fff}
+[data-slide-status="building"] .slide-skeleton::after{content:"";position:absolute;
+inset:0;pointer-events:none;background:linear-gradient(100deg,transparent 35%,
+#1a73e814 50%,transparent 65%);animation:sk-scan 2.6s ease-in-out infinite}
+[data-slide-status="building"] .sk-chip{color:#1967d2;background:#e8f0fe}
+[data-slide-status="building"] .sk-spin{width:1.2cqw;height:1.2cqw;border-radius:50%;
+border:.25cqw solid #1a73e84d;border-top-color:#1a73e8;animation:sk-spin .8s linear infinite}
+[data-slide-status="building"] .sk-title{color:#202124;
+animation:sk-type 1.1s steps(24,end) .15s both}
+[data-slide-status="building"] .sk-title::after{content:"";display:inline-block;
+width:.3cqw;height:1em;margin-left:.5cqw;vertical-align:-.12em;background:#1a73e8;
+animation:sk-caret 1s steps(1) infinite}
+[data-slide-status="building"] .bar{background:linear-gradient(90deg,#e3e6ea 0,
+#f4f6f8 40%,#e3e6ea 80%) 0 0/300% 100%;animation:sk-grow .6s cubic-bezier(.2,.7,.2,1)
+calc(.35s + var(--d,0) * .14s) both,sk-shimmer 1.6s ease-in-out 1.2s infinite}
+[data-slide-status="building"] .sk-visual span{background:linear-gradient(#aecbfa,#d2e3fc);
+animation:sk-rise .7s cubic-bezier(.2,.7,.2,1) calc(.6s + var(--d,0) * .12s) both,
+sk-breathe 2.4s ease-in-out calc(1.5s + var(--d,0) * .2s) infinite alternate}
+
+[data-slide-status="pending"] .slide{opacity:.72}
+[data-slide-status="pending"] .slide-skeleton{box-shadow:none;
+outline:1.5px dashed #bdc1c6;outline-offset:-1px}
+[data-slide-status="pending"] .sk-title{color:#9aa0a6;font-weight:600}
+
+[data-slide-fresh] .slide{animation:sk-land .7s cubic-bezier(.2,.7,.2,1) both}
+[data-slide-fresh]::after{content:"\\2713  Added";position:absolute;top:10px;right:10px;
+padding:4px 10px;border-radius:99px;font:600 12px/1.2 Arial,sans-serif;color:#fff;
+background:#188038;box-shadow:0 2px 8px #0003;animation:sk-badge 2.6s ease both}
+
+@keyframes sk-shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+@keyframes sk-flow{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@keyframes sk-scan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@keyframes sk-spin{to{transform:rotate(360deg)}}
+@keyframes sk-caret{50%{opacity:0}}
+@keyframes sk-type{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes sk-grow{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
+@keyframes sk-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes sk-breathe{from{transform:scaleY(1)}to{transform:scaleY(.72)}}
+@keyframes sk-glow{0%,100%{box-shadow:0 3px 14px #0003,0 0 0 0 #1a73e840}
+50%{box-shadow:0 3px 14px #0003,0 0 0 10px #1a73e800}}
+@keyframes sk-land{from{opacity:0;transform:translateY(14px) scale(.985)}
+to{opacity:1;transform:none}}
+@keyframes sk-badge{0%{opacity:0;transform:translateY(-6px)}12%,70%{opacity:1;
+transform:none}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){[data-deck-live] *,[data-deck-live] *::after{
+animation:none!important}[data-slide-fresh]::after{display:none}}
+"""
+
+# Proportions of the placeholder text lines and chart bars; the chart rises
+# and breathes on the slide being built.
+_SKELETON_LINES = ("88%", "80%", "92%", "64%")
+_SKELETON_BARS = ("42%", "68%", "54%", "86%", "72%")
+
+
+def _pending_slide_skeletons(plan: DeckPlan, *, first: int, ratio: str) -> list[str]:
+    """Placeholders for the planned slides an agent has not saved yet.
+
+    The first missing slide is the one being built: its planned title types
+    in, its content blocks assemble and a progress bar shows how far the deck
+    is. The rest stay still, titled from the plan so the user sees what is next.
+    """
+    skeletons: list[str] = []
+    for index in range(first, plan.total):
+        title = plan.title(index)
+        number = index + 1
+        state = "building" if index == first else "pending"
+        caption = (
+            f"Building slide {number} of {plan.total}"
+            if state == "building"
+            else "Up next"
+        )
+        label = f"Slide {number}" + (f" — {title}" if title else "")
+        heading = (
+            f'<h2 class="sk-title">{html.escape(title)}</h2>'
+            if title
+            else '<div class="bar title"></div>'
+        )
+        lines = "".join(
+            f'<div class="bar line" style="--w:{width};--d:{order}"></div>'
+            for order, width in enumerate(_SKELETON_LINES)
+        )
+        chart = "".join(
+            f'<span style="--h:{height};--d:{order}"></span>'
+            for order, height in enumerate(_SKELETON_BARS)
+        )
+        progress = ""
+        if state == "building":
+            progress = (
+                '<div class="sk-progress" aria-hidden="true">'
+                f'<span class="done" style="width:{100 * first / plan.total:.2f}%"></span>'
+                f'<span class="now" style="width:{100 / plan.total:.2f}%"></span></div>'
+            )
+        spinner = '<span class="sk-spin"></span>' if state == "building" else ""
+        skeletons.append(
+            '<article class="slide-wrap" data-preview-item '
+            f'data-preview-label="{html.escape(label, quote=True)}" '
+            f'data-preview-title="{html.escape(title, quote=True)}" '
+            f'data-slide-status="{state}">'
+            f'<div class="slide-number">{number}</div>'
+            f'<section class="slide slide-skeleton" style="aspect-ratio:{ratio}" '
+            f'aria-label="{html.escape(f"{label}, {caption.lower()}", quote=True)}">'
+            f'<div class="sk-head"><span class="sk-chip">{spinner}{html.escape(caption)}</span>'
+            f'{heading}<div class="bar subtitle" style="--d:1"></div></div>'
+            f'<div class="sk-body"><div class="sk-text">{lines}</div>'
+            f'<div class="sk-visual" aria-hidden="true">{chart}</div></div>'
+            f"{progress}</section></article>"
+        )
+    return skeletons
 
 
 def _render_pdf(source: Path) -> str:
@@ -4951,7 +5115,9 @@ def _render_source(source: Path) -> str:
         ".pdf": _render_pdf,
     }
     try:
-        if source.suffix.lower() in _OFFICE_RUNTIME_SUFFIXES:
+        if source.suffix.lower() in _OFFICE_RUNTIME_SUFFIXES and not deck_is_live(
+            source
+        ):
             exact = _render_with_office_runtime(source)
             if exact is not None:
                 return exact

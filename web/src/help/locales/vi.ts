@@ -1046,6 +1046,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
+        text: 'Khi agent tạo file Word, Excel hay PowerPoint trong session Work, Files tự mở preview trong lúc turn đang chạy (trừ khi bạn đang dùng tool workbench khác) và vẽ lại sau mỗi lần lưu. Deck dựng bằng Skill PowerPoint hiện dần từng slide: slide xong hiện ngay khi được lưu, slide đang dựng hiện tiêu đề dự kiến kèm placeholder động, các slide sau được liệt kê là Up next. Trong lúc dựng, cột thumbnail và cây file tạm ẩn và viewer đi theo slide mới nhất; cuộn, bấm hoặc chuyển slide để tự điều khiển. Cả hai hiện lại khi deck xong, và renderer chính xác tiếp quản từ đó.',
+      },
+      {
+        type: 'p',
         text: 'Sai thường gặp: lục Review ở Work; chờ Files khi chưa focus Coding workspace; bookmark `/scheduler`; tin nhãn ⌘P cho Files; mở mười tab Terminal cho one-liner nên gửi bằng ! trên composer.',
       },
       {

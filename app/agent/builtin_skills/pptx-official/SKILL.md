@@ -66,6 +66,10 @@ Anything unresolved here becomes a placeholder in the deck.
 
 **Phase 4 — Build.** Build from the outline: one layout per recurring slide
 shape, palette as named constants, real content in every visible slot.
+Build live, one slide at a time: first run `scripts/deck_live.py init` with
+one `--title` per outlined slide so the deck file exists immediately, then
+add a slide and save after each, and finish with `deck_live.py finish`. The
+user watches the preview fill in; see *Live build* in the create guides.
 
 **Phase 5 — Verify and repair.** Run the QA checklist and `document_preview`,
 fix what they report, run them again. Machine checks passing is a technical

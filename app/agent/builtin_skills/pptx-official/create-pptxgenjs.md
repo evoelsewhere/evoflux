@@ -57,6 +57,38 @@ slide.addText("Revenue grew 34% on 22% headcount", {
 await pres.writeFile({ fileName: "review.pptx" });
 ```
 
+## Live build
+
+Build the deck one slide at a time so the user sees it take shape. Create
+the file from the outline first — it opens in the preview straight away with
+a placeholder per planned slide:
+
+```bash
+uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx \
+  --title "Q3 Product Review" --title "What shipped" --title "What's next"
+```
+
+PptxGenJS cannot reopen a saved file, so write the deck after each slide
+(slides 1..k) and re-embed the plan with `mark`; finish with `finish`:
+
+```typescript
+import { execFileSync } from "node:child_process";
+
+const live = (command: string) =>
+  execFileSync("uv", ["run", "--with", "python-pptx", "python",
+    "<skill>/scripts/deck_live.py", command, "review.pptx"], { stdio: "inherit" });
+
+const builders = [cover, shipped, nextSteps];   // one function per outline slide
+for (let done = 1; done <= builders.length; done++) {
+  const pres = new pptxgen();
+  pres.layout = "LAYOUT_WIDE";
+  builders.slice(0, done).forEach((build) => build(pres));
+  await pres.writeFile({ fileName: "review.pptx" });
+  live("mark");
+}
+live("finish");
+```
+
 Available `pres.layout` values: `LAYOUT_16x9` (10 × 5.625), `LAYOUT_WIDE`
 (13.333 × 7.5), `LAYOUT_16x10` (10 × 6.25), `LAYOUT_4x3` (10 × 7.5). Use
 `LAYOUT_WIDE` for anything modern.

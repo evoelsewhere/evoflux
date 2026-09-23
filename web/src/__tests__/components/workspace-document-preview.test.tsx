@@ -416,6 +416,37 @@ describe('WorkspaceDocumentPreview', () => {
     expect(screen.getByRole('button', { name: 'Hide speaker notes' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('gives a deck under construction the whole surface until it is finished', async () => {
+    const liveDeckHtml = slideDeckHtml
+      .replace('<body>', '<body><main data-deck-live="true">')
+      .replace('</body>', '</main></body>')
+    const respond = (html: string) => ({ ok: true, status: 200, text: () => Promise.resolve(html) })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(liveDeckHtml)))
+    const onLiveDeckChange = vi.fn()
+    const deck = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }
+    const { rerender } = render(
+      <WorkspaceDocumentPreview sessionId="session-1" file={deck} onLiveDeckChange={onLiveDeckChange} />,
+    )
+
+    await waitFor(() => expect(onLiveDeckChange).toHaveBeenLastCalledWith(true))
+    hydrateFrame(liveDeckHtml)
+    expect(screen.queryByRole('navigation', { name: 'Slide thumbnails' })).not.toBeInTheDocument()
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(slideDeckHtml)))
+    rerender(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ ...deck, mtime: 3 }}
+        onLiveDeckChange={onLiveDeckChange}
+      />,
+    )
+
+    await waitFor(() => expect(onLiveDeckChange).toHaveBeenLastCalledWith(false))
+    hydrateFrame(slideDeckHtml)
+    expect(await screen.findByRole('navigation', { name: 'Slide thumbnails' })).toBeInTheDocument()
+    expect(onLiveDeckChange).toHaveBeenCalledTimes(2)
+  })
+
   it('navigates PowerPoint slides with arrows, Home, End, and Space', async () => {
     render(
       <WorkspaceDocumentPreview
