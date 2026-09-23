@@ -1,12 +1,12 @@
 name: Office runtime
 
 # Builds the trimmed LibreOffice runtime the document viewer installs on
-# request, proves it end to end on every platform (real installer, signature
+# request, proves it end to end on every platform (real installer, checksum
 # check, DOCX/PPTX/XLSX conversion through the preview pipeline) and, when
-# asked, publishes the signed archives as a GitHub release.
+# asked, publishes the archives as a GitHub release.
 #
 # Pull requests that touch the runtime build or install code run the same
-# build and verification with a throwaway signing key; nothing is published.
+# build and verification; nothing is published.
 
 on:
   workflow_dispatch:
@@ -16,7 +16,7 @@ on:
         required: true
         default: "26.8.0"
       publish:
-        description: Sign with the release key and publish the release assets
+        description: Publish the release assets
         type: boolean
         default: false
   pull_request:
@@ -74,53 +74,19 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra office-preview
 
-      - name: Prepare signing key
-        env:
-          OFFICE_RUNTIME_SIGNING_KEY: ${{ secrets.OFFICE_RUNTIME_SIGNING_KEY }}
-          OFFICE_RUNTIME_KEY_ID: ${{ vars.OFFICE_RUNTIME_KEY_ID }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/keys"
-          if [ "$PUBLISH" = "true" ]; then
-            if [ -z "$OFFICE_RUNTIME_SIGNING_KEY" ] || [ -z "$OFFICE_RUNTIME_KEY_ID" ]; then
-              echo "Publishing needs the OFFICE_RUNTIME_SIGNING_KEY secret and OFFICE_RUNTIME_KEY_ID variable." >&2
-              exit 1
-            fi
-            printf '%s\n' "$OFFICE_RUNTIME_SIGNING_KEY" > "$RUNNER_TEMP/keys/office.private.pem"
-            uv run python - "$RUNNER_TEMP/keys" <<'PY'
-          import sys
-          from pathlib import Path
-          from cryptography.hazmat.primitives import serialization
-          keys = Path(sys.argv[1])
-          key = serialization.load_pem_private_key((keys / "office.private.pem").read_bytes(), None)
-          (keys / "office.public.pem").write_bytes(
-              key.public_key().public_bytes(
-                  serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
-              )
-          )
-          PY
-            echo "KEY_ID=$OFFICE_RUNTIME_KEY_ID" >> "$GITHUB_ENV"
-          else
-            uv run python scripts/build_libreoffice_runtime.py --generate-key "$RUNNER_TEMP/keys/office"
-            echo "KEY_ID=ci-ephemeral" >> "$GITHUB_ENV"
-          fi
-
       - name: Build trimmed runtime
         run: |
           uv run python scripts/build_libreoffice_runtime.py \
             --version "$LIBREOFFICE_VERSION" \
             --platform "${{ matrix.platform }}" \
             --output dist/office-runtime \
-            --signing-key "$RUNNER_TEMP/keys/office.private.pem" \
-            --key-id "$KEY_ID" \
             --base-url "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
 
       - name: Verify install and conversion
         run: |
           uv run python scripts/verify_office_runtime.py \
             --manifest "dist/office-runtime/libreoffice-$LIBREOFFICE_VERSION-${{ matrix.platform }}.json" \
-            --archive "dist/office-runtime/libreoffice-$LIBREOFFICE_VERSION-${{ matrix.platform }}.tar.gz" \
-            --public-key "$RUNNER_TEMP/keys/office.public.pem" \
-            --key-id "$KEY_ID"
+            --archive "dist/office-runtime/libreoffice-$LIBREOFFICE_VERSION-${{ matrix.platform }}.tar.gz"
 
       - name: Upload runtime
         if: env.PUBLISH == 'true'

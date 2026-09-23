@@ -1042,7 +1042,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'File Office (.docx, .xlsx, .pptx) mở trong viewer chỉ đọc. Renderer có sẵn chỉ dàn trang gần đúng; muốn trang chính xác, bấm Install renderer trong viewer để tải renderer LibreOffice tuỳ chọn (khoảng 150–190 MB, một lần, trên Windows và macOS). Không tải gì cho tới khi bạn yêu cầu. Gói tải về được kiểm checksum và chữ ký đã ghim trước khi cài vào thư mục dữ liệu của app; việc chuyển đổi chạy offline và tắt macro. Lần render chính xác đầu tiên của một file có thể mất tới một phút, các lần sau dùng cache. Tìm kiếm và bôi đen chữ vẫn dùng được trên trang chính xác.',
+        text: 'File Office (.docx, .xlsx, .pptx) mở trong viewer chỉ đọc. Renderer có sẵn chỉ dàn trang gần đúng; muốn trang chính xác, bấm Install renderer trong viewer để tải renderer LibreOffice tuỳ chọn (khoảng 150–190 MB, một lần, trên Windows và macOS). Không tải gì cho tới khi bạn yêu cầu. Gói tải về được kiểm checksum đã ghim trước khi cài vào thư mục dữ liệu của app; việc chuyển đổi chạy offline và tắt macro. Lần render chính xác đầu tiên của một file có thể mất tới một phút, các lần sau dùng cache. Tìm kiếm và bôi đen chữ vẫn dùng được trên trang chính xác.',
       },
       {
         type: 'p',

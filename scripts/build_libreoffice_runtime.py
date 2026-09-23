@@ -1,30 +1,26 @@
-"""Build, trim and sign the LibreOffice runtime bundle the document viewer installs.
+"""Build and trim the LibreOffice runtime bundle the document viewer installs.
 
 The sidecar never downloads LibreOffice's full installer. Maintainers run this
 script (locally or in CI) to turn an official The Document Foundation package
 into a trimmed ``soffice/`` tree that is enough for headless PDF conversion,
-pack it as ``libreoffice-<version>-<platform>.tar.gz``, and sign its asset
-record with the team's ed25519 key. The printed manifest entry is what goes
-into ``app/services/office_runtime/manifest.py`` (``PINNED_ASSETS``) once the
+and pack it as ``libreoffice-<version>-<platform>.tar.gz``. The printed
+manifest entry (URL, SHA-256, size) is what goes into
+``app/services/office_runtime/manifest.py`` (``PINNED_ASSETS``) once the
 archive is published as a release asset.
 
 Only official TDF packages are accepted: the upstream SHA-256 is fetched from
 ``download.documentfoundation.org`` and checked before anything is extracted.
 
-Examples::
+Example::
 
     uv run python scripts/build_libreoffice_runtime.py --version 26.8.0 \\
-        --platform win32-x64 --signing-key key.pem --key-id evoflux-office-1 \\
+        --platform win32-x64 \\
         --base-url https://github.com/evoelsewhere/evoflux/releases/download/office-runtime-26.8.0
-
-    # Generate a new signing key pair (keep the private key in CI secrets):
-    uv run python scripts/build_libreoffice_runtime.py --generate-key keys/office
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
 import os
@@ -38,7 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.office_runtime.manifest import RUNTIME_ROOT, signed_record  # noqa: E402
+from app.services.office_runtime.manifest import RUNTIME_ROOT  # noqa: E402
 
 TDF_STABLE = "https://download.documentfoundation.org/libreoffice/stable"
 
@@ -322,46 +318,16 @@ def _pack(stage: Path, destination: Path) -> None:
         archive.add(stage / RUNTIME_ROOT, arcname=RUNTIME_ROOT, filter=normalize)
 
 
-def _sign(record: bytes, key_path: Path) -> str:
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from cryptography.hazmat.primitives.serialization import load_pem_private_key
-
-    key = load_pem_private_key(key_path.read_bytes(), password=None)
-    if not isinstance(key, Ed25519PrivateKey):
-        raise SystemExit("Signing key must be an ed25519 private key")
-    return base64.b64encode(key.sign(record)).decode("ascii")
-
-
-def _generate_key(prefix: Path) -> None:
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-    key = Ed25519PrivateKey.generate()
-    private = key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    )
-    public = key.public_key().public_bytes(
-        serialization.Encoding.PEM,
-        serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
-    prefix.parent.mkdir(parents=True, exist_ok=True)
-    private_path = prefix.with_suffix(".private.pem")
-    private_path.write_bytes(private)
-    os.chmod(private_path, 0o600)
-    prefix.with_suffix(".public.pem").write_bytes(public)
-    _log(f"wrote {private_path} and {prefix.with_suffix('.public.pem')}")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
-    parser.add_argument("--version", help="LibreOffice version, e.g. 26.8.0")
-    parser.add_argument("--platform", choices=sorted(UPSTREAM_PACKAGES))
+    parser.add_argument(
+        "--version", required=True, help="LibreOffice version, e.g. 26.8.0"
+    )
+    parser.add_argument("--platform", required=True, choices=sorted(UPSTREAM_PACKAGES))
     parser.add_argument("--output", type=Path, default=Path("dist/office-runtime"))
-    parser.add_argument("--signing-key", type=Path, help="ed25519 private key (PEM)")
-    parser.add_argument("--key-id", help="identifier pinned next to the public key")
-    parser.add_argument("--base-url", help="release URL the archive is published under")
+    parser.add_argument(
+        "--base-url", required=True, help="release URL the archive is published under"
+    )
     parser.add_argument(
         "--upstream-package",
         type=Path,
@@ -372,25 +338,7 @@ def main() -> None:
         type=Path,
         help="Office file to convert with the trimmed bundle before packing",
     )
-    parser.add_argument(
-        "--generate-key",
-        type=Path,
-        metavar="PREFIX",
-        help="write PREFIX.private.pem / PREFIX.public.pem and exit",
-    )
     args = parser.parse_args()
-    if args.generate_key:
-        _generate_key(args.generate_key)
-        return
-    missing = [
-        name
-        for name in ("version", "platform", "signing_key", "key_id", "base_url")
-        if getattr(args, name) is None
-    ]
-    if missing:
-        parser.error(
-            "missing " + ", ".join(f"--{m.replace('_', '-')}" for m in missing)
-        )
 
     args.output.mkdir(parents=True, exist_ok=True)
     archive_name = f"libreoffice-{args.version}-{args.platform}.tar.gz"
@@ -409,27 +357,22 @@ def main() -> None:
         program_root = extract(package, work)
         stage = _stage(program_root, args.platform, work)
         _smoke_test(stage, args.platform, args.smoke_sample, work)
+        installed_size = sum(
+            path.stat().st_size
+            for path in (stage / RUNTIME_ROOT).rglob("*")
+            if path.is_file() and not path.is_symlink()
+        )
         _pack(stage, archive)
 
     sha256 = _sha256(archive)
     size = archive.stat().st_size
-    executable = EXECUTABLES[args.platform]
-    record = signed_record(
-        platform=args.platform,
-        version=args.version,
-        sha256=sha256,
-        size=size,
-        key_id=args.key_id,
-        executable=executable,
-    )
     entry = {
         "version": args.version,
         "url": f"{args.base_url.rstrip('/')}/{archive_name}",
         "sha256": sha256,
         "size": size,
-        "keyId": args.key_id,
-        "signature": _sign(record, args.signing_key),
-        "executable": executable,
+        "executable": EXECUTABLES[args.platform],
+        "installedSize": installed_size,
     }
     manifest = args.output / f"libreoffice-{args.version}-{args.platform}.json"
     manifest.write_text(json.dumps({args.platform: entry}, indent=2) + "\n")

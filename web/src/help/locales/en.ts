@@ -1078,7 +1078,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Office files (.docx, .xlsx, .pptx) open in a read-only viewer. The built-in renderers approximate layout; for exact pages, click Install renderer in the viewer to download the optional LibreOffice renderer (about 150–190 MB, once, on Windows and macOS). Nothing downloads until you ask. The archive is checked against a pinned checksum and signature before it is installed into the app data folder, and conversion runs offline with macros disabled. The first exact render of a file can take up to a minute; later opens use the cache. Search and text selection still work on exact pages.',
+        text: 'Office files (.docx, .xlsx, .pptx) open in a read-only viewer. The built-in renderers approximate layout; for exact pages, click Install renderer in the viewer to download the optional LibreOffice renderer (about 150–190 MB, once, on Windows and macOS). Nothing downloads until you ask. The archive is checked against a pinned checksum before it is installed into the app data folder, and conversion runs offline with macros disabled. The first exact render of a file can take up to a minute; later opens use the cache. Search and text selection still work on exact pages.',
       },
       {
         type: 'p',
