@@ -175,6 +175,62 @@ async def test_tool_call_id_first_wins():
     assert "hi world" in (tool_msgs[0].content or "")
 
 
+async def test_tool_calls_without_ids_get_distinct_synthesized_ids():
+    """Endpoints that never stream a tool call id (e.g. MiMo) still yield one
+    result per call, each paired with its own non-empty id."""
+
+    def greet(name: str) -> str:
+        """Greet."""
+        return f"hi {name}"
+
+    chunk = ChatCompletionChunk(
+        id="c1",
+        created=0,
+        model="m",
+        choices=[
+            ChatCompletionChunkChoice(
+                index=0,
+                delta=ChatCompletionDelta(
+                    tool_calls=[
+                        ToolCallDelta(
+                            index=0,
+                            function=FunctionCallDelta(
+                                name="greet", arguments='{"name": "ada"}'
+                            ),
+                        ),
+                        ToolCallDelta(
+                            index=1,
+                            function=FunctionCallDelta(
+                                name="greet", arguments='{"name": "bob"}'
+                            ),
+                        ),
+                    ]
+                ),
+                finish_reason="tool_calls",
+            )
+        ],
+    )
+
+    provider = MockProvider([[chunk], [make_text_chunk("done")]])
+    agent = Agent(name="bot", llm_provider=provider, tools=[Tool(greet)])
+
+    msgs = await agent.run([HumanMessage(content="greet both")])
+
+    from app.agent.schemas.chat import ToolMessage
+
+    assistant = next(
+        m for m in msgs if isinstance(m, AssistantMessage) and m.tool_calls
+    )
+    call_ids = [tc.id for tc in assistant.tool_calls or []]
+    assert len(call_ids) == 2
+    assert all(call_ids)
+    assert len(set(call_ids)) == 2
+
+    tool_msgs = [m for m in msgs if isinstance(m, ToolMessage)]
+    assert sorted(m.tool_call_id for m in tool_msgs) == sorted(call_ids)
+    assert sorted(m.content or "" for m in tool_msgs) == ["hi ada", "hi bob"]
+
+
 # ---------------------------------------------------------------------------
 # Line 502-503: checkpointer.sync raises exception
 # ---------------------------------------------------------------------------

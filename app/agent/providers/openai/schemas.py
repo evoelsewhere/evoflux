@@ -192,7 +192,9 @@ class OpenAIFunctionCallDelta(BaseModel):
 class OpenAIToolCallDelta(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    index: int
+    # Optional because some OpenAI-compatible endpoints omit it on single-call
+    # streams; the stream assembler treats a missing index as slot 0.
+    index: int | None = None
     id: str | None = None
     # StepFun step-5-preview sends "" on the chunks that continue a tool call
     # rather than repeating "function" or omitting the key. The kind is never
