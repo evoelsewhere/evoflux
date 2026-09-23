@@ -84,15 +84,6 @@ export function useTeamCommands({
       description: 'Cycle: Agent → Split', shortcut: 'Ctrl+V', action: cycleViewMode,
     },
     { id: 'workspace-files',  group: 'View',       label: mode === 'coding' ? 'Open Changed & Files' : 'Toggle Workspace Files', description: mode === 'coding' ? 'Browse changed files and workspace files' : 'Browse files the agent has produced', shortcut: 'Ctrl+F', action: handleWorkspaceFiles },
-    ...(mode === 'coding'
-      ? [{
-          id: 'workspace-overview',
-          group: 'View',
-          label: 'Open Workspace Overview',
-          description: 'See Git, session, tools, and recent changes',
-          action: () => useUIStore.getState().openWorkbenchTool('overview'),
-        }]
-      : []),
     ...(mode === 'coding' && workspace
       ? [{
           id: 'ai-review-changes',

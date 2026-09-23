@@ -5,6 +5,7 @@
  *
  * Each mounted panel owns exactly one PTY. Multiple terminals are represented
  * by independent Workbench tabs, avoiding a second nested tab strip here.
+ * The "Running" bar at the foot lists managed processes and can stop them.
  * "Send to agent" hands this terminal's selection (or recent scrollback) to
  * the chat composer via the `evoflux:composer-insert` event.
  */
@@ -26,6 +27,7 @@ import { withTokenParam } from '@/api/auth'
 import { codingWorkspaceFileUrl } from '@/api/client'
 import type { EditorActionRequest } from '@/api/types'
 import { EditorAiActionDialog } from './EditorAiActionDialog'
+import { TerminalRunningBar } from './TerminalRunningBar'
 import { useUIStore } from '@/stores/useUIStore'
 import { useToastStore } from '@/stores/useToastStore'
 
@@ -373,6 +375,7 @@ export function TerminalPanel({
           Start a session to open a terminal.
         </div>
       )}
+      <TerminalRunningBar active={active} sessionId={sessionId} terminalId={terminalId} />
       {aiRequest && workspace && (
         <EditorAiActionDialog
           workspace={workspace}

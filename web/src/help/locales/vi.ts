@@ -199,7 +199,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Sidebar biến mất hoàn toàn khi thu gọn; dùng Ctrl+B hoặc nút sidebar nổi để mở lại.',
       'Khi đang ở Settings, mode switcher bị ẩn; thoát Settings rồi mới đổi mode lại.',
       'Work hợp research, docs, browser task, script tạm; Coding cho repo bền.',
-      'Permission mode, slash và hầu hết workbench tool chạy xuyên mode; Overview / Files / Changes / Review chỉ trong Coding.',
+      'Permission mode, slash và hầu hết workbench tool chạy xuyên mode; Changes / Review / Problems chỉ trong Coding.',
       'Đừng mở git monorepo trong Work rồi chờ Changes/Review — sang Coding để tool source-control gắn vào.',
       'Work: folder + share_context cho research song song; Coding: project khi các repo phải gắn với nhau.',
       'Mode memory theo mode, không theo window — nếu tưởng về Coding home trống, kiểm tra xem route workspace cũ có bị restore không.'
@@ -767,7 +767,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Khi /new — đổi chủ đề mà context bar đã bẩn.',
           'Khi /compact — cùng chủ đề, budget leo, cần giữ continuity.',
           'Khi /stop — tool chạy loạn hoặc fan-out sai; rồi nêu lại ask.',
-          '/init + Coding Overview sau khi mở repo mới.'
+          '/init sau khi mở repo mới.'
 ],
       }
 ],
@@ -972,15 +972,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench tools',
     summary:
-      'Mở Terminal, Browser, Files, Files, Side chat, Memory, Scheduler, Changes và Review bên cạnh chat — shortcut tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
+      'Mở Terminal, Browser, Files, Side chat, Memory, Scheduler, Changes và Review bên cạnh chat — shortcut tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
     keywords: [
       'workbench',
       'panel',
       'terminal',
       'files',
       'dock',
-      'overview',
-      'source search',
       'Changes',
       'Review',
       'Ctrl+F',
@@ -991,22 +989,21 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'bảng công cụ'
 ],
     setup:
-      'Mở session trước. Coding Overview, Files và Changes cục bộ cần Coding workspace. Built-in Browser phải bật trong Settings → Browser trước khi Ctrl+T hữu ích.',
+      'Mở session trước. Coding Files và Changes cục bộ cần Coding workspace. Built-in Browser phải bật trong Settings → Browser trước khi Ctrl+T hữu ích.',
     tricks: [
       'Mở tool từ workbench bar, dock, hoặc shortcut bên dưới.',
-      'Coding Overview chỉ hiện khi đã chọn workspace.',
       'Shortcut runtime và label tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
       'Mapping sống: Files = Ctrl+F (label có thể hiện ⌘P); Side chat = Ctrl+; (label có thể hiện ⌥⌘S).',
       'Changes gồm cả source control cục bộ lẫn Review pull request — chuyển qua lại ở header của nó.',
       'Terminal và Browser hỗ trợ nhiều tab; tool khác là toggle single-instance.',
+      'Mở Running ở đáy tab Terminal bất kỳ để xem và dừng lệnh của agent, preview server và terminal khác trên mọi session.',
       'Changes (Ctrl+G) chỉ Coding; Files cần Coding workspace.',
-      'Toggle cùng tool lần nữa để đóng — workbench không phải đống card vĩnh viễn.',
-      'Mở workbench với Coding workspace mà chưa chọn tool thì Overview mở mặc định.'
+      'Toggle cùng tool lần nữa để đóng — workbench không phải đống card vĩnh viễn.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Workbench là surface tool bên phải (hoặc dock) cạnh chat. Tool: Overview, Terminal, Browser, Files, Files, Side chat, Memory (wiki), Scheduler và Changes (source control kèm Review pull/merge request). Chat vẫn là chính; tool là mặt kiểm tra và hành động cách một shortcut.',
+        text: 'Workbench là surface tool bên phải (hoặc dock) cạnh chat. Tool: Terminal, Browser, Files, Side chat, Memory (wiki), Scheduler và Changes (source control kèm Review pull/merge request). Chat vẫn là chính; tool là mặt kiểm tra và hành động cách một shortcut.',
       },
       {
         type: 'p',
@@ -1028,11 +1025,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Overview — Coding workspace / git / session / tool status một nhìn.',
-          'Terminal — chạy lệnh trong workspace đang active.',
+          'Terminal — chạy lệnh trong workspace đang active; thanh Running liệt kê và dừng process được quản lý.',
           'Browser — browser trong app (bật trong Settings → Browser).',
           'Files — file workspace và artifact sinh ra.',
-          'Files — source search cấu trúc (Coding).',
           'Side chat — câu hỏi song song /btw.',
           'Memory — wiki + note pending.',
           'Scheduler — cron / one-shot (chỉ panel; /scheduler redirect home).',
@@ -1181,14 +1176,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Managed worktree nest dưới source repo trên cây sidebar.',
       'Repo standalone vẫn là single-workspace session hợp lệ không cần project.',
       'Chạy /init trong Coding session để tạo hoặc cập nhật AGENTS.md cho convention agent.',
-      'Mở Coding Overview từ workbench khi workspace đã chọn để xem status một nhìn.',
       'Commit hoặc stash trước khi spawn worktree nếu cần dirty change ở chỗ khác — chúng không xuất hiện trên cây mới.',
       'Ưu tiên project khi service chia sẻ API giữa repo; ưu tiên single repo khi changeset local.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Coding mode quản git repository, multi-repo project tùy chọn và managed worktree. Agent sửa cây thật với Files, Files, Terminal, Changes và Review cạnh chat. Đây là mode cho việc engineering bền.',
+        text: 'Coding mode quản git repository, multi-repo project tùy chọn và managed worktree. Agent sửa cây thật với Files, Terminal, Changes và Review cạnh chat. Đây là mode cho việc engineering bền.',
       },
       {
         type: 'p',
@@ -1196,7 +1190,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Thêm repo từ sidebar Coding. Click để focus; + / New chat cho session. Tạo Project để bind nhiều repo. Spawn worktree từ menu repo; chọn repository-local vs user_data trong Settings → Sandbox. Dùng /init để scaffold hoặc refresh AGENTS.md. Files và Overview bật khi workspace active.',
+        text: 'Thêm repo từ sidebar Coding. Click để focus; + / New chat cho session. Tạo Project để bind nhiều repo. Spawn worktree từ menu repo; chọn repository-local vs user_data trong Settings → Sandbox. Dùng /init để scaffold hoặc refresh AGENTS.md. Files bật khi workspace active.',
       },
       {
         type: 'tips',
@@ -1205,13 +1199,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Projects — multi-repo dưới một project_id.',
           'Worktrees — cây sạch; source chưa commit không copy.',
           '/init — AGENTS.md cho convention Coding.',
-          'Sandbox — policy vị trí worktree.',
-          'Overview — status khi workspace đã focus.'
+          'Sandbox — policy vị trí worktree.'
 ],
       },
       {
         type: 'p',
-        text: 'Session Coding đầu: (1) sang Coding, (2) thêm git repo, (3) click focus, (4) + / New chat, (5) /init nếu thiếu AGENTS.md, (6) set permission mode, (7) @ file then chốt và mô tả thay đổi, (8) mở Overview xác nhận workspace khỏe.',
+        text: 'Session Coding đầu: (1) sang Coding, (2) thêm git repo, (3) click focus, (4) + / New chat, (5) /init nếu thiếu AGENTS.md, (6) set permission mode, (7) @ file then chốt và mô tả thay đổi, (8) mở Changes xác nhận branch và working tree.',
       },
       {
         type: 'p',

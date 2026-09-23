@@ -206,7 +206,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Collapsed sidebar disappears completely; use Ctrl+B or the floating sidebar button to restore it.',
       'Settings hides the mode switcher while you configure the app; leave Settings to switch modes again.',
       'Work is best for research, docs, browser tasks, and throwaway scripts; Coding for persistent repos.',
-      'Permission modes, slash commands, and most workbench tools work across modes; Overview / Files / Changes / Review are Coding-scoped.',
+      'Permission modes, slash commands, and most workbench tools work across modes; Changes / Review / Problems are Coding-scoped.',
       'Do not open a git monorepo in Work expecting Changes/Review — switch to Coding so source-control tools attach.',
       'Use Work folders + share_context for parallel research threads; use Coding projects when repos must stay linked.',
       'Mode memory is per mode, not per window — if you expected a blank Coding home, check whether an old workspace route was restored.'
@@ -790,7 +790,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'When to /new — topic change with a polluted context bar.',
           'When to /compact — same topic, rising budget, keep continuity.',
           'When to /stop — runaway tools or wrong fan-out; then restate the ask.',
-          'Cross-feature: /init + Coding Overview after opening a new repo.'
+          'Cross-feature: /init after opening a new repo.'
 ],
       }
 ],
@@ -1001,15 +1001,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench tools',
     summary:
-      'Open Terminal, Browser, Files, Files, Side chat, Memory, Scheduler, Changes, and Review beside chat — with platform-native shortcuts: Command on macOS, Ctrl on Windows/Linux.',
+      'Open Terminal, Browser, Files, Side chat, Memory, Scheduler, Changes, and Review beside chat — with platform-native shortcuts: Command on macOS, Ctrl on Windows/Linux.',
     keywords: [
       'workbench',
       'panel',
       'terminal',
       'files',
       'dock',
-      'overview',
-      'source search',
       'Changes',
       'Review',
       'Ctrl+F',
@@ -1022,22 +1020,21 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'パネル'
 ],
     setup:
-      'Open a session first. Coding Overview, Files, and local Changes need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
+      'Open a session first. Coding Files and local Changes need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
     tricks: [
       'Open tools from the workbench bar, dock, or keyboard shortcuts listed below.',
-      'Coding Overview appears only when a workspace is selected.',
       'Runtime shortcuts and labels adapt to the OS: Command on macOS, Ctrl on Windows/Linux.',
       'Live mappings: Files = Ctrl+F (label may show ⌘P); Side chat = Ctrl+; (label may show ⌥⌘S).',
       'Changes holds both local source control and pull-request Review — switch between them in its header.',
       'Terminal and Browser support multiple tab instances; other tools are single-instance toggles.',
+      'Expand Running at the foot of any Terminal tab to see and stop agent commands, preview servers, and other terminals across sessions.',
       'Changes (Ctrl+G) is Coding-only; Files needs a Coding workspace.',
-      'Toggle the same tool again to close it — the workbench is not a pile of permanent cards.',
-      'When opening the workbench with a Coding workspace and no tool selected, Overview opens by default.'
+      'Toggle the same tool again to close it — the workbench is not a pile of permanent cards.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Overview, Terminal, Browser, Files, Files, Side chat, Memory (wiki), Scheduler, and Changes (source control plus pull/merge request Review). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
+        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Terminal, Browser, Files, Side chat, Memory (wiki), Scheduler, and Changes (source control plus pull/merge request Review). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
       },
       {
         type: 'p',
@@ -1059,11 +1056,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Overview — Coding workspace / git / session / tool status at a glance.',
-          'Terminal — run commands in the active workspace.',
+          'Terminal — run commands in the active workspace; its Running bar lists and stops managed processes.',
           'Browser — in-app browser (enable in Settings → Browser).',
           'Files — workspace files and generated artifacts.',
-          'Files — structural source search (Coding).',
           'Side chat — /btw parallel questions.',
           'Memory — wiki + pending notes.',
           'Scheduler — cron / one-shot tasks (panel only; /scheduler redirects home).',
@@ -1217,14 +1212,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Managed worktrees nest under the source repo in the sidebar tree.',
       'Standalone repos remain valid single-workspace sessions without a project.',
       'Run /init in a Coding session to create or update AGENTS.md for agent conventions.',
-      'Open Coding Overview from the workbench when a workspace is selected for status at a glance.',
       'Commit or stash before spawning a worktree if you need those dirty changes elsewhere — they will not appear in the new tree.',
       'Prefer a project when services share APIs across repos; prefer a single repo when the change set is local.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Coding mode manages git repositories, optional multi-repo projects, and managed worktrees. Agents edit real trees with Files, Files, Terminal, Changes, and Review tools available beside chat. This is the mode for persistent engineering work.',
+        text: 'Coding mode manages git repositories, optional multi-repo projects, and managed worktrees. Agents edit real trees with Files, Terminal, Changes, and Review tools available beside chat. This is the mode for persistent engineering work.',
       },
       {
         type: 'p',
@@ -1232,7 +1226,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Add a repo from the Coding sidebar. Click to focus; press + / New chat for a session. Create a Project to bind multiple repos. Spawn a worktree from the repo menu; choose repository-local vs user_data location in Settings → Sandbox. Use /init to scaffold or refresh AGENTS.md. Files and Overview enable once a workspace is active.',
+        text: 'Add a repo from the Coding sidebar. Click to focus; press + / New chat for a session. Create a Project to bind multiple repos. Spawn a worktree from the repo menu; choose repository-local vs user_data location in Settings → Sandbox. Use /init to scaffold or refresh AGENTS.md. Files enables once a workspace is active.',
       },
       {
         type: 'tips',
@@ -1241,13 +1235,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Projects — multi-repo under one project_id.',
           'Worktrees — clean trees; uncommitted source not copied.',
           '/init — AGENTS.md for Coding conventions.',
-          'Sandbox — worktree location policy.',
-          'Overview — status once a workspace is focused.'
+          'Sandbox — worktree location policy.'
 ],
       },
       {
         type: 'p',
-        text: 'Step-by-step first Coding session: (1) switch to Coding, (2) add the git repo, (3) click to focus, (4) + / New chat, (5) /init if AGENTS.md is missing, (6) set permission mode, (7) @ key files and describe the change, (8) open Overview to confirm workspace health.',
+        text: 'Step-by-step first Coding session: (1) switch to Coding, (2) add the git repo, (3) click to focus, (4) + / New chat, (5) /init if AGENTS.md is missing, (6) set permission mode, (7) @ key files and describe the change, (8) open Changes to confirm the branch and working tree.',
       },
       {
         type: 'p',

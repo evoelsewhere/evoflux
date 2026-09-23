@@ -4,9 +4,7 @@ import {
   Files,
   GitBranch,
   Globe2,
-  LayoutDashboard,
   MessageCirclePlus,
-  ListTree,
   Blocks,
   CircleAlert,
   Terminal,
@@ -25,21 +23,11 @@ export const WORKBENCH_TOOLS: Record<
   WorkbenchTool,
   { label: string; description: string; icon: LucideIcon; shortcut?: string }
 > = {
-  overview: {
-    label: 'Overview',
-    description: 'See workspace, Git, session, and tool status at a glance',
-    icon: LayoutDashboard,
-  },
   terminal: {
     label: 'Terminal',
     description: 'Run commands in the active workspace',
     icon: Terminal,
     shortcut: '^`',
-  },
-  processes: {
-    label: 'Processes',
-    description: 'See and stop commands, previews, and terminal sessions',
-    icon: ListTree,
   },
   browser: {
     label: 'Browser',
@@ -96,9 +84,6 @@ export function isWorkbenchToolEnabled(
   tool: WorkbenchTool,
   context: WorkbenchContext,
 ): boolean {
-  if (tool === 'overview') {
-    return context.mode === 'coding' && Boolean(context.workspace)
-  }
   if (tool === 'problems') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }

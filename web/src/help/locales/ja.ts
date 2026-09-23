@@ -199,7 +199,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'サイドバーは折りたたむと完全に消えます。Ctrl+B またはフローティングボタンで再表示できます。',
       'Settings 中はモードスイッチャーが隠れます。再び切り替えるには Settings を離れます。',
       'Work は調査・ドキュメント・ブラウザ作業・捨てスクリプト向け; Coding は永続リポジトリ向け。',
-      '権限モード、スラッシュ、大半の workbench ツールはモード横断; Overview / Files / Changes / Review は Coding スコープです。',
+      '権限モード、スラッシュ、大半の workbench ツールはモード横断; Changes / Review / Problems は Coding スコープです。',
       'Work で git モノレポを開き Changes/Review を期待しないでください — Coding に切り替えてソースコントロールを付けます。',
       '並列調査スレッドには Work フォルダ + share_context; リポジトリを紐づけたままにするなら Coding プロジェクト。',
       'モード記憶はウィンドウ単位ではなくモード単位 — 空白の Coding ホームを期待したなら、古いワークスペースルートが復元されていないか確認。'
@@ -770,7 +770,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '/new するとき — 汚染されたコンテキストバーでの話題変更。',
           '/compact するとき — 同じ話題、予算上昇、連続性を保つ。',
           '/stop するとき — runaway ツールや誤った fan-out; その後依頼を言い直す。',
-          '横断: 新しいレポを開いたあと /init + Coding Overview。'
+          '横断: 新しいレポを開いたあと /init。'
 ],
       }
 ],
@@ -978,15 +978,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench ツール',
     summary:
-      'Terminal、Browser、Files、Files、Side chat、Memory、Scheduler、Changes、Review をチャット横で開きます。ショートカットは OS に合わせ、macOS は Command、Windows/Linux は Ctrl を使います。',
+      'Terminal、Browser、Files、Side chat、Memory、Scheduler、Changes、Review をチャット横で開きます。ショートカットは OS に合わせ、macOS は Command、Windows/Linux は Ctrl を使います。',
     keywords: [
       'workbench',
       'panel',
       'terminal',
       'files',
       'dock',
-      'overview',
-      'source search',
       'Changes',
       'Review',
       'Ctrl+F',
@@ -999,22 +997,21 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ファイル'
 ],
     setup:
-      'まずセッションを開きます。Coding Overview、Files、ローカルの Changes には Coding ワークスペースが必要。内蔵 Browser は Settings → Browser で有効にしてから Ctrl+T が役立ちます。',
+      'まずセッションを開きます。Coding の Files とローカルの Changes には Coding ワークスペースが必要。内蔵 Browser は Settings → Browser で有効にしてから Ctrl+T が役立ちます。',
     tricks: [
       'workbench バー、ドック、または下記ショートカットからツールを開きます。',
-      'Coding Overview はワークスペース選択時のみ表示。',
       'ランタイムショートカットとラベルは OS に合わせ、macOS は Command、Windows/Linux は Ctrl。',
       '実マッピング: Files = Ctrl+F（ラベルは ⌘P の場合あり）; Side chat = Ctrl+;（ラベルは ⌥⌘S の場合あり）。',
       'Changes はローカルのソースコントロールと pull request の Review を兼ねます — ヘッダーで切り替え。',
       'Terminal と Browser は複数タブインスタンス対応; 他ツールは単一インスタンスのトグル。',
+      'どの Terminal タブでも下部の Running を開くと、全セッションのエージェントコマンド、プレビューサーバー、他のターミナルを確認・停止できます。',
       'Changes（Ctrl+G）は Coding のみ; Files には Coding ワークスペースが必要。',
-      '同じツールをもう一度トグルで閉じる — workbench は常設カードの山ではありません。',
-      'Coding ワークスペースあり・ツール未選択で workbench を開くと、既定で Overview が開きます。'
+      '同じツールをもう一度トグルで閉じる — workbench は常設カードの山ではありません。'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Workbench はチャット横の右（またはドック）ツール面です。ツール: Overview、Terminal、Browser、Files、Files、Side chat、Memory（wiki）、Scheduler、Changes（ソースコントロールと pull/merge request の Review）。チャットが主; ツールはワンショートカット先の検査とアクション面です。',
+        text: 'Workbench はチャット横の右（またはドック）ツール面です。ツール: Terminal、Browser、Files、Side chat、Memory（wiki）、Scheduler、Changes（ソースコントロールと pull/merge request の Review）。チャットが主; ツールはワンショートカット先の検査とアクション面です。',
       },
       {
         type: 'p',
@@ -1036,11 +1033,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Overview — Coding ワークスペース / git / セッション / ツール状態の一覧。',
-          'Terminal — アクティブワークスペースでコマンド実行。',
+          'Terminal — アクティブワークスペースでコマンド実行; Running バーで管理プロセスを一覧・停止。',
           'Browser — アプリ内ブラウザ（Settings → Browser で有効化）。',
           'Files — ワークスペースファイルと生成成果物。',
-          'Files — 構造コードグラフ（Coding）。',
           'Side chat — /btw 並列質問。',
           'Memory — wiki + 保留メモ。',
           'Scheduler — cron / ワンショットタスク（パネルのみ; /scheduler はホームへリダイレクト）。',
@@ -1192,14 +1187,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '管理 worktree はサイドバーツリーでソースレポの下にネスト。',
       'スタンドアロンレポはプロジェクトなしの有効な単一ワークスペースセッションのまま。',
       'Coding セッションで /init を実行し、エージェント慣例用 AGENTS.md を作成または更新。',
-      'ワークスペース選択時に workbench から Coding Overview を開き状態を一覧。',
       '汚れた変更が別の場所でも必要なら worktree 作成前に commit または stash — 新しいツリーには現れません。',
       'サービスがレポ横断で API を共有するならプロジェクト; 変更セットがローカルなら単一レポを優先。'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Coding モードは git リポジトリ、任意のマルチレポプロジェクト、管理 worktree を扱います。エージェントは Files、Files、Terminal、Changes、Review をチャット横で使い実ツリーを編集します。永続エンジニアリング作業向けのモードです。',
+        text: 'Coding モードは git リポジトリ、任意のマルチレポプロジェクト、管理 worktree を扱います。エージェントは Files、Terminal、Changes、Review をチャット横で使い実ツリーを編集します。永続エンジニアリング作業向けのモードです。',
       },
       {
         type: 'p',
@@ -1207,7 +1201,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Coding サイドバーからレポを追加。クリックでフォーカス; + / New chat でセッション。Project を作り複数レポをバインド。レポメニューから worktree を生成; Settings → Sandbox で repository-local vs user_data。/init で AGENTS.md を足場または更新。ワークスペースがアクティブになると Files と Overview が有効。',
+        text: 'Coding サイドバーからレポを追加。クリックでフォーカス; + / New chat でセッション。Project を作り複数レポをバインド。レポメニューから worktree を生成; Settings → Sandbox で repository-local vs user_data。/init で AGENTS.md を足場または更新。ワークスペースがアクティブになると Files が有効。',
       },
       {
         type: 'tips',
@@ -1216,13 +1210,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Projects — 1 つの project_id 下のマルチレポ。',
           'Worktrees — クリーンツリー; 未コミットソースはコピーされない。',
           '/init — Coding 慣例用 AGENTS.md。',
-          'Sandbox — worktree 配置ポリシー。',
-          'Overview — ワークスペースフォーカス後の状態。'
+          'Sandbox — worktree 配置ポリシー。'
 ],
       },
       {
         type: 'p',
-        text: '最初の Coding セッション手順: (1) Coding へ切り替え、(2) git レポを追加、(3) クリックでフォーカス、(4) + / New chat、(5) AGENTS.md がなければ /init、(6) 権限モード設定、(7) 主要ファイルを @ して変更を記述、(8) Overview でワークスペース健全性を確認。',
+        text: '最初の Coding セッション手順: (1) Coding へ切り替え、(2) git レポを追加、(3) クリックでフォーカス、(4) + / New chat、(5) AGENTS.md がなければ /init、(6) 権限モード設定、(7) 主要ファイルを @ して変更を記述、(8) Changes でブランチと作業ツリーを確認。',
       },
       {
         type: 'p',
