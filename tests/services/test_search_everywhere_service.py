@@ -34,9 +34,6 @@ async def test_search_aggregates_repository_paths_and_problems(tmp_path: Path):
     with (
         patch("app.services.search_everywhere_service._git_items", empty_async),
         patch("app.services.search_everywhere_service._skill_items", return_value=[]),
-        patch(
-            "app.services.search_everywhere_service._workflow_items", return_value=[]
-        ),
     ):
         path_rows = await search_everywhere(tmp_path, "auth_service")
         problem_rows = await search_everywhere(tmp_path, "callback")
@@ -75,9 +72,6 @@ async def test_search_deduplicates_and_respects_global_limit(tmp_path: Path):
         ),
         patch("app.services.search_everywhere_service._problem_items", return_value=[]),
         patch("app.services.search_everywhere_service._skill_items", return_value=[]),
-        patch(
-            "app.services.search_everywhere_service._workflow_items", return_value=[]
-        ),
     ):
         rows = await search_everywhere(tmp_path, "app", limit=1)
 

@@ -29,7 +29,6 @@ test-artifacts/  Checked-in visual evidence used by selected tests/reviews
 | `app/agent/mcp/` | User-global MCP configuration and runtime |
 | `app/plugin_platform/` | Portable Agent Plugin lifecycle and isolated MCP |
 | `app/services/` | Business logic shared by API, CLI and agents |
-| `app/workflow/` | Workflow schema, graph, runner and node handlers |
 | `app/scheduler/` | At/every/cron scheduling and team dispatch |
 | `app/conductor/` | Optional managed-resource control plane client |
 | `app/models/` | Application SQLModel tables |
@@ -38,7 +37,7 @@ test-artifacts/  Checked-in visual evidence used by selected tests/reviews
 | `app/cli/` | `evoflux` command-line interface |
 
 Backend changes must follow the nearest `AGENTS.md`; routes stay thin and
-durable logic belongs in services, agent runtime, workflow, or core modules.
+durable logic belongs in services, agent runtime, scheduler, or core modules.
 
 ## Frontend map
 
@@ -78,7 +77,7 @@ dependency.
 ## Test ownership
 
 The Python suite mirrors the backend layout: `tests/agent`, `tests/api`,
-`tests/services`, `tests/core`, `tests/workflow`, `tests/scheduler`,
+`tests/services`, `tests/core`, `tests/scheduler`,
 `tests/plugin_platform`, `tests/conductor`, `tests/cli`, and packaging tests.
 Frontend tests live under `web/src/__tests__`; Rust unit tests are colocated in
 `desktop/src-tauri/src`.

@@ -19,7 +19,7 @@ export const HELP_CATEGORIES_EN: HelpCategory[] = [
   {
     id: 'composer',
     label: 'Composer',
-    description: 'Mentions, attachments, skills, and workflows',
+    description: 'Mentions, attachments, and skills',
   },
   {
     id: 'slash',
@@ -242,7 +242,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: Ctrl+B toggles the mode sidebar the same way in every mode.',
           'Cross-feature: Scheduler tasks target work or coding mode explicitly — set the right mode on the task.',
-          'Cross-feature: workflows can be scoped per mode, so a Coding-only workflow stays hidden in Work; Skills are available in both modes.'
+          'Cross-feature: Skills are available in both modes.'
 ],
       },
       {
@@ -518,7 +518,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'composer',
     title: 'Composer power features',
     summary:
-      'Use /, !, @, $ skills, # snippets, attachments, quote selection, Work folder targeting, and workflows with RunInputsDialog. Undo restores attachments too, so drafts stay recoverable after a bad send.',
+      'Use /, !, @, $ skills, # snippets, attachments, quote selection, and Work folder targeting. Undo restores attachments too, so drafts stay recoverable after a bad send.',
     keywords: [
       'composer',
       'mention',
@@ -530,8 +530,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'paste',
       'skill',
       '$skill-name',
-      'workflow',
-      'RunInputsDialog',
       'WorkFolderSelector',
       'quote',
       '!',
@@ -550,7 +548,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Type @ to insert ranked file/folder path references from the active workspace.',
       'In Coding, type # to expand workspace or global snippets into the composer.',
       'Type $ to pick a skill; $skill-name works anywhere in the message and you can name several (not inside > quote lines or code blocks).',
-      'Workflows open RunInputsDialog when required and never send the raw slash text as chat.',
       'Undo restores the previous user message and its attachments into the composer.',
       'Paste images/files or drag-drop onto the composer when attachments are enabled.',
       'Select transcript text for Add to chat, more details, or Send to side chat.',
@@ -560,28 +557,27 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'The composer is more than a text box: slash menu (/), shell bang (!), path mentions (@), skill mentions ($), Coding snippets (#), file attachments, quote context chips, WorkFolderSelector for Work sessions, and approved workflows. Mastering these affordances is the difference between dumping trees into the prompt and steering with precision.',
+        text: 'The composer is more than a text box: slash menu (/), shell bang (!), path mentions (@), skill mentions ($), Coding snippets (#), file attachments, quote context chips, and WorkFolderSelector for Work sessions. Mastering these affordances is the difference between dumping trees into the prompt and steering with precision.',
       },
       {
         type: 'p',
-        text: 'These controls keep context precise without flooding the model. Skills and workflows package repeatable procedures; attachments and quotes pin evidence; WorkFolderSelector retargets the session folder without opening the Files tool. Shell bang is for deliberate commands, not a substitute for Terminal when you need a long interactive session.',
+        text: 'These controls keep context precise without flooding the model. Skills package repeatable procedures; attachments and quotes pin evidence; WorkFolderSelector retargets the session folder without opening the Files tool. Shell bang is for deliberate commands, not a substitute for Terminal when you need a long interactive session.',
       },
       {
         type: 'p',
-        text: 'Type / to open the command menu (built-ins, workflows, custom .evoflux/commands/). Type $ to pick a skill: the agent already sees every enabled skill\'s name and description and reads its SKILL.md when a task matches, but `$skill-name` makes it use that skill now. Prefix with ! for shell. Use @ to pick paths. In Coding, # expands snippets. Drag-drop or paste files onto the bar. On Work sessions, use WorkFolderSelector near the composer to point at a private session folder or another local directory. After /undo, both text and attachments return to the draft.',
+        text: 'Type / to open the command menu (built-ins, custom .evoflux/commands/). Type $ to pick a skill: the agent already sees every enabled skill\'s name and description and reads its SKILL.md when a task matches, but `$skill-name` makes it use that skill now. Prefix with ! for shell. Use @ to pick paths. In Coding, # expands snippets. Drag-drop or paste files onto the bar. On Work sessions, use WorkFolderSelector near the composer to point at a private session folder or another local directory. After /undo, both text and attachments return to the draft.',
       },
       {
         type: 'tips',
         items: [
-          '/ — slash commands, workflows, custom commands',
+          '/ — slash commands, custom commands',
           '$ — skills; any position, several per message',
           '! — shell mode for the rest of the line',
           '@ — file/folder mentions',
           '# — snippets (Coding workspaces)',
           'DnD / paste — attachments when enabled',
           'Quote selection — Add to chat or Send to side chat',
-          'WorkFolderSelector — retarget Work session folder',
-          'RunInputsDialog — workflow parameters before launch'
+          'WorkFolderSelector — retarget Work session folder'
 ],
       },
       {
@@ -590,7 +586,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: sending raw `/workflow name` text hoping it runs (workflows launch through the menu/dialog); typing a skill name with capitals or spaces (skill names are lowercase with hyphens, e.g. `$code-review`); using # in Work expecting Coding snippets; pasting secrets into the composer instead of configuring Providers; forgetting that /undo restores attachments — re-send carefully if the files were sensitive.',
+        text: 'Common mistakes: typing a skill name with capitals or spaces (skill names are lowercase with hyphens, e.g. `$code-review`); using # in Work expecting Coding snippets; pasting secrets into the composer instead of configuring Providers; forgetting that /undo restores attachments — re-send carefully if the files were sensitive.',
       },
       {
         type: 'tips',
@@ -603,7 +599,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Workflows must be approved and valid for the session scope (work / coding) or they stay hidden. The $ picker lists only skills that are valid, turned on in Settings → Skills, and user-invocable. If a command or skill is missing, check scope, validation, and the skill\'s switch before assuming a composer bug.',
+        text: 'The $ picker lists only skills that are valid, turned on in Settings → Skills, and user-invocable. If a command or skill is missing, check scope, validation, and the skill\'s switch before assuming a composer bug.',
       }
 ],
     related: [
@@ -710,7 +706,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'slash',
     title: 'Built-in slash commands',
     summary:
-      'Type / in the composer for stop, compact, undo, init, btw, goal, workflows, and custom commands from .evoflux/commands/. Built-ins run immediately; custom entries usually insert so you can finish arguments. Skills use $skill-name instead of a slash command.',
+      'Type / in the composer for stop, compact, undo, init, btw, goal, and custom commands from .evoflux/commands/. Built-ins run immediately; custom entries usually insert so you can finish arguments. Skills use $skill-name instead of a slash command.',
     setup:
       'Focus the composer and type /. Place project or global custom commands under `.evoflux/commands/` (compatible OpenCode paths also work).',
     keywords: [
@@ -721,7 +717,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       '/init',
       '/btw',
       '/goal',
-      '/workflow',
       'command',
       '.evoflux/commands',
       'lệnh',
@@ -734,7 +729,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Longest-prefix match; : and / are interchangeable for nested command names.',
       'Custom commands live under project or global .evoflux/commands/ (and compatible OpenCode paths).',
       'Skills are not slash commands: type $ to pick one, or write $skill-name anywhere in the message.',
-      'Workflows must be approved and valid for the session scope (work / coding) or they stay hidden.',
       '/compact early when the context budget bar climbs — waiting for failure wastes a turn.',
       '/init is Coding-oriented for AGENTS.md scaffolding.',
       '/stop is the panic button for runaway specialist fan-out; pair with a clearer next instruction.',
@@ -743,7 +737,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Slash commands are first-class composer actions. Built-ins control the team run; goal subcommands manage durable objectives; workflows launch structured runs; user-defined Markdown/YAML commands expand server-side. The menu is searchable — type a few letters to filter.',
+        text: 'Slash commands are first-class composer actions. Built-ins control the team run; goal subcommands manage durable objectives; user-defined Markdown/YAML commands expand server-side. The menu is searchable — type a few letters to filter.',
       },
       {
         type: 'p',
@@ -766,13 +760,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { cmd: '/goal:budget <tokens|none>', desc: 'Set or clear the goal token budget' },
           { cmd: '/goal:pause', desc: 'Pause the active goal' },
           { cmd: '/goal:resume', desc: 'Resume a paused goal' },
-          { cmd: '/goal:stop', desc: 'Remove the session goal' },
-          { cmd: '/workflow <name>', desc: 'Run an approved workflow (may open RunInputsDialog)' }
+          { cmd: '/goal:stop', desc: 'Remove the session goal' }
 ],
       },
       {
         type: 'p',
-        text: 'Type / to filter commands. Pick a built-in to run it, or a custom/workflow entry to insert or launch. Place custom files under `.evoflux/commands/` in the project or your global EvoFlux config. Nested names prefer longest prefix; use either `:` or `/` as separators. Workflows may open RunInputsDialog and never send the raw slash line as ordinary chat.',
+        text: 'Type / to filter commands. Pick a built-in to run it, or a custom entry to insert it. Place custom files under `.evoflux/commands/` in the project or your global EvoFlux config. Nested names prefer longest prefix; use either `:` or `/` as separators.',
       },
       {
         type: 'tips',
@@ -780,7 +773,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Built-in — executes on pick',
           'Custom — usually inserts; append $ARGUMENTS',
           'Skill — not a slash command; type $skill-name',
-          'Workflow — scope + approval required or hidden',
           'Longest prefix — parent:child nesting with : or /'
 ],
       },
@@ -790,7 +782,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: expecting `/scheduler` to open a page (use Ctrl+S — the route redirects home); treating missing workflows as a composer bug when scope/approval is wrong; running /compact so late that the summary drops the constraint you still needed; using /undo thinking it reverts git commits — it only restores the prior user message draft.',
+        text: 'Common mistakes: expecting `/scheduler` to open a page (use Ctrl+S — the route redirects home); running /compact so late that the summary drops the constraint you still needed; using /undo thinking it reverts git commits — it only restores the prior user message draft.',
       },
       {
         type: 'tips',
@@ -2191,7 +2183,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'Cross-feature: a Coding skill teaches the workflow; native source search validates and executes every retrieval action.',
-          'Cross-feature: workflows need scope validity to show in /; skills need to be valid and switched on to show in $.',
+          'Cross-feature: skills need to be valid and switched on to show in $.',
           'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.'
 ],
       }

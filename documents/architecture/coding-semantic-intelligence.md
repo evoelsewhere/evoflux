@@ -161,7 +161,7 @@ abort signal.
 
 `POST /api/team/workspace/search-everywhere` covers the authorized workspace:
 files, folders, symbols, text/code, Git branches and commits, Problems, skills,
-workflows, and recent files. Caller-shaped natural language queries are routed
+and recent files. Caller-shaped natural language queries are routed
 to repository search; known navigation phrases can route directly to the
 corresponding action.
 

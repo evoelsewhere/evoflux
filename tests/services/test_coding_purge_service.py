@@ -18,7 +18,6 @@ from app.models.chat import (
     DreamLog,
     SessionMessage,
 )
-from app.models.workflow import WorkflowExecution, WorkflowNodeRun
 from app.scheduler.models import ScheduledTask
 from app.services import coding_purge_service as purge
 from app.services.coding_project_service import create_project
@@ -45,7 +44,6 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
     lead_id = uuid.uuid7()
     child_id = uuid.uuid7()
     side_id = uuid.uuid7()
-    execution_id = uuid.uuid7()
 
     async with db_module.async_session_factory() as db:
         async with db.begin():
@@ -73,21 +71,6 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
                     processed_at=datetime.now(timezone.utc),
                 )
             )
-            db.add(
-                WorkflowExecution(
-                    id=execution_id,
-                    definition_name="test",
-                    definition_hash="b" * 64,
-                    session_id=lead_id,
-                )
-            )
-            db.add(
-                WorkflowNodeRun(
-                    execution_id=execution_id,
-                    node_id="node",
-                    status="succeeded",
-                )
-            )
 
     generated_paths = (
         workspace_dir(str(lead_id)),
@@ -108,8 +91,6 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
         assert (await db.exec(select(ChatSession))).all() == []
         assert (await db.exec(select(SessionMessage))).all() == []
         assert (await db.exec(select(DreamLog))).all() == []
-        assert (await db.exec(select(WorkflowExecution))).all() == []
-        assert (await db.exec(select(WorkflowNodeRun))).all() == []
         assert (await db.exec(select(CodingWorkspace))).all() == []
 
 

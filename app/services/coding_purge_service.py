@@ -40,17 +40,11 @@ from app.models.webbridge import (
     WebBridgeTeachDraft,
     WebBridgeTeachReplay,
 )
-from app.models.workflow import (
-    WorkflowExecution,
-    WorkflowGateRequest,
-    WorkflowNodeRun,
-)
 from app.scheduler.models import ScheduledTask
 from app.scheduler.scheduler import task_scheduler
 from app.services import agent_service, memory_stream_store, team_manager
 from app.services.snapshot_service import snapshot_dir
 from app.services.terminal_service import terminal_manager
-from app.workflow.runner import runner as workflow_runner
 
 
 class PurgeConflictError(ValueError):
@@ -98,9 +92,6 @@ async def _stop_session_runtime(session_ids: set[UUID]) -> None:
     await team_manager.stop_sessions(string_ids)
     for session_id in string_ids:
         agent_service.cancel_deferred_user_message(session_id)
-        state = workflow_runner.active.get(session_id)
-        if state is not None:
-            await workflow_runner.stop(state.execution_id)
         for terminal_id in terminal_manager.list_terminals(session_id):
             await terminal_manager.close(session_id, terminal_id=terminal_id)
         await memory_stream_store.clear(session_id)
@@ -124,16 +115,6 @@ async def _purge_session_rows(
     for session_id in session_ids:
         await forget_session_memory(db, session_id)
 
-    executions = list(
-        (
-            await db.exec(
-                select(WorkflowExecution).where(
-                    col(WorkflowExecution.session_id).in_(session_ids)
-                )
-            )
-        ).all()
-    )
-    execution_ids = {execution.id for execution in executions}
     drafts = list(
         (
             await db.exec(
@@ -145,22 +126,6 @@ async def _purge_session_rows(
     )
     draft_ids = {draft.id for draft in drafts}
 
-    if execution_ids:
-        await db.exec(
-            delete(WorkflowGateRequest).where(
-                col(WorkflowGateRequest.execution_id).in_(execution_ids)
-            )
-        )
-        await db.exec(
-            delete(WorkflowNodeRun).where(
-                col(WorkflowNodeRun.execution_id).in_(execution_ids)
-            )
-        )
-        await db.exec(
-            delete(WorkflowExecution).where(
-                col(WorkflowExecution.id).in_(execution_ids)
-            )
-        )
     if draft_ids:
         await db.exec(
             delete(WebBridgeTeachReplay).where(

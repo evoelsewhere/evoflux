@@ -34,7 +34,6 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/mcp` | global/plugin server status and global MCP lifecycle | `mcp.py` |
 | `/api/plugins` | package inspection/install/editor/credentials/lifecycle | `plugins.py` |
 | `/api/settings` | providers, sandbox, Git, browser and Conductor | `settings.py` |
-| `/api/workflows` | definitions, approval, run and execution status | `workflows.py` |
 | `/api/scheduler` | task CRUD, pause/resume and trigger | `scheduler.py` |
 | `/api/wiki` | validated Markdown tree/file operations | `wiki.py` |
 | `/api/dream` | config, manual run/status and lint | `dream.py` |
@@ -76,7 +75,7 @@ stream endpoints.
 
 The SSE `data` payload is a structured envelope. Event types include content
 deltas, tool/activity blocks, member status, permissions, plan review,
-questions, queues, usage, goal/workflow updates, errors and completion. Clients
+questions, queues, usage, goal updates, errors and completion. Clients
 must tolerate additional event fields/types and reconnect using durable history
 rather than assuming one uninterrupted socket.
 

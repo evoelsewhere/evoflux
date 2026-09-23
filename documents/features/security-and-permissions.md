@@ -24,8 +24,8 @@ Session permission modes resolve `ask` as follows:
 
 User replies can allow once, add a session-scoped always rule, or reject. A mode
 change resolves pending requests that the new mode permits. Permission modes do
-not bypass filesystem sandboxing, browser policies, provider capability checks,
-workflow approval or Conductor enforcement.
+not bypass filesystem sandboxing, browser policies, provider capability checks
+or Conductor enforcement.
 
 ## Filesystem and shell sandbox
 
@@ -63,8 +63,6 @@ CORS origins.
 - Code-review connections default to TLS verification and bounded provider
   hosts/media.
 - Browser and WebBridge have independent domain/action/sharing policies.
-- Workflow direct tool execution requires hash-bound approval and remains pinned
-  to its workspace sandbox.
 - Memory and Dream treat source text as data, reject secrets and preserve scope.
 
 ## Conductor

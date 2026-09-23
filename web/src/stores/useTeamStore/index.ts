@@ -304,7 +304,6 @@ const SESSION_OWNED_KEYS = [
   'error',
   'activeGoal',
   'suggestedTasks',
-  'activeWorkflowExecution',
   'setupRequired',
   'browserSession',
   'planApproval',
@@ -424,7 +423,6 @@ function resetSessionState(
   state.error = null
   state.activeGoal = null
   state.suggestedTasks = []
-  state.activeWorkflowExecution = null
   state.setupRequired = null
   state.planApproval = null
   state.turnChanges = null
@@ -543,7 +541,6 @@ export const useTeamStore = create<TeamStore>()(
     error: null,
     activeGoal: null,
     suggestedTasks: [],
-    activeWorkflowExecution: null,
     setupRequired: null,
     browserSession: null,
     planApproval: null,
@@ -1431,17 +1428,6 @@ export const useTeamStore = create<TeamStore>()(
                 }
               : null
             draft.activeGoal = history.goal ?? null
-            draft.activeWorkflowExecution = history.workflow_execution
-              ? {
-                  executionId: String(history.workflow_execution.execution_id),
-                  definitionName: history.workflow_execution.definition_name,
-                  status: history.workflow_execution.status,
-                  nodeId: history.workflow_execution.node_id,
-                  nodeIndex: history.workflow_execution.node_index,
-                  totalNodes: history.workflow_execution.total_nodes,
-                  error: null,
-                }
-              : null
 
             Object.values(draft.agentStreams).forEach((stream) => {
               stream.revertedCount = 0

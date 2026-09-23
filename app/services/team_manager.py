@@ -406,8 +406,7 @@ def current_team_for_session(session_id: str) -> "AgentTeam | None":
 
 def find_team_for_session(session_id: str) -> "AgentTeam | None":
     """Any live team currently bound to *session_id*, regardless of mode —
-    work teams key by session id, coding teams by (workspace, session).
-    Used by the workflow runner, which only has a session id."""
+    work teams key by session id, coding teams by (workspace, session)."""
     team = _session_teams.get(session_id)
     if team is not None:
         return team

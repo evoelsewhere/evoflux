@@ -67,7 +67,7 @@ Legacy bare Coding session URLs are resolved through the session API when they
 do not identify a current workspace/project.
 
 The session history endpoint returns the lead transcript, specialist
-transcripts, goal and live workflow projection. Cursor pagination keeps long
+transcripts and goal projection. Cursor pagination keeps long
 history bounded. The live SSE stream then layers current activity over the
 durable replay.
 

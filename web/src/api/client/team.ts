@@ -294,7 +294,6 @@ export async function getPendingQuestions(sessionId: string): Promise<{
     items: Array<{
       question: string
       options: string[]
-      strict?: boolean
       kind?: 'text' | 'agent_spawn'
       agent_spawn?: {
         blueprint: string

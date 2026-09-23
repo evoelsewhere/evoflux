@@ -59,7 +59,7 @@ async def test_reply_publishes_question_replied_sse():
 async def test_interrupt_cancel_publishes_question_replied_sse():
     svc = AskUserService("sess-2", stream_session_id="lead-2")
     task = asyncio.create_task(
-        svc.ask([QuestionSpec(question="Gate?", options=["a", "b"], strict=True)])
+        svc.ask([QuestionSpec(question="Gate?", options=["a", "b"])])
     )
     request_id = await _pending_id(svc)
 

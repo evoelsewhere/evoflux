@@ -39,7 +39,7 @@ cache rather than maintaining a second durable truth in component state.
 
 - Work or Coding sidebar;
 - transcript, streaming activity and agent switching;
-- composer, attachments, skills, snippets, commands and workflow invocation;
+- composer, attachments, skills, snippets and commands;
 - plan, permission and question interaction surfaces;
 - single and Split layouts;
 - a lazy workbench dock for files, editor, Git, graph, Problems, terminal,
@@ -72,7 +72,7 @@ loading does not move the text currently under the reader.
 `useTeamSse` connects/reconnects the session stream and projects envelope types
 into the team store. Replayed history is loaded before live deltas. Event
 handlers preserve partial turns, member streams, queued messages, todos, goal
-progress, workflow progress, tool blocks, plan requests and terminal states.
+progress, tool blocks, plan requests and terminal states.
 
 Any backend SSE shape change must update all of:
 

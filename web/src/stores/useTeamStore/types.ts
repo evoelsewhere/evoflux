@@ -67,16 +67,6 @@ export interface AgentStream {
   _revertedSuffix?: ContentBlock[]
 }
 
-export interface ActiveWorkflowExecution {
-  executionId: string
-  definitionName: string
-  status: string
-  nodeId: string | null
-  nodeIndex: number | null
-  totalNodes: number
-  error: string | null
-}
-
 export interface BrowserTabInfo {
   index: number
   url: string
@@ -132,7 +122,6 @@ export interface TeamStoreState {
   activeGoal: GoalResponse | null
   /** Open suggestion chips for this session, oldest first. */
   suggestedTasks: SuggestedTask[]
-  activeWorkflowExecution: ActiveWorkflowExecution | null
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
   planApproval: PlanApprovalPending | null

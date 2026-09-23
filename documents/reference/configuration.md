@@ -40,10 +40,8 @@ Derived values:
 | `<config>/mcp.json` | user/Settings | global stdio/HTTP MCP servers |
 | `<config>/sandbox.yaml` | user/Settings | denied paths and outbound policy |
 | `<config>/model_registry.yaml` | operator | model capability/metadata corrections |
-| `<config>/workflows/*.yaml` | user | global Workflow definitions |
 | `<config>/plugins/*.py` | trusted user | legacy in-process hook plugins |
 | `<data>/agent-plugins/` | Plugin Center | installed package registry and private data |
-| `<workspace>/.evoflux/workflows/*.yaml` | repository | project-local Coding Workflows |
 | `<workspace>/.evoflux/launch.json` | repository | preview/process launch definitions |
 
 Project `.env` is loaded first and `~/.config/evoflux/.env` overrides it.

@@ -1398,8 +1398,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   )
 
   // Command heads the overlay may highlight: the first token of each
-  // non-skill entry, so ``/workflow release-check`` lights up its ``/workflow``
-  // and a mistyped ``/wrkflow`` stays plain.
+  // non-skill entry, so ``/goal:budget 5000`` lights up its ``/goal:budget``
+  // and a mistyped ``/gaol`` stays plain.
   const composerCommandNames = useMemo(
     () => new Set(
       slashCommands

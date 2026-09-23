@@ -26,7 +26,7 @@ flowchart LR
 |---|---|---|
 | Tauri shell | Native windows, sidecar supervision, token handshake, tray, updater, persistent browser, packaging | Agent logic or application persistence |
 | React WebView | Navigation, chat/workbench UI, cached server state, streaming projections, Settings | Durable business rules |
-| FastAPI sidecar | API, agent loop, teams, tools, persistence, scheduler, workflows, coding tools, memory, MCP, policy | Native package lifecycle |
+| FastAPI sidecar | API, agent loop, teams, tools, persistence, scheduler, coding tools, memory, MCP, policy | Native package lifecycle |
 | Provider/MCP child processes | Provider requests or configured tool servers | EvoFlux authorization decisions |
 
 ## Startup and shutdown
@@ -36,9 +36,8 @@ The sidecar emits an `EVOFLUX_HANDSHAKE` line containing its port, random token,
 PID, and version. Tauri waits for `/api/health/live`, injects the backend URL and
 token into the WebView, and keeps the sidecar tied to the shell PID.
 
-FastAPI critical startup initializes runtime directories, reconciles orphaned
-workflow executions, migrates the production database, seeds the wiki, and
-sets up telemetry. MCP, plugin MCP, Conductor, agent validation, Scheduler, and
+FastAPI critical startup initializes runtime directories, migrates the
+production database, seeds the wiki, and sets up telemetry. MCP, plugin MCP, Conductor, agent validation, Scheduler, and
 Dream start as optional background services so the health endpoint becomes
 available without waiting for external I/O.
 
@@ -76,7 +75,7 @@ sequenceDiagram
 
 The API acknowledges accepted work before the turn completes. A single
 session-keyed in-memory stream carries token deltas, tool activity, agent
-status, questions, permissions, plan review, goals, workflows, and completion.
+status, questions, permissions, plan review, goals, and completion.
 Durable messages and state are stored separately so reconnect can replay the
 transcript and then resume live streaming.
 
@@ -87,7 +86,7 @@ transcript and then resume live streaming.
 - **Team:** one lead is persistent for the team identity; specialists are
   blueprints instantiated on demand and communicate through a mailbox.
 - **Policy:** the model can propose actions, but tool permissions, sandbox
-  roots, outbound redaction, workflow approval, and desktop/browser policies
+  roots, outbound redaction, and desktop/browser policies
   are enforced by the harness.
 - **Storage:** application records stay in the main database; user knowledge
   remains inspectable in scoped facts and Markdown wiki files.

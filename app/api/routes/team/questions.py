@@ -32,7 +32,6 @@ async def pending_questions(session_id: str) -> dict:
                     {
                         "question": q.question,
                         "options": q.options,
-                        "strict": q.strict,
                         "kind": q.kind,
                         **(
                             {"agent_spawn": q.agent_spawn.model_dump()}

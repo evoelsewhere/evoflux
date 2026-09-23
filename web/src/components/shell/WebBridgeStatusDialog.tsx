@@ -699,10 +699,6 @@ export function WebBridgeStatusPopover({
                       </div>
                     </div>
                   )}
-                  <details className="text-xs text-(--color-text-subtle)">
-                    <summary className="cursor-pointer">Advanced workflow details</summary>
-                    <pre className="mt-1 max-h-36 overflow-auto whitespace-pre-wrap rounded bg-(--bg-2) p-2 font-mono text-[10px]">{draft.workflow_yaml}</pre>
-                  </details>
                   <div className="flex gap-2">
                     {draft.status !== 'approved' ? (
                       <Button

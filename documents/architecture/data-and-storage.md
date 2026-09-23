@@ -29,7 +29,6 @@ The main SQLModel/Alembic database stores:
 | Memory | scoped facts, evidence and extraction state |
 | Dream | processed session/note logs |
 | Scheduler | task definitions, targets and run status |
-| Workflows | approvals, executions, node runs and gate requests |
 | Git/reviews | server connection metadata |
 | WebBridge | pairings, interactions, tab bindings, Teach drafts and replays |
 

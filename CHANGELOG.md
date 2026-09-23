@@ -34,6 +34,18 @@ All notable changes to EvoFlux are documented in this file.
     reference files, and the Codex-only Google Doc/Slides report workflows
     are removed.
 
+### Removed
+
+- Workflows are gone. `/workflow <name>`, the run-inputs dialog, the progress
+  pill, workflow hits in Search Everywhere and in the WebBridge side-panel
+  composer, `/api/workflows`, and the built-in `pr-hygiene` and
+  `second-opinion` definitions are removed; `.evoflux/workflows/*.yaml` files
+  are no longer read. Revision `00000068` drops the `workflow_approvals`,
+  `workflow_executions`, `workflow_node_runs` and `workflow_gate_requests`
+  tables. WebBridge Teach drafts no longer carry a generated `workflow_yaml`,
+  and `ask_user` questions no longer have a `strict` mode — it existed only
+  for workflow gates.
+
 ### Added
 
 - StepFun is now a supported provider. `stepfun:` models resolve to the

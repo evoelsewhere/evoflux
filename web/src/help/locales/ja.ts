@@ -19,7 +19,7 @@ export const HELP_CATEGORIES_JA: HelpCategory[] = [
   {
     id: 'composer',
     label: 'Composer',
-    description: 'メンション、添付、スキル、ワークフロー',
+    description: 'メンション、添付、スキル',
   },
   {
     id: 'slash',
@@ -231,7 +231,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: Ctrl+B はすべてのモードで同じようにモードサイドバーをトグル。',
           '横断: Scheduler タスクは work または coding モードを明示 — タスク側で正しいモードを設定。',
-          '横断: workflows はモードスコープ可能で、Coding 専用 workflow は Work では隠れます。Skills は両モードで使えます。'
+          '横断: Skills は両モードで使えます。'
 ],
       },
       {
@@ -505,7 +505,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'composer',
     title: 'Composer の強力機能',
     summary:
-      '/、!、@、$ スキル、# スニペット、添付、引用選択、Work フォルダ指定、RunInputsDialog 付きワークフローを使います。Undo は添付も復元するので、誤送信後も下書きを回復できます。',
+      '/、!、@、$ スキル、# スニペット、添付、引用選択、Work フォルダ指定を使います。Undo は添付も復元するので、誤送信後も下書きを回復できます。',
     keywords: [
       'composer',
       'mention',
@@ -517,8 +517,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'paste',
       'skill',
       '$skill-name',
-      'workflow',
-      'RunInputsDialog',
       'WorkFolderSelector',
       'quote',
       '!',
@@ -535,7 +533,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '@ でアクティブワークスペースからランク付きファイル/フォルダパス参照を挿入。',
       'Coding では # でワークスペースまたはグローバルスニペットを composer に展開。',
       '$ を打つとスキルを選べます。$skill-name はメッセージのどこに書いてもよく、複数指定できます（> 引用行とコードブロック内は除く）。',
-      'ワークフローは必須時に RunInputsDialog を開き、生のスラッシュ文をチャットとして送りません。',
       'Undo は前のユーザーメッセージとその添付を composer に復元。',
       '添付が有効なら画像/ファイルのペーストや composer へのドラッグ&ドロップ。',
       'トランスクリプト文を選択して Add to chat、詳細、または Send to side chat。',
@@ -545,28 +542,27 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'composer は単なるテキストボックスではありません: スラッシュメニュー（/）、シェル bang（!）、パスメンション（@）、スキルメンション（$）、Coding スニペット（#）、ファイル添付、引用コンテキストチップ、Work セッション用 WorkFolderSelector、承認済みワークフロー。これらのアフォーダンスをマスターすることが、ツリーをプロンプトにダンプすることと精密に操縦することの差です。',
+        text: 'composer は単なるテキストボックスではありません: スラッシュメニュー（/）、シェル bang（!）、パスメンション（@）、スキルメンション（$）、Coding スニペット（#）、ファイル添付、引用コンテキストチップ、Work セッション用 WorkFolderSelector。これらのアフォーダンスをマスターすることが、ツリーをプロンプトにダンプすることと精密に操縦することの差です。',
       },
       {
         type: 'p',
-        text: 'これらの制御はモデルを洪水にせずコンテキストを精密に保ちます。Skills と workflows は反復手順をパッケージ化; 添付と引用は証拠をピン留め; WorkFolderSelector は Files ツールを開かずに session folder を付け替え。シェル bang は意図的コマンド用で、長い対話セッションが必要なときの Terminal の代替ではありません。',
+        text: 'これらの制御はモデルを洪水にせずコンテキストを精密に保ちます。Skills は反復手順をパッケージ化; 添付と引用は証拠をピン留め; WorkFolderSelector は Files ツールを開かずに session folder を付け替え。シェル bang は意図的コマンド用で、長い対話セッションが必要なときの Terminal の代替ではありません。',
       },
       {
         type: 'p',
-        text: '/ でコマンドメニュー（組み込み、ワークフロー、カスタム .evoflux/commands/）。$ でスキルを選択: エージェントは有効なスキルすべての名前と説明を把握しており、タスクが合えば自分で SKILL.md を読みますが、`$skill-name` と書くとそのスキルを今すぐ使わせられます。! 接頭辞でシェル。@ でパス選択。Coding では # がスニペット展開。ファイルをバーへ DnD またはペースト。Work セッションでは composer 近くの WorkFolderSelector でプライベート session folder または別ローカルディレクトリを指定。/undo 後、テキストと添付の両方が下書きに戻ります。',
+        text: '/ でコマンドメニュー（組み込み、カスタム .evoflux/commands/）。$ でスキルを選択: エージェントは有効なスキルすべての名前と説明を把握しており、タスクが合えば自分で SKILL.md を読みますが、`$skill-name` と書くとそのスキルを今すぐ使わせられます。! 接頭辞でシェル。@ でパス選択。Coding では # がスニペット展開。ファイルをバーへ DnD またはペースト。Work セッションでは composer 近くの WorkFolderSelector でプライベート session folder または別ローカルディレクトリを指定。/undo 後、テキストと添付の両方が下書きに戻ります。',
       },
       {
         type: 'tips',
         items: [
-          '/ — スラッシュコマンド、ワークフロー、カスタムコマンド',
+          '/ — スラッシュコマンド、カスタムコマンド',
           '$ — スキル。位置は自由、1 メッセージに複数可',
           '! — 行の残りをシェルモード',
           '@ — ファイル/フォルダメンション',
           '# — スニペット（Coding ワークスペース）',
           'DnD / ペースト — 有効時の添付',
           '引用選択 — Add to chat または Send to side chat',
-          'WorkFolderSelector — Work session folder の付け替え',
-          'RunInputsDialog — 起動前のワークフローパラメータ'
+          'WorkFolderSelector — Work session folder の付け替え'
 ],
       },
       {
@@ -575,7 +571,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: 生の `/workflow name` テキストを送って動くと期待（ワークフローはメニュー/ダイアログ経由）; スキル名を大文字やスペース入りで書く（スキル名は小文字とハイフン。例: `$code-review`）; Work で # を使い Coding スニペットを期待; Providers 設定ではなく composer にシークレットを貼る; /undo が添付も復元することを忘れ、機微ファイルを不用意に再送。',
+        text: 'よくある失敗: スキル名を大文字やスペース入りで書く（スキル名は小文字とハイフン。例: `$code-review`）; Work で # を使い Coding スニペットを期待; Providers 設定ではなく composer にシークレットを貼る; /undo が添付も復元することを忘れ、機微ファイルを不用意に再送。',
       },
       {
         type: 'tips',
@@ -588,7 +584,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'ワークフローは承認済みでセッションスコープ（work / coding）に有効でなければ隠れます。$ ピッカーに出るのは、有効（valid）で Settings → Skills でオンになっており、ユーザー呼び出し可能なスキルだけです。コマンドやスキルが見つからない場合は、composer のバグと決める前にスコープ、検証、スキルのスイッチを確認。',
+        text: '$ ピッカーに出るのは、有効（valid）で Settings → Skills でオンになっており、ユーザー呼び出し可能なスキルだけです。コマンドやスキルが見つからない場合は、composer のバグと決める前にスコープ、検証、スキルのスイッチを確認。',
       }
 ],
     related: [
@@ -694,7 +690,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'slash',
     title: '組み込みスラッシュコマンド',
     summary:
-      'composer で / を打ち、stop、compact、undo、init、btw、goal、ワークフロー、`.evoflux/commands/` のカスタムコマンドを使います。組み込みは即実行; カスタムは通常挿入され引数を仕上げられます。スキルはスラッシュコマンドではなく $skill-name で使います。',
+      'composer で / を打ち、stop、compact、undo、init、btw、goal、`.evoflux/commands/` のカスタムコマンドを使います。組み込みは即実行; カスタムは通常挿入され引数を仕上げられます。スキルはスラッシュコマンドではなく $skill-name で使います。',
     keywords: [
       'slash',
       '/stop',
@@ -703,19 +699,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '/init',
       '/btw',
       '/goal',
-      '/workflow',
       'command',
       '.evoflux/commands',
       'スラッシュ',
-      'コマンド',
-      'ワークフロー'
+      'コマンド'
 ],
     tricks: [
       '組み込みは選択で即実行; カスタムは通常 textarea に挿入され $ARGUMENTS を付け足せます。',
       '最長プレフィックス一致; ネストしたコマンド名では : と / は互換。',
       'カスタムコマンドはプロジェクトまたはグローバルの .evoflux/commands/（および互換 OpenCode パス）に置きます。',
       'スキルはスラッシュコマンドではありません: $ で選ぶか、メッセージのどこかに $skill-name と書きます。',
-      'ワークフローはセッションスコープ（work / coding）で承認・有効でなければ隠れます。',
       'コンテキスト予算バーが上がったら早めに /compact — 失敗待ちはターンを無駄にします。',
       '/init は AGENTS.md 向けの Coding 志向; AGENTS.md 向けです。',
       '/stop は runaway specialist fan-out のパニックボタン; 次の明確な指示と組み合わせ。',
@@ -724,7 +717,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'スラッシュコマンドは一級の composer アクションです。組み込みはチーム実行を制御; goal サブコマンドは永続目標を管理; ワークフローは構造化された実行を起動; ユーザー定義の Markdown/YAML コマンドはサーバー側で展開。メニューは検索可能 — 数文字打てば絞り込めます。',
+        text: 'スラッシュコマンドは一級の composer アクションです。組み込みはチーム実行を制御; goal サブコマンドは永続目標を管理; ユーザー定義の Markdown/YAML コマンドはサーバー側で展開。メニューは検索可能 — 数文字打てば絞り込めます。',
       },
       {
         type: 'p',
@@ -747,13 +740,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { cmd: '/goal:budget <tokens|none>', desc: 'Goal のトークン予算を設定またはクリア' },
           { cmd: '/goal:pause', desc: 'アクティブな Goal を一時停止' },
           { cmd: '/goal:resume', desc: '一時停止中の Goal を再開' },
-          { cmd: '/goal:stop', desc: 'セッションの Goal を削除' },
-          { cmd: '/workflow <name>', desc: '承認済みワークフローを実行（RunInputsDialog が開く場合あり）' }
+          { cmd: '/goal:stop', desc: 'セッションの Goal を削除' }
 ],
       },
       {
         type: 'p',
-        text: '/ でコマンドを絞り込み。組み込みを選ぶと実行、カスタム/ワークフローは挿入または起動。カスタムファイルはプロジェクトまたはグローバル EvoFlux 設定の `.evoflux/commands/` に置きます。ネスト名は最長プレフィックス優先; 区切りは `:` または `/`。ワークフローは RunInputsDialog を開くことがあり、生のスラッシュ行を通常チャットとしては送りません。',
+        text: '/ でコマンドを絞り込み。組み込みを選ぶと実行、カスタムは挿入。カスタムファイルはプロジェクトまたはグローバル EvoFlux 設定の `.evoflux/commands/` に置きます。ネスト名は最長プレフィックス優先; 区切りは `:` または `/`。',
       },
       {
         type: 'tips',
@@ -761,7 +753,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '組み込み — 選択で実行',
           'カスタム — 通常は挿入; $ARGUMENTS を付け足す',
           'Skill — スラッシュコマンドではない; $skill-name と入力',
-          'Workflow — スコープ + 承認が必要、さもなくば非表示',
           '最長プレフィックス — : または / での parent:child ネスト'
 ],
       },
@@ -771,7 +762,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: `/scheduler` でページが開くと期待（Ctrl+S を使う — ルートはホームへリダイレクト）; スコープ/承認が悪いのに欠けたワークフローを composer バグ扱い; /compact が遅すぎてまだ必要な制約が要約で落ちる; /undo が git コミットを戻すと思い込む — 戻すのは前のユーザーメッセージ下書きだけ。',
+        text: 'よくある失敗: `/scheduler` でページが開くと期待（Ctrl+S を使う — ルートはホームへリダイレクト）; /compact が遅すぎてまだ必要な制約が要約で落ちる; /undo が git コミットを戻すと思い込む — 戻すのは前のユーザーメッセージ下書きだけ。',
       },
       {
         type: 'tips',
@@ -2159,7 +2150,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'tips',
         items: [
           '横断: Coding スキルが workflow を案内し、ネイティブ source search がすべての retrieval action を検証・実行します。',
-          '横断: workflows は / に出るにはスコープ有効性が必要、skills は $ に出るには valid かつオンである必要があります。',
+          '横断: skills は $ に出るには valid かつオンである必要があります。',
           '横断: 権限 Always ルールは MCP ツールにも適用 — まず Once を優先。'
 ],
       }

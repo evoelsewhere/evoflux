@@ -135,9 +135,6 @@ boundary claims the row, all three report that it is already on its way. Rows
 queued before lanes existed are treated as `steer`. Queued rows are durable:
 they survive a restart and are restored in queue order.
 
-Suppressed while a workflow drives the session — queued messages then land at
-node boundaries only.
-
 ## Parked out-of-scope work
 
 A Coding lead that notices work worth doing but outside the current change

@@ -19,7 +19,6 @@ class SearchEverywhereItemResponse(BaseModel):
         "git_commit",
         "problem",
         "skill",
-        "workflow",
     ]
     label: str
     description: str
