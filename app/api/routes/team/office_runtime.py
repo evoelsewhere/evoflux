@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from app.api.schemas.office_runtime import OfficeRuntimeStatusResponse
 from app.services.office_runtime import (
     RuntimeInstallError,
+    cancel_runtime_install,
     dismiss_install_error,
     runtime_status,
     start_runtime_install,
@@ -31,6 +32,16 @@ async def install_office_runtime_route() -> OfficeRuntimeStatusResponse:
     """Start the user-requested download; progress arrives via /status."""
     try:
         start_runtime_install()
+    except RuntimeInstallError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return await asyncio.to_thread(_status)
+
+
+@router.post("/install/cancel", response_model=OfficeRuntimeStatusResponse)
+async def cancel_office_runtime_install_route() -> OfficeRuntimeStatusResponse:
+    """Stop a download the user no longer wants."""
+    try:
+        cancel_runtime_install()
     except RuntimeInstallError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return await asyncio.to_thread(_status)

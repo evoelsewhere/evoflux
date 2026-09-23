@@ -92,8 +92,11 @@ syntax; a type check catches these mismatches before runtime.
 ## System dependencies (PDF/PNG rendering)
 
 `scripts/render_pdf.py` needs LibreOffice; `scripts/render_slides.py` and
-`scripts/contact_sheet.py` also need Poppler's `pdftoppm`. The scripts find
-LibreOffice through `EVOFLUX_SOFFICE` or `PATH`.
+`scripts/contact_sheet.py` also rasterise pages, with Poppler's `pdftoppm`
+when it is on `PATH` and otherwise with pypdfium2, which `uv` fetches on
+first use — so Poppler is optional wherever `uv` is available. The scripts
+find LibreOffice through `EVOFLUX_SOFFICE` (set in EvoFlux once the exact
+renderer is installed from the document viewer) or `PATH`.
 
 ```bash
 # macOS

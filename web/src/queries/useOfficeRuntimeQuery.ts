@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
+  cancelOfficeRuntimeInstall,
   dismissOfficeRuntimeError,
   getOfficeRuntimeStatus,
   installOfficeRuntime,
@@ -33,6 +34,11 @@ function useInvalidateOfficeRuntime() {
 export function useInstallOfficeRuntimeMutation() {
   const invalidate = useInvalidateOfficeRuntime()
   return useMutation({ mutationFn: installOfficeRuntime, onSettled: invalidate })
+}
+
+export function useCancelOfficeRuntimeInstallMutation() {
+  const invalidate = useInvalidateOfficeRuntime()
+  return useMutation({ mutationFn: cancelOfficeRuntimeInstall, onSettled: invalidate })
 }
 
 export function useDismissOfficeRuntimeErrorMutation() {

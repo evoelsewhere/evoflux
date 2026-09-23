@@ -125,25 +125,32 @@ def _scrubbed_env(*, inherit: bool = False) -> dict[str, str]:
                 if key.upper() not in internal_upper
             }
         blocked_upper = {*_PYTHON_ENV_LEAK_KEYS_UPPER, *internal_upper}
-        return {
-            key: value
-            for key, value in os.environ.items()
-            if key.upper() not in blocked_upper
-            and (
-                key.upper() in _SAFE_SHELL_ENV_KEYS_UPPER
-                or key.upper().startswith("LC_")
-            )
-        }
+        return _expose_app_runtimes(
+            {
+                key: value
+                for key, value in os.environ.items()
+                if key.upper() not in blocked_upper
+                and (
+                    key.upper() in _SAFE_SHELL_ENV_KEYS_UPPER
+                    or key.upper().startswith("LC_")
+                )
+            }
+        )
 
     internal = {key for key in os.environ if key.startswith("EVOFLUX_")}
     if inherit:
-        return {key: value for key, value in os.environ.items() if key not in internal}
+        return _expose_app_runtimes(
+            {key: value for key, value in os.environ.items() if key not in internal}
+        )
     blocked = {*_PYTHON_ENV_LEAK_KEYS, *internal}
-    return {
-        key: value
-        for key, value in os.environ.items()
-        if key not in blocked and (key in _SAFE_SHELL_ENV_KEYS or key.startswith("LC_"))
-    }
+    return _expose_app_runtimes(
+        {
+            key: value
+            for key, value in os.environ.items()
+            if key not in blocked
+            and (key in _SAFE_SHELL_ENV_KEYS or key.startswith("LC_"))
+        }
+    )
 
 
 def _command_env(shell_bin: str, *, inherit: bool = False) -> dict[str, str]:
@@ -156,9 +163,25 @@ def _command_env(shell_bin: str, *, inherit: bool = False) -> dict[str, str]:
     login_path = discover_login_path(shell_bin)
     if login_path:
         env["PATH"] = login_path
+        # The login PATH replaced the scrubbed one; re-add app runtimes.
+        _expose_app_runtimes(env)
     if sys.platform != "win32":
         env["SHELL"] = shell_bin
     return env
+
+
+def _expose_app_runtimes(env: dict[str, str]) -> dict[str, str]:
+    """Add runtimes the user installed through EvoFlux (e.g. LibreOffice).
+
+    EvoFlux internal variables are never inherited, so tools the app itself
+    provides must be advertised explicitly for Skills to find them.
+    """
+    from app.services.office_runtime.installer import expose_to_tool_environment
+
+    try:
+        return expose_to_tool_environment(env)
+    except OSError:
+        return env
 
 
 def _tail_text(text: str, max_lines: int, max_bytes: int) -> tuple[str, bool]:

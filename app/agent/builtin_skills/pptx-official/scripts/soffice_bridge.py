@@ -59,9 +59,27 @@ def _which_pdftoppm() -> str:
     found = shutil.which("pdftoppm")
     if not found:
         raise BridgeError(
-            "pdftoppm (poppler) not found. Install poppler-utils or "
-            "convert to PDF only.")
+            "pdftoppm (poppler) not found and no pypdfium2 fallback is available "
+            "(needs `uv` on PATH). Install poppler-utils or uv, or convert to "
+            "PDF only.")
     return found
+
+
+def _pypdfium2_command() -> list[str] | None:
+    """Command prefix that runs the pypdfium2 CLI, or None if unavailable.
+
+    Prefers a bundled interpreter that already has pypdfium2 (EVOFLUX_PYTHON);
+    otherwise lets uv fetch pypdfium2 and Pillow into a throwaway environment,
+    so rasterising never requires installing Poppler.
+    """
+    bundled = os.environ.get("EVOFLUX_PYTHON")
+    if bundled:
+        return [bundled, "-m", "pypdfium2_cli"]
+    uv = shutil.which("uv")
+    if uv:
+        return [uv, "run", "--no-project", "--quiet", "--with", "pypdfium2",
+                "--with", "pillow", "python", "-m", "pypdfium2_cli"]
+    return None
 
 
 @contextmanager
@@ -110,10 +128,12 @@ def _rasterize(pdf_path: Path, out_dir: Path, image_ext: str, *,
     out_dir.mkdir(parents=True, exist_ok=True)
     file_ext = "jpg" if image_ext in ("jpg", "jpeg") else image_ext
 
-    if shutil.which("pdftoppm") is None and os.environ.get("EVOFLUX_PYTHON"):
-        # No Poppler, but a bundled Python (with pypdfium2 preinstalled) is available.
-        return _rasterize_pypdfium2(pdf_path, out_dir, file_ext,
-                                    dpi=dpi, first=first, last=last)
+    if shutil.which("pdftoppm") is None:
+        command = _pypdfium2_command()
+        if command is not None:
+            # No Poppler: render with pypdfium2 (bundled Python or uv).
+            return _rasterize_pypdfium2(pdf_path, out_dir, file_ext, command,
+                                        dpi=dpi, first=first, last=last)
 
     binary = _which_pdftoppm()
     prefix = out_dir / "slide"
@@ -135,11 +155,12 @@ def _rasterize(pdf_path: Path, out_dir: Path, image_ext: str, *,
     return sorted(out_dir.glob(f"slide-*.{file_ext}"))
 
 
-def _rasterize_pypdfium2(pdf_path: Path, out_dir: Path, file_ext: str, *,
+def _rasterize_pypdfium2(pdf_path: Path, out_dir: Path, file_ext: str,
+                         command: list[str], *,
                          dpi: int,
                          first: int | None,
                          last: int | None) -> list[Path]:
-    """Poppler-free fallback: render via pypdfium2 in the bundled interpreter.
+    """Poppler-free fallback: render via the pypdfium2 CLI (see `_pypdfium2_command`).
 
     Renders all pages into a scratch directory (pypdfium2_cli page-range syntax
     varies across versions; pre-existing files in `out_dir` are never touched),
@@ -147,20 +168,18 @@ def _rasterize_pypdfium2(pdf_path: Path, out_dir: Path, file_ext: str, *,
     pypdfium2's zero-padded page numbers so lexicographic sorting matches page
     order and the naming convention matches the pdftoppm path.
     """
-    python_bin = os.environ["EVOFLUX_PYTHON"]
     kept: list[Path] = []
     with tempfile.TemporaryDirectory(prefix="pypdfium2-render-") as scratch_str:
         scratch = Path(scratch_str)
         result = subprocess.run(
-            [python_bin, "-m", "pypdfium2_cli", "render", str(pdf_path),
+            [*command, "render", str(pdf_path),
              "--output", str(scratch), "--format", file_ext, "--scale", str(dpi / 72.0)],
             capture_output=True, text=True,
         )
         if result.returncode != 0:
             raise BridgeError(
                 f"pypdfium2 fallback exited {result.returncode}: {result.stderr}\n"
-                "(is pypdfium2 with its pypdfium2_cli module available in the "
-                "EVOFLUX_PYTHON interpreter?)")
+                "(it needs pypdfium2 and Pillow: in EVOFLUX_PYTHON, or fetched by uv)")
 
         for page in sorted(scratch.glob(f"{pdf_path.stem}_*.{file_ext}")):
             digits = page.stem.rsplit("_", 1)[1]

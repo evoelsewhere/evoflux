@@ -16,6 +16,8 @@ export const STORAGE_KEYS = {
   accessKey: 'EvoFlux.accessKey',
   lastRoute: 'oa-last-route',
   pinnedSessions: 'oa.pinnedSessions',
+  /** Version of the exact Office renderer whose install offer the user hid. */
+  officeRuntimeOfferHidden: 'oa.officeRuntime.offerHidden',
   modeRoutes: {
     work: 'oa-last-route-work',
     coding: 'oa-last-route-coding',

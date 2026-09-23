@@ -5,6 +5,17 @@ const { saveFile } = vi.hoisted(() => ({
   saveFile: vi.fn(async (_url: string, _filename: string) => undefined),
 }))
 vi.mock('@/lib/workspace-file-save', () => ({ saveWorkspaceFileFromUrl: saveFile }))
+// The document viewer offers the optional exact renderer; its status query is
+// outside what these attachment tests cover.
+vi.mock('@/queries/useOfficeRuntimeQuery', () => {
+  const idle = () => ({ mutate: vi.fn(), isPending: false, error: null, reset: vi.fn() })
+  return {
+    useOfficeRuntimeQuery: () => ({ data: undefined }),
+    useInstallOfficeRuntimeMutation: idle,
+    useCancelOfficeRuntimeInstallMutation: idle,
+    useDismissOfficeRuntimeErrorMutation: idle,
+  }
+})
 
 import { ToolAttachments } from '@/components/ToolCall'
 

@@ -11,6 +11,7 @@ Covers the rewritten shell tool:
 
 from __future__ import annotations
 
+import os
 import shutil
 import signal
 import sys
@@ -195,6 +196,55 @@ def test_scrubbed_env_can_inherit_host_values_but_never_internal_token(monkeypat
     assert env["VIRTUAL_ENV"] == "/project/.venv"
     assert env["UV_PROJECT_ENVIRONMENT"] == "/project/.venv"
     assert "EVOFLUX_DESKTOP_TOKEN" not in env
+
+
+def _installed_office_runtime(monkeypatch, tmp_path):
+    from app.services.office_runtime import installer
+
+    executable = tmp_path / "soffice" / "program" / "soffice.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"")
+    runtime = installer.InstalledRuntime("26.8.0", executable, tmp_path)
+    monkeypatch.setattr(installer, "installed_runtime", lambda: runtime)
+    return executable
+
+
+def test_scrubbed_env_advertises_the_installed_office_runtime(monkeypatch, tmp_path):
+    executable = _installed_office_runtime(monkeypatch, tmp_path)
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setenv("EVOFLUX_SOFFICE", "/host/value/never/inherited")
+
+    env = _scrubbed_env()
+
+    path_key = next(key for key in env if key.upper() == "PATH")
+    assert env["EVOFLUX_SOFFICE"] == str(executable)
+    entries = env[path_key].split(os.pathsep)
+    # Appended, so an existing user soffice keeps precedence on PATH.
+    assert entries[0] == "/usr/bin"
+    assert entries[-1] == str(executable.parent)
+
+
+def test_command_env_keeps_the_office_runtime_after_the_login_path(
+    monkeypatch, tmp_path
+):
+    executable = _installed_office_runtime(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.shell.discover_login_path", lambda _shell: "/login/bin"
+    )
+
+    env = _command_env("/bin/bash")
+
+    assert env["EVOFLUX_SOFFICE"] == str(executable)
+    assert env["PATH"].split(os.pathsep) == ["/login/bin", str(executable.parent)]
+
+
+def test_scrubbed_env_without_office_runtime_adds_nothing(monkeypatch):
+    from app.services.office_runtime import installer
+
+    monkeypatch.setattr(installer, "installed_runtime", lambda: None)
+    monkeypatch.delenv("EVOFLUX_SOFFICE", raising=False)
+
+    assert "EVOFLUX_SOFFICE" not in _scrubbed_env()
 
 
 def test_scrubbed_env_leak_keys_covers_known_offenders():

@@ -21,6 +21,16 @@ export async function installOfficeRuntime(): Promise<OfficeRuntimeStatus> {
   return res.json()
 }
 
+/** Stop a download that is still in progress. */
+export async function cancelOfficeRuntimeInstall(): Promise<OfficeRuntimeStatus> {
+  const res = await fetch(apiUrl('/team/office-runtime/install/cancel'), {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'cancelOfficeRuntimeInstall')
+  return res.json()
+}
+
 export async function dismissOfficeRuntimeError(): Promise<void> {
   const res = await fetch(apiUrl('/team/office-runtime/install/dismiss'), { method: 'POST' })
   if (!res.ok) await parseDetailOrThrow(res, 'dismissOfficeRuntimeError')

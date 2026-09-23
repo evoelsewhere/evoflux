@@ -587,6 +587,8 @@ export interface OfficeRuntimeStatus {
   platform: string | null
   version: string | null
   download_bytes: number | null
+  /** Disk space the installed runtime takes, when the manifest states it. */
+  install_bytes: number | null
   installed_version: string | null
   job: OfficeRuntimeJob | null
 }
