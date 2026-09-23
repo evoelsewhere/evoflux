@@ -16,12 +16,12 @@ describe('coding file viewer placement', () => {
 
   it('does not promote a Files editor to a standalone panel', () => {
     expect(shouldShowStandaloneEditor('files', false, 'files')).toBe(false)
-    expect(shouldShowStandaloneEditor('files', true, 'overview')).toBe(false)
+    expect(shouldShowStandaloneEditor('files', true, 'terminal')).toBe(false)
   })
 
   it('keeps explicitly standalone editors independent from the workbench', () => {
     expect(shouldShowStandaloneEditor('standalone', false, null)).toBe(true)
-    expect(shouldShowStandaloneEditor('standalone', true, 'overview')).toBe(true)
+    expect(shouldShowStandaloneEditor('standalone', true, 'terminal')).toBe(true)
     expect(shouldShowStandaloneEditor('standalone', true, 'files')).toBe(false)
   })
 })

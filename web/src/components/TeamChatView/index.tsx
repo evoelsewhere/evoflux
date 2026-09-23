@@ -122,11 +122,6 @@ const WorkspaceFilesPanel = lazy(() =>
     default: module.WorkspaceFilesPanel,
   })),
 )
-const ProcessPanel = lazy(() =>
-  import('@/components/ProcessPanel').then((module) => ({
-    default: module.ProcessPanel,
-  })),
-)
 const CodingFileViewerPanel = lazy(() =>
   import('@/components/CodingFileViewerPanel').then((module) => ({
     default: module.CodingFileViewerPanel,
@@ -140,11 +135,6 @@ const CodingWorkspacePanel = lazy(() =>
 const GitWorkspacePanel = lazy(() =>
   import('@/components/GitWorkspacePanel').then((module) => ({
     default: module.GitWorkspacePanel,
-  })),
-)
-const CodingSummaryPanel = lazy(() =>
-  import('@/components/CodingSummaryPanel').then((module) => ({
-    default: module.CodingSummaryPanel,
   })),
 )
 const SideChatPanel = lazy(() =>
@@ -448,16 +438,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // Single source of truth for "what is this coding session about" wherever
   // the UI needs a short identity label (tray, mobile header, action sheet,
   // composer placeholder) — project name when project-scoped, else the repo.
-  // Every repository the Overview panel may describe. Empty outside a
-  // project: a standalone repository has nothing to switch between.
-  const overviewRepositories = useMemo(
-    () =>
-      (activeProject?.workspaces ?? []).map((item) => ({
-        path: item.path,
-        label: item.display_name || item.name || workspaceLabel(item.path),
-      })),
-    [activeProject?.workspaces],
-  )
   const codingIdentityLabel =
     mode === 'coding' && workspace
       ? projectIdState
@@ -1667,28 +1647,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       <Suspense fallback={<PanelLoadingFallback />}>
         {mode === 'coding' && workspace && (
           <>
-            <WorkbenchSurface tool="overview">
-              {(_tab, active) => (
-                <CodingSummaryPanel
-                  workspace={workspace}
-                  sessionId={sessionIdState}
-                  open={active}
-                  isWorking={isTeamWorking}
-                  repositories={overviewRepositories}
-                  onOpenFile={(path) => {
-                    setCodingFileViewer({
-                      path,
-                      name: path.split('/').pop() ?? path,
-                      size: 0,
-                      mtime: 0,
-                      mime: 'text/plain',
-                    })
-                    setCodingFileViewerHost('standalone')
-                    setCodingFileViewerMode('diff')
-                  }}
-                />
-              )}
-            </WorkbenchSurface>
             <WorkbenchSurface tool="files">
               <CodingWorkspacePanel
                 workspace={workspace}
@@ -1725,11 +1683,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               workspace={mode === 'coding' ? workspace : null}
               activeFilePath={codingFileViewer?.path ?? null}
             />
-          )}
-        </WorkbenchSurface>
-        <WorkbenchSurface tool="processes">
-          {(_tab, active) => (
-            <ProcessPanel active={active} currentSessionId={sessionIdState} />
           )}
         </WorkbenchSurface>
         <WorkbenchSurface tool="browser">

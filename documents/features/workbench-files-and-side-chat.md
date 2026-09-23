@@ -9,14 +9,13 @@ on mode and workspace, but share one dock and open-with contract.
 |---|---:|---:|---|
 | Workspace files and uploads | Yes | Repository tree/files | team file routes and watcher |
 | Read-only document preview | Yes | Yes | document preview service |
-| Terminal | Yes | Yes | terminal WebSocket service |
-| Managed processes/previews | Yes | Yes | process manager and agent process/preview tools |
+| Terminal, with a Running bar for managed processes/previews | Yes | Yes | terminal WebSocket service, process manager |
 | Persistent browser | Yes | Yes | direct browser bridge/Tauri |
 | Wiki | Yes | Yes | wiki routes/service |
 | Scheduler | Yes | Yes | scheduler routes/service |
 | Plugin Center | Yes | Yes | plugin platform |
 | Side Chat | Yes | Yes | side-chat routes and panel |
-| Source editor/Git/graph/Problems | No | Yes | Coding services |
+| Source editor/Git/Problems | No | Yes | Coding services |
 
 The dock lazy-loads panels and supports responsive overlay behavior. Split mode
 can show conversation, editor/workspace and auxiliary tools simultaneously;
@@ -30,10 +29,8 @@ member — by insertion order — is what the backend derives. That is a cwd, no
 verdict about which repository matters, and a panel that presents it as the
 project is wrong.
 
-Overview therefore names the repository it is describing and, in a project,
-lets the reader switch: the branch, the changed files, the sync state and the
-workspace row all follow that choice. The Changes tab — both its Changes and
-Review views — already carries its own repository selection. Terminal and the file tree stay rooted at the
+The Changes tab — both its Changes and Review views — therefore carries its own
+repository selection. Terminal and the file tree stay rooted at the
 session's own repository, which is where the agent actually runs.
 
 ## Files and uploads
@@ -95,8 +92,11 @@ external URLs, path escapes and active embedded content are rejected.
 Each terminal is scoped to a session and authorized current working directory.
 POSIX uses PTY primitives; Windows uses ConPTY through `pywinpty`. A WebSocket
 carries resize, input and output. Managed background commands and preview
-servers have separate list/stop surfaces and are terminated during sidecar
-shutdown.
+servers are terminated during sidecar shutdown. There is no separate Processes
+tool: every Terminal tab has a collapsible Running bar (`TerminalRunningBar`)
+that lists them across sessions — the current session first, the tab's own PTY
+left out — and stops them through `DELETE /team/processes/{id}`. Only a visible
+Terminal tab polls `GET /team/processes`.
 
 ## Side Chat (`/btw`)
 
