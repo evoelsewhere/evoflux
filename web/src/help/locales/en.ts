@@ -1022,22 +1022,22 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'パネル'
 ],
     setup:
-      'Open a session first. Coding Overview, Files, Changes, and Review need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
+      'Open a session first. Coding Overview, Files, and local Changes need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
     tricks: [
       'Open tools from the workbench bar, dock, or keyboard shortcuts listed below.',
       'Coding Overview appears only when a workspace is selected.',
       'Runtime shortcuts and labels adapt to the OS: Command on macOS, Ctrl on Windows/Linux.',
       'Live mappings: Files = Ctrl+F (label may show ⌘P); Side chat = Ctrl+; (label may show ⌥⌘S).',
-      'Files and Review have no dedicated global shortcuts — use the workbench bar or command palette.',
+      'Changes holds both local source control and pull-request Review — switch between them in its header.',
       'Terminal and Browser support multiple tab instances; other tools are single-instance toggles.',
-      'Changes (Ctrl+G) and Review are Coding-only; Files needs a Coding workspace.',
+      'Changes (Ctrl+G) is Coding-only; Files needs a Coding workspace.',
       'Toggle the same tool again to close it — the workbench is not a pile of permanent cards.',
       'When opening the workbench with a Coding workspace and no tool selected, Overview opens by default.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Overview, Terminal, Browser, Files, Files, Side chat, Memory (wiki), Scheduler, Changes (source control), and Review (pull/merge requests). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
+        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Overview, Terminal, Browser, Files, Files, Side chat, Memory (wiki), Scheduler, and Changes (source control plus pull/merge request Review). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
       },
       {
         type: 'p',
@@ -1067,8 +1067,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Side chat — /btw parallel questions.',
           'Memory — wiki + pending notes.',
           'Scheduler — cron / one-shot tasks (panel only; /scheduler redirects home).',
-          'Changes — stage, commit, branch operations (Coding).',
-          'Review — PR/MR list for connected hosts (Coding).'
+          'Changes — stage, commit, branch operations, and the Review view of PRs/MRs for connected hosts (Coding).'
 ],
       },
       {
@@ -1281,7 +1280,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'coding',
     title: 'Git, changes, and pull requests',
     summary:
-      'Stage, commit, branch, merge, rebase, stash, and review PRs/MRs from Coding via Changes (Ctrl+G), the Review panel, and Settings → Git & reviews. Keep safety toggles intentional before force-with-lease or huge diffs.',
+      'Stage, commit, branch, merge, rebase, stash, and review PRs/MRs from Coding via Changes (Ctrl+G) — with its Changes and Review views — and Settings → Git & reviews. Keep safety toggles intentional before force-with-lease or huge diffs.',
     keywords: [
       'git',
       'commit',
@@ -1310,9 +1309,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Coding mode with a git workspace. Connect hosts under Settings → Git & reviews for remote PR/MR actions. Review timeouts, max diff size, and force-with-lease before aggressive operations.',
     tricks: [
       'Ctrl+G opens Changes (source control).',
-      'Diff review panels can prompt the agent to Create PRs.',
       'Force-with-lease and max diff size are gated in version-control settings.',
-      'Review workbench lists PRs/MRs for GitHub, GitLab, Bitbucket, Gitea, and Azure DevOps when connected.',
+      'The Review view of Changes lists PRs/MRs for GitHub, GitLab, Bitbucket, Gitea, and Azure DevOps when connected.',
       'Agents can also run git operations through tools subject to permission mode and sandbox.',
       'Use stash / branch / rebase from Changes or agent tools depending on comfort level.',
       'Prefer small commits with clear messages — agents write better follow-ups against clean history.',

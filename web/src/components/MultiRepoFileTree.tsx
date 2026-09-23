@@ -53,9 +53,9 @@ export function MultiRepoFileTree({
       staleTime: 5_000,
     })),
   })
-  // Reuses DiffReviewPanel's query key/cache — reading it here just to mark
-  // changed files in the tree costs no extra network round-trip when the
-  // Changed tab has already populated the cache for the same repo.
+  // Reuses the shared `coding.diff` query key/cache — reading it here just to
+  // mark changed files in the tree costs no extra network round-trip when
+  // another surface has already populated the cache for the same repo.
   const diffQueries = useQueries({
     queries: paths.map((path) => ({
       queryKey: queryKeys.coding.diff(path),

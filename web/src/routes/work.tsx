@@ -237,7 +237,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
   // Keep ``useTeamStore._workspace`` and ``projectId`` in sync with the
   // URL-derived session the moment we render the layout — before the async
   // ``loadSession`` round-trip in TeamChatView.  CodingWorkspacePanel reads
-  // ``projectId`` to decide whether to show multi-repo (DiffReviewPanel) or
+  // ``projectId`` to decide whether to show multi-repo (MultiRepoFileTree) or
   // single-workspace mode; priming it here prevents the single-workspace
   // flash on initial load / navigation.
   const cachedProjectId = cachedSession?.project_id ?? sessionQuery.data?.project_id ?? null
