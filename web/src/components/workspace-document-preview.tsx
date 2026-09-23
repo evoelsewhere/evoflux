@@ -37,6 +37,7 @@ import { DocumentPreviewRuntimeBanner } from '@/components/document-preview-runt
 import { MAX_DOCX_SOURCE_BYTES, renderDocxPreviewHtml } from '@/lib/docx-preview-render'
 import { cn } from '@/lib/utils'
 import {
+  useCancelOfficeRuntimeInstallMutation,
   useDismissOfficeRuntimeErrorMutation,
   useInstallOfficeRuntimeMutation,
   useOfficeRuntimeQuery,
@@ -319,6 +320,7 @@ export function WorkspaceDocumentPreview({
   const officeRuntime = useOfficeRuntimeQuery(officeKind)
   const installRuntime = useInstallOfficeRuntimeMutation()
   const dismissRuntimeError = useDismissOfficeRuntimeErrorMutation()
+  const cancelRuntime = useCancelOfficeRuntimeInstallMutation()
   // Once LibreOffice is installed the backend renders Office files exactly;
   // the key changes so an open preview re-renders the moment it lands.
   const exactRenderer = officeKind ? officeRuntime.data?.installed_version ?? '' : ''
@@ -330,7 +332,8 @@ export function WorkspaceDocumentPreview({
     if (sessionId) return workspaceMediaUrl(sessionId, file.path)
     return ''
   }, [exactRenderer, file.path, kind, providedRawUrl, providedSourceUrl, sessionId, workspace])
-  const requestKey = `${sourceUrl}:${file.size}:${file.mtime}:${exactRenderer}`
+  const documentKey = `${sourceUrl}:${file.size}:${file.mtime}`
+  const requestKey = `${documentKey}:${exactRenderer}`
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const viewerRef = useRef<HTMLElement>(null)
@@ -364,8 +367,25 @@ export function WorkspaceDocumentPreview({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [slidePreviewMeta, setSlidePreviewMeta] = useState<SlidePreviewMeta[]>([])
   const [slideAspectRatio, setSlideAspectRatio] = useState('16 / 9')
-  const currentResult = result?.key === `${requestKey}:${retryKey}` ? result : null
+  const freshResult = result?.key === `${requestKey}:${retryKey}` ? result : null
+  // When the exact renderer lands, keep showing this file's approximate pages
+  // until the exact render (up to a minute) replaces them.
+  const staleResult = !freshResult && result?.html && result.key.startsWith(`${documentKey}:`)
+    ? result
+    : null
+  const currentResult = freshResult ?? staleResult
+  const exactFallback = Boolean(
+    exactRenderer
+    && freshResult?.html
+    && !freshResult.html.includes('data-preview-renderer="libreoffice-'),
+  )
   const isPresentation = kind === 'pptx'
+  // With the slide thumbnails collapsed, a deck reads top to bottom like a
+  // document: every slide is laid out and the frame scrolls between them.
+  const slideScroll = isPresentation
+    && presentationView === 'normal'
+    && !(navigatorOpen && entries.length > 1)
+  const slideScrollRef = useRef(slideScroll)
   const fullscreenSupported = typeof Element !== 'undefined' && Boolean(
     Element.prototype.requestFullscreen
     || (HTMLElement.prototype as WebkitFullscreenElement).webkitRequestFullscreen,
@@ -528,7 +548,7 @@ export function WorkspaceDocumentPreview({
 
   const goToItem = useCallback((index: number) => {
     const normalized = Math.max(0, Math.min(index, itemElementsRef.current.length - 1))
-    const singleSurface = kind === 'pptx' || kind === 'xlsx'
+    const singleSurface = kind === 'xlsx' || (kind === 'pptx' && !slideScrollRef.current)
     itemElementsRef.current.forEach((item, itemIndex) => {
       if (singleSurface) item.toggleAttribute('hidden', itemIndex !== normalized)
       else item.removeAttribute('hidden')
@@ -689,7 +709,9 @@ export function WorkspaceDocumentPreview({
     const restoredIndex = Math.max(0, Math.min(activeIndexRef.current, elements.length - 1))
     activeIndexRef.current = restoredIndex
     setActiveIndex(restoredIndex)
-    if (kind === 'pptx' || kind === 'xlsx') {
+    const continuousSlides = kind === 'pptx' && slideScrollRef.current
+    document.documentElement.toggleAttribute('data-evoflux-continuous', continuousSlides)
+    if ((kind === 'pptx' && !continuousSlides) || kind === 'xlsx') {
       elements.forEach((element, index) => element.toggleAttribute('hidden', index !== restoredIndex))
     }
 
@@ -706,12 +728,19 @@ export function WorkspaceDocumentPreview({
         body { display: flex !important; align-items: center; justify-content: center; padding: 18px !important; }
         [data-preview-item] { margin: 0 !important; }
         .slide-number { display: none !important; }
+        html[data-evoflux-continuous] { height: 100% !important; overflow: auto !important; }
+        html[data-evoflux-continuous] body {
+          height: auto !important; min-height: 100%; overflow: visible !important;
+          flex-direction: column; justify-content: flex-start !important; gap: 20px;
+        }
+        html[data-evoflux-continuous] [data-preview-item] { flex: none; }
       ` : ''}
     `
     document.head?.append(style)
 
     let scrollFrame = 0
     const handleScroll = () => {
+      if (kind === 'pptx' && !slideScrollRef.current) return
       frameWindow.cancelAnimationFrame(scrollFrame)
       scrollFrame = frameWindow.requestAnimationFrame(() => {
         let closest = 0
@@ -727,7 +756,7 @@ export function WorkspaceDocumentPreview({
         setActiveIndex(closest)
       })
     }
-    const tracksContinuousScroll = kind === 'pdf' || kind === 'docx'
+    const tracksContinuousScroll = kind === 'pdf' || kind === 'docx' || kind === 'pptx'
     if (tracksContinuousScroll) {
       frameWindow.addEventListener('scroll', handleScroll, { passive: true })
     }
@@ -794,6 +823,25 @@ export function WorkspaceDocumentPreview({
     frameWindow.requestAnimationFrame(() => fitDocument(fitMode === 'custom' ? 'width' : fitMode))
   }, [fitDocument, fitMode, kind, refreshSearch, searchQuery, selectSpreadsheetCell])
 
+  // Switch an already loaded deck between one-slide and scrolling layouts
+  // when the thumbnails are shown or collapsed, keeping the current slide.
+  useEffect(() => {
+    // Frame callbacks (load, scroll, navigation) read the layout from here.
+    slideScrollRef.current = slideScroll
+    if (!isPresentation) return
+    const frameWindow = iframeRef.current?.contentWindow
+    const document = iframeRef.current?.contentDocument
+    const items = itemElementsRef.current
+    if (!frameWindow || !document?.documentElement || items.length === 0) return
+    document.documentElement.toggleAttribute('data-evoflux-continuous', slideScroll)
+    items.forEach((item, index) => {
+      item.toggleAttribute('hidden', !slideScroll && index !== activeIndexRef.current)
+    })
+    frameWindow.requestAnimationFrame(() => {
+      if (slideScroll) items[activeIndexRef.current]?.scrollIntoView?.({ block: 'start' })
+    })
+  }, [isPresentation, slideScroll])
+
   useEffect(() => {
     if (!isPresentation) return
     const document = iframeRef.current?.contentDocument
@@ -802,7 +850,7 @@ export function WorkspaceDocumentPreview({
     document?.body?.style.setProperty('--evoflux-stage-background', background)
   }, [currentResult?.html, isPresentation, presentationView])
 
-  if (currentResult?.error) {
+  if (freshResult?.error) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <span className="flex h-10 w-10 items-center justify-center rounded-full bg-(--color-error)/10 text-(--color-error)">
@@ -810,7 +858,7 @@ export function WorkspaceDocumentPreview({
         </span>
         <div>
           <p className="text-sm font-medium text-(--color-text)">Document preview unavailable</p>
-          <p className="mt-1 max-w-sm text-xs leading-5 text-(--color-text-muted)">{currentResult.error}</p>
+          <p className="mt-1 max-w-sm text-xs leading-5 text-(--color-text-muted)">{freshResult.error}</p>
         </div>
         <button
           type="button"
@@ -839,8 +887,16 @@ export function WorkspaceDocumentPreview({
     <DocumentPreviewRuntimeBanner
       status={officeRuntime.data}
       starting={installRuntime.isPending}
+      requestError={installRuntime.error ?? cancelRuntime.error}
+      rendering={Boolean(staleResult)}
+      fallback={exactFallback}
       onInstall={() => installRuntime.mutate()}
-      onDismissError={() => dismissRuntimeError.mutate()}
+      onCancel={() => cancelRuntime.mutate()}
+      onDismissError={() => {
+        installRuntime.reset()
+        cancelRuntime.reset()
+        dismissRuntimeError.mutate()
+      }}
     />
   )
 

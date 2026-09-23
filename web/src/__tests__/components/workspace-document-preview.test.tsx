@@ -1,18 +1,30 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { workPreviewUrl, codingPreviewUrl, renderDocx, runtime, installRuntime } = vi.hoisted(() => ({
+const { workPreviewUrl, codingPreviewUrl, renderDocx, runtime, installRuntime, cancelRuntime } = vi.hoisted(() => ({
   workPreviewUrl: vi.fn((sessionId: string, path: string) => `/work/${sessionId}/${path}`),
   codingPreviewUrl: vi.fn((workspace: string, path: string) => `/coding/${workspace}/${path}`),
   renderDocx: vi.fn(),
-  runtime: { status: undefined as unknown },
+  runtime: { status: undefined as unknown, installError: null as Error | null },
   installRuntime: vi.fn(),
+  cancelRuntime: vi.fn(),
 }))
 
 vi.mock('@/queries/useOfficeRuntimeQuery', () => ({
   useOfficeRuntimeQuery: () => ({ data: runtime.status }),
-  useInstallOfficeRuntimeMutation: () => ({ mutate: installRuntime, isPending: false }),
+  useInstallOfficeRuntimeMutation: () => ({
+    mutate: installRuntime,
+    isPending: false,
+    error: runtime.installError,
+    reset: vi.fn(),
+  }),
   useDismissOfficeRuntimeErrorMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useCancelOfficeRuntimeInstallMutation: () => ({
+    mutate: cancelRuntime,
+    isPending: false,
+    error: null,
+    reset: vi.fn(),
+  }),
 }))
 
 const availableRuntime = {
@@ -20,6 +32,7 @@ const availableRuntime = {
   platform: 'win32-x64',
   version: '26.8.0',
   download_bytes: 191_184_974,
+  install_bytes: 635_851_559,
   installed_version: null,
   job: null,
 }
@@ -95,7 +108,9 @@ beforeEach(() => {
   renderDocx.mockReset()
   renderDocx.mockResolvedValue(documentHtml)
   runtime.status = undefined
+  runtime.installError = null
   installRuntime.mockReset()
+  cancelRuntime.mockReset()
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
@@ -207,7 +222,7 @@ describe('WorkspaceDocumentPreview', () => {
     await waitFor(() => expect(fetch).toHaveBeenCalled())
     hydrateFrame(slideDeckHtml)
 
-    expect(screen.getByText(/This preview is approximate/)).toHaveTextContent('182 MB download')
+    expect(screen.getByText(/This preview is approximate/)).not.toHaveTextContent(/MB/)
     expect(installRuntime).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Install renderer' }))
     expect(installRuntime).toHaveBeenCalledTimes(1)
@@ -489,5 +504,75 @@ describe('WorkspaceDocumentPreview', () => {
         Reflect.deleteProperty(Element.prototype, 'requestFullscreen')
       }
     }
+  })
+})
+
+describe('WorkspaceDocumentPreview exact renderer banner', () => {
+  const pptx = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }
+  const downloadingJob = {
+    phase: 'downloading' as const,
+    version: '26.8.0',
+    bytes_done: 1,
+    bytes_total: 2,
+    started_at: '2026-09-23T00:00:00Z',
+    error: null,
+  }
+
+  it('lets the user cancel a running download', async () => {
+    runtime.status = { ...availableRuntime, job: downloadingJob }
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByRole('progressbar', { name: 'Exact renderer download' })).toHaveAttribute('aria-valuenow', '50')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(cancelRuntime).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces a rejected install request instead of failing silently', async () => {
+    runtime.status = { ...availableRuntime, available: false }
+    runtime.installError = new Error('No verified LibreOffice runtime is published for this platform.')
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('No verified LibreOffice runtime is published')
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('offers an update when a newer renderer is pinned', async () => {
+    runtime.status = { ...availableRuntime, version: '26.8.1', installed_version: '26.8.0' }
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByText(/A newer exact renderer \(LibreOffice 26.8.1\)/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Update renderer' }))
+    expect(installRuntime).toHaveBeenCalledTimes(1)
+  })
+
+  it('says so when the installed renderer fell back to the approximate preview', async () => {
+    runtime.status = { ...availableRuntime, installed_version: '26.8.0' }
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByText(/could not render this file/)).toBeInTheDocument()
+  })
+
+  it('remembers a hidden install offer per renderer version', async () => {
+    window.localStorage.clear()
+    runtime.status = availableRuntime
+    const { unmount } = render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+    fireEvent.click(screen.getByRole('button', { name: 'Hide renderer suggestion' }))
+    unmount()
+
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+    expect(screen.queryByText(/This preview is approximate/)).not.toBeInTheDocument()
+    window.localStorage.clear()
   })
 })

@@ -135,8 +135,18 @@ nothing downloads until they ask.
   or SHA-256 mismatch, refuses archive entries outside `soffice/`,
   links that escape it and special files, then activates the tree under
   `<data dir>/runtimes/libreoffice/<version>` (renames retry through transient
-  Windows antivirus locks). `EVOFLUX_OFFICE_RUNTIME_MANIFEST` can point at a
+  Windows antivirus locks). A download can be cancelled while it transfers;
+  a failed one keeps its bytes in `.download-<sha256>.part` and Retry resumes
+  with an HTTP range request (the SHA-256 still covers the whole archive).
+  Leftover staging trees and other versions' partial downloads are removed
+  on the next install. `EVOFLUX_OFFICE_RUNTIME_MANIFEST` can point at a
   local manifest to test an unpublished bundle; it passes the same checks.
+- **Agent Skills.** Agent shells get a scrubbed environment, so the installed
+  runtime is advertised explicitly: commands receive `EVOFLUX_SOFFICE` and
+  the runtime's directory appended to `PATH` (after any user LibreOffice),
+  which the Office Skills already look for. Their slide/page rasterisation
+  uses Poppler's `pdftoppm` when present and otherwise pypdfium2 fetched by
+  `uv`, so Poppler is optional.
 - **Conversion.** `app/services/office_runtime/convert.py` runs headless
   `soffice` with one hardened profile (macros disabled, untrusted remote
   references blocked, external links never refreshed), serialized, with a
@@ -145,8 +155,20 @@ nothing downloads until they ask.
 - **Viewer.** DOCX, XLSX and PPTX then render as PDF pages with a positioned,
   transparent text layer (search and selection keep working), slide/sheet
   labels and speaker notes. The preview cache key includes the renderer, so
-  installing the runtime re-renders open files; a failed conversion falls back
-  to the built-in renderers.
+  installing the runtime re-renders open files — the approximate pages stay
+  visible until the exact ones replace them. A failed conversion falls back
+  to the built-in renderers and the banner says so; the banner also offers
+  an update when a newer runtime is pinned, and a hidden offer is remembered
+  per version.
+- **Slides.** With the slide thumbnails collapsed, a deck lays out every
+  slide vertically and scrolls like a document; the slide counter follows
+  the scroll and previous/next scroll to a slide. The workbench dock can be
+  widened to 75% of the window (up to 1600 px) while the chat column keeps
+  its minimum width.
+- **Mislabelled files.** Office preflight names what a rejected file really
+  is — a ZIP archive with an Office extension, a package saved under the
+  wrong extension, or a legacy/password-protected file — instead of calling
+  every such file "damaged".
 
 Preview cache is regeneratable and stored outside user workspaces. Unsafe
 external URLs, path escapes and active embedded content are rejected.
