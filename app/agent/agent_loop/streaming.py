@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import uuid
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -451,6 +452,19 @@ async def stream_and_assemble(
                     fn_args[:80],
                 )
                 continue
+        if not buf["id"]:
+            # Some OpenAI-compatible endpoints (MiMo among them) stream a
+            # call without ever sending its id. Results, history pairing, and
+            # replay all key on the id, so empty ids would collapse parallel
+            # calls into one result and get the calls stripped on replay.
+            buf["id"] = f"call_{uuid.uuid4().hex[:24]}"
+            logger.warning(
+                "tool_call_missing_id agent={} idx={} name={} synthesized_id={}",
+                agent_name,
+                i,
+                fn_name,
+                buf["id"],
+            )
         tc_list.append(ToolCall(**buf))
     # Me attach usage to `extra` immediately so `wrap_model_call` hooks
     # (e.g. OtelHook) can read it from the returned message inside the
