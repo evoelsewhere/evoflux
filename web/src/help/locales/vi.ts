@@ -991,22 +991,22 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'bảng công cụ'
 ],
     setup:
-      'Mở session trước. Coding Overview, Files, Changes và Review cần Coding workspace. Built-in Browser phải bật trong Settings → Browser trước khi Ctrl+T hữu ích.',
+      'Mở session trước. Coding Overview, Files và Changes cục bộ cần Coding workspace. Built-in Browser phải bật trong Settings → Browser trước khi Ctrl+T hữu ích.',
     tricks: [
       'Mở tool từ workbench bar, dock, hoặc shortcut bên dưới.',
       'Coding Overview chỉ hiện khi đã chọn workspace.',
       'Shortcut runtime và label tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
       'Mapping sống: Files = Ctrl+F (label có thể hiện ⌘P); Side chat = Ctrl+; (label có thể hiện ⌥⌘S).',
-      'Files và Review không có global shortcut riêng — dùng workbench bar hoặc command palette.',
+      'Changes gồm cả source control cục bộ lẫn Review pull request — chuyển qua lại ở header của nó.',
       'Terminal và Browser hỗ trợ nhiều tab; tool khác là toggle single-instance.',
-      'Changes (Ctrl+G) và Review chỉ Coding; Files cần Coding workspace.',
+      'Changes (Ctrl+G) chỉ Coding; Files cần Coding workspace.',
       'Toggle cùng tool lần nữa để đóng — workbench không phải đống card vĩnh viễn.',
       'Mở workbench với Coding workspace mà chưa chọn tool thì Overview mở mặc định.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Workbench là surface tool bên phải (hoặc dock) cạnh chat. Tool: Overview, Terminal, Browser, Files, Files, Side chat, Memory (wiki), Scheduler, Changes (source control) và Review (pull/merge request). Chat vẫn là chính; tool là mặt kiểm tra và hành động cách một shortcut.',
+        text: 'Workbench là surface tool bên phải (hoặc dock) cạnh chat. Tool: Overview, Terminal, Browser, Files, Files, Side chat, Memory (wiki), Scheduler và Changes (source control kèm Review pull/merge request). Chat vẫn là chính; tool là mặt kiểm tra và hành động cách một shortcut.',
       },
       {
         type: 'p',
@@ -1036,8 +1036,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Side chat — câu hỏi song song /btw.',
           'Memory — wiki + note pending.',
           'Scheduler — cron / one-shot (chỉ panel; /scheduler redirect home).',
-          'Changes — stage, commit, branch (Coding).',
-          'Review — danh sách PR/MR host đã kết nối (Coding).'
+          'Changes — stage, commit, branch và view Review liệt kê PR/MR host đã kết nối (Coding).'
 ],
       },
       {
@@ -1245,7 +1244,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'coding',
     title: 'Git, Changes và pull request',
     summary:
-      'Stage, commit, branch, merge, rebase, stash và review PR/MR từ Coding qua Changes (Ctrl+G), panel Review và Settings → Git & reviews. Giữ safety toggle chủ đích trước force-with-lease hoặc diff khổng lồ.',
+      'Stage, commit, branch, merge, rebase, stash và review PR/MR từ Coding qua Changes (Ctrl+G) — với hai view Changes và Review — và Settings → Git & reviews. Giữ safety toggle chủ đích trước force-with-lease hoặc diff khổng lồ.',
     keywords: [
       'git',
       'commit',
@@ -1271,9 +1270,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Coding mode với git workspace. Kết nối host trong Settings → Git & reviews cho action PR/MR remote. Xem lại timeout, max diff size và force-with-lease trước thao tác mạnh.',
     tricks: [
       'Ctrl+G mở Changes (source control).',
-      'Panel diff review có thể prompt agent Create PR.',
       'Force-with-lease và max diff size bị gate trong version-control settings.',
-      'Review workbench liệt kê PR/MR cho GitHub, GitLab, Bitbucket, Gitea và Azure DevOps khi đã kết nối.',
+      'View Review của Changes liệt kê PR/MR cho GitHub, GitLab, Bitbucket, Gitea và Azure DevOps khi đã kết nối.',
       'Agent cũng chạy git qua tool, chịu permission mode và sandbox.',
       'Stash / branch / rebase từ Changes hoặc agent tool tùy mức thoải mái.',
       'Ưu tiên commit nhỏ, message rõ — agent follow-up tốt hơn trên history sạch.',

@@ -3,7 +3,6 @@ import {
   CalendarClock,
   Files,
   GitBranch,
-  GitPullRequest,
   Globe2,
   LayoutDashboard,
   MessageCirclePlus,
@@ -80,14 +79,9 @@ export const WORKBENCH_TOOLS: Record<
   },
   'source-control': {
     label: 'Changes',
-    description: 'Review and commit local workspace changes',
+    description: 'Commit local changes and review pull requests',
     icon: GitBranch,
     shortcut: '^G',
-  },
-  'pull-requests': {
-    label: 'Review',
-    description: 'Review pull requests and merge requests',
-    icon: GitPullRequest,
   },
   problems: {
     label: 'Problems',
@@ -108,7 +102,7 @@ export function isWorkbenchToolEnabled(
   if (tool === 'problems') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }
-  if (tool === 'source-control' || tool === 'pull-requests') {
+  if (tool === 'source-control') {
     return context.mode === 'coding'
   }
   if (tool === 'files') return Boolean(context.sessionId || context.workspace)

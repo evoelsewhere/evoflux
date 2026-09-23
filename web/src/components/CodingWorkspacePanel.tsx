@@ -230,7 +230,7 @@ export function CodingWorkspacePanel({
   // project detail is still loading (see work.tsx projectId priming).
   const isProjectMode = projectId != null
   // Single-workspace queries — dead in project mode (Files/Changed render
-  // MultiRepoFileTree/DiffReviewPanel instead), so skip the wasted fetch.
+  // MultiRepoFileTree instead), so skip the wasted fetch.
   const files = useQuery({
     queryKey: queryKeys.coding.files(workspace),
     queryFn: () => listCodingWorkspaceFiles(workspace),

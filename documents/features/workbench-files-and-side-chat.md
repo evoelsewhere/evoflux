@@ -32,8 +32,8 @@ project is wrong.
 
 Overview therefore names the repository it is describing and, in a project,
 lets the reader switch: the branch, the changed files, the sync state and the
-workspace row all follow that choice. Changes and Review already carry their
-own repository selection. Terminal and the file tree stay rooted at the
+workspace row all follow that choice. The Changes tab — both its Changes and
+Review views — already carries its own repository selection. Terminal and the file tree stay rooted at the
 session's own repository, which is where the agent actually runs.
 
 ## Files and uploads

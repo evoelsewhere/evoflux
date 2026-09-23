@@ -496,6 +496,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
   const openGitChanges = useUIStore((s) => s.openGitChanges)
+  const openGitReviews = useUIStore((s) => s.openGitReviews)
   // Self-terminating: clearing the host makes the predicate false, so this
   // settles on the retry rather than looping.
   if (shouldClearFilesEditor(codingFileViewerHost, workbenchOpen, hasFilesTab)) {
@@ -544,12 +545,12 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     if (!sessionIdState && mode !== 'coding') closeWorkbenchTool('files')
     if (mode !== 'coding') {
       closeWorkbenchTool('source-control')
-      closeWorkbenchTool('pull-requests')
       closeWorkbenchTool('problems')
     }
+    // Changes stays open without a workspace: its Review view lists pull
+    // requests across repositories, and its Changes view offers to open one.
     if (mode === 'coding' && !workspace) {
       closeWorkbenchTool('files')
-      closeWorkbenchTool('source-control')
       closeWorkbenchTool('problems')
     }
   }, [closeWorkbenchTool, mode, sessionIdState, workspace])
@@ -1792,21 +1793,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               {(_tab, active) => (
                 <GitWorkspacePanel
                   open={active}
-                  view="changes"
-                  scope="session"
-                  workspace={workspace}
-                  projectId={projectIdState}
-                  focus={null}
-                  onOpenInChat={handleOpenCodeReviewChat}
-                  onOpenWorkspace={handleOpenWorkspaceDialog}
-                />
-              )}
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="pull-requests">
-              {(_tab, active) => (
-                <GitWorkspacePanel
-                  open={active}
-                  view="reviews"
                   scope={pullRequestsScope}
                   workspace={workspace}
                   projectId={projectIdState}
@@ -1963,7 +1949,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           workspace={workbenchWorkspace}
           onChooseWorkspace={mode === 'coding' ? handleOpenWorkspaceDialog : undefined}
           reviewContext={mode === 'coding' ? reviewSessionContext : null}
-          onOpenReviewContext={() => openWorkbenchTool('pull-requests')}
+          onOpenReviewContext={openGitReviews}
           webBridgeEnabled={webBridgeEnabled}
           onWebBridgeEnabledChange={handleWebBridgeEnabledChange}
           selectedExtensionId={webBridgeExtensionId}

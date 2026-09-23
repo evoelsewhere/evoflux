@@ -154,6 +154,7 @@ export function CodingSummaryPanel({
   const todosQuery = useTodosQuery(sessionId)
   const turnChanges = useTeamStore((state) => state.turnChanges)
   const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
+  const openGitReviews = useUIStore((state) => state.openGitReviews)
   const currentTurnChanges =
     turnChanges?.sessionId === sessionId ? turnChanges : null
 
@@ -332,7 +333,7 @@ export function CodingSummaryPanel({
               icon={GitPullRequest}
               label="Review pull requests"
               detail="Open repository review work"
-              onClick={openTool('pull-requests')}
+              onClick={openGitReviews}
             />
           </Section>
 

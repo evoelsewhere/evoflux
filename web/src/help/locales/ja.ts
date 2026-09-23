@@ -999,22 +999,22 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ファイル'
 ],
     setup:
-      'まずセッションを開きます。Coding Overview、Files、Changes、Review には Coding ワークスペースが必要。内蔵 Browser は Settings → Browser で有効にしてから Ctrl+T が役立ちます。',
+      'まずセッションを開きます。Coding Overview、Files、ローカルの Changes には Coding ワークスペースが必要。内蔵 Browser は Settings → Browser で有効にしてから Ctrl+T が役立ちます。',
     tricks: [
       'workbench バー、ドック、または下記ショートカットからツールを開きます。',
       'Coding Overview はワークスペース選択時のみ表示。',
       'ランタイムショートカットとラベルは OS に合わせ、macOS は Command、Windows/Linux は Ctrl。',
       '実マッピング: Files = Ctrl+F（ラベルは ⌘P の場合あり）; Side chat = Ctrl+;（ラベルは ⌥⌘S の場合あり）。',
-      'Files と Review に専用グローバルショートカットはありません — workbench バーまたはコマンドパレット。',
+      'Changes はローカルのソースコントロールと pull request の Review を兼ねます — ヘッダーで切り替え。',
       'Terminal と Browser は複数タブインスタンス対応; 他ツールは単一インスタンスのトグル。',
-      'Changes（Ctrl+G）と Review は Coding のみ; Files には Coding ワークスペースが必要。',
+      'Changes（Ctrl+G）は Coding のみ; Files には Coding ワークスペースが必要。',
       '同じツールをもう一度トグルで閉じる — workbench は常設カードの山ではありません。',
       'Coding ワークスペースあり・ツール未選択で workbench を開くと、既定で Overview が開きます。'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Workbench はチャット横の右（またはドック）ツール面です。ツール: Overview、Terminal、Browser、Files、Files、Side chat、Memory（wiki）、Scheduler、Changes（ソースコントロール）、Review（pull/merge requests）。チャットが主; ツールはワンショートカット先の検査とアクション面です。',
+        text: 'Workbench はチャット横の右（またはドック）ツール面です。ツール: Overview、Terminal、Browser、Files、Files、Side chat、Memory（wiki）、Scheduler、Changes（ソースコントロールと pull/merge request の Review）。チャットが主; ツールはワンショートカット先の検査とアクション面です。',
       },
       {
         type: 'p',
@@ -1044,8 +1044,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Side chat — /btw 並列質問。',
           'Memory — wiki + 保留メモ。',
           'Scheduler — cron / ワンショットタスク（パネルのみ; /scheduler はホームへリダイレクト）。',
-          'Changes — stage、commit、ブランチ操作（Coding）。',
-          'Review — 接続ホストの PR/MR 一覧（Coding）。'
+          'Changes — stage、commit、ブランチ操作、接続ホストの PR/MR を一覧する Review ビュー（Coding）。'
 ],
       },
       {
@@ -1256,7 +1255,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'coding',
     title: 'Git、Changes、プルリクエスト',
     summary:
-      'Coding の Changes（Ctrl+G）、Review パネル、Settings → Git & reviews から stage、commit、branch、merge、rebase、stash、PR/MR レビューを行います。force-with-lease や巨大 diff の前に安全トグルを意図的に。',
+      'Coding の Changes（Ctrl+G。Changes / Review の 2 ビュー）と Settings → Git & reviews から stage、commit、branch、merge、rebase、stash、PR/MR レビューを行います。force-with-lease や巨大 diff の前に安全トグルを意図的に。',
     keywords: [
       'git',
       'commit',
@@ -1284,9 +1283,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'git ワークスペース付き Coding モード。リモート PR/MR 操作は Settings → Git & reviews でホスト接続。積極的操作の前にタイムアウト、max diff size、force-with-lease を確認。',
     tricks: [
       'Ctrl+G で Changes（ソースコントロール）を開く。',
-      'Diff レビューパネルからエージェントに Create PR を促せます。',
       'Force-with-lease と max diff size はバージョンコントロール設定でゲート。',
-      'Review workbench は接続時に GitHub、GitLab、Bitbucket、Gitea、Azure DevOps の PR/MR を一覧。',
+      'Changes の Review ビューは接続時に GitHub、GitLab、Bitbucket、Gitea、Azure DevOps の PR/MR を一覧。',
       'エージェントも権限モードと sandbox に従いツール経由で git 操作可能。',
       'stash / branch / rebase は快適さに応じて Changes またはエージェントツールから。',
       '小さなコミットと明確なメッセージを優先 — エージェントはきれいな履歴に対してより良いフォローアップを書きます。',
