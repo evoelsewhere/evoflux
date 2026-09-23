@@ -1,14 +1,22 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { workPreviewUrl, codingPreviewUrl } = vi.hoisted(() => ({
+const { workPreviewUrl, codingPreviewUrl, renderDocx } = vi.hoisted(() => ({
   workPreviewUrl: vi.fn((sessionId: string, path: string) => `/work/${sessionId}/${path}`),
   codingPreviewUrl: vi.fn((workspace: string, path: string) => `/coding/${workspace}/${path}`),
+  renderDocx: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
   workspaceDocumentPreviewUrl: workPreviewUrl,
   codingWorkspaceDocumentPreviewUrl: codingPreviewUrl,
+  workspaceMediaUrl: (sessionId: string, path: string) => `/media/${sessionId}/${path}`,
+  codingWorkspaceFileUrl: (workspace: string, path: string) => `/raw/${workspace}/${path}`,
+}))
+
+vi.mock('@/lib/docx-preview-render', () => ({
+  MAX_DOCX_SOURCE_BYTES: 100 * 1024 * 1024,
+  renderDocxPreviewHtml: renderDocx,
 }))
 
 import { WorkspaceDocumentPreview } from '@/components/workspace-document-preview'
@@ -67,10 +75,13 @@ function hydrateFrame(html = workbookHtml): HTMLIFrameElement {
 beforeEach(() => {
   workPreviewUrl.mockClear()
   codingPreviewUrl.mockClear()
+  renderDocx.mockReset()
+  renderDocx.mockResolvedValue(documentHtml)
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
     text: () => Promise.resolve(workbookHtml),
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
   }))
   if (!HTMLElement.prototype.scrollIntoView) {
     HTMLElement.prototype.scrollIntoView = vi.fn()
@@ -149,6 +160,34 @@ describe('WorkspaceDocumentPreview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show navigator' }))
     expect(screen.getByRole('navigation', { name: 'Document navigator' })).toBeInTheDocument()
     expect(screen.queryByText('Read only')).not.toBeInTheDocument()
+  })
+
+  it('renders DOCX from the raw file on the client instead of the backend preview', async () => {
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'report.docx', name: 'report.docx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(renderDocx).toHaveBeenCalledWith(expect.any(ArrayBuffer), 'report.docx'))
+    expect(fetch).toHaveBeenCalledWith('/media/session-1/report.docx', expect.any(Object))
+    expect(fetch).not.toHaveBeenCalledWith('/work/session-1/report.docx', expect.any(Object))
+    await waitFor(() => expect(screen.getByTestId('document-preview-frame')).toHaveAttribute('srcdoc', documentHtml))
+  })
+
+  it('falls back to the backend DOCX preview when client rendering fails', async () => {
+    renderDocx.mockRejectedValue(new Error('corrupt'))
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    render(
+      <WorkspaceDocumentPreview
+        workspace="/repo"
+        file={{ path: 'report.docx', name: 'report.docx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/coding//repo/report.docx', expect.any(Object)))
+    expect(fetch).toHaveBeenCalledWith('/raw//repo/report.docx', expect.any(Object))
   })
 
   it('searches rendered content and navigates between preview items', async () => {

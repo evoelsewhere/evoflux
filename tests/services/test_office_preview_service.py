@@ -1389,3 +1389,306 @@ def test_render_pdf_preview_is_bounded_and_cleans_rasters(monkeypatch, tmp_path)
         "max_pixels_per_page": preview.MAX_PDF_PREVIEW_PIXELS_PER_PAGE,
     }
     assert not list((tmp_path / "cache").rglob("*-pages"))
+
+
+_P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+
+
+def _append_shape_xml(slide, markup: str) -> None:
+    from pptx.oxml import parse_xml
+
+    slide.shapes._spTree.append(parse_xml(markup))
+
+
+def _smartart_deck(path) -> None:
+    from pptx.opc.package import Part
+    from pptx.opc.packuri import PackURI
+
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    package = presentation.part.package
+    drawing = Part(
+        PackURI("/ppt/diagrams/drawing1.xml"),
+        "application/vnd.ms-office.drawingml.diagramDrawing+xml",
+        package,
+        (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<dsp:drawing xmlns:dsp="http://schemas.microsoft.com/office/drawing/2008/diagram"'
+            f' xmlns:a="{_A_NS}"><dsp:spTree><dsp:nvGrpSpPr><dsp:cNvPr id="0" name=""/>'
+            "<dsp:cNvGrpSpPr/></dsp:nvGrpSpPr><dsp:grpSpPr/>"
+            '<dsp:sp modelId="{1}"><dsp:nvSpPr><dsp:cNvPr id="0" name=""/><dsp:cNvSpPr/>'
+            '</dsp:nvSpPr><dsp:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1828800" cy="914400"/>'
+            '</a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill>'
+            '<a:srgbClr val="2563EB"/></a:solidFill></dsp:spPr><dsp:txBody><a:bodyPr/>'
+            "<a:lstStyle/><a:p><a:r><a:t>Discover</a:t></a:r></a:p></dsp:txBody>"
+            '<dsp:txXfrm><a:off x="0" y="0"/><a:ext cx="1828800" cy="914400"/></dsp:txXfrm>'
+            "</dsp:sp></dsp:spTree></dsp:drawing>"
+        ).encode(),
+    )
+    drawing_rid = slide.part.relate_to(
+        drawing, "http://schemas.microsoft.com/office/2007/relationships/diagramDrawing"
+    )
+    data = Part(
+        PackURI("/ppt/diagrams/data1.xml"),
+        "application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml",
+        package,
+        (
+            '<dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram"'
+            ' xmlns:dsp="http://schemas.microsoft.com/office/drawing/2008/diagram">'
+            f'<dgm:extLst><dsp:dataModelExt relId="{drawing_rid}"/></dgm:extLst>'
+            "</dgm:dataModel>"
+        ).encode(),
+    )
+    data_rid = slide.part.relate_to(
+        data,
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData",
+    )
+    _append_shape_xml(
+        slide,
+        f'<p:graphicFrame xmlns:p="{_P_NS}" xmlns:a="{_A_NS}" xmlns:r="{_R_NS}">'
+        '<p:nvGraphicFramePr><p:cNvPr id="42" name="Process Diagram"/>'
+        "<p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>"
+        '<p:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="1828800"/></p:xfrm>'
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/diagram">'
+        '<dgm:relIds xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram"'
+        f' r:dm="{data_rid}" r:lo="" r:qs="" r:cs=""/></a:graphicData></a:graphic>'
+        "</p:graphicFrame>",
+    )
+    presentation.save(path)
+
+
+def test_render_pptx_preview_rebuilds_smartart_from_cached_drawing(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "smartart.pptx"
+    _smartart_deck(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    document = lxml_html.fromstring(
+        preview.render_document_preview(source).read_text(encoding="utf-8")
+    )
+
+    group = document.xpath('//*[@data-shape-id="42"]')[0]
+    assert "shape-group" in group.get("class")
+    assert group.get("data-shape-name") == "Process Diagram"
+    assert group.get("data-coordinate-width") == "3657600"
+    child = group.xpath('.//*[contains(@class, "text-shape")]')[0]
+    assert "Discover" in child.text_content()
+    assert "width:50.000%" in child.get("style")
+
+
+def test_render_pptx_preview_uses_alternate_content_fallback(monkeypatch, tmp_path):
+    source = tmp_path / "alternate.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+
+    def text_shape(shape_id: int, text: str) -> str:
+        return (
+            f'<p:sp><p:nvSpPr><p:cNvPr id="{shape_id}" name="{text}"/><p:cNvSpPr/>'
+            '<p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/>'
+            '<a:ext cx="914400" cy="457200"/></a:xfrm><a:prstGeom prst="rect">'
+            "<a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>"
+            f"<a:p><a:r><a:t>{text}</a:t></a:r></a:p></p:txBody></p:sp>"
+        )
+
+    _append_shape_xml(
+        slide,
+        f'<mc:AlternateContent xmlns:mc="{_MC_NS}" xmlns:p="{_P_NS}" xmlns:a="{_A_NS}">'
+        f'<mc:Choice Requires="a14">{text_shape(7, "Choice branch")}</mc:Choice>'
+        f"<mc:Fallback>{text_shape(8, 'Fallback branch')}</mc:Fallback>"
+        "</mc:AlternateContent>",
+    )
+    presentation.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_document_preview(source).read_text(encoding="utf-8")
+
+    assert "Fallback branch" in rendered
+    assert 'data-shape-id="8"' in rendered
+    assert "Choice branch" not in rendered
+
+
+def test_render_pptx_preview_labels_embedded_objects_without_preview(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "ole.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    _append_shape_xml(
+        slide,
+        f'<p:graphicFrame xmlns:p="{_P_NS}" xmlns:a="{_A_NS}">'
+        '<p:nvGraphicFramePr><p:cNvPr id="9" name="Budget workbook"/>'
+        "<p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr>"
+        '<p:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></p:xfrm>'
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole">'
+        '<p:oleObj progId="Excel.Sheet.12"/></a:graphicData></a:graphic></p:graphicFrame>',
+    )
+    presentation.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    document = lxml_html.fromstring(
+        preview.render_document_preview(source).read_text(encoding="utf-8")
+    )
+
+    placeholder = document.xpath('//*[@data-shape-id="9"]')[0]
+    assert "object-placeholder" in placeholder.get("class")
+    assert "Embedded object" in placeholder.text_content()
+    assert "Excel.Sheet.12" in placeholder.text_content()
+
+
+def test_render_xlsx_preview_applies_workbook_view_and_conditional_features(
+    monkeypatch, tmp_path
+):
+    from openpyxl.comments import Comment
+    from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule
+    from openpyxl.styles import PatternFill
+
+    source = tmp_path / "features.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Scores"
+    for row, value in enumerate([10, 50, 90], start=1):
+        sheet.cell(row, 1, value)
+        sheet.cell(row, 2, value)
+        sheet.cell(row, 3, value)
+    sheet.conditional_formatting.add(
+        "A1:A3",
+        CellIsRule(
+            operator="greaterThan",
+            formula=["40"],
+            fill=PatternFill(bgColor="FFC7CE", fill_type="solid"),
+        ),
+    )
+    sheet.conditional_formatting.add(
+        "B1:B3",
+        ColorScaleRule(
+            start_type="min", start_color="FFFFFF", end_type="max", end_color="63BE7B"
+        ),
+    )
+    sheet.conditional_formatting.add(
+        "C1:C3",
+        DataBarRule(start_type="min", end_type="max", color="638EC6"),
+    )
+    sheet.row_dimensions[4].hidden = True
+    sheet["A4"] = "hidden row"
+    sheet.freeze_panes = "B2"
+    sheet["D1"] = "Docs"
+    sheet["D1"].hyperlink = "https://example.com/spec"
+    sheet["D2"].value = "Reviewed"
+    sheet["D2"].comment = Comment("Check totals", "Mai")
+    sheet.sheet_view.showGridLines = False
+    hidden = workbook.create_sheet("Lookup")
+    hidden.sheet_state = "hidden"
+    workbook.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    document = lxml_html.fromstring(
+        preview.render_document_preview(source).read_text(encoding="utf-8")
+    )
+
+    def cell(name: str):
+        return document.xpath(f'//section[1]//td[@data-cell="{name}"]')[0]
+
+    assert "background:#ffc7ce" in cell("A2").get("style")
+    assert "#ffc7ce" not in cell("A1").get("style", "")
+    assert "background:#ffffff" in cell("B1").get("style")
+    assert "background:#63be7b" in cell("B3").get("style")
+    assert "linear-gradient" in cell("C3").get("style")
+    hidden_row = cell("A4").getparent()
+    assert "visibility:collapse" in hidden_row.get("style")
+    assert "position:sticky;left:44.00px" in cell("A2").get("style")
+    assert "position:sticky;top:26.00px" in cell("B1").get("style")
+    assert "frozen" not in cell("B2").get("class")
+    assert "hyperlink" in cell("D1").get("class")
+    assert cell("D1").get("data-href") == "https://example.com/spec"
+    assert "href" not in cell("D1").attrib
+    assert "has-comment" in cell("D2").get("class")
+    assert "Mai: Check totals" in cell("D2").get("title")
+    sections = document.xpath("//section[@data-preview-item]")
+    assert "no-gridlines" in sections[0].get("class")
+    assert sections[1].get("data-preview-label") == "Lookup (hidden)"
+
+
+def test_render_xlsx_preview_draws_text_boxes_openpyxl_discards(monkeypatch, tmp_path):
+    source = tmp_path / "textbox.xlsx"
+    workbook = Workbook()
+    workbook.active.title = "Notes"
+    workbook.active["A1"] = "Anchor"
+    workbook.save(source)
+    xdr = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+    drawing = (
+        f'<xdr:wsDr xmlns:xdr="{xdr}" xmlns:a="{_A_NS}"><xdr:twoCellAnchor>'
+        "<xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row>"
+        "<xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>3</xdr:col>"
+        "<xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>"
+        '<xdr:sp><xdr:nvSpPr><xdr:cNvPr id="2" name="TextBox 1"/><xdr:cNvSpPr txBox="1"/>'
+        '</xdr:nvSpPr><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+        '<a:solidFill><a:srgbClr val="FFF2CC"/></a:solidFill></xdr:spPr><xdr:txBody>'
+        '<a:bodyPr/><a:p><a:pPr algn="ctr"/><a:r><a:rPr b="1"/><a:t>Assumptions</a:t>'
+        "</a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>"
+    )
+    rewritten = source.with_suffix(".tmp.xlsx")
+    with ZipFile(source) as reader, ZipFile(rewritten, "w", ZIP_DEFLATED) as writer:
+        for member in reader.infolist():
+            payload = reader.read(member.filename)
+            if member.filename == "xl/worksheets/sheet1.xml":
+                payload = payload.replace(
+                    b"</worksheet>",
+                    f'<drawing xmlns:r="{_R_NS}" r:id="rIdDrawing1"/></worksheet>'.encode(),
+                )
+            if member.filename == "[Content_Types].xml":
+                payload = payload.replace(
+                    b"</Types>",
+                    b'<Override PartName="/xl/drawings/drawing1.xml" ContentType='
+                    b'"application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>',
+                )
+            writer.writestr(member, payload)
+        writer.writestr("xl/drawings/drawing1.xml", drawing)
+        writer.writestr(
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rIdDrawing1" Type="http://schemas.openxmlformats.org/'
+            'officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>'
+            "</Relationships>",
+        )
+    rewritten.replace(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    document = lxml_html.fromstring(
+        preview.render_document_preview(source).read_text(encoding="utf-8")
+    )
+
+    shape = document.xpath('//*[@data-shape-name="TextBox 1"]')[0]
+    assert "workbook-shape" in shape.get("class")
+    assert "Assumptions" in shape.text_content()
+    assert "background:#fff2cc" in shape.get("style")
+    from openpyxl import load_workbook
+
+    loaded = load_workbook(source)
+    column_a = preview._xlsx_column_width_px(loaded["Notes"], 1)
+    # Anchored at column B / row 2: row header gutter + column A, and the
+    # header row + one rendered row (25px minimum + 1px border).
+    assert f"left:{44 + column_a:.2f}px" in shape.get("style")
+    assert "top:52.00px" in shape.get("style")
+
+
+def test_resolve_markup_compatibility_keeps_fallback_content():
+    from app.services.document_preview.xlsx_features import (
+        resolve_markup_compatibility,
+    )
+
+    xml = (
+        f'<root xmlns:mc="{_MC_NS}"><a/><mc:AlternateContent>'
+        '<mc:Choice Requires="hs"><choice/></mc:Choice>'
+        "<mc:Fallback><fallback/><second/></mc:Fallback></mc:AlternateContent><z/></root>"
+    ).encode()
+
+    resolved = resolve_markup_compatibility(xml).decode()
+
+    assert "AlternateContent" not in resolved
+    assert "<choice/>" not in resolved
+    assert resolved.index("<a/>") < resolved.index("<fallback/>")
+    assert resolved.index("<second/>") < resolved.index("<z/>")

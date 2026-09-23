@@ -81,6 +81,24 @@ overwritten. Session workspaces are addressed by session id
 - PDF and HTML intake for agent context uses `markitdown` where supported.
 - DOCX, XLSX and PPTX are read-only workspace previews backed by optional host
   engines; Office content is not silently injected into agent context.
+- DOCX renders in the WebView with `docx-preview`
+  (`web/src/lib/docx-preview-render.ts`) from the raw file, covering Word
+  numbering, sections, headers/footers, footnotes/endnotes, tracked changes,
+  floating text boxes and table merges. Its output is neutralized (no scripts,
+  handlers, remote sources or navigable links) and serialized into the same
+  inert CSP document and `[data-preview-item]` page contract as the backend.
+  The backend python-docx renderer stays the fallback when client rendering
+  fails or no raw file URL is available.
+- PPTX renders on the backend. SmartArt is rebuilt from the drawing PowerPoint
+  caches in `ppt/diagrams/drawingN.xml`, `mc:AlternateContent` resolves to its
+  fallback branch, and OLE objects show their preview image or a labelled
+  placeholder instead of disappearing.
+- XLSX renders on the backend with conditional formatting (cell rules, colour
+  scales, data bars, icon sets), hidden rows/columns, freeze panes, hidden
+  gridlines, comments, hyperlinks (inert), drawing shapes/text boxes, chart
+  sheets and hidden-sheet labels (`app/services/document_preview/xlsx_features.py`).
+  Packages openpyxl rejects are retried once from a copy with
+  markup-compatibility fallbacks resolved.
 - XLSX formula display is calculated conservatively and never executes workbook
   macros or arbitrary formulas.
 

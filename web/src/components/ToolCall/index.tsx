@@ -72,6 +72,7 @@ const DocumentPreview = lazy(() =>
 interface AttachmentDocumentPreview {
   file: WorkspaceFileInfo
   sourceUrl: string
+  rawUrl?: string
 }
 
 function attachmentDocumentPreview(
@@ -91,6 +92,7 @@ function attachmentDocumentPreview(
   return {
     file,
     sourceUrl: resolveApiUrl(attachment.preview_url) || attachment.preview_url,
+    rawUrl: attachment.url ? resolveApiUrl(attachment.url) || attachment.url : undefined,
   }
 }
 
@@ -203,6 +205,7 @@ export function ToolAttachments({
               <DocumentPreview
                 file={documentPreview.file}
                 sourceUrl={documentPreview.sourceUrl}
+                rawUrl={documentPreview.rawUrl}
               />
             </Suspense>
           )}

@@ -28,9 +28,12 @@ import {
 
 import {
   codingWorkspaceDocumentPreviewUrl,
+  codingWorkspaceFileUrl,
   workspaceDocumentPreviewUrl,
+  workspaceMediaUrl,
 } from '@/api/client'
 import type { WorkspaceFileInfo } from '@/api/types'
+import { MAX_DOCX_SOURCE_BYTES, renderDocxPreviewHtml } from '@/lib/docx-preview-render'
 import { cn } from '@/lib/utils'
 import {
   workspaceFileKind,
@@ -78,6 +81,8 @@ export interface WorkspaceDocumentPreviewProps {
   sessionId?: string
   workspace?: string
   sourceUrl?: string
+  /** Raw file bytes, used for client-side rendering (DOCX) before falling back to `sourceUrl`. */
+  rawUrl?: string
 }
 
 const FORMAT_META: Record<WorkspaceDocumentKind, { accent: string; label: string }> = {
@@ -250,6 +255,16 @@ async function previewResponseText(response: Response): Promise<string> {
   return new TextDecoder().decode(payload)
 }
 
+async function fetchDocxPreviewHtml(rawUrl: string, title: string, signal: AbortSignal): Promise<string> {
+  const response = await fetch(rawUrl, { signal })
+  if (!response.ok) throw new Error(await errorMessage(response))
+  const declaredSize = Number(response.headers?.get?.('content-length') ?? 0)
+  if (Number.isFinite(declaredSize) && declaredSize > MAX_DOCX_SOURCE_BYTES) {
+    throw new Error('This document is too large for the in-app viewer. Download the file to inspect it externally.')
+  }
+  return renderDocxPreviewHtml(await response.arrayBuffer(), title)
+}
+
 function adjacentCellName(name: string, key: string): string | null {
   const match = /^([A-Z]+)([1-9]\d*)$/.exec(name)
   if (!match) return null
@@ -284,6 +299,7 @@ export function WorkspaceDocumentPreview({
   sessionId,
   workspace,
   sourceUrl: providedSourceUrl,
+  rawUrl: providedRawUrl,
 }: WorkspaceDocumentPreviewProps) {
   const kind = workspaceFileKind(file) as WorkspaceDocumentKind
   const meta = FORMAT_META[kind]
@@ -293,6 +309,14 @@ export function WorkspaceDocumentPreview({
     if (sessionId) return workspaceDocumentPreviewUrl(sessionId, file.path)
     return ''
   }, [file.path, providedSourceUrl, sessionId, workspace])
+  const rawUrl = useMemo(() => {
+    if (kind !== 'docx') return ''
+    if (providedRawUrl) return providedRawUrl
+    if (providedSourceUrl) return ''
+    if (workspace) return codingWorkspaceFileUrl(workspace, file.path)
+    if (sessionId) return workspaceMediaUrl(sessionId, file.path)
+    return ''
+  }, [file.path, kind, providedRawUrl, providedSourceUrl, sessionId, workspace])
   const requestKey = `${sourceUrl}:${file.size}:${file.mtime}`
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -347,11 +371,21 @@ export function WorkspaceDocumentPreview({
       return () => controller.abort()
     }
 
-    void fetch(sourceUrl, { signal: controller.signal })
+    const fetchBackendHtml = () => fetch(sourceUrl, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(await errorMessage(response))
         return previewResponseText(response)
       })
+    // DOCX renders client-side for fidelity; the backend renderer stays the fallback.
+    const loadHtml = rawUrl
+      ? fetchDocxPreviewHtml(rawUrl, file.name, controller.signal).catch((reason: unknown) => {
+        if (controller.signal.aborted) throw reason
+        console.warn('[DocumentPreview] client DOCX render failed, using backend preview:', reason)
+        return fetchBackendHtml()
+      })
+      : fetchBackendHtml()
+
+    void loadHtml
       .then((html) => {
         setPresentationView('normal')
         setNotesOpen(false)
@@ -367,7 +401,7 @@ export function WorkspaceDocumentPreview({
       })
 
     return () => controller.abort()
-  }, [kind, requestKey, retryKey, sourceUrl])
+  }, [file.name, kind, rawUrl, requestKey, retryKey, sourceUrl])
 
   useEffect(() => () => frameCleanupRef.current?.(), [])
 
