@@ -37,6 +37,7 @@ from app.api.routes.team import (
     git,
     git_ai,
     language_servers,
+    office_runtime,
     permissions,
     preview,
     problems,
@@ -67,6 +68,8 @@ router.include_router(preview.router)
 router.include_router(suggested_tasks.router)
 # Literal /search-app, ahead of chat.py's parameterised session routes.
 router.include_router(app_search.router)
+# Literal /office-runtime/*, same reason.
+router.include_router(office_runtime.router)
 router.include_router(chat.router)
 router.include_router(files.router)
 router.include_router(change_sets.router)

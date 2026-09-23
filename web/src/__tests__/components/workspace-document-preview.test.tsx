@@ -1,11 +1,28 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { workPreviewUrl, codingPreviewUrl, renderDocx } = vi.hoisted(() => ({
+const { workPreviewUrl, codingPreviewUrl, renderDocx, runtime, installRuntime } = vi.hoisted(() => ({
   workPreviewUrl: vi.fn((sessionId: string, path: string) => `/work/${sessionId}/${path}`),
   codingPreviewUrl: vi.fn((workspace: string, path: string) => `/coding/${workspace}/${path}`),
   renderDocx: vi.fn(),
+  runtime: { status: undefined as unknown },
+  installRuntime: vi.fn(),
 }))
+
+vi.mock('@/queries/useOfficeRuntimeQuery', () => ({
+  useOfficeRuntimeQuery: () => ({ data: runtime.status }),
+  useInstallOfficeRuntimeMutation: () => ({ mutate: installRuntime, isPending: false }),
+  useDismissOfficeRuntimeErrorMutation: () => ({ mutate: vi.fn(), isPending: false }),
+}))
+
+const availableRuntime = {
+  available: true,
+  platform: 'win32-x64',
+  version: '26.8.0',
+  download_bytes: 191_184_974,
+  installed_version: null,
+  job: null,
+}
 
 vi.mock('@/api/client', () => ({
   workspaceDocumentPreviewUrl: workPreviewUrl,
@@ -77,6 +94,8 @@ beforeEach(() => {
   codingPreviewUrl.mockClear()
   renderDocx.mockReset()
   renderDocx.mockResolvedValue(documentHtml)
+  runtime.status = undefined
+  installRuntime.mockReset()
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
@@ -174,6 +193,65 @@ describe('WorkspaceDocumentPreview', () => {
     expect(fetch).toHaveBeenCalledWith('/media/session-1/report.docx', expect.any(Object))
     expect(fetch).not.toHaveBeenCalledWith('/work/session-1/report.docx', expect.any(Object))
     await waitFor(() => expect(screen.getByTestId('document-preview-frame')).toHaveAttribute('srcdoc', documentHtml))
+  })
+
+  it('offers the exact renderer and starts its download only on request', async () => {
+    runtime.status = availableRuntime
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByText(/This preview is approximate/)).toHaveTextContent('182 MB download')
+    expect(installRuntime).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Install renderer' }))
+    expect(installRuntime).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports download progress while the renderer installs', async () => {
+    runtime.status = {
+      ...availableRuntime,
+      job: {
+        phase: 'downloading',
+        version: '26.8.0',
+        bytes_done: 95_592_487,
+        bytes_total: 191_184_974,
+        started_at: '2026-09-23T00:00:00Z',
+        error: null,
+      },
+    }
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'forecast.xlsx', name: 'forecast.xlsx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame()
+
+    const progress = screen.getByRole('status', { name: '' })
+    expect(progress).toHaveTextContent('Downloading the exact renderer')
+    expect(progress).toHaveTextContent('50% · 91 MB / 182 MB')
+  })
+
+  it('renders DOCX through the backend once the exact renderer is installed', async () => {
+    runtime.status = { ...availableRuntime, installed_version: '26.8.0' }
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'report.docx', name: 'report.docx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/work/session-1/report.docx', expect.any(Object)))
+    expect(renderDocx).not.toHaveBeenCalled()
+    expect(screen.queryByText(/This preview is approximate/)).not.toBeInTheDocument()
   })
 
   it('falls back to the backend DOCX preview when client rendering fails', async () => {

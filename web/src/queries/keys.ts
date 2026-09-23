@@ -159,6 +159,7 @@ export const queryKeys = {
     webbridge: () => ['settings', 'webbridge'] as const,
     multimodal: () => ['settings', 'multimodal'] as const,
     providers: () => ['settings', 'providers'] as const,
+    officeRuntime: () => ['settings', 'office-runtime'] as const,
     languageServers: (workspaces: readonly string[]) =>
       ['settings', 'language-servers', workspaces] as const,
     providerModels: (providerId: string) => ['settings', 'providers', providerId, 'models'] as const,

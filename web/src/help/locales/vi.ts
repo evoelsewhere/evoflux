@@ -999,6 +999,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Terminal và Browser hỗ trợ nhiều tab; tool khác là toggle single-instance.',
       'Mở Running ở đáy tab Terminal bất kỳ để xem và dừng lệnh của agent, preview server và terminal khác trên mọi session.',
       'Source Control (Ctrl+G) chỉ Coding.',
+      'Preview Word, Excel, PowerPoint là bản gần đúng cho tới khi bạn bấm Install renderer trong viewer; renderer LibreOffice tuỳ chọn khi đó hiển thị trang đúng như Office dàn trang.',
       'Toggle cùng tool lần nữa để đóng — workbench không phải đống card vĩnh viễn.'
 ],
     blocks: [
@@ -1038,6 +1039,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'p',
         text: 'Bấm tool trên workbench bar hoặc nhấn shortcut. Toggle cùng tool lần nữa để đóng. Quên tool nào làm gì thì Ctrl+P. Đừng nhầm built-in Browser (Ctrl+T) với WebBridge pairing cho Chrome/Edge thật.',
+      },
+      {
+        type: 'p',
+        text: 'File Office (.docx, .xlsx, .pptx) mở trong viewer chỉ đọc. Renderer có sẵn chỉ dàn trang gần đúng; muốn trang chính xác, bấm Install renderer trong viewer để tải renderer LibreOffice tuỳ chọn (khoảng 150–190 MB, một lần, trên Windows và macOS). Không tải gì cho tới khi bạn yêu cầu. Gói tải về được kiểm checksum và chữ ký đã ghim trước khi cài vào thư mục dữ liệu của app; việc chuyển đổi chạy offline và tắt macro. Lần render chính xác đầu tiên của một file có thể mất tới một phút, các lần sau dùng cache. Tìm kiếm và bôi đen chữ vẫn dùng được trên trang chính xác.',
       },
       {
         type: 'p',

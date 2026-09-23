@@ -570,6 +570,20 @@ def _relationship_targets(archive: zipfile.ZipFile, part: str) -> dict[str, str]
     return targets
 
 
+def visible_sheet_names(source: Path) -> list[str]:
+    """Return workbook sheet names in tab order, skipping hidden sheets."""
+    try:
+        with zipfile.ZipFile(source) as archive:
+            workbook = etree.fromstring(archive.read("xl/workbook.xml"), _XML_PARSER)
+    except (KeyError, OSError, zipfile.BadZipFile, etree.XMLSyntaxError):
+        return []
+    return [
+        str(sheet.get("name") or "")
+        for sheet in workbook.iter(f"{{{_SHEET_NS}}}sheet")
+        if (sheet.get("state") or "visible") == "visible"
+    ]
+
+
 def worksheet_drawing_parts(source: Path) -> dict[str, str]:
     """Map worksheet titles to the drawing part each one references."""
     result: dict[str, str] = {}

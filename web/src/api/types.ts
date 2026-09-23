@@ -570,6 +570,27 @@ export interface LanguageServerInstallJob {
   error: string | null
 }
 
+export type OfficeRuntimeJobPhase = 'downloading' | 'verifying' | 'extracting' | 'failed'
+
+export interface OfficeRuntimeJob {
+  phase: OfficeRuntimeJobPhase
+  version: string
+  bytes_done: number
+  bytes_total: number
+  started_at: string
+  error: string | null
+}
+
+/** Exact Office rendering runtime (LibreOffice), installed on user request. */
+export interface OfficeRuntimeStatus {
+  available: boolean
+  platform: string | null
+  version: string | null
+  download_bytes: number | null
+  installed_version: string | null
+  job: OfficeRuntimeJob | null
+}
+
 export interface LanguageServerOverview {
   workspaces: string[]
   cache_dir: string
