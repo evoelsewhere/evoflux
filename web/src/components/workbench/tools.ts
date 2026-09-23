@@ -66,7 +66,7 @@ export const WORKBENCH_TOOLS: Record<
     shortcut: '^K',
   },
   'source-control': {
-    label: 'Changes',
+    label: 'Source Control',
     description: 'Commit local changes and review pull requests',
     icon: GitBranch,
     shortcut: '^G',
