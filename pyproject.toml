@@ -38,8 +38,10 @@ dependencies = [
     # in Python 3.14. Shimmed onto `uuid` in app/__init__.py for 3.12/3.13.
     "uuid7>=0.1.0",
     # Core PDF/HTML intake. Office files are view-only and are never converted
-    # into agent context by this dependency.
-    "markitdown>=0.1.5",
+    # into agent context by this dependency. The [pdf] extra (pdfminer.six +
+    # pdfplumber) is required: without it markitdown recognises PDFs but its
+    # PdfConverter raises MissingDependencyException.
+    "markitdown[pdf]>=0.1.5",
     "markdown-it-py>=4.0.0",
     "pyyaml>=6.0.3",
     "fastapi>=0.135.2",
