@@ -7,6 +7,7 @@ import pytest
 
 from app.remote.contracts import RemoteConnectionState, RemoteErrorClass
 from app.remote.imessage import adapter as adapter_module
+from app.remote.imessage.capabilities import IMessageCapabilities, IMessageHealth
 from app.remote.imessage.adapter import IMessageRemoteAdapter
 
 
@@ -26,7 +27,24 @@ class _Provider:
 
 
 @pytest.mark.asyncio
-async def test_adapter_waits_for_pairing_then_starts() -> None:
+async def test_adapter_waits_for_pairing_then_starts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _ReadyChannel:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def start(self) -> IMessageCapabilities:
+            return IMessageCapabilities(
+                provider="imsg",
+                health=IMessageHealth.HEALTHY,
+                features=frozenset(),
+            )
+
+        async def stop(self) -> None:
+            pass
+
+    monkeypatch.setattr(adapter_module, "IMessageChannel", _ReadyChannel)
     adapter = IMessageRemoteAdapter(
         connection_id=uuid4(), credential="ignored", on_action=lambda _: _done()
     )
