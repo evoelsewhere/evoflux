@@ -576,3 +576,37 @@ describe('WorkspaceDocumentPreview exact renderer banner', () => {
     window.localStorage.clear()
   })
 })
+
+describe('WorkspaceDocumentPreview loading skeleton', () => {
+  it.each([
+    ['deck.pptx', 'PowerPoint'],
+    ['model.xlsx', 'Excel'],
+    ['report.docx', 'Word'],
+  ])('shows a %s-shaped skeleton while the preview renders', async (name, label) => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => undefined)))
+    renderDocx.mockReturnValue(new Promise(() => undefined))
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: name, name, mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    expect(await screen.findByTestId('document-preview-skeleton')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(`Rendering ${label} document…`)
+    expect(screen.queryByTestId('document-preview-frame')).not.toBeInTheDocument()
+  })
+
+  it('tells the user the first exact render can take a while', async () => {
+    runtime.status = { ...availableRuntime, installed_version: '26.8.0' }
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => undefined)))
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    expect(await screen.findByRole('status')).toHaveTextContent('first exact render can take up to a minute')
+  })
+})
