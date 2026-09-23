@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import io
 import json
 import subprocess
@@ -9,21 +8,11 @@ import tarfile
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.services.office_runtime import convert, installer, manifest
 
 PLATFORM = "win32-x64"
 EXECUTABLE = "soffice/program/soffice.exe"
-
-
-def _keypair() -> tuple[Ed25519PrivateKey, str]:
-    key = Ed25519PrivateKey.generate()
-    public = key.public_key().public_bytes(
-        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
-    )
-    return key, public.decode("ascii")
 
 
 def _archive(
@@ -41,26 +30,14 @@ def _archive(
             archive.addfile(info)
 
 
-def _record(archive: Path, key: Ed25519PrivateKey, *, key_id: str = "test-key") -> dict:
+def _record(archive: Path) -> dict:
     import hashlib
 
-    sha256 = hashlib.sha256(archive.read_bytes()).hexdigest()
-    size = archive.stat().st_size
-    signed = manifest.signed_record(
-        platform=PLATFORM,
-        version="26.8.0",
-        sha256=sha256,
-        size=size,
-        key_id=key_id,
-        executable=EXECUTABLE,
-    )
     return {
         "version": "26.8.0",
         "url": archive.resolve().as_uri(),
-        "sha256": sha256,
-        "size": size,
-        "keyId": key_id,
-        "signature": base64.b64encode(key.sign(signed)).decode("ascii"),
+        "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "size": archive.stat().st_size,
         "executable": EXECUTABLE,
     }
 
@@ -72,53 +49,34 @@ def runtime_env(monkeypatch, tmp_path):
     monkeypatch.setattr(installer, "_job", None)
     monkeypatch.setattr(installer, "_task", None)
 
-    def configure(record: dict, public_key: str) -> None:
+    def configure(record: dict) -> None:
         override = tmp_path / "manifest.json"
-        override.write_text(
-            json.dumps(
-                {"keys": {record["keyId"]: public_key}, "assets": {PLATFORM: record}}
-            )
-        )
+        override.write_text(json.dumps({"assets": {PLATFORM: record}}))
         monkeypatch.setenv(manifest.MANIFEST_OVERRIDE_ENV, str(override))
 
     return configure
 
 
-def test_parse_asset_rejects_tampered_records():
-    key, public = _keypair()
+def test_parse_asset_rejects_malformed_records():
     record = {
         "version": "26.8.0",
         "url": "https://example.com/libreoffice.tar.gz",
         "sha256": "a" * 64,
         "size": 1024,
-        "keyId": "k",
         "executable": EXECUTABLE,
     }
-    signed = manifest.signed_record(
-        platform=PLATFORM,
-        version="26.8.0",
-        sha256="a" * 64,
-        size=1024,
-        key_id="k",
-        executable=EXECUTABLE,
-    )
-    record["signature"] = base64.b64encode(key.sign(signed)).decode()
 
-    asset = manifest.parse_asset(PLATFORM, record, {"k": public})
+    asset = manifest.parse_asset(PLATFORM, record)
     assert asset.size == 1024
 
-    with pytest.raises(manifest.RuntimeManifestError, match="signature"):
-        manifest.parse_asset(PLATFORM, {**record, "size": 2048}, {"k": public})
-    with pytest.raises(manifest.RuntimeManifestError, match="Unknown signing key"):
-        manifest.parse_asset(PLATFORM, record, {})
+    with pytest.raises(manifest.RuntimeManifestError, match="sha256"):
+        manifest.parse_asset(PLATFORM, {**record, "sha256": "not-a-hash"})
+    with pytest.raises(manifest.RuntimeManifestError, match="size"):
+        manifest.parse_asset(PLATFORM, {**record, "size": 0})
     with pytest.raises(manifest.RuntimeManifestError, match="HTTPS"):
-        manifest.parse_asset(
-            PLATFORM, {**record, "url": "http://example.com/x"}, {"k": public}
-        )
+        manifest.parse_asset(PLATFORM, {**record, "url": "http://example.com/x"})
     with pytest.raises(manifest.RuntimeManifestError, match="soffice/"):
-        manifest.parse_asset(
-            PLATFORM, {**record, "executable": "../evil.exe"}, {"k": public}
-        )
+        manifest.parse_asset(PLATFORM, {**record, "executable": "../evil.exe"})
 
 
 @pytest.mark.parametrize(
@@ -139,10 +97,9 @@ def test_extraction_refuses_unsafe_archives(tmp_path, members, links, message):
 
 
 def test_install_verifies_extracts_and_activates(runtime_env, tmp_path):
-    key, public = _keypair()
     archive = tmp_path / "runtime.tar.gz"
     _archive(archive, {EXECUTABLE: b"MZ", "soffice/share/fonts/a.ttf": b"font"})
-    runtime_env(_record(archive, key), public)
+    runtime_env(_record(archive))
 
     async def run() -> None:
         installer.start_runtime_install()
@@ -161,12 +118,11 @@ def test_install_verifies_extracts_and_activates(runtime_env, tmp_path):
 
 
 def test_install_rejects_archive_that_does_not_match_pin(runtime_env, tmp_path):
-    key, public = _keypair()
     archive = tmp_path / "runtime.tar.gz"
     _archive(archive, {EXECUTABLE: b"MZ"})
-    record = _record(archive, key)
+    record = _record(archive)
     _archive(archive, {EXECUTABLE: b"MZ-tampered-and-longer"})
-    runtime_env(record, public)
+    runtime_env(record)
 
     async def run() -> None:
         installer.start_runtime_install()

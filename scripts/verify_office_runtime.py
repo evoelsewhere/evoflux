@@ -1,7 +1,7 @@
 """End-to-end check of a built LibreOffice runtime bundle on this machine.
 
 Installs the bundle through the sidecar's real installer (download, size and
-SHA-256 check, ed25519 signature, guarded extraction, activation) into a
+SHA-256 check, guarded extraction, activation) into a
 throwaway data directory, then renders generated DOCX, PPTX and XLSX files
 through the document preview pipeline and asserts that LibreOffice produced
 them with the expected text. CI runs this on every runtime platform so macOS
@@ -10,8 +10,7 @@ and Windows bundles are proven before they are published.
 Example::
 
     uv run --extra office-preview python scripts/verify_office_runtime.py \\
-        --manifest dist/office-runtime/libreoffice-26.8.0-win32-x64.json \\
-        --public-key keys/office.public.pem --key-id evoflux-office-1
+        --manifest dist/office-runtime/libreoffice-26.8.0-win32-x64.json
 """
 
 from __future__ import annotations
@@ -126,8 +125,6 @@ def _render(fixtures: list[Path]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     parser.add_argument("--manifest", type=Path, required=True)
-    parser.add_argument("--public-key", type=Path, required=True)
-    parser.add_argument("--key-id", required=True)
     parser.add_argument(
         "--archive",
         type=Path,
@@ -137,22 +134,14 @@ def main() -> None:
 
     assets = json.loads(args.manifest.read_text(encoding="utf-8"))
     if args.archive is not None:
-        # The signature covers content and identity, not location, so a
-        # local copy verifies exactly like the published asset.
+        # The pin covers content (hash and size), not location, so a local
+        # copy verifies exactly like the published asset.
         for entry in assets.values():
             entry["url"] = args.archive.resolve().as_uri()
     with tempfile.TemporaryDirectory(prefix="evoflux-lo-verify-") as directory:
         root = Path(directory)
         override = root / "manifest.json"
-        override.write_text(
-            json.dumps(
-                {
-                    "keys": {args.key_id: args.public_key.read_text(encoding="ascii")},
-                    "assets": assets,
-                }
-            ),
-            encoding="utf-8",
-        )
+        override.write_text(json.dumps({"assets": assets}), encoding="utf-8")
         os.environ["EVOFLUX_OFFICE_RUNTIME_MANIFEST"] = str(override)
         os.environ["EVOFLUX_DATA_DIR"] = str(root / "data")
         os.environ["EVOFLUX_CACHE_DIR"] = str(root / "cache")

@@ -118,21 +118,21 @@ nothing downloads until they ask.
   download.documentfoundation.org) into a trimmed `soffice/` tree — help,
   translations, extensions, galleries, templates, Python/Java and unused icon
   themes removed; metric-compatible fonts kept — packs it as
-  `libreoffice-<version>-<platform>.tar.gz` (about 180 MB on Windows) and signs
-  its asset record with the team ed25519 key. macOS apps are re-sealed with an
-  ad-hoc signature after trimming.
+  `libreoffice-<version>-<platform>.tar.gz` (about 180 MB on Windows) and
+  prints its manifest entry (URL, SHA-256, size). macOS apps are re-sealed
+  with an ad-hoc signature after trimming.
 - **CI.** `.github/workflows/office-runtime.yml` builds and verifies every
   platform (macOS Apple Silicon and Intel, Windows x64, Linux x64) with
   `scripts/verify_office_runtime.py`, which installs through the real
   installer and converts generated DOCX/PPTX/XLSX through the preview
-  pipeline. With `publish` it signs with the release key and uploads the
-  archives to the `office-runtime-<version>` release; the step summary prints
-  the entries to pin in `app/services/office_runtime/manifest.py`
-  (`PINNED_ASSETS`, `TRUSTED_KEYS`). Until then the runtime reports
-  unavailable and the banner stays hidden.
+  pipeline. With `publish` it uploads the archives to the
+  `office-runtime-<version>` release; the step summary prints the entries to
+  pin in `app/services/office_runtime/manifest.py` (`PINNED_ASSETS`). The pin
+  ships inside the application, so no separate signing key is needed. Until
+  then the runtime reports unavailable and the banner stays hidden.
 - **Install.** `app/services/office_runtime/installer.py` streams the archive
-  with byte progress (`GET/POST /api/team/office-runtime/…`), rejects any size,
-  SHA-256 or signature mismatch, refuses archive entries outside `soffice/`,
+  with byte progress (`GET/POST /api/team/office-runtime/…`), rejects any size
+  or SHA-256 mismatch, refuses archive entries outside `soffice/`,
   links that escape it and special files, then activates the tree under
   `<data dir>/runtimes/libreoffice/<version>` (renames retry through transient
   Windows antivirus locks). `EVOFLUX_OFFICE_RUNTIME_MANIFEST` can point at a
