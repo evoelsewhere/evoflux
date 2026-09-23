@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   ChevronRight,
   LayoutGrid,
-  Loader2,
   Maximize2,
   Minimize2,
   MonitorPlay,
@@ -34,6 +33,7 @@ import {
 } from '@/api/client'
 import type { WorkspaceFileInfo } from '@/api/types'
 import { DocumentPreviewRuntimeBanner } from '@/components/document-preview-runtime-banner'
+import { DocumentPreviewSkeleton } from '@/components/document-preview-skeleton'
 import { MAX_DOCX_SOURCE_BYTES, renderDocxPreviewHtml } from '@/lib/docx-preview-render'
 import { cn } from '@/lib/utils'
 import {
@@ -873,13 +873,11 @@ export function WorkspaceDocumentPreview({
 
   if (!currentResult?.html) {
     return (
-      <div className="flex h-full items-center justify-center gap-2 text-(--color-text-subtle)">
-        <Loader2 size={17} className="animate-spin" aria-hidden="true" />
-        <span className="text-xs">
-          Rendering {meta.label} document…
-          {exactRenderer && ' The first exact render can take up to a minute.'}
-        </span>
-      </div>
+      <DocumentPreviewSkeleton
+        kind={kind}
+        label={meta.label}
+        note={exactRenderer ? 'The first exact render can take up to a minute.' : undefined}
+      />
     )
   }
 
