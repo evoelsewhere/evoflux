@@ -1082,6 +1082,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
+        text: 'When an agent creates a Word, Excel or PowerPoint file in a Work session, Files opens its preview while the turn runs (unless you are using another workbench tool) and redraws it on every save. A deck built with the PowerPoint Skill fills in slide by slide: finished slides appear as they land, the slide being built shows its planned title and an animated placeholder, and later slides are listed as Up next. While it is being built the slide thumbnails and the file tree step aside and the viewer follows the newest slide; scroll, click or navigate to take over. Both come back when the deck is finished, and the exact renderer takes over from there.',
+      },
+      {
+        type: 'p',
         text: 'Common mistakes: hunting Review in Work mode; expecting Files without a focused Coding workspace; bookmarking `/scheduler`; trusting a ⌘P label for Files; opening ten Terminal tabs for one-liners better sent with ! in the composer.',
       },
       {

@@ -90,6 +90,8 @@ export interface WorkspaceDocumentPreviewProps {
   sourceUrl?: string
   /** Raw file bytes, used for client-side rendering (DOCX) before falling back to `sourceUrl`. */
   rawUrl?: string
+  /** Called when a deck starts or stops being built live by an agent. */
+  onLiveDeckChange?: (live: boolean) => void
 }
 
 const FORMAT_META: Record<WorkspaceDocumentKind, { accent: string; label: string }> = {
@@ -307,6 +309,7 @@ export function WorkspaceDocumentPreview({
   workspace,
   sourceUrl: providedSourceUrl,
   rawUrl: providedRawUrl,
+  onLiveDeckChange,
 }: WorkspaceDocumentPreviewProps) {
   const kind = workspaceFileKind(file) as WorkspaceDocumentKind
   const meta = FORMAT_META[kind]
@@ -344,6 +347,18 @@ export function WorkspaceDocumentPreview({
   const frameCleanupRef = useRef<(() => void) | null>(null)
   const selectedCellElementRef = useRef<HTMLElement | null>(null)
   const viewerKeyDownRef = useRef<(event: ViewerKeyEvent) => void>(() => undefined)
+  const viewedSourceRef = useRef<string | null>(null)
+  // While an agent builds a deck the viewer follows the slide being built,
+  // until the user scrolls, clicks or navigates themselves.
+  const followLiveRef = useRef(true)
+  // Whether the frame last showed a deck still being built.
+  const deckLiveRef = useRef(false)
+  const savedScrollRef = useRef(0)
+  // The layout a live build collapsed, restored once the deck is finished
+  // unless the user reopened the thumbnails in the meantime.
+  const liveLayoutRef = useRef({ live: false, restoreNavigator: false })
+  const onLiveDeckChangeRef = useRef(onLiveDeckChange)
+  const navigatorOpenRef = useRef(false)
   const [result, setResult] = useState<{ key: string; html?: string; error?: string } | null>(null)
   const [retryKey, setRetryKey] = useState(0)
   const [navigatorOpen, setNavigatorOpen] = useState(() => (
@@ -367,17 +382,24 @@ export function WorkspaceDocumentPreview({
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [slidePreviewMeta, setSlidePreviewMeta] = useState<SlidePreviewMeta[]>([])
   const [slideAspectRatio, setSlideAspectRatio] = useState('16 / 9')
+  const [lastGood, setLastGood] = useState<{ source: string; renderer: string; html: string } | null>(null)
   const freshResult = result?.key === `${requestKey}:${retryKey}` ? result : null
-  // When the exact renderer lands, keep showing this file's approximate pages
-  // until the exact render (up to a minute) replaces them.
-  const staleResult = !freshResult && result?.html && result.key.startsWith(`${documentKey}:`)
-    ? result
+  // Keep showing this file's last good pages while a newer version renders —
+  // an agent saving a deck slide by slide, or the exact renderer landing —
+  // and when a save was read mid-write, instead of flashing a loader or error.
+  const reusable = lastGood?.source === sourceUrl ? lastGood : null
+  const staleResult = !freshResult?.html && reusable
+    ? { key: `stale:${sourceUrl}`, html: reusable.html }
     : null
-  const currentResult = freshResult ?? staleResult
+  const currentResult = freshResult?.html ? freshResult : (staleResult ?? freshResult)
+  const renderingExact = Boolean(staleResult && reusable && reusable.renderer !== exactRenderer)
   const exactFallback = Boolean(
     exactRenderer
     && freshResult?.html
-    && !freshResult.html.includes('data-preview-renderer="libreoffice-'),
+    && !freshResult.html.includes('data-preview-renderer="libreoffice-')
+    // A deck an agent is still building renders natively on purpose; the
+    // exact render follows once it is finished.
+    && !freshResult.html.includes('data-deck-live="true"'),
   )
   const isPresentation = kind === 'pptx'
   // With the slide thumbnails collapsed, a deck reads top to bottom like a
@@ -420,13 +442,41 @@ export function WorkspaceDocumentPreview({
 
     void loadHtml
       .then((html) => {
-        setPresentationView('normal')
-        setNotesOpen(false)
-        setSlidePreviewMeta([])
-        setSlideAspectRatio('16 / 9')
-        setZoom(100)
-        setFitMode(kind === 'pptx' ? 'page' : 'width')
+        // Reset the view for a different file only; a refresh of the same
+        // file keeps zoom, layout and the current slide.
+        if (viewedSourceRef.current !== sourceUrl) {
+          viewedSourceRef.current = sourceUrl
+          followLiveRef.current = true
+          deckLiveRef.current = false
+          savedScrollRef.current = 0
+          setPresentationView('normal')
+          setNotesOpen(false)
+          setSlidePreviewMeta([])
+          setSlideAspectRatio('16 / 9')
+          setZoom(100)
+          setFitMode(kind === 'pptx' ? 'page' : 'width')
+        } else if (!deckLiveRef.current && html.includes('data-deck-live="true"')) {
+          // The agent started building this deck again: follow it again.
+          followLiveRef.current = true
+        }
+        // A deck an agent is building gets the whole surface: the thumbnails
+        // collapse (so the slides scroll and the viewer follows the one being
+        // built) and the host is told, so it can hide its own chrome too.
+        const live = kind === 'pptx' && html.includes('data-deck-live="true"')
+        const layout = liveLayoutRef.current
+        if (live !== layout.live) {
+          layout.live = live
+          onLiveDeckChangeRef.current?.(live)
+          if (live) {
+            layout.restoreNavigator = navigatorOpenRef.current
+            setNavigatorOpen(false)
+          } else if (layout.restoreNavigator) {
+            layout.restoreNavigator = false
+            setNavigatorOpen(true)
+          }
+        }
         setResult({ key, html })
+        setLastGood({ source: sourceUrl, renderer: exactRenderer, html })
       })
       .catch((reason: unknown) => {
         if (controller.signal.aborted) return
@@ -434,9 +484,21 @@ export function WorkspaceDocumentPreview({
       })
 
     return () => controller.abort()
-  }, [file.name, kind, rawUrl, requestKey, retryKey, sourceUrl])
+  }, [exactRenderer, file.name, kind, rawUrl, requestKey, retryKey, sourceUrl])
 
   useEffect(() => () => frameCleanupRef.current?.(), [])
+
+  useEffect(() => {
+    onLiveDeckChangeRef.current = onLiveDeckChange
+  }, [onLiveDeckChange])
+
+  useEffect(() => {
+    navigatorOpenRef.current = navigatorOpen
+  }, [navigatorOpen])
+
+  useEffect(() => () => {
+    if (liveLayoutRef.current.live) onLiveDeckChangeRef.current?.(false)
+  }, [])
 
   useEffect(() => {
     if (!window.matchMedia) return
@@ -547,6 +609,8 @@ export function WorkspaceDocumentPreview({
   }, [currentResult?.html, fitDocument, fitMode])
 
   const goToItem = useCallback((index: number) => {
+    // Navigating yourself stops following a deck an agent is building.
+    followLiveRef.current = false
     const normalized = Math.max(0, Math.min(index, itemElementsRef.current.length - 1))
     const singleSurface = kind === 'xlsx' || (kind === 'pptx' && !slideScrollRef.current)
     itemElementsRef.current.forEach((item, itemIndex) => {
@@ -706,10 +770,27 @@ export function WorkspaceDocumentPreview({
     } else {
       setSlidePreviewMeta([])
     }
-    const restoredIndex = Math.max(0, Math.min(activeIndexRef.current, elements.length - 1))
+    const continuousSlides = kind === 'pptx' && slideScrollRef.current
+    // A deck an agent is still building: follow the slide being built (or,
+    // one slide at a time, the latest finished one) until the user takes over.
+    const liveDeck = kind === 'pptx' && Boolean(document.querySelector('[data-deck-live]'))
+    const statuses = elements.map((element) => element.dataset.slideStatus ?? '')
+    const building = statuses.indexOf('building')
+    const lastDone = statuses.lastIndexOf('done')
+    const followTarget = continuousSlides
+      ? (building >= 0 ? building : lastDone)
+      : (lastDone >= 0 ? lastDone : building)
+    // The save that finishes a followed deck lands on its last slide.
+    const justFinished = kind === 'pptx' && !liveDeck && deckLiveRef.current && followLiveRef.current
+    deckLiveRef.current = liveDeck
+    const following = justFinished || (liveDeck && followLiveRef.current && followTarget >= 0)
+    const restoredIndex = justFinished
+      ? elements.length - 1
+      : following
+        ? followTarget
+        : Math.max(0, Math.min(activeIndexRef.current, elements.length - 1))
     activeIndexRef.current = restoredIndex
     setActiveIndex(restoredIndex)
-    const continuousSlides = kind === 'pptx' && slideScrollRef.current
     document.documentElement.toggleAttribute('data-evoflux-continuous', continuousSlides)
     if ((kind === 'pptx' && !continuousSlides) || kind === 'xlsx') {
       elements.forEach((element, index) => element.toggleAttribute('hidden', index !== restoredIndex))
@@ -741,6 +822,7 @@ export function WorkspaceDocumentPreview({
     let scrollFrame = 0
     const handleScroll = () => {
       if (kind === 'pptx' && !slideScrollRef.current) return
+      savedScrollRef.current = frameWindow.scrollY
       frameWindow.cancelAnimationFrame(scrollFrame)
       scrollFrame = frameWindow.requestAnimationFrame(() => {
         let closest = 0
@@ -809,9 +891,20 @@ export function WorkspaceDocumentPreview({
     const initialCell = elements[restoredIndex]?.querySelector<HTMLElement>('[data-cell]')
     if (initialCell) selectSpreadsheetCell(initialCell)
 
+    // Any deliberate interaction hands control back to the user.
+    const stopFollowing = () => { followLiveRef.current = false }
+    if (liveDeck) {
+      frameWindow.addEventListener('wheel', stopFollowing, { passive: true })
+      document.addEventListener('pointerdown', stopFollowing)
+      document.addEventListener('keydown', stopFollowing)
+    }
+
     frameCleanupRef.current = () => {
       frameWindow.cancelAnimationFrame(scrollFrame)
       if (tracksContinuousScroll) frameWindow.removeEventListener('scroll', handleScroll)
+      frameWindow.removeEventListener('wheel', stopFollowing)
+      document.removeEventListener('pointerdown', stopFollowing)
+      document.removeEventListener('keydown', stopFollowing)
       frameWindow.removeEventListener('keydown', handleFrameKeyDown)
       document.removeEventListener('click', handleCellClick)
       document.removeEventListener('focusin', handleCellFocus)
@@ -820,7 +913,14 @@ export function WorkspaceDocumentPreview({
     }
 
     if (searchQuery) refreshSearch(searchQuery)
-    frameWindow.requestAnimationFrame(() => fitDocument(fitMode === 'custom' ? 'width' : fitMode))
+    frameWindow.requestAnimationFrame(() => {
+      fitDocument(fitMode === 'custom' ? 'width' : fitMode)
+      if (tracksContinuousScroll && (kind !== 'pptx' || continuousSlides)) {
+        // A refreshed document keeps its place; a followed deck moves on.
+        if (following) elements[restoredIndex]?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+        else if (savedScrollRef.current) frameWindow.scrollTo(0, savedScrollRef.current)
+      }
+    })
   }, [fitDocument, fitMode, kind, refreshSearch, searchQuery, selectSpreadsheetCell])
 
   // Switch an already loaded deck between one-slide and scrolling layouts
@@ -850,7 +950,7 @@ export function WorkspaceDocumentPreview({
     document?.body?.style.setProperty('--evoflux-stage-background', background)
   }, [currentResult?.html, isPresentation, presentationView])
 
-  if (freshResult?.error) {
+  if (freshResult?.error && !staleResult) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <span className="flex h-10 w-10 items-center justify-center rounded-full bg-(--color-error)/10 text-(--color-error)">
@@ -886,7 +986,7 @@ export function WorkspaceDocumentPreview({
       status={officeRuntime.data}
       starting={installRuntime.isPending}
       requestError={installRuntime.error ?? cancelRuntime.error}
-      rendering={Boolean(staleResult)}
+      rendering={renderingExact}
       fallback={exactFallback}
       onInstall={() => installRuntime.mutate()}
       onCancel={() => cancelRuntime.mutate()}
@@ -948,7 +1048,11 @@ export function WorkspaceDocumentPreview({
           {hasNavigator && (
             <button
               type="button"
-              onClick={() => setNavigatorOpen((open) => !open)}
+              onClick={() => {
+                // Choosing a layout yourself overrides the live build's.
+                liveLayoutRef.current.restoreNavigator = false
+                setNavigatorOpen((open) => !open)
+              }}
               aria-label={navigatorVisible
                 ? `Hide ${isPresentation ? 'slide thumbnails' : 'navigator'}`
                 : `Show ${isPresentation ? 'slide thumbnails' : 'navigator'}`}

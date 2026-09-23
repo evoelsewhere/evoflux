@@ -165,6 +165,28 @@ nothing downloads until they ask.
   the scroll and previous/next scroll to a slide. The workbench dock can be
   widened to 75% of the window (up to 1600 px) while the chat column keeps
   its minimum width.
+- **Live decks.** The `pptx-official` Skill builds a deck one slide at a
+  time with `scripts/deck_live.py`: `init` creates the file with its plan
+  (slide count and titles) in the `evoflux.deck` custom document property,
+  each slide is appended and saved atomically, `mark` re-embeds the plan
+  after PptxGenJS rewrites the file, and `finish` marks it done.
+  `app/services/document_preview/live_deck.py` reads the plan. While it is
+  not done the deck always renders natively (never through LibreOffice),
+  inside `<main data-deck-live="true">`: finished slides carry
+  `data-slide-status="done"` (the newest also `data-slide-fresh`, which
+  animates it in), the next planned slide is `building` (planned title,
+  animated placeholder, deck progress bar) and the rest are `pending`.
+  Motion is disabled under `prefers-reduced-motion`. The viewer keeps the
+  last good render while a save re-renders, keeps zoom and scroll across
+  saves of the same file, collapses the slide thumbnails and reports the
+  state through `onLiveDeckChange` so Files hides its tree, and follows the
+  slide being built until the user scrolls, clicks or navigates. Both are
+  restored when the deck is finished unless the user toggled them meanwhile.
+- **Generated documents.** `web/src/hooks/useGeneratedDocumentWatcher.ts`
+  subscribes a Work session to `/api/team/{session}/files/watch`, refreshes
+  the file list on every Office save and opens the preview of a document the
+  agent just created, once per file, while a turn runs — unless another
+  workbench tool is active or `oa.documents.autoOpenGenerated` is `"false"`.
 - **Mislabelled files.** Office preflight names what a rejected file really
   is — a ZIP archive with an Office extension, a package saved under the
   wrong extension, or a legacy/password-protected file — instead of calling
