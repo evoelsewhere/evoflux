@@ -35,6 +35,10 @@ vi.mock('@/components/ThemeToggle', () => ({
   ThemeToggle: () => <button type="button">Theme</button>,
 }))
 
+vi.mock('@/hooks/useActiveSkillDiscoveryScope', () => ({
+  useActiveSkillDiscoveryScope: () => ({ workspaces: [] }),
+}))
+
 vi.mock('@/queries', () => ({
   useAgentFilesQuery: () => ({ data: { agents: [] } }),
   useSkillFilesQuery: () => ({ data: { skills: [] } }),

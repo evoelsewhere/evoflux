@@ -3,6 +3,16 @@
 You have an `.xlsx` on disk and you need to change it without losing its
 formulas, styles, charts, or hidden metadata.
 
+## Contents
+
+- Two workflows
+- Cardinal rule: never open with `data_only=True` if you plan to save
+- Standard editing: load and save, append rows, insert/delete rows and columns, patch by label, modify formulas, add or rename sheets, defined names, preserve styles, tables
+- Raw XML workflow: unpack, edit XML safely, repack
+- Comments
+- Common mistakes to avoid
+- After editing — always
+
 ## Two workflows
 
 | Situation | Workflow | Section |
@@ -12,6 +22,11 @@ formulas, styles, charts, or hidden metadata.
 
 Start with the standard workflow. Fall back to raw XML only when openpyxl
 demonstrably drops something on save.
+
+Python snippets go into a `.py` file in the workspace and run with
+`uv run --with openpyxl python edit_workbook.py` (add `--with lxml` for the
+raw XML snippet). Scripts run as
+`uv run --with openpyxl python scripts/<name>.py`.
 
 ## Cardinal rule: never open with `data_only=True` if you plan to save
 
@@ -239,7 +254,7 @@ For any of these, unpack the file, edit the XML directly, and repack.
 ### Unpack
 
 ```bash
-python scripts/explode.py input.xlsx unpacked/
+uv run --with openpyxl python scripts/explode.py input.xlsx unpacked/
 ```
 
 The layout you get:
@@ -304,16 +319,19 @@ Key SpreadsheetML rules:
 ### Repack
 
 ```bash
-python scripts/assemble.py unpacked/ output.xlsx
-python scripts/audit.py output.xlsx
-python scripts/bake.py output.xlsx
+uv run --with openpyxl python scripts/assemble.py unpacked/ output.xlsx
+uv run --with openpyxl python scripts/audit.py output.xlsx
+uv run --with openpyxl python scripts/bake.py output.xlsx
 ```
 
 `assemble.py` rebuilds the ZIP with the correct member order (`[Content_Types].xml`
 must be first) and standard deflate compression. `audit.py` confirms the
 result parses.
 
-## Tracked changes and comments
+## Comments
+
+Excel has no tracked-changes model that openpyxl can write; record review
+notes as cell comments.
 
 ### Adding a comment
 
@@ -355,11 +373,12 @@ for row in ws.iter_rows():
 ## After editing — always
 
 ```bash
-python scripts/bake.py output.xlsx
-python scripts/audit.py output.xlsx
+uv run --with openpyxl python scripts/bake.py output.xlsx
+uv run --with openpyxl python scripts/audit.py output.xlsx
 ```
 
-If you touched a formula, spot-check its new value with:
+Then finish the QA checklist in `SKILL.md` (reconcile, then
+`document_preview`). If you touched a formula, spot-check its new value with:
 
 ```python
 from openpyxl import load_workbook

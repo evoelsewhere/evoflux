@@ -277,18 +277,6 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
     return { header, headerTitle, formattedArgs: null }
   }
 
-  // ── skill: conversational header, hide raw args ─────────────
-  if (name === 'skill') {
-    const presentation = getSkillCallPresentation(args)
-    return {
-      header: presentation?.headerTitle ? <Arg>{presentation.headerTitle}</Arg> : null,
-      headerTitle: presentation?.headerTitle ?? null,
-      formattedArgs: null,
-      completedLabel: presentation?.completedLabel,
-      activityLabel: presentation?.activityLabel,
-    }
-  }
-
   // ── note: conversational header, note body as args ─────────────
   if (name === 'note') {
     return {
@@ -407,6 +395,18 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
 
   // ── read: file name in header, custom result renderer shows content ──
   if (name === 'read') {
+    // A full read of a SKILL.md is how a Skill is activated.
+    const skill = getSkillCallPresentation(name, args)
+    if (skill) {
+      return {
+        header: <Arg>{skill.headerTitle}</Arg>,
+        headerTitle: skill.headerTitle,
+        formattedArgs: null,
+        suppressResult: true,
+        completedLabel: skill.completedLabel,
+        activityLabel: skill.activityLabel,
+      }
+    }
     const path = str(parsed, 'path')
     const fileName = path ? path.split('/').pop() ?? path : null
     return {

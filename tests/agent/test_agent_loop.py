@@ -8,6 +8,7 @@ Covers:
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Annotated
 from unittest.mock import MagicMock
@@ -1261,12 +1262,14 @@ async def test_load_tool_refreshes_mcp_granted_during_same_run(tmp_path, monkeyp
 async def test_loading_plugin_skill_grants_its_mcp_tools_in_same_run(
     tmp_path, monkeypatch
 ):
-    """A plugin Skill makes its installation-scoped MCP tools callable on the
-    very next model iteration, without requiring an agent restart or a
-    persistent MCP server assignment.
+    """Reading a plugin Skill's SKILL.md makes its installation-scoped MCP
+    tools callable on the very next model iteration, without an agent restart
+    or a persistent MCP server assignment.
     """
-    from app.agent.skills.models import SkillRecord
-    from app.agent.tools.builtin.skill import load_skill
+    from app.agent.hooks.skills import SkillsHook
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.skills.registry import SkillRoot, invalidate_skill_cache
+    from app.agent.tools.builtin.filesystem.read import read_file
     from app.agent.tools.registry import Tool
     from app.plugin_platform.runtime import plugin_mcp_runtime
 
@@ -1277,19 +1280,13 @@ async def test_loading_plugin_skill_grants_its_mcp_tools_in_same_run(
     skill_file.write_text(
         "---\n"
         "name: jira-task-management\n"
-        "description: Inspect Jira tasks.\n"
+        "description: Inspects Jira tasks. Use when the user mentions Jira.\n"
         "---\n\n"
         "Use the Jira MCP tools from this plugin.\n",
         encoding="utf-8",
     )
-    record = SkillRecord(
-        name="jira-task-management",
-        description="Inspect Jira tasks.",
-        skill_file=skill_file,
-        root=plugin_root / "skills",
-        source="plugin:installation-123",
-        modes=("work",),
-    )
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
     jira_search = Tool(
         lambda: "jira result",
         name="mcp_plugin_123_jira_issues_search",
@@ -1299,13 +1296,13 @@ async def test_loading_plugin_skill_grants_its_mcp_tools_in_same_run(
     jira_search.origin = "mcp"
 
     monkeypatch.setattr(
-        "app.agent.tools.builtin.skill._resolve_record",
-        lambda skill_name, mode: (
-            (record, None)
-            if skill_name == record.name and mode == "work"
-            else (None, "not found")
-        ),
+        "app.plugin_platform.skills.plugin_skill_roots",
+        lambda: [
+            SkillRoot(plugin_root / "skills", "plugin", plugin_id="installation-123")
+        ],
     )
+    invalidate_skill_cache()
+    token = set_sandbox(SandboxConfig(workspace=str(workspace)))
     monkeypatch.setattr(
         plugin_mcp_runtime,
         "get_tools_for_installation",
@@ -1320,8 +1317,8 @@ async def test_loading_plugin_skill_grants_its_mcp_tools_in_same_run(
         yield _tool_chunk(
             0,
             "call_skill",
-            "skill",
-            '{"action":"load","skill_name":"jira-task-management"}',
+            "read",
+            json.dumps({"path": skill_file.as_posix()}),
         )
         yield _finish_chunk()
 
@@ -1337,12 +1334,21 @@ async def test_loading_plugin_skill_grants_its_mcp_tools_in_same_run(
     agent = Agent(
         llm_provider=mock_provider,
         name="test-agent",
-        tools=[load_skill],
+        tools=[read_file],
     )
+    agent.hooks.append(SkillsHook())
 
-    await agent.run([HumanMessage(content="Inspect Jira using the plugin Skill")])
+    try:
+        await agent.run([HumanMessage(content="Inspect Jira using the plugin Skill")])
+    finally:
+        _sandbox_ctx.reset(token)
+        invalidate_skill_cache()
 
     assert len(calls) == 2
+    first_system = next(
+        message.content for message in calls[0]["messages"] if message.role == "system"
+    )
+    assert f"<location>{skill_file.as_posix()}</location>" in first_system
     first_names = {tool["function"]["name"] for tool in calls[0]["tools"]}
     second_names = {tool["function"]["name"] for tool in calls[1]["tools"]}
     assert jira_search.name not in first_names
@@ -1352,7 +1358,7 @@ async def test_loading_plugin_skill_grants_its_mcp_tools_in_same_run(
         for message in calls[1]["messages"]
         if isinstance(message, ToolMessage)
     ]
-    assert any("Plugin root:" in result for result in skill_results)
+    assert any("Use the Jira MCP tools" in result for result in skill_results)
 
 
 async def test_deferred_metadata_stays_visible_without_loader_tool():
@@ -1752,7 +1758,9 @@ async def test_a_refused_tool_reports_back_to_the_model_and_ends_the_turn():
 
     class RefusingHook(BaseAgentHook):
         async def wrap_tool_call(self, ctx, state, tool_call, handler):
-            raise PermissionRejectedError("", tool=tool_call.function.name, repeated=True)
+            raise PermissionRejectedError(
+                "", tool=tool_call.function.name, repeated=True
+            )
 
     def _iter1():
         async def _gen():

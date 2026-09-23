@@ -1,5 +1,15 @@
 # Session Formats
 
+## Contents
+
+- Course state (`learn/<slug>/course-state.md`, or portable state block)
+- Course map
+- Lesson
+- Practice prompt
+- Feedback
+- Chapter checkpoint
+- Progress report
+
 Use these as defaults, adapting length and labels to the learner and topic.
 
 ## Course state (`learn/<slug>/course-state.md`, or portable state block)

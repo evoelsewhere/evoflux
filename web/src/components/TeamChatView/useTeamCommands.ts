@@ -129,7 +129,7 @@ export function useTeamCommands({
     { id: 'go-settings', group: 'Navigation', label: 'Open Settings',  description: 'Manage agents & skills', action: () => useUIStore.getState().openSettings('agents') },
     { id: 'settings-agents', group: 'Settings', label: 'Manage Agents', description: 'Edit agent .md files',  action: () => useUIStore.getState().openSettings('agents') },
     { id: 'settings-new-agent', group: 'Settings', label: 'New Agent',  description: 'Create a new agent',    action: () => useUIStore.getState().openSettings('agents/new') },
-    { id: 'settings-skills', group: 'Settings', label: 'Manage Skills', description: 'Edit skill .md files',  action: () => useUIStore.getState().openSettings('skills') },
+    { id: 'settings-skills', group: 'Settings', label: 'Manage Skills', description: 'Create, edit, and turn skills on or off',  action: () => useUIStore.getState().openSettings('skills') },
     { id: 'settings-new-skill', group: 'Settings', label: 'New Skill',  description: 'Create a new skill',    action: () => useUIStore.getState().openSettings('skills/new') },
     { id: 'settings-memory', group: 'Settings', label: 'Memory Settings',  description: 'Review memory and configure Dream synthesis', action: () => useUIStore.getState().openSettings('memory') },
     {

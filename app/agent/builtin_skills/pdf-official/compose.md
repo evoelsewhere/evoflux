@@ -13,11 +13,26 @@ The tool is **reportlab** (BSD-3). It has two APIs:
 
 Default: use Platypus unless you need pixel-precise placement.
 
-## 0. Install
+## Contents
 
-```bash
-python3 -m pip install --upgrade reportlab
-```
+- 0. Running the code
+- 1. Cover sheet with the imperative API
+- 2. Multi-page report with Platypus
+- 3. Headers, footers, page numbers
+- 4. Fonts, including the CJK protocol
+- 5. Subscripts / superscripts / inline markup
+- 6. Images
+- 7. Vectors on canvas
+- 8. Templates: designed background + dynamic text
+- 9. Metadata
+- Validation
+
+## 0. Running the code
+
+Write the builder to a `.py` file in the workspace and run it with
+`uv run --with reportlab python build_pdf.py`. Add `--with pypdf` when it
+merges onto a template or edits metadata (§8, §9), and `--with pillow` when it
+embeds images (§6).
 
 ## 1. Cover sheet with the imperative API
 
@@ -165,7 +180,11 @@ way a CJK PDF comes out unreadable, so:
 - The terminal fallback for CJK is the built-in CID font — **never Helvetica**.
 
 Resolve the font with this ladder (first hit wins) and use the returned name
-everywhere CJK text appears:
+everywhere CJK text appears. The paths are common default locations per
+operating system, not the only valid ones: if the user names a font, or a
+CJK-capable TrueType file exists elsewhere on the machine (on Linux or macOS,
+`fc-list :lang=zh file` lists candidates; on Windows, look in the Fonts
+folder), put that path first in the list for the current platform.
 
 ```python
 import os, platform
@@ -348,12 +367,13 @@ with open("final.pdf", "wb") as fh:
 Whatever you produced, close the loop:
 
 ```bash
-scripts/survey.py out.pdf --pretty            # page count + metadata OK?
-scripts/render_pages.py out.pdf qa/            # eyeball each rendered page
-scripts/sanity_check.py out.pdf                # open + round-trip clean?
+uv run --with pypdf python scripts/survey.py out.pdf --pretty                  # page count + metadata OK?
+uv run --with pypdfium2 --with pillow python scripts/render_pages.py out.pdf qa/ # one image per page
+uv run --with pypdf python scripts/sanity_check.py out.pdf                      # open + round-trip clean?
 ```
 
-Common regressions caught by the eyeball step:
+Then run the `document_preview` tool on `out.pdf` for the rendered-layout
+check. Common regressions caught at this step:
 
 - Every CJK character is a black box → the CJK font never registered and
   reportlab fell back to Helvetica → §4 `resolve_cjk_font()`

@@ -41,8 +41,8 @@ function shortModelName(modelId: string | null | undefined): string | null {
 }
 
 /**
- * Render user prose with ``@mention``, ``/command`` and skill
- * (``/skill:<name>`` or ``$<name>``) tokens syntax-highlighted.
+ * Render user prose with ``@mention``, ``/command`` and every ``$skill-name``
+ * mention syntax-highlighted.
  *
  * Matches the InputBar's overlay convention so a message looks the same
  * after send as it did while composing:
@@ -77,6 +77,9 @@ function renderMentionSegments(content: string): React.ReactNode[] {
   const out: React.ReactNode[] = []
   let cursor = 0
   for (const r of ranges) {
+    // Ranges from different grammars never overlap in practice; skip one
+    // defensively rather than duplicate text.
+    if (r.start < cursor) continue
     if (r.start > cursor) out.push(content.slice(cursor, r.start))
     const token = content.slice(r.start, r.end)
     if (r.kind === 'skill') {

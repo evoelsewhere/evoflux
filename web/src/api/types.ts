@@ -1100,11 +1100,14 @@ export interface WikiFile {
 
 // ── Agent management ────────────────────────────────────────────────────────
 
+/** Product modes a Conductor-managed resource targets. */
+export type ResourceTargetMode = 'work' | 'coding'
+
 export interface ManagedResourceProvider {
   project_id: string
   project_name: string
   resource_id: string
-  modes?: SkillMode[]
+  modes?: ResourceTargetMode[]
   version_id: string | null
   version: string | null
   applied_version_id: string | null
@@ -1218,15 +1221,11 @@ export interface AgentBulkModelResponse {
 }
 
 // ── Skill management ────────────────────────────────────────────────────────
+//
+// Mirrors ``app/api/schemas/skills.py``. See
+// ``documents/architecture/agent-skills.md``.
 
-export type SkillMode = 'work' | 'coding'
-
-export interface SkillRuntimeSettingsUpdate {
-  settings_id: string
-  modes: SkillMode[]
-  allow_implicit_invocation: boolean
-  user_invocable: boolean
-}
+export type SkillSource = 'project' | 'user' | 'plugin' | 'builtin'
 
 export interface SkillDiagnostic {
   code: string
@@ -1237,25 +1236,25 @@ export interface SkillDiagnostic {
 export interface SkillSummary {
   name: string
   description: string
-  display_name: string | null
-  short_description: string | null
-  default_prompt: string | null
-  allow_implicit_invocation: boolean
+  /** Absolute path of ``SKILL.md`` — the ``location`` the model reads. */
+  location: string
+  source: SkillSource
+  /** Enabled plugin installation that contributes the Skill, if any. */
+  plugin_id: string | null
+  enabled: boolean
+  /** False when ``disable-model-invocation: true`` hides it from the catalog. */
+  model_invocable: boolean
   user_invocable: boolean
-  resource_count: number
-  symlinked: boolean
+  license: string | null
+  compatibility: string | null
+  allowed_tools: string | null
+  metadata: Record<string, string>
+  valid: boolean
   diagnostics: SkillDiagnostic[]
   shadowed_paths: string[]
-  valid: boolean
-  error: string | null
-  built_in: boolean
   editable: boolean
-  settings_editable: boolean
-  settings_id: string
-  settings_overridden: boolean
-  source: string
-  modes: SkillMode[]
-  dependencies: Record<string, unknown>[]
+  symlinked: boolean
+  resource_count: number
   provider: ManagedResourceProvider | null
 }
 
@@ -1274,32 +1273,10 @@ export interface SkillBundleFileWrite {
   encoding: 'utf-8' | 'base64'
 }
 
-export interface SkillDetail {
-  name: string
-  path: string
+export interface SkillDetail extends SkillSummary {
   content: string
-  description: string
-  display_name: string | null
-  short_description: string | null
-  default_prompt: string | null
-  allow_implicit_invocation: boolean
-  user_invocable: boolean
-  resource_count: number
-  symlinked: boolean
-  diagnostics: SkillDiagnostic[]
-  shadowed_paths: string[]
-  error: string | null
-  built_in: boolean
-  editable: boolean
-  settings_editable: boolean
-  settings_id: string
-  settings_overridden: boolean
-  source: string
-  modes: SkillMode[]
-  dependencies: Record<string, unknown>[]
-  bundle_truncated: boolean
   files: SkillBundleFile[]
-  provider: ManagedResourceProvider | null
+  bundle_truncated: boolean
 }
 
 export interface SkillDeleteResponse {
@@ -1382,15 +1359,13 @@ export interface ToolCatalogEntry {
   lead_only: boolean
 }
 
+/** A Skill an agent definition may preload through ``skills:``. */
 export interface SkillCatalogEntry {
   name: string
   description: string
-  display_name?: string | null
-  short_description?: string | null
-  allow_implicit_invocation?: boolean
-  user_invocable?: boolean
-  modes: SkillMode[]
-  dependencies: Record<string, unknown>[]
+  enabled: boolean
+  model_invocable: boolean
+  user_invocable: boolean
 }
 
 export interface ModelCatalogEntry {

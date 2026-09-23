@@ -2,6 +2,15 @@
 
 The Decision Trace is the single most important differentiator of this skill. Without it, a design can only be *regenerated*. With it, a design can be *edited*. That's the difference between "AI made this" and "we have a designer working with us."
 
+## Contents
+
+- Schema
+- When to emit a trace
+- Good traces vs. weak traces (two weak traces, each with a stronger version)
+- Example set — a full blueprint's worth
+- Format in your final output
+- The reason this all matters — one more time
+
 ## Schema
 
 Each Decision Trace entry is one JSON-style object with exactly four fields:
@@ -77,7 +86,7 @@ Missing entirely. The blueprint just uses a card grid for a feature section. No 
 ```json
 {
   "decision": "Feature section rendered as inline typographic list, not a card grid",
-  "reason": "The Editorial Restraint direction the user picked treats every card grid as a slop tell (see anti-slop.md #U2). Inline typographic rhythm — feature name in Söhne 500, description in GT America 400, one accent color for the feature-name, hairline divider between — carries the same information with less template drag.",
+  "reason": "The Editorial Restraint direction the user picked treats every card grid as a slop tell (anti-slop pattern U2). Inline typographic rhythm — feature name in Söhne 500, description in GT America 400, one accent color for the feature-name, hairline divider between — carries the same information with less template drag.",
   "alternatives": ["3×2 card grid (rejected: template)", "Icon+heading+description in a flex row (rejected: still reads as grid-derived)"],
   "tradeoff": "Inline typography is harder to skim than a card grid. If usability testing shows people miss features, revisit — but for the current brief (a considered, reading-first brand), skim isn't the primary optimization."
 }

@@ -239,7 +239,7 @@ def test_side_chat_stream_sanitizes_typed_block_payloads(
     assert "must-not-leak" not in event["data"]
 
 
-def test_side_chat_stream_keeps_only_safe_skill_presentation():
+def test_side_chat_stream_presents_skill_file_read_as_activation():
     event = _browser_panel_stream_event(
         {
             "event": "tool_start",
@@ -247,13 +247,9 @@ def test_side_chat_stream_keeps_only_safe_skill_presentation():
                 {
                     "agent": "lead",
                     "tool_call_id": "skill-1",
-                    "name": "skill",
+                    "name": "read",
                     "arguments": json.dumps(
-                        {
-                            "action": "load",
-                            "skill_name": "work-writing",
-                            "token": "must-not-leak",
-                        }
+                        {"path": "/private/must-not-leak/work-writing/SKILL.md"}
                     ),
                 }
             ),
@@ -265,12 +261,42 @@ def test_side_chat_stream_keeps_only_safe_skill_presentation():
         "type": "tool_start",
         "id": "skill-1",
         "agent": "lead",
-        "name": "skill",
+        "name": "read",
         "skill_action": "load",
         "skill_name": "work-writing",
         "state": "running",
     }
     assert "must-not-leak" not in event["data"]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"path": "/repo/docs/README.md"},
+        {"path": "/skills/work-writing/SKILL.md", "offset": 40},
+        {"path": "/skills/work-writing/SKILL.md", "limit": 10},
+        {"path": "SKILL.md"},
+    ],
+)
+def test_side_chat_stream_ignores_reads_that_are_not_skill_activations(arguments):
+    event = _browser_panel_stream_event(
+        {
+            "event": "tool_start",
+            "data": json.dumps(
+                {
+                    "agent": "lead",
+                    "tool_call_id": "read-1",
+                    "name": "read",
+                    "arguments": json.dumps(arguments),
+                }
+            ),
+        }
+    )
+
+    assert event is not None
+    payload = json.loads(event["data"])
+    assert "skill_name" not in payload
+    assert "skill_action" not in payload
 
 
 def test_side_chat_stream_projects_sanitized_webbridge_arguments():
@@ -816,13 +842,9 @@ def test_side_chat_history_keeps_safe_skill_presentation_without_arguments():
             {
                 "id": "skill-1",
                 "function": {
-                    "name": "skill",
+                    "name": "read",
                     "arguments": json.dumps(
-                        {
-                            "action": "load",
-                            "skill_name": "work-writing",
-                            "token": "must-not-leak",
-                        }
+                        {"path": "C:\\must-not-leak\\skills\\work-writing\\SKILL.md"}
                     ),
                 },
             }
@@ -835,7 +857,7 @@ def test_side_chat_history_keeps_safe_skill_presentation_without_arguments():
         session_id=session_id,
         role="tool",
         content="private tool output",
-        name="skill",
+        name="read",
         created_at=created_at,
         extra={"duration_ms": 43},
         tool_calls=None,
@@ -850,7 +872,7 @@ def test_side_chat_history_keeps_safe_skill_presentation_without_arguments():
             "id": f"{assistant.id}:tool:skill-1",
             "type": "tool",
             "agent": "lead",
-            "name": "skill",
+            "name": "read",
             "tool_call_id": "skill-1",
             "done": True,
             "skill_action": "load",
@@ -3388,7 +3410,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
-    from app.api.schemas.skills import SkillListResponse, SkillSummary
     from app.api.schemas.workflows import (
         WorkflowInputOut,
         WorkflowListItem,
@@ -3414,6 +3435,14 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
         encoding="utf-8",
     )
     source_path.write_text("print('hello')\n", encoding="utf-8")
+    project_skills = workspace / ".evoflux" / "skills"
+    for name, extra in (("repo-audit", ""), ("model-only", "user-invocable: false\n")):
+        (project_skills / name).mkdir(parents=True)
+        (project_skills / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Audits this repository.\n{extra}---\n\n"
+            "Audit it.\n",
+            encoding="utf-8",
+        )
 
     async with db_module.async_session_factory() as db:
         session = ChatSession(
@@ -3425,18 +3454,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
         db.add(session)
         await db.commit()
 
-    skills = SkillListResponse(
-        skills=[
-            SkillSummary(
-                name="repo-audit",
-                display_name="Repo Audit",
-                short_description="Audit this repository",
-                default_prompt="$repo-audit focus on risks",
-                source="project-EvoFlux",
-                modes=["coding"],
-            )
-        ]
-    )
     workflows = WorkflowListResponse(
         workflows=[
             WorkflowListItem(
@@ -3454,9 +3471,7 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
             )
         ]
     )
-    list_skills = AsyncMock(return_value=skills)
     list_workflows = AsyncMock(return_value=workflows)
-    monkeypatch.setattr("app.api.routes.skills.list_skills", list_skills)
     monkeypatch.setattr("app.api.routes.workflows.list_workflows", list_workflows)
 
     owner = _pair_extension(client, "Composer owner")
@@ -3473,9 +3488,18 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
     assert ("builtin", "continue") in commands
     assert commands[("builtin", "shell")]["insert_text"] == "! "
     assert commands[("command", "review")]["source"] == "project-EvoFlux"
-    assert commands[("skill", "skill:repo-audit")]["insert_text"] == (
-        "skill:repo-audit focus on risks"
-    )
+    assert commands[("skill", "skill:repo-audit")] == {
+        "id": "skill:repo-audit",
+        "label": "repo-audit",
+        "description": "Audits this repository.",
+        "category": "skill",
+        "insert_text": "$repo-audit ",
+        "keep_input_open": True,
+        "source": "project",
+        "inputs": [],
+    }
+    assert ("skill", "skill:model-only") not in commands
+    assert ("builtin", "skill") not in commands
     assert commands[("workflow", "workflow-release-check")]["inputs"] == [
         {
             "name": "version",
@@ -3497,7 +3521,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
     references = {(item["type"], item["path"]) for item in catalog["references"]}
     assert ("file", "src/app.py") in references
     assert ("directory", "src") in references
-    list_skills.assert_awaited_once_with(workspace=[str(workspace)], mode="coding")
 
     rendered_command = client.post(
         f"{_PREFIX}/sessions/{session.id}/composer/commands/review/render",

@@ -13,10 +13,7 @@ from typing import Any
 from loguru import logger
 
 from app.agent.config import parse_agent_definition
-from app.agent.skills.validation import (
-    parse_skill_definition,
-    portable_skill_name_error,
-)
+from app.agent.skills.spec import name_problems, validate_skill_text
 from app.conductor.client import ConductorClient
 from app.conductor.constants.resource import (
     DEFAULT_RESOURCE_TARGET_MODES,
@@ -32,11 +29,7 @@ from app.conductor.models import (
     ResourceChangePage,
 )
 from app.conductor.semver import SemanticVersion
-from app.core.skill_scope import serialize_skill_modes
-from app.core.skill_settings import (
-    delete_skill_runtime_settings,
-    skill_settings_id,
-)
+from app.core.skill_settings import SkillSettingsError, set_skill_enabled
 from app.core.version import VERSION
 from app.plugin_platform.installer import (
     PluginInstallError,
@@ -520,18 +513,21 @@ class GovernedResourceReconciler:
         previous: ManagedResourceRecord | None,
     ) -> ManagedResourceRecord:
         files = _files(version.payload)
-        modes = _resource_modes(files)
+        # Skills have no mode scope: one bundle serves Work and Coding. A
+        # release-level mode document is Conductor wire metadata and is never
+        # written into the bundle.
+        modes = list(DEFAULT_RESOURCE_TARGET_MODES)
         skill_md = next(
             (content for path, content in files if path == "SKILL.md"), None
         )
         if skill_md is None:
             raise ValueError("Skill release has no root SKILL.md.")
-        name_error = portable_skill_name_error(change.slug)
-        if name_error is not None:
-            raise ValueError(name_error)
-        _description, definition_error = parse_skill_definition(change.slug, skill_md)
-        if definition_error is not None:
-            raise ValueError(definition_error)
+        problems = name_problems(change.slug)
+        if problems:
+            raise ValueError("; ".join(item.message for item in problems))
+        _definition, errors = validate_skill_text(skill_md, directory_name=change.slug)
+        if errors:
+            raise ValueError("; ".join(item.message for item in errors))
         exists = change.slug in agent_fs.list_skills()
         if exists and previous is None:
             return self._record(
@@ -567,16 +563,6 @@ class GovernedResourceReconciler:
             resources,
             sorted(existing_paths - desired_paths),
         )
-        (root / RESOURCE_MODE_SCOPE_FILENAME).write_text(
-            serialize_skill_modes(modes),
-            encoding="utf-8",
-        )
-        settings_id = skill_settings_id(
-            source="global-EvoFlux",
-            root=agent_fs.skills_dir(),
-            stem=change.slug,
-        )
-        delete_skill_runtime_settings(settings_id)
         material = _skill_material(change.slug)
         team_manager.invalidate_skill_cache()
         return self._record(
@@ -758,13 +744,16 @@ class GovernedResourceReconciler:
                     shutil.rmtree(target, ignore_errors=True)
                     removed_skill = True
                     removed.append(label)
-                delete_skill_runtime_settings(
-                    skill_settings_id(
-                        source="global-EvoFlux",
-                        root=agent_fs.skills_dir(),
-                        stem=record.slug,
+                # A purged Skill must not leave a switch behind that would
+                # silently disable a later Skill of the same name.
+                try:
+                    set_skill_enabled(record.slug, True)
+                except (SkillSettingsError, OSError) as exc:
+                    logger.warning(
+                        "conductor_purge_skill_settings_failed skill={} error={}",
+                        record.slug,
+                        exc,
                     )
-                )
         if removed_skill:
             team_manager.invalidate_skill_cache()
         self.store.forget()
@@ -1084,12 +1073,10 @@ def unresolved_capabilities(record: ManagedResourceRecord) -> dict[str, list[str
         return {}
     missing: dict[str, list[str]] = {}
     if record.declared_skills:
-        available: set[str] = set()
         try:
-            from app.agent.tools.builtin.skill import discover_skill_records_runtime
+            from app.agent.skills.registry import discover_skills
 
-            for mode in record.modes:
-                available.update(discover_skill_records_runtime(mode=mode.value))
+            available = {skill.name for skill in discover_skills().active()}
         except Exception:  # discovery is best-effort; absence is not proof
             return {}
         absent = [name for name in record.declared_skills if name not in available]

@@ -165,7 +165,7 @@ export function SettingsHubPage() {
           to: '/settings/skills',
           icon: Sparkles,
           title: 'Skills',
-          description: 'Instruction packs agents load on demand',
+          description: 'SKILL.md folders agents read when a task matches',
           count: skillsCount,
           countLabel: skillsCount === 1 ? 'skill' : 'skills',
           attention: skillUpdateCount > 0

@@ -13,7 +13,6 @@ from app.agent.tools.builtin.filesystem._ignore import (
     is_ignored_workspace_path,
     load_gitignore_rules,
 )
-from app.core.config import settings
 from app.services.git_ops import run_git
 from app.services.problems_service import list_problems
 
@@ -215,31 +214,20 @@ def _problem_items(
 
 
 def _skill_items(workspace: Path, query: str, limit: int) -> list[SearchEverywhereItem]:
-    from app.agent.skills.discovery import (
-        discover_skill_records,
-        select_skill_records_for_mode,
-        standard_skill_roots,
-    )
+    """User-invocable Skills; choosing one fills the composer with ``$name``."""
+    from app.agent.skills.registry import discover_skills
 
-    roots = standard_skill_roots(
-        workspace_roots=[workspace],
-        evoflux_global=Path(settings.SKILLS_DIR),
-    )
-    records = select_skill_records_for_mode(discover_skill_records(roots), "coding")
     needle = query.casefold()
     return [
         SearchEverywhereItem(
-            id=f"skill:{record.name}",
+            id=f"skill:{skill.name}",
             kind="skill",
-            label=record.display_name or record.name,
-            description=record.short_description or record.description,
-            metadata={"name": record.name},
+            label=skill.name,
+            description=skill.description,
+            metadata={"name": skill.name, "insert_text": f"${skill.name} "},
         )
-        for record in records.values()
-        if needle
-        in " ".join(
-            filter(None, (record.name, record.display_name, record.description))
-        ).casefold()
+        for skill in discover_skills([workspace]).user_visible()
+        if needle in f"{skill.name} {skill.description}".casefold()
     ][:limit]
 
 

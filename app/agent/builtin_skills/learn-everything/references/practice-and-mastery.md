@@ -1,5 +1,16 @@
 # Practice and Mastery Guide
 
+## Contents
+
+- Exercise-writing rules
+- Difficulty adaptation
+- Error classification
+- Hint ladder
+- Mastery evidence
+- Rubric for open responses
+- Practice mix by domain (conceptual, mathematics and physics, programming, languages, history and social sciences, practical skills)
+- Final assessment design
+
 Cognitive levels (in SKILL.md) describe what the learner does; difficulty bands below describe how much scaffolding surrounds it. The two dimensions combine freely: a transfer-level task can be supported early and unscaffolded later.
 
 ## Exercise-writing rules

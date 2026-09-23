@@ -10,7 +10,7 @@ this workflow:
 | `thinking_level` | A level advertised by the selected model |
 | `tools` | Extra exact names from the current tool registry |
 | `tools_opt_out` | Exclusions from code-owned mode/tier tools only |
-| `skills` | Optional exact discovered skill metadata; bodies are not preloaded |
+| `skills` | Exact skill names from the catalog; each listed skill's full `SKILL.md` is preloaded into that agent's system prompt and removed from its catalog |
 | `mcp` | Exact configured MCP server names for bulk attachment |
 | `responses_api` | Boolean provider transport override |
 
@@ -24,8 +24,10 @@ testable instruction.
 - Keep `model` and `fallback_model` in registered `provider:model` form.
 - Never copy example model or tool names without checking the runtime catalog.
 - Do not put implicit lifecycle/team tools into `tools`; runtime injects them.
-- Do not add a skill to `skills` merely because it was installed. Add metadata
-  only when the user explicitly wants this agent assignment.
+- Do not add a skill to `skills` merely because it was installed. Every listed
+  skill costs system-prompt space on every turn of that agent; add it only when
+  the user explicitly wants the skill always loaded for this agent. Skills in
+  the catalog are already available on demand.
 - Do not edit secrets or `.env`. When a provider credential is required,
   inspect only configured/unconfigured status and tell the user which supported
   credential flow to complete.
@@ -34,6 +36,6 @@ testable instruction.
 
 Existing agent-file edits are detected and applied on the affected agent's next
 turn without interrupting an in-flight turn. New or removed agent files alter
-team shape and may require runtime restart. A skill body is read on its next
-fresh activation and does not rewrite instructions already visible in the
-current conversation.
+team shape and may require runtime restart. A skill's `SKILL.md` is read when
+it is next activated; an edit does not rewrite instructions already visible in
+the current conversation.

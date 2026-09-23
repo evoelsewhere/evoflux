@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { InputBar, type ComposerSkill, type SlashCommand } from '@/components/InputBar'
 import {
+  findActiveSkillToken,
   findCommandDirectives,
   findSkillDirectives,
   splitQuotedContext,
@@ -14,13 +15,8 @@ const slashCommands: SlashCommand[] = [
 ]
 
 const skills: ComposerSkill[] = [
-  {
-    name: 'work-writing',
-    label: 'work-writing',
-    description: 'Create Word documents',
-    prompt: 'Use $work-writing to draft this document.',
-  },
-  { name: 'git:commit', label: 'git:commit', description: 'Prepare a Git commit' },
+  { name: 'work-writing', description: 'Create Word documents' },
+  { name: 'git-commit', description: 'Prepare a Git commit' },
 ]
 
 beforeEach(() => {
@@ -38,8 +34,8 @@ beforeEach(() => {
   })
 })
 
-describe('InputBar skill directives', () => {
-  it('no longer offers skills from the / menu', () => {
+describe('InputBar $skill picker', () => {
+  it('does not offer skills from the / menu', () => {
     render(<InputBar onSubmit={vi.fn()} slashCommands={slashCommands} skills={skills} />)
     const input = screen.getByRole('textbox', { name: 'Message input' })
 
@@ -48,7 +44,7 @@ describe('InputBar skill directives', () => {
     expect(screen.queryByText('Create Word documents')).not.toBeInTheDocument()
   })
 
-  it('lists every skill on a bare $ and commits the chosen one', () => {
+  it('lists every skill on a bare $ and inserts $name', () => {
     render(<InputBar onSubmit={vi.fn()} slashCommands={slashCommands} skills={skills} />)
     const input = screen.getByRole('textbox', { name: 'Message input' })
 
@@ -59,11 +55,36 @@ describe('InputBar skill directives', () => {
     fireEvent.keyDown(input, { key: 'ArrowDown' })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(input).toHaveValue('$git:commit ')
-    expect(screen.getByTestId('skill-chip')).toHaveTextContent('$git:commit')
+    expect(input).toHaveValue('$git-commit ')
+    expect(screen.getByTestId('skill-chip')).toHaveTextContent('$git-commit')
   })
 
-  it('submits a $ directive with the user prompt', async () => {
+  it('filters by name and inserts only the token, mid-sentence too', () => {
+    render(<InputBar onSubmit={vi.fn()} slashCommands={slashCommands} skills={skills} />)
+    const input = screen.getByRole('textbox', { name: 'Message input' })
+
+    fireEvent.change(input, { target: { value: 'Draft the report with $work' } })
+    expect(screen.getByRole('listbox', { name: 'Skills' })).toBeInTheDocument()
+    expect(screen.queryByText('Prepare a Git commit')).not.toBeInTheDocument()
+
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(input).toHaveValue('Draft the report with $work-writing ')
+  })
+
+  it('offers the picker on later lines and highlights several mentions', () => {
+    render(<InputBar onSubmit={vi.fn()} slashCommands={slashCommands} skills={skills} />)
+    const input = screen.getByRole('textbox', { name: 'Message input' })
+
+    fireEvent.change(input, { target: { value: 'Use $work-writing first\nthen $git' } })
+    expect(screen.getByRole('listbox', { name: 'Skills' })).toBeInTheDocument()
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(input).toHaveValue('Use $work-writing first\nthen $git-commit ')
+    const chips = screen.getAllByTestId('skill-chip')
+    expect(chips.map((chip) => chip.textContent)).toEqual(['$work-writing', '$git-commit'])
+  })
+
+  it('submits a $ mention with the user prompt', async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined)
     render(<InputBar onSubmit={onSubmit} slashCommands={slashCommands} skills={skills} />)
     const input = screen.getByRole('textbox', { name: 'Message input' })
@@ -72,55 +93,50 @@ describe('InputBar skill directives', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }))
 
     await waitFor(() => {
-      expect(onSubmit).toHaveBeenCalledWith(
-        '$work-writing Draft the report',
-        undefined,
-        'steer',
-      )
+      expect(onSubmit).toHaveBeenCalledWith('$work-writing Draft the report', undefined, 'steer')
     })
-  })
-
-  it('opens the $ picker and commits the shorthand directive', () => {
-    render(<InputBar onSubmit={vi.fn()} slashCommands={slashCommands} skills={skills} />)
-    const input = screen.getByRole('textbox', { name: 'Message input' })
-
-    fireEvent.change(input, { target: { value: '$work' } })
-    expect(screen.getByRole('listbox', { name: 'Skills' })).toBeInTheDocument()
-    expect(screen.getByText('Create Word documents')).toBeInTheDocument()
-    expect(screen.queryByText('Prepare a Git commit')).not.toBeInTheDocument()
-
-    fireEvent.keyDown(input, { key: 'Enter' })
-
-    expect(input).toHaveValue('Use $work-writing to draft this document. ')
-    expect(screen.getByTestId('skill-chip')).toHaveTextContent('$work-writing')
-  })
-
-  it('seeds the starter prompt only when it opens the message', () => {
-    render(<InputBar onSubmit={vi.fn()} slashCommands={slashCommands} skills={skills} />)
-    const input = screen.getByRole('textbox', { name: 'Message input' })
-
-    // A prompt written around its own directive is inserted whole.
-    fireEvent.change(input, { target: { value: '$work' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-    expect(input).toHaveValue('Use $work-writing to draft this document. ')
-
-    // Mid-sentence, only the directive lands.
-    fireEvent.change(input, { target: { value: 'Draft the report with $work' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
-    expect(input).toHaveValue('Draft the report with $work-writing ')
   })
 
   it('keeps $ inert where the backend would ignore it', () => {
     render(<InputBar onSubmit={vi.fn()} slashCommands={slashCommands} skills={skills} />)
     const input = screen.getByRole('textbox', { name: 'Message input' })
 
-    // Only the first content line selects a skill, so no picker below it.
-    fireEvent.change(input, { target: { value: 'Refactor this\n$work' } })
+    // Quoted context lines are not read.
+    fireEvent.change(input, { target: { value: '> quoted $work' } })
     expect(screen.queryByRole('listbox', { name: 'Skills' })).not.toBeInTheDocument()
 
-    // An unknown name never chips, even on the first line.
+    // Nor are fenced code blocks.
+    fireEvent.change(input, { target: { value: '```\necho $work' } })
+    expect(screen.queryByRole('listbox', { name: 'Skills' })).not.toBeInTheDocument()
+
+    // An unknown name never chips.
     fireEvent.change(input, { target: { value: '$not-a-skill do it' } })
     expect(screen.queryByTestId('skill-chip')).not.toBeInTheDocument()
+  })
+
+  it('reads the WebBridge catalog shape from category skill slash entries', () => {
+    render(
+      <InputBar
+        onSubmit={vi.fn()}
+        slashCommands={[
+          ...slashCommands,
+          {
+            id: 'skill:pdf',
+            label: 'pdf',
+            description: 'Extracts PDF text',
+            category: 'skill',
+            insertText: '$pdf ',
+            keepInputOpen: true,
+          },
+        ]}
+      />,
+    )
+    const input = screen.getByRole('textbox', { name: 'Message input' })
+
+    fireEvent.change(input, { target: { value: '$p' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    expect(input).toHaveValue('$pdf ')
   })
 
   it('leaves the @ picker working beside the $ picker', () => {
@@ -177,16 +193,53 @@ describe('InputBar skill directives', () => {
       'Ask a question…',
     )
   })
+})
 
-  it('reads one directive per message, from the first content line', () => {
+describe('$skill-name grammar (mirrors app/agent/skills/invocation.py)', () => {
+  it('finds every mention anywhere in the message', () => {
     expect(findSkillDirectives('$work-writing draft it')).toEqual([
       { start: 0, end: 13, name: 'work-writing' },
     ])
-    // Prices, shell variables and argument placeholders are not directives.
-    expect(findSkillDirectives('it costs $5 and $ARGUMENTS stay plain')).toEqual([])
+    expect(findSkillDirectives('first\nuse $pdf-tools, then ($git-commit).')).toEqual([
+      { start: 10, end: 20, name: 'pdf-tools' },
+      { start: 28, end: 39, name: 'git-commit' },
+    ])
+  })
+
+  it('applies the backend boundary rules', () => {
+    // Glued to a word character or another $.
     expect(findSkillDirectives('email me@host.com$work-writing')).toEqual([])
-    // Below the first content line the hook never looks.
-    expect(findSkillDirectives('do this\n$work-writing')).toEqual([])
+    expect(findSkillDirectives('$$work-writing')).toEqual([])
+    // Not followed by whitespace, punctuation or the end.
+    expect(findSkillDirectives('$work-writing/sub')).toEqual([])
+    expect(findSkillDirectives('$Work-Writing')).toEqual([])
+    // Trailing punctuation stays outside the name.
+    expect(findSkillDirectives('try "$pdf-tools"')).toEqual([
+      { start: 5, end: 15, name: 'pdf-tools' },
+    ])
+  })
+
+  it('ignores quoted context lines and fenced code blocks', () => {
+    const text = '> quoted $pdf-tools\n```\n$git-commit\n```\n  > also quoted $docx\nreal $pdf-tools'
+    const names = findSkillDirectives(text).map((range) => range.name)
+    expect(names).toEqual(['pdf-tools'])
+    expect(findSkillDirectives(text)[0]?.start).toBe(text.lastIndexOf('$pdf-tools'))
+  })
+
+  it('uses the roster when given and a heuristic otherwise', () => {
+    // Prices, shell variables and argument placeholders are not mentions.
+    expect(findSkillDirectives('it costs $5 and $ARGUMENTS stay plain')).toEqual([])
+    expect(findSkillDirectives('$pdf and $docx', new Set(['docx']))).toEqual([
+      { start: 9, end: 14, name: 'docx' },
+    ])
+    expect(findSkillDirectives('$5', new Set(['5']))).toEqual([{ start: 0, end: 2, name: '5' }])
+  })
+
+  it('locates the $ token under the caret on any readable line', () => {
+    expect(findActiveSkillToken('hello\nuse $pd', 13)).toEqual({ start: 10, end: 13, query: 'pd' })
+    expect(findActiveSkillToken('> quote $pd', 11)).toBeNull()
+    expect(findActiveSkillToken('```\n$pd', 7)).toBeNull()
+    expect(findActiveSkillToken('cost5$pd', 8)).toBeNull()
   })
 
   it('splits the composer quote block off without losing a byte', () => {
@@ -197,62 +250,34 @@ describe('InputBar skill directives', () => {
     expect(body).toBe('/goal ship it')
     expect(quote + body).toBe(message)
 
-    expect(splitQuotedContext('/goal ship it')).toEqual({
-      quote: '',
-      body: '/goal ship it',
-    })
+    expect(splitQuotedContext('/goal ship it')).toEqual({ quote: '', body: '/goal ship it' })
     // Nothing but quotes: no body to run a command from.
-    expect(splitQuotedContext('> only a quote')).toEqual({
-      quote: '',
-      body: '> only a quote',
-    })
+    expect(splitQuotedContext('> only a quote')).toEqual({ quote: '', body: '> only a quote' })
   })
 
   it('treats only a leading, known command as a command', () => {
-    expect(findCommandDirectives('/goal Ship it')).toEqual([
-      { start: 0, end: 5, name: 'goal' },
-    ])
+    expect(findCommandDirectives('/goal Ship it')).toEqual([{ start: 0, end: 5, name: 'goal' }])
     expect(findCommandDirectives('please run /goal Ship it')).toEqual([])
     expect(findCommandDirectives('/goal Ship it', new Set(['compact']))).toEqual([])
-    // Skill directives belong to the skill highlighter, not this one.
-    expect(findCommandDirectives('/skill:work-writing draft it')).toEqual([])
   })
+})
 
-  it('recognizes nested skill directives after quoted context', () => {
-    const text = '> selected context\n\n/skill:git:commit Commit this change'
-
-    expect(findSkillDirectives(text)).toEqual([
-      { start: 20, end: 37, name: 'git:commit' },
-    ])
-    expect(findSkillDirectives(text, new Set(['work-writing']))).toEqual([])
-  })
-
-  it('keeps the selected skill highlighted after the message is sent', () => {
+describe('sent messages', () => {
+  it('renders every sent $ mention as a chip', () => {
     render(
       <BlockRenderer
         block={{
-          id: 'user-skill',
+          id: 'user-dollar',
           type: 'user',
-          content: '/skill:work-writing Draft the report',
+          content: '$work-writing Draft the report, then $git-commit it',
         }}
         isStreaming={false}
       />,
     )
 
-    const chip = screen.getByTestId('skill-chip')
-    expect(chip).toHaveTextContent('/skill:work-writing')
-    expect(chip).toHaveClass('font-semibold')
-  })
-
-  it('renders a sent $ directive as the same chip', () => {
-    render(
-      <BlockRenderer
-        block={{ id: 'user-dollar', type: 'user', content: '$work-writing Draft the report' }}
-        isStreaming={false}
-      />,
-    )
-
-    expect(screen.getByTestId('skill-chip')).toHaveTextContent('$work-writing')
+    const chips = screen.getAllByTestId('skill-chip')
+    expect(chips.map((chip) => chip.textContent)).toEqual(['$work-writing', '$git-commit'])
+    expect(chips[0]).toHaveClass('font-semibold')
   })
 
   it('highlights built-in, workflow, and custom slash commands after send', () => {

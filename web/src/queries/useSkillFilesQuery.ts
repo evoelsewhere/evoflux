@@ -1,44 +1,36 @@
-/** TanStack Query hooks for the skill CRUD API. */
+/** TanStack Query hooks for the skill CRUD API (``/api/skills``). */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   listSkillFiles,
   getSkill,
   createSkill,
   updateSkill,
-  updateSkillSettings,
-  resetSkillSettings,
+  setSkillEnabled,
   deleteSkill,
+  normalizeSkillWorkspaces,
 } from '@/api/client'
 import type { SkillDiscoveryScope } from '@/api/client'
-import type {
-  SkillBundleFileWrite,
-  SkillMode,
-  SkillRuntimeSettingsUpdate,
-} from '@/api/types'
+import type { SkillBundleFileWrite } from '@/api/types'
 import { queryKeys } from './keys'
 
-function scopeParts(scope?: SkillDiscoveryScope) {
-  const seen = new Set<string>()
-  const workspaces: string[] = []
-  for (const rawWorkspace of scope?.workspaces ?? []) {
-    const workspace = rawWorkspace.trim()
-    if (!workspace || seen.has(workspace)) continue
-    seen.add(workspace)
-    workspaces.push(workspace)
-  }
-  return {
-    workspaces,
-    mode: scope?.mode ?? null,
-  }
+/** Normalized scope, or ``undefined`` for the unscoped (global) catalog. */
+function resolveScope(scope?: SkillDiscoveryScope): { workspaces: string[] } | undefined {
+  return scope ? { workspaces: normalizeSkillWorkspaces(scope) } : undefined
+}
+
+function detailKey(name: string, resolved: { workspaces: string[] } | undefined) {
+  return resolved
+    ? queryKeys.skillFiles.detail(name, resolved.workspaces)
+    : queryKeys.skillFiles.detail(name)
 }
 
 export function useSkillFilesQuery(scope?: SkillDiscoveryScope) {
-  const resolved = scopeParts(scope)
+  const resolved = resolveScope(scope)
   return useQuery({
-    queryKey: scope
-      ? queryKeys.skillFiles.list(resolved.workspaces, resolved.mode)
+    queryKey: resolved
+      ? queryKeys.skillFiles.list(resolved.workspaces)
       : queryKeys.skillFiles.list(),
-    queryFn: () => listSkillFiles(scope ? resolved : undefined),
+    queryFn: () => listSkillFiles(resolved),
     staleTime: 10_000,
   })
 }
@@ -47,12 +39,10 @@ export function useSkillFileQuery(
   name: string | null | undefined,
   scope?: SkillDiscoveryScope,
 ) {
-  const resolved = scopeParts(scope)
+  const resolved = resolveScope(scope)
   return useQuery({
-    queryKey: scope
-      ? queryKeys.skillFiles.detail(name ?? '', resolved.workspaces, resolved.mode)
-      : queryKeys.skillFiles.detail(name ?? ''),
-    queryFn: () => getSkill(name as string, scope ? resolved : undefined),
+    queryKey: detailKey(name ?? '', resolved),
+    queryFn: () => getSkill(name as string, resolved),
     enabled: !!name,
   })
 }
@@ -65,27 +55,26 @@ function invalidateAll(client: ReturnType<typeof useQueryClient>) {
   client.invalidateQueries({ queryKey: queryKeys.agents() })
 }
 
-export function useCreateSkillMutation() {
+export function useCreateSkillMutation(scope?: SkillDiscoveryScope) {
   const client = useQueryClient()
+  const resolved = resolveScope(scope)
   return useMutation({
     mutationFn: ({
       name,
       content,
       files = [],
-      modes = ['work', 'coding'],
     }: {
       name: string
       content: string
       files?: SkillBundleFileWrite[]
-      modes?: SkillMode[]
-    }) => createSkill(name, content, files, modes),
+    }) => createSkill(name, content, files, resolved),
     onSuccess: () => invalidateAll(client),
   })
 }
 
 export function useUpdateSkillMutation(scope?: SkillDiscoveryScope) {
   const client = useQueryClient()
-  const resolved = scopeParts(scope)
+  const resolved = resolveScope(scope)
   return useMutation({
     mutationFn: ({
       name,
@@ -97,67 +86,33 @@ export function useUpdateSkillMutation(scope?: SkillDiscoveryScope) {
       content: string
       files?: SkillBundleFileWrite[]
       deletedFiles?: string[]
-    }) => updateSkill(name, content, files, deletedFiles, scope ? resolved : undefined),
+    }) => updateSkill(name, content, files, deletedFiles, resolved),
     onSuccess: (_data, { name }) => {
       invalidateAll(client)
-      client.invalidateQueries({
-        queryKey: scope
-          ? queryKeys.skillFiles.detail(name, resolved.workspaces, resolved.mode)
-          : queryKeys.skillFiles.detail(name),
-      })
+      client.invalidateQueries({ queryKey: detailKey(name, resolved) })
     },
   })
 }
 
-export function useUpdateSkillSettingsMutation(scope?: SkillDiscoveryScope) {
+/** Turn a Skill on or off (``PATCH /api/skills/{name}``). */
+export function useSetSkillEnabledMutation(scope?: SkillDiscoveryScope) {
   const client = useQueryClient()
-  const resolved = scopeParts(scope)
+  const resolved = resolveScope(scope)
   return useMutation({
-    mutationFn: ({
-      name,
-      settings,
-    }: {
-      name: string
-      settings: SkillRuntimeSettingsUpdate
-    }) => updateSkillSettings(name, settings, scope ? resolved : undefined),
-    onSuccess: (_data, { name }) => {
+    mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) =>
+      setSkillEnabled(name, enabled, resolved),
+    onSuccess: (data, { name }) => {
+      client.setQueryData(detailKey(name, resolved), data)
       invalidateAll(client)
-      client.invalidateQueries({
-        queryKey: scope
-          ? queryKeys.skillFiles.detail(name, resolved.workspaces, resolved.mode)
-          : queryKeys.skillFiles.detail(name),
-      })
-    },
-  })
-}
-
-export function useResetSkillSettingsMutation(scope?: SkillDiscoveryScope) {
-  const client = useQueryClient()
-  const resolved = scopeParts(scope)
-  return useMutation({
-    mutationFn: ({
-      name,
-      settingsId,
-    }: {
-      name: string
-      settingsId: string
-    }) => resetSkillSettings(name, settingsId, scope ? resolved : undefined),
-    onSuccess: (_data, { name }) => {
-      invalidateAll(client)
-      client.invalidateQueries({
-        queryKey: scope
-          ? queryKeys.skillFiles.detail(name, resolved.workspaces, resolved.mode)
-          : queryKeys.skillFiles.detail(name),
-      })
     },
   })
 }
 
 export function useDeleteSkillMutation(scope?: SkillDiscoveryScope) {
   const client = useQueryClient()
-  const resolved = scopeParts(scope)
+  const resolved = resolveScope(scope)
   return useMutation({
-    mutationFn: (name: string) => deleteSkill(name, scope ? resolved : undefined),
+    mutationFn: (name: string) => deleteSkill(name, resolved),
     onSuccess: () => invalidateAll(client),
   })
 }

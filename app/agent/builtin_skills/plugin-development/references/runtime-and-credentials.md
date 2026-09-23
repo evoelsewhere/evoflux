@@ -5,7 +5,7 @@ Use this reference whenever a plugin declares MCP servers, credential fields, in
 ## Contents
 
 - [`mcp.json`](#mcpjson)
-- [Placeholder rules](#placeholder-rules)
+- [Plugin runtime variables](#plugin-runtime-variables)
 - [Credentials extension](#credentials-extension)
 - [Capabilities and permissions](#capabilities-and-permissions)
 - [Runtime identity and tool lookup](#runtime-identity-and-tool-lookup)
@@ -47,14 +47,18 @@ For remote MCP:
 - do not depend on redirects because the runtime disables them;
 - treat declared headers as literal package data, never as a secret-reference mechanism.
 
-## Placeholder rules
+## Plugin runtime variables
 
-EvoFlux performs a single substitution pass for:
+`PLUGIN_ROOT` and `PLUGIN_DATA` are plugin runtime environment variables. They
+belong to the plugin MCP runtime, not to Skill instructions:
 
-- `${PLUGIN_ROOT}` — immutable installed or linked package root;
-- `${PLUGIN_DATA}` — mutable installation-scoped data root.
+- `PLUGIN_ROOT` — immutable installed or linked package root;
+- `PLUGIN_DATA` — mutable installation-scoped data root.
 
-Substitution is supported in stdio `args`, `env` values, and `cwd`. Do not use placeholders in `command`, remote URLs, or remote headers. A resolved relative working directory must remain inside the plugin root; a `${PLUGIN_DATA}` working directory must remain inside the data root.
+EvoFlux sets both in every plugin stdio server process, so server code reads
+them from its environment. In `mcp.json`, EvoFlux also performs a single
+substitution pass for the `${PLUGIN_ROOT}` and `${PLUGIN_DATA}` forms.
+Substitution is supported in stdio `args`, `env` values, and `cwd`. Do not use `${PLUGIN_ROOT}` or `${PLUGIN_DATA}` in `command`, remote URLs, or remote headers. A resolved relative working directory must remain inside the plugin root; a `${PLUGIN_DATA}` working directory must remain inside the data root.
 
 Do not rely on nested or recursive expansion. Pass distinct values as separate arguments instead of constructing a shell expression.
 
@@ -108,7 +112,7 @@ packages. Use `org.evoelsewhere.evoflux.credentials` for all new package work.
 
 ## Capabilities and permissions
 
-Declare current server capabilities separately from credentials:
+Declare server capabilities separately from credentials:
 
 ```json
 {
@@ -161,4 +165,4 @@ Keep the MCP process portable and bounded:
 - use tool annotations for read-only, destructive, idempotent, and open-world behavior when supported;
 - create data directories safely and use restrictive file permissions for sensitive state.
 
-EvoFlux currently does not define a manifest hook that creates a virtual environment or installs package dependencies. Before choosing an entrypoint, verify that its interpreter and imported libraries exist in every target runtime, or bundle a self-contained executable/runtime inside the portable package. Do not assume a developer's active virtual environment will exist for a managed installation. Record any unavoidable runtime prerequisite in the plugin README and test it from a clean managed install.
+EvoFlux does not define a manifest hook that creates a virtual environment or installs package dependencies. Before choosing an entrypoint, verify that its interpreter and imported libraries exist in every target runtime, or bundle a self-contained executable/runtime inside the portable package. Do not assume a developer's active virtual environment will exist for a managed installation. Record any unavoidable runtime prerequisite in the plugin README and test it from a clean managed install.

@@ -9,6 +9,16 @@ Two workflows, pick the one that matches the change:
 
 Both share the same golden rule: **never overwrite the original file until the new one has passed QA.** Write to `output.docx`, verify, then rename.
 
+Python snippets below go into a `.py` file in the workspace and run with `uv run --with python-docx python edit_doc.py`; the scripts run as `uv run --with python-docx python scripts/<name>.py`.
+
+## Contents
+
+- Workflow A — `python-docx` in-place edit: inspect, placeholder replacement, insert, delete, repeat a template block
+- Workflow B — Explode → edit XML → assemble: file map, hand-editing rules, raw paragraph replacement
+- Comments and tracked changes: add a comment, accept all tracked changes
+- When Word refuses to open the file
+- Anti-patterns
+
 ## Workflow A — `python-docx` in-place edit
 
 ### Load and inspect first
@@ -127,9 +137,9 @@ carries formatting you need to keep, run the `substitute()` helper over
 Use only when Workflow A cannot express the change (e.g. rewriting a `w:sdt` structured document tag, editing custom XML parts, splicing two documents together preserving numbering IDs).
 
 ```bash
-uv run scripts/explode.py template.docx exploded/
+uv run --with python-docx python scripts/explode.py template.docx exploded/
 # … edit exploded/word/document.xml (or others) …
-uv run scripts/assemble.py exploded/ output.docx --sanity
+uv run --with python-docx python scripts/assemble.py exploded/ output.docx --sanity
 ```
 
 `explode.py` pretty-prints every XML file so diffs are readable. `assemble.py` writes parts in the order declared by `[Content_Types].xml` with fixed mtimes, so a reassemble of an unchanged tree produces a byte-identical archive. Pass `--sanity` to run the required-parts and ZIP-integrity probes after writing.
@@ -195,47 +205,27 @@ Reassemble, then run the QA loop.
 
 ## Comments and tracked changes
 
-Comments and revision marks live in separate XML parts. Three modes:
+Comments and revision marks live in separate XML parts. Reading existing comments and counting pending revisions are covered in `read.md`; this section changes them.
 
 ### Adding a new comment
 
-Use the bundled script against an exploded directory:
+Run the bundled script against an exploded directory:
 
 ```bash
-uv run scripts/explode.py template.docx exploded/
-uv run scripts/annotate.py exploded/ "Please double-check this figure." \
+uv run --with python-docx python scripts/explode.py template.docx exploded/
+uv run --with python-docx python scripts/annotate.py exploded/ "Please double-check this figure." \
     --author "Reviewer" --anchor '$4.2M'
-uv run scripts/assemble.py exploded/ commented.docx
+uv run --with python-docx python scripts/assemble.py exploded/ commented.docx
 ```
 
 `annotate.py` wires up all three files that OOXML requires (`comments.xml`, the `.rels` entry, `[Content_Types].xml`) and inserts the anchor markers into `document.xml`. If the anchor string isn't found, it prints an XML snippet to paste in by hand.
 
-### Reading existing comments
-
-```python
-from docx import Document
-doc = Document("reviewed.docx")
-
-part = doc.part.related_parts
-comments = None
-for rel_id, rel in doc.part.rels.items():
-    if rel.reltype.endswith("/comments"):
-        comments = rel.target_part
-        break
-
-if comments is not None:
-    for el in comments.element.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}comment"):
-        author = el.get("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}author")
-        text = "".join(t.text or "" for t in el.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"))
-        print(author, "→", text)
-```
-
 ### Accepting all tracked changes programmatically
 
-Use the bundled script — it walks the OOXML directly with `lxml` and needs no LibreOffice round-trip:
+Run the bundled script — it walks the OOXML directly with `lxml` and needs no LibreOffice round-trip:
 
 ```bash
-uv run scripts/resolve_revisions.py reviewed.docx clean.docx
+uv run --with python-docx python scripts/resolve_revisions.py reviewed.docx clean.docx
 ```
 
 Semantics: `<w:ins>` blocks are unwrapped (their content stays), `<w:del>` blocks are removed, formatting-change markers (`w:rPrChange`, `w:pPrChange`, …) are stripped, and paragraphs whose pilcrow is marked deleted are merged with the following paragraph — the same rules Word's *Accept All* applies.
@@ -248,10 +238,10 @@ soffice --headless --convert-to docx --outdir out/ reviewed.docx
 
 ## When Word refuses to open the file
 
-Word's error dialog rarely tells you what's wrong. Diagnose:
+Word's error dialog rarely tells you what's wrong. Start with `uv run --with python-docx python scripts/audit.py broken.docx`; to see every unparseable part directly:
 
 ```bash
-uv run python -c "
+uv run --with python-docx python -c "
 import zipfile, xml.etree.ElementTree as ET
 with zipfile.ZipFile('broken.docx') as z:
     for name in z.namelist():

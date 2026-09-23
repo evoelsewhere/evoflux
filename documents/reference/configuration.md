@@ -36,7 +36,7 @@ Derived values:
 | `<config>/settings.yaml` | Settings/runtime | typed operational preferences |
 | `<config>/agents/**/*.md` | user | agent frontmatter and prompt overrides |
 | `<config>/skills/*/SKILL.md` | user | custom Skill bundles |
-| `<config>/skill-settings.json` | Settings | per-discovered-variant runtime overlay |
+| `<config>/skill-settings.json` | Settings | names of Skills turned off (`{"version": 2, "disabled": [...]}`) |
 | `<config>/mcp.json` | user/Settings | global stdio/HTTP MCP servers |
 | `<config>/sandbox.yaml` | user/Settings | denied paths and outbound policy |
 | `<config>/model_registry.yaml` | operator | model capability/metadata corrections |

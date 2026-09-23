@@ -82,3 +82,33 @@ async def test_search_deduplicates_and_respects_global_limit(tmp_path: Path):
         rows = await search_everywhere(tmp_path, "app", limit=1)
 
     assert rows == [duplicate]
+
+
+def test_skill_items_insert_dollar_mentions_for_user_invocable_skills(tmp_path: Path):
+    from app.agent.skills.registry import invalidate_skill_cache
+    from app.services.search_everywhere_service import _skill_items
+
+    skills_root = tmp_path / ".evoflux" / "skills"
+    for name, extra in (
+        ("zq-release-audit", ""),
+        ("zq-release-hidden", "user-invocable: false\n"),
+    ):
+        (skills_root / name).mkdir(parents=True)
+        (skills_root / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Audits a zq release.\n{extra}---\n\n"
+            "Audit it.\n",
+            encoding="utf-8",
+        )
+    invalidate_skill_cache()
+
+    rows = _skill_items(tmp_path, "zq-release", 10)
+
+    assert rows == [
+        SearchEverywhereItem(
+            id="skill:zq-release-audit",
+            kind="skill",
+            label="zq-release-audit",
+            description="Audits a zq release.",
+            metadata={"name": "zq-release-audit", "insert_text": "$zq-release-audit "},
+        )
+    ]

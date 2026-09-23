@@ -97,9 +97,9 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)$", re.DOTALL)
 def _parse_frontmatter(text: str) -> tuple[dict, str]:
     """Split YAML frontmatter from markdown body.
 
-    Mirrors ``app.agent.tools.builtin.skill._parse_frontmatter`` — kept
-    private here to avoid a cross-package import that would pull the
-    skill tool's settings into ``services``.
+    Deliberately lenient and independent of
+    ``app.agent.skills.spec.split_frontmatter``: command files are not Agent
+    Skills and must not inherit the ``SKILL.md`` validation rules.
     """
     match = _FRONTMATTER_RE.match(text)
     if not match:
@@ -224,7 +224,7 @@ def parse_slash_invocation(content: str) -> SlashInvocation | None:
 def _md_tree_signature(root: Path) -> int:
     """Cheap fingerprint that changes whenever any ``*.md`` under *root* changes.
 
-    Mirrors ``app.agent.tools.builtin.skill._skills_dir_signature``: the max
+    The signature is the max
     of the root's own mtime_ns, each subdirectory's mtime_ns, and every
     ``*.md`` mtime_ns down to the one nested level ``_iter_md`` honours — so
     in-place edits, additions, and removals all change the signature.

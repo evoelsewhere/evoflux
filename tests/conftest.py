@@ -63,6 +63,14 @@ def _restore_os_environ():
 
 
 @pytest.fixture(autouse=True)
+def _isolate_home_skill_roots(monkeypatch: pytest.MonkeyPatch, tmp_path_factory):
+    """Keep the developer's ``~/.agents/skills`` and ``~/.claude/skills`` out
+    of every Skill catalog built during tests."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setattr("app.agent.skills.registry.home_dir", lambda: home)
+
+
+@pytest.fixture(autouse=True)
 def _disable_desktop_token_auth(monkeypatch: pytest.MonkeyPatch):
     """Keep API tests independent from a desktop launcher token in the shell."""
     monkeypatch.delenv("EVOFLUX_DESKTOP_TOKEN", raising=False)

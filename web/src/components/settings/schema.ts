@@ -12,7 +12,7 @@
  * dealing with ``SafeParseReturn`` objects in JSX.
  */
 import { z } from 'zod'
-import { splitFrontmatter } from './frontmatter'
+import { splitFrontmatter, unquoteYamlScalar } from './frontmatter'
 
 z.config({ jitless: true })
 
@@ -64,65 +64,57 @@ export const descriptionSchema = z
   .max(1024, 'Max 1024 characters')
 
 // ── Skill field schemas ─────────────────────────────────────────────────────
+//
+// Mirror the strict authoring rules in ``app/agent/skills/spec.py`` (the
+// Agent Skills specification plus Anthropic's constraints). See
+// ``documents/architecture/agent-skills.md``.
 
-/**
- * Skill filename/path. Supports flat names (``research``) and one nested level
- * (``git/commit``) to mirror ``app/services/agent_fs.py::_validate_skill_name``.
- */
+export const SKILL_NAME_MAX_CHARS = 64
+export const SKILL_DESCRIPTION_MAX_CHARS = 1024
+/** Words a Skill name must not contain. */
+export const SKILL_RESERVED_NAME_WORDS = ['anthropic', 'claude'] as const
+/** Flat Skill name: lowercase letters, digits and single hyphens. */
+export const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+/** Same XML tag pattern the backend rejects in ``name`` / ``description``. */
+const XML_TAG_RE = /<\s*\/?\s*[A-Za-z][\w.:-]*(?:\s[^<>]*)?\/?\s*>/
+
+/** Skill name — also the name of the Skill's directory. */
 export const skillNameSchema = z
   .string()
   .min(1, 'Required')
-  .refine((value) => value.split('/').length <= 2, {
-    message: "Only one nested level is allowed (e.g. 'parent/sub')",
-  })
-  .refine((value) => value.split('/').every((part) => agentNameSchema.safeParse(part).success), {
-    message: "Each segment must use letters, digits, '.', '_', '-' and start with a letter or digit",
-  })
-
-/** Portable Agent Skills name used for newly scaffolded packages. */
-export const portableSkillNameSchema = z
-  .string()
-  .min(1, 'Required')
-  .max(64, 'Max 64 characters')
+  .max(SKILL_NAME_MAX_CHARS, `Max ${SKILL_NAME_MAX_CHARS} characters`)
   .regex(
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    SKILL_NAME_RE,
     "Use lowercase letters, digits, and single hyphens (for example 'code-review')",
   )
+  .refine(
+    (value) => !SKILL_RESERVED_NAME_WORDS.some((word) => value.includes(word)),
+    { message: "Must not contain 'anthropic' or 'claude'" },
+  )
 
-/** Skill one-line description that the agent sees when browsing skills. */
+/** What the Skill does and when to use it — the model sees this in its catalog. */
 export const skillDescriptionSchema = z
   .string()
-  .min(1, 'Required — shown to agents when they browse skills')
-  .max(1024, 'Max 1024 characters')
+  .trim()
+  .min(1, 'Required — the agent uses it to decide when to read the skill')
+  .max(SKILL_DESCRIPTION_MAX_CHARS, `Max ${SKILL_DESCRIPTION_MAX_CHARS} characters`)
+  .refine((value) => !XML_TAG_RE.test(value), { message: 'Must not contain XML tags' })
 
 export const skillFrontmatterSchema = z.object({
   name: skillNameSchema,
   description: skillDescriptionSchema,
 })
 
-export const newSkillFrontmatterSchema = skillFrontmatterSchema.extend({
-  name: portableSkillNameSchema,
-})
-
 export type SkillFrontmatterParsed = z.infer<typeof skillFrontmatterSchema>
+
+export function validateSkillName(raw: string): string | null {
+  return firstError(skillNameSchema, raw)
+}
 
 export function validateSkillForm(
   fm: unknown
 ): Record<string, string> | null {
   const result = skillFrontmatterSchema.safeParse(fm)
-  if (result.success) return null
-  const errors: Record<string, string> = {}
-  for (const issue of result.error.issues) {
-    const path = issue.path.join('.') || '_root'
-    if (!(path in errors)) errors[path] = issue.message
-  }
-  return errors
-}
-
-export function validateNewSkillForm(
-  fm: unknown,
-): Record<string, string> | null {
-  const result = newSkillFrontmatterSchema.safeParse(fm)
   if (result.success) return null
   const errors: Record<string, string> = {}
   for (const issue of result.error.issues) {
@@ -235,9 +227,16 @@ export function validateAgentDraft(raw: string): Record<string, string> | null {
   return validateAgentForm(fm)
 }
 
-/** Same for skills. */
-export function validateSkillDraft(raw: string): Record<string, string> | null {
-  const { fm: fmText } = splitFrontmatter(raw)
+/**
+ * Validate a raw ``SKILL.md`` draft. When ``expectedName`` is given (editing
+ * an existing Skill), the frontmatter ``name`` must equal it because it must
+ * match the Skill's directory.
+ */
+export function validateSkillDraft(
+  raw: string,
+  opts: { expectedName?: string } = {},
+): Record<string, string> | null {
+  const { fm: fmText, body } = splitFrontmatter(raw)
   if (!fmText.trim()) {
     return { _root: 'Missing YAML frontmatter (needs --- … --- header).' }
   }
@@ -247,22 +246,23 @@ export function validateSkillDraft(raw: string): Record<string, string> | null {
   } catch (err) {
     return { _root: (err as Error).message }
   }
-  return validateSkillForm(fm)
+  const errors = validateSkillForm(fm)
+  if (errors) return errors
+  if (opts.expectedName !== undefined && fm.name !== opts.expectedName) {
+    return { name: `Name must stay '${opts.expectedName}' (it matches the skill folder)` }
+  }
+  if (!body.trim()) {
+    return { body: 'Add instructions below the frontmatter' }
+  }
+  return null
 }
 
-/** Validate a new package against the portable Agent Skills naming contract. */
-export function validateNewSkillDraft(raw: string): Record<string, string> | null {
+/** Frontmatter ``name`` of a ``SKILL.md`` draft, or ``null`` when absent. */
+export function skillDraftName(raw: string): string | null {
   const { fm: fmText } = splitFrontmatter(raw)
-  if (!fmText.trim()) {
-    return { _root: 'Missing YAML frontmatter (needs --- … --- header).' }
-  }
-  let fm: Record<string, unknown>
-  try {
-    fm = parseLooseYaml(fmText)
-  } catch (err) {
-    return { _root: (err as Error).message }
-  }
-  return validateNewSkillForm(fm)
+  if (!fmText.trim()) return null
+  const name = parseLooseYaml(fmText).name
+  return typeof name === 'string' && name ? name : null
 }
 
 /**
@@ -274,14 +274,33 @@ function parseLooseYaml(text: string): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   const lines = text.split(/\r?\n/)
   let currentList: string[] | null = null
+  // Multi-line scalar being collected: a block scalar (``key: >`` /
+  // ``key: |``) or a plain scalar continued on indented lines.
+  let pending: { key: string; joiner: string; lines: string[]; plain: boolean } | null = null
+
+  const flushPending = () => {
+    if (!pending) return
+    const joined = pending.lines.join(pending.joiner).trim()
+    out[pending.key] = pending.plain ? coerceScalar(unquoteYamlScalar(joined)) : joined
+    pending = null
+  }
 
   for (const raw of lines) {
     const line = raw.replace(/\s+$/, '')
+    if (pending && /^\s/.test(line) && !/^\s+-\s/.test(line)) {
+      pending.lines.push(line.trim())
+      continue
+    }
+    if (pending && !line.trim() && !pending.plain) {
+      pending.lines.push('')
+      continue
+    }
+    flushPending()
     if (!line.trim() || line.trim().startsWith('#')) continue
 
     const listMatch = /^\s+-\s+(.*)$/.exec(line)
     if (currentList && listMatch) {
-      currentList.push(unquote(listMatch[1]))
+      currentList.push(unquoteYamlScalar(listMatch[1]))
       continue
     }
 
@@ -295,17 +314,13 @@ function parseLooseYaml(text: string): Record<string, unknown> {
       out[key] = currentList
       continue
     }
-    out[key] = coerceScalar(unquote(rawValue))
+    const blockMatch = /^([>|])[+-]?\d*$/.exec(rawValue.trim())
+    pending = blockMatch
+      ? { key, joiner: blockMatch[1] === '>' ? ' ' : '\n', lines: [], plain: false }
+      : { key, joiner: ' ', lines: [rawValue], plain: true }
   }
+  flushPending()
   return out
-}
-
-function unquote(v: string): string {
-  const t = v.trim()
-  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
-    return t.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-  }
-  return t
 }
 
 function coerceScalar(v: string): unknown {

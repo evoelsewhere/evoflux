@@ -325,7 +325,6 @@ async def get_registry(
             description="Repeat for every repository in the active workspace/project."
         ),
     ] = None,
-    mode: Annotated[Literal["work", "coding"] | None, Query()] = None,
 ) -> RegistryResponse:
     """Dropdown catalog: tools, skills, providers, known models."""
     from app.agent.hooks.summarization import prompt_token_threshold_for_model
@@ -338,10 +337,11 @@ async def get_registry(
         get_model_metadata,
         get_model_modes,
     )
-    from app.api.routes.skills import _discover_runtime_skills, _workspace_paths
+    from app.agent.skills.registry import discover_skills
+    from app.api.routes.skills import _workspace_paths
 
     tool_registry = _default_tool_registry()
-    hidden_tools = {"skill", "load_tool", "todo_manage", "schedule_task", "note"}
+    hidden_tools = {"load_tool", "todo_manage", "schedule_task", "note"}
     tools = sorted(
         (
             ToolCatalogEntry(
@@ -356,25 +356,20 @@ async def get_registry(
         key=lambda t: t.name,
     )
 
-    skill_map = _discover_runtime_skills(_workspace_paths(workspace), mode=mode)
-    skills = sorted(
-        (
-            SkillCatalogEntry(
-                name=k,
-                description=v.get("description", ""),
-                display_name=v.get("display_name"),
-                short_description=v.get("short_description"),
-                allow_implicit_invocation=bool(
-                    v.get("allow_implicit_invocation", True)
-                ),
-                user_invocable=bool(v.get("user_invocable", True)),
-                dependencies=list(v.get("dependencies") or []),
-                modes=list(v.get("modes", ("work", "coding"))),
-            )
-            for k, v in skill_map.items()
-        ),
-        key=lambda s: s.name,
-    )
+    # Valid Skills an agent's ``skills:`` list may preload. Disabled ones stay
+    # listed (flagged) so an existing definition that names one still renders.
+    catalog = discover_skills(_workspace_paths(workspace))
+    skills = [
+        SkillCatalogEntry(
+            name=skill.name,
+            description=skill.description,
+            enabled=skill.enabled,
+            model_invocable=not skill.disable_model_invocation,
+            user_invocable=skill.user_invocable,
+        )
+        for skill in catalog.all()
+        if skill.valid
+    ]
 
     # Provider IDs straight from the catalog — single source of truth.
     # Previously this was derived from the capability resolver's prefix
@@ -756,7 +751,7 @@ async def update_agent_runtime_settings(
             status_code=422,
             detail=f"Model '{body.model}' is not configured or selectable.",
         )
-    registry = await get_registry(workspace=None, mode=_mode_for_agent_path(name))
+    registry = await get_registry(workspace=None)
     known_tools = {item.name for item in registry.tools}
     known_skills = {item.name for item in registry.skills}
     unknown_tools = sorted(set(body.extra_tools) - known_tools)

@@ -16,6 +16,7 @@ import {
   bulkUpdateAgentModel,
   updateAgentRuntimeModel,
   updateAgentRuntimeSettings,
+  normalizeSkillWorkspaces,
 } from '@/api/client'
 import type { SkillDiscoveryScope } from '@/api/client'
 import { queryKeys } from './keys'
@@ -37,15 +38,12 @@ export function useAgentFileQuery(name: string | null | undefined) {
 }
 
 export function useRegistryQuery(scope?: SkillDiscoveryScope) {
-  const workspaces = [...new Set(
-    (scope?.workspaces ?? []).map((workspace) => workspace.trim()).filter(Boolean),
-  )]
-  const mode = scope?.mode ?? null
+  const workspaces = normalizeSkillWorkspaces(scope)
   return useQuery({
     queryKey: scope
-      ? queryKeys.agentFiles.registry(workspaces, mode)
+      ? queryKeys.agentFiles.registry(workspaces)
       : queryKeys.agentFiles.registry(),
-    queryFn: () => getRegistry(scope ? { workspaces, mode } : undefined),
+    queryFn: () => getRegistry(scope ? { workspaces } : undefined),
     // Global model/tool metadata is process-stable. Workspace skill catalogs
     // are scoped and can change on disk, so do not retain them forever.
     staleTime: scope ? 10_000 : Infinity,

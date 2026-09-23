@@ -1,12 +1,30 @@
 # Transforming an existing PDF
 
-Goal: rearrange, protect, or shrink a PDF that already exists. This chapter
+Goal: rearrange, protect, or shrink a PDF that already exists. This file
 covers everything that mutates page order, orientation, or file-level
-properties. For adding new *content* to a page, see `compose.md` (§8 for the
-overlay technique).
+properties, plus stamping one PDF onto another (§5). Drawing new text onto an
+existing page is composition: `compose.md` §8.
 
 Each recipe has a **pypdf** version (permissive Python) and a **qpdf**
-version (Apache-2.0 CLI, faster on huge inputs). Default to pypdf.
+version (Apache-2.0 CLI, faster on huge inputs). Default to pypdf. Save a
+Python recipe to a `.py` file in the workspace and run it with
+`uv run --with pypdf python recipe.py` (add `--with reportlab` for the
+generated stamp in §5). The wrapper scripts run as
+`uv run --with pypdf python scripts/<name>.py`.
+
+## Contents
+
+- 1. Combine
+- 2. Carve (split)
+- 3. Reorient (rotate)
+- 4. Crop
+- 5. Watermark / stamp
+- 6. Encrypt / decrypt
+- 7. Linearize + shrink
+- 8. Repair
+- 9. Extract or delete individual pages
+- 10. Replace a page in place
+- Validation
 
 ## 1. Combine
 
@@ -39,8 +57,8 @@ qpdf --empty --pages intro.pdf 1-3 chapter1.pdf 1-z \
 Wrapper:
 
 ```bash
-scripts/combine.py intro.pdf chapter1.pdf chapter2.pdf --out book.pdf
-scripts/combine.py a.pdf b.pdf --out out.pdf --preserve-metadata FIRST
+uv run --with pypdf python scripts/combine.py intro.pdf chapter1.pdf chapter2.pdf --out book.pdf
+uv run --with pypdf python scripts/combine.py a.pdf b.pdf --out out.pdf --preserve-metadata FIRST
 ```
 
 ## 2. Carve (split)
@@ -74,9 +92,9 @@ qpdf handbook.pdf --pages . 26-z -- part2.pdf
 Wrapper (all three modes, one binary):
 
 ```bash
-scripts/carve.py handbook.pdf --by-range 1-25 26-50 51-z --dest parts/
-scripts/carve.py handbook.pdf --every-page --dest pages/
-scripts/carve.py handbook.pdf --chunk-size 10 --dest chunks/
+uv run --with pypdf python scripts/carve.py handbook.pdf --by-range 1-25 26-50 51-z --dest parts/
+uv run --with pypdf python scripts/carve.py handbook.pdf --every-page --dest pages/
+uv run --with pypdf python scripts/carve.py handbook.pdf --chunk-size 10 --dest chunks/
 ```
 
 ## 3. Reorient (rotate)
@@ -104,8 +122,8 @@ qpdf scan.pdf scan_rotated.pdf --rotate=+90:2,5,6 --rotate=180:9
 Wrapper:
 
 ```bash
-scripts/reorient.py scan.pdf --angle 90 --targets 2,5,6 --out out.pdf
-scripts/reorient.py scan.pdf --angle 180 --targets all --out flipped.pdf
+uv run --with pypdf python scripts/reorient.py scan.pdf --angle 90 --targets 2,5,6 --out out.pdf
+uv run --with pypdf python scripts/reorient.py scan.pdf --angle 180 --targets all --out flipped.pdf
 ```
 
 ## 4. Crop
@@ -286,10 +304,13 @@ with open("book_v2.pdf", "wb") as fh:
 After any structural mutation:
 
 ```bash
-scripts/survey.py out.pdf --pretty    # page count still right?
-scripts/sanity_check.py out.pdf        # round-trip clean?
-qpdf --check out.pdf                   # any structural warnings?
+uv run --with pypdf python scripts/survey.py out.pdf --pretty    # page count still right?
+uv run --with pypdf python scripts/sanity_check.py out.pdf        # round-trip clean?
+qpdf --check out.pdf                                              # any structural warnings?
 ```
+
+Then run the `document_preview` tool on the output to confirm page order and
+orientation in the rendered layout.
 
 Missing-page-after-split is almost always an off-by-one. qpdf ranges are
 1-based, **inclusive**; pypdf's `reader.pages` is 0-based. Wrapper scripts

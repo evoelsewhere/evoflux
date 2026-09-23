@@ -242,7 +242,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: Ctrl+B toggles the mode sidebar the same way in every mode.',
           'Cross-feature: Scheduler tasks target work or coding mode explicitly — set the right mode on the task.',
-          'Cross-feature: Skills and workflows can be scoped per mode in Settings; a Coding-only workflow stays hidden in Work.'
+          'Cross-feature: workflows can be scoped per mode, so a Coding-only workflow stays hidden in Work; Skills are available in both modes.'
 ],
       },
       {
@@ -518,7 +518,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'composer',
     title: 'Composer power features',
     summary:
-      'Use /, !, @, # snippets, attachments, quote selection, Work folder targeting, nested skills, and workflows with RunInputsDialog. Undo restores attachments too, so drafts stay recoverable after a bad send.',
+      'Use /, !, @, $ skills, # snippets, attachments, quote selection, Work folder targeting, and workflows with RunInputsDialog. Undo restores attachments too, so drafts stay recoverable after a bad send.',
     keywords: [
       'composer',
       'mention',
@@ -529,6 +529,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'drag',
       'paste',
       'skill',
+      '$skill-name',
       'workflow',
       'RunInputsDialog',
       'WorkFolderSelector',
@@ -548,7 +549,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Start a message with ! to run a shell command (or pick /shell to prefill bang mode).',
       'Type @ to insert ranked file/folder path references from the active workspace.',
       'In Coding, type # to expand workspace or global snippets into the composer.',
-      'Nested skills use /skill:parent:child (colon and slash are interchangeable for nested names).',
+      'Type $ to pick a skill; $skill-name works anywhere in the message and you can name several (not inside > quote lines or code blocks).',
       'Workflows open RunInputsDialog when required and never send the raw slash text as chat.',
       'Undo restores the previous user message and its attachments into the composer.',
       'Paste images/files or drag-drop onto the composer when attachments are enabled.',
@@ -559,7 +560,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'The composer is more than a text box: slash menu (/), shell bang (!), path mentions (@), Coding snippets (#), file attachments, quote context chips, WorkFolderSelector for Work sessions, skill directives, and approved workflows. Mastering these affordances is the difference between dumping trees into the prompt and steering with precision.',
+        text: 'The composer is more than a text box: slash menu (/), shell bang (!), path mentions (@), skill mentions ($), Coding snippets (#), file attachments, quote context chips, WorkFolderSelector for Work sessions, and approved workflows. Mastering these affordances is the difference between dumping trees into the prompt and steering with precision.',
       },
       {
         type: 'p',
@@ -567,12 +568,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Type / to open the command menu (built-ins, skills under /skill:, workflows, custom .evoflux/commands/). Prefix with ! for shell. Use @ to pick paths. In Coding, # expands snippets. Drag-drop or paste files onto the bar. On Work sessions, use WorkFolderSelector near the composer to point at a private session folder or another local directory. After /undo, both text and attachments return to the draft.',
+        text: 'Type / to open the command menu (built-ins, workflows, custom .evoflux/commands/). Type $ to pick a skill: the agent already sees every enabled skill\'s name and description and reads its SKILL.md when a task matches, but `$skill-name` makes it use that skill now. Prefix with ! for shell. Use @ to pick paths. In Coding, # expands snippets. Drag-drop or paste files onto the bar. On Work sessions, use WorkFolderSelector near the composer to point at a private session folder or another local directory. After /undo, both text and attachments return to the draft.',
       },
       {
         type: 'tips',
         items: [
-          '/ — slash commands, skills, workflows, custom commands',
+          '/ — slash commands, workflows, custom commands',
+          '$ — skills; any position, several per message',
           '! — shell mode for the rest of the line',
           '@ — file/folder mentions',
           '# — snippets (Coding workspaces)',
@@ -584,11 +586,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step for a precise Coding ask: (1) @ the files that matter, (2) attach a screenshot or log only if needed, (3) state the outcome and tests, (4) optionally /skill:… for a known procedure, (5) set permission mode, (6) send. For Work research: set WorkFolderSelector, attach sources, quote prior answers, then ask.',
+        text: 'Step-by-step for a precise Coding ask: (1) @ the files that matter, (2) attach a screenshot or log only if needed, (3) state the outcome and tests, (4) optionally $skill-name for a known procedure, (5) set permission mode, (6) send. For Work research: set WorkFolderSelector, attach sources, quote prior answers, then ask.',
       },
       {
         type: 'p',
-        text: 'Common mistakes: sending raw `/workflow name` text hoping it runs (workflows launch through the menu/dialog); nesting skills with spaces instead of `:` / `/`; using # in Work expecting Coding snippets; pasting secrets into the composer instead of configuring Providers; forgetting that /undo restores attachments — re-send carefully if the files were sensitive.',
+        text: 'Common mistakes: sending raw `/workflow name` text hoping it runs (workflows launch through the menu/dialog); typing a skill name with capitals or spaces (skill names are lowercase with hyphens, e.g. `$code-review`); using # in Work expecting Coding snippets; pasting secrets into the composer instead of configuring Providers; forgetting that /undo restores attachments — re-send carefully if the files were sensitive.',
       },
       {
         type: 'tips',
@@ -601,7 +603,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Workflows must be approved and valid for the session scope (work / coding) or they stay hidden. Skills appear under /skill: only after they validate in Settings → Skills. If a command is missing, check scope and validation before assuming a slash bug.',
+        text: 'Workflows must be approved and valid for the session scope (work / coding) or they stay hidden. The $ picker lists only skills that are valid, turned on in Settings → Skills, and user-invocable. If a command or skill is missing, check scope, validation, and the skill\'s switch before assuming a composer bug.',
       }
 ],
     related: [
@@ -708,7 +710,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'slash',
     title: 'Built-in slash commands',
     summary:
-      'Type / in the composer for stop, compact, undo, init, btw, goal, skills, workflows, and custom commands from .evoflux/commands/. Built-ins run immediately; custom entries usually insert so you can finish arguments.',
+      'Type / in the composer for stop, compact, undo, init, btw, goal, workflows, and custom commands from .evoflux/commands/. Built-ins run immediately; custom entries usually insert so you can finish arguments. Skills use $skill-name instead of a slash command.',
     setup:
       'Focus the composer and type /. Place project or global custom commands under `.evoflux/commands/` (compatible OpenCode paths also work).',
     keywords: [
@@ -720,7 +722,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       '/btw',
       '/goal',
       '/workflow',
-      '/skill',
       'command',
       '.evoflux/commands',
       'lệnh',
@@ -730,9 +731,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
     tricks: [
       'Built-ins execute immediately on pick; custom commands usually insert into the textarea so you can append $ARGUMENTS.',
-      'Longest-prefix match; : and / are interchangeable for nested command and skill names.',
+      'Longest-prefix match; : and / are interchangeable for nested command names.',
       'Custom commands live under project or global .evoflux/commands/ (and compatible OpenCode paths).',
-      'Skills appear under /skill: only after they validate in Settings → Skills.',
+      'Skills are not slash commands: type $ to pick one, or write $skill-name anywhere in the message.',
       'Workflows must be approved and valid for the session scope (work / coding) or they stay hidden.',
       '/compact early when the context budget bar climbs — waiting for failure wastes a turn.',
       '/init is Coding-oriented for AGENTS.md scaffolding.',
@@ -742,7 +743,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Slash commands are first-class composer actions. Built-ins control the team run; goal subcommands manage durable objectives; skills and workflows attach structured behavior; user-defined Markdown/YAML commands expand server-side. The menu is searchable — type a few letters to filter.',
+        text: 'Slash commands are first-class composer actions. Built-ins control the team run; goal subcommands manage durable objectives; workflows launch structured runs; user-defined Markdown/YAML commands expand server-side. The menu is searchable — type a few letters to filter.',
       },
       {
         type: 'p',
@@ -766,20 +767,19 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { cmd: '/goal:pause', desc: 'Pause the active goal' },
           { cmd: '/goal:resume', desc: 'Resume a paused goal' },
           { cmd: '/goal:stop', desc: 'Remove the session goal' },
-          { cmd: '/skill:…', desc: 'Attach a skill for the next message (nested: /skill:parent:child)' },
           { cmd: '/workflow <name>', desc: 'Run an approved workflow (may open RunInputsDialog)' }
 ],
       },
       {
         type: 'p',
-        text: 'Type / to filter commands. Pick a built-in to run it, or a custom/skill/workflow entry to insert or launch. Place custom files under `.evoflux/commands/` in the project or your global EvoFlux config. Nested names prefer longest prefix; use either `:` or `/` as separators. Workflows may open RunInputsDialog and never send the raw slash line as ordinary chat.',
+        text: 'Type / to filter commands. Pick a built-in to run it, or a custom/workflow entry to insert or launch. Place custom files under `.evoflux/commands/` in the project or your global EvoFlux config. Nested names prefer longest prefix; use either `:` or `/` as separators. Workflows may open RunInputsDialog and never send the raw slash line as ordinary chat.',
       },
       {
         type: 'tips',
         items: [
           'Built-in — executes on pick',
           'Custom — usually inserts; append $ARGUMENTS',
-          'Skill — /skill: after Settings → Skills validation',
+          'Skill — not a slash command; type $skill-name',
           'Workflow — scope + approval required or hidden',
           'Longest prefix — parent:child nesting with : or /'
 ],
@@ -1828,7 +1828,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Runtime behavior: an enabled valid Skill joins the normal metadata catalog and loads only when activated. Loading a plugin Skill makes ready MCP tools from the same installation available for that run, subject to permission rules. Settings → Skills shows discovery/validation; Settings → MCP servers shows plugin-badged runtime state and tool names. Runtime names contain installation hashes, so author instructions should refer to stable server/tool suffixes rather than copying a generated prefix.',
+        text: 'Runtime behavior: the agent sees each enabled, valid plugin Skill\'s name and description like any other Skill and reads its SKILL.md when a task matches (or when you type `$skill-name`). Once a plugin Skill\'s SKILL.md is read, ready MCP tools from the same installation become available for that run, subject to permission rules. Settings → Skills shows validation and lets you turn a single plugin Skill off; Settings → MCP servers shows plugin-badged runtime state and tool names. Runtime names contain installation hashes, so author instructions should refer to stable server/tool suffixes rather than copying a generated prefix.',
       },
       {
         type: 'p',
@@ -1838,12 +1838,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'Plugin does not install — open inspection diagnostics; fix fatal `plugin.json`, unsafe path, archive collision, symlink, size, or digest errors.',
-          'Skill is missing — enable the installation; confirm `skills/<name>/SKILL.md` is one level below `skills/`, has valid frontmatter, and is not shadowed by a higher-precedence project/user Skill.',
+          'Skill is missing — enable the installation; confirm `skills/<name>/SKILL.md` is one level below `skills/`, has valid frontmatter, is switched on in Settings → Skills, and is not shadowed by a higher-precedence project/user Skill.',
           'MCP is missing from Settings — confirm the plugin is enabled, `mcp.json` validates, and the transport is stdio or Streamable HTTP rather than SSE.',
           'MCP is error — expand the runtime row; check executable path, arguments, working directory, startup logs, required credentials, and whether stdout is reserved for stdio protocol messages.',
           'Credentials page says unsupported — add `org.evoelsewhere.evoflux.credentials.fields` to `plugin.json`, then validate and return.',
           'Remote server is not ready — verify URL/host reachability and literal headers; stored plugin credentials are intentionally not injected into Streamable HTTP.',
-          'Tools are not selected in chat — activate the matching plugin Skill or explicitly select the plugin MCP server for the agent; installation alone does not grant all tools.',
+          'Tools are not selected in chat — use the matching plugin Skill (type `$skill-name`) or explicitly select the plugin MCP server for the agent; installation alone does not grant all tools.',
           'Changes look stale — Validate or save again, refresh Plugin Center, then disable/enable to reconcile the runtime.'
 ],
       },
@@ -1904,11 +1904,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'code',
         language: 'markdown',
         caption: 'skills/release-audit/SKILL.md',
-        code: '---\nname: release-audit\ndescription: Inspect release evidence, checks, and risk before publishing.\n---\n\n# Release audit\n\n1. Gather bounded evidence.\n2. Use the plugin MCP tools only when live data is required.\n3. Separate facts, inference, and missing evidence.\n4. Never publish or mutate a release without explicit authorization.',
+        code: '---\nname: release-audit\ndescription: Inspects release evidence, checks, and risk before publishing. Use when the user asks whether a release is ready or mentions a release checklist.\n---\n\n# Release audit\n\n1. Gather bounded evidence.\n2. Use the plugin MCP tools only when live data is required.\n3. Separate facts, inference, and missing evidence.\n4. Never publish or mutate a release without explicit authorization.',
       },
       {
         type: 'p',
-        text: 'Skill name must match the portable Agent Skills naming contract. Write a precise description because it drives discovery. Keep the core workflow in SKILL.md and load large references only when needed. Refer to MCP tools by stable suffix because EvoFlux prefixes runtime names per installation.',
+        text: 'A Skill is a folder with a SKILL.md. `name` matches the folder: lowercase letters, digits, and single hyphens, up to 64 characters, without "anthropic" or "claude". `description` (up to 1,024 characters, no XML tags) says in the third person what the Skill does and when to use it — the agent sees only the name and description until it decides to read SKILL.md. Keep SKILL.md focused and link larger reference files one level deep so they are read only when needed. Refer to MCP tools by stable suffix because EvoFlux prefixes runtime names per installation.',
       },
       {
         type: 'p',
@@ -2013,9 +2013,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'table',
         columns: ['Concern', 'Rule'],
         rows: [
-          ['Skill precedence', 'Project/user/admin roots override enabled plugins; enabled plugins override EvoFlux built-ins.'],
+          ['Skill precedence', 'Project and user skill folders override enabled plugins; enabled plugins override EvoFlux built-ins. Any Skill can be turned off in Settings → Skills.'],
           ['MCP configuration', 'Plugin declarations stay in a separate in-memory manager and never modify global mcp.json.'],
-          ['Agent availability', 'Explicit MCP selection or activation of a same-installation Skill makes ready tools available for that run.'],
+          ['Agent availability', 'Explicit MCP selection, or reading the SKILL.md of a Skill from the same installation, makes ready tools available for that run.'],
           ['WebBridge', 'Only explicitly declared safe capabilities may keep a non-browser plugin server visible in a WebBridge run.'],
           ['Failure isolation', 'Bad Skill/server entries are isolated; fatal manifest/package errors reject the package.'],
         ],
@@ -2058,7 +2058,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           ['MCP error', 'Bad command/args/cwd, missing credential, network/TLS failure', 'Expand runtime error and compare trust/config.'],
           ['Credentials unsupported', 'No canonical/legacy credential extension', 'Add fields extension, save, validate, refresh.'],
           ['Credentials incomplete', 'Required field missing or invalid URL/type', 'Fill required fields; leave configured secret blank only to preserve it.'],
-          ['Tools not offered to agent', 'Server not ready or not selected/activated', 'Select MCP for agent or activate same-plugin Skill.'],
+          ['Tools not offered to agent', 'Server not ready, not selected, or no same-plugin Skill used', 'Select MCP for agent or use a same-plugin Skill ($skill-name).'],
           ['Linked code looks stale', 'Unsaved file or runtime not reconciled', 'Save, Validate, refresh, disable/enable.'],
           ['Update fails', 'Invalid replacement or identity/package safety failure', 'Inspect new directory/archive before update; keep old installation.'],
         ],
@@ -2121,7 +2121,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'settings',
     title: 'Agents, skills, and MCP',
     summary:
-      'Configure Markdown agents, skill packs, and MCP servers under Settings — tools inherit the same permission rules as native tools. Teams stay scoped to work / coding so the right specialists appear in each mode.',
+      'Configure Markdown agents, Skills (folders with a SKILL.md), and MCP servers under Settings — tools inherit the same permission rules as native tools. Teams stay scoped to work / coding so the right specialists appear in each mode; Skills are available in both.',
     keywords: [
       'agents',
       'skills',
@@ -2139,10 +2139,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'MCP'
 ],
     setup:
-      'Settings → Agents for team members; Settings → Skills to validate packs; Settings → MCP to add servers. From chat, use /skill: or the command palette for New Agent / New Skill shortcuts.',
+      'Settings → Agents for team members; Settings → Skills to create or edit your skills and turn any skill on or off; Settings → MCP to add servers. From chat, type $skill-name to use a skill, or use the command palette for New Agent / New Skill shortcuts.',
     tricks: [
       'Agents are .md files with YAML frontmatter — diffable and versionable.',
-      'Settings → Skills creates, edits, displays, and filters skills by Work, Coding, or Both; valid skills appear under /skill: only in matching sessions.',
+      'A Skill is a folder with a SKILL.md. The agent sees each enabled skill\'s name and description and reads SKILL.md itself when a task matches.',
+      'Type $skill-name anywhere in a message to use a skill explicitly; you can name several.',
+      'Settings → Skills creates and edits skills in your user skills folder and has an on/off switch for every skill, including built-in, plugin, and project ones.',
+      'An agent\'s Skills field preloads those skills into that agent, so it starts with their instructions.',
       'MCP status dots: ready / starting / auth / error / stopped.',
       'MCP tools inherit the same permission rules as native tools.',
       'Teams are scoped to work / coding.',
@@ -2154,7 +2157,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Agents define role, model, tools, and system prompt. Skills are instruction packs loaded on demand via /skill:. MCP servers expose external tools over stdio, HTTP, or SSE. Together they are how you shape team behavior without forking the product.',
+        text: 'Agents define role, model, tools, and system prompt. Skills are folders with a SKILL.md plus optional reference files, scripts, and assets: the agent sees each enabled skill\'s name and description, reads SKILL.md when a task matches, and opens the other files only when the instructions point to them. MCP servers expose external tools over stdio, HTTP, or SSE. Together they are how you shape team behavior without forking the product.',
       },
       {
         type: 'p',
@@ -2162,13 +2165,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Settings → Agents to edit team members; Settings → Skills to validate packs; Settings → MCP to add servers and watch status dots. From chat, type /skill: or open the palette for New Agent / New Skill. Lead-only tools (ask_user, plan mode, worktree helpers) are never granted to specialists.',
+        text: 'Settings → Agents to edit team members; Settings → Skills to create or edit your skills, check validation, and turn any skill on or off; Settings → MCP to add servers and watch status dots. From chat, type $skill-name to use a skill now, or open the palette for New Agent / New Skill. An agent\'s Skills field preloads those skills into that agent. Lead-only tools (ask_user, plan mode, worktree helpers) are never granted to specialists.',
       },
       {
         type: 'tips',
         items: [
           'Agents — .md + YAML frontmatter',
-          'Skills — /skill: after validation',
+          'Skills — SKILL.md folders; $skill-name to use one; on/off in Settings',
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
           'tools_opt_out — disable code-owned tool defaults',
@@ -2182,13 +2185,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: expecting invalid skills in the slash menu; granting specialists Lead-only tools in your head; leaving MCP on error and retrying chat; putting secrets in agent markdown committed to a public repo; forgetting mode scope so a Coding specialist never appears in Work.',
+        text: 'Common mistakes: expecting an invalid or switched-off skill in the $ picker; writing a vague skill description (the agent decides from it whether to read the skill); granting specialists Lead-only tools in your head; leaving MCP on error and retrying chat; putting secrets in agent markdown committed to a public repo; forgetting mode scope so a Coding specialist never appears in Work.',
       },
       {
         type: 'tips',
         items: [
-          'Cross-feature: activated Coding skills teach the workflow; native source search validates and executes every retrieval action.',
-          'Cross-feature: workflows and skills both need scope validity to show in /.',
+          'Cross-feature: a Coding skill teaches the workflow; native source search validates and executes every retrieval action.',
+          'Cross-feature: workflows need scope validity to show in /; skills need to be valid and switched on to show in $.',
           'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.'
 ],
       }
@@ -2419,7 +2422,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Providers — API keys, OAuth, local daemons, model registry',
           'Agents — model, tools, system prompt per team member',
-          'Skills — instruction packs for /skill:',
+          'Skills — create/edit SKILL.md folders, turn any skill on or off',
           'MCP servers — stdio / HTTP / SSE external tools',
           'Memory — long-term wiki + Dream schedule',
           'Connection — bundled sidecar vs external URL / access key',

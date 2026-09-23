@@ -1,5 +1,22 @@
 # Method Writing Guide
 
+## Contents
+
+- Goal
+- Pre-Writing Questions
+- Method Writing Steps
+- Three Elements of a Pipeline Module
+- Method Content Decomposition
+- How to Write Module Design
+- How to Write Module Motivation
+- How to Check Whether Method is Easy to Understand
+- Method Section Skeleton
+- Overview Subsection
+- Section 3.1 and Other Module Subsections
+- Module Writing Pattern
+- Implementation Details
+- Common Issues
+
 ## Goal
 
 Write the Method section clearly by following this sequence:
@@ -21,11 +38,11 @@ Recommended organization:
 - Why do we need this module?
 - Why does this module work?
 
-3. Organize answers as a mind map or a table for clarity.
+3. Organize answers as a mind map or a table for clarity, for example:
 
-Local cite:
-
-1. `references/examples/method/pre-writing-questions.md`
+| Module | How it runs | Why it is needed | Why it works |
+|---|---|---|---|
+| Module 1 | input -> steps -> output | problem it addresses | property that makes it effective |
 
 ## Method Writing Steps
 
@@ -64,12 +81,6 @@ Definition:
 1. Explain why this module has technical advantage over alternatives.
 2. Tie advantage to measurable behavior when possible.
 
-### Example of the Three Elements
-
-Local cite:
-
-1. `references/examples/method/example-of-the-three-elements.md`
-
 ## Method Content Decomposition
 
 ```mermaid
@@ -99,10 +110,6 @@ Sentence skeleton:
 2. `Given [input], we first ... then ... finally ...`
 3. `This produces [output], which is used for ...`
 
-Local cite:
-
-1. `references/examples/method/module-design-instant-ngp.md`
-
 ## How to Write Module Motivation
 
 `Module motivation is usually problem-driven: because a problem exists, we design xx to solve it.`
@@ -112,10 +119,6 @@ Typical opening sentences:
 1. `A remaining problem/challenge is ...`
 2. `However, we ...`
 3. `Previous methods have difficulty in ...`
-
-Local cite:
-
-1. `references/examples/method/module-motivation-patterns.md`
 
 ## How to Check Whether Method is Easy to Understand
 
@@ -147,10 +150,6 @@ Local cite:
 % Section 3.3
 ```
 
-Local cite:
-
-1. `references/examples/method/section-skeleton.md`
-
 ## Overview Subsection
 
 `Overview should usually include: setting, core contribution, optional pipeline figure pointer, and a map of what each subsection contains.`
@@ -162,19 +161,13 @@ Writing structure:
 3. If pipeline/framework is novel, point to overview figure.
 4. Tell readers what Section 3.1/3.2/3.3 covers.
 
-Local cite:
-
-1. `references/examples/method/overview-template.md`
-
 ## Section 3.1 and Other Module Subsections
 
 `Basic subsection logic: (1) motivation of this module, (2) module forward process/module design, (3) technical advantages of this module.`
 
-Local cite:
+Apply the three elements from "Three Elements of a Pipeline Module" to every module subsection, in that order.
 
-1. `references/examples/method/example-of-the-three-elements.md`
-
-## Module Writing Pattern (Mermaid)
+## Module Writing Pattern
 
 ```mermaid
 flowchart TB
@@ -187,8 +180,10 @@ flowchart TB
 
 `Implementation details include hyperparameters (e.g., layer count, feature dimensions), coordinate transforms/normalization, and other practical details. Put them near the end of Method or in a dedicated Implementation Details section.`
 
-## Additional Examples
+## Common Issues
 
-1. Figure-to-text conversion (Neural Body): `references/examples/method/neural-body-annotated-figure-text.md`
-2. Module triad summary (Neural Body): `references/examples/method/module-triad-neural-body.md`
-3. Common issues note: `references/examples/method/method-writing-common-issues-note.md`
+1. A module appears without motivation — the reader cannot tell why it exists.
+2. The forward process skips steps or is not written in execution order.
+3. The pipeline figure and the subsection structure do not match.
+4. Key terms change name between the figure, the Overview, and the subsections.
+5. Advantages are claimed but not tied to any experiment or measurable behavior.

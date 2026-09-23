@@ -21,7 +21,7 @@ CODING_EVOFLUX_DESCRIPTION = "Lead coding agent. Plans the work, coordinates the
 
 # Wired explicitly by the loader / team runtime (implicit adds and per-role
 # variants) — never granted via tier membership.
-_LOADER_MANAGED_TOOLS = {"skill", "todo_manage", "schedule_task", "note"}
+_LOADER_MANAGED_TOOLS = {"todo_manage", "schedule_task", "note"}
 
 
 def tier_tools(registry: Mapping[str, Any], *, mode: str, role: str) -> list[str]:

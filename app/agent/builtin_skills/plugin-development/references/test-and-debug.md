@@ -98,7 +98,7 @@ If the Skill loads but its tools are absent, verify the MCP server belongs to th
 
 ### MCP declaration is skipped
 
-Separate a top-level `mcp.json` error from a per-server error. Verify only `$schema` and `mcpServers` exist at top level. Check transport type, URL rules, executable form, placeholder positions, resolved cwd containment, environment types, and extension server names.
+Separate a top-level `mcp.json` error from a per-server error. Verify only `$schema` and `mcpServers` exist at top level. Check transport type, URL rules, executable form, `${PLUGIN_ROOT}`/`${PLUGIN_DATA}` positions, resolved cwd containment, environment types, and extension server names.
 
 Legacy `sse` is expected to be skipped. Do not “fix” that behavior by routing it through an unreviewed transport.
 

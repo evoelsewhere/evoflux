@@ -1,50 +1,45 @@
 # Environment setup
 
-Read this only when a required tool is missing. The runtime contract in
-SKILL.md decides *which* tier you are on; this file is how to install the
-pieces once you know.
+Read this only when a required tool is missing. Ask the user before
+installing anything; every command below changes their machine or workspace.
 
+## Contents
 
+- How this skill runs code
+- Installing uv and bun
+- TypeScript project for PptxGenJS
+- System dependencies (PDF/PNG rendering)
 
-### Prerequisites
+## How this skill runs code
 
-If `uv` or `bun` are not yet installed:
+- Python: every bundled script and every generator runs as
+  `uv run --with python-pptx python <file>.py`. `uv` fetches `python-pptx`
+  (which pulls in `lxml` and `Pillow`) into its cache on first use; no
+  project, virtual environment, or `pip install` is needed. Add
+  `--with defusedxml` when a script of yours parses XML with `defusedxml`.
+- TypeScript: PptxGenJS generators run with `bun run <file>.ts` inside a Bun
+  project in the user's workspace.
+- Only if the user explicitly refuses `uv` / `bun`: use `pip install
+  python-pptx` in a virtual environment you manage and run
+  `python scripts/<name>.py`, and `npm`/`pnpm` + `npx tsx` instead of `bun`.
+
+## Installing uv and bun
 
 ```bash
-# Install uv (Python package/project manager)
+# uv (Python package/project manager)
 # macOS / Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
 # Windows: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# Install bun (TypeScript runtime, replaces Node.js for this workflow)
+# bun (TypeScript runtime)
 # macOS / Linux
 curl -fsSL https://bun.sh/install | bash
 # Windows: powershell -c "irm bun.sh/install.ps1|iex"
 ```
 
-Only if the user explicitly refuses `uv` / `bun`, substitute `pip` (in a venv you manage yourself) for `uv`, and `npm`/`pnpm` + `npx tsx` for `bun` — everything else in this skill stays the same.
+## TypeScript project for PptxGenJS
 
-### Python (uv)
-
-Python dependencies are managed by `uv`. Do not use `pip` directly.
-
-```bash
-# Initialize project (if no pyproject.toml exists)
-uv init -p 3.12
-
-# Add dependencies
-uv add python-pptx lxml Pillow
-uv add defusedxml                  # safe XML parsing (recommended for manual XML edits)
-```
-
-**Rules:**
-- Never use `pip` — always `uv add` for packages.
-- Never run `python scripts/...` directly — always `uv run scripts/...`.
-- Don't manually manage environments with `python -m venv` or `source .venv/bin/activate`.
-
-### TypeScript (bun)
-
-For PptxGenJS creation, use `bun` (project-local, not global installs):
+Use project-local installs, not global ones:
 
 ```bash
 # Initialize (if no package.json exists)
@@ -61,6 +56,7 @@ bun add -d @types/bun @types/react @types/react-dom
 ```
 
 Create a `tsconfig.json` if one doesn't exist:
+
 ```json
 {
   "compilerOptions": {
@@ -78,20 +74,26 @@ Create a `tsconfig.json` if one doesn't exist:
 }
 ```
 
-Run scripts directly as TypeScript — no transpilation needed:
+Run generators directly as TypeScript — no transpilation needed:
+
 ```bash
 bun run create-ppt.ts
 ```
 
 **Always run type checking after writing or modifying TS code:**
+
 ```bash
 bun tsc --noEmit
 ```
-Models may inadvertently use outdated PptxGenJS API signatures or
-deprecated syntax without realizing it. A type check catches these
-mismatches before runtime.
 
-### System dependencies (PDF/PNG rendering)
+Generated code can use outdated PptxGenJS API signatures or deprecated
+syntax; a type check catches these mismatches before runtime.
+
+## System dependencies (PDF/PNG rendering)
+
+`scripts/render_pdf.py` needs LibreOffice; `scripts/render_slides.py` and
+`scripts/contact_sheet.py` also need Poppler's `pdftoppm`. The scripts find
+LibreOffice through `EVOFLUX_SOFFICE` or `PATH`.
 
 ```bash
 # macOS
@@ -102,7 +104,8 @@ brew install poppler
 sudo apt-get install -y libreoffice poppler-utils
 ```
 
-Every script under `scripts/` uses only the standard library plus
-`python-pptx`, `lxml`, and `Pillow`. No proprietary dependencies. External
-binaries (`soffice`, `pdftoppm`) are invoked as subprocesses; nothing is
-bundled or statically linked.
+On Windows, use the LibreOffice installer and a Poppler build on `PATH`.
+
+The bundled scripts use only the standard library plus `python-pptx`, `lxml`,
+and `Pillow`. External binaries (`soffice`, `pdftoppm`) are invoked as
+subprocesses; nothing is bundled or statically linked.

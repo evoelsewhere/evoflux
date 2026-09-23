@@ -56,7 +56,6 @@ import {
 
 import { useAgentFilesQuery, useMcpServersQuery, useRegistryQuery } from '@/queries'
 import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
-import type { SkillMode } from '@/api/types'
 import { MultiSelect, type MultiSelectOption } from './MultiSelect'
 import {
   combinePreservingUnknown,
@@ -90,8 +89,8 @@ interface Props {
    *  toggle stays in sync with the form body. */
   mode: 'form' | 'raw'
   onModeChange: (next: 'form' | 'raw') => void
-  /** Runtime mode used to resolve mode-specific skill collisions. */
-  skillMode?: SkillMode
+  /** Team the agent belongs to; scopes the lead picker. Defaults from ``agentPath``. */
+  team?: 'work' | 'coding'
   /** Project repositories; falls back to the active coding workspace. */
   workspaceRoots?: readonly string[]
   /** A managed Agent configures its installation model outside the bundle form. */
@@ -106,7 +105,7 @@ export function AgentForm({
   isNew,
   mode,
   onModeChange,
-  skillMode,
+  team,
   workspaceRoots,
   hideRuntimeSection,
 }: Props) {
@@ -144,12 +143,10 @@ export function AgentForm({
     }
   }
 
-  const agentMode = skillMode ?? (agentPath?.startsWith('coding/') ? 'coding' : 'work')
-  const activeSkillScope = useActiveSkillDiscoveryScope(agentMode)
+  const agentMode = team ?? (agentPath?.startsWith('coding/') ? 'coding' : 'work')
+  const activeSkillScope = useActiveSkillDiscoveryScope()
   const registry = useRegistryQuery(
-    workspaceRoots?.length
-      ? { workspaces: workspaceRoots, mode: agentMode }
-      : activeSkillScope,
+    workspaceRoots?.length ? { workspaces: workspaceRoots } : activeSkillScope,
   )
   const mcpServers = useMcpServersQuery()
   const agentFiles = useAgentFilesQuery()
@@ -172,14 +169,15 @@ export function AgentForm({
     registry.data?.tools.filter((t) => t.lead_only).map((t) => t.name) ?? [],
   )
 
+  // Skills listed here are preloaded into this agent's system prompt.
+  // Disabled skills stay selectable (so a saved selection survives) but are
+  // marked because they are not preloaded while off.
   const skillOptions: MultiSelectOption[] =
-    registry.data?.skills
-      .filter((s) => (s.modes ?? ['work', 'coding']).includes(agentMode))
-      .map((s) => ({
-        value: s.name,
-        label: s.display_name || s.name,
-        description: `${s.short_description || s.description}${s.allow_implicit_invocation === false ? ' · explicit catalog' : ''}`,
-      })) ?? []
+    registry.data?.skills.map((s) => ({
+      value: s.name,
+      label: s.name,
+      description: s.enabled ? s.description : `Disabled · ${s.description}`,
+    })) ?? []
 
   // Show every server, including disabled / errored ones, so an agent can
   // still reference a server that's temporarily down without the picker
@@ -373,7 +371,7 @@ function FormFields({
       ? fm.thinking_level
       : '__default__'
   const hasBuiltInProfile = isBuiltInProfile(fm.name, fm.role, agentPath)
-  const implicitToolNames = new Set(['skill', 'todo_manage', 'schedule_task', 'note'])
+  const implicitToolNames = new Set(['todo_manage', 'schedule_task', 'note'])
   // Every agent gets its mode tier's tools — the server's effective
   // toolset (tier grant + implicit adds) minus explicit frontmatter
   // extras is what we show as always-included chips.
@@ -410,7 +408,7 @@ function FormFields({
           <div className="min-w-0">
             <p className="font-semibold text-(--color-text)">Built-in EvoFlux profile</p>
             <p className="mt-0.5">
-              Default tools and instructions are versioned in EvoFlux. Assigned skills are preloaded for this agent; the remaining catalog stays on demand. Upgrades never overwrite your custom setup.
+              Default tools and instructions are versioned in EvoFlux. Assigned skills are preloaded for this agent; it reads other skills itself when a task needs them. Upgrades never overwrite your custom setup.
             </p>
           </div>
         </div>
@@ -676,7 +674,7 @@ function FormFields({
           <div className="min-w-0 p-4 sm:p-5">
             <Field
               label="Skills"
-              hint={`${(fm.skills ?? []).length} selected of ${extraSkillOptions.length}. Assigned skills preload; all others remain on demand.`}
+              hint={`${(fm.skills ?? []).length} selected of ${extraSkillOptions.length}. Assigned skills are preloaded into this agent; it reads the others itself when relevant.`}
             >
               <MultiSelect
                 ariaLabel="Skills"

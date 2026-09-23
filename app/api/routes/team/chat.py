@@ -158,29 +158,31 @@ async def _validate_thinking_level_for_model(
     raise HTTPException(status_code=422, detail=detail)
 
 
-def discover_skills():  # noqa: ANN201 - compatibility wrapper
-    from app.agent.tools.builtin.skill import discover_skills as discover
-
-    return discover()
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _serialize_agent(agent: Agent, *, is_lead: bool = False) -> dict:
     """Serialize an Agent into the /team/agents response shape."""
     from app.agent.hooks.summarization import prompt_token_threshold_for_model
+    from app.agent.skills.registry import discover_skills
 
     skill_names: list[str] = agent.skills or []
     skills: list[dict] = []
     if skill_names:
         try:
-            available = discover_skills()
-        except Exception:
-            available = {}
+            catalog = discover_skills()
+        except Exception:  # noqa: BLE001 - agent listing must not fail
+            catalog = None
         skills = [
-            {"name": n, "description": available.get(n, {}).get("description", "")}
-            for n in skill_names
+            {
+                "name": name,
+                "description": (
+                    skill.description
+                    if catalog is not None and (skill := catalog.get(name))
+                    else ""
+                ),
+            }
+            for name in skill_names
         ]
 
     return {
@@ -1787,7 +1789,6 @@ def _validated_permission_mode(mode: str | None) -> str:
             detail=f"Unknown permission_mode '{mode}'.",
         )
     return mode
-
 
 
 class PermissionModeRequest(BaseModel):

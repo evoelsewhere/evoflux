@@ -3,13 +3,34 @@
 You need to clean, transform, aggregate, or summarize tabular data and hand
 the result back as a polished `.xlsx`. The pattern is:
 
-1. **Read** into pandas (`read.md` covers this).
+1. **Read** into pandas with `pd.read_excel` (pass `sheet_name=`, and
+   `header=` when the header is not on row 1; pass `dtype={"id": str}` for
+   identifier columns so `"00123"` stays text). `read.md` has recipes for
+   messier inputs such as title rows and two-row headers.
 2. **Transform** in memory — pure pandas.
 3. **Write** back through pandas for the data, then reopen with openpyxl to
    attach formulas, formatting, and named styles.
 
 pandas is fast and expressive but produces plain workbooks — no formulas,
 minimal formatting. openpyxl finishes the job.
+
+Save the pipeline as a `.py` file in the workspace and run it with
+`uv run --with pandas --with openpyxl python pipeline.py` (add
+`--with xlsxwriter` for the large-write path under *Performance*). Scripts
+run as `uv run --with openpyxl python scripts/<name>.py`. Every transformation
+that drops, fills, or coerces source rows belongs in the Phase 2 plan with its
+reason.
+
+## Contents
+
+- Standard pipeline
+- Common transforms: deduplicate, fill missing, reshape, join, bin, rolling
+- Emitting formulas from a pandas pipeline
+- Reading formulas back into pandas
+- Categorical data in openpyxl output
+- Datetime gotchas
+- Performance
+- Validating your pipeline
 
 ## Standard pipeline
 
@@ -65,7 +86,7 @@ wb.save("out.xlsx")
 Then recalc:
 
 ```bash
-python scripts/bake.py out.xlsx
+uv run --with openpyxl python scripts/bake.py out.xlsx
 ```
 
 ## Common transforms
@@ -181,7 +202,7 @@ If the file was written by openpyxl and never recalced, formula cells come
 back as `None`. Fix it:
 
 ```bash
-python scripts/bake.py model.xlsx
+uv run --with openpyxl python scripts/bake.py model.xlsx
 ```
 
 Then re-read.
@@ -236,7 +257,7 @@ Before shipping:
 
 1. **Recalculate** — the writer only stored formula strings.
    ```bash
-   python scripts/bake.py out.xlsx
+   uv run --with openpyxl python scripts/bake.py out.xlsx
    ```
 2. **Sanity-check totals** — the pandas value and the Excel formula should
    match.

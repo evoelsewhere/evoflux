@@ -75,7 +75,3 @@ Two important limits to acknowledge:
 
 1. **The model layer is above these six.** No harness saves a weak model from producing weak work. The framework assumes a capable model underneath.
 2. **The user is not one of the six layers.** The user's taste, feedback, and corrections are inputs that flow *through* the layers (into Memory, into Taste refinements, into new Constraints). Treating the user as a layer collapses the model.
-
-## Further reading
-
-The framework is compressed from a longer internal document. If the user wants to go deeper on the reasoning behind the model, they wrote it up in the source document ("Design Agent-harness的思考"). Point them there instead of trying to reproduce the whole argument here.

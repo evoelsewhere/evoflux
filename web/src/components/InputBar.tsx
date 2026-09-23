@@ -65,25 +65,14 @@ export interface SnippetCommand {
 }
 
 /**
- * A user-invocable skill offered by the ``$`` picker.
- *
- * ``$`` is the composer's only skill affordance — the old ``/skill:``
- * namespace is gone from the slash menu (the backend still accepts that
- * notation, and the highlighter still colors it, so old messages and typed
- * directives keep working).
+ * A user-invocable skill offered by the ``$`` picker. Picking one inserts
+ * ``$<name> ``; the harness then reads that skill's ``SKILL.md`` for the
+ * agent (see ``InputBar.skills.ts``).
  */
 export interface ComposerSkill {
-  /** Composer notation: ``release-audit`` or one level of ``git:commit``. */
+  /** Skill name, e.g. ``release-audit``. */
   name: string
-  label: string
   description: string
-  /**
-   * The skill's raw ``default_prompt``, verbatim. These are written around
-   * the directive itself ("Use $deep-research to investigate …"), so the
-   * picker inserts the prompt as-is when it already carries the token
-   * instead of tearing the token out and leaving a hole in the sentence.
-   */
-  prompt?: string
 }
 
 interface InputBarProps {
@@ -793,23 +782,18 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   // ── $skill picker ──────────────────────────────────────────────────────────
 
   /**
-   * The skill roster. Callers pass ``skills`` directly; the fallback keeps
-   * working for any caller still shipping skills as ``category: 'skill'``
-   * slash entries (the shape the WebBridge composer endpoint serves).
+   * The skill roster. Callers pass ``skills`` directly; the fallback reads
+   * ``category: 'skill'`` slash entries (the WebBridge composer catalog
+   * shape, whose ids are ``skill:<name>``).
    */
   const composerSkills = useMemo<ComposerSkill[]>(() => {
     if (skills.length > 0) return skills
     return slashCommands
-      .filter((cmd) => cmd.category === 'skill' && cmd.id !== 'skill' && !cmd.isSeparator)
-      .map((cmd) => {
-        const name = (cmd.displayName ?? cmd.id).replace(/^skill:/, '')
-        const insert = (cmd.insertText ?? '').replace(/^skill:/, '')
-        // ``insertText`` is ``skill:<name> <starter prompt>`` when the skill
-        // ships a default prompt; keep the starter so both notations seed
-        // the same message.
-        const prompt = insert.startsWith(name) ? insert.slice(name.length).trim() : ''
-        return { name, label: cmd.label, description: cmd.description, prompt }
-      })
+      .filter((cmd) => cmd.category === 'skill' && !cmd.isSeparator)
+      .map((cmd) => ({
+        name: cmd.label || cmd.id.replace(/^skill:/, ''),
+        description: cmd.description,
+      }))
   }, [skills, slashCommands])
 
   const skillMenuId = 'inputbar-skill-menu'
@@ -820,7 +804,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     return composerSkills.filter(
       (skill) =>
         skill.name.toLowerCase().includes(query) ||
-        skill.label.toLowerCase().includes(query),
+        skill.description.toLowerCase().includes(query),
     )
   }, [composerSkills, skillRange])
 
@@ -906,20 +890,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     }
   }, [onSnippetCommand, resize, snippetRange, value])
 
-  /** Replace the active ``$token`` with the chosen skill directive. */
+  /** Replace the active ``$token`` with ``$<name> ``. */
   const insertSkill = useCallback((skill: ComposerSkill) => {
     if (!skillRange) return
     const before = value.slice(0, skillRange.start)
     const after = value.slice(skillRange.end)
-    const token = `$${skill.name}`
-    // The starter prompt only makes sense when the directive opens an empty
-    // message; mid-sentence it would bulldoze whatever the user is writing.
-    const prompt = !before.trim() && !after.trim() ? (skill.prompt ?? '').trim() : ''
-    const body = !prompt
-      ? token
-      // A prompt written around its own directive already carries the token.
-      : prompt.includes(token) ? prompt : `${token} ${prompt}`
-    const insertion = `${body} `
+    const insertion = `$${skill.name} `
     const next = before + insertion + after
     setValue(next)
     setShellMode(false)
@@ -1601,9 +1577,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           </div>
         )}
 
-        {/* $-skill picker — the shorthand notation for ``/skill:<name>``.
-            Only offered on the message's first content line, which is the
-            only place the backend reads a skill directive from. */}
+        {/* $-skill picker — inserts ``$<name> ``. Offered on any line the
+            backend reads mentions from (not quote lines or code fences). */}
         {!minimized && skillMenuOpen && (
           <div
             id={skillMenuId}

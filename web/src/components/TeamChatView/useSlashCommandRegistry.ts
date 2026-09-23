@@ -79,7 +79,6 @@ export function useSlashCommandRegistry({
       : agentWorkspace
         ? [agentWorkspace]
         : [],
-    mode,
   })
   const snippetsQ = useSnippetsQuery(mode === 'coding' ? agentWorkspace : null)
   const userCommandNames = useMemo(
@@ -141,39 +140,16 @@ export function useSlashCommandRegistry({
   ]
 
   /**
-   * Skills are picked with ``$`` in the composer, not from the ``/`` menu —
-   * one directive, one affordance. The backend still resolves the legacy
-   * ``/skill:<name>`` text, so nothing already typed or already sent breaks.
+   * Skills are picked with ``$`` in the composer, not from the ``/`` menu.
+   * Only skills the harness would actually activate for ``$name`` are
+   * offered: valid, enabled and user-invocable.
    */
   const composerSkills: ComposerSkill[] = useMemo(
     () =>
       (skillsQ.data?.skills ?? [])
-        .filter(
-          (skill) =>
-            skill.valid &&
-            skill.user_invocable !== false &&
-            (skill.modes ?? ['work', 'coding']).includes(mode),
-        )
-        .map((skill) => {
-          const skillName = skill.name.replace('/', ':')
-          return {
-            name: skillName,
-            label: skill.display_name || skillName,
-            description:
-              skill.short_description || skill.description || `Load the ${skillName} skill`,
-            // Verbatim: ``default_prompt`` is written around its own
-            // directive ("Use $my-skill for …"), and the picker inserts it
-            // whole rather than cutting the token out of the sentence.
-            // Nested skills are ``parent/child`` on the wire and
-            // ``parent:child`` in the composer, so rewrite the prompt's
-            // self-reference into the notation the directive uses.
-            prompt: (skill.default_prompt ?? '').replaceAll(
-              `$${skill.name}`,
-              `$${skillName}`,
-            ),
-          }
-        }),
-    [skillsQ.data, mode],
+        .filter((skill) => skill.valid && skill.enabled && skill.user_invocable)
+        .map((skill) => ({ name: skill.name, description: skill.description })),
+    [skillsQ.data],
   )
 
   const snippetCommands: SnippetCommand[] = (snippetsQ.data?.snippets ?? []).map((item) => ({

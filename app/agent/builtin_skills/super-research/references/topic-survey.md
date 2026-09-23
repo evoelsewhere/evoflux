@@ -1,12 +1,24 @@
 # Mode: Topic survey / 主题调研
 
+## Contents
+
+- Contract fields
+- Step 0 — date, triage, and depth
+- Baseline
+- The evidence log
+- The claims log (optional but recommended)
+- The loop
+- Scholarly / paper-heavy surveys — use the toolbox
+- Judgment
+- Final report
+
 Use when the user wants a research question answered by gathering and synthesizing external sources — "deep research", "survey the literature", "调研 X", "state of the art in Y", "gather evidence about Z". Do not use it for a one- or two-search answer, a supplied document summary, or a measured experiment/benchmark.
 
 The failure mode this mode is designed against: producing a plausible-sounding synthesis with no verifiable trail back to the sources. Every claim must be traceable to a specific row in `sources.tsv`.
 
 ## Contract fields
 
-1. **Research question**: One question, sharp enough to have an answer. If the user asks "what's the state of RL" — negotiate to "what are the top-3 open problems in offline RL as of mid-2026" or similar. Vague questions produce vague surveys.
+1. **Research question**: One question, sharp enough to have an answer. If the user asks "what's the state of RL" — negotiate to "what are the top-3 open problems in offline RL in papers from the last two years" or similar. Vague questions produce vague surveys.
 2. **Scope boundaries**: Time window (e.g. "papers since 2024"), source types (peer-reviewed / blog posts / benchmarks / code repos — be explicit), languages, and any explicit inclusions/exclusions the user cares about.
 3. **Depth**: How many sources at minimum before you stop? Default is 15 for a short survey, 30 for a thorough one. Also: saturation criterion — stop when the last 5 sources add no new claims to your synthesis.
 4. **Deliverable**: Markdown report + `sources.tsv` (evidence table) + optionally a `claims.tsv` (claim ↔ sources mapping). Length target (usually 1–3 pages of report body).

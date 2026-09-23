@@ -1,6 +1,7 @@
 ---
 name: plugin-development
-description: Build, extend, test, debug, package, and maintain portable EvoFlux Agent Plugins end to end, including plugin.json, immediate-child Agent Skills, portable MCP servers, credentials, installation-scoped data, Plugin Center and CLI lifecycle, and runtime verification. Use when authoring or repairing an unpacked or .evoplugin package or changing the generic EvoFlux Plugin Platform. Do not use for merely installing a finished package, raw legacy hook URLs, generic standalone skills, or global MCP configuration.
+description: Builds, extends, tests, debugs, packages, and maintains portable EvoFlux Agent Plugins end to end, including plugin.json, immediate-child Agent Skills, portable MCP servers (mcp.json), credentials, installation-scoped data, Plugin Center and evoflux plugin CLI lifecycle, and runtime verification. Use when the user asks to author or repair an unpacked plugin or .evoplugin package, or to change the generic EvoFlux Plugin Platform. Not for merely installing a finished package, raw single-file hook URLs, standalone skills, or global MCP configuration.
+disable-model-invocation: true
 ---
 
 # EvoFlux Plugin Development
@@ -19,19 +20,20 @@ Select the smallest path that covers the requested outcome:
   CLI, or Plugin Center behavior without adding a domain-specific bundle.
 
 First confirm that “plugin” means a managed Plugin Center package. EvoFlux also
-has trusted in-process hooks: those are single `.py` files discovered from
-`settings.plugin_dirs()` and must export `async def plugin()` or
+has trusted in-process hooks: those are single `.py` files discovered from the
+`plugins/` subdirectory of the EvoFlux configuration directory (or the
+directories listed in `EVOFLUX_PLUGINS_DIRS`) and must export `async def plugin()` or
 `class Plugin(BaseAgentHook)`. They are a different trust/runtime contract and
 must never be scaffolded as an Agent Plugin directory. Provider plugins are
 also loaded from that trusted file root by their own registry.
 
 Hand adjacent operations to their owning workflow:
 
-- Use `plugin-installer` for installing the legacy trusted single-file hook from a raw Python URL.
-- Use `skill-creator` for a standalone skill that is not packaged in a plugin.
-- Use `mcp-installer` for global user/project MCP configuration outside a plugin.
+- Installing a trusted single-file hook from a raw Python URL: read the `plugin-installer` skill.
+- A standalone skill that is not packaged in a plugin: read the `skill-creator` skill.
+- Global user/project MCP configuration outside a plugin: read the `mcp-installer` skill.
 - For a finished package that only needs installation, use Plugin Center or the plugin CLI directly.
-- Do not invent commands, agents, a storage SDK, signatures, registry import, or rich connection types; those are not current platform contracts.
+- Do not invent commands, agents, a storage SDK, signatures, registry import, or rich connection types; none of those is part of the platform contract.
 
 ## Load the right contracts
 
@@ -40,7 +42,7 @@ Read only the references required by the work, but read each selected file compl
 - Read [package-contract.md](references/package-contract.md) before creating or changing package structure, `plugin.json`, Skills, packaging, or installation behavior.
 - Read [runtime-and-credentials.md](references/runtime-and-credentials.md) before implementing or debugging MCP, credentials, environment variables, data, tool grants, or runtime readiness.
 - Read [test-and-debug.md](references/test-and-debug.md) before testing, debugging, packing, updating, or declaring completion.
-- Read [evoflux-source-map.md](references/evoflux-source-map.md) when working inside the EvoFlux repository or when exact CLI, API, or host UI ownership matters.
+- Read [evoflux-source-map.md](references/evoflux-source-map.md) when changing the Plugin Platform inside the EvoFlux repository or when exact CLI, API, or host UI ownership matters.
 
 Treat current source and `/api/plugins` OpenAPI as authoritative if a reference and the implementation differ. Update the reference in the same change when the contract changed intentionally.
 
@@ -62,7 +64,7 @@ Start from the official scaffold when practical:
 evoflux plugin create ./my-plugin --name my-plugin --skill my-workflow
 ```
 
-Use Plugin Center's Create flow when the author/license/Skill form is useful. A blank Starter Skill field defaults to the plugin name, so the UI scaffold contributes a discoverable workflow immediately. The CLI scaffold currently exposes the basic manifest and optional Skill. EvoFlux intentionally does not generate an MCP implementation because it cannot guarantee a portable executable or install plugin dependencies.
+Use Plugin Center's Create flow when the author/license/Skill form is useful. A blank Starter Skill field defaults to the plugin name, so the UI scaffold contributes a discoverable workflow immediately. The CLI scaffold takes a destination, a required name, an optional description, and an optional Skill; set version, author, and license in `plugin.json` afterwards or use Plugin Center. EvoFlux intentionally does not generate an MCP implementation because it cannot guarantee a portable executable or install plugin dependencies.
 
 Derive the tree from the components the package actually contributes. The
 smallest useful Skills package is:
@@ -95,7 +97,7 @@ Avoid encoding installation identity or absolute machine paths. Installation IDs
 
 ### 2. Skills
 
-Write each `SKILL.md` with only `name` and `description` in frontmatter. Match the name to the directory. Make the description discriminate positive triggers from near misses, and make the body an imperative, executable workflow.
+Each plugin Skill follows the Agent Skills contract: `SKILL.md` plus optional `references/`, `scripts/`, and `assets/`; frontmatter with `name` (matching the directory) and a third-person `description` saying what the Skill does and when to use it, plus only the optional keys `license`, `compatibility`, `metadata`, `allowed-tools`, `disable-model-invocation`, and `user-invocable`. Make the body an imperative, executable workflow. For frontmatter rules, body structure, and evaluation scenarios, read the `skill-creator` skill.
 
 When a Skill calls plugin MCP tools:
 
@@ -108,7 +110,7 @@ When a Skill calls plugin MCP tools:
 
 Declare servers in `mcp.json`. Prefer `stdio` for bundled local code and `streamable-http` for a remote MCP endpoint. Legacy `sse` may validate but is skipped by EvoFlux.
 
-For local servers, use an executable plus argument array—never a shell command string. Resolve bundled files through `${PLUGIN_ROOT}` and mutable state through `${PLUGIN_DATA}`. Return bounded, structured results and sanitize operational errors.
+For local servers, use an executable plus argument array—never a shell command string. Resolve bundled files through `${PLUGIN_ROOT}` and mutable state through `${PLUGIN_DATA}`. These are plugin runtime environment variables, not skill placeholders: EvoFlux substitutes `${PLUGIN_ROOT}` (the installed or linked package root) and `${PLUGIN_DATA}` (the installation's mutable data root) in stdio `args`, `env` values, and `cwd` of `mcp.json`, and sets `PLUGIN_ROOT` and `PLUGIN_DATA` in the server process environment. Return bounded, structured results and sanitize operational errors.
 
 There is no automatic MCP starter and no host-Python alias. Prefer a
 package-owned executable such as `./bin/my-server`, or a remote
@@ -130,8 +132,8 @@ remote headers remain literal package data and must not contain secrets.
 
 Treat `${PLUGIN_DATA}` as installation-scoped mutable state. Do not write generated state into the installed package. Persist files with restrictive permissions when they contain secrets, and mask secrets in all list/read responses.
 
-Use `extensions["org.evoelsewhere.evoflux.mcp"].servers.<name>.capabilities` only for current
-declared capabilities such as `webbridge-safe`; never infer trust from package
+Use `extensions["org.evoelsewhere.evoflux.mcp"].servers.<name>.capabilities` only for
+supported declared capabilities such as `webbridge-safe`; never infer trust from package
 installation alone.
 
 Existing packages using `evoflux.credentials` or `evoflux.mcp` remain readable
@@ -194,7 +196,7 @@ Locate the first failing boundary before editing:
 1. **Package discovery:** wrong root, missing `plugin.json`, duplicate install source, archive safety rejection.
 2. **Manifest:** schema/name/version/root-field error or invalid EvoFlux extension.
 3. **Skill discovery:** nested Skill, name mismatch, bad frontmatter, oversized file, or local validation error.
-4. **MCP declaration:** invalid top level, unsupported server type, unsafe URL/cwd/path, or placeholder misuse.
+4. **MCP declaration:** invalid top level, unsupported server type, unsafe URL/cwd/path, or `${PLUGIN_ROOT}`/`${PLUGIN_DATA}` in an unsupported position.
 5. **Process startup:** missing executable/dependency, stdout noise, wrong argument, environment, cwd, or permissions.
 6. **Credentials/data:** undeclared env, missing required field, stale runtime refresh, unsafe file mode, or incorrect `${PLUGIN_DATA}` usage.
 7. **Tool behavior:** API contract, auth, timeout, pagination, annotations, response size, or unsanitized exception.

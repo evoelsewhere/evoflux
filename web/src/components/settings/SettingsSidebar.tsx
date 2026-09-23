@@ -44,6 +44,7 @@ import {
   useSandboxSettingsQuery,
   useSkillFilesQuery,
 } from '@/queries'
+import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
 import { useUIStore } from '@/stores/useUIStore'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EnterpriseAttentionDot } from '@/components/settings/EnterpriseAttentionDot'
@@ -196,7 +197,9 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
   const { isMacOverlay } = usePlatform()
   const dragHandlers = useTauriDrag()
   const agentsQ = useAgentFilesQuery()
-  const skillsQ = useSkillFilesQuery()
+  // Same scoped query as the Skills list and Settings overview, so the three
+  // counts agree and share one cache entry.
+  const skillsQ = useSkillFilesQuery(useActiveSkillDiscoveryScope())
   const mcpQ = useMcpServersQuery()
   const sandboxQ = useSandboxSettingsQuery()
   const conductorQ = useConductorStatusQuery()

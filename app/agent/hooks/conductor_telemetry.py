@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 import uuid
 from datetime import UTC, datetime
@@ -358,9 +357,9 @@ def _resource_refs_for_state(
 def _tool_resource_refs(
     state: "AgentState", tool_call: "ToolCall"
 ) -> list[dict[str, str]]:
-    if tool_call.function.name == "skill":
-        reference = _skill_resource_ref(tool_call.function.arguments)
-        return [reference] if reference else []
+    skill_reference = _skill_resource_ref(state, tool_call)
+    if skill_reference is not None:
+        return [skill_reference]
 
     references: list[dict[str, str]] = []
     grants = state.metadata.get(PLUGIN_MCP_GRANTS_METADATA_KEY, set())
@@ -400,24 +399,27 @@ def _tool_resource_refs(
     return references
 
 
-def _skill_resource_ref(arguments: str) -> dict[str, str] | None:
-    try:
-        payload = json.loads(arguments)
-    except (TypeError, ValueError):
-        return None
-    if not isinstance(payload, dict) or payload.get("action", "load") != "load":
-        return None
-    skill_name = payload.get("skill_name")
-    if not isinstance(skill_name, str) or not skill_name:
-        return None
-    try:
-        from app.agent.tools.builtin.skill import discover_skill_records_runtime
+def _skill_resource_ref(
+    state: "AgentState", tool_call: "ToolCall"
+) -> dict[str, str] | None:
+    """Attribute a read of a managed Skill's ``SKILL.md`` (an activation)."""
 
-        record = discover_skill_records_runtime().get(skill_name)
-        if record and record.source.startswith("plugin:"):
+    from app.agent.hooks.skills import run_skill_catalog
+    from app.agent.skills.activation import full_read_path
+
+    path = full_read_path(tool_call)
+    catalog = run_skill_catalog(state)
+    if path is None or catalog is None:
+        return None
+    record = catalog.for_location(path)
+    if record is None:
+        return None
+    skill_name = record.name
+    try:
+        if record.plugin_id:
             from app.plugin_platform.registry import get_installation
 
-            installation_id = record.source.removeprefix("plugin:").strip()
+            installation_id = record.plugin_id
             installation = get_installation(installation_id)
             if (
                 installation

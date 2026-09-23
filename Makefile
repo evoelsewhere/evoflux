@@ -1,6 +1,6 @@
 # Makefile for evoflux
 
-.PHONY: all run dev dev-web dev-desktop kill-dev-ports test coverage migrate revision build-web build dist clean help
+.PHONY: all run dev dev-web dev-desktop kill-dev-ports test validate-skills coverage migrate revision build-web build dist clean help
 
 # Default target
 all: test
@@ -42,6 +42,9 @@ dev-desktop: ## Start backend, web UI, and Tauri desktop app
 
 test: ## Run tests
 	uv run pytest -q
+
+validate-skills: ## Check bundled Agent Skills against the spec and best practices
+	uv run python scripts/validate_skills.py --strict-warnings
 
 coverage: ## Run tests with coverage report
 	uv run pytest --cov=app --cov-report=term-missing tests/

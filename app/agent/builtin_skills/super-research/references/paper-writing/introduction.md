@@ -1,5 +1,16 @@
 # Introduction Writing Guide
 
+## Contents
+
+- Goal
+- Introduction Logic Map
+- How to Think About Introduction: Backward First, Then Forward
+- Section Skeleton
+- Part A: Introduce Task and Application (Versions 1–4)
+- Part B: Introduce Technical Challenge for Previous Methods (Versions 1–3)
+- Part C: Introduce Our Pipeline for Solving the Challenge (Versions 1–4, not-recommended pattern)
+- Quick Quality Checklist
+
 ## Goal
 
 Write a strong introduction in three steps:
@@ -60,7 +71,7 @@ graph LR
 
 1. Introduce the paper's task.
 2. Use prior methods to lead to the technical challenge we solve.
-3. Present xx contributions to solve this technical challenge.
+3. Present the contributions that solve this technical challenge.
 4. Explain technical advantages of our contributions and explicitly express our new insight. (important)
 
 ## Section Skeleton
@@ -91,10 +102,6 @@ Sentence skeleton:
 1. `[xxx task] targets at recovering/reconstructing/estimating [xxx output] from [xxx input].`
 2. `[xxx task] has a variety of applications such as [xxx], [xxx], and [xxx].`
 
-Local cite:
-
-1. `references/examples/introduction/version-1-task-then-application.md`
-
 ### Version 2
 
 `Version 2: If the task is already familiar to most readers, introduce applications directly.`
@@ -109,13 +116,9 @@ Sentence skeleton:
 
 1. `[xxx task] has a variety of applications such as [xxx], [xxx], and [xxx].`
 
-Local cite:
-
-1. `references/examples/introduction/version-2-application-first.md`
-
 ### Version 3
 
-`Version 3: Introduce applications of the general task first, then introduce the specific task setting. (Personally recommended when the setting is relatively new.)`
+`Version 3: Introduce applications of the general task first, then introduce the specific task setting. (Recommended when the setting is relatively new.)`
 
 Writing structure:
 
@@ -127,10 +130,6 @@ Sentence skeleton:
 
 1. `[general task] has a variety of applications such as [xxx], [xxx], and [xxx].`
 2. `This paper focuses on the specific setting of recovering/reconstructing/estimating [xxx output] from [xxx input].`
-
-Local cite:
-
-1. `references/examples/introduction/version-3-general-to-specific-setting.md`
 
 ### Version 4
 
@@ -156,10 +155,6 @@ Expert note:
 3. Typical Version 4 flow: Part 1 (task + application and directly expose challenge via previous methods 1) -> Part 2 (previous methods 2 try to solve it but still fail) -> Part 3 (our method).
 4. More common general flow: Part 1 (task + application) -> Part 2 (previous methods 1 + limitation) -> Part 3 (previous methods 2 + limitation; here the target challenge emerges) -> Part 4 (our method).
 
-Local cite:
-
-1. `references/examples/introduction/version-4-open-with-challenge.md`
-
 ## Part B: Introduce Technical Challenge for Previous Methods (Very Important)
 
 Purpose:
@@ -168,13 +163,13 @@ Purpose:
 2. Build reader curiosity about how to solve this challenge.
 3. Make motivation/benefit of our method clear.
 
-Key logic before writing (faithful translation):
+Key logic before writing:
 
 1. First make clear the logic for "leading to the technical challenge we solved".
 2. For existing tasks: identify which recent methods have this challenge, why those methods exist, and optionally what earlier challenge they were trying to solve.
 3. For novel tasks: at minimum, define the technical challenge solved by our pipeline.
 
-Important warning :
+Important warning:
 
 1. Do not first present a naive solution and then describe our improvement over it.
 2. That writing makes the work look like a low-score incremental patch.
@@ -200,10 +195,6 @@ Sentence skeleton:
 3. `Recently, ... methods ... However, they ... because ...`
 4. `To overcome this challenge, ... methods ... However, they ... because ...`
 
-Local cite:
-
-1. `references/examples/introduction/technical-challenge-version-1-existing-task.md`
-
 ### Technical-Challenge Version 2 (existing task + our insight seen in traditional methods)
 
 `Version 2: For existing tasks, when our insight has historical roots in traditional methods, use that line as conceptual backing and then show why new methods still fail.`
@@ -223,10 +214,6 @@ Sentence skeleton:
 3. `However, these methods still ... because ...`
 4. `To overcome this challenge, newer methods ... However, they ... because ...`
 
-Local cite:
-
-1. `references/examples/introduction/technical-challenge-version-2-existing-task-insight-backed-by-traditional.md`
-
 ### Technical-Challenge Version 3 (novel task, no direct methods)
 
 `Version 3: For novel tasks without direct prior methods, define the challenge directly and decompose it into several concrete challenge points.`
@@ -245,10 +232,7 @@ Sentence skeleton:
 3. `Second, ...`
 4. `Finally, ...`
 
-Local cite:
-
-1. `references/examples/introduction/technical-challenge-version-3-novel-task.md`
-2. `references/examples/introduction/novel-task-challenge-decomposition.md`
+Decomposition check: each challenge point should be independent (removing one does not collapse another), and each later maps to a specific part of the pipeline in Part C.
 
 ## Part C: Introduce Our Pipeline for Solving the Challenge
 
@@ -288,10 +272,6 @@ Sentence skeleton:
 5. `In contrast to previous methods, ...`
 6. `Another advantage of the proposed method is that ...`
 
-Local cite:
-
-1. `references/examples/introduction/pipeline-version-1-one-contribution-multi-advantages.md`
-
 ### Pipeline Version 2
 
 `Version 2: Two contributions, and one teaser figure to present the basic idea.`
@@ -314,10 +294,6 @@ Sentence skeleton:
 6. `However, ...` (remaining challenge)
 7. `Specifically, ...` (contribution 2)
 
-Local cite:
-
-1. `references/examples/introduction/pipeline-version-2-two-contributions.md`
-
 ### Pipeline Version 3
 
 `Version 3: Build on a prior pipeline and introduce one new module, with a teaser figure for the basic idea.`
@@ -338,10 +314,6 @@ Sentence skeleton:
 4. `Considering that ..., we introduce ...`
 5. `In contrast to ..., our module ...`
 
-Local cite:
-
-1. `references/examples/introduction/pipeline-version-3-new-module-on-existing-pipeline.md`
-
 ### Pipeline Version 4
 
 `Version 4: Contribution comes from one important observation. Introduce key innovation first, then a listener-friendly observation as motivation, then method details, then benefits.`
@@ -360,10 +332,6 @@ Sentence skeleton:
 3. `Considering that ..., we ...`
 4. `This leads to ... and achieves ...`
 
-Local cite:
-
-1. `references/examples/introduction/pipeline-version-4-observation-driven.md`
-
 ### Not Recommended Writing
 
 `Not recommended: If the method is simple, do not hide concrete method design in Introduction and only describe abstract insights to make the work look novel.`
@@ -379,10 +347,6 @@ Why not recommended (writing structure warning):
 1. Presenting only abstract insight without concrete pipeline steps weakens technical clarity.
 2. Introducing many new terms without mechanism-level explanation creates a novelty illusion.
 3. Reviewers may interpret this as shallow or incremental work.
-
-Local cite:
-
-1. `references/examples/introduction/pipeline-not-recommended-abstract-only.md`
 
 ## Quick Quality Checklist
 

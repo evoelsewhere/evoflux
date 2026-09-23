@@ -13,6 +13,7 @@ def _load_mcp_apply():
         / "agent"
         / "builtin_skills"
         / "mcp-installer"
+        / "scripts"
         / "mcp_apply.py"
     )
     spec = importlib.util.spec_from_file_location("EVOFLUX_mcp_apply", path)

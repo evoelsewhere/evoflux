@@ -3,6 +3,26 @@
 You are producing a new `.xlsx` from a prompt, a dataset, or a mix of both.
 The user has no existing template to preserve.
 
+Write the generator to a `.py` file in the workspace and run it with
+`uv run --with openpyxl python build_model.py`; add `--with pandas` when it
+uses pandas, `--with xlsxwriter` for that engine, and `--with pillow` for
+images. Scripts run as `uv run --with openpyxl python scripts/<name>.py`.
+
+## Contents
+
+- Library choice
+- Minimum viable workbook
+- Writing data: list of dicts, DataFrame, multiple sheets
+- Formulas: fill down, escaping literal `=`
+- Styles and formatting: fonts and CJK, named styles, widths, number formats, borders, freeze panes, merged cells
+- Charts
+- Images
+- Data validation (dropdowns)
+- Conditional formatting
+- Print setup
+- Full working example
+- After saving — always
+
 ## Library choice
 
 | Task                                       | Library      | Why |
@@ -217,7 +237,9 @@ for row in ws.iter_rows(min_row=2, min_col=2, max_col=2, max_row=ws.max_row):
         cell.number_format = "$#,##0.00"
 ```
 
-See the number-format cheatsheet in [`SKILL.md`](SKILL.md).
+The number-format cheatsheet is in `SKILL.md`; the common ones are
+`#,##0` (integer), `$#,##0.00` (currency), `0.0%` (percentage), and
+`yyyy-mm-dd` (date).
 
 ### Borders
 
@@ -286,7 +308,7 @@ img.height = 40
 ws.add_image(img, "A1")
 ```
 
-`Image` requires Pillow to be installed. Anchor images to a cell — never rely
+`Image` requires Pillow (`--with pillow`). Anchor images to a cell — never rely
 on absolute pixel coordinates because they shift on different DPI settings.
 
 ## Data validation (dropdowns)
@@ -394,8 +416,10 @@ for i in range(1, 13):
     model.cell(row=row, column=3, value=f"=B{row}*Inputs!$B$4")
     model.cell(row=row, column=4, value=f"=B{row}-C{row}")
 
+for row in model.iter_rows(min_row=2, min_col=2, max_col=4):
+    for cell in row:
+        cell.number_format = "$#,##0"          # per cell; column_dimensions does not stick
 for col in ("B", "C", "D"):
-    model.column_dimensions[col].number_format = "$#,##0"
     model.column_dimensions[col].width = 14
 model.column_dimensions["A"].width = 8
 model.freeze_panes = "A2"
@@ -404,16 +428,17 @@ model.freeze_panes = "A2"
 wb.save("model.xlsx")
 
 # Then (outside this script) run:
-#   python scripts/bake.py model.xlsx
+#   uv run --with openpyxl python scripts/bake.py model.xlsx
 # to fill in the computed values.
 ```
 
 ## After saving — always
 
 ```bash
-python scripts/bake.py model.xlsx
-python scripts/audit.py model.xlsx
+uv run --with openpyxl python scripts/bake.py model.xlsx
+uv run --with openpyxl python scripts/audit.py model.xlsx
 ```
 
 If `bake.py` reports any errors, fix them and repeat. A workbook shipped
-with `#REF!` in the middle of a formula is a bug, not a feature.
+with `#REF!` in the middle of a formula is a bug, not a feature. Then finish
+the QA checklist in `SKILL.md` (reconcile, then `document_preview`).

@@ -215,7 +215,7 @@ export function useGlobalSearch({
             return
           }
           if (item.kind === 'skill') {
-            fillComposer(`/skill:${String(item.metadata?.name ?? item.label)} `)
+            fillComposer(`$${String(item.metadata?.name ?? item.label)} `)
             return
           }
           if (item.kind === 'workflow') {

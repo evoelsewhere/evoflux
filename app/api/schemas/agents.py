@@ -7,7 +7,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.conductor.models import ManagedResourceProvider
-from app.core.skill_scope import SkillMode, default_skill_modes
 
 
 class AgentSummary(BaseModel):
@@ -109,16 +108,13 @@ class ToolCatalogEntry(BaseModel):
 
 
 class SkillCatalogEntry(BaseModel):
+    """A Skill an agent definition may preload through ``skills:``."""
+
     name: str
     description: str
-    display_name: str | None = None
-    short_description: str | None = None
-    allow_implicit_invocation: bool = True
+    enabled: bool = True
+    model_invocable: bool = True
     user_invocable: bool = True
-    dependencies: list[dict] = Field(default_factory=list)
-    # User/project skills default to both modes; bundled workflows have an
-    # explicit scope in the code-owned catalog.
-    modes: list[SkillMode] = Field(default_factory=default_skill_modes)
 
 
 class ModelCatalogEntry(BaseModel):

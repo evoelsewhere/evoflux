@@ -67,12 +67,14 @@ class TestModelTiming:
         state.pending_tool_lifecycles.append(
             PendingToolLifecycle(
                 tool_call_id="resolved-1",
-                name="skill",
-                arguments=('{"action":"load","skill_name":"coding-investigation"}'),
-                result=(
-                    '<skill_content name="coding-investigation">body</skill_content>'
-                ),
-                metadata={"duration_ms": 0.0, "activation_source": "resolved"},
+                name="read",
+                arguments='{"path": "/skills/investigation/SKILL.md"}',
+                result="00001| ---",
+                metadata={
+                    "duration_ms": 0.0,
+                    "synthetic": True,
+                    "skill": "investigation",
+                },
             )
         )
         pushed = []
@@ -89,11 +91,11 @@ class TestModelTiming:
             "tool_end",
         ]
         assert {event.data["tool_call_id"] for event in pushed} == {"resolved-1"}
-        assert pushed[1].data["name"] == "skill"
-        assert pushed[1].data["arguments"] == (
-            '{"action":"load","skill_name":"coding-investigation"}'
+        assert pushed[1].data["name"] == "read"
+        assert (
+            pushed[1].data["arguments"] == '{"path": "/skills/investigation/SKILL.md"}'
         )
-        assert pushed[2].data["result"].startswith("<skill_content")
+        assert pushed[2].data["result"].startswith("00001| ---")
         assert pushed[2].data["metadata"]["duration_ms"] == 0.0
         assert state.pending_tool_lifecycles == []
 

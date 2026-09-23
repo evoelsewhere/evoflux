@@ -5,9 +5,12 @@ validation, filename derivation, and atomic writes. All paths are kept
 inside the configured root directory — traversal attempts raise
 ``AgentFsPathError``.
 
-Used by ``app.api.routes.agents`` and ``app.api.routes.skills``.  Validation
-of YAML frontmatter happens in ``app.services.team_manager`` (agents) or
-by re-parsing after write (skills).
+Used by ``app.api.routes.agents``, ``app.services.skills_service`` and the
+Conductor reconciler. Validation of YAML frontmatter happens in
+``app.services.team_manager`` (agents) or ``app.agent.skills.spec`` (skills).
+
+A Skill is a direct child directory of the skills root; deeper ``SKILL.md``
+files are ordinary bundle files (see ``documents/architecture/agent-skills.md``).
 """
 
 from __future__ import annotations
@@ -26,7 +29,6 @@ from typing import Literal
 from loguru import logger
 
 from app.core.config import settings
-from app.core.skill_scope import SKILL_SCOPE_FILENAME
 
 
 # ── Errors ───────────────────────────────────────────────────────────────────
@@ -132,30 +134,20 @@ def _validate_name(name: str) -> str:
 
 
 def _validate_skill_name(name: str) -> Path:
-    """Validate a flat or one-level-nested skill name.
+    """Validate a Skill directory name: one path segment, no traversal.
 
-    Accepts ``"my-skill"`` (flat) or ``"parent/sub"`` (one nested level).
-    Rejects empty names, names with more than one ``/``, and any segment
-    that fails :func:`_validate_name`.
-
-    Returns a :class:`~pathlib.Path` with 1 or 2 components that can be
-    safely joined under the skills root.
+    Specification naming rules (lowercase, hyphens, reserved words) are
+    enforced by ``app.agent.skills.spec``; this only guarantees the name is a
+    safe single directory below the skills root.
     """
-    parts = name.split("/")
-    if len(parts) > 2:
-        raise AgentFsPathError(
-            f"Skill name '{name}' is nested more than one level deep. "
-            "Only one level of nesting is allowed (e.g. 'parent/sub')."
-        )
-    if not parts or not parts[0]:
+    if not name:
         raise AgentFsPathError("Skill name cannot be empty.")
-    return Path(*(_validate_name(p) for p in parts))
-
-
-def validate_skill_name(name: str) -> None:
-    """Validate skill route syntax without resolving or reading the target."""
-
-    _validate_skill_name(name)
+    if "/" in name or "\\" in name:
+        raise AgentFsPathError(
+            f"Invalid skill name '{name}'. A Skill is a direct child of its "
+            "skills directory; nested names are not supported."
+        )
+    return Path(_validate_name(name))
 
 
 def _validate_agent_name(name: str) -> Path:
@@ -218,7 +210,6 @@ def _validate_skill_resource_path(path: str) -> PurePosixPath:
         rel.is_absolute()
         or any(part in {"", ".", ".."} for part in rel.parts)
         or rel.name == "SKILL.md"
-        or rel == PurePosixPath(SKILL_SCOPE_FILENAME)
     ):
         raise AgentFsPathError(f"Invalid skill resource path '{path}'.")
     return rel
@@ -227,13 +218,6 @@ def _validate_skill_resource_path(path: str) -> PurePosixPath:
 def _skill_resource_file(skill_dir: Path, path: str) -> Path:
     root = skill_dir.resolve()
     rel = _validate_skill_resource_path(path)
-    current = root
-    for part in rel.parts[:-1]:
-        current = current / part
-        if current != root and (current / "SKILL.md").is_file():
-            raise AgentFsPathError(
-                f"Skill resource path enters nested skill bundle: '{path}'."
-            )
     file = (root / Path(*rel.parts)).resolve()
     if not file.is_relative_to(root):
         raise AgentFsPathError(f"Path escapes skill directory: '{path}'.")
@@ -383,26 +367,15 @@ def delete_agent(name: str) -> None:
 
 
 def list_skills() -> list[str]:
-    """Return the list of skill names — directories containing SKILL.md.
-
-    Supports a flat layout (``{root}/{name}/SKILL.md``) and one nested
-    level (``{root}/{parent}/{sub}/SKILL.md``).  Sub-skills are returned
-    as ``"parent/sub"``.
-    """
+    """Return the directory names of the Skills directly under the skills root."""
     root = skills_dir()
     if not root.exists():
         return []
-    names: list[str] = []
-    for p in root.iterdir():
-        if not p.is_dir():
-            continue
-        if (p / "SKILL.md").is_file():
-            names.append(p.name)
-        # One level of nesting
-        for nested in p.iterdir():
-            if nested.is_dir() and (nested / "SKILL.md").is_file():
-                names.append(f"{p.name}/{nested.name}")
-    return sorted(names)
+    return sorted(
+        p.name
+        for p in root.iterdir()
+        if p.is_dir() and not p.name.startswith(".") and (p / "SKILL.md").is_file()
+    )
 
 
 def read_skill(name: str) -> SkillFileRecord:
@@ -418,16 +391,10 @@ def write_skill(name: str, content: str, *, create: bool) -> SkillFileRecord:
     file = _skill_file(name)
     if create and file.exists():
         raise AgentFsConflictError(f"Skill '{name}' already exists.")
-    if create and file.parent.is_dir():
-        unrelated = [
-            child
-            for child in file.parent.iterdir()
-            if not (child.is_dir() and (child / "SKILL.md").is_file())
-        ]
-        if unrelated:
-            raise AgentFsConflictError(
-                f"Skill bundle directory for '{name}' already contains files."
-            )
+    if create and file.parent.is_dir() and any(file.parent.iterdir()):
+        raise AgentFsConflictError(
+            f"Skill bundle directory for '{name}' already contains files."
+        )
     _atomic_write(file, content)
     logger.info("skill_fs_write name={} bytes={}", name, len(content))
     return SkillFileRecord(name=name, path=str(file), content=content)
@@ -440,7 +407,9 @@ def list_skill_bundle_files(skill_dir: Path) -> list[SkillBundleFileRecord]:
     function must remain bounded even when a repository is hostile or simply
     very large. At most 200 resource records and 2 MiB of aggregate UTF-8
     content are returned. Binary, oversized, and out-of-budget files remain
-    visible as metadata without inflating the response.
+    visible as metadata without inflating the response. A deeper ``SKILL.md``
+    is an ordinary bundle file; it is listed read-only because authoring
+    rejects nested ``SKILL.md`` files.
     """
     root = skill_dir.resolve()
     if not root.is_dir():
@@ -454,11 +423,7 @@ def list_skill_bundle_files(skill_dir: Path) -> list[SkillBundleFileRecord]:
                 relative = file.relative_to(root).as_posix()
             except ValueError:
                 continue
-            if (
-                filename == "SKILL.md"
-                or relative == SKILL_SCOPE_FILENAME
-                or file.is_symlink()
-            ):
+            if relative == "SKILL.md" or file.is_symlink():
                 continue
             try:
                 if not file.is_file():
@@ -493,12 +458,31 @@ def list_skill_bundle_files(skill_dir: Path) -> list[SkillBundleFileRecord]:
                     media_type=media_type,
                     content=content,
                     encoding=encoding,
-                    editable=editable,
+                    editable=editable and filename != "SKILL.md",
                 )
             )
             if len(records) >= _MAX_SKILL_BUNDLE_FILES:
                 return records
     return records
+
+
+def count_skill_bundle_files(skill_dir: Path) -> int:
+    """Count regular bundle files next to ``SKILL.md`` (bounded, no symlinks)."""
+    root = skill_dir.resolve()
+    if not root.is_dir():
+        return 0
+    count = 0
+    for _base, _directories, files in _bounded_skill_bundle_walk(root):
+        for file in files:
+            try:
+                if file.is_symlink() or not file.is_file():
+                    continue
+                if file.relative_to(root).as_posix() == "SKILL.md":
+                    continue
+            except (OSError, ValueError):
+                continue
+            count += 1
+    return count
 
 
 def apply_skill_bundle_files(
@@ -603,7 +587,7 @@ def assert_skill_bundle_limits(skill_dir: Path) -> None:
                                 f"Skill bundle entry '{path.name}' is not a regular file."
                             )
                         relative = path.relative_to(root).as_posix()
-                        if relative in {"SKILL.md", SKILL_SCOPE_FILENAME}:
+                        if relative == "SKILL.md":
                             continue
                         size = entry.stat(follow_symlinks=False).st_size
                     except AgentFsPathError:
@@ -635,15 +619,6 @@ def delete_skill(name: str) -> None:
     try:
         file.parent.rmdir()
     except OSError:
-        # Directory not empty (e.g. reference/, scripts/, sub-skills) — leave it.
+        # Directory not empty (e.g. references/, scripts/) — leave it.
         pass
-    else:
-        # For a nested skill (parent/sub) the parent dir may now also be
-        # empty — attempt to clean it up too.
-        parent = file.parent.parent
-        if parent != skills_dir():
-            try:
-                parent.rmdir()
-            except OSError:
-                pass
     logger.info("skill_fs_delete name={}", name)

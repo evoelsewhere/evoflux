@@ -1,5 +1,18 @@
 # The Nine-Section DESIGN.md Protocol
 
+## Contents
+
+1. Objective
+2. Product Context
+3. Visual Foundations (color, typography, spacing & rhythm, component seeds)
+4. Accessibility
+5. Voice & Tone
+6. Implementation Practices
+7. Anti-Patterns
+8. Decision-Making
+9. Workflow
+- Two writing rules that apply to every section
+
 The DESIGN.md is the persistent, brand-side spec — the durable *taste anchor* that survives across many artifacts (this slide deck, next quarter's poster, the landing page redesign). If it reads like a one-off memo about *this specific request*, you wrote it wrong. Rewrite it so any future designer, or any future agent, could execute a fresh artifact against it and stay on-brand.
 
 Nine sections, each with a clear job. Do not merge them, and keep all nine headers even in a lite-depth spec (see SKILL.md Move 3 for when lite is appropriate) — a future turn can inflate a compressed section, but two specs with different shapes can't be reconciled. Whatever the depth, do not skip Anti-Patterns or Decision-Making — those two are the sections that actually prevent drift.
@@ -97,7 +110,7 @@ Include:
 
 ## 6. Implementation Practices
 
-**Job:** How the system is realized in code / production, at the level a downstream implementer needs. This section is a bridge to the frontend-design or code-execution phase.
+**Job:** How the system is realized in code / production, at the level a downstream implementer needs. This section is a bridge to the implementation phase (the `frontend-design` skill, or direct code execution).
 
 Include:
 - Design token format (CSS variables? Tailwind theme? Figma variables?)
@@ -116,10 +129,10 @@ If the artifact isn't code (a poster, a slide), translate this to the medium: "E
 
 Format: bullet list, each bullet is one refusal + one sentence on why.
 
-Draw from `references/anti-slop.md` for the general list, then add 3–5 refusals *specific to this brand*.
+Draw from [references/anti-slop.md](references/anti-slop.md) (also linked from SKILL.md) for the general list, then add 3–5 refusals *specific to this brand*.
 
 Example (fintech landing page brand):
-- No gradient hero backgrounds. Sits in the median of every fintech landing since 2020.
+- No gradient hero backgrounds. Sits in the median of fintech landing pages.
 - No stacked "trust logos" strip immediately under the fold. Everyone does it; it stops meaning anything.
 - No emoji in section headings. This brand's confidence is verbal, not visual.
 - No card grids for feature lists. Use inline typographic rhythm instead.

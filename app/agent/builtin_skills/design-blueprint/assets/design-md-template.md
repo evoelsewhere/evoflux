@@ -5,7 +5,12 @@ This is the fillable template. When producing a DESIGN.md as part of a blueprint
 copy this structure, replace every [placeholder], remove these HTML comments, and
 delete any sub-bullets that don't apply. Do not add sections beyond these nine.
 
-See references/nine-section-protocol.md for how to write each section well.
+See references/nine-section-protocol.md (linked from SKILL.md Move 3) for how
+to write each section well.
+
+Contents: 1 Objective, 2 Product Context, 3 Visual Foundations, 4 Accessibility,
+5 Voice & Tone, 6 Implementation Practices, 7 Anti-Patterns, 8 Decision-Making,
+9 Workflow.
 -->
 
 ## 1. Objective

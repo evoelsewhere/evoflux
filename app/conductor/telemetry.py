@@ -219,17 +219,21 @@ def clear_usage() -> None:
 
 
 def _managed_metadata(skill_name: str) -> dict[str, object] | None:
-    root = Path(settings.SKILLS_DIR).resolve()
-    metadata = (root / skill_name / ".evoflux.json").resolve()
-    if not metadata.is_relative_to(root):
-        return None
+    """Return Conductor provenance for a synced Skill, if it is managed."""
+
     try:
-        payload = json.loads(metadata.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, ValueError, TypeError):
+        from app.conductor.managed_state import ManagedResourceStore
+
+        resources = ManagedResourceStore().load().resources
+    except (OSError, ValueError):
         return None
-    if not isinstance(payload, dict) or payload.get("managed_by") != "conductor":
-        return None
-    return payload
+    for resource in resources:
+        if resource.kind == "skill" and resource.slug == skill_name:
+            return {
+                "resource_id": resource.resource_id,
+                "resource_version": resource.version_id,
+            }
+    return None
 
 
 def record_skill_usage(

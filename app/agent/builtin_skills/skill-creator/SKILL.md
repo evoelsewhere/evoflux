@@ -1,175 +1,205 @@
 ---
 name: skill-creator
-description: "Use this skill to design the content of an Agent Skill: pinning down its use cases, writing a description that triggers on the right requests and stays quiet otherwise, structuring progressive disclosure across the body and its references, and diagnosing a skill that never fires or fires too often. Use the skill-installer workflow instead to create, validate, install, or relocate the bundle on disk."
+description: Designs, writes, and reviews Agent Skills for EvoFlux, covering use cases and evaluation scenarios, the SKILL.md frontmatter and description, body structure, progressive disclosure into references/, scripts/, and assets/, and self-validation against the Agent Skills specification. Use when the user asks to create or write a new skill, turn a repeated workflow into a skill, improve or review an existing SKILL.md, or fix a skill that never triggers or triggers too often. Not for installing a third-party skill bundle from a URL or archive (read the skill-installer skill) or for editing an agent's configuration.
 ---
 
 # Skill Creator
 
-A skill is a folder that teaches an agent how to handle a specific task or workflow:
+A skill is a directory that gives an agent the procedural knowledge for one
+kind of task. EvoFlux lists every skill's `name`, `description`, and the
+absolute location of its `SKILL.md` in the system prompt; the agent reads
+`SKILL.md` with the `read` tool when a task matches, and reads or runs bundled
+files only when `SKILL.md` points to them.
 
+```text
+my-skill/
+├── SKILL.md       required: YAML frontmatter + Markdown instructions
+├── references/    optional: documentation read on demand
+├── scripts/       optional: executable code, run with the shell tool
+└── assets/        optional: templates, data, images used in output
 ```
-your-skill-name/
-├── SKILL.md       # Required — YAML frontmatter + Markdown instructions
-├── scripts/       # Optional — executable code (Python, Bash, ...)
-├── references/    # Optional — docs loaded only when needed
-└── assets/        # Optional — templates, fonts, icons used in output
+
+Nothing else belongs in a bundle: no `agents/*.yaml`, no `.evoflux.json`, no
+`evals/`, no `README.md`, no changelog. There is no mode scope; a skill is
+available in both Work and Coding mode.
+
+## Where to create the skill
+
+Create new skills in the user skills directory; its absolute path is stated in
+the Skills section of the system prompt. The skill is the direct child
+`<user skills directory>/<name>/SKILL.md`. Create it under
+`<workspace>/.evoflux/skills/<name>/` only when the user wants it shared with
+a repository. Discovery refreshes automatically after the files are written;
+no restart is needed.
+
+To install an existing third-party bundle instead of writing one, read the
+`skill-installer` skill.
+
+## Workflow
+
+Copy this checklist and track progress:
+
+```text
+- [ ] 1. Collect use cases and at least three evaluation scenarios
+- [ ] 2. Record baseline behavior without the skill
+- [ ] 3. Write the frontmatter
+- [ ] 4. Write the minimal body that closes the observed gaps
+- [ ] 5. Split detail into references/, scripts/, assets/
+- [ ] 6. Self-validate (checklist below)
+- [ ] 7. Run the scenarios with the skill, fix, repeat
 ```
 
-Skills rely on **progressive disclosure**: the frontmatter is always in context (so it decides *when* the skill loads), the SKILL.md body loads when relevant, and linked files load only on demand. Keep each level as small as it can be.
+### 1. Collect use cases and evaluation scenarios
 
-## Workflow: Creating a New Skill
+Build evaluations before writing extensive documentation. Pin down with the
+user, as **Trigger -> Steps -> Result**:
 
-### Step 1: Define 2-3 concrete use cases
+- the outcome the user wants, and the literal phrases they would type;
+- the steps in order, the tools and scripts needed, and the domain knowledge
+  the agent does not already have;
+- adjacent requests that must *not* load the skill.
 
-Before writing anything, pin down with the user:
+Write at least three scenarios in this shape:
 
-- What does the user want to accomplish? (outcome, not feature)
-- What triggers it? Collect literal phrases users would say.
-- What steps does the workflow require, in order?
-- Which tools are needed (built-in, scripts, MCP servers)?
-- What domain knowledge or best practices must be embedded?
+```json
+{
+  "skills": ["my-skill"],
+  "query": "Extract all text from this PDF file and save it to output.txt",
+  "files": ["test-files/document.pdf"],
+  "expected_behavior": [
+    "Reads the PDF with an appropriate library or command-line tool",
+    "Extracts text from every page without skipping any",
+    "Saves the text to output.txt in a readable format"
+  ]
+}
+```
 
-Write each use case as: **Trigger → Steps → Result**. If the user is vague, propose use cases and confirm rather than guessing silently.
+Keep scenarios and their test files **outside** the bundle (for example in the
+session workspace or the user's repository); never add an `evals/` directory
+to the skill. For scenario design, trigger testing, and iteration, read
+[references/evaluation.md](references/evaluation.md).
 
-Identify the category — it shapes the structure:
+### 2. Record baseline behavior
 
-1. **Document & asset creation** — embed style guides, templates, quality checklists.
-2. **Workflow automation** — step-by-step process with validation gates.
-3. **MCP enhancement** — orchestrate MCP tool calls in sequence with domain expertise.
+Run the scenarios without the skill and note what the agent gets wrong, asks
+about, or does inefficiently. The skill exists to close those gaps and nothing
+more.
 
-### Step 2: Plan the folder structure
-
-- Folder name: kebab-case only (`my-skill` — no spaces, capitals, or underscores) and it must match the frontmatter `name`.
-- `SKILL.md` must be named exactly that, case-sensitive.
-- Never put a `README.md` inside the skill folder.
-- Keep the body under roughly 500 lines; move conditional detail to
-  `references/` and link to it with a relative link that resolves.
-- Recognised resource directories: `agents`, `assets`, `evals`, `examples`,
-  `references`, `scripts`, `templates`. No symlinks, no links outside the
-  bundle.
-- For critical validations, prefer a bundled script over prose — code is deterministic, language interpretation isn't.
-
-### Step 3: Write the frontmatter
-
-The frontmatter is the single most important part — it alone decides whether the skill ever loads.
+### 3. Write the frontmatter
 
 ```yaml
 ---
-name: your-skill-name
-description: [What it does] + [When to use it, with literal trigger phrases] + [negative triggers if needed]
+name: processing-pdfs
+description: Extracts text and tables from PDF files, fills PDF forms, and merges documents. Use when working with PDF files or when the user mentions PDFs, forms, or document extraction.
 ---
 ```
 
-Rules (hard requirements in EvoFlux):
+Hard rules:
 
-- The frontmatter carries exactly two keys, `name` and `description`. Any other
-  key is a contract violation; licence, version, platform, and tool-restriction
-  metadata belongs outside it.
-- `name` is 1–64 characters of lowercase letters, digits, and single hyphens,
-  and equals the directory name.
-- `description` states what the skill is for and, explicitly, what it is not
-  for, under 1024 characters, with no XML angle brackets.
-- Name the artifacts, file types, and decisions that identify the task. The
-  negative half is what stops the skill firing on every adjacent request.
+- `name`: 1-64 characters, lowercase letters, digits, and single hyphens;
+  equals the directory name; must not contain `anthropic` or `claude`; no XML
+  tags.
+- `description`: 1-1,024 characters, third person, states **what** the skill
+  does and **when** to use it with concrete trigger terms (file types, phrases
+  users say). No XML tags, no "I" or "you". An optional short "Not for ..."
+  sentence stops near-miss triggering.
+- Optional: `license`, `compatibility` (at most 500 characters of environment
+  requirements), `metadata` (string-to-string map), `allowed-tools` (displayed
+  only; it does not change EvoFlux permissions).
+- EvoFlux keys: `disable-model-invocation: true` hides the skill from the
+  catalog so it runs only when the user types `$name` (use it for long,
+  interrupting, or side-effectful workflows); `user-invocable: false` removes
+  it from the `$` picker.
+- Any other key is ignored and reported as a warning.
 
-Weak: `description: Helps with projects.`
-Strong: `description: Use this skill to build, edit, or inspect a spreadsheet
-when that file is the deliverable — models, template fills, messy-data repair,
-workbook audits. Do not use it when the spreadsheet is only source material for
-an analysis whose real output is something else.`
+For every field with examples, the error and warning rules, and description
+rewrites, read [references/frontmatter.md](references/frontmatter.md).
 
-Everything host-specific lives beside `SKILL.md`: interface labels and
-`policy.allow_implicit_invocation` in `agents/evoflux.yaml`, activation cases
-in `evals/trigger-cases.json`, and mode scope in `.evoflux.json` for user and
-project skills or in `app/agent/builtin_skills/catalog.py` for bundled ones.
-Set `allow_implicit_invocation: false` for a long, interrupting, or
-side-effectful workflow whose timing the user should own, and keep the same
-rule stated in the description and body.
+### 4. Write the minimal body
 
-For every field, the bundle layout, and more good and bad examples, read
-[references/frontmatter.md](references/frontmatter.md).
+The agent is already capable; add only what it does not know. For each
+paragraph ask whether the agent needs it and whether it justifies its tokens.
 
-### Step 4: Write the instructions
+- Match specificity to fragility: prose for judgment-heavy work, exact steps or
+  a checklist for fragile sequences, a script for deterministic operations.
+- Put must-not-skip rules first. Number steps that must run in order and state
+  what each step needs from the previous one.
+- Add a feedback loop where quality matters: run the validator, fix, repeat
+  until it passes.
+- Give one default approach with an escape hatch, not a menu of options.
+- Use one term per concept throughout; give concrete input/output examples.
+- No time-sensitive statements ("currently", "as of", pinned model names). Put
+  superseded behavior in a clearly labeled legacy section if it must stay.
+- Refer to other skills by name ("read the `pdf-processing` skill"); do not
+  route with `$other-skill` inside a body.
 
-Recommended body structure:
+For structural patterns (workflows, feedback loops, templates, examples,
+conditional workflows, plan-validate-execute, MCP tool references), read
+[references/patterns.md](references/patterns.md).
 
-```markdown
-# Skill Name
+### 5. Split detail with progressive disclosure
 
-## Instructions
-### Step 1: [First major step]
-Exact commands / tool calls, with expected output described.
+- Keep the `SKILL.md` body under 500 lines and the whole file readable in one
+  `read` result (keep it well under 20,000 characters).
+- Link every reference file **directly** from `SKILL.md` with a one-line
+  condition saying when to read it. Reference files must not depend on further
+  links for essential information (one level deep).
+- Start any reference file longer than 100 lines with a `## Contents` list of
+  its sections.
+- Use relative paths with forward slashes (`references/api.md`), never
+  backslashes, absolute paths, or `../` escaping the bundle.
+- Say whether each script is to be **run** ("Run
+  `python scripts/validate.py form.json`") or **read** ("See
+  `scripts/validate.py` for the algorithm"). Use one invocation style and
+  state required packages (`uv run --with pypdf python scripts/extract.py`).
+- Skill directories are read-only to the agent's tools, so scripts must write
+  output to the workspace, not into the bundle. The agent derives the absolute
+  script path from the `SKILL.md` location.
 
-## Examples
-User says X → actions → result.
+### 6. Self-validate
 
-## Troubleshooting
-Error → cause → fix.
+Check every item before handing over. Use `shell` or `read` to confirm, do not
+assume.
+
+```text
+- [ ] Directory name equals frontmatter name; name matches ^[a-z0-9]+(-[a-z0-9]+)*$, <= 64 chars, no anthropic/claude
+- [ ] Frontmatter is valid YAML between --- lines; only allowed keys; metadata values are strings
+- [ ] description <= 1,024 chars, third person, what + when, no XML tags
+- [ ] compatibility (if present) <= 500 chars
+- [ ] Body is non-empty, < 500 lines; whole SKILL.md well under 20,000 chars
+- [ ] Every relative link resolves to a file inside the bundle; forward slashes only
+- [ ] Every reference file is linked from SKILL.md with a when-to-read condition
+- [ ] Reference files over 100 lines start with ## Contents
+- [ ] No nested SKILL.md, no symlinks, no agents/, evals/, .evoflux.json, README.md
+- [ ] Every script runs on a representative input; dependencies are stated
+- [ ] No time-sensitive statements, placeholders, or machine-specific paths
 ```
 
-Best practices:
+Count lines and characters with the shell (for example `wc -lc SKILL.md`)
+rather than estimating. After writing, confirm the skill appears in the
+catalog on the next turn, or under Settings, Skills.
 
-- Be specific and actionable: give exact commands with flags and expected output, not vibes ("validate the data").
-- Put critical instructions at the top; use `## Important` headers for must-not-skip rules.
-- Include error handling for the failures users will actually hit.
-- Reference bundled resources explicitly ("Before writing queries, read the API-patterns file in references/").
-- Number steps that must happen in order; state data dependencies between steps.
+### 7. Run the scenarios and iterate
 
-For proven structural patterns (sequential orchestration, multi-MCP coordination, iterative refinement, context-aware tool selection, domain-specific intelligence), read `references/patterns.md`.
+Run each scenario in a fresh conversation with the skill available. Observe
+which files the agent reads, which steps it skips, and where it hesitates.
+Fix the specific gap, re-run, and repeat. When the user brings failures from
+real sessions, encode the fix as an explicit instruction, troubleshooting
+entry, or validation step.
 
-### Step 5: Validate
+## Reviewing an existing skill
 
-Run the repository validator over the skills root that holds the bundle:
-
-```bash
-python scripts/validate_skills.py app/agent/builtin_skills
-python scripts/validate_skills.py path/to/skills --require-evals
-```
-
-It checks the name and description contract, interface metadata, relative
-resource links, activation-eval balance, and bundle resource limits. Fix every
-ERROR; treat each WARNING as a review prompt.
-
-A bundled skill is not finished until it is also registered in
-`app/agent/builtin_skills/catalog.py` with its mode scope, because the catalogue
-and the discovered set are asserted to match.
-
-### Step 6: Test and iterate
-
-Iterate on a single challenging task until it succeeds, then extract the winning approach into the skill — this gives faster signal than broad testing. Then cover:
-
-1. **Triggering**: obvious phrasing loads it, paraphrases load it, unrelated queries don't. Encode both sides in `evals/trigger-cases.json`, with a `near_miss` note on every negative case.
-2. **Function**: outputs correct, tool calls succeed, edge cases handled.
-3. **Baseline comparison**: fewer corrections / tool calls / tokens than without the skill.
-
-Debugging trick: ask the agent "When would you use the [name] skill?" — it will paraphrase the description back; fix what's missing.
-
-Full test-case templates and iteration signals are in `references/testing.md`.
-
-## Workflow: Reviewing an Existing Skill
-
-When asked to review or improve a skill:
-
-1. Read its SKILL.md and run the repository validator over the skills root that holds it.
-2. Diagnose against the common failure modes:
-   - **Never triggers** → description too generic or missing user-facing trigger phrases. Rewrite with literal phrases and keywords.
-   - **Triggers too often** → add negative triggers ("Do NOT use for...") and narrow the scope.
-   - **Loads but instructions ignored** → instructions too verbose, buried, or ambiguous. Move critical rules to the top, replace prose validations with a script.
-   - **Slow / degraded responses** → SKILL.md too large; move detail into `references/`.
-3. Propose concrete edits (before/after for the description), not general advice.
-4. If the user brings failure examples from real sessions, encode the fix as an explicit instruction or troubleshooting entry — that is the highest-value iteration loop.
-
-## Quick Checklist
-
-Before delivering a skill, verify:
-
-- [ ] Folder is kebab-case and matches frontmatter `name`
-- [ ] `SKILL.md` exact filename; no `README.md` inside the folder
-- [ ] Frontmatter has `---` delimiters and exactly `name` plus a scope-setting `description` under 1024 chars
-- [ ] No XML angle brackets in frontmatter
-- [ ] Instructions specific and actionable, with examples and error handling
-- [ ] Every referenced `scripts/`, `references/`, `assets/` file actually exists
-- [ ] The repository validator reports the bundle valid with 0 errors
-- [ ] `agents/evoflux.yaml` and `evals/trigger-cases.json` present, with positive and near-miss cases
-- [ ] Bundled skills registered in `app/agent/builtin_skills/catalog.py` with their mode scope
-- [ ] Triggering tested: fires on target phrasings, silent on unrelated ones
+1. Read its `SKILL.md` and list the bundle files.
+2. Run the self-validation checklist and report every failed item.
+3. Diagnose behavior:
+   - **Never triggers**: the description is generic or lacks the words users
+     say. Rewrite it with concrete file types and phrases.
+   - **Triggers too often**: add a "Not for ..." boundary and narrow the scope.
+   - **Loads but instructions are ignored**: rules are buried or verbose. Move
+     critical rules to the top; replace prose validation with a script.
+   - **Slow or context-heavy**: `SKILL.md` is too large. Move conditional
+     detail into linked reference files.
+4. Propose concrete before/after edits, not general advice. Remove legacy
+   control-plane files (`agents/`, `evals/`, `.evoflux.json`) and move their
+   meaning into the frontmatter (`disable-model-invocation`) or out of the
+   bundle (evaluation scenarios).

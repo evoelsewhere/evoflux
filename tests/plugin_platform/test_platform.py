@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
-from app.agent.skills.discovery import builtin_skills_dir
+from app.agent.skills.registry import SkillRoot, builtin_skills_dir, discover_skills
 from app.core.config import settings
-from app.core.skill_settings import write_skill_runtime_settings
+from app.core.skill_settings import set_skill_enabled
 from app.plugin_platform.builtins import list_builtin_installations
 from app.plugin_platform.installer import (
     PluginInstallError,
@@ -45,10 +45,7 @@ from app.plugin_platform.runtime import (
     _linked_tree_signature,
     build_plugin_mcp_config,
 )
-from app.plugin_platform.skills import (
-    discover_plugin_skill_records,
-    discover_skill_records_with_plugins,
-)
+from app.plugin_platform.skills import plugin_skill_roots
 from app.plugin_platform.validator import inspect_plugin
 from app.plugin_platform.workspace import list_workspace, write_workspace_file
 
@@ -285,10 +282,16 @@ def test_created_skill_scaffold_survives_pack_install_and_discovery(
     assert first.read_bytes() == second.read_bytes()
 
     installation = install_plugin(first, enabled=True)
-    record = discover_plugin_skill_records()["created-workflow"]
-    assert record.source == f"plugin:{installation.id}"
-    assert record.skill_file == (
-        Path(installation.root) / "skills" / "created-workflow" / "SKILL.md"
+    skill = discover_skills(roots=plugin_skill_roots()).get("created-workflow")
+    assert skill is not None
+    assert skill.valid is True
+    assert skill.source == "plugin"
+    assert skill.plugin_id == installation.id
+    assert (
+        skill.location.resolve()
+        == (
+            Path(installation.root) / "skills" / "created-workflow" / "SKILL.md"
+        ).resolve()
     )
 
 
@@ -456,31 +459,25 @@ def test_registry_rejects_and_filters_persisted_builtin_records(
     assert persisted["installations"][0]["source_type"] == "linked"
 
 
-def test_plugin_skill_applies_persisted_runtime_settings(
+def test_plugin_skill_is_read_only_but_can_be_disabled(
     isolated_platform: Path,
 ) -> None:
     plugin = _plugin(isolated_platform / "settings-plugin")
     managed = link_plugin(plugin)
-    inherited = discover_plugin_skill_records()["portable-skill"]
+    inherited = discover_skills(roots=plugin_skill_roots()).get("portable-skill")
 
-    assert inherited.source == f"plugin:{managed.id}"
-    assert inherited.settings_editable is True
-    assert inherited.settings_overridden is False
+    assert inherited is not None
+    assert inherited.plugin_id == managed.id
+    assert inherited.editable is False
+    assert inherited.model_visible is True
 
-    write_skill_runtime_settings(
-        inherited.settings_id,
-        name=inherited.name,
-        source=inherited.source,
-        modes=["coding"],
-        allow_implicit_invocation=False,
-        user_invocable=False,
-    )
-    overridden = discover_plugin_skill_records()["portable-skill"]
+    set_skill_enabled("portable-skill", False)
+    disabled = discover_skills(roots=plugin_skill_roots()).get("portable-skill")
 
-    assert overridden.modes == ("coding",)
-    assert overridden.allow_implicit_invocation is False
-    assert overridden.user_invocable is False
-    assert overridden.settings_overridden is True
+    assert disabled is not None
+    assert disabled.enabled is False
+    assert disabled.model_visible is False
+    assert disabled.user_visible is False
 
 
 @pytest.mark.parametrize(
@@ -756,32 +753,38 @@ def test_plugin_skills_precede_builtins_but_not_project_skills(
     plugin = _plugin(
         isolated_platform / "plugin",
         name="skill-precedence",
-        skill="algorithmic-art",
+        skill="frontend-design",
     )
     link_plugin(plugin)
+    builtin = SkillRoot(builtin_skills_dir(), "builtin")
+    builtin_location = builtin_skills_dir() / "frontend-design" / "SKILL.md"
 
-    plugin_over_builtin = discover_skill_records_with_plugins([builtin_skills_dir()])
-    assert plugin_over_builtin["algorithmic-art"].source.startswith("plugin:")
-    assert any(
-        item.source == "builtin"
-        for item in plugin_over_builtin["algorithmic-art"].alternates
-    )
+    plugin_over_builtin = discover_skills(roots=[*plugin_skill_roots(), builtin])
+    winner = plugin_over_builtin.get("frontend-design")
+    assert winner is not None
+    assert winner.source == "plugin"
+    assert [path.resolve() for path in winner.shadowed] == [builtin_location.resolve()]
 
     project_root = isolated_platform / "workspace" / ".agents" / "skills"
-    project_skill = project_root / "algorithmic-art"
+    project_skill = project_root / "frontend-design"
     project_skill.mkdir(parents=True)
     (project_skill / "SKILL.md").write_text(
-        "---\nname: algorithmic-art\ndescription: Project override\n---\n\nProject workflow.\n",
+        "---\nname: frontend-design\ndescription: Project override\n---\n\nProject workflow.\n",
         encoding="utf-8",
     )
-    project_over_plugin = discover_skill_records_with_plugins(
-        [project_root, builtin_skills_dir()]
+    project_over_plugin = discover_skills(
+        roots=[
+            SkillRoot(project_root, "project", editable=True),
+            *plugin_skill_roots(),
+            builtin,
+        ]
     )
-    assert project_over_plugin["algorithmic-art"].source == "project-agents"
+    project_winner = project_over_plugin.get("frontend-design")
+    assert project_winner is not None
+    assert project_winner.source == "project"
     assert (
-        project_over_plugin["algorithmic-art"]
-        .alternates[0]
-        .source.startswith("plugin:")
+        project_winner.shadowed[0].resolve()
+        == (plugin / "skills" / "frontend-design" / "SKILL.md").resolve()
     )
 
 

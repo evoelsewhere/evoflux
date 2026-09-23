@@ -1,7 +1,7 @@
 # MCP attachment contract
 
-MCP server configuration belongs to `$mcp-installer`. This reference covers
-only attaching already-configured server tools to an agent.
+MCP server configuration belongs to the `mcp-installer` skill. This reference
+covers only attaching already-configured server tools to an agent.
 
 ## Choose one attachment mode
 

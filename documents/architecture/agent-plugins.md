@@ -113,18 +113,19 @@ automation.
 
 ## Runtime and precedence
 
-Plugin Skills join the normal metadata-only catalog and load progressively through the existing Skill tool. Precedence is:
+Plugin Skills join the normal metadata-only catalog: the model reads their
+`SKILL.md` with the `read` tool like any other Skill (see
+[Agent Skills](agent-skills.md)). Precedence is:
 
-1. project, user, and administrator roots;
-2. enabled installed and linked Agent Plugin installations;
-3. release-bundled Agent Plugins;
-4. core EvoFlux built-in Skills.
+1. project and user roots;
+2. enabled installed, linked and release-bundled Agent Plugin installations;
+3. core EvoFlux built-in Skills.
 
 Plugin MCP configuration is adapted in memory into a separate manager. It is
 never copied to or merged into the user's global `{CONFIG_DIR}/mcp.json`.
 Runtime servers appear in **Settings → MCP servers** with a `plugin` badge and
-can be selected in an agent's `mcp` configuration. Loading a Skill contributed
-by a plugin also grants and activates the ready MCP tools from that same
+can be selected in an agent's `mcp` configuration. Reading the `SKILL.md` of a
+Skill contributed by a plugin also grants and activates the ready MCP tools from that same
 installation for the current run. Installation alone does not grant every
 agent every tool, and calls remain subject to the normal permission pipeline.
 

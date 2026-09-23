@@ -1,6 +1,0 @@
-interface:
-  display_name: "Slide Decks"
-  short_description: "Author, edit, and render .pptx decks"
-  default_prompt: "Use $pptx-official to build this deck from a slide plan and verify the rendered slides."
-policy:
-  allow_implicit_invocation: true

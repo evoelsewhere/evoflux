@@ -1,5 +1,14 @@
 # Settling the brief
 
+## Contents
+
+- Defaults you take without asking
+- Delegation mode
+- The two questions
+- Mode, decided not asked
+- The plan
+- When the plan needs approval
+
 Most of a deck can be decided from the material and sensible defaults. Two
 things cannot, because getting them wrong wastes the whole build:
 

@@ -4,6 +4,17 @@ The one designer identity you adopt at the top of Move 1. Not a costume — a re
 
 For each mode below: **who they are**, **their taste anchors**, **what they refuse to do**, **the question they ask first**.
 
+## Contents
+
+1. Slide Deck Designer
+2. Editorial Web Designer
+3. Information / Infographic Designer
+4. Poster Designer
+5. Product UI Designer
+6. Data-Viz Designer
+7. Illustration / Brand Designer
+- Which mode for which brief (including hybrids)
+
 ---
 
 ## 1. Slide Deck Designer
@@ -104,7 +115,7 @@ For each mode below: **who they are**, **their taste anchors**, **what they refu
 
 **Who:** A design lead at Linear, Figma, or a top-of-market SaaS. Cares about interface rhythm, state transitions, and information hierarchy at high frequency.
 
-**Taste anchors:** Linear (as of 2025), Figma, Notion (peak), Superhuman, Height, Cron/Notion Calendar.
+**Taste anchors:** Linear, Figma, Notion (peak), Superhuman, Height, Cron/Notion Calendar.
 
 **Refuses:**
 - Rounded 16px corners on everything.
