@@ -17,9 +17,24 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    columns = {
+        column["name"] for column in sa.inspect(bind).get_columns("delegation_tasks")
+    }
+    indexes = {
+        index["name"] for index in sa.inspect(bind).get_indexes("delegation_tasks")
+    }
+    if (
+        "asdd_change_id" not in columns
+        and "ix_delegation_tasks_asdd_change_id" not in indexes
+    ):
+        return
+
     with op.batch_alter_table("delegation_tasks", schema=None) as batch_op:
-        batch_op.drop_index("ix_delegation_tasks_asdd_change_id")
-        batch_op.drop_column("asdd_change_id")
+        if "ix_delegation_tasks_asdd_change_id" in indexes:
+            batch_op.drop_index("ix_delegation_tasks_asdd_change_id")
+        if "asdd_change_id" in columns:
+            batch_op.drop_column("asdd_change_id")
 
 
 def downgrade() -> None:

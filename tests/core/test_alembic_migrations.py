@@ -16,6 +16,7 @@ Complements ``tests/core/test_db_extra.py``, which only covers
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -396,6 +397,37 @@ def test_legacy_remote_database_migrates_after_main_and_preserves_rows(
         assert "asdd_change_id" not in delegation_columns
     finally:
         engine.dispose()
+
+
+def test_drop_retired_asdd_metadata_is_safe_when_branch_never_had_it(
+    tmp_path, monkeypatch
+):
+    """The main cleanup migration must tolerate the remote branch schema."""
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "legacy-remote-without-asdd.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    monkeypatch.setattr(schema_version, "current_sqlite_path", lambda: str(db_path))
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000066")
+
+    with sqlite3.connect(db_path) as db:
+        db.execute("DROP INDEX IF EXISTS ix_delegation_tasks_asdd_change_id")
+        db.execute("ALTER TABLE delegation_tasks DROP COLUMN asdd_change_id")
+
+    command.upgrade(cfg, "00000067")
+
+    with sqlite3.connect(db_path) as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(delegation_tasks)")}
+        assert "asdd_change_id" not in columns
+        assert (
+            db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+            == "00000067"
+        )
 
 
 def test_work_mode_migration_rewrites_forge_rows_and_defaults(tmp_path, monkeypatch):
