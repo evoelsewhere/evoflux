@@ -29,6 +29,7 @@ from app.agent.agent_loop.tool_executor import make_tool_executor
 from app.agent.lifecycle import normalize_sleep_message
 from app.agent.usage import usage_to_dict
 from app.agent.checkpointer import Checkpointer
+from app.agent.errors import ContextOverflowError
 from app.agent.hooks import BaseAgentHook
 from app.agent.providers.base import LLMProviderBase
 from app.agent.providers.capabilities import ModelCapabilities, get_capabilities
@@ -690,6 +691,9 @@ class Agent(Generic[TContext]):
         empty_after_tool_continuations = 0
         max_empty_after_tool_continuations = 3
         provider_resume_attempts = 0
+        # Set while the next model call is the one retry after a context
+        # overflow; a second overflow before any call succeeds is surfaced.
+        overflow_compaction_pending = False
         last_activated_deferred: frozenset[str] = frozenset()
 
         while iteration < self.max_iterations:
@@ -823,6 +827,25 @@ class Agent(Generic[TContext]):
 
             try:
                 assistant_msg = await model_chain(model_request)
+            except ContextOverflowError as exc:
+                # The prompt outgrew the window before the usage-based
+                # threshold caught it (a large tool result, a stale
+                # threshold, or a catalogue window larger than the real one).
+                # Force one compaction and replay the call; the summarisation
+                # hook's before_model runs again at the top of the loop.
+                if overflow_compaction_pending:
+                    state.metadata.pop("force_summarization", None)
+                    raise
+                overflow_compaction_pending = True
+                state.metadata["force_summarization"] = True
+                logger.warning(
+                    "agent_context_overflow_compact agent={} iteration={} status={}",
+                    self.name,
+                    iteration,
+                    exc.status_code,
+                )
+                iteration -= 1  # this iteration produced no assistant message
+                continue
             except (httpx.ConnectError, httpx.ReadTimeout, TimeoutError) as exc:
                 # The provider (and any fallback) exhausted its retry budget on
                 # a transient connectivity failure.  Rather than letting this
@@ -878,6 +901,9 @@ class Agent(Generic[TContext]):
             # A successful model call clears the transient-failure budget so a
             # later, unrelated hiccup gets the full resume allowance again.
             provider_resume_attempts = 0
+            if overflow_compaction_pending:
+                overflow_compaction_pending = False
+                state.metadata.pop("force_summarization", None)
 
             # Convert the legacy model-facing sentinel into runtime-owned
             # metadata before after_model hooks, persistence, or completion

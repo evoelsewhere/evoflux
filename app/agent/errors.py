@@ -12,6 +12,7 @@ Hierarchy::
     │   ├── ProviderConnectionError
     │   ├── ProviderAuthenticationError
     │   └── ProviderRequestError
+    │       └── ContextOverflowError
     ├── ToolError
     │   ├── ToolNotFoundError
     │   ├── ToolArgumentError
@@ -97,6 +98,14 @@ class ProviderRequestError(ProviderError):
         self.status_code = status_code
         self.provider = provider
         super().__init__(message)
+
+
+class ContextOverflowError(ProviderRequestError):
+    """Provider rejected the request because the prompt exceeds its context window.
+
+    A subclass so existing ``ProviderRequestError`` handling (UI rendering,
+    team error reporting) still applies when recovery does not.
+    """
 
 
 # ── Tool errors ───────────────────────────────────────────────────────────

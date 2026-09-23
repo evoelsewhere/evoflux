@@ -75,6 +75,12 @@ Without that guard a session whose compaction could not succeed spent several
 seconds and a full-history call per turn, forever, while its context kept
 growing.
 
+An ordinary turn that the endpoint rejects as too long — HTTP 413, an
+`error.code`/`error.type` of `context_length_exceeded` or
+`context_window_exceeded`, or a message naming the context length — forces
+one compaction and replays the call, instead of ending the turn. A second
+overflow before any call succeeds is surfaced as the provider's error.
+
 ## Lead and specialists
 
 The session-selected lead decides whether to handle work directly or spawn its

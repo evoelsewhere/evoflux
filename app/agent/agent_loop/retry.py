@@ -25,6 +25,7 @@ import httpx
 from loguru import logger
 
 from app.agent.errors import (
+    ContextOverflowError,
     ProviderAuthenticationError,
     ProviderRateLimitError,
     ProviderRequestError,
@@ -235,6 +236,50 @@ def _extract_provider_error_message(body: str) -> str | None:
     return None
 
 
+#: Structured ``error.code`` / ``error.type`` values providers use for an
+#: over-long prompt. OpenAI uses the first; several OpenAI-compatible
+#: gateways use the second.
+_CONTEXT_OVERFLOW_CODES = frozenset(
+    {"context_length_exceeded", "context_window_exceeded"}
+)
+#: Message phrases for providers that only say it in prose. Kept specific:
+#: this triggers a compaction, so a generic "token" or "maximum" (which also
+#: appear in max_tokens parameter errors) is not enough.
+_CONTEXT_OVERFLOW_PHRASES = (
+    "context length",
+    "context window",
+    "context_length",
+    "maximum context",
+    "prompt is too long",
+    "input is too long",
+    "too many tokens",
+    "exceeds the context",
+    "reduce the length",
+)
+
+
+def is_context_overflow_response(status: int, body: str) -> bool:
+    """Whether a provider error response means the prompt did not fit."""
+    if status == 413:
+        return True
+    if status != 400:
+        return False
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        data = None
+    error = data.get("error") if isinstance(data, dict) else None
+    if isinstance(error, dict):
+        for key in ("code", "type"):
+            value = error.get(key)
+            if isinstance(value, str) and value.lower() in _CONTEXT_OVERFLOW_CODES:
+                return True
+    lowered = body.lower()
+    return any(code in lowered for code in _CONTEXT_OVERFLOW_CODES) or any(
+        phrase in lowered for phrase in _CONTEXT_OVERFLOW_PHRASES
+    )
+
+
 def classify_provider_http_error(
     exc: httpx.HTTPStatusError, *, provider_label: str
 ) -> Exception:
@@ -247,8 +292,10 @@ def classify_provider_http_error(
 
     - 401 / 403 → :class:`ProviderAuthenticationError` (UI shows a
       "reconnect provider" banner)
+    - 400 / 413 meaning the prompt is too long → :class:`ContextOverflowError`
+      (the agent loop compacts and retries once before surfacing it)
     - 400 / 404 / 422 → :class:`ProviderRequestError` (UI shows the
-      specific reason — bad model, unsupported param, context too long…)
+      specific reason — bad model, unsupported param…)
     - any other 4xx → :class:`ProviderRequestError` (best-effort)
 
     Returns the original ``exc`` for status codes that should keep
@@ -256,9 +303,10 @@ def classify_provider_http_error(
     """
     status = exc.response.status_code
     try:
-        detail = _extract_provider_error_message(exc.response.text)
+        body = exc.response.text
     except Exception:
-        detail = None
+        body = ""
+    detail = _extract_provider_error_message(body) if body else None
 
     suffix = f": {detail}" if detail else ""
     punctuation = "" if detail and detail.endswith((".", "!", "?")) else "."
@@ -267,6 +315,14 @@ def classify_provider_http_error(
             f"{provider_label} rejected the request — authentication failed "
             f"(HTTP {status}){suffix}{punctuation} Check the provider's API key "
             f"/ login in Settings → Providers.",
+            status_code=status,
+            provider=provider_label,
+        )
+    if is_context_overflow_response(status, body):
+        return ContextOverflowError(
+            f"{provider_label} rejected the request — the conversation is "
+            f"longer than the model's context window (HTTP {status})"
+            f"{suffix}{punctuation}",
             status_code=status,
             provider=provider_label,
         )
