@@ -90,6 +90,61 @@ def _invalid_package() -> DocumentPreviewError:
     )
 
 
+_OLE_SIGNATURE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_ZIP_SIGNATURES = (b"PK\x03\x04", b"PK\x05\x06")
+_FORMAT_NAMES = {
+    ".docx": "Word document",
+    ".xlsx": "Excel workbook",
+    ".pptx": "PowerPoint presentation",
+}
+
+
+def _reject_non_package(source: Path, suffix: str) -> None:
+    """Explain files that carry an Office name but are not OOXML packages.
+
+    Without this every such file surfaced as "damaged", which sends people
+    looking for corruption in what is really a mislabelled file.
+    """
+    with source.open("rb") as handle:
+        head = handle.read(len(_OLE_SIGNATURE))
+    if head.startswith(_ZIP_SIGNATURES):
+        return
+    if head == _OLE_SIGNATURE:
+        raise DocumentPreviewUnsupportedError(
+            f"This {suffix} file is password-protected or was saved in the legacy "
+            "Office 97–2003 format. Open it in Office and save it without a "
+            f"password as {suffix} to preview it here."
+        )
+    raise DocumentPreviewUnsupportedError(
+        f"This file has a {suffix} name but is not a "
+        f"{_FORMAT_NAMES.get(suffix, 'Office document')}."
+    )
+
+
+def _missing_parts_error(
+    names: dict[str, zipfile.ZipInfo], suffix: str
+) -> DocumentPreviewError:
+    """Name what a ZIP without the expected OOXML parts actually is."""
+    for other_suffix, main_part in _EXPECTED_MAIN_PART.items():
+        if other_suffix != suffix and main_part in names:
+            return DocumentPreviewUnsupportedError(
+                f"This file is a {_FORMAT_NAMES[other_suffix]} saved with a "
+                f"{suffix} name. Rename it to {other_suffix} to preview it."
+            )
+    if "[content_types].xml" not in names:
+        files = [
+            info.filename for info in names.values() if not info.filename.endswith("/")
+        ]
+        examples = ", ".join(Path(name).name for name in files[:3])
+        more = f" (for example {examples})" if examples else ""
+        return DocumentPreviewUnsupportedError(
+            f"This file is a ZIP archive with a {suffix} name, not a "
+            f"{_FORMAT_NAMES.get(suffix, 'Office document')}. It contains "
+            f"{len(files)} file{'s' if len(files) != 1 else ''}{more}."
+        )
+    return _invalid_package()
+
+
 def _read_bounded_eocd(source: Path) -> tuple[int, int, int]:
     """Return ``(entry_count, central_size, central_offset)`` without ZipFile.
 
@@ -234,6 +289,7 @@ def preflight_ooxml_package(source: Path, suffix: str | None = None) -> None:
     if package_suffix not in OOXML_PREVIEW_EXTENSIONS:
         return
 
+    _reject_non_package(source, package_suffix)
     expected_entries, _central_size, _central_offset = _read_bounded_eocd(source)
     try:
         with zipfile.ZipFile(source) as archive:
@@ -295,7 +351,7 @@ def preflight_ooxml_package(source: Path, suffix: str | None = None) -> None:
                 _EXPECTED_MAIN_PART[package_suffix],
             }
             if not required.issubset(names):
-                raise _invalid_package()
+                raise _missing_parts_error(names, package_suffix)
 
             content_types_info = names["[content_types].xml"]
             if content_types_info.file_size > MAX_OOXML_CONTENT_TYPES_BYTES:

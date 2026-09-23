@@ -1340,7 +1340,9 @@ def test_render_document_preview_surfaces_parse_error(monkeypatch, tmp_path):
     source.write_bytes(b"not an OpenXML package")
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
 
-    with pytest.raises(preview.DocumentPreviewError, match="Could not render"):
+    with pytest.raises(
+        preview.DocumentPreviewError, match="not a PowerPoint presentation"
+    ):
         preview.render_document_preview(source)
 
 
