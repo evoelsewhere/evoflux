@@ -67,17 +67,62 @@ away from the settings page.
 1. User sends a message to the bot on Telegram.
 2. The remote adapter polls `getUpdates`, matches the `chat_id` to a pairing,
    and forwards the text into the active session as a user message.
-3. The adapter immediately sends one HTML-formatted status card and repeats
-   Telegram's native typing indicator while the phone-started turn is unresolved.
-   The status card contains only the task title and admission status.
+3. The adapter immediately sends one HTML-formatted status card with animated
+   spinner and phase labels (Thinking/Planning/Working/Checking). The card
+   includes the current model, token usage, and estimated cost in real time.
 4. On completion or error, the adapter edits that card into a bounded final
-   summary. It never mirrors token, tool, or file-path deltas into the live
-   status text.
-5. A completed card can offer **Full diff** and **Tool log**. Each button is a
-   short-lived, opaque capability for that exact turn only; tapping it sends
-   the already-persisted detail as redacted, escaped, bounded follow-up cards.
-   It cannot retrieve a different turn or session, and an expired button asks
-   the user to request fresh detail.
+   summary. It never mirrors tool-call details, arguments, or file-path deltas
+   into the live status text. The final card shows only user-facing results,
+   model info, token/cache/reasoning usage, and estimated cost.
+5. A completed card can offer **Full diff** if file changes are available.
+   Tool-log buttons are no longer shown on terminal cards.
+
+### Media delivery
+
+**Outbound:** Photos and other media can be sent from EvoFlux to Telegram using
+the `sendPhoto` API. HTTPS-only URLs are enforced; non-HTTPS URLs and images
+over 10 MiB are rejected with a text fallback.
+
+**Inbound:** Telegram photos and documents sent to the bot are downloaded,
+validated (size, MIME type, magic bytes), and passed through the provider-neutral
+attachment pipeline to agent context. Files over 10 MiB are rejected with a
+text fallback. iMessage attachments follow the same pipeline when the provider
+supports materialization.
+
+### Steering chat
+
+Users can send steering instructions to an active task using `/steer`:
+
+```
+/steer Focus on authentication before UI changes
+/steer Don't modify tests yet, keep them as-is
+```
+
+Steering messages are injected into the active task's context as priority
+instructions.
+
+### Settings
+
+The `/settings` command displays a rich card with:
+
+- Connection status with emoji indicator
+- Current model (with provider icon)
+- Lead agent
+- Response mode (live/terminal)
+- Thinking level (none/low/medium/high)
+- Permission mode
+- Provider count and total models available
+
+Models are grouped by provider. Tapping a provider button opens a per-provider
+card with pricing (input/output cost per 1M tokens) and a checkmark on the
+active selection.
+
+### Info commands
+
+- `/status` — Full dashboard: connection, session, providers, models, active task
+- `/skills` — Skills catalog grouped by work/coding mode
+- `/skill <name>` — Load a specific skill by name with description and modes
+- `/agent` — Current agent info with thinking level reference
 
 ### Desktop, Workflow, and Scheduler completion
 
@@ -85,9 +130,15 @@ away from the settings page.
   scope, an addressable top-level Work or Coding session started from the
   desktop, Workflow, or Scheduler sends the same final completion/error card
   to the paired phone.
-- These cross-origin sessions never create a live status card or typing
-  indicator. Side Chat, child, internal, and otherwise non-addressable
-  sessions never notify the phone.
+- Desktop-origin sessions are lazily admitted for live streaming when the
+  active pairing requests `notify_scope=all`. This means desktop prompts now
+  get live process cards, streaming deltas, heartbeat updates, and terminal
+  notifications — not just the final card.
+- Stream callbacks from worker threads are properly forwarded to the
+  adapter-owning event loop using `call_soon_threadsafe`, ensuring terminal
+  notifications are never silently dropped.
+- Side Chat, child, internal, and otherwise non-addressable sessions never
+  notify the phone.
 - The `remote_only` scope keeps notifications limited to `remote_origin`
   sessions.
 
@@ -252,6 +303,27 @@ a vault key reference, never the raw token.
 - **Cross-origin authorization**: the synchronous stream observer queues an
   unregistered completion, then the asynchronous delivery path loads the
   session and applies the shared addressability predicate before sending.
+
+## Completion and error notifications
+
+Final Telegram notifications identify the outcome and the work itself: success
+cards start with `Done: <task title>`, and failure cards start with
+`Failed: <task title>` followed by a user-readable error. The card may include
+the final response, tool count, elapsed time, and safe follow-up buttons, so a
+user receiving only the notification can understand what finished or failed
+without reopening the laptop.
+
+## Telegram streaming responses
+
+When a remote-origin turn is configured for live delivery, Telegram receives
+incremental redacted assistant output in the same correlated status card. The
+projection coalesces deltas and uses the existing Telegram edit budget; output
+is previewed up to the provider message limit and finalized into the existing
+completion or error card. A provider that does not advertise the private draft
+capability uses `editMessageText`; draft-specific delivery is not required for
+correctness. Partial delivery state is process-local and is abandoned safely on
+restart, cancellation, or connection shutdown. Pairing, addressability,
+redaction, and HTML escaping are applied to partial and final payloads alike.
 
 ## Observability
 

@@ -11,6 +11,8 @@ from app.remote.contracts import (
     RemoteAdapterStatus,
     RemoteConnectionState,
     RemoteErrorClass,
+    RemoteInboundAction,
+    RemoteInboundActionKind,
     RemoteOutboundMessage,
     RemoteProviderKind,
 )
@@ -48,6 +50,67 @@ class IMessageRemoteAdapter:
         self._paired_principal_id = None
         self._paired_destination_id = None
 
+    async def _materialize_media(
+        self, action: RemoteInboundAction
+    ) -> RemoteInboundAction:
+        """Download iMessage attachments via provider and attach to action.
+
+        Attachments are bounded to 10 MiB. Download failures are caught
+        and logged; the text fallback is preserved.
+        """
+        from app.remote.contracts import RemoteInboundAttachment
+
+        if action.kind != RemoteInboundActionKind.TEXT:
+            return action
+
+        # Check if the originating payload had attachments — stored in
+        # the action's text field as "[iMessage attachment]" for pure-media
+        # messages, or alongside real text.
+        attachments: list[RemoteInboundAttachment] = []
+
+        # The iMessage channel stores raw payload metadata on the action
+        # text. Pure attachment messages have "[iMessage attachment]" as
+        # their text, while captioned messages keep the caption text. In
+        # both cases, the channel provider can be asked to materialize
+        # attachment bytes if a download URL is available.
+        if self._channel is None or self._channel._provider is None:
+            return action
+
+        try:
+            provider = self._channel._provider
+            materialize = getattr(provider, "materialize_attachments", None)
+            if materialize is not None:
+                raw_atts = await materialize(
+                    self._paired_destination_id or "",
+                    max_bytes=10 * 1024 * 1024,
+                )
+                for att in raw_atts:
+                    attachments.append(
+                        RemoteInboundAttachment(
+                            content=att["content"],
+                            filename=att.get("filename", "attachment"),
+                            mime_type=att.get("mime_type"),
+                        )
+                    )
+        except Exception:
+            logger.debug(
+                "imessage_attachment_download_failed destination_id={}",
+                self._paired_destination_id,
+            )
+
+        if not attachments:
+            return action
+
+        from dataclasses import replace
+
+        return replace(action, attachments=tuple(attachments))
+
+    async def _on_action_with_media(self, action: RemoteInboundAction) -> None:
+        """Materialize attachments before dispatching to the runtime."""
+        action = await self._materialize_media(action)
+        await self._on_action(action)
+
+
     async def start(self) -> None:
         """Start (or restart) the channel.
 
@@ -76,7 +139,7 @@ class IMessageRemoteAdapter:
             paired_destination_id=self._paired_destination_id,
             load_watermark=self._load_watermark,
             save_watermark=self._save_watermark,
-            on_action=self._on_action,
+            on_action=self._on_action_with_media,
         )
         try:
             capabilities = await self._channel.start()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import re
 from collections.abc import Mapping, Sequence
+from typing import Any
 
 from app.remote.contracts import RemoteButton
 
@@ -196,6 +197,8 @@ def render_live_status_card(
     title: str,
     elapsed_seconds: float,
     activity_lines: Sequence[str],
+    response_text: str | None = None,
+    stop_token: str | None = None,
     model: str | None = None,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
@@ -204,21 +207,50 @@ def render_live_status_card(
     """The single status card a live-mode turn edits in place (AC-56). No
     buttons — like ``render_status_card``, this card is never actionable;
     when the turn ends this same message becomes the done/error card."""
-    header = f"\U0001f527 <b>{escape(title)}</b> · {format_elapsed(elapsed_seconds)}"
+    spinner_frames = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+    spinner = spinner_frames[int(max(0.0, elapsed_seconds) * 2) % len(spinner_frames)]
+    header = f"{spinner} <b>{escape(title)}</b> · {format_elapsed(elapsed_seconds)}"
     parts = [header]
     # Token / model footer — only shown once the first usage data arrives.
     meta_parts: list[str] = []
     if model:
-        meta_parts.append(escape(model))
+        meta_parts.append(f"{_model_icon(model)} {escape(model)}")
     if input_tokens is not None or output_tokens is not None:
         meta_parts.append(f"{input_tokens or 0:,} \u2192 {output_tokens or 0:,} tok")
     if cost_usd is not None and cost_usd > 0:
         meta_parts.append(f"${cost_usd:.4f}")
     if meta_parts:
         parts.append("\U0001f4ca " + " \u00b7 ".join(meta_parts))
+    if response_text and response_text.strip():
+        preview = response_text.strip()
+        if len(preview) > 3000:
+            preview = preview[:2997].rstrip() + "..."
+        parts.append(markdown_to_telegram_html(preview))
     if activity_lines:
         parts.append("\n".join(activity_lines))
-    return "\n\n".join(parts), ()
+    else:
+        phases = ("Thinking", "Planning", "Working", "Checking")
+        phase = phases[int(max(0.0, elapsed_seconds) // 3) % len(phases)]
+        dots = "." * (int(max(0.0, elapsed_seconds) * 2) % 4)
+        parts.append(f"{spinner} {phase}{dots}")
+    buttons = (RemoteButton(text="Stop task", token=stop_token),) if stop_token else ()
+    return "\n\n".join(parts), buttons
+
+
+def _model_icon(model: str | None) -> str:
+    """Return a stable, provider-neutral icon for the visible model label."""
+    value = (model or "").lower()
+    if "claude" in value or "anthropic" in value:
+        return "◈"
+    if "gpt" in value or "openai" in value or "o1" in value:
+        return "◉"
+    if "gemini" in value or "google" in value:
+        return "✦"
+    if "llama" in value or "meta" in value:
+        return "◌"
+    if "mistral" in value:
+        return "✧"
+    return "◍"
 
 
 def render_done_card(
@@ -238,14 +270,21 @@ def render_done_card(
     reasoning_tokens: int | None = None,
     cost_usd: float | None = None,
 ) -> tuple[str, tuple[RemoteButton, ...]]:
-    header = f"✅ <b>{escape(title)}</b> · {format_elapsed(elapsed_seconds)}"
+    header = (
+        f"✅ {_model_icon(model)} <b>Done:</b> {escape(title)}"
+        f" · {format_elapsed(elapsed_seconds)}"
+    )
     lines = [escape(line) for line in summary_lines]
     parts = [header]
     if response_text and response_text.strip():
         parts.append(markdown_to_telegram_html(response_text.strip()))
     if lines:
         parts.append("\n".join(lines))
-    parts.append(f"<b>{tool_call_count} tool calls</b>")
+    # Tool-call details are omitted when the terminal card has no explicit
+    # tool-log action. Legacy callers that opt into a tool-log token retain
+    # their detailed rendering.
+    if tool_call_count and toollog_token:
+        parts.append(f"<b>{tool_call_count} tool calls</b>")
 
     # ── Usage footer ─────────────────────────────────────────────────
     # Build a compact multi-line usage block instead of a single dense
@@ -255,7 +294,7 @@ def render_done_card(
 
     # Line 1: model name
     if model:
-        usage_lines.append(escape(model))
+        usage_lines.append(f"{_model_icon(model)} {escape(model)}")
 
     # Line 2: token summary — "📊 2.4k → 1.1k" with cache/reasoning callouts
     if total_tokens > 0:
@@ -325,9 +364,9 @@ def render_error_card(
     *, title: str, message: str, toollog_token: str | None
 ) -> tuple[str, tuple[RemoteButton, ...]]:
     friendly = _sanitize_error_message(message)
-    text = f"❌ <b>{escape(title)}</b>\n\n<b>Error:</b> {friendly}"
+    text = f"❌ <b>Failed:</b> {escape(title)}\n\n<b>Error:</b> {friendly}"
     buttons = (
-        (RemoteButton(text="\U0001f9fe Tool log", token=toollog_token),)
+        (RemoteButton(text="🧾 Tool log", token=toollog_token),)
         if toollog_token
         else ()
     )
@@ -383,6 +422,21 @@ def render_gate_card(
     return text, buttons
 
 
+def _provider_label(provider: str) -> str:
+    labels = {
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "google": "Google",
+        "deepseek": "DeepSeek",
+        "groq": "Groq",
+        "mistral": "Mistral",
+        "bedrock": "Bedrock",
+        "codex": "Codex",
+        "copilot": "Copilot",
+    }
+    return labels.get(provider, provider.title())
+
+
 def render_settings_card(
     *,
     connection_label: str,
@@ -390,10 +444,13 @@ def render_settings_card(
     permission_mode: str,
     agent_name: str,
     response_mode: str,
+    thinking_level: str | None = None,
     response_mode_tokens: Mapping[str, str],
     mode_tokens: Mapping[str, str],
     agent_tokens: Mapping[str, str],
     model_tokens: Mapping[str, str],
+    provider_model_tokens: Mapping[str, str] | None = None,
+    thinking_tokens: Mapping[str, str] | None = None,
     configured_provider_count: int | None = None,
     redaction_policy: str | None = None,
     notify_scope: str | None = None,
@@ -407,12 +464,14 @@ def render_settings_card(
         "",
         f"<b>Mode</b>\n<code>{escape(permission_mode)}</code>",
         "",
-        f"<b>Model</b>\n<code>{escape(model)}</code>",
+        f"<b>Model</b> {_model_icon(model)}\n<code>{escape(model)}</code>",
         "",
         f"<b>Lead agent</b>\n<code>{escape(agent_name)}</code>",
         "",
         f"<b>Responses</b>\n<code>{escape(response_mode)}</code>",
     ]
+    if thinking_level is not None:
+        lines += ["", f"<b>Thinking</b>\n<code>{escape(thinking_level)}</code>"]
     if configured_provider_count is not None:
         lines += [
             "",
@@ -431,22 +490,41 @@ def render_settings_card(
     # see ALLOWED_REMOTE_MODES) — a bug in one boundary alone must never be
     # the only thing standing between a phone and bypass mode (AC-48).
     buttons: list[RemoteButton] = [
-        RemoteButton(text=f"Mode: {escape(name)}", token=token)
+        RemoteButton(text=f"Permission mode: {escape(name)}", token=token)
         for name, token in mode_tokens.items()
         if name != "bypass"
     ]
     buttons += [
-        RemoteButton(text=f"Agent: {escape(name)}", token=token)
+        RemoteButton(text=f"Use agent: {escape(name)}", token=token)
         for name, token in agent_tokens.items()
     ]
     buttons += [
-        RemoteButton(text=f"Responses: {escape(name)}", token=token)
+        RemoteButton(text=f"Updates: {escape(name)}", token=token)
         for name, token in response_mode_tokens.items()
     ]
-    buttons += [
-        RemoteButton(text=f"Model: {escape(name)}", token=token)
-        for name, token in model_tokens.items()
-    ]
+    # Replace flat model buttons with grouped provider cards.
+    if provider_model_tokens:
+        buttons += [
+            RemoteButton(
+                text=f"{_model_icon(None)} {_provider_label(provider)} ({count})",
+                token=token,
+            )
+            for provider, token in provider_model_tokens.items()
+            for count in [len(model_tokens)]
+        ][:3]
+    else:
+        buttons += [
+            RemoteButton(text=f"Use model: {escape(name)}", token=token)
+            for name, token in model_tokens.items()
+        ]
+    if thinking_tokens:
+        buttons += [
+            RemoteButton(
+                text=f"Thinking: {escape(name)}{' ✓' if name == thinking_level else ''}",
+                token=token,
+            )
+            for name, token in thinking_tokens.items()
+        ]
     buttons += [
         RemoteButton(text=f"Redaction: {escape(name)}", token=token)
         for name, token in redaction_tokens.items()
@@ -455,6 +533,45 @@ def render_settings_card(
         RemoteButton(text=f"Notify: {escape(name)}", token=token)
         for name, token in notify_scope_tokens.items()
     ]
+    return text, tuple(buttons)
+
+
+def render_models_card(
+    *,
+    provider: str,
+    models: Sequence[str],
+    current_model: str,
+    model_costs: Mapping[str, dict[str, Any]] | None = None,
+    model_tokens: Mapping[str, str] | None = None,
+) -> tuple[str, tuple[RemoteButton, ...]]:
+    """A provider-specific model picker with pricing and token buttons."""
+    icon = _model_icon(f"{provider}:" if provider else None)
+    header = f"{icon} <b>{_provider_label(provider)}</b> models"
+    parts = [header]
+
+    for model_id in models:
+        label = escape(model_id)
+        marker = " ◀" if model_id == current_model else ""
+        cost_line = ""
+        if model_costs and model_id in model_costs:
+            cost = model_costs[model_id]
+            inp = cost.get("input", 0)
+            out = cost.get("output", 0)
+            cost_line = f"\n   ${inp:.2f} / ${out:.2f} per 1M tok"
+        parts.append(f"<code>{label}{marker}</code>{cost_line}")
+
+    text = "\n\n".join(parts)
+    buttons: list[RemoteButton] = []
+    if model_tokens:
+        for model_id in models:
+            if model_id not in model_tokens:
+                continue
+            token = model_tokens[model_id]
+            short = model_id.split(":", 1)[1] if ":" in model_id else model_id
+            if len(short) > 40:
+                short = short[:37] + "…"
+            marker = " ✓" if model_id == current_model else ""
+            buttons.append(RemoteButton(text=f"{short}{marker}", token=token))
     return text, tuple(buttons)
 
 
@@ -562,6 +679,8 @@ def render_changes_card(
 
 def render_session_list_card(
     sessions: Sequence[Mapping[str, str]],
+    *,
+    next_token: str | None = None,
 ) -> tuple[str, tuple[RemoteButton, ...]]:
     """Render a session-history list card.
 
@@ -575,6 +694,8 @@ def render_session_list_card(
         buttons.append(RemoteButton(text=label, token=item["token"]))
     if not buttons:
         parts.append("No sessions yet.")
+    if next_token:
+        buttons.append(RemoteButton(text="More sessions", token=next_token))
     return "\n\n".join(parts), tuple(buttons)
 
 
@@ -612,3 +733,280 @@ def render_session_detail_card(
     if summarize_token:
         buttons.append(RemoteButton(text="\U0001f4dd Summarize", token=summarize_token))
     return "\n\n".join(parts), tuple(buttons)
+
+
+def render_status_dashboard(
+    *,
+    connection_state: str,
+    pairing_label: str,
+    session: Any = None,
+    provider_count: int = 0,
+    model_count: int = 0,
+    provider_groups: Mapping[str, Sequence[str]] | None = None,
+    message_count: int = 0,
+    turn_count: int = 0,
+) -> str:
+    """Rich status dashboard showing connection, session, and provider info."""
+    from datetime import UTC, datetime
+
+    model = getattr(session, "model", None) or "(default)"
+    agent = getattr(session, "agent_name", None) or "(default)"
+    mode = getattr(session, "mode", None) or "work"
+    thinking = getattr(session, "thinking_level", None) or "medium"
+    permission = getattr(session, "permission_mode", None) or "work"
+    title = getattr(session, "title", None)
+    response_mode = getattr(session, "response_mode", None)
+
+    state_icon = {
+        "used_elsewhere": "🔄",
+        "error": "❌",
+        "connected": "✅",
+        "backoff": "⏳",
+    }
+    icon = state_icon.get(connection_state, "🟢")
+
+    lines = [
+        f"<b>{icon} EvoFlux Status</b>",
+        "",
+        f"<b>Connection</b> {connection_state}",
+        f"<b>Phone</b> {escape(pairing_label)}",
+        "",
+        f"<b>Mode</b> <code>{escape(mode)}</code>",
+        f"<b>Model</b> {_model_icon(model)} <code>{escape(model)}</code>",
+        f"<b>Agent</b> <code>{escape(agent)}</code>",
+        f"<b>Thinking</b> <code>{escape(thinking)}</code>",
+        f"<b>Permissions</b> <code>{escape(permission)}</code>",
+    ]
+
+    if response_mode is not None:
+        lines.append(f"<b>Responses</b> <code>{escape(response_mode)}</code>")
+
+    lines.append("")
+    lines.append(f"<b>Providers</b> {provider_count} configured")
+    lines.append(f"<b>Models</b> {model_count} available")
+
+    if provider_groups:
+        provider_summary = ", ".join(
+            f"{_provider_label(p)} ({len(models)})"
+            for p, models in provider_groups.items()
+        )
+        lines.append(f"<b>Catalog</b> {provider_summary}")
+
+    if title:
+        lines.append("")
+        lines.append(f"<b>Active task</b>\n{escape(title)}")
+    elif getattr(session, "id", None) is not None:
+        lines.append("")
+        lines.append("<b>Active task</b>\nNo title")
+
+    # Session activity stats.
+    if getattr(session, "id", None) is not None:
+        lines.append("")
+        stats_parts: list[str] = []
+        if message_count > 0:
+            stats_parts.append(f"{message_count} messages")
+        if turn_count > 0:
+            stats_parts.append(f"{turn_count} turns")
+        if stats_parts:
+            lines.append(f"<b>Activity</b> {' · '.join(stats_parts)}")
+
+        created_at = getattr(session, "created_at", None)
+        if created_at is not None:
+            now = datetime.now(UTC)
+            created_utc = (
+                created_at.replace(tzinfo=UTC)
+                if created_at.tzinfo is None
+                else created_at
+            )
+            age = now - created_utc
+            if age.days > 0:
+                lines.append(f"<b>Session age</b> {age.days}d {age.seconds // 3600}h")
+            else:
+                hours = age.seconds // 3600
+                mins = (age.seconds % 3600) // 60
+                lines.append(f"<b>Session age</b> {hours}h {mins}m")
+
+    lines.append("")
+    now = datetime.now(UTC).strftime("%H:%M UTC")
+    lines.append(f"<i>Updated {now}</i>")
+
+    return "\n".join(lines)
+
+
+def render_skills_card(
+    *,
+    available_skills: Mapping[str, Any],
+    current_mode: str | None = None,
+) -> str:
+    """Display skills grouped by mode."""
+    work_skills: list[str] = []
+    coding_skills: list[str] = []
+    both_skills: list[str] = []
+
+    for name, modes in available_skills.items():
+        mode_names = [str(m) for m in modes]
+        if "work" in mode_names and "coding" in mode_names:
+            both_skills.append(name)
+        elif "work" in mode_names:
+            work_skills.append(name)
+        elif "coding" in mode_names:
+            coding_skills.append(name)
+        else:
+            both_skills.append(name)
+
+    lines = ["<b>🧩 Skills Catalog</b>", ""]
+
+    if current_mode:
+        lines.append(f"<b>Current mode:</b> <code>{escape(current_mode)}</code>")
+        lines.append("")
+
+    if both_skills:
+        lines.append("<b>Both modes</b>")
+        for name in sorted(both_skills):
+            lines.append(f"  • <code>{escape(name)}</code>")
+        lines.append("")
+
+    if work_skills:
+        lines.append("<b>Work mode</b>")
+        for name in sorted(work_skills):
+            lines.append(f"  • <code>{escape(name)}</code>")
+        lines.append("")
+
+    if coding_skills:
+        lines.append("<b>Coding mode</b>")
+        for name in sorted(coding_skills):
+            lines.append(f"  • <code>{escape(name)}</code>")
+
+    total = len(both_skills) + len(work_skills) + len(coding_skills)
+    lines.append("")
+    lines.append(f"<i>{total} skills available</i>")
+
+    return "\n".join(lines)
+
+
+def render_agent_card(
+    *,
+    agent_name: str,
+    model: str,
+    mode: str,
+    thinking_level: str,
+) -> str:
+    """Detailed agent info card."""
+    lines = [
+        f"<b>{_model_icon(model)} Agent Info</b>",
+        "",
+        f"<b>Name</b> <code>{escape(agent_name)}</code>",
+        f"<b>Model</b> {_model_icon(model)} <code>{escape(model)}</code>",
+        f"<b>Mode</b> <code>{escape(mode)}</code>",
+        f"<b>Thinking</b> <code>{escape(thinking_level)}</code>",
+        "",
+        "<b>Thinking levels:</b>",
+        "  <code>none</code> — fast, no reasoning",
+        "  <code>low</code> — light reasoning",
+        "  <code>medium</code> — balanced (default)",
+        "  <code>high</code> — deep reasoning, more tokens",
+    ]
+    return "\n".join(lines)
+
+
+def render_skill_card(
+    *,
+    skill_name: str,
+    description: str,
+    modes: Any = None,
+    extra_prompt: str = "",
+) -> tuple[str, tuple[RemoteButton, ...]]:
+    """Card shown when a skill is loaded via /skill command."""
+    lines = [
+        f"<b>🧩 Skill: {escape(skill_name)}</b>",
+        "",
+    ]
+    if description:
+        lines.append(escape(description))
+
+    if modes:
+        mode_list = ", ".join(str(m) for m in modes)
+        lines.append(f"\n<b>Modes:</b> {escape(mode_list)}")
+
+    if extra_prompt:
+        lines.append(f"\n<b>Your instruction:</b>\n{escape(extra_prompt)}")
+
+    lines.append("\nThe skill has been loaded. Send your message to use it.")
+
+    text = "\n".join(lines)
+    buttons = ()
+    return text, buttons
+
+
+def render_switch_card(
+    *,
+    sessions: Sequence[Any],
+    active_session_id: Any = None,
+) -> tuple[str, tuple[RemoteButton, ...]]:
+    """Card showing numbered sessions for quick switching."""
+    from datetime import UTC, datetime as _dt
+
+    lines = ["<b>🔄 Switch Session</b>", ""]
+    buttons: list[RemoteButton] = []
+
+    for i, session in enumerate(sessions, 1):
+        title = getattr(session, "title", None) or "Untitled"
+        updated = getattr(session, "updated_at", None)
+        marker = (
+            " ◀ active" if getattr(session, "id", None) == active_session_id else ""
+        )
+        if updated is not None:
+            age = _dt.now(UTC) - updated
+            if age.days > 0:
+                age_str = f"{age.days}d ago"
+            elif age.seconds > 3600:
+                age_str = f"{age.seconds // 3600}h ago"
+            elif age.seconds > 60:
+                age_str = f"{age.seconds // 60}m ago"
+            else:
+                age_str = "just now"
+        else:
+            age_str = ""
+        age_part = f" · {age_str}" if age_str else ""
+        lines.append(f"<b>{i}.</b> {escape(title)}{marker}{age_part}")
+
+        token = f"session_switch:{session.id}"
+        buttons.append(RemoteButton(text=f"{i}. {title[:30]}{marker}", token=token))
+
+    text = "\n".join(lines)
+    return text, tuple(buttons)
+
+
+def render_delete_card(
+    *,
+    sessions: Sequence[Any],
+) -> tuple[str, tuple[RemoteButton, ...]]:
+    """Card showing sessions that can be deleted."""
+    from datetime import UTC, datetime as _dt
+
+    lines = ["<b>🗑️ Delete Sessions</b>", ""]
+    buttons: list[RemoteButton] = []
+
+    for i, session in enumerate(sessions, 1):
+        title = getattr(session, "title", None) or "Untitled"
+        updated = getattr(session, "updated_at", None)
+        if updated is not None:
+            age = _dt.now(UTC) - updated
+            if age.days > 0:
+                age_str = f"{age.days}d ago"
+            elif age.seconds > 3600:
+                age_str = f"{age.seconds // 3600}h ago"
+            elif age.seconds > 60:
+                age_str = f"{age.seconds // 60}m ago"
+            else:
+                age_str = "just now"
+        else:
+            age_str = ""
+        age_part = f" · {age_str}" if age_str else ""
+        lines.append(f"<b>{i}.</b> {escape(title)}{age_part}")
+
+        token = f"session_delete:{session.id}"
+        buttons.append(RemoteButton(text=f"🗑️ {title[:25]}", token=token))
+
+    text = "\n".join(lines)
+    return text, tuple(buttons)

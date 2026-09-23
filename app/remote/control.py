@@ -40,7 +40,7 @@ prompt an operator relies on (AC-48).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -64,6 +64,7 @@ __all__ = [
 
 #: Every permission mode this phone may set — bypass excluded on purpose.
 ALLOWED_REMOTE_MODES: tuple[str, ...] = ("ask", "accept-edits", "plan", "auto")
+ALLOWED_THINKING_LEVELS: tuple[str, ...] = ("none", "low", "medium", "high")
 
 ControlStatus = Literal["ok", "invalid", "not_found", "conflict"]
 
@@ -281,6 +282,28 @@ async def set_response_mode(
     return ControlResult(status="ok")
 
 
+async def set_thinking_level(
+    db: AsyncSession, session_id: str, level: str
+) -> ControlResult:
+    if level not in ALLOWED_THINKING_LEVELS:
+        return ControlResult(status="invalid", detail=level)
+
+    try:
+        session_uuid = UUID(session_id)
+    except ValueError:
+        return ControlResult(status="not_found")
+
+    session = await db.get(ChatSession, session_uuid)
+    if session is None:
+        return ControlResult(status="not_found")
+
+    session.thinking_level = level
+    db.add(session)
+    await db.commit()
+
+    return ControlResult(status="ok")
+
+
 async def count_configured_providers() -> int:
     """How many catalog providers currently have usable credentials —
     the one number `/settings` shows for AC-53. Calls the same route
@@ -292,3 +315,33 @@ async def count_configured_providers() -> int:
 
     result = await list_providers()
     return sum(1 for provider in result.providers if provider.is_configured)
+
+
+async def list_models_by_provider(
+    app_mode: str | None = None,
+) -> dict[str, list[str]]:
+    """All registered models grouped by provider id."""
+    from app.api.routes.agents import get_registry
+
+    mode_arg = cast("Literal['work', 'coding'] | None", app_mode)
+    registry = await get_registry(mode=mode_arg)
+    grouped: dict[str, list[str]] = {}
+    for entry in registry.models:
+        provider = entry.id.split(":", 1)[0] if ":" in entry.id else "other"
+        grouped.setdefault(provider, []).append(entry.id)
+    return grouped
+
+
+async def get_model_costs(
+    model_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Per-model cost metadata keyed by model id, omitting models with no pricing data."""
+    from app.agent.providers.model_metadata import get_model_cost
+
+    costs: dict[str, dict[str, Any]] = {}
+    for model_id in model_ids:
+        cost = get_model_cost(model_id)
+        if cost.input is None and cost.output is None:
+            continue
+        costs[model_id] = {k: v for k, v in cost.to_dict().items() if v is not None}
+    return costs

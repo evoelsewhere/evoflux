@@ -63,6 +63,51 @@ def test_render_done_card_escapes_response_text():
     assert "&lt;script&gt;" in text
 
 
+def test_render_live_status_card_animates_spinner_by_elapsed_time():
+    early, _ = formatting.render_live_status_card(
+        title="Streaming", elapsed_seconds=0.0, activity_lines=[]
+    )
+    later, _ = formatting.render_live_status_card(
+        title="Streaming", elapsed_seconds=1.0, activity_lines=[]
+    )
+    assert early != later
+    assert "<b>Streaming</b>" in early
+    assert "<b>Streaming</b>" in later
+
+
+def test_render_live_status_card_includes_response_preview():
+    text, _ = formatting.render_live_status_card(
+        title="Streaming",
+        elapsed_seconds=1.0,
+        activity_lines=[],
+        response_text="Partial response",
+    )
+    assert "Partial response" in text
+
+
+def test_render_live_status_card_includes_stop_action():
+    text, buttons = formatting.render_live_status_card(
+        title="Running task",
+        elapsed_seconds=1.0,
+        activity_lines=[],
+        stop_token="stop-token",
+    )
+    assert "Running task" in text
+    assert [button.text for button in buttons] == ["Stop task"]
+    assert buttons[0].token == "stop-token"
+
+
+def test_render_live_status_card_truncates_response_preview():
+    text, _ = formatting.render_live_status_card(
+        title="Streaming",
+        elapsed_seconds=1.0,
+        activity_lines=[],
+        response_text="x" * 4000,
+    )
+    assert len(text) < 3200
+    assert "..." in text
+
+
 def test_render_done_card_omits_buttons_when_no_tokens():
     _, buttons = formatting.render_done_card(
         title="No-op turn",
@@ -506,7 +551,9 @@ class TestMarkdownToTelegramHtml:
         assert "def f():" in result
 
     def test_link(self) -> None:
-        result = formatting.markdown_to_telegram_html("[click here](https://example.com)")
+        result = formatting.markdown_to_telegram_html(
+            "[click here](https://example.com)"
+        )
         assert '<a href="https://example.com">click here</a>' in result
 
     def test_heading(self) -> None:

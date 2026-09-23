@@ -43,6 +43,14 @@ class FakeAdapter:
         #: succeeding, to simulate a transient transport error.
         self.typing_failures_remaining = 0
         self.typing_calls = 0
+        self.drafts: list[dict[str, object]] = []
+
+    async def send_draft(
+        self, *, destination_id: str, draft_id: int, text: str
+    ) -> None:
+        self.drafts.append(
+            {"destination_id": destination_id, "draft_id": draft_id, "text": text}
+        )
 
     async def send(self, message: RemoteOutboundMessage) -> None:
         if message.correlation_id in self.fail_send_correlations:
@@ -288,19 +296,13 @@ async def test_done_registers_current_turn_detail_capabilities(
     projection.observe(str(addressable_session.id), _envelope("done"))
     await projection.drain_pending()
 
-    assert [call["action_kind"] for call in capabilities.calls] == [
-        "diff",
-        "toollog",
-    ]
+    assert [call["action_kind"] for call in capabilities.calls] == ["diff"]
     assert all(
         call["session_id"] == str(addressable_session.id) for call in capabilities.calls
     )
     assert all(call["principal_id"] == "user-1" for call in capabilities.calls)
     assert all(call["destination_id"] == destination_id for call in capabilities.calls)
-    assert [button.token for button in adapter.edited[0].buttons[-2:]] == [
-        "diff-token",
-        "toollog-token",
-    ]
+    assert [button.token for button in adapter.edited[0].buttons[-1:]] == ["diff-token"]
 
 
 @pytest.mark.asyncio
@@ -371,6 +373,34 @@ async def test_unregistered_addressable_session_notifies_when_scope_is_all(
     assert adapter.sent[0].destination_id == "chat-1"
     assert str(adapter.sent[0].connection_id) == connection_id
     assert projection.typing_task_for(str(addressable_session.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_unregistered_addressable_session_is_admitted_for_live_stream(
+    addressable_session: ChatSession,
+) -> None:
+    projection = RemoteProjection()
+    adapter = FakeAdapter()
+    projection.set_adapter(adapter)
+    projection.set_active_pairing(
+        connection_id=str(uuid4()),
+        destination_id="chat-1",
+        notify_scope="all",
+        principal_id="user-1",
+    )
+
+    projection.observe(
+        str(addressable_session.id),
+        _envelope("message", text="Working now"),
+    )
+    await projection.drain_pending()
+    await asyncio.sleep(0.05)
+    await projection.drain_pending()
+
+    assert adapter.sent
+    assert "Working" in adapter.sent[0].text
+    assert str(addressable_session.id) in projection._session_tags
+    assert "desktop_admitted" in projection._session_tags[str(addressable_session.id)]
 
 
 @pytest.mark.asyncio
@@ -1205,7 +1235,10 @@ class TestLiveMode:
         projection.observe(
             session_id,
             _envelope(
-                "tool_start", agent="explorer", tool_call_id="call-1", name="grep",
+                "tool_start",
+                agent="explorer",
+                tool_call_id="call-1",
+                name="grep",
                 arguments="{}",
             ),
         )
@@ -1213,7 +1246,10 @@ class TestLiveMode:
         projection.observe(
             session_id,
             _envelope(
-                "tool_start", agent="explorer", tool_call_id="call-2", name="read",
+                "tool_start",
+                agent="explorer",
+                tool_call_id="call-2",
+                name="read",
                 arguments="{}",
             ),
         )
@@ -1229,6 +1265,7 @@ class TestLiveMode:
         """A turn's final done card must always be delivered even if the
         edit budget is currently exhausted from live-activity updates."""
         adapter = FakeAdapter()
+        adapter.edit_notifies_user = False
         projection = RemoteProjection()
         projection.set_adapter(adapter)
         session_id = str(uuid4())
@@ -1253,14 +1290,21 @@ class TestLiveMode:
         projection.observe(
             session_id,
             _envelope(
-                "tool_start", agent="explorer", tool_call_id="call-1", name="grep",
+                "tool_start",
+                agent="explorer",
+                tool_call_id="call-1",
+                name="grep",
                 arguments="{}",
             ),
         )
         await projection.drain_pending()
         edits_after_activity = len(adapter.edited)
 
+        sent_before_done = len(adapter.sent)
         projection.observe(session_id, _envelope("done"))
         await projection.drain_pending()
 
         assert len(adapter.edited) == edits_after_activity + 1  # the done card landed
+        assert (
+            len(adapter.sent) == sent_before_done + 1
+        )  # silent edits get a push message

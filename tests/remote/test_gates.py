@@ -199,7 +199,32 @@ class TestGateRendering:
         msg = adapter.sent[0]
         assert len(msg.buttons) == 3
         texts = {b.text for b in msg.buttons}
-        assert texts == {"A", "B", "C"}
+        assert texts == {"1. A", "2. B", "3. C"}
+        assert "1. A" in msg.text and "2. B" in msg.text and "3. C" in msg.text
+
+    @pytest.mark.asyncio
+    async def test_question_button_shortens_label_but_keeps_full_answer(
+        self, bridge: RemoteGateBridge, adapter: FakeAdapter
+    ) -> None:
+        long_answer = "Use the existing authenticated deployment workflow in production"
+        bridge.on_gate(
+            session_id="sess-1",
+            event_type="question_asked",
+            data={
+                "request_id": "req-long",
+                "questions": [
+                    {"question": "How?", "options": [long_answer], "strict": True}
+                ],
+            },
+            connection_id=uuid4(),
+            destination_id="chat-1",
+        )
+        await asyncio.sleep(0.05)
+        msg = adapter.sent[0]
+        assert (
+            msg.buttons[0].text == "1. Use the existing authenticated deployment wor…"
+        )
+        assert long_answer in msg.text
 
     @pytest.mark.asyncio
     async def test_plan_gate_creates_approve_and_reject(

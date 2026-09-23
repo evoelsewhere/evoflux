@@ -82,13 +82,28 @@ def test_rejects_attachment_and_unpaired_sender() -> None:
         "paired_principal_id": "+1555",
         "paired_destination_id": "chat-1",
     }
+    # Attachment-only messages now produce a text fallback action.
+    att_only = normalize_inbound(
+        {
+            "guid": "m4",
+            "principal_id": "+1555",
+            "destination_id": "chat-1",
+            "attachments": [{"name": "photo.jpg"}],
+        },
+        **kwargs,
+    )
+    assert att_only is not None
+    assert att_only.text == "[iMessage attachment]"
+    assert att_only.kind == RemoteInboundActionKind.TEXT
+
+    # Unpaired senders are still rejected.
     assert (
         normalize_inbound(
             {
-                "guid": "m4",
-                "principal_id": "+1555",
+                "guid": "m5",
+                "principal_id": "+9999",
                 "destination_id": "chat-1",
-                "attachments": [{"name": "photo.jpg"}],
+                "text": "hello",
             },
             **kwargs,
         )

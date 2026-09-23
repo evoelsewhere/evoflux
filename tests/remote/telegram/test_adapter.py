@@ -156,8 +156,9 @@ class TestStartupSequence:
     @pytest.mark.asyncio
     async def test_registers_exactly_the_bounded_command_set(self):
         """AC-58's original 9-command set plus /clear, /history, and
-        /pair, each a deliberate post-spec addition (see
-        _register_commands's docstring)."""
+        /skills, /skill, /steer, /switch, /delete, /agent, each a
+        deliberate post-spec addition (see _register_commands's
+        docstring).  /pair was removed in favor of /start <code>."""
         transport = ScriptedTransport()
         adapter = _make_adapter(transport)
         await _run_briefly(adapter)
@@ -176,7 +177,12 @@ class TestStartupSequence:
             "changes",
             "clear",
             "actions",
-            "pair",
+            "skills",
+            "skill",
+            "steer",
+            "switch",
+            "delete",
+            "agent",
             "unpair",
         ]
 
@@ -940,7 +946,9 @@ class TestAnswerCallbackExpired:
         )
         transport.queue(
             "answerCallbackQuery",
-            _err(400, 400, "Bad Request: query is too old and response timeout expired"),
+            _err(
+                400, 400, "Bad Request: query is too old and response timeout expired"
+            ),
         )
         adapter = _make_adapter(transport)
         await adapter.start()

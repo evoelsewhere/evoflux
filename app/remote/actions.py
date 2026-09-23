@@ -33,12 +33,7 @@ from app.remote.contracts import (
     RemoteOutboundPriority,
     RemotePairingAwareAdapter,
 )
-from app.remote.pairing import (
-    PairingCodeExpired,
-    PairingCodeMismatch,
-    PairingCodeRateLimited,
-    PairingService,
-)
+from app.remote.pairing import PairingService
 
 if TYPE_CHECKING:
     from app.remote import control
@@ -85,46 +80,47 @@ class _ActionCapability:
 
 # ── Known commands ────────────────────────────────────────────────────────────
 
-_SLASH_COMMANDS: frozenset[str] = frozenset(
-    {
-        "start",
-        "help",
-        "status",
-        "new",
-        "stop",
-        "unpair",
-        "actions",
-        "settings",
-        "health",
-        "changes",
-        "clear",
-        "pair",
-        "history",
-    }
-)
+_COMMAND_HELP: dict[str, str] = {
+    "status": "See what your agent is doing now — session, providers, models",
+    "new": "Set aside the current task and start a fresh one",
+    "stop": "Stop the active task",
+    "settings": "Choose permission mode, agent, model, or thinking level",
+    "health": "Check connection and system health",
+    "history": "Browse recent sessions; use More sessions to load older work",
+    "changes": "See files changed by the current task",
+    "actions": "Open Work/Coding projects, saved workflows, or scheduled tasks",
+    "clear": "Delete your recent messages in this chat (not the agent's)",
+    "unpair": "Disconnect this phone from EvoFlux",
+    "skills": "Browse available skills by work/coding mode",
+    "skill": "Load a specific skill by name (e.g. /skill coding-change)",
+    "steer": "Redirect the agent mid-task with a new instruction",
+    "switch": "Switch to a different active session",
+    "delete": "Delete unused sessions to keep your history clean",
+    "agent": "Show current agent info, model, and capabilities",
+}
+_SLASH_COMMANDS: frozenset[str] = frozenset({"start", "help", *_COMMAND_HELP})
 
 
 # ── Help text ─────────────────────────────────────────────────────────────────
 
-_HELP_TEXT = """\U0001f44b You're paired with EvoFlux. Just type a message to send it to \
+_HELP_TEXT = (
+    """\U0001f44b You're paired with EvoFlux. Just type a message to send it to \
 your agent — no command needed. It'll pick up your current task, or start \
 a new one if there isn't one yet.
 
 Commands:
-/status — What's my agent doing right now?
-/new — Set aside the current task and start a fresh one
-/stop — Interrupt the agent while it's working on your last message
-/settings — Change mode, model, agent, or response style
-/health — Check system health
-/history — Browse recent chat sessions
-/changes — See this task's file changes
-/actions — Run a saved workflow, open a coding project, or fire a \
-scheduled task
-/clear — Delete my recent messages in this chat (not yours)
-/unpair — Disconnect this phone from EvoFlux
-/pair — Connect this phone with a code from EvoFlux
+"""
+    + "\n".join(
+        f"/{name} — {description}" for name, description in _COMMAND_HELP.items()
+    )
+    + """
+
+Live updates show the active process and response as they arrive. When a task
+needs approval, use the buttons on the card; in auto mode, supported commands
+continue without an approval prompt.
 
 Send /help any time to see this again."""
+)
 
 
 class RemoteActionService:
@@ -203,7 +199,7 @@ class RemoteActionService:
         arg = parts[1].strip() if len(parts) > 1 else ""
 
         if command == "help" or command == "start":
-            return await self._cmd_help(db, action)
+            return await self._cmd_help(db, action, arg)
         elif command == "status":
             return await self._cmd_status(db, action)
         elif command == "new":
@@ -212,8 +208,6 @@ class RemoteActionService:
             return await self._cmd_stop(db, action)
         elif command == "unpair":
             return await self._cmd_unpair(db, action)
-        elif command == "pair":
-            return await self._cmd_pair(db, action, arg)
         elif command == "actions":
             return await self._cmd_actions(db, action, arg)
         elif command == "settings":
@@ -226,6 +220,16 @@ class RemoteActionService:
             return await self._cmd_clear(db, action)
         elif command == "history":
             return await self._cmd_history(db, action)
+        elif command == "skills":
+            return await self._cmd_skills(db, action)
+        elif command == "skill":
+            return await self._cmd_skill(db, action)
+        elif command == "switch":
+            return await self._cmd_switch(db, action)
+        elif command == "delete":
+            return await self._cmd_delete(db, action)
+        elif command == "agent":
+            return await self._cmd_agent(db, action)
         else:
             # Unknown command — return bounded help.
             return await self._cmd_help(db, action)
@@ -284,20 +288,89 @@ class RemoteActionService:
     # ── Command implementations ────────────────────────────────────────────
 
     async def _cmd_help(
-        self, db: AsyncSession, action: RemoteInboundAction
+        self,
+        db: AsyncSession,
+        action: RemoteInboundAction,
+        arg: str = "",
     ) -> RemoteActionResult:
+        """``/start`` entry point: pair with a code, or show help.
+
+        When no pairing is active the user must supply an 8-digit code
+        (``/start 12345678``).  If already paired, the help text is shown.
+        """
+        from app.remote.pairing import (
+            PairingCodeExpired,
+            PairingCodeMismatch,
+            PairingCodeRateLimited,
+        )
+
         pairing = await self._pairing_service.authorize(
             db,
             connection_id=action.connection_id,
             principal_id=action.principal.principal_id,
         )
+
+        # ── Not paired yet: try to pair with the supplied code ──────────
         if pairing is None:
-            return RemoteActionResult(status="unauthorized")
+            code = arg.strip()
+            if not code or not code.isdigit():
+                return RemoteActionResult(
+                    status="pair_prompt",
+                    text=(
+                        "Welcome to EvoFlux!\n\n"
+                        "Open EvoFlux on your desktop and copy the 8-digit "
+                        "pairing code, then send:\n\n"
+                        "<code>/start 12345678</code>"
+                    ),
+                )
+
+            try:
+                pairing = await self._pairing_service.verify_pair_code(
+                    db,
+                    connection_id=action.connection_id,
+                    principal=action.principal,
+                    raw_code=code,
+                )
+            except PairingCodeExpired:
+                return RemoteActionResult(
+                    status="pair_expired",
+                    text="Code expired. Open EvoFlux and generate a new one.",
+                )
+            except PairingCodeMismatch:
+                return RemoteActionResult(
+                    status="pair_mismatch",
+                    text="That code didn't match. Check the code and try again.",
+                )
+            except PairingCodeRateLimited:
+                return RemoteActionResult(
+                    status="pair_rate_limited",
+                    text="Too many attempts. Wait a moment and try again.",
+                )
+
+            if self._projection is not None:
+                self._projection.set_active_pairing(
+                    connection_id=str(action.connection_id),
+                    destination_id=pairing.destination_id,
+                    notify_scope=pairing.notify_scope,
+                    principal_id=pairing.principal_id,
+                )
+            return RemoteActionResult(
+                status="pair_ok",
+                text="Phone connected! Send any message to get started.",
+            )
+
+        # ── Already paired: show help ───────────────────────────────────
         return RemoteActionResult(status="ok", text=_HELP_TEXT)
 
     async def _cmd_status(
         self, db: AsyncSession, action: RemoteInboundAction
     ) -> RemoteActionResult:
+        from sqlalchemy import func, select
+
+        from app.models.chat import ChatSession, SessionMessage, normalize_mode
+        from app.remote import control
+        from app.remote.formatting import render_status_dashboard
+
         pairing = await self._pairing_service.authorize(
             db,
             connection_id=action.connection_id,
@@ -307,26 +380,306 @@ class RemoteActionService:
             return RemoteActionResult(status="unauthorized")
 
         # Connection status.
-        status_text = "Connected"
+        connection_state = "connected"
         if self._status_provider is not None:
             adapter_status = self._status_provider()
-            status_text = f"Status: {adapter_status.state.value}"
+            connection_state = adapter_status.state.value
 
-        # Current task.
-        task_text = "No current task"
+        # Current task and session details.
+        session = None
         if pairing.active_session_id is not None:
-            from app.models.chat import ChatSession
-
             session = await db.get(ChatSession, pairing.active_session_id)
-            if session is not None and session.title:
-                task_text = f"Current task: {session.title}"
-            elif session is not None:
-                task_text = f"Current task: session {session.id}"
+
+        # Provider health.
+        provider_count = await control.count_configured_providers()
+
+        # Model registry info.
+        app_mode = normalize_mode(session.mode) if session else None
+        model_count = len(await control.list_model_ids(app_mode, limit=200))
+        provider_groups = (
+            await control.list_models_by_provider(app_mode) if app_mode else {}
+        )
+
+        # Session activity stats.
+        message_count = 0
+        turn_count = 0
+        if session is not None:
+            message_count = (
+                await db.exec(
+                    select(func.count())
+                    .select_from(SessionMessage)
+                    .where(SessionMessage.session_id == session.id)
+                )
+            ).one()
+            turn_count = (
+                await db.exec(
+                    select(func.count())
+                    .select_from(SessionMessage)
+                    .where(
+                        SessionMessage.session_id == session.id,
+                        SessionMessage.role == "user",
+                    )
+                )
+            ).one()
+
+        text = render_status_dashboard(
+            connection_state=connection_state,
+            pairing_label=pairing.label or "This phone",
+            session=session,
+            provider_count=provider_count,
+            model_count=model_count,
+            provider_groups=provider_groups,
+            message_count=message_count,
+            turn_count=turn_count,
+        )
+        return RemoteActionResult(status="ok", text=text)
+
+    async def _cmd_skills(
+        self, db: AsyncSession, action: RemoteInboundAction
+    ) -> RemoteActionResult:
+        from app.agent.builtin_skills.catalog import BUNDLED_SKILL_MODES
+        from app.models.chat import ChatSession, normalize_mode
+        from app.remote.formatting import render_skills_card
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            return RemoteActionResult(status="unauthorized")
+
+        app_mode = None
+        if pairing.active_session_id is not None:
+            session = await db.get(ChatSession, pairing.active_session_id)
+            if session is not None:
+                app_mode = normalize_mode(session.mode)
+
+        text = render_skills_card(
+            available_skills=BUNDLED_SKILL_MODES,
+            current_mode=app_mode,
+        )
+        return RemoteActionResult(status="ok", text=text)
+
+    async def _cmd_skill(
+        self, db: AsyncSession, action: RemoteInboundAction
+    ) -> RemoteActionResult:
+        """Load a specific skill by name and inject its instructions as context."""
+        from app.remote.formatting import escape, render_skill_card
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            return RemoteActionResult(status="unauthorized")
+
+        # Parse the skill name from "/skill <name>" or "/skill <name> <extra>"
+        text = (action.text or "").strip()
+        parts = text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            return RemoteActionResult(
+                status="ok",
+                text="Usage: /skill <name>\nExample: /skill coding-change",
+            )
+        skill_name = parts[1].strip()
+        extra_prompt = parts[1].strip() if len(parts) > 1 else ""
+
+        # Find the skill by name.
+        from app.agent.tools.builtin.skill import discover_skill_records_runtime
+
+        all_skills = discover_skill_records_runtime()
+        matched = None
+        for name, record in all_skills.items():
+            if name == skill_name:
+                matched = record
+                break
+        if matched is None:
+            return RemoteActionResult(
+                status="ok",
+                text=f"Skill '{escape(skill_name)}' not found.\nUse /skills to browse available skills.",
+            )
+
+        # Build the skill card with available metadata.
+        text, buttons = render_skill_card(
+            skill_name=matched.name,
+            description=matched.description or matched.short_description or "",
+            modes=matched.modes,
+            extra_prompt=extra_prompt,
+        )
+
+        # Send the skill info card.
+        if self._adapter is not None:
+            await self._send(action.principal.destination_id, text, buttons=buttons)
+        return RemoteActionResult(status="ok", text=text)
+
+    async def _cmd_switch(
+        self, db: AsyncSession, action: RemoteInboundAction
+    ) -> RemoteActionResult:
+        """Switch to a different session by number or show the session list."""
+        from sqlmodel import col, select
+
+        from app.models.chat import ChatSession
+        from app.remote.formatting import render_switch_card
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            return RemoteActionResult(status="unauthorized")
+
+        # Parse "/switch" or "/switch <number>"
+        text = (action.text or "").strip()
+        parts = text.split(maxsplit=1)
+        number = (
+            int(parts[1]) if len(parts) > 1 and parts[1].strip().isdigit() else None
+        )
+
+        # Fetch recent sessions.
+        sessions = list(
+            await db.exec(
+                select(ChatSession)
+                .order_by(col(ChatSession.updated_at).desc())
+                .limit(10)
+            )
+        )
+
+        if number is None:
+            # Show session list with numbers for selection.
+            if not sessions:
+                return RemoteActionResult(status="ok", text="No sessions found.")
+            text, buttons = render_switch_card(
+                sessions=sessions,
+                active_session_id=pairing.active_session_id,
+            )
+            if self._adapter is not None:
+                await self._send(action.principal.destination_id, text, buttons=buttons)
+            return RemoteActionResult(status="ok", text=text)
+
+        # Switch by number.
+        idx = number - 1
+        if idx < 0 or idx >= len(sessions):
+            return RemoteActionResult(
+                status="ok",
+                text=f"Invalid session number. Use /switch to see available sessions (1-{len(sessions)}).",
+            )
+
+        target = sessions[idx]
+        pairing.active_session_id = target.id
+        db.add(pairing)
+        await db.commit()
+
+        title = target.title or "Untitled"
+        return RemoteActionResult(
+            status="ok",
+            text=f"✅ Switched to: {title}\nNext message continues this session.",
+        )
+
+    async def _cmd_delete(
+        self, db: AsyncSession, action: RemoteInboundAction
+    ) -> RemoteActionResult:
+        """Delete unused sessions by number or show which can be deleted."""
+        from sqlmodel import col, select
+
+        from app.models.chat import ChatSession, SessionMessage
+        from app.remote.formatting import render_delete_card
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            return RemoteActionResult(status="unauthorized")
+
+        # Parse "/delete" or "/delete <number>"
+        text = (action.text or "").strip()
+        parts = text.split(maxsplit=1)
+        number = (
+            int(parts[1]) if len(parts) > 1 and parts[1].strip().isdigit() else None
+        )
+
+        # Fetch recent sessions, excluding the active one.
+        sessions = list(
+            await db.exec(
+                select(ChatSession)
+                .order_by(col(ChatSession.updated_at).desc())
+                .limit(15)
+            )
+        )
+        deletable = [s for s in sessions if s.id != pairing.active_session_id]
+
+        if number is None:
+            if not deletable:
+                return RemoteActionResult(status="ok", text="No sessions to delete.")
+            text, buttons = render_delete_card(sessions=deletable)
+            if self._adapter is not None:
+                await self._send(action.principal.destination_id, text, buttons=buttons)
+            return RemoteActionResult(status="ok", text=text)
+
+        # Delete by number.
+        idx = number - 1
+        if idx < 0 or idx >= len(deletable):
+            return RemoteActionResult(
+                status="ok",
+                text=f"Invalid session number. Use /delete to see available sessions (1-{len(deletable)}).",
+            )
+
+        target = deletable[idx]
+        title = target.title or "Untitled"
+
+        # Delete all messages first, then the session.
+        msgs = list(
+            await db.exec(
+                select(SessionMessage).where(
+                    col(SessionMessage.session_id) == target.id
+                )
+            )
+        )
+        for msg in msgs:
+            await db.delete(msg)
+        await db.delete(target)
+        await db.commit()
 
         return RemoteActionResult(
             status="ok",
-            text=f"{status_text}\n{task_text}\nPaired: {pairing.label or 'Yes'}",
+            text=f"🗑️ Deleted: {title}",
         )
+
+    async def _cmd_agent(
+        self, db: AsyncSession, action: RemoteInboundAction
+    ) -> RemoteActionResult:
+        from app.models.chat import ChatSession
+        from app.remote.formatting import render_agent_card
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            return RemoteActionResult(status="unauthorized")
+
+        session = None
+        if pairing.active_session_id is not None:
+            session = await db.get(ChatSession, pairing.active_session_id)
+
+        # Resolve agent info from config.
+        agent_name = getattr(session, "agent_name", None) or "(default)"
+        model = getattr(session, "model", None) or "(default)"
+        mode = getattr(session, "mode", None) or "work"
+        thinking_level = getattr(session, "thinking_level", None) or "medium"
+
+        text = render_agent_card(
+            agent_name=agent_name,
+            model=model,
+            mode=mode,
+            thinking_level=thinking_level,
+        )
+        return RemoteActionResult(status="ok", text=text)
 
     async def _cmd_settings(
         self, db: AsyncSession, action: RemoteInboundAction
@@ -368,7 +721,14 @@ class RemoteActionService:
             name: self._issue_settings_token(action, session_id, "set_agent", name)
             for name in agent_names
         }
-        model_ids = await control.list_model_ids(app_mode)
+        model_ids = await control.list_model_ids(app_mode, limit=200)
+        provider_groups = await control.list_models_by_provider(app_mode)
+        provider_model_tokens = {
+            provider: self._issue_settings_token(
+                action, session_id, "browse_model_provider", provider
+            )
+            for provider in provider_groups
+        }
         model_tokens = {
             model_id: self._issue_settings_token(
                 action, session_id, "set_model", model_id
@@ -381,6 +741,13 @@ class RemoteActionService:
             )
             for mode in control.ALLOWED_RESPONSE_MODES
         }
+        thinking_level = getattr(session, "thinking_level", None) or "medium"
+        thinking_tokens = {
+            level: self._issue_settings_token(
+                action, session_id, "set_thinking_level", level
+            )
+            for level in control.ALLOWED_THINKING_LEVELS
+        }
         configured_provider_count = await control.count_configured_providers()
 
         text, buttons = render_settings_card(
@@ -389,10 +756,13 @@ class RemoteActionService:
             permission_mode=session.permission_mode,
             agent_name=session.agent_name or "(default)",
             response_mode=pairing.response_mode,
+            thinking_level=thinking_level,
             response_mode_tokens=response_mode_tokens,
             mode_tokens=mode_tokens,
             agent_tokens=agent_tokens,
             model_tokens=model_tokens,
+            provider_model_tokens=provider_model_tokens,
+            thinking_tokens=thinking_tokens,
             configured_provider_count=configured_provider_count,
         )
 
@@ -601,9 +971,22 @@ class RemoteActionService:
         self, db: AsyncSession, action: RemoteInboundAction
     ) -> RemoteActionResult:
         """List recent sessions with inline buttons to inspect each one."""
+        return await self._render_history_page(db, action)
+
+    async def _render_history_page(
+        self,
+        db: AsyncSession,
+        action: RemoteInboundAction,
+        *,
+        before: str | None = None,
+        project_id: str | None = None,
+    ) -> RemoteActionResult:
         from app.services.chat_service import list_sessions_page
 
-        sessions, _cursor, _has_more = await list_sessions_page(db, limit=5)
+        project_uuid = UUID(project_id) if project_id else None
+        sessions, cursor, has_more = await list_sessions_page(
+            db, before=before, limit=5, project_id=project_uuid
+        )
         if not sessions:
             return RemoteActionResult(status="ok", text="No sessions yet.")
 
@@ -634,7 +1017,17 @@ class RemoteActionService:
 
         from app.remote.formatting import render_session_list_card
 
-        text, buttons = render_session_list_card(items)
+        next_token = None
+        if has_more and cursor:
+            next_token = self._issue_token(
+                connection_id=action.connection_id,
+                principal_id=action.principal.principal_id,
+                destination_id=action.principal.destination_id,
+                session_id="",
+                action_kind="history_page",
+                action_target=cursor,
+            )
+        text, buttons = render_session_list_card(items, next_token=next_token)
         await self._send(action.principal.destination_id, text, buttons=buttons)
         return RemoteActionResult(status="ok")
 
@@ -796,6 +1189,105 @@ class RemoteActionService:
         )
         return True
 
+    async def _exec_session_switch_by_token(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        """Switch to a session via button callback."""
+        from uuid import UUID
+
+        from app.models.chat import ChatSession
+
+        try:
+            target_id = UUID(cap.action_target)
+        except (ValueError, TypeError):
+            await self._reply_text(action.principal.destination_id, "Invalid session.")
+            return True
+
+        session = await db.get(ChatSession, target_id)
+        if session is None:
+            await self._reply_text(
+                action.principal.destination_id, "Session not found."
+            )
+            return True
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            await self._reply_text(action.principal.destination_id, "Not paired.")
+            return True
+
+        pairing.active_session_id = session.id
+        db.add(pairing)
+        await db.commit()
+
+        title = session.title or "Untitled"
+        await self._reply_text(
+            action.principal.destination_id,
+            f"✅ Switched to: {title}\nNext message continues this session.",
+        )
+        return True
+
+    async def _exec_session_delete_by_token(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        """Delete a session via button callback."""
+        from uuid import UUID
+
+        from app.models.chat import ChatSession, SessionMessage
+        from sqlmodel import col, select
+
+        try:
+            target_id = UUID(cap.action_target)
+        except (ValueError, TypeError):
+            await self._reply_text(action.principal.destination_id, "Invalid session.")
+            return True
+
+        session = await db.get(ChatSession, target_id)
+        if session is None:
+            await self._reply_text(
+                action.principal.destination_id, "Session not found."
+            )
+            return True
+
+        pairing = await self._pairing_service.authorize(
+            db,
+            connection_id=action.connection_id,
+            principal_id=action.principal.principal_id,
+        )
+        if pairing is None:
+            await self._reply_text(action.principal.destination_id, "Not paired.")
+            return True
+
+        # Don't delete the active session.
+        if pairing.active_session_id == session.id:
+            await self._reply_text(
+                action.principal.destination_id,
+                "Cannot delete the active session. Switch to another first.",
+            )
+            return True
+
+        title = session.title or "Untitled"
+        msgs = list(
+            await db.exec(
+                select(SessionMessage).where(
+                    col(SessionMessage.session_id) == session.id
+                )
+            )
+        )
+        for msg in msgs:
+            await db.delete(msg)
+        await db.delete(session)
+        await db.commit()
+
+        await self._reply_text(
+            action.principal.destination_id,
+            f"🗑️ Deleted: {title}",
+        )
+        return True
+
     async def _exec_session_summarize(
         self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
     ) -> bool:
@@ -856,64 +1348,6 @@ class RemoteActionService:
                 status="ok", text=f"Phone unpaired. {reconnect_hint}"
             )
         return RemoteActionResult(status="ok", text="No active pairing to remove.")
-
-    async def _cmd_pair(
-        self, db: AsyncSession, action: RemoteInboundAction, arg: str
-    ) -> RemoteActionResult:
-        """Verify a phone-submitted pairing code (``/pair <code>``).
-
-        On success the connection is paired; on failure the user sees a
-        short diagnostic message.
-        """
-        code = arg.strip()
-        if not code or not code.isdigit():
-            return RemoteActionResult(
-                status="pair_bad_format",
-                text="Send /pair followed by the 8-digit code shown on your desktop. Example: /pair 12345678",
-            )
-
-        try:
-            pairing = await self._pairing_service.verify_pair_code(
-                db,
-                connection_id=action.connection_id,
-                principal=action.principal,
-                raw_code=code,
-            )
-        except PairingCodeExpired:
-            return RemoteActionResult(
-                status="pair_expired",
-                text="Code expired. Open EvoFlux and generate a new one.",
-            )
-        except PairingCodeMismatch:
-            return RemoteActionResult(
-                status="pair_mismatch",
-                text="That code didn't match. Check the code and try again.",
-            )
-        except PairingCodeRateLimited:
-            return RemoteActionResult(
-                status="pair_rate_limited",
-                text="Too many attempts. Wait a moment and try again.",
-            )
-
-        if self._projection is not None:
-            self._projection.set_active_pairing(
-                connection_id=str(action.connection_id),
-                destination_id=pairing.destination_id,
-                notify_scope=pairing.notify_scope,
-                principal_id=pairing.principal_id,
-            )
-        # Adapters whose channel is bound to a fixed contact at construction
-        # time (iMessage) were running in discovery mode until now and must
-        # be told the real contact and restarted to actually deliver to it.
-        # Telegram's adapter does not implement this protocol, so this is a
-        # no-op there — matching its existing behavior exactly.
-        if isinstance(self._adapter, RemotePairingAwareAdapter):
-            self._adapter.set_pairing(
-                principal_id=pairing.principal_id,
-                destination_id=pairing.destination_id,
-            )
-            await self._adapter.start()
-        return RemoteActionResult(status="pair_ok", text="Phone connected.")
 
     async def _cmd_actions(
         self, db: AsyncSession, action: RemoteInboundAction, arg: str
@@ -1019,8 +1453,23 @@ class RemoteActionService:
                 items.append(
                     RemoteMenuItem(
                         token=token,
-                        label=f"Project: {proj.name[:50]}",
+                        label=f"Open project: {proj.name[:44]}",
                         description=(proj.description or "")[:100],
+                    )
+                )
+                history_token = self._issue_token(
+                    connection_id=action.connection_id,
+                    principal_id=action.principal.principal_id,
+                    destination_id=action.principal.destination_id,
+                    session_id="",
+                    action_kind="project_history",
+                    action_target=str(proj.id),
+                )
+                items.append(
+                    RemoteMenuItem(
+                        token=history_token,
+                        label=f"History: {proj.name[:50]}",
+                        description="Show sessions for this project",
                     )
                 )
             return items
@@ -1069,16 +1518,33 @@ class RemoteActionService:
             return await self._exec_workflow_start(cap, action, db)
         elif cap.action_kind == "coding_task":
             return await self._exec_coding_task(cap, action, db)
+        elif cap.action_kind == "project_history":
+            return bool(
+                (
+                    await self._render_history_page(
+                        db, action, project_id=cap.action_target
+                    )
+                ).status
+                == "ok"
+            )
         elif cap.action_kind == "schedule_trigger":
             return await self._exec_schedule_trigger(cap, action, db)
         elif cap.action_kind == "set_mode":
             return await self._exec_set_mode(cap, action, db)
         elif cap.action_kind == "set_agent":
             return await self._exec_set_agent(cap, action, db)
+        elif cap.action_kind == "set_thinking_level":
+            return await self._exec_set_thinking_level(cap, action, db)
+        elif cap.action_kind == "browse_model_provider":
+            return await self._exec_browse_model_provider(cap, action, db)
         elif cap.action_kind == "set_model":
             return await self._exec_set_model(cap, action, db)
         elif cap.action_kind == "set_response_mode":
             return await self._exec_set_response_mode(cap, action, db)
+        elif cap.action_kind == "session_switch":
+            return await self._exec_session_switch_by_token(cap, action, db)
+        elif cap.action_kind == "session_delete":
+            return await self._exec_session_delete_by_token(cap, action, db)
         elif cap.action_kind == "onboarding_setup":
             return await self._exec_onboarding_setup(cap, action, db)
         elif cap.action_kind == "onboarding_health":
@@ -1087,6 +1553,14 @@ class RemoteActionService:
             return await self._exec_onboarding_start(cap, action, db)
         elif cap.action_kind == "changes_diff":
             return await self._exec_changes_diff(cap, action, db)
+        elif cap.action_kind == "history_page":
+            result = await self._render_history_page(
+                db, action, before=cap.action_target
+            )
+            return result.status == "ok"
+        elif cap.action_kind == "stop_session":
+            result = await self._cmd_stop(db, action)
+            return result.status == "ok"
         elif cap.action_kind == "session_detail":
             return await self._exec_session_detail(cap, action, db)
         elif cap.action_kind == "session_switch":
@@ -1331,6 +1805,58 @@ class RemoteActionService:
         await self._reply_control_result(
             action, result, f"Model set to {cap.action_target}."
         )
+        return True
+
+    async def _exec_set_thinking_level(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        from app.remote import control
+
+        result = await control.set_thinking_level(db, cap.session_id, cap.action_target)
+        await self._reply_control_result(
+            action, result, f"Thinking level set to {cap.action_target}."
+        )
+        return True
+
+    async def _exec_browse_model_provider(
+        self, cap: _ActionCapability, action: RemoteInboundAction, db: AsyncSession
+    ) -> bool:
+        """Open the per-provider model picker card with pricing."""
+        from app.models.chat import ChatSession, normalize_mode
+        from app.remote import control
+        from app.remote.formatting import render_models_card
+
+        session = await db.get(ChatSession, cap.session_id)
+        if session is None:
+            await self._send(action.principal.destination_id, "Session not found.")
+            return True
+
+        app_mode = normalize_mode(session.mode)
+        provider_groups = await control.list_models_by_provider(app_mode)
+        provider = cap.action_target
+        models = provider_groups.get(provider, [])
+        if not models:
+            await self._send(
+                action.principal.destination_id, f"No models for {provider}."
+            )
+            return True
+
+        model_tokens = {
+            model_id: self._issue_settings_token(
+                action, cap.session_id, "set_model", model_id
+            )
+            for model_id in models
+        }
+        model_costs = await control.get_model_costs(models)
+
+        text, buttons = render_models_card(
+            provider=provider,
+            models=models,
+            current_model=session.model or "",
+            model_costs=model_costs,
+            model_tokens=model_tokens,
+        )
+        await self._send(action.principal.destination_id, text, buttons=buttons)
         return True
 
     async def _exec_set_response_mode(

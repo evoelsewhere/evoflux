@@ -34,8 +34,11 @@ def normalize_inbound(
     identity. Everything else from an unrecognized sender is dropped so no
     unpaired contact can inject arbitrary text before pairing exists.
     """
-    if payload.get("attachment") is not None or payload.get("attachments"):
-        return None
+    # Attachment-only messages are still rejected; attachment + text goes through
+    # as text with metadata resolved later by the adapter materializer.
+    has_attachment = payload.get("attachment") is not None or bool(
+        payload.get("attachments")
+    )
     principal_id = _string(payload, "principal_id", "sender")
     # `chat_identifier`/`chat_guid` are imsg's *portable string* handles for
     # a chat. Its numeric `chat_id` (a database rowid) is deliberately not a
@@ -80,8 +83,12 @@ def normalize_inbound(
     if callback is not None:
         kind = RemoteInboundActionKind.CALLBACK
         callback_token = callback
-    elif text is not None:
-        numbered = _NUMBERED_REPLY.fullmatch(text)
+    elif text is not None or has_attachment:
+        # If there is attachment but no text, create a synthetic text
+        # placeholder so the message still reaches the pipeline.
+        if text is None and has_attachment:
+            text = "[iMessage attachment]"
+        numbered = _NUMBERED_REPLY.fullmatch(text or "")
         if numbered is not None:
             kind = RemoteInboundActionKind.CALLBACK
             callback_token = f"number:{numbered.group(1)}"

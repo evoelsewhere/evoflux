@@ -14,6 +14,7 @@ from app.models.remote import RemotePairing
 from app.remote.contracts import RemoteInboundAction, RemoteInboundActionKind
 from app.remote.pairing import PairingService
 from app.services import agent_service
+from app.services.agent_service import RawAttachment
 from app.services.chat_service import create_chat_session
 from app.services.interactive_message_service import (
     NoTeamConfigured,
@@ -77,11 +78,24 @@ class RemoteInboundService:
                 return RemoteInboundResult(status="session_not_addressable")
 
             request_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            raw_attachments = (
+                [
+                    RawAttachment(
+                        data=att.content,
+                        filename=att.filename,
+                        content_type=att.mime_type,
+                    )
+                    for att in action.attachments
+                ]
+                if action.attachments
+                else None
+            )
             result = await submit_persisted_interactive_message(
                 db,
                 session=session,
                 team=team,
                 content=content,
+                attachments=raw_attachments or None,
                 message_extra={
                     "interactive_source": {
                         "channel": "remote",
@@ -90,7 +104,12 @@ class RemoteInboundService:
                         "key": action.source_key,
                         "request_hash": request_hash,
                         "state": "persisted",
-                    }
+                    },
+                    **(
+                        {"delivery": action.delivery}
+                        if action.delivery in {"steer", "queue"}
+                        else {}
+                    ),
                 },
                 source_key=action.source_key,
                 source_request_hash=request_hash,

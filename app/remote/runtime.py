@@ -287,6 +287,8 @@ class RemoteRuntime:
             token,
             self._handle_action,
         )
+        if hasattr(adapter, "streaming_provider"):
+            setattr(adapter, "streaming_provider", connection.provider)
         await adapter.start()
         self._adapter = adapter
         self._connection_id = connection.id
@@ -396,7 +398,12 @@ class RemoteRuntime:
         if action.kind == RemoteInboundActionKind.PAIRING_START:
             await self._handle_pairing(action)
         elif action.kind == RemoteInboundActionKind.TEXT:
-            if (action.text or "").strip().startswith("/"):
+            text = (action.text or "").strip()
+            if text.lower().startswith("/steer") and (
+                len(text) == 6 or text[6].isspace()
+            ):
+                await self._handle_text(action)
+            elif text.startswith("/"):
                 await self._handle_command(action)
             else:
                 await self._handle_text(action)
@@ -431,17 +438,115 @@ class RemoteRuntime:
             )
 
     async def _handle_pairing(self, action: RemoteInboundAction) -> None:
-        """Consume a ``/start`` deep-link pairing token."""
+        """Handle ``/start``: deep-link token, 8-digit code, or bare prompt."""
         from app.core.db import async_session_factory
         from app.remote.pairing import pairing_service
 
         token = action.pairing_token
+
+        # ── Bare /start (no token): show pairing prompt or help ─────────
         if not token:
-            logger.debug(
-                "remote_pairing_start_no_token connection_id={}",
-                action.connection_id,
-            )
+            async with async_session_factory() as db:
+                pairing = await pairing_service.authorize(
+                    db,
+                    connection_id=action.connection_id,
+                    principal_id=action.principal.principal_id,
+                )
+            if pairing is not None:
+                # Already paired — show help text.
+                if self._adapter is not None:
+                    from app.remote.actions import _HELP_TEXT
+
+                    await self._adapter.send(
+                        RemoteOutboundMessage(
+                            connection_id=action.connection_id,
+                            destination_id=action.principal.destination_id,
+                            text=_HELP_TEXT,
+                            buttons=(),
+                            priority=RemoteOutboundPriority.HIGH,
+                        )
+                    )
+            else:
+                # Not paired — show pairing prompt.
+                if self._adapter is not None:
+                    await self._adapter.send(
+                        RemoteOutboundMessage(
+                            connection_id=action.connection_id,
+                            destination_id=action.principal.destination_id,
+                            text=(
+                                "Welcome to EvoFlux!\n\n"
+                                "Open EvoFlux on your desktop and copy the "
+                                "8-digit pairing code, then send:\n\n"
+                                "<code>/start 12345678</code>"
+                            ),
+                            buttons=(),
+                            priority=RemoteOutboundPriority.HIGH,
+                        )
+                    )
             return
+
+        # ── 8-digit code: verify pair code ──────────────────────────────
+        if token.isdigit():
+            from app.remote.pairing import (
+                PairingCodeExpired,
+                PairingCodeMismatch,
+                PairingCodeRateLimited,
+            )
+
+            try:
+                async with async_session_factory() as db:
+                    pairing = await pairing_service.verify_pair_code(
+                        db,
+                        connection_id=action.connection_id,
+                        principal=action.principal,
+                        raw_code=token,
+                    )
+            except PairingCodeExpired:
+                text = "Code expired. Open EvoFlux and generate a new one."
+            except PairingCodeMismatch:
+                text = "That code didn't match. Check the code and try again."
+            except PairingCodeRateLimited:
+                text = "Too many attempts. Wait a moment and try again."
+            else:
+                if pairing is not None:
+                    logger.info(
+                        "remote_pairing_code_success connection_id={} principal_id={}",
+                        action.connection_id,
+                        action.principal.principal_id,
+                    )
+                    if self._projection is not None:
+                        self._projection.set_active_pairing(
+                            connection_id=str(action.connection_id),
+                            destination_id=pairing.destination_id,
+                            notify_scope=pairing.notify_scope,
+                            principal_id=pairing.principal_id,
+                        )
+                    if self._adapter is not None:
+                        await self._adapter.send(
+                            RemoteOutboundMessage(
+                                connection_id=action.connection_id,
+                                destination_id=action.principal.destination_id,
+                                text="Phone connected! Send any message to get started.",
+                                buttons=(),
+                                priority=RemoteOutboundPriority.HIGH,
+                            )
+                        )
+                    return
+                text = "Pairing failed. Try again."
+
+            if self._adapter is not None:
+                await self._adapter.send(
+                    RemoteOutboundMessage(
+                        connection_id=action.connection_id,
+                        destination_id=action.principal.destination_id,
+                        text=text,
+                        buttons=(),
+                        priority=RemoteOutboundPriority.HIGH,
+                    )
+                )
+            return
+
+        # ── Deep-link token: consume pairing token ──────────────────────
 
         from app.remote.pairing import ConsumeResult
 
@@ -558,8 +663,16 @@ class RemoteRuntime:
             )
 
     async def _handle_text(self, action: RemoteInboundAction) -> None:
-        """Submit paired plain text to the inbound service."""
+        """Submit paired plain text, including explicit steering messages."""
+        from dataclasses import replace
+
         from app.core.db import async_session_factory
+
+        if action.text and action.text.startswith("/steer"):
+            steering_text = action.text[6:].strip()
+            if not steering_text:
+                return
+            action = replace(action, text=steering_text, delivery="steer")
         from app.remote.inbound import RemoteInboundService
         from app.remote.pairing import pairing_service
 

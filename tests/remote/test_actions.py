@@ -142,14 +142,16 @@ class TestSlashCommands:
         assert "/actions" in result.text
 
     @pytest.mark.asyncio
-    async def test_help_requires_authorization(
+    async def test_help_shows_pairing_prompt_when_unpaired(
         self, service: RemoteActionService
     ) -> None:
+        """When no pairing exists, /help shows pairing prompt instead of help."""
         mock_db = MagicMock()
         action = _make_action(text="/help")
         with patch.object(service._pairing_service, "authorize", return_value=None):
             result = await service.dispatch_command(mock_db, action)
-        assert result.status == "unauthorized"
+        assert result.status == "pair_prompt"
+        assert "pairing code" in result.text.lower()
 
     @pytest.mark.asyncio
     async def test_start_returns_help(self, service: RemoteActionService) -> None:
@@ -197,12 +199,18 @@ class TestSlashCommands:
         mock_pairing.active_session_id = None
         mock_pairing.label = "My Phone"
 
-        with patch.object(
-            service._pairing_service, "authorize", return_value=mock_pairing
+        with (
+            patch.object(
+                service._pairing_service, "authorize", return_value=mock_pairing
+            ),
+            patch("app.remote.control.count_configured_providers", return_value=0),
+            patch("app.remote.control.list_model_ids", return_value=[]),
+            patch("app.remote.control.list_models_by_provider", return_value={}),
         ):
             result = await service.dispatch_command(mock_db, action)
         assert result.status == "ok"
-        assert "Paired: My Phone" in result.text
+        assert "My Phone" in result.text
+        assert "EvoFlux Status" in result.text
 
     @pytest.mark.asyncio
     async def test_new_clears_current_task(self, service: RemoteActionService) -> None:
@@ -723,7 +731,9 @@ class TestSettings:
                 await service.dispatch_command(db, settings_action)
 
             sent_buttons = adapter.sent_messages[-1].buttons
-            ask_token = next(b.token for b in sent_buttons if b.text == "Mode: ask")
+            ask_token = next(
+                b.token for b in sent_buttons if b.text == "Permission mode: ask"
+            )
 
             callback_action = _make_action(
                 kind=RemoteInboundActionKind.CALLBACK,
@@ -790,7 +800,7 @@ class TestSettings:
 
             sent_buttons = adapter.sent_messages[-1].buttons
             live_token = next(
-                b.token for b in sent_buttons if b.text == "Responses: live"
+                b.token for b in sent_buttons if b.text == "Updates: live"
             )
 
             callback_action = _make_action(
@@ -1472,7 +1482,9 @@ class TestHistoryCommand:
         assert handled is True
         assert "not found" in adapter.sent_texts[-1].lower()
 
-    def test_issue_token_requires_all_fields(self, service: RemoteActionService) -> None:
+    def test_issue_token_requires_all_fields(
+        self, service: RemoteActionService
+    ) -> None:
         conn_id = uuid4()
 
         with pytest.raises(TypeError, match="principal_id"):

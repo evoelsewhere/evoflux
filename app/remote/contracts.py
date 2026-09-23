@@ -128,6 +128,15 @@ class RemotePrincipal:
 
 
 @dataclass(frozen=True)
+class RemoteInboundAttachment:
+    """Provider-neutral inbound attachment materialized as bounded bytes."""
+
+    content: bytes
+    filename: str
+    mime_type: str | None = None
+
+
+@dataclass(frozen=True)
 class RemoteInboundAction:
     """One normalized inbound update, already classified by the adapter.
 
@@ -144,6 +153,8 @@ class RemoteInboundAction:
     text: str | None = None
     callback_token: str | None = None
     pairing_token: str | None = None
+    delivery: str | None = None
+    attachments: tuple[RemoteInboundAttachment, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -163,6 +174,7 @@ class RemoteAttachment:
     url: str
     mime_type: str | None = None
     filename: str | None = None
+    size_bytes: int | None = None
 
 
 @dataclass(frozen=True)

@@ -127,9 +127,22 @@ class RemoteGateBridge:
             questions = data.get("questions", [])
             if questions:
                 first_q = questions[0]
-                text = f"Question: {first_q.get('question', '')}"
-                options = first_q.get("options", [])
-                actions = [(opt, opt) for opt in options[:8]]  # bound to 8
+                question_text = str(first_q.get("question", "")).strip()
+                options = [str(option).strip() for option in first_q.get("options", [])]
+                option_lines = "\n".join(
+                    f"{index}. {option}" for index, option in enumerate(options[:8], 1)
+                )
+                text = f"Question: {question_text}"
+                if option_lines:
+                    text += f"\n\nAnswers:\n{option_lines}"
+                actions = [
+                    (
+                        option,
+                        f"{index}. {option[:45].rstrip()}"
+                        + ("…" if len(option) > 45 else ""),
+                    )
+                    for index, option in enumerate(options[:8], 1)
+                ]
             else:
                 text = "Question asked."
                 actions = []

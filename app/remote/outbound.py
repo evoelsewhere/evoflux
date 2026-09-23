@@ -25,6 +25,7 @@ import time
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID
 
@@ -39,6 +40,7 @@ from app.remote.contracts import (
 from app.remote.edit_budget import EditBudget
 from app.remote.formatting import (
     derive_card_heading,
+    markdown_to_telegram_html,
     render_done_card,
     render_error_card,
     render_live_status_card,
@@ -68,6 +70,7 @@ class _CapabilityRegistrar(Protocol):
 
 #: Telegram's maximum message length in characters.
 _TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+_PROCESS_HEARTBEAT_SECONDS = 3.0
 
 #: Live-mode-only events (AC-56) — only handled for a turn whose cached
 #: response_mode is "live"; the check happens in ``observe`` itself
@@ -115,6 +118,10 @@ class _TurnDeliveryState:
     #: The repeating native-typing-indicator task started alongside the
     #: status card; cancelled and cleared once the turn finalizes.
     typing_task: "asyncio.Task[None] | None" = field(default=None, repr=False)
+    process_heartbeat_task: "asyncio.Task[None] | None" = field(
+        default=None, repr=False
+    )
+    stop_token: str | None = field(default=None, repr=False)
     title: str = ""
     principal_id: str = ""
     #: "summary" (default) or "live" — read fresh from the pairing at the
@@ -140,6 +147,9 @@ class _TurnDeliveryState:
     #: card heading than the session title (which is often "Task" or an
     #: LLM-generated title that hasn't been generated yet).
     user_message: str | None = None
+    response_text: str = ""
+    draft_id: int = field(default_factory=lambda: uuid.uuid4().int % 2_000_000_000 + 1)
+    draft_task: asyncio.Task[None] | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -216,6 +226,10 @@ class RemoteProjection:
     #: app/remote/edit_budget.py's own docstring for why the throttle is
     #: connection-scoped rather than per-turn.
     _edit_budget: EditBudget = field(default_factory=EditBudget, repr=False)
+    #: The event loop that owns adapter delivery. Stream observers can arrive
+    #: from worker threads, so `_schedule_drain` must be able to hand work back
+    #: to this loop instead of silently dropping the notification.
+    _delivery_loop: asyncio.AbstractEventLoop | None = field(default=None, repr=False)
 
     def set_adapter(self, adapter: RemoteAdapter | None) -> None:
         """Bind or unbind the live adapter. Called by the runtime on start/stop.
@@ -227,7 +241,13 @@ class RemoteProjection:
         forever.
         """
         self._adapter = adapter
-        if adapter is None:
+        if adapter is not None:
+            try:
+                self._delivery_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+        else:
+            self._delivery_loop = None
             for turn in self._turns.values():
                 self._stop_typing(turn)
 
@@ -379,6 +399,21 @@ class RemoteProjection:
                 pass
             else:
                 turn.typing_task = loop.create_task(self._run_typing_loop(turn))
+                if response_mode == "live":
+                    turn.process_heartbeat_task = loop.create_task(
+                        self._run_process_heartbeat(turn)
+                    )
+
+    async def _run_process_heartbeat(self, turn: _TurnDeliveryState) -> None:
+        """Refresh the live process card while a turn has no new event."""
+        try:
+            while not turn.completion_sent:
+                await asyncio.sleep(_PROCESS_HEARTBEAT_SECONDS)
+                if turn.completion_sent or self._adapter is None:
+                    return
+                self._maybe_schedule_live_edit(turn, allow_draft=False)
+        except asyncio.CancelledError:
+            pass
 
     async def _run_typing_loop(self, turn: _TurnDeliveryState) -> None:
         """Call ``indicate_typing`` every 4s until cancelled.
@@ -440,11 +475,15 @@ class RemoteProjection:
             return
 
         tags = self._session_tags.get(session_id)
-        if tags is None:
+        if tags is None or "remote_origin" not in tags:
+            # Desktop-origin sessions may be registered with ordinary tags (or
+            # not registered in this projection at all). When the active
+            # pairing explicitly requests all notifications, still deliver
+            # terminal outcomes through the addressability-checked fallback.
+            # Live streaming remains reserved for remote-origin turns until a
+            # session has a verified title and destination-bound card.
             active = self._active_pairing
             if active is None or active[2] != "all":
-                return
-            if event_type not in {"done", "error"}:
                 return
             connection_id, destination_id, _, principal_id = active
             self._enqueue_unregistered_completion(
@@ -455,8 +494,6 @@ class RemoteProjection:
                 event_type=event_type,
                 envelope_data=dict(envelope.data),
             )
-            return
-        if "remote_origin" not in tags:
             return
 
         connection_id = self._session_connection_ids.get(session_id, "")
@@ -490,6 +527,9 @@ class RemoteProjection:
         # them so the live status card refreshes at the edit-budget cadence
         # even when no tool/thinking events are in flight.
         if event_type == "message":
+            delta = envelope.data.get("text", "")
+            if isinstance(delta, str) and delta:
+                turn.response_text += _redact_text(delta)
             if (
                 turn.phone_admitted
                 and turn.response_mode == "live"
@@ -539,10 +579,22 @@ class RemoteProjection:
         )
         self._schedule_drain()
 
+    @staticmethod
+    def _cancel_draft_task(turn: _TurnDeliveryState) -> None:
+        task = turn.draft_task
+        if task is not None and not task.done():
+            task.cancel()
+        turn.draft_task = None
+        heartbeat = turn.process_heartbeat_task
+        if heartbeat is not None and not heartbeat.done():
+            heartbeat.cancel()
+        turn.process_heartbeat_task = None
+
     def _handle_done(self, turn: _TurnDeliveryState, envelope) -> None:
         if turn.completion_sent:
             return
         turn.completion_sent = True
+        self._cancel_draft_task(turn)
         self._pending_finalizations.append((turn, None))
         self._schedule_drain()
 
@@ -550,6 +602,7 @@ class RemoteProjection:
         if turn.completion_sent:
             return
         turn.completion_sent = True
+        self._cancel_draft_task(turn)
         message = envelope.data.get("message", "An error occurred.")
         self._pending_finalizations.append((turn, message))
         self._schedule_drain()
@@ -578,7 +631,6 @@ class RemoteProjection:
             )
 
         diff_token: str | None = None
-        toollog_token: str | None = None
         if self._actions is not None:
             if activity.diff_text.strip() and activity.diff_text != "No file changes.":
                 diff_token = self._actions.register_capability(
@@ -589,25 +641,13 @@ class RemoteProjection:
                     action_kind="diff",
                     action_target=activity.diff_text,
                 )
-            # Omit the button entirely rather than link to an always-empty
-            # "No tool calls." page — most conversational turns have none,
-            # and an always-present, always-empty button reads as broken.
-            if activity.tool_call_count > 0:
-                toollog_token = self._actions.register_capability(
-                    connection_id=turn.connection_id,
-                    principal_id=turn.principal_id,
-                    destination_id=turn.destination_id,
-                    session_id=turn.session_id,
-                    action_kind="toollog",
-                    action_target=activity.tool_log_text,
-                )
 
         heading = derive_card_heading(turn.user_message, turn.title)
         if error_message is not None:
             text, buttons = render_error_card(
                 title=heading,
                 message=_redact_text(error_message),
-                toollog_token=toollog_token,
+                toollog_token=None,
             )
         else:
             text, buttons = render_done_card(
@@ -618,10 +658,13 @@ class RemoteProjection:
                     if activity.response_text
                     else None
                 ),
-                summary_lines=[_redact_text(line) for line in activity.summary_lines],
-                tool_call_count=activity.tool_call_count,
+                # Tool names and arguments are internal execution details;
+                # terminal delivery keeps only the user-facing response and
+                # usage/credit footer.
+                summary_lines=(),
+                tool_call_count=0,
                 diff_token=diff_token,
-                toollog_token=toollog_token,
+                toollog_token=None,
                 model=turn.usage_model,
                 context_window=turn.usage_context_window,
                 input_tokens=turn.usage_input_tokens,
@@ -630,6 +673,16 @@ class RemoteProjection:
                 reasoning_tokens=turn.usage_reasoning_tokens,
                 cost_usd=turn.usage_cost_usd,
             )
+
+        # Live edits are obsolete once the turn has completed. Drop them before
+        # queueing the terminal card so a burst of deltas cannot delay or
+        # overwrite the done/error notification.
+        if turn.lifecycle_correlation_id is not None:
+            self._pending_edits = [
+                message
+                for message in self._pending_edits
+                if message.correlation_id != turn.lifecycle_correlation_id
+            ]
 
         # Only edit when this turn's status card was actually confirmed
         # sent — an adapter's edit silently no-ops against a correlation id
@@ -650,6 +703,15 @@ class RemoteProjection:
                 buttons=buttons,
                 correlation_id=correlation_id,
             )
+            # Telegram edits do not generate a phone notification. Adapters
+            # whose edits are silent also receive a fresh terminal message.
+            if not getattr(self._adapter, "edit_notifies_user", True):
+                self._enqueue_send(
+                    destination_id=turn.destination_id,
+                    text=text,
+                    buttons=buttons,
+                    priority=RemoteOutboundPriority.HIGH,
+                )
         else:
             self._enqueue_send(
                 destination_id=turn.destination_id,
@@ -690,14 +752,53 @@ class RemoteProjection:
 
         self._maybe_schedule_live_edit(turn)
 
-    def _maybe_schedule_live_edit(self, turn: _TurnDeliveryState) -> None:
+    def _maybe_schedule_live_edit(
+        self, turn: _TurnDeliveryState, *, allow_draft: bool = True
+    ) -> None:
         correlation_id = turn.lifecycle_correlation_id
         if correlation_id is None:
             return
+        adapter = self._adapter
+        provider = getattr(adapter, "streaming_provider", None)
+        send_draft = getattr(adapter, "send_draft", None)
+        if (
+            allow_draft
+            and turn.response_text
+            and provider == "private_draft"
+            and callable(send_draft)
+        ):
+            draft_text = markdown_to_telegram_html(turn.response_text[:3000])
+            draft_key = f"draft:{turn.session_id}"
+            if self._edit_budget.should_edit(
+                connection_id=turn.connection_id, key=draft_key, text=draft_text
+            ):
+                self._edit_budget.record_edit(
+                    connection_id=turn.connection_id, key=draft_key, text=draft_text
+                )
+                turn.draft_task = asyncio.create_task(
+                    self._send_draft_update(
+                        send_draft=send_draft,
+                        destination_id=turn.destination_id,
+                        draft_id=turn.draft_id,
+                        text=draft_text,
+                    )
+                )
+            return
+        if self._actions is not None and turn.stop_token is None:
+            turn.stop_token = self._actions.register_capability(
+                connection_id=turn.connection_id,
+                principal_id=turn.principal_id,
+                destination_id=turn.destination_id,
+                session_id=turn.session_id,
+                action_kind="stop_session",
+                action_target=turn.session_id,
+            )
         text, buttons = render_live_status_card(
             title=derive_card_heading(turn.user_message, turn.title),
             elapsed_seconds=time.monotonic() - turn.started_at,
             activity_lines=turn.activity.lines(),
+            response_text=turn.response_text,
+            stop_token=turn.stop_token,
             model=turn.usage_model,
             input_tokens=turn.usage_input_tokens,
             output_tokens=turn.usage_output_tokens,
@@ -716,6 +817,25 @@ class RemoteProjection:
             buttons=buttons,
             correlation_id=correlation_id,
         )
+
+    async def _send_draft_update(
+        self,
+        *,
+        send_draft: Any,
+        destination_id: str,
+        draft_id: int,
+        text: str,
+    ) -> None:
+        try:
+            await send_draft(
+                destination_id=destination_id, draft_id=draft_id, text=text
+            )
+        except Exception as exc:
+            logger.warning(
+                "remote_telegram_draft_update_failed destination_id={} error={}",
+                destination_id,
+                exc,
+            )
 
     def _handle_gate(self, turn: _TurnDeliveryState, event_type: str, envelope) -> None:
         data = envelope.data
@@ -804,21 +924,38 @@ class RemoteProjection:
             except Exception:  # pragma: no cover
                 pass  # best-effort; missing metadata is non-fatal
 
+        # The turn-usage publisher emits a cumulative snapshot marked by
+        # metadata.turn_total. Per-call events are additive; cumulative
+        # snapshots replace the running total or they would be double-counted
+        # in the remote Done card.
+        cumulative = metadata.get("turn_total") is True
         prompt = data.get("prompt_tokens") or data.get("input_tokens")
         if isinstance(prompt, int):
-            turn.usage_input_tokens = (turn.usage_input_tokens or 0) + prompt
+            turn.usage_input_tokens = (
+                prompt if cumulative else (turn.usage_input_tokens or 0) + prompt
+            )
 
         completion = data.get("completion_tokens") or data.get("output_tokens")
         if isinstance(completion, int):
-            turn.usage_output_tokens = (turn.usage_output_tokens or 0) + completion
+            turn.usage_output_tokens = (
+                completion
+                if cumulative
+                else (turn.usage_output_tokens or 0) + completion
+            )
 
         cached = data.get("cached_tokens")
         if isinstance(cached, int):
-            turn.usage_cached_tokens = (turn.usage_cached_tokens or 0) + cached
+            turn.usage_cached_tokens = (
+                cached if cumulative else (turn.usage_cached_tokens or 0) + cached
+            )
 
         thoughts = data.get("thoughts_tokens")
         if isinstance(thoughts, int):
-            turn.usage_reasoning_tokens = (turn.usage_reasoning_tokens or 0) + thoughts
+            turn.usage_reasoning_tokens = (
+                thoughts
+                if cumulative
+                else (turn.usage_reasoning_tokens or 0) + thoughts
+            )
 
         cost = data.get("cost")
         # UsageEvent.cost is ``dict[str, float]`` produced by
@@ -829,13 +966,22 @@ class RemoteProjection:
         if isinstance(cost, dict):
             estimated = cost.get("estimated_usd")
             if isinstance(estimated, (int, float)):
-                turn.usage_cost_usd = (turn.usage_cost_usd or 0.0) + float(estimated)
+                turn.usage_cost_usd = (
+                    float(estimated)
+                    if cumulative
+                    else (turn.usage_cost_usd or 0.0) + float(estimated)
+                )
             else:
-                turn.usage_cost_usd = (turn.usage_cost_usd or 0.0) + sum(
-                    v for v in cost.values() if isinstance(v, (int, float))
+                amount = sum(v for v in cost.values() if isinstance(v, (int, float)))
+                turn.usage_cost_usd = (
+                    amount if cumulative else (turn.usage_cost_usd or 0.0) + amount
                 )
         elif isinstance(cost, (int, float)):
-            turn.usage_cost_usd = (turn.usage_cost_usd or 0.0) + float(cost)
+            turn.usage_cost_usd = (
+                float(cost)
+                if cumulative
+                else (turn.usage_cost_usd or 0.0) + float(cost)
+            )
 
         # Trigger a live card edit so the phone sees updated token/model
         # info in real time — not only at the next tool-call boundary.
@@ -913,12 +1059,22 @@ class RemoteProjection:
         return ""
 
     def _schedule_drain(self) -> None:
-        """Schedule an async drain of pending messages if a loop is running."""
+        """Schedule delivery on the adapter-owning loop.
+
+        Agent stream callbacks may execute on a worker thread. Calling
+        ``get_running_loop`` there used to silently drop every queued terminal
+        notification; hand the coroutine back to the loop captured at adapter
+        startup instead.
+        """
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self.drain_pending())
         except RuntimeError:
-            pass
+            loop = self._delivery_loop
+            if loop is None or loop.is_closed():
+                return
+            loop.call_soon_threadsafe(lambda: loop.create_task(self.drain_pending()))
+            return
+        loop.create_task(self.drain_pending())
 
     async def drain_pending(self) -> None:
         """Send queued status cards, finalize completed turns, then send or
@@ -1023,6 +1179,31 @@ class RemoteProjection:
                 continue
 
             turn = self._turns.get(session_id)
+            if event_type not in {"done", "error"}:
+                # Admission is now validated. Register the session before
+                # replaying the first event so subsequent deltas follow the
+                # ordinary live lifecycle instead of re-entering fallback.
+                self.register_session(
+                    session_id,
+                    connection_id=connection_id,
+                    destination_id=destination_id,
+                    tags=frozenset({"remote_origin", "desktop_admitted"}),
+                )
+                if session_id not in self._turns:
+                    self.begin_phone_turn(
+                        session_id,
+                        connection_id=connection_id,
+                        destination_id=destination_id,
+                        principal_id=principal_id,
+                        title=session_row.title or "Desktop task",
+                        status="Working",
+                        response_mode="live",
+                    )
+                self.observe(
+                    session_id,
+                    SimpleNamespace(event=event_type, data=envelope_data),
+                )
+                continue
             if turn is None:
                 turn = _TurnDeliveryState(
                     session_id=session_id,

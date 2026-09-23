@@ -35,6 +35,24 @@ class TelegramChat(BaseModel):
     type: str
 
 
+class TelegramPhotoSize(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    file_id: str
+    width: int
+    height: int
+    file_size: int | None = None
+
+
+class TelegramDocument(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    file_id: str
+    file_name: str | None = None
+    mime_type: str | None = None
+    file_size: int | None = None
+
+
 class TelegramMessage(BaseModel):
     """https://core.telegram.org/bots/api#message
 
@@ -50,6 +68,9 @@ class TelegramMessage(BaseModel):
     chat: TelegramChat
     from_user: TelegramUser | None = Field(default=None, alias="from")
     text: str | None = None
+    caption: str | None = None
+    photo: list[TelegramPhotoSize] | None = None
+    document: TelegramDocument | None = None
 
 
 class TelegramCallbackQuery(BaseModel):

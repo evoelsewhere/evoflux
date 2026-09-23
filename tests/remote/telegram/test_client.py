@@ -225,8 +225,10 @@ class TestSendEditAnswer:
         )
         markup = captured["payload"]["reply_markup"]
         assert markup["inline_keyboard"] == [
-            [{"text": "Allow", "callback_data": "tok-1"}],
-            [{"text": "Deny", "callback_data": "tok-2"}],
+            [
+                {"text": "Allow", "callback_data": "tok-1"},
+                {"text": "Deny", "callback_data": "tok-2"},
+            ],
         ]
         await client.aclose()
 

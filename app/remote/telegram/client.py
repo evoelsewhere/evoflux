@@ -120,11 +120,25 @@ def _build_reply_markup(buttons: Sequence[RemoteButton]) -> dict[str, Any] | Non
         return None
     for button in buttons:
         _validate_callback_data(button.token)
-    return {
-        "inline_keyboard": [
-            [{"text": button.text, "callback_data": button.token}] for button in buttons
-        ]
-    }
+    rows: list[list[dict[str, str]]] = []
+    current: list[dict[str, str]] = []
+    for button in buttons:
+        item = {"text": button.text, "callback_data": button.token}
+        # Compact labels share a row; descriptive labels stay full-width for
+        # readability and reliable tapping on small screens.
+        if len(button.text) > 24:
+            if current:
+                rows.append(current)
+                current = []
+            rows.append([item])
+        else:
+            current.append(item)
+            if len(current) == 2:
+                rows.append(current)
+                current = []
+    if current:
+        rows.append(current)
+    return {"inline_keyboard": rows}
 
 
 class TelegramClient:
@@ -149,6 +163,41 @@ class TelegramClient:
     async def aclose(self) -> None:
         if self._owns_http:
             await self._http.aclose()
+
+    async def download_file(
+        self, file_id: str, *, max_bytes: int = 10 * 1024 * 1024
+    ) -> bytes:
+        """Resolve and download one Telegram file with a bounded body."""
+        result = await self._call(
+            "getFile", {"file_id": file_id}, result_model=dict[str, Any]
+        )
+        file_path = result.get("file_path")
+        if not isinstance(file_path, str) or not file_path:
+            raise TelegramMalformedResponseError("Telegram file response had no path.")
+        try:
+            async with self._http.stream(
+                "GET", f"https://api.telegram.org/file/bot{self._token}/{file_path}"
+            ) as response:
+                response.raise_for_status()
+                content_length = response.headers.get("content-length")
+                if content_length is not None and int(content_length) > max_bytes:
+                    raise TelegramApiError(
+                        error_code=413,
+                        description="Telegram attachment exceeds the size limit.",
+                    )
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise TelegramApiError(
+                            error_code=413,
+                            description="Telegram attachment exceeds the size limit.",
+                        )
+                    chunks.append(chunk)
+        except httpx.HTTPError as exc:
+            raise TelegramTransportError(cause_type=type(exc).__name__) from None
+        return b"".join(chunks)
 
     def _url(self, method: str) -> str:
         return f"{TELEGRAM_API_BASE}/bot{self._token}/{method}"
@@ -266,6 +315,41 @@ class TelegramClient:
         if markup is not None:
             payload["reply_markup"] = markup
         return await self._call("sendMessage", payload, result_model=TelegramMessage)
+
+    async def send_photo(
+        self,
+        *,
+        chat_id: str | int,
+        photo: str,
+        caption: str | None = None,
+    ) -> TelegramMessage:
+        """Send a validated URL-addressable image to a Telegram chat."""
+        payload: dict[str, Any] = {"chat_id": chat_id, "photo": photo}
+        if caption:
+            payload["caption"] = caption
+            payload["parse_mode"] = "HTML"
+        return await self._call("sendPhoto", payload, result_model=TelegramMessage)
+
+    async def send_message_draft(
+        self,
+        *,
+        chat_id: str | int,
+        draft_id: int,
+        text: str,
+    ) -> None:
+        """Stream an ephemeral partial response using Telegram's Bot API."""
+        if draft_id <= 0:
+            raise ValueError("draft_id must be positive")
+        await self._call(
+            "sendMessageDraft",
+            {
+                "chat_id": chat_id,
+                "draft_id": draft_id,
+                "text": text,
+                "parse_mode": "HTML",
+            },
+            result_model=bool,
+        )
 
     async def edit_text(
         self,

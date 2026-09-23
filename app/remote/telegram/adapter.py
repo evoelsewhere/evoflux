@@ -27,7 +27,9 @@ import asyncio
 import random
 from collections import OrderedDict, defaultdict, deque
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -75,6 +77,7 @@ DEFAULT_RATE_LIMIT_FALLBACK_SECONDS = 1
 #: design, like every other in-memory interaction token (spec: "Remote
 #: interaction contract").
 MAX_PENDING_CALLBACK_IDS = 512
+MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024
 
 #: Bound on how many sent message ids ``clear_history`` remembers per
 #: destination, so a long-running connection's history for one chat
@@ -97,6 +100,11 @@ class TelegramAdapter:
     callback that receives every normalized inbound action.
     """
 
+    # Terminal cards stay consolidated into the live process message. Telegram
+    # edits are intentionally treated as the canonical completion transition;
+    # callers must not emit a duplicate terminal message.
+    edit_notifies_user = True
+
     def __init__(
         self,
         *,
@@ -111,6 +119,7 @@ class TelegramAdapter:
         clock: ClockFn = _default_clock,
     ) -> None:
         self._connection_id = connection_id
+        self.streaming_provider: str | None = None
         self._client = TelegramClient(token, http_client=http_client)
         self._on_action = on_action
         self._poll_timeout_seconds = poll_timeout_seconds
@@ -198,6 +207,42 @@ class TelegramAdapter:
     # ------------------------------------------------------------------
 
     async def send(self, message: RemoteOutboundMessage) -> None:
+        for attachment in message.attachments:
+            parsed = urlparse(attachment.url)
+            if parsed.scheme != "https" or not parsed.netloc:
+                logger.warning(
+                    "telegram_attachment_rejected reason=invalid_url destination_id={}",
+                    message.destination_id,
+                )
+                continue
+            if attachment.mime_type and not attachment.mime_type.startswith("image/"):
+                logger.warning(
+                    "telegram_attachment_rejected reason=unsupported_mime destination_id={}",
+                    message.destination_id,
+                )
+                continue
+            if attachment.size_bytes is not None and (
+                attachment.size_bytes < 0
+                or attachment.size_bytes > MAX_PHOTO_SIZE_BYTES
+            ):
+                logger.warning(
+                    "telegram_attachment_rejected reason=size_limit destination_id={}",
+                    message.destination_id,
+                )
+                continue
+            try:
+                photo = await self._client.send_photo(
+                    chat_id=message.destination_id,
+                    photo=attachment.url,
+                )
+                self._message_history[message.destination_id].append(photo.message_id)
+            except TelegramApiError as exc:
+                self._record_delivery_failure(exc)
+                logger.warning(
+                    "telegram_attachment_failed destination_id={} error={}",
+                    message.destination_id,
+                    exc,
+                )
         try:
             sent = await self._client.send_text(
                 chat_id=message.destination_id,
@@ -233,6 +278,21 @@ class TelegramAdapter:
                 message_id=message_id,
                 text=message.text,
                 buttons=message.buttons,
+            )
+        except TelegramApiError as exc:
+            self._record_delivery_failure(exc)
+            raise
+        self._record_delivery_success()
+
+    async def send_draft(
+        self, *, destination_id: str, draft_id: int, text: str
+    ) -> None:
+        """Send an ephemeral partial response for private-draft providers."""
+        try:
+            await self._client.send_message_draft(
+                chat_id=destination_id,
+                draft_id=draft_id,
+                text=text,
             )
         except TelegramApiError as exc:
             self._record_delivery_failure(exc)
@@ -382,23 +442,30 @@ class TelegramAdapter:
         Best-effort: a paired user can still type any command by hand, so a
         failure here must never block the poll loop from starting.
 
-        ``clear``, ``history``, and ``pair`` are deliberate additions
+        ``clear``, ``history``, ``skills``, ``skill``, ``steer``,
+        ``switch``, ``delete``, and ``agent`` are deliberate additions
         beyond the control-surface spec's original AC-58 bounded set (9
-        commands) — requested directly by a user testing this feature
-        live, after that set was first implemented.
+        commands) — requested directly by users testing this feature
+        live, after that set was first implemented.  ``/pair`` was
+        removed: ``/start <code>`` now handles code-based pairing.
         """
         commands = [
             ("help", "What can I do here?"),
             ("status", "What's my agent doing right now?"),
             ("new", "Set aside this task, start a new one"),
             ("stop", "Interrupt the agent mid-task"),
-            ("settings", "Change mode, model, agent, or response style"),
+            ("settings", "Change mode, model, agent, or thinking level"),
             ("health", "Check system health"),
             ("history", "Browse recent chat sessions"),
             ("changes", "See this task's file changes"),
             ("clear", "Delete my recent messages here"),
             ("actions", "Run a workflow, project, or schedule"),
-            ("pair", "Connect this phone with a code"),
+            ("skills", "Browse available skills"),
+            ("skill", "Load a skill by name"),
+            ("steer", "Redirect the agent mid-task"),
+            ("switch", "Switch to another session"),
+            ("delete", "Delete unused sessions"),
+            ("agent", "Show agent info and model"),
             ("unpair", "Disconnect this phone"),
         ]
         try:
@@ -502,6 +569,7 @@ class TelegramAdapter:
         for update in sorted(updates, key=lambda item: item.update_id):
             action = self._classify(update)
             if action is not None:
+                action = await self._materialize_media(action, update)
                 try:
                     await self._on_action(action)
                 except Exception:
@@ -547,8 +615,24 @@ class TelegramAdapter:
             )
 
         message = update.message
-        if message is None or message.text is None:
-            return None  # media/service message — unsupported, ignored
+        if message is None:
+            return None
+        text = message.text or message.caption
+        if text is None and message.photo:
+            largest = message.photo[-1]
+            text = (
+                f"[Image attached: {largest.width}×{largest.height}; "
+                f"file_id={largest.file_id}]"
+            )
+        elif text is None and message.document is not None:
+            document = message.document
+            name = document.file_name or "unnamed file"
+            details = document.mime_type or "unknown type"
+            text = f"[File attached: {name}; {details}; file_id={document.file_id}]"
+        if text is None:
+            return None  # unsupported service message
+        text = str(text)
+        normalized_text = text
         if message.chat.type != "private":
             return None  # group/channel — never addressable
         if message.from_user is None or message.from_user.is_bot:
@@ -560,7 +644,7 @@ class TelegramAdapter:
             destination_id=str(message.chat.id),
             display=message.from_user.username or message.from_user.first_name or "",
         )
-        text = message.text
+        text = normalized_text
         if text == "/start" or text.startswith("/start "):
             payload = text[len("/start ") :].strip() if " " in text else ""
             return RemoteInboundAction(
@@ -583,6 +667,63 @@ class TelegramAdapter:
         self._pending_callback_ids.move_to_end(token)
         while len(self._pending_callback_ids) > MAX_PENDING_CALLBACK_IDS:
             self._pending_callback_ids.popitem(last=False)
+
+    async def _materialize_media(
+        self, action: RemoteInboundAction, update: TelegramUpdate
+    ) -> RemoteInboundAction:
+        """Download media from Telegram and attach it to the inbound action.
+
+        Files are bounded to 10 MiB. Download failures are swallowed with a
+        log; the text fallback (caption or descriptive placeholder) is kept.
+        """
+        from app.remote.contracts import RemoteInboundAttachment
+
+        message = update.message
+        if message is None or action.kind != RemoteInboundActionKind.TEXT:
+            return action
+
+        attachments: list[RemoteInboundAttachment] = []
+
+        # Photo — always use the largest resolution.
+        if message.photo:
+            largest = message.photo[-1]
+            try:
+                content = await self._client.download_file(largest.file_id)
+                attachments.append(
+                    RemoteInboundAttachment(
+                        content=content,
+                        filename=f"photo_{largest.file_id[:12]}.jpg",
+                        mime_type="image/jpeg",
+                    )
+                )
+            except Exception:
+                logger.debug(
+                    "telegram_photo_download_failed file_id={}",
+                    largest.file_id,
+                )
+
+        # Document — download by file_id.
+        if message.document is not None:
+            document = message.document
+            try:
+                content = await self._client.download_file(document.file_id)
+                filename = document.file_name or f"document_{document.file_id[:12]}"
+                attachments.append(
+                    RemoteInboundAttachment(
+                        content=content,
+                        filename=filename,
+                        mime_type=document.mime_type,
+                    )
+                )
+            except Exception:
+                logger.debug(
+                    "telegram_document_download_failed file_id={}",
+                    document.file_id,
+                )
+
+        if not attachments:
+            return action
+        return replace(action, attachments=tuple(attachments))
 
     # ------------------------------------------------------------------
     # Interruptible waits
