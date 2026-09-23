@@ -319,3 +319,82 @@ def test_office_preview_falls_back_when_conversion_fails(monkeypatch, tmp_path):
 
     assert "data-preview-renderer" not in rendered
     assert "Fallback body" in rendered
+
+
+def test_download_resumes_a_partial_file_and_hashes_every_byte(runtime_env, tmp_path):
+    import hashlib
+
+    archive = tmp_path / "runtime.tar.gz"
+    _archive(archive, {EXECUTABLE: b"MZ" * 50_000, "soffice/share/a.ttf": b"f" * 9_000})
+    record = _record(archive)
+    runtime_env(record)
+    asset = manifest.current_asset()
+    assert asset is not None
+    partial = installer.partial_download_path(asset)
+    partial.parent.mkdir(parents=True)
+    payload = archive.read_bytes()
+    partial.write_bytes(payload[: len(payload) // 2])
+    installer._set_job(
+        installer.InstallJob("downloading", "26.8.0", 0, len(payload), "now")
+    )
+
+    digest = asyncio.run(installer._download(asset, partial))
+
+    assert digest == hashlib.sha256(payload).hexdigest()
+    assert partial.read_bytes() == payload
+    assert installer.runtime_status().job.bytes_done == len(payload)
+
+
+def test_failed_download_keeps_bytes_and_cancel_discards_them(runtime_env, tmp_path):
+    archive = tmp_path / "runtime.tar.gz"
+    _archive(archive, {EXECUTABLE: b"MZ"})
+    record = _record(archive)
+    runtime_env(record)
+    asset = manifest.current_asset()
+    assert asset is not None
+    partial = installer.partial_download_path(asset)
+
+    async def interrupted(asset_, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"half")
+        raise installer.RuntimeInstallError("connection reset")
+
+    async def cancelled(asset_, destination):
+        destination.write_bytes(b"half")
+        raise asyncio.CancelledError
+
+    original = installer._download
+    try:
+        installer._download = interrupted
+        with pytest.raises(installer.RuntimeInstallError):
+            asyncio.run(installer._install(asset))
+        assert partial.read_bytes() == b"half"
+
+        installer._download = cancelled
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(installer._install(asset))
+        assert not partial.exists()
+    finally:
+        installer._download = original
+
+
+def test_stale_leftovers_are_removed_except_the_resumable_download(
+    runtime_env, tmp_path
+):
+    archive = tmp_path / "runtime.tar.gz"
+    _archive(archive, {EXECUTABLE: b"MZ"})
+    runtime_env(_record(archive))
+    asset = manifest.current_asset()
+    assert asset is not None
+    home = installer.runtime_home()
+    (home / ".staging-old" / "tree").mkdir(parents=True)
+    old_partial = home / f".download-{'0' * 64}.part"
+    old_partial.write_bytes(b"old")
+    keep = installer.partial_download_path(asset)
+    keep.write_bytes(b"resume me")
+
+    installer._remove_stale_staging(keep=keep)
+
+    assert not (home / ".staging-old").exists()
+    assert not old_partial.exists()
+    assert keep.read_bytes() == b"resume me"

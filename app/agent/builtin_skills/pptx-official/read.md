@@ -264,10 +264,11 @@ uv run --with python-pptx python scripts/render_slides.py input.pptx --out slide
 uv run --with python-pptx python scripts/render_slides.py input.pptx --out slides/ --first 3 --last 3
 ```
 
-`render_slides.py` renders via LibreOffice → PDF, then Poppler's `pdftoppm`
-to raster each page, so it needs both (LibreOffice through `EVOFLUX_SOFFICE`
-or `PATH`). Without them, the `document_preview` tool still gives a
-rendered-layout check of every slide.
+`render_slides.py` renders via LibreOffice → PDF, then rasters each page
+with Poppler's `pdftoppm`, or with pypdfium2 fetched by `uv` when Poppler is
+missing. It needs LibreOffice (through `EVOFLUX_SOFFICE` or `PATH`) and one
+of those rasterisers. Without them, the `document_preview` tool still gives
+a rendered-layout check of every slide.
 
 ## Detecting broken files
 

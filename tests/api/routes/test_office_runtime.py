@@ -20,6 +20,7 @@ def _status(job: InstallJob | None = None) -> RuntimeStatus:
         platform="darwin-arm64",
         version="26.8.0",
         download_bytes=150_000_000,
+        install_bytes=600_000_000,
         installed_version=None,
         job=job,
     )

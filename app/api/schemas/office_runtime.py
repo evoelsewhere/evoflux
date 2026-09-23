@@ -21,5 +21,6 @@ class OfficeRuntimeStatusResponse(BaseModel):
     platform: str | None
     version: str | None
     download_bytes: int | None
+    install_bytes: int | None
     installed_version: str | None
     job: OfficeRuntimeJobResponse | None

@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
@@ -44,6 +44,7 @@ InstallPhase = Literal["downloading", "verifying", "extracting", "failed"]
 _MAX_ENTRIES = 60_000
 _MAX_EXTRACTED_BYTES = 4 * 1024 * 1024 * 1024
 _CHUNK = 1024 * 1024
+_PROGRESS_CHUNK = 64 * 1024
 _INSTALL_RECORD = "install.json"
 
 
@@ -76,6 +77,7 @@ class RuntimeStatus:
     platform: str | None
     version: str | None
     download_bytes: int | None
+    install_bytes: int | None
     installed_version: str | None
     job: InstallJob | None
 
@@ -113,6 +115,32 @@ def installed_runtime() -> InstalledRuntime | None:
     return InstalledRuntime(version=version, executable=path, root=root)
 
 
+def expose_to_tool_environment(env: dict[str, str]) -> dict[str, str]:
+    """Advertise the installed runtime to agent-run commands.
+
+    Agent shells get a scrubbed environment, so the runtime the user installed
+    for exact previews was invisible to the Office Skills, which look for
+    ``EVOFLUX_SOFFICE`` or ``soffice`` on ``PATH``. Only the executable's
+    location is added; its directory is appended to ``PATH`` so it never
+    shadows a tool the user already has.
+    """
+    runtime = installed_runtime()
+    if runtime is None:
+        return env
+    executable = str(runtime.executable)
+    env["EVOFLUX_SOFFICE"] = executable
+    path_key = next((key for key in env if key.upper() == "PATH"), "PATH")
+    directory = str(runtime.executable.parent)
+    entries = [entry for entry in env.get(path_key, "").split(os.pathsep) if entry]
+    folded = os.path.normcase(os.path.normpath(directory))
+    if not any(
+        os.path.normcase(os.path.normpath(entry)) == folded for entry in entries
+    ):
+        entries.append(directory)
+    env[path_key] = os.pathsep.join(entries)
+    return env
+
+
 def runtime_status() -> RuntimeStatus:
     asset = current_asset()
     installed = installed_runtime()
@@ -121,6 +149,7 @@ def runtime_status() -> RuntimeStatus:
         platform=asset.platform if asset else None,
         version=asset.version if asset else None,
         download_bytes=asset.size if asset else None,
+        install_bytes=asset.installed_size if asset else None,
         installed_version=installed.version if installed else None,
         job=_job,
     )
@@ -139,43 +168,72 @@ def _update(**changes: object) -> None:
             _job = replace(_job, **changes)  # type: ignore[arg-type]
 
 
-async def _download(asset: RuntimeAsset, destination: Path) -> str:
-    """Stream the archive to ``destination`` and return its SHA-256."""
+def partial_download_path(asset: RuntimeAsset) -> Path:
+    """Where an unfinished download of ``asset`` is kept between attempts."""
+    return runtime_home() / f".download-{asset.sha256}.part"
+
+
+def _hash_existing(path: Path, limit: int) -> tuple[hashlib._Hash, int]:
     digest = hashlib.sha256()
     received = 0
+    try:
+        with path.open("rb") as handle:
+            while received < limit and (chunk := handle.read(_CHUNK)):
+                chunk = chunk[: limit - received]
+                digest.update(chunk)
+                received += len(chunk)
+    except FileNotFoundError:
+        pass
+    return digest, received
+
+
+async def _download(asset: RuntimeAsset, destination: Path) -> str:
+    """Stream the archive to ``destination`` and return its SHA-256.
+
+    Slow or flaky links are the norm for a ~200 MB download, so a previous
+    attempt's bytes are kept and the transfer resumes with an HTTP range
+    request. The final SHA-256 still covers every byte, resumed or not.
+    """
+    digest, received = await asyncio.to_thread(_hash_existing, destination, asset.size)
+    if destination.exists() and destination.stat().st_size != received:
+        os.truncate(destination, received)
+    _update(bytes_done=received)
+
+    def accept(chunk: bytes, handle: Any) -> None:
+        nonlocal received
+        received += len(chunk)
+        if received > asset.size:
+            raise RuntimeInstallError("Runtime archive is larger than pinned")
+        digest.update(chunk)
+        handle.write(chunk)
+        _update(bytes_done=received)
+
     parsed = urlparse(asset.url)
-    with destination.open("wb") as handle:
-        if parsed.scheme == "file":
-            source = Path(url2pathname(unquote(parsed.path)))
-            with source.open("rb") as reader:
-                while chunk := await asyncio.to_thread(reader.read, _CHUNK):
-                    received += len(chunk)
-                    if received > asset.size:
-                        raise RuntimeInstallError(
-                            "Runtime archive is larger than pinned"
-                        )
-                    digest.update(chunk)
-                    handle.write(chunk)
-                    _update(bytes_done=received)
-        else:
-            timeout = httpx.Timeout(60.0, read=120.0)
-            async with httpx.AsyncClient(
-                timeout=timeout, follow_redirects=True
-            ) as client:
-                async with client.stream("GET", asset.url) as response:
-                    if response.status_code != 200:
-                        raise RuntimeInstallError(
-                            f"Download failed with HTTP {response.status_code}"
-                        )
-                    async for chunk in response.aiter_bytes(_CHUNK):
-                        received += len(chunk)
-                        if received > asset.size:
-                            raise RuntimeInstallError(
-                                "Runtime archive is larger than pinned"
-                            )
-                        digest.update(chunk)
-                        handle.write(chunk)
-                        _update(bytes_done=received)
+    if received < asset.size and parsed.scheme == "file":
+        source = Path(url2pathname(unquote(parsed.path)))
+        with source.open("rb") as reader, destination.open("ab") as handle:
+            reader.seek(received)
+            while chunk := await asyncio.to_thread(reader.read, _PROGRESS_CHUNK):
+                accept(chunk, handle)
+    elif received < asset.size:
+        timeout = httpx.Timeout(60.0, read=120.0)
+        headers = {"Range": f"bytes={received}-"} if received else {}
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            async with client.stream("GET", asset.url, headers=headers) as response:
+                if response.status_code == 200 and received:
+                    # The server ignored the range: start over.
+                    digest, received = hashlib.sha256(), 0
+                    os.truncate(destination, 0)
+                    _update(bytes_done=0)
+                elif response.status_code not in {200, 206}:
+                    raise RuntimeInstallError(
+                        f"Download failed with HTTP {response.status_code}"
+                    )
+                with destination.open("ab") as handle:
+                    # No fixed chunk size: on a slow link waiting to fill a
+                    # megabyte froze the progress bar for tens of seconds.
+                    async for chunk in response.aiter_bytes():
+                        accept(chunk, handle)
     if received != asset.size:
         raise RuntimeInstallError(
             f"Runtime archive is {received} bytes, expected {asset.size}"
@@ -298,19 +356,26 @@ def _activate(asset: RuntimeAsset, extracted: Path) -> None:
 async def _install(asset: RuntimeAsset) -> None:
     home = runtime_home()
     home.mkdir(parents=True, exist_ok=True)
+    archive = partial_download_path(asset)
+    try:
+        digest = await _download(asset, archive)
+    except asyncio.CancelledError:
+        # The user stopped the download: do not keep its bytes around.
+        archive.unlink(missing_ok=True)
+        raise
+    # Any other failure keeps the partial file so Retry resumes from it.
+    _update(phase="verifying")
+    if digest != asset.sha256:
+        archive.unlink(missing_ok=True)
+        raise RuntimeInstallError("Runtime archive checksum does not match")
+    _update(phase="extracting")
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=home))
     try:
-        archive = staging / "runtime.tar.gz"
-        digest = await _download(asset, archive)
-        _update(phase="verifying")
-        if digest != asset.sha256:
-            raise RuntimeInstallError("Runtime archive checksum does not match")
-        _update(phase="extracting")
         extracted = staging / "tree"
         extracted.mkdir()
         await asyncio.to_thread(_extract, archive, extracted)
-        archive.unlink(missing_ok=True)
         await asyncio.to_thread(_activate, asset, extracted)
+        archive.unlink(missing_ok=True)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
@@ -325,6 +390,7 @@ def start_runtime_install() -> InstallJob:
         )
     if _task is not None and not _task.done() and _job is not None:
         return _job
+    _remove_stale_staging(keep=partial_download_path(asset))
     job = InstallJob(
         phase="downloading",
         version=asset.version,
@@ -337,6 +403,10 @@ def start_runtime_install() -> InstallJob:
     async def run() -> None:
         try:
             await _install(asset)
+        except asyncio.CancelledError:
+            # The user stopped the download; _install already removed staging.
+            _set_job(None)
+            logger.info("office_runtime_install_cancelled version={}", asset.version)
         except Exception as exc:  # noqa: BLE001 - surfaced to the user verbatim
             _update(phase="failed", error=str(exc) or type(exc).__name__)
             logger.warning("office_runtime_install_failed error={}", exc)
@@ -346,6 +416,38 @@ def start_runtime_install() -> InstallJob:
 
     _task = asyncio.create_task(run(), name="office-runtime-install")
     return job
+
+
+def _remove_stale_staging(*, keep: Path | None = None) -> None:
+    """Delete leftovers of installs the app quit in the middle of.
+
+    Activation only prunes version directories, so an interrupted extraction
+    would otherwise keep up to a gigabyte on disk forever. Partial downloads
+    are kept only for the asset about to be installed (``keep``), which the
+    download then resumes; those of other versions are removed.
+    """
+    home = runtime_home()
+    if not home.is_dir():
+        return
+    for staging in home.glob(".staging-*"):
+        shutil.rmtree(staging, ignore_errors=True)
+    for partial in home.glob(".download-*.part"):
+        if keep is None or partial != keep:
+            partial.unlink(missing_ok=True)
+
+
+def cancel_runtime_install() -> None:
+    """Stop an install that is still downloading or verifying.
+
+    Extraction and activation run in worker threads that cannot be
+    interrupted safely, so a cancel that arrives then is refused.
+    """
+    job = _job
+    if _task is None or _task.done() or job is None:
+        return
+    if job.phase not in {"downloading", "verifying"}:
+        raise RuntimeInstallError("The renderer is already being installed.")
+    _task.cancel()
 
 
 def dismiss_install_error() -> None:
@@ -364,6 +466,7 @@ __all__ = [
     "InstalledRuntime",
     "RuntimeInstallError",
     "RuntimeStatus",
+    "cancel_runtime_install",
     "dismiss_install_error",
     "installed_runtime",
     "runtime_home",

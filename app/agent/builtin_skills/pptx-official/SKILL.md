@@ -112,8 +112,8 @@ An extraction-only request needs neither gate: read the file and answer.
 - Every script prints its options with `--help`. `render_pdf.py`,
   `render_slides.py`, and `contact_sheet.py` share the helper
   `scripts/soffice_bridge.py`, need LibreOffice (found through
-  `EVOFLUX_SOFFICE` or `PATH`), and the last two also need Poppler's
-  `pdftoppm`.
+  `EVOFLUX_SOFFICE` or `PATH`), and the last two rasterise with Poppler's
+  `pdftoppm` or, without it, pypdfium2 fetched by `uv`.
 - EvoFlux hosts its own preview, file, and browser surfaces: never start a
   preview server from this bundle. A preview the user watches is not
   verification.
