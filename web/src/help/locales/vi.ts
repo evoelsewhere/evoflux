@@ -151,7 +151,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Khi nào ở Work, khi nào nhảy mode: Work cho browser task, docs, research theo folder, không cần vòng đời git. Sang Coding ngay khi cần Changes, Files, Review, worktree hoặc AGENTS.md.',
+        text: 'Khi nào ở Work, khi nào nhảy mode: Work cho browser task, docs, research theo folder, không cần vòng đời git. Sang Coding ngay khi cần Source Control, Review, worktree hoặc AGENTS.md.',
       },
       {
         type: 'tips',
@@ -199,8 +199,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Sidebar biến mất hoàn toàn khi thu gọn; dùng Ctrl+B hoặc nút sidebar nổi để mở lại.',
       'Khi đang ở Settings, mode switcher bị ẩn; thoát Settings rồi mới đổi mode lại.',
       'Work hợp research, docs, browser task, script tạm; Coding cho repo bền.',
-      'Permission mode, slash và hầu hết workbench tool chạy xuyên mode; Changes / Review / Problems chỉ trong Coding.',
-      'Đừng mở git monorepo trong Work rồi chờ Changes/Review — sang Coding để tool source-control gắn vào.',
+      'Permission mode, slash và hầu hết workbench tool chạy xuyên mode; Source Control và Problems chỉ trong Coding.',
+      'Đừng mở git monorepo trong Work rồi chờ Source Control — sang Coding để tool source-control gắn vào.',
       'Work: folder + share_context cho research song song; Coding: project khi các repo phải gắn với nhau.',
       'Mode memory theo mode, không theo window — nếu tưởng về Coding home trống, kiểm tra xem route workspace cũ có bị restore không.'
 ],
@@ -221,7 +221,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'tips',
         items: [
           'Work — research, document, browser task, script nhanh, chat theo folder.',
-          'Coding — single repo, multi-repo project, worktree, Files, Changes, Review.',
+          'Coding — single repo, multi-repo project, worktree, Files, Source Control.',
           'Mode memory — last route mỗi mode được restore khi quay lại.',
           'Settings — mode switcher ẩn cho đến khi bạn rời settings route.'
 ],
@@ -490,7 +490,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Revise tốt nêu rõ file, test và out-of-scope.',
           'Revise xấu mơ hồ (“làm tốt hơn”) — quote bullet yếu trước.',
           'Câu meta không liên quan đẩy sang side chat để thread plan sạch.',
-          'Sau Accept việc Coding, mở Changes (Ctrl+G) xem diff có khớp plan không.'
+          'Sau Accept việc Coding, mở Source Control (Ctrl+G) xem diff có khớp plan không.'
 ],
       },
       {
@@ -972,13 +972,14 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench tools',
     summary:
-      'Mở Terminal, Browser, Files, Side chat, Memory, Scheduler, Changes và Review bên cạnh chat — shortcut tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
+      'Mở Terminal, Browser, Files, Side chat, Memory, Scheduler và Source Control bên cạnh chat — shortcut tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
     keywords: [
       'workbench',
       'panel',
       'terminal',
       'files',
       'dock',
+      'Source Control',
       'Changes',
       'Review',
       'Ctrl+F',
@@ -989,21 +990,21 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'bảng công cụ'
 ],
     setup:
-      'Mở session trước. Coding Files và Changes cục bộ cần Coding workspace. Built-in Browser phải bật trong Settings → Browser trước khi Ctrl+T hữu ích.',
+      'Mở session trước. Coding Files và Source Control cần Coding workspace. Built-in Browser phải bật trong Settings → Browser trước khi Ctrl+T hữu ích.',
     tricks: [
       'Mở tool từ workbench bar, dock, hoặc shortcut bên dưới.',
       'Shortcut runtime và label tự theo OS: Command trên macOS, Ctrl trên Windows/Linux.',
       'Mapping sống: Files = Ctrl+F (label có thể hiện ⌘P); Side chat = Ctrl+; (label có thể hiện ⌥⌘S).',
-      'Changes gồm cả source control cục bộ lẫn Review pull request — chuyển qua lại ở header của nó.',
+      'Source Control gồm cả Changes cục bộ lẫn Review pull request — chuyển qua lại ở header của nó.',
       'Terminal và Browser hỗ trợ nhiều tab; tool khác là toggle single-instance.',
       'Mở Running ở đáy tab Terminal bất kỳ để xem và dừng lệnh của agent, preview server và terminal khác trên mọi session.',
-      'Changes (Ctrl+G) chỉ Coding; Files cần Coding workspace.',
+      'Source Control (Ctrl+G) chỉ Coding.',
       'Toggle cùng tool lần nữa để đóng — workbench không phải đống card vĩnh viễn.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Workbench là surface tool bên phải (hoặc dock) cạnh chat. Tool: Terminal, Browser, Files, Side chat, Memory (wiki), Scheduler và Changes (source control kèm Review pull/merge request). Chat vẫn là chính; tool là mặt kiểm tra và hành động cách một shortcut.',
+        text: 'Workbench là surface tool bên phải (hoặc dock) cạnh chat. Tool: Terminal, Browser, Files, Side chat, Memory (wiki), Scheduler và Source Control (Changes cục bộ kèm Review pull/merge request). Chat vẫn là chính; tool là mặt kiểm tra và hành động cách một shortcut.',
       },
       {
         type: 'p',
@@ -1019,7 +1020,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { keys: 'Ctrl+M', action: 'Memory (wiki)' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
-          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' }
+          { keys: 'Ctrl+G', action: 'Source Control (Coding)' }
 ],
       },
       {
@@ -1031,7 +1032,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Side chat — câu hỏi song song /btw.',
           'Memory — wiki + note pending.',
           'Scheduler — cron / one-shot (chỉ panel; /scheduler redirect home).',
-          'Changes — stage, commit, branch và view Review liệt kê PR/MR host đã kết nối (Coding).'
+          'Source Control — stage, commit, branch và view Review liệt kê PR/MR host đã kết nối (Coding).'
 ],
       },
       {
@@ -1047,7 +1048,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Terminal vs ! — tương tác/dài vs lệnh ngắn gắn chat.',
           'Files vs @ — browse/khám vs ghim path đã biết vào ask.',
-          'Changes sau Accept plan mode để verify diff.',
+          'Source Control sau Accept plan mode để verify diff.',
           'Memory sau session research để Dream có nguyên liệu.'
 ],
       }
@@ -1182,7 +1183,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding mode quản git repository, multi-repo project tùy chọn và managed worktree. Agent sửa cây thật với Files, Terminal, Changes và Review cạnh chat. Đây là mode cho việc engineering bền.',
+        text: 'Coding mode quản git repository, multi-repo project tùy chọn và managed worktree. Agent sửa cây thật với Files, Terminal và Source Control cạnh chat. Đây là mode cho việc engineering bền.',
       },
       {
         type: 'p',
@@ -1204,7 +1205,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Session Coding đầu: (1) sang Coding, (2) thêm git repo, (3) click focus, (4) + / New chat, (5) /init nếu thiếu AGENTS.md, (6) set permission mode, (7) @ file then chốt và mô tả thay đổi, (8) mở Changes xác nhận branch và working tree.',
+        text: 'Session Coding đầu: (1) sang Coding, (2) thêm git repo, (3) click focus, (4) + / New chat, (5) /init nếu thiếu AGENTS.md, (6) set permission mode, (7) @ file then chốt và mô tả thay đổi, (8) mở Source Control xác nhận branch và working tree.',
       },
       {
         type: 'p',
@@ -1220,7 +1221,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Nên project — type cross-repo, contract dùng chung, đổi multi-service.',
           'Không nên project — một app repo với vendored code ít đụng.',
           'Files cross-repo cần project_id.',
-          'Review/Changes gắn workspace đang focus.'
+          'Source Control gắn workspace đang focus.'
 ],
       }
 ],
@@ -1235,9 +1236,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
   {
     id: 'coding-git',
     category: 'coding',
-    title: 'Git, Changes và pull request',
+    title: 'Git, Source Control và pull request',
     summary:
-      'Stage, commit, branch, merge, rebase, stash và review PR/MR từ Coding qua Changes (Ctrl+G) — với hai view Changes và Review — và Settings → Git & reviews. Giữ safety toggle chủ đích trước force-with-lease hoặc diff khổng lồ.',
+      'Stage, commit, branch, merge, rebase, stash và review PR/MR từ Coding qua Source Control (Ctrl+G) — với hai view Changes và Review — và Settings → Git & reviews. Giữ safety toggle chủ đích trước force-with-lease hoặc diff khổng lồ.',
     keywords: [
       'git',
       'commit',
@@ -1262,11 +1263,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     setup:
       'Coding mode với git workspace. Kết nối host trong Settings → Git & reviews cho action PR/MR remote. Xem lại timeout, max diff size và force-with-lease trước thao tác mạnh.',
     tricks: [
-      'Ctrl+G mở Changes (source control).',
+      'Ctrl+G mở Source Control.',
       'Force-with-lease và max diff size bị gate trong version-control settings.',
-      'View Review của Changes liệt kê PR/MR cho GitHub, GitLab, Bitbucket, Gitea và Azure DevOps khi đã kết nối.',
+      'View Review của Source Control liệt kê PR/MR cho GitHub, GitLab, Bitbucket, Gitea và Azure DevOps khi đã kết nối.',
       'Agent cũng chạy git qua tool, chịu permission mode và sandbox.',
-      'Stash / branch / rebase từ Changes hoặc agent tool tùy mức thoải mái.',
+      'Stash / branch / rebase từ Source Control hoặc agent tool tùy mức thoải mái.',
       'Ưu tiên commit nhỏ, message rõ — agent follow-up tốt hơn trên history sạch.',
       'Kết nối host trước khi hỏi Create PR; không thì commit local thành công rồi bước remote fail muộn.',
       'Diff khổng lồ thì nâng max diff size tạm — review quá lớn che rủi ro.'
@@ -1274,7 +1275,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding mở source control local (Changes) và review remote (Review). Thao tác local gồm stage, commit, branch, merge, rebase, cherry-pick, stash và flow biết worktree. Host remote cung cấp list PR/MR và action review khi Settings → Git & reviews đã cấu hình.',
+        text: 'Coding mở Source Control: thay đổi local (Changes) và review remote (Review). Thao tác local gồm stage, commit, branch, merge, rebase, cherry-pick, stash và flow biết worktree. Host remote cung cấp list PR/MR và action review khi Settings → Git & reviews đã cấu hình.',
       },
       {
         type: 'p',
@@ -1282,12 +1283,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Nhấn Ctrl+G hoặc mở Changes từ workbench. Xem diff, stage, commit. Mở Review cho PR/MR đã kết nối. Cấu hình host, timeout và safety toggle trong Settings → Git & reviews. Nhờ agent tạo PR từ diff review khi host connection sẵn.',
+        text: 'Nhấn Ctrl+G hoặc mở Source Control từ workbench. Xem diff, stage, commit. Mở Review cho PR/MR đã kết nối. Cấu hình host, timeout và safety toggle trong Settings → Git & reviews. Nhờ agent tạo PR từ diff review khi host connection sẵn.',
       },
       {
         type: 'tips',
         items: [
-          'Ctrl+G — Changes / source control',
+          'Ctrl+G — Source Control',
           'Review — danh sách PR/MR host đã kết nối',
           'GitHub / GitLab / Bitbucket / Gitea / Azure DevOps — tích hợp host',
           'force-with-lease — bị gate; không phải mặc định tùy tiện',
@@ -1310,7 +1311,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Plan Accept → Changes để verify plan thành diff bạn kỳ vọng.',
+          'Plan Accept → Source Control để verify plan thành diff bạn kỳ vọng.',
           'Worktree giữ commit thí nghiệm khỏi checkout chính.',
           'Permission ask trước lần push đầu lên remote production.'
 ],
@@ -2440,7 +2441,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+T', action: 'Built-in browser' },
-          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' },
+          { keys: 'Ctrl+G', action: 'Source Control (Coding)' },
           { keys: 'Ctrl+`', action: 'Terminal' },
           { keys: 'Ctrl+I', action: 'Focus chat input' },
           { keys: 'Ctrl+;', action: 'Side chat (label có thể hiện ⌥⌘S)' },
@@ -2547,7 +2548,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Checklist theo thứ tự: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) tool theo mode (Changes/Files/Review chỉ Coding). Dừng ở lớp fail đầu tiên.',
+        text: 'Checklist theo thứ tự: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) tool theo mode (Source Control và Problems chỉ Coding). Dừng ở lớp fail đầu tiên.',
       },
       {
         type: 'p',

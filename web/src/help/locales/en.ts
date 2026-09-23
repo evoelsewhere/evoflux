@@ -155,7 +155,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'When to stay in Work vs jump modes: use Work for browser tasks, docs, and folder-organized research with no git lifecycle. Switch to Coding as soon as you need Changes, Files, Review, worktrees, or AGENTS.md.',
+        text: 'When to stay in Work vs jump modes: use Work for browser tasks, docs, and folder-organized research with no git lifecycle. Switch to Coding as soon as you need Source Control, Review, worktrees, or AGENTS.md.',
       },
       {
         type: 'tips',
@@ -206,8 +206,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Collapsed sidebar disappears completely; use Ctrl+B or the floating sidebar button to restore it.',
       'Settings hides the mode switcher while you configure the app; leave Settings to switch modes again.',
       'Work is best for research, docs, browser tasks, and throwaway scripts; Coding for persistent repos.',
-      'Permission modes, slash commands, and most workbench tools work across modes; Changes / Review / Problems are Coding-scoped.',
-      'Do not open a git monorepo in Work expecting Changes/Review — switch to Coding so source-control tools attach.',
+      'Permission modes, slash commands, and most workbench tools work across modes; Source Control and Problems are Coding-scoped.',
+      'Do not open a git monorepo in Work expecting Source Control — switch to Coding so source-control tools attach.',
       'Use Work folders + share_context for parallel research threads; use Coding projects when repos must stay linked.',
       'Mode memory is per mode, not per window — if you expected a blank Coding home, check whether an old workspace route was restored.'
 ],
@@ -228,7 +228,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'Work — research, documents, browser tasks, quick scripts, folder-organized chats.',
-          'Coding — single repos, multi-repo projects, worktrees, source search, Changes, Review.',
+          'Coding — single repos, multi-repo projects, worktrees, source search, Source Control.',
           'Mode memory — last route per mode is restored when you switch back.',
           'Settings — mode switcher hidden until you leave the settings routes.'
 ],
@@ -503,7 +503,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Good revise prompts name files, tests, and out-of-scope items explicitly.',
           'Bad revise prompts are vague (“make it better”) — quote the weak bullet first.',
           'Cross-feature: Send unrelated meta questions to side chat so the plan thread stays clean.',
-          'Cross-feature: after Accept on Coding work, open Changes (Ctrl+G) to verify the diff matches the plan.'
+          'Cross-feature: after Accept on Coding work, open Source Control (Ctrl+G) to verify the diff matches the plan.'
 ],
       },
       {
@@ -1001,13 +1001,14 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench tools',
     summary:
-      'Open Terminal, Browser, Files, Side chat, Memory, Scheduler, Changes, and Review beside chat — with platform-native shortcuts: Command on macOS, Ctrl on Windows/Linux.',
+      'Open Terminal, Browser, Files, Side chat, Memory, Scheduler, and Source Control beside chat — with platform-native shortcuts: Command on macOS, Ctrl on Windows/Linux.',
     keywords: [
       'workbench',
       'panel',
       'terminal',
       'files',
       'dock',
+      'Source Control',
       'Changes',
       'Review',
       'Ctrl+F',
@@ -1020,21 +1021,21 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'パネル'
 ],
     setup:
-      'Open a session first. Coding Files and local Changes need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
+      'Open a session first. Coding Files and Source Control need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
     tricks: [
       'Open tools from the workbench bar, dock, or keyboard shortcuts listed below.',
       'Runtime shortcuts and labels adapt to the OS: Command on macOS, Ctrl on Windows/Linux.',
       'Live mappings: Files = Ctrl+F (label may show ⌘P); Side chat = Ctrl+; (label may show ⌥⌘S).',
-      'Changes holds both local source control and pull-request Review — switch between them in its header.',
+      'Source Control holds both local Changes and pull-request Review — switch between them in its header.',
       'Terminal and Browser support multiple tab instances; other tools are single-instance toggles.',
       'Expand Running at the foot of any Terminal tab to see and stop agent commands, preview servers, and other terminals across sessions.',
-      'Changes (Ctrl+G) is Coding-only; Files needs a Coding workspace.',
+      'Source Control (Ctrl+G) is Coding-only.',
       'Toggle the same tool again to close it — the workbench is not a pile of permanent cards.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Terminal, Browser, Files, Side chat, Memory (wiki), Scheduler, and Changes (source control plus pull/merge request Review). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
+        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Terminal, Browser, Files, Side chat, Memory (wiki), Scheduler, and Source Control (local Changes plus pull/merge request Review). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
       },
       {
         type: 'p',
@@ -1050,7 +1051,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+M', action: 'Memory (wiki)' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
-          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' }
+          { keys: 'Ctrl+G', action: 'Source Control (Coding)' }
 ],
       },
       {
@@ -1062,7 +1063,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Side chat — /btw parallel questions.',
           'Memory — wiki + pending notes.',
           'Scheduler — cron / one-shot tasks (panel only; /scheduler redirects home).',
-          'Changes — stage, commit, branch operations, and the Review view of PRs/MRs for connected hosts (Coding).'
+          'Source Control — stage, commit, branch operations, and the Review view of PRs/MRs for connected hosts (Coding).'
 ],
       },
       {
@@ -1078,7 +1079,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'When to use Terminal vs ! — interactive/long vs short chat-tied commands.',
           'When to use Files vs @ — browse/explore vs pin a known path into the ask.',
-          'Cross-feature: Changes after Accept in plan mode to verify diffs.',
+          'Cross-feature: Source Control after Accept in plan mode to verify diffs.',
           'Cross-feature: Memory after research sessions so Dream has material.'
 ],
       }
@@ -1218,7 +1219,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding mode manages git repositories, optional multi-repo projects, and managed worktrees. Agents edit real trees with Files, Terminal, Changes, and Review tools available beside chat. This is the mode for persistent engineering work.',
+        text: 'Coding mode manages git repositories, optional multi-repo projects, and managed worktrees. Agents edit real trees with Files, Terminal, and Source Control available beside chat. This is the mode for persistent engineering work.',
       },
       {
         type: 'p',
@@ -1240,7 +1241,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step first Coding session: (1) switch to Coding, (2) add the git repo, (3) click to focus, (4) + / New chat, (5) /init if AGENTS.md is missing, (6) set permission mode, (7) @ key files and describe the change, (8) open Changes to confirm the branch and working tree.',
+        text: 'Step-by-step first Coding session: (1) switch to Coding, (2) add the git repo, (3) click to focus, (4) + / New chat, (5) /init if AGENTS.md is missing, (6) set permission mode, (7) @ key files and describe the change, (8) open Source Control to confirm the branch and working tree.',
       },
       {
         type: 'p',
@@ -1256,7 +1257,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'When to project — cross-repo types, shared contracts, multi-service changes.',
           'When not to project — one app repo with vendored code you rarely touch.',
           'Cross-feature: source search cross-repo resolution needs a project_id.',
-          'Cross-feature: Review/Changes attach to the focused workspace.'
+          'Cross-feature: Source Control attaches to the focused workspace.'
 ],
       }
 ],
@@ -1271,9 +1272,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
   {
     id: 'coding-git',
     category: 'coding',
-    title: 'Git, changes, and pull requests',
+    title: 'Git, Source Control, and pull requests',
     summary:
-      'Stage, commit, branch, merge, rebase, stash, and review PRs/MRs from Coding via Changes (Ctrl+G) — with its Changes and Review views — and Settings → Git & reviews. Keep safety toggles intentional before force-with-lease or huge diffs.',
+      'Stage, commit, branch, merge, rebase, stash, and review PRs/MRs from Coding via Source Control (Ctrl+G) — with its Changes and Review views — and Settings → Git & reviews. Keep safety toggles intentional before force-with-lease or huge diffs.',
     keywords: [
       'git',
       'commit',
@@ -1301,11 +1302,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     setup:
       'Coding mode with a git workspace. Connect hosts under Settings → Git & reviews for remote PR/MR actions. Review timeouts, max diff size, and force-with-lease before aggressive operations.',
     tricks: [
-      'Ctrl+G opens Changes (source control).',
+      'Ctrl+G opens Source Control.',
       'Force-with-lease and max diff size are gated in version-control settings.',
-      'The Review view of Changes lists PRs/MRs for GitHub, GitLab, Bitbucket, Gitea, and Azure DevOps when connected.',
+      'The Review view of Source Control lists PRs/MRs for GitHub, GitLab, Bitbucket, Gitea, and Azure DevOps when connected.',
       'Agents can also run git operations through tools subject to permission mode and sandbox.',
-      'Use stash / branch / rebase from Changes or agent tools depending on comfort level.',
+      'Use stash / branch / rebase from Source Control or agent tools depending on comfort level.',
       'Prefer small commits with clear messages — agents write better follow-ups against clean history.',
       'Connect the host before asking for Create PR; otherwise local commits succeed and remote steps fail late.',
       'If a diff is huge, raise max diff size only temporarily — oversized reviews hide risk.'
@@ -1313,7 +1314,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding exposes local source control (Changes) and remote review (Review). Supported local operations include stage, commit, branch, merge, rebase, cherry-pick, stash, and worktree-aware flows. Remote hosts power PR/MR listing and review actions when Settings → Git & reviews is configured.',
+        text: 'Coding exposes Source Control: local changes (Changes) and remote review (Review). Supported local operations include stage, commit, branch, merge, rebase, cherry-pick, stash, and worktree-aware flows. Remote hosts power PR/MR listing and review actions when Settings → Git & reviews is configured.',
       },
       {
         type: 'p',
@@ -1321,12 +1322,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Press Ctrl+G or open Changes from the workbench. Review diffs, stage, and commit. Open Review for connected PR/MRs. Configure hosts, timeouts, and safety toggles under Settings → Git & reviews. Ask the agent to create PRs from diff review when the host connection is ready.',
+        text: 'Press Ctrl+G or open Source Control from the workbench. Review diffs, stage, and commit. Open Review for connected PR/MRs. Configure hosts, timeouts, and safety toggles under Settings → Git & reviews. Ask the agent to create PRs from diff review when the host connection is ready.',
       },
       {
         type: 'tips',
         items: [
-          'Ctrl+G — Changes / source control',
+          'Ctrl+G — Source Control',
           'Review — PR/MR list for connected hosts',
           'GitHub / GitLab / Bitbucket / Gitea / Azure DevOps — host integrations',
           'force-with-lease — gated; not a casual default',
@@ -1349,7 +1350,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Cross-feature: Plan Accept → Changes to verify the plan became the diff you expected.',
+          'Cross-feature: Plan Accept → Source Control to verify the plan became the diff you expected.',
           'Cross-feature: worktrees keep experimental commits off your main checkout.',
           'Cross-feature: permission ask mode before first push on a production remote.'
 ],
@@ -2497,7 +2498,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+T', action: 'Built-in browser' },
-          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' },
+          { keys: 'Ctrl+G', action: 'Source Control (Coding)' },
           { keys: 'Ctrl+`', action: 'Terminal' },
           { keys: 'Ctrl+I', action: 'Focus chat input' },
           { keys: 'Ctrl+;', action: 'Side chat (label may show ⌥⌘S)' },
@@ -2607,7 +2608,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Ordered checklist: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) mode-specific tools (Changes/Files/Review only in Coding). Stop at the first failing layer.',
+        text: 'Ordered checklist: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) mode-specific tools (Source Control and Problems only in Coding). Stop at the first failing layer.',
       },
       {
         type: 'p',

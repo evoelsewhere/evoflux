@@ -199,8 +199,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'サイドバーは折りたたむと完全に消えます。Ctrl+B またはフローティングボタンで再表示できます。',
       'Settings 中はモードスイッチャーが隠れます。再び切り替えるには Settings を離れます。',
       'Work は調査・ドキュメント・ブラウザ作業・捨てスクリプト向け; Coding は永続リポジトリ向け。',
-      '権限モード、スラッシュ、大半の workbench ツールはモード横断; Changes / Review / Problems は Coding スコープです。',
-      'Work で git モノレポを開き Changes/Review を期待しないでください — Coding に切り替えてソースコントロールを付けます。',
+      '権限モード、スラッシュ、大半の workbench ツールはモード横断; Source Control と Problems は Coding スコープです。',
+      'Work で git モノレポを開き Source Control を期待しないでください — Coding に切り替えてソースコントロールを付けます。',
       '並列調査スレッドには Work フォルダ + share_context; リポジトリを紐づけたままにするなら Coding プロジェクト。',
       'モード記憶はウィンドウ単位ではなくモード単位 — 空白の Coding ホームを期待したなら、古いワークスペースルートが復元されていないか確認。'
 ],
@@ -221,7 +221,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'tips',
         items: [
           'Work — 調査、ドキュメント、ブラウザ作業、クイックスクリプト、フォルダ整理されたチャット。',
-          'Coding — 単一レポ、マルチレポプロジェクト、worktree、Files、Changes、Review。',
+          'Coding — 単一レポ、マルチレポプロジェクト、worktree、Files、Source Control。',
           'モード記憶 — 戻ったとき最終ルートが復元される。',
           'Settings — settings ルートを離れるまでモードスイッチャーは非表示。'
 ],
@@ -490,7 +490,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '良い revise プロンプトはファイル、テスト、スコープ外を明示。',
           '悪い revise は曖昧（「もっと良く」） — まず弱い箇条を引用。',
           '横断: 無関係なメタ質問は side chat へ送り、プランスレッドを清潔に。',
-          '横断: Coding 作業で Accept 後、Changes（Ctrl+G）を開き diff がプランと一致するか確認。'
+          '横断: Coding 作業で Accept 後、Source Control（Ctrl+G）を開き diff がプランと一致するか確認。'
 ],
       },
       {
@@ -978,13 +978,14 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench ツール',
     summary:
-      'Terminal、Browser、Files、Side chat、Memory、Scheduler、Changes、Review をチャット横で開きます。ショートカットは OS に合わせ、macOS は Command、Windows/Linux は Ctrl を使います。',
+      'Terminal、Browser、Files、Side chat、Memory、Scheduler、Source Control をチャット横で開きます。ショートカットは OS に合わせ、macOS は Command、Windows/Linux は Ctrl を使います。',
     keywords: [
       'workbench',
       'panel',
       'terminal',
       'files',
       'dock',
+      'Source Control',
       'Changes',
       'Review',
       'Ctrl+F',
@@ -997,21 +998,21 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ファイル'
 ],
     setup:
-      'まずセッションを開きます。Coding の Files とローカルの Changes には Coding ワークスペースが必要。内蔵 Browser は Settings → Browser で有効にしてから Ctrl+T が役立ちます。',
+      'まずセッションを開きます。Coding の Files と Source Control には Coding ワークスペースが必要。内蔵 Browser は Settings → Browser で有効にしてから Ctrl+T が役立ちます。',
     tricks: [
       'workbench バー、ドック、または下記ショートカットからツールを開きます。',
       'ランタイムショートカットとラベルは OS に合わせ、macOS は Command、Windows/Linux は Ctrl。',
       '実マッピング: Files = Ctrl+F（ラベルは ⌘P の場合あり）; Side chat = Ctrl+;（ラベルは ⌥⌘S の場合あり）。',
-      'Changes はローカルのソースコントロールと pull request の Review を兼ねます — ヘッダーで切り替え。',
+      'Source Control はローカルの Changes と pull request の Review を兼ねます — ヘッダーで切り替え。',
       'Terminal と Browser は複数タブインスタンス対応; 他ツールは単一インスタンスのトグル。',
       'どの Terminal タブでも下部の Running を開くと、全セッションのエージェントコマンド、プレビューサーバー、他のターミナルを確認・停止できます。',
-      'Changes（Ctrl+G）は Coding のみ; Files には Coding ワークスペースが必要。',
+      'Source Control（Ctrl+G）は Coding のみ。',
       '同じツールをもう一度トグルで閉じる — workbench は常設カードの山ではありません。'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Workbench はチャット横の右（またはドック）ツール面です。ツール: Terminal、Browser、Files、Side chat、Memory（wiki）、Scheduler、Changes（ソースコントロールと pull/merge request の Review）。チャットが主; ツールはワンショートカット先の検査とアクション面です。',
+        text: 'Workbench はチャット横の右（またはドック）ツール面です。ツール: Terminal、Browser、Files、Side chat、Memory（wiki）、Scheduler、Source Control（ローカルの Changes と pull/merge request の Review）。チャットが主; ツールはワンショートカット先の検査とアクション面です。',
       },
       {
         type: 'p',
@@ -1027,7 +1028,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+M', action: 'Memory（wiki）' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
-          { keys: 'Ctrl+G', action: 'Git Changes（Coding）' }
+          { keys: 'Ctrl+G', action: 'Source Control（Coding）' }
 ],
       },
       {
@@ -1039,7 +1040,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Side chat — /btw 並列質問。',
           'Memory — wiki + 保留メモ。',
           'Scheduler — cron / ワンショットタスク（パネルのみ; /scheduler はホームへリダイレクト）。',
-          'Changes — stage、commit、ブランチ操作、接続ホストの PR/MR を一覧する Review ビュー（Coding）。'
+          'Source Control — stage、commit、ブランチ操作、接続ホストの PR/MR を一覧する Review ビュー（Coding）。'
 ],
       },
       {
@@ -1055,7 +1056,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           'Terminal vs ! — 対話/長時間 vs 短いチャット紐づきコマンド。',
           'Files vs @ — 閲覧/探索 vs 既知パスを依頼にピン留め。',
-          '横断: plan モード Accept 後に Changes で diff を検証。',
+          '横断: plan モード Accept 後に Source Control で diff を検証。',
           '横断: 調査セッション後に Memory を開き Dream の材料を残す。'
 ],
       }
@@ -1193,7 +1194,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding モードは git リポジトリ、任意のマルチレポプロジェクト、管理 worktree を扱います。エージェントは Files、Terminal、Changes、Review をチャット横で使い実ツリーを編集します。永続エンジニアリング作業向けのモードです。',
+        text: 'Coding モードは git リポジトリ、任意のマルチレポプロジェクト、管理 worktree を扱います。エージェントは Files、Terminal、Source Control をチャット横で使い実ツリーを編集します。永続エンジニアリング作業向けのモードです。',
       },
       {
         type: 'p',
@@ -1215,7 +1216,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '最初の Coding セッション手順: (1) Coding へ切り替え、(2) git レポを追加、(3) クリックでフォーカス、(4) + / New chat、(5) AGENTS.md がなければ /init、(6) 権限モード設定、(7) 主要ファイルを @ して変更を記述、(8) Changes でブランチと作業ツリーを確認。',
+        text: '最初の Coding セッション手順: (1) Coding へ切り替え、(2) git レポを追加、(3) クリックでフォーカス、(4) + / New chat、(5) AGENTS.md がなければ /init、(6) 権限モード設定、(7) 主要ファイルを @ して変更を記述、(8) Source Control でブランチと作業ツリーを確認。',
       },
       {
         type: 'p',
@@ -1231,7 +1232,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'プロジェクトするとき — クロスレポ型、共有契約、マルチサービス変更。',
           'プロジェクトしないとき — めったに触らない vendored 付きの 1 アプリレポ。',
           '横断: source search のクロスレポ解決には project_id が必要。',
-          '横断: Review/Changes はフォーカスされたワークスペースに付く。'
+          '横断: Source Control はフォーカスされたワークスペースに付く。'
 ],
       }
 ],
@@ -1246,9 +1247,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
   {
     id: 'coding-git',
     category: 'coding',
-    title: 'Git、Changes、プルリクエスト',
+    title: 'Git、Source Control、プルリクエスト',
     summary:
-      'Coding の Changes（Ctrl+G。Changes / Review の 2 ビュー）と Settings → Git & reviews から stage、commit、branch、merge、rebase、stash、PR/MR レビューを行います。force-with-lease や巨大 diff の前に安全トグルを意図的に。',
+      'Coding の Source Control（Ctrl+G。Changes / Review の 2 ビュー）と Settings → Git & reviews から stage、commit、branch、merge、rebase、stash、PR/MR レビューを行います。force-with-lease や巨大 diff の前に安全トグルを意図的に。',
     keywords: [
       'git',
       'commit',
@@ -1275,11 +1276,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     setup:
       'git ワークスペース付き Coding モード。リモート PR/MR 操作は Settings → Git & reviews でホスト接続。積極的操作の前にタイムアウト、max diff size、force-with-lease を確認。',
     tricks: [
-      'Ctrl+G で Changes（ソースコントロール）を開く。',
+      'Ctrl+G で Source Control を開く。',
       'Force-with-lease と max diff size はバージョンコントロール設定でゲート。',
-      'Changes の Review ビューは接続時に GitHub、GitLab、Bitbucket、Gitea、Azure DevOps の PR/MR を一覧。',
+      'Source Control の Review ビューは接続時に GitHub、GitLab、Bitbucket、Gitea、Azure DevOps の PR/MR を一覧。',
       'エージェントも権限モードと sandbox に従いツール経由で git 操作可能。',
-      'stash / branch / rebase は快適さに応じて Changes またはエージェントツールから。',
+      'stash / branch / rebase は快適さに応じて Source Control またはエージェントツールから。',
       '小さなコミットと明確なメッセージを優先 — エージェントはきれいな履歴に対してより良いフォローアップを書きます。',
       'Create PR を頼む前にホスト接続 — さもなくばローカルコミットは成功しリモート段階で遅く失敗。',
       'diff が巨大なら max diff size は一時的にだけ上げる — 過大レビューはリスクを隠します。'
@@ -1287,7 +1288,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding はローカルソースコントロール（Changes）とリモートレビュー（Review）を公開します。ローカル操作には stage、commit、branch、merge、rebase、cherry-pick、stash、worktree 対応フローが含まれます。Settings → Git & reviews 設定時、リモートホストが PR/MR 一覧とレビューアクションを支えます。',
+        text: 'Coding は Source Control として、ローカル変更（Changes）とリモートレビュー（Review）を公開します。ローカル操作には stage、commit、branch、merge、rebase、cherry-pick、stash、worktree 対応フローが含まれます。Settings → Git & reviews 設定時、リモートホストが PR/MR 一覧とレビューアクションを支えます。',
       },
       {
         type: 'p',
@@ -1295,12 +1296,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Ctrl+G を押すか workbench から Changes を開く。diff をレビューし、stage し、commit。接続済み PR/MR は Review。ホスト、タイムアウト、安全トグルは Settings → Git & reviews。ホスト接続準備ができたら diff レビューから Create PR を依頼。',
+        text: 'Ctrl+G を押すか workbench から Source Control を開く。diff をレビューし、stage し、commit。接続済み PR/MR は Review。ホスト、タイムアウト、安全トグルは Settings → Git & reviews。ホスト接続準備ができたら diff レビューから Create PR を依頼。',
       },
       {
         type: 'tips',
         items: [
-          'Ctrl+G — Changes / ソースコントロール',
+          'Ctrl+G — Source Control',
           'Review — 接続ホストの PR/MR 一覧',
           'GitHub / GitLab / Bitbucket / Gitea / Azure DevOps — ホスト連携',
           'force-with-lease — ゲート済み; 気軽な既定ではない',
@@ -1323,7 +1324,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          '横断: Plan Accept → Changes で、プランが期待どおりの diff になったか確認。',
+          '横断: Plan Accept → Source Control で、プランが期待どおりの diff になったか確認。',
           '横断: worktree は実験コミットを主チェックアウトから遠ざける。',
           '横断: 本番リモートへの初 push 前は権限 ask モード。'
 ],
@@ -2462,7 +2463,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+T', action: '内蔵ブラウザ' },
-          { keys: 'Ctrl+G', action: 'Git Changes（Coding）' },
+          { keys: 'Ctrl+G', action: 'Source Control（Coding）' },
           { keys: 'Ctrl+`', action: 'Terminal' },
           { keys: 'Ctrl+I', action: 'チャット入力にフォーカス' },
           { keys: 'Ctrl+;', action: 'Side chat（ラベルは ⌥⌘S の場合あり）' },
@@ -2571,7 +2572,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '順序付きチェックリスト: (1) HealthDot、(2) Connection モード、(3) Welcome/チーム準備、(4) Diagnostics、(5) Providers、(6) 権限シールド、(7) Sandbox denylist、(8) Browser/WebBridge、(9) モード固有ツール（Changes/Files/Review は Coding のみ）。最初に失敗した層で止める。',
+        text: '順序付きチェックリスト: (1) HealthDot、(2) Connection モード、(3) Welcome/チーム準備、(4) Diagnostics、(5) Providers、(6) 権限シールド、(7) Sandbox denylist、(8) Browser/WebBridge、(9) モード固有ツール（Source Control と Problems は Coding のみ）。最初に失敗した層で止める。',
       },
       {
         type: 'p',

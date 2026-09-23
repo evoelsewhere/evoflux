@@ -29,7 +29,7 @@ member — by insertion order — is what the backend derives. That is a cwd, no
 verdict about which repository matters, and a panel that presents it as the
 project is wrong.
 
-The Changes tab — both its Changes and Review views — therefore carries its own
+The Source Control tab — both its Changes and Review views — therefore carries its own
 repository selection. Terminal and the file tree stay rooted at the
 session's own repository, which is where the agent actually runs.
 
