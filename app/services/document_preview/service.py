@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import io
 import math
 import os
 import shutil
@@ -667,7 +668,7 @@ def _load_preview_workbooks(source: Path) -> tuple[Any, Any]:
     """
     from openpyxl import load_workbook
 
-    from app.services.document_preview.xlsx_features import sanitized_workbook_copy
+    from app.services.document_preview.xlsx_features import sanitized_workbook_bytes
 
     try:
         return (
@@ -675,15 +676,14 @@ def _load_preview_workbooks(source: Path) -> tuple[Any, Any]:
             load_workbook(source, data_only=True, read_only=False),
         )
     except (TypeError, ValueError, KeyError, AttributeError) as first_error:
-        with tempfile.TemporaryDirectory(prefix="evoflux-xlsx-") as directory:
-            repaired = sanitized_workbook_copy(source, Path(directory) / source.name)
-            try:
-                workbooks = (
-                    load_workbook(repaired, data_only=False, read_only=False),
-                    load_workbook(repaired, data_only=True, read_only=False),
-                )
-            except (TypeError, ValueError, KeyError, AttributeError):
-                raise first_error from None
+        repaired = sanitized_workbook_bytes(source)
+        try:
+            workbooks = (
+                load_workbook(io.BytesIO(repaired), data_only=False, read_only=False),
+                load_workbook(io.BytesIO(repaired), data_only=True, read_only=False),
+            )
+        except (TypeError, ValueError, KeyError, AttributeError):
+            raise first_error from None
         logger.info("document_preview_xlsx_repaired file={}", source.name)
         return workbooks
 
@@ -1108,10 +1108,10 @@ def _shape_box(
 ) -> str:
     width_basis = coordinate_width or slide_width
     height_basis = coordinate_height or slide_height
-    left = 100 * (int(shape.left) - coordinate_left) / max(width_basis, 1)
-    top = 100 * (int(shape.top) - coordinate_top) / max(height_basis, 1)
-    width = 100 * int(shape.width) / max(width_basis, 1)
-    height = 100 * int(shape.height) / max(height_basis, 1)
+    left = 100 * (int(shape.left or 0) - coordinate_left) / max(width_basis, 1)
+    top = 100 * (int(shape.top or 0) - coordinate_top) / max(height_basis, 1)
+    width = 100 * int(shape.width or 0) / max(width_basis, 1)
+    height = 100 * int(shape.height or 0) / max(height_basis, 1)
     styles = f"left:{left:.3f}%;top:{top:.3f}%;width:{width:.3f}%;height:{height:.3f}%"
     transform = _shape_transform_css(shape)
     if transform:
@@ -2296,10 +2296,10 @@ def _connector_svg(
 ) -> str:
     width_basis = coordinate_width or slide_width
     height_basis = coordinate_height or slide_height
-    left = 100 * (int(shape.left) - coordinate_left) / max(width_basis, 1)
-    top = 100 * (int(shape.top) - coordinate_top) / max(height_basis, 1)
-    width = 100 * int(shape.width) / max(width_basis, 1)
-    height = 100 * int(shape.height) / max(height_basis, 1)
+    left = 100 * (int(shape.left or 0) - coordinate_left) / max(width_basis, 1)
+    top = 100 * (int(shape.top or 0) - coordinate_top) / max(height_basis, 1)
+    width = 100 * int(shape.width or 0) / max(width_basis, 1)
+    height = 100 * int(shape.height or 0) / max(height_basis, 1)
     transform = shape._element.xpath(".//*[local-name()='xfrm']")
     flip_horizontal = bool(transform and transform[0].get("flipH") == "1")
     flip_vertical = bool(transform and transform[0].get("flipV") == "1")
@@ -4400,6 +4400,46 @@ def _graphic_frame_fallback(frame: Any, *, identity: str, box: str) -> str:
     )
 
 
+def _shape_type_name(shape: Any) -> str:
+    """Return python-pptx's shape type name, or "" for unmodelled shapes.
+
+    ``Shape.shape_type`` raises ``NotImplementedError`` for autoshapes without
+    a geometry, which markup-compatibility fallbacks and SmartArt drawings
+    commonly contain.
+    """
+    try:
+        return str(getattr(getattr(shape, "shape_type", None), "name", "") or "")
+    except NotImplementedError:
+        return ""
+
+
+def _render_slide_shapes(slide: Any, **options: Any) -> list[str]:
+    """Render every composited shape, isolating failures to the one shape.
+
+    Real decks carry shapes the renderer does not fully model; one of them
+    must not blank the whole presentation.
+    """
+    rendered: list[str] = []
+    for layer, shape in _composite_slide_shapes(slide):
+        try:
+            rendered.append(
+                _render_pptx_shape(shape, layer=layer, slide=slide, **options)
+            )
+        except (
+            AttributeError,
+            KeyError,
+            TypeError,
+            ValueError,
+            NotImplementedError,
+        ) as exc:
+            logger.warning(
+                "document_preview_pptx_shape_skipped name={} error={}",
+                getattr(shape, "name", ""),
+                exc,
+            )
+    return rendered
+
+
 def _composite_slide_shapes(slide: Any) -> list[tuple[str, Any]]:
     layout = slide.slide_layout
     result: list[tuple[str, Any]] = []
@@ -4451,7 +4491,7 @@ def _render_pptx_shape(
     coordinate_width: int | None = None,
     coordinate_height: int | None = None,
 ) -> str:
-    shape_type = getattr(getattr(shape, "shape_type", None), "name", "")
+    shape_type = _shape_type_name(shape)
     if shape_type == "GROUP":
         box = _shape_box(
             shape,
@@ -4653,18 +4693,13 @@ def _render_pptx(source: Path) -> str:
     for slide_number, slide in enumerate(presentation.slides, start=1):
         palette = _pptx_theme_palette(slide)
         fonts = _pptx_theme_fonts(slide)
-        shapes = [
-            _render_pptx_shape(
-                shape,
-                layer=layer,
-                slide=slide,
-                palette=palette,
-                fonts=fonts,
-                slide_width=slide_width,
-                slide_height=slide_height,
-            )
-            for layer, shape in _composite_slide_shapes(slide)
-        ]
+        shapes = _render_slide_shapes(
+            slide,
+            palette=palette,
+            fonts=fonts,
+            slide_width=slide_width,
+            slide_height=slide_height,
+        )
 
         background = _slide_background(slide, palette)
         ratio = f"{slide_width}/{slide_height}"

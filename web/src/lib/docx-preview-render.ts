@@ -30,6 +30,7 @@ export const MAX_DOCX_SOURCE_BYTES = 100 * 1024 * 1024
 
 const BLOCKED_ELEMENTS = 'script,iframe,frame,object,embed,link,meta,base,form,input,button,textarea,select'
 const SAFE_URL = /^(data:|blob:|#)/i
+const SAFE_IMAGE_URL = /^(data:image\/|blob:)/i
 
 const VIEWER_CSS = `
 html,body{margin:0;padding:0;background:#e8eaed}
@@ -61,6 +62,9 @@ export function neutralizeRenderedDocx(root: Element): void {
         element.removeAttribute(attribute.name)
       } else if (name === 'href' || name === 'xlink:href') {
         const value = attribute.value.trim()
+        // SVG <image> is how VML picture fallbacks are painted; inline image
+        // data is inert, so keep it. Anything else could navigate the frame.
+        if (element.localName === 'image' && SAFE_IMAGE_URL.test(value)) continue
         element.removeAttribute(attribute.name)
         if (value && !value.startsWith('#')) element.setAttribute('data-href', value)
       } else if ((name === 'src' || name === 'srcset' || name === 'poster') && !SAFE_URL.test(attribute.value.trim())) {
