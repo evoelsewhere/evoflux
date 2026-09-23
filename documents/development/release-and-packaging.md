@@ -47,8 +47,10 @@ make -C desktop sidecar-full  # adds Azure Document Intelligence
 ```
 
 `scripts/build_sidecar.py` downloads/assembles the target Python runtime,
-installs project dependencies and optional Office preview engines, includes app
-and migration resources, and validates the resulting entry path. Generated
+installs project dependencies and optional Office preview engines at the exact
+versions pinned in `uv.lock` (via `uv export --locked`; the build fails if the
+lock is stale), includes app and migration resources, and validates the
+resulting entry path. Run `uv lock` after changing dependencies. Generated
 `desktop/sidecar-bundle` is a build artifact and must not be committed.
 
 ### Native package
