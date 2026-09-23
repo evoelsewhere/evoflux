@@ -15,7 +15,7 @@ const STATUS_POLL_INTERVAL_MS = 1_000
 
 const INITIAL_STATUS: BackendStartupStatus = {
   phase: 'preparing',
-  message: 'Preparing the local engine…',
+  message: 'Starting EvoFlux…',
   attempt: 0,
   max_attempts: 3,
   elapsed_ms: 0,
@@ -99,7 +99,7 @@ export function useAppBackendBootstrap(): AppBackendBootstrap {
         setStartup((current) => ({
           ...current,
           phase: 'error',
-          message: 'The local engine is taking longer than expected.',
+          message: 'EvoFlux is taking longer than expected.',
           error: current.error || 'Startup exceeded 210 seconds. You can retry or inspect the backend log.',
           fatal: false,
         }))
@@ -132,8 +132,8 @@ export function useAppBackendBootstrap(): AppBackendBootstrap {
           applyStatus({
             phase: 'error',
             message: event.payload.fatal
-              ? 'The local engine needs attention.'
-              : 'The local engine could not start.',
+              ? 'EvoFlux needs attention.'
+              : "EvoFlux couldn't start.",
             attempt: event.payload.attempt,
             max_attempts: event.payload.max_attempts,
             elapsed_ms: Date.now() - mountedAt,
@@ -166,7 +166,7 @@ export function useAppBackendBootstrap(): AppBackendBootstrap {
     setStartup((current) => ({
       ...current,
       phase: 'launching',
-      message: 'Restarting the local engine…',
+      message: 'Restarting EvoFlux…',
       error: null,
       fatal: false,
     }))
@@ -176,7 +176,7 @@ export function useAppBackendBootstrap(): AppBackendBootstrap {
       setStartup((current) => ({
         ...current,
         phase: 'error',
-        message: 'Could not request an engine restart.',
+        message: "EvoFlux couldn't restart.",
         error: error instanceof Error ? error.message : String(error),
         fatal: false,
       }))
