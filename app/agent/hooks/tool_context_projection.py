@@ -8,12 +8,14 @@ OpenAI-compatible providers continue to receive a valid function-call history.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from loguru import logger
 
 from app.agent.hooks.base import BaseAgentHook
-from app.agent.schemas.chat import AssistantMessage, ToolMessage
+from app.agent.schemas.chat import AssistantMessage, ChatMessage, ToolMessage
+from app.agent.skills.activation import is_skill_file_read
 
 if TYPE_CHECKING:
     from app.agent.state import (
@@ -24,10 +26,9 @@ if TYPE_CHECKING:
     )
 
 
-# Skill bodies are executable instructions and have their own exact-preservation
-# contract. Every other old text-only result is safe to project once it leaves
-# the recent working set; this also protects the harness when new tools appear.
-_NON_PROJECTABLE_TOOLS = frozenset({"skill"})
+# A read of a SKILL.md is a Skill activation: executable instructions with
+# their own exact-preservation contract. Every other old text-only result is
+# safe to project once it leaves the recent working set.
 _MIN_RESULT_CHARS = 1_200
 _RECEIPT_STATUS_CHARS = 160
 _RECEIPT_HEAD_CHARS = 180
@@ -85,6 +86,74 @@ def _projected_batch_count(total_batches: int, keep_recent: int) -> int:
     return ((total_batches - keep_recent) // step) * step
 
 
+def project_tool_results(
+    messages: "Sequence[ChatMessage]", *, keep_recent_batches: int
+) -> tuple[list["ChatMessage"], dict[str, int] | None]:
+    """Replace old, high-volume tool results with receipts.
+
+    Pure: takes a message list, returns a new one plus the stats describing
+    what it replaced, or ``None`` when nothing qualified. Shared with the
+    summariser, which has to send the same shrunk transcript the provider
+    boundary already sends — building its request from the raw one was how a
+    session whose turns fit in 200K sent a 404K compaction request and got a
+    ``context_length_exceeded`` on every attempt.
+    """
+    batches = [
+        message
+        for message in messages
+        if isinstance(message, AssistantMessage) and message.tool_calls
+    ]
+    compacted_batches = _projected_batch_count(
+        len(batches), max(1, keep_recent_batches)
+    )
+    if compacted_batches <= 0:
+        return list(messages), None
+
+    keep_call_ids = {
+        call.id
+        for message in batches[compacted_batches:]
+        for call in message.tool_calls or []
+    }
+    results = {
+        message.tool_call_id: message
+        for message in messages
+        if isinstance(message, ToolMessage)
+    }
+    keep_call_ids.update(
+        call.id
+        for message in batches[:compacted_batches]
+        for call in message.tool_calls or []
+        if is_skill_file_read(call, results.get(call.id))
+    )
+    projected: list[ChatMessage] = []
+    original_chars = 0
+    projected_chars = 0
+    projected_count = 0
+    for message in messages:
+        if (
+            isinstance(message, ToolMessage)
+            and message.tool_call_id not in keep_call_ids
+            and not message.parts
+            and len(message.content or "") > _MIN_RESULT_CHARS
+        ):
+            replacement = _receipt(message)
+            projected.append(message.model_copy(update={"content": replacement}))
+            original_chars += len(message.content or "")
+            projected_chars += len(replacement)
+            projected_count += 1
+        else:
+            projected.append(message)
+
+    if not projected_count:
+        return list(messages), None
+    return projected, {
+        "results": projected_count,
+        "original_chars": original_chars,
+        "projected_chars": projected_chars,
+        "saved_chars": original_chars - projected_chars,
+    }
+
+
 class ToolContextProjectionHook(BaseAgentHook):
     """Bound replay cost while preserving the recent working set verbatim."""
 
@@ -98,57 +167,19 @@ class ToolContextProjectionHook(BaseAgentHook):
         request: "ModelRequest",
         handler: "ModelCallHandler",
     ) -> AssistantMessage:
-        batches = [
-            message
-            for message in request.messages
-            if isinstance(message, AssistantMessage) and message.tool_calls
-        ]
-        compacted_batches = _projected_batch_count(
-            len(batches), self._keep_recent_batches
+        projected, stats = project_tool_results(
+            request.messages, keep_recent_batches=self._keep_recent_batches
         )
-        if compacted_batches <= 0:
-            return await handler(request)
 
-        keep_call_ids = {
-            call.id
-            for message in batches[compacted_batches:]
-            for call in message.tool_calls or []
-        }
-        projected = []
-        original_chars = 0
-        projected_chars = 0
-        projected_count = 0
-        for message in request.messages:
-            if (
-                isinstance(message, ToolMessage)
-                and message.tool_call_id not in keep_call_ids
-                and message.name not in _NON_PROJECTABLE_TOOLS
-                and not message.parts
-                and len(message.content or "") > _MIN_RESULT_CHARS
-            ):
-                replacement = _receipt(message)
-                projected.append(message.model_copy(update={"content": replacement}))
-                original_chars += len(message.content or "")
-                projected_chars += len(replacement)
-                projected_count += 1
-            else:
-                projected.append(message)
-
-        if projected_count:
-            saved = original_chars - projected_chars
-            state.metadata["tool_context_projection"] = {
-                "results": projected_count,
-                "original_chars": original_chars,
-                "projected_chars": projected_chars,
-                "saved_chars": saved,
-            }
+        if stats:
+            state.metadata["tool_context_projection"] = dict(stats)
             logger.debug(
                 "tool_context_projected agent={} results={} original_chars={} projected_chars={} saved_chars={}",
                 ctx.agent_name,
-                projected_count,
-                original_chars,
-                projected_chars,
-                saved,
+                stats["results"],
+                stats["original_chars"],
+                stats["projected_chars"],
+                stats["saved_chars"],
             )
             request = request.override(messages=tuple(projected))
         return await handler(request)

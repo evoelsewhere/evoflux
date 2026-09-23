@@ -8,7 +8,7 @@ The failure mode this mode is designed against: producing a plausible-looking ch
 
 1. **Question**: A crisp hypothesis or estimation target. Not "look at this data" — "does feature X predict outcome Y after controlling for Z?", or "what's the median time-to-first-response by team?". If the user only has a dataset and no question, negotiate to a specific question in the contract.
 2. **Dataset**: Path, format (CSV / parquet / JSON / DB connection), row count if known, schema if known. Note anything the user warns about (known missing values, duplicated columns, sample bias).
-3. **Deliverables**: A `report.md` with the finding, `analysis_log.tsv` (one row per analytical step), and a `scripts/` folder with numbered scripts that reproduce every figure and number in the report. Optionally a `figures/` folder.
+3. **Deliverables**: A `report.md` with the finding, `analysis_log.tsv` (one row per analytical step), and an `analysis/<tag>/scripts/` folder with numbered scripts that reproduce every figure and number in the report. Optionally a `figures/` folder. (In this mode, `scripts/` always means the analysis folder in the workspace, not the skill's own toolbox scripts.)
 4. **Constraints**: What's off-limits? (e.g. "don't merge with the internal HR table", "compute must run under 10 min per script", "no ML libraries — keep it interpretable statistics").
 5. **Working directory**: A dedicated `analysis/<tag>/` folder. Everything goes there.
 
@@ -47,7 +47,7 @@ step	script	status	finding	caveat
 - **finding** — one sentence, quantitative where possible.
 - **caveat** — one sentence, what makes this weaker than it looks. Empty caveat is suspicious.
 
-## The scripts folder
+## The analysis scripts folder
 
 - Numbered by step (`00_audit.py`, `01_distributions.py`, …) so a reader can rerun in order.
 - Each script: reads the raw data, does one thing, writes any figures to `figures/`, prints its findings (which you copy into the log). No shared mutable state between scripts unless you write an intermediate parquet in between and load it back.

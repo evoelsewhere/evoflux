@@ -69,13 +69,12 @@ DEFAULT_CHAR_THRESHOLD = 40000
 # Me preview chars: first N + last N shown inline so agent sees head & tail
 DEFAULT_PREVIEW_CHARS = 1000
 # Never offload read — agent uses it to access prior offloads, offloading
-# its result would create a circular dependency.
-# Never offload skill — skill content must reach the agent intact; truncating
-# it would silently deliver incomplete instructions.
+# its result would create a circular dependency. It also keeps Skill
+# activations (reads of SKILL.md) intact.
 # shell is NOT excluded: it self-truncates large output (persists full content
 # to the XDG session artifact directory) so this hook normally never sees
 # oversized shell results.
-_NEVER_OFFLOAD = frozenset({"read", "skill"})
+_NEVER_OFFLOAD = frozenset({"read"})
 
 
 class ToolResultOffloadHook(BaseAgentHook):

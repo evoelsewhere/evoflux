@@ -70,7 +70,6 @@ export type PlanDecision = 'approved' | 'rejected' | 'revise'
 export interface AskUserQuestionItem {
   question: string
   options: string[]
-  strict?: boolean
   kind?: 'text' | 'agent_spawn'
   agentSpawn?: {
     blueprint: string
@@ -487,7 +486,6 @@ export type SearchEverywhereKind =
   | 'git_commit'
   | 'problem'
   | 'skill'
-  | 'workflow'
 
 export interface SearchEverywhereItem {
   id: string
@@ -572,6 +570,29 @@ export interface LanguageServerInstallJob {
   error: string | null
 }
 
+export type OfficeRuntimeJobPhase = 'downloading' | 'verifying' | 'extracting' | 'failed'
+
+export interface OfficeRuntimeJob {
+  phase: OfficeRuntimeJobPhase
+  version: string
+  bytes_done: number
+  bytes_total: number
+  started_at: string
+  error: string | null
+}
+
+/** Exact Office rendering runtime (LibreOffice), installed on user request. */
+export interface OfficeRuntimeStatus {
+  available: boolean
+  platform: string | null
+  version: string | null
+  download_bytes: number | null
+  /** Disk space the installed runtime takes, when the manifest states it. */
+  install_bytes: number | null
+  installed_version: string | null
+  job: OfficeRuntimeJob | null
+}
+
 export interface LanguageServerOverview {
   workspaces: string[]
   cache_dir: string
@@ -579,167 +600,6 @@ export interface LanguageServerOverview {
   /** True when detection stopped at `scan_limit`, so languages may be missing. */
   scan_truncated: boolean
   scan_limit: number
-}
-
-// ── Code context (/api/code-context) ────────────────────────────────────────
-
-export interface CodeGraphStatusResponse {
-  indexed: boolean
-  files: number
-  nodes: number
-  edges: number
-  indexing: boolean
-  index_phase: string | null
-  index_progress: number | null
-  index_message: string | null
-  index_error: string | null
-}
-
-export interface CodeGraphNode {
-  id: string
-  workspace_id: string
-  kind: string
-  name: string
-  qualified_name: string
-  file_path: string
-  language: string
-  line_start: number
-  line_end: number
-  signature: string | null
-  docstring: string | null
-}
-
-export interface CodeGraphSearchResponse {
-  nodes: CodeGraphNode[]
-}
-
-export type CodeGraphOperation =
-  | 'definition'
-  | 'callers'
-  | 'callees'
-  | 'references'
-  | 'impact'
-  | 'neighborhood'
-export type CodeGraphFreshnessPolicy = 'fast' | 'balanced' | 'strict'
-
-export interface CodeGraphSymbol {
-  repository: string
-  file_path: string
-  line_start: number
-  line_end: number
-  symbol: string
-  kind: string
-  language: string
-  signature: string | null
-  resolution: string
-  source: string | null
-}
-
-export interface CodeGraphRelation {
-  kind: string
-  depth: number
-  cross_repo: boolean
-  source_symbol: string
-  source_location: string
-  target_symbol: string
-  target_location: string
-  callsite_location: string
-  callsite_source: string | null
-}
-
-export interface CodeGraphLanguageCapability {
-  language: string
-  extensions: string[]
-  graph: boolean
-  lsp: boolean
-  indexed_files: number
-  workspace_files: number
-  coverage: number
-}
-
-export interface CodeGraphNavigateResponse {
-  symbol: string
-  operation: CodeGraphOperation
-  strategy: string
-  graph_version: string | null
-  working_tree_revision: string
-  freshness: 'fresh' | 'partial' | 'unavailable'
-  dirty_files: number
-  pending_edges: number
-  matches: CodeGraphSymbol[]
-  relations: CodeGraphRelation[]
-  suggestions: CodeGraphSymbol[]
-  capabilities: CodeGraphLanguageCapability[]
-  limitations: string[]
-  truncated: boolean
-}
-
-export interface CodeGraphFreshnessResponse {
-  graph_version: string | null
-  working_tree_revision: string
-  freshness: 'fresh' | 'partial' | 'unavailable'
-  indexed_files: number
-  dirty_files: number
-  change_source: string
-}
-
-export interface CodeGraphEdge {
-  id: string
-  src_id: string
-  dst_id: string
-  kind: string
-  file_path: string | null
-  line: number | null
-}
-
-export interface ProjectCodeGraphData {
-  repos: ProjectRepoStatus[]
-  nodes: CodeGraphNode[]
-  edges: CodeGraphEdge[]
-  cross_repo_edges: CrossRepoEdge[]
-  node_limit_per_repo: number
-  edge_limit_per_repo: number
-  total_node_count: number
-  total_edge_count: number
-}
-
-export interface CodeGraphReindexResponse {
-  indexing: boolean
-  already_running: boolean
-}
-
-export interface ProjectReindexStartedResponse {
-  indexing: boolean
-  repo_count: number
-  already_running: number
-  full: boolean
-}
-
-// Per-repo index status for a project-wide code graph view — one entry per
-// workspace, not an aggregate, so the UI can offer "Build index" for
-// whichever specific repo(s) haven't been indexed yet.
-export interface ProjectRepoStatus {
-  workspace_id: string
-  path: string
-  name: string
-  indexed: boolean
-  files: number
-  nodes: number
-  edges: number
-  indexing: boolean
-  index_phase: string | null
-  index_progress: number | null
-  index_message: string | null
-  index_error: string | null
-}
-
-export interface ProjectCodeSearchResult {
-  path: string
-  node: CodeGraphNode
-}
-
-export interface ProjectCodeSearchResponse {
-  results: ProjectCodeSearchResult[]
 }
 
 export interface MessageAttachment {
@@ -862,29 +722,6 @@ export interface AddWorkspaceToProjectRequest {
   display_name?: string
 }
 
-// Cross-repository links are resolved from the current repository targets.
-export type CrossRepoEdgeMethod = 'dynamic-symbol-resolution'
-
-export type CrossRepoEdgeStatus = 'unresolved' | 'resolved' | 'rejected'
-
-export interface CrossRepoEdge {
-  id: string
-  src_workspace_id: string
-  src_node_id: string | null
-  src_file_path: string
-  src_line: number | null
-  raw_reference: string
-  dst_name_hint: string | null
-  kind: string
-  status: CrossRepoEdgeStatus
-  method: CrossRepoEdgeMethod | null
-  confidence: number | null
-  rationale: string | null
-  dst_workspace_id: string | null
-  dst_node_id: string | null
-  dst_qualified_name: string | null
-}
-
 export interface SessionDetailResponse extends SessionResponse {
   messages: MessageResponse[]
 }
@@ -968,99 +805,8 @@ export interface TeamHistoryResponse {
   }>
   /** Durable autonomous objective attached to this session. */
   goal?: GoalResponse | null
-  // Live workflow snapshot from the runner (gone after restart).
-  workflow_execution?: {
-    execution_id: string
-    definition_name: string
-    status: string
-    node_id: string | null
-    node_index: number | null
-    total_nodes: number
-  } | null
   has_more: boolean
   next_cursor: string | null
-}
-
-// ── Workflows (documents/plans/workflows-feature-plan.md) ────────────────────
-
-export interface WorkflowInputSpec {
-  name: string
-  type: 'string' | 'number' | 'boolean' | 'enum'
-  required: boolean
-  default?: unknown
-  options?: string[] | null
-  description: string
-}
-
-export interface WorkflowListItem {
-  name: string
-  description: string
-  scope: 'work' | 'coding'
-  inputs: WorkflowInputSpec[]
-  hash: string
-  root: string
-  source_path: string
-  approved: boolean
-  valid: boolean
-  errors: string[]
-  node_count: number
-}
-
-export interface WorkflowDetail {
-  name: string
-  raw_yaml: string
-  graph: Record<string, unknown>
-  hash: string
-  root: string
-  scope: string | null
-  approved: boolean
-  manifest: Record<string, unknown>
-  lint_warnings: string[]
-  errors: string[]
-}
-
-export interface WorkflowRunResult {
-  execution_id: string
-  session_id: string
-}
-
-export interface WorkflowExecutionSummary {
-  id: string
-  definition_name: string
-  definition_hash: string
-  session_id: string
-  // running | waiting_gate | completed | failed | stopped
-  status: string
-  error: string | null
-  inputs: Record<string, unknown>
-  retry_of_execution_id: string | null
-  outputs: Record<string, unknown>
-  started_at: string
-  ended_at: string | null
-  // True while the in-memory runner is driving this execution; a running
-  // row without it is an orphan from a backend restart ("interrupted").
-  live: boolean
-}
-
-export interface WorkflowNodeRun {
-  id: string
-  node_id: string
-  iteration: number | null
-  // running | succeeded | failed | skipped
-  status: string
-  output: Record<string, unknown> | null
-  error: string | null
-  started_at: string
-  ended_at: string | null
-}
-
-export interface WorkflowExecutionDetail {
-  execution: WorkflowExecutionSummary
-  node_runs: WorkflowNodeRun[]
-}
-
-export interface WorkflowExecutionListResponse {
-  executions: WorkflowExecutionSummary[]
 }
 
 // SSE Event Types
@@ -1284,11 +1030,14 @@ export interface WikiFile {
 
 // ── Agent management ────────────────────────────────────────────────────────
 
+/** Product modes a Conductor-managed resource targets. */
+export type ResourceTargetMode = 'work' | 'coding'
+
 export interface ManagedResourceProvider {
   project_id: string
   project_name: string
   resource_id: string
-  modes?: SkillMode[]
+  modes?: ResourceTargetMode[]
   version_id: string | null
   version: string | null
   applied_version_id: string | null
@@ -1402,15 +1151,11 @@ export interface AgentBulkModelResponse {
 }
 
 // ── Skill management ────────────────────────────────────────────────────────
+//
+// Mirrors ``app/api/schemas/skills.py``. See
+// ``documents/architecture/agent-skills.md``.
 
-export type SkillMode = 'work' | 'coding'
-
-export interface SkillRuntimeSettingsUpdate {
-  settings_id: string
-  modes: SkillMode[]
-  allow_implicit_invocation: boolean
-  user_invocable: boolean
-}
+export type SkillSource = 'project' | 'user' | 'plugin' | 'builtin'
 
 export interface SkillDiagnostic {
   code: string
@@ -1421,25 +1166,25 @@ export interface SkillDiagnostic {
 export interface SkillSummary {
   name: string
   description: string
-  display_name: string | null
-  short_description: string | null
-  default_prompt: string | null
-  allow_implicit_invocation: boolean
+  /** Absolute path of ``SKILL.md`` — the ``location`` the model reads. */
+  location: string
+  source: SkillSource
+  /** Enabled plugin installation that contributes the Skill, if any. */
+  plugin_id: string | null
+  enabled: boolean
+  /** False when ``disable-model-invocation: true`` hides it from the catalog. */
+  model_invocable: boolean
   user_invocable: boolean
-  resource_count: number
-  symlinked: boolean
+  license: string | null
+  compatibility: string | null
+  allowed_tools: string | null
+  metadata: Record<string, string>
+  valid: boolean
   diagnostics: SkillDiagnostic[]
   shadowed_paths: string[]
-  valid: boolean
-  error: string | null
-  built_in: boolean
   editable: boolean
-  settings_editable: boolean
-  settings_id: string
-  settings_overridden: boolean
-  source: string
-  modes: SkillMode[]
-  dependencies: Record<string, unknown>[]
+  symlinked: boolean
+  resource_count: number
   provider: ManagedResourceProvider | null
 }
 
@@ -1458,32 +1203,10 @@ export interface SkillBundleFileWrite {
   encoding: 'utf-8' | 'base64'
 }
 
-export interface SkillDetail {
-  name: string
-  path: string
+export interface SkillDetail extends SkillSummary {
   content: string
-  description: string
-  display_name: string | null
-  short_description: string | null
-  default_prompt: string | null
-  allow_implicit_invocation: boolean
-  user_invocable: boolean
-  resource_count: number
-  symlinked: boolean
-  diagnostics: SkillDiagnostic[]
-  shadowed_paths: string[]
-  error: string | null
-  built_in: boolean
-  editable: boolean
-  settings_editable: boolean
-  settings_id: string
-  settings_overridden: boolean
-  source: string
-  modes: SkillMode[]
-  dependencies: Record<string, unknown>[]
-  bundle_truncated: boolean
   files: SkillBundleFile[]
-  provider: ManagedResourceProvider | null
+  bundle_truncated: boolean
 }
 
 export interface SkillDeleteResponse {
@@ -1566,15 +1289,13 @@ export interface ToolCatalogEntry {
   lead_only: boolean
 }
 
+/** A Skill an agent definition may preload through ``skills:``. */
 export interface SkillCatalogEntry {
   name: string
   description: string
-  display_name?: string | null
-  short_description?: string | null
-  allow_implicit_invocation?: boolean
-  user_invocable?: boolean
-  modes: SkillMode[]
-  dependencies: Record<string, unknown>[]
+  enabled: boolean
+  model_invocable: boolean
+  user_invocable: boolean
 }
 
 export interface ModelCatalogEntry {
@@ -2245,7 +1966,6 @@ export interface WebBridgeTeachDraft {
   replay_next_step: number
   replay_state: 'idle' | 'ready' | 'in_flight' | 'ambiguous' | 'completed'
   replay_in_flight_step: number | null
-  workflow_yaml: string
 }
 
 export interface WebBridgeTeachDraftReplayResponse {
@@ -2443,177 +2163,4 @@ export interface PluginCredentialState {
 export interface SideChatCreateResponse {
   side_chat_id: string
   title: string
-}
-
-// ── Agent Spec-Driven (ASDD) ───────────────────────────────────────────────────
-//
-// A change is identified by its slug and described entirely by the files in
-// its folder. Nothing here carries a hash, a revision id or a session id.
-
-export type AsddStatus =
-  | 'drafting'
-  | 'proposed'
-  | 'specifying'
-  | 'specified'
-  | 'designing'
-  | 'designed'
-  | 'tasking'
-  | 'tasked'
-  | 'implementing'
-  | 'verifying'
-  | 'ready'
-  | 'archived'
-
-export type AsddRisk = 'trivial' | 'standard' | 'cross_layer' | 'critical'
-
-export type AsddApproveArtifact = 'proposal' | 'specs' | 'design' | 'tasks'
-
-export interface AsddBlocker {
-  code: string
-  message: string
-  [key: string]: unknown
-}
-
-export interface AsddAction {
-  id: string
-  label: string
-  state: 'available' | 'blocked'
-  blockers: AsddBlocker[]
-}
-
-export interface AsddHold {
-  gate: string | null
-  reason: string | null
-  raised: string | null
-}
-
-export interface AsddActionRail {
-  status: string
-  primary_action: string | null
-  actions: AsddAction[]
-  required_approvals: string[]
-  problems: AsddBlocker[]
-  autopilot: boolean
-  hold: AsddHold | null
-  /** Gates this risk tier keeps for a person even with autopilot on. */
-  human_only_gates: string[]
-}
-
-export interface AsddChange {
-  change_id: string
-  repository: string
-  title: string
-  /**
-   * Usually an `AsddStatus`, but `status` is hand-editable and the server
-   * reports an unrecognised one rather than refusing to serve the change.
-   */
-  status: AsddStatus | (string & {})
-  risk: AsddRisk | (string & {})
-  capabilities: string[]
-  delta_capabilities: string[]
-  /** What a person signed. */
-  approvals: Record<string, string | null>
-  /** What autopilot cleared on its own judgment. */
-  auto_approvals: Record<string, string | null>
-  autopilot: boolean
-  hold: AsddHold | null
-  tasks_total: number
-  tasks_done: number
-  evidence_count: number
-  review_recorded: boolean
-  created: string | null
-  path: string
-}
-
-export interface AsddCapabilityDelta {
-  capability: string
-  added: string[]
-  modified: string[]
-  removed: string[]
-  problems: string[]
-  body: string
-}
-
-export interface AsddEvidence {
-  id: string
-  kind: string
-  result: string
-  requirement: string | null
-  recorded: string | null
-  summary: string
-}
-
-export interface AsddChangeDetail {
-  change: AsddChange
-  rail: AsddActionRail
-  proposal: string
-  design: string | null
-  tasks: string | null
-  deltas: AsddCapabilityDelta[]
-  evidence: AsddEvidence[]
-}
-
-export interface AsddChangeList {
-  workspace: string
-  project_id: string | null
-  changes: AsddChange[]
-  archived: string[]
-  capabilities: string[]
-}
-
-export interface AsddChangeActionResult {
-  change: AsddChange
-  rail: AsddActionRail
-  prompt: string
-  skill: string
-}
-
-export interface AsddArchiveResult {
-  change_id: string
-  archived_as: string
-  capabilities_updated: string[]
-}
-
-export interface AsddRepositorySetup {
-  path: string
-  name: string
-  display_name: string | null
-  status: 'not_initialized' | 'upgrade_required' | 'ready' | 'invalid'
-  installed: boolean
-  manifest_path: string
-  data_directory: string
-  data_path: string
-  rules_path: string
-  skills_path: string
-  skill_names: string[]
-  missing_skills: string[]
-  missing_catalogue_files: string[]
-  issue: string | null
-}
-
-export interface AsddSetupResponse {
-  scope: 'workspace' | 'project'
-  workspace: string
-  project_id: string | null
-  /** This workspace's own catalogue is installed and usable. */
-  workspace_ready: boolean
-  /** Every repository in scope is installed. Drives the progress readout. */
-  ready: boolean
-  repository_count: number
-  installed_count: number
-  repositories: AsddRepositorySetup[]
-}
-
-export interface AsddRequirement {
-  name: string
-  statement: string
-  scenarios: { name: string; steps: string[] }[]
-}
-
-export interface AsddSpec {
-  capability: string
-  purpose: string
-  requirements: AsddRequirement[]
-  path: string
-  body: string
 }

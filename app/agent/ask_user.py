@@ -98,7 +98,6 @@ class AskUserService:
                             {
                                 "question": q.question,
                                 "options": q.options,
-                                "strict": q.strict,
                                 "kind": q.kind,
                                 **(
                                     {"agent_spawn": q.agent_spawn.model_dump()}
@@ -140,24 +139,16 @@ class AskUserService:
         return self._pending.get(request_id)
 
     def validate_answers(self, request_id: str, answers: list[str]) -> str | None:
-        """Check *answers* against a pending batch: one answer per question,
-        and any ``strict`` question's answer must be one of its options.
+        """Check *answers* against a pending batch: one answer per question.
 
         Returns an error message when invalid, or ``None`` when the answers
-        are acceptable. A gate whose answer doesn't match a declared choice
-        would otherwise route no edge and silently strand the run.
+        are acceptable.
         """
         req = self._pending.get(request_id)
         if req is None or req._future is None or req._future.done():
             return None  # let reply() report the not-found/resolved case
         if len(answers) != len(req.questions):
             return f"expected {len(req.questions)} answer(s), got {len(answers)}."
-        for question, answer in zip(req.questions, answers):
-            if question.strict and answer not in question.options:
-                return (
-                    f"answer {answer!r} is not one of the allowed choices "
-                    f"{question.options}."
-                )
         return None
 
     def reply(self, request_id: str, answers: list[str]) -> bool:

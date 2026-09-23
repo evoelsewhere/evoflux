@@ -29,9 +29,11 @@ import {
   SquareTerminal,
   Globe2,
   FolderOpen,
+  Sparkles,
 } from 'lucide-react'
 import { ToolResult } from '../ToolResult'
 import { getToolDisplay } from './display'
+import { getSkillActivationName } from './skillPresentation'
 import { DiffView } from './DiffView'
 import { ReadView } from './ReadView'
 import { getDiffStats } from './diffUtils'
@@ -70,6 +72,7 @@ const DocumentPreview = lazy(() =>
 interface AttachmentDocumentPreview {
   file: WorkspaceFileInfo
   sourceUrl: string
+  rawUrl?: string
 }
 
 function attachmentDocumentPreview(
@@ -89,6 +92,7 @@ function attachmentDocumentPreview(
   return {
     file,
     sourceUrl: resolveApiUrl(attachment.preview_url) || attachment.preview_url,
+    rawUrl: attachment.url ? resolveApiUrl(attachment.url) || attachment.url : undefined,
   }
 }
 
@@ -201,6 +205,7 @@ export function ToolAttachments({
               <DocumentPreview
                 file={documentPreview.file}
                 sourceUrl={documentPreview.sourceUrl}
+                rawUrl={documentPreview.rawUrl}
               />
             </Suspense>
           )}
@@ -255,7 +260,6 @@ function completedToolLabel(name: string): string {
     case 'edit_file':
     case 'patch': return 'Edited'
     case 'grep':
-    case 'code_context': return 'Searched'
     case 'glob':
     case 'ls': return 'Listed'
     case 'shell':
@@ -267,11 +271,12 @@ function completedToolLabel(name: string): string {
   }
 }
 
-function ToolActivityIcon({ name }: { name: string }) {
+function ToolActivityIcon({ name, skill = false }: { name: string; skill?: boolean }) {
   const props = { size: 13, strokeWidth: 1.7, 'aria-hidden': true as const }
+  if (skill) return <Sparkles {...props} />
   if (name === 'read' || name === 'read_file') return <FileText {...props} />
   if (name === 'write' || name === 'write_file' || name === 'edit' || name === 'edit_file' || name === 'patch') return <Pencil {...props} />
-  if (name === 'grep' || name === 'code_context') return <Search {...props} />
+  if (name === 'grep') return <Search {...props} />
   if (name === 'glob' || name === 'ls') return <FolderOpen {...props} />
   if (name === 'browser_use' || name === 'webbridge' || name === 'web_search' || name === 'web_fetch') return <Globe2 {...props} />
   return <SquareTerminal {...props} />
@@ -305,7 +310,6 @@ function toolActivityLabel(
     case 'edit': return `Editing ${target || 'file'}`
     case 'patch': return `Applying ${target || 'patch'}`
     case 'rm': return `Removing ${target || 'file'}`
-    case 'skill': return `Loading ${target || 'skill'}`
     case 'shell': return target || 'Running command'
     case 'python': return target || 'Running Python'
     case 'browser_use':
@@ -314,7 +318,6 @@ function toolActivityLabel(
     case 'web_fetch': return target ? `Reading ${target}` : 'Reading page'
     case 'memory_search': return target ? `Searching memory for ${target}` : 'Searching memory'
     case 'grep':
-    case 'code_context': return target || 'Querying code context'
     case 'glob': return target || 'Scanning files'
     case 'ls': return target || 'Listing files'
     default: return target || `Running ${formatToolLabel(name)}`
@@ -358,6 +361,10 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
     useMemo(() => getToolDisplay(name, args), [name, args])
   const usesDiffView = name === 'edit' || name === 'patch' || name === 'write'
   const usesReadView = name === 'read'
+  const isSkillActivation = useMemo(
+    () => getSkillActivationName(name, args ?? undefined) !== null,
+    [name, args],
+  )
   const diffStats = useMemo(
     () => ((usesDiffView || name === 'rm') && args ? getDiffStats(name, args, result) : null),
     [name, args, result, usesDiffView],
@@ -462,7 +469,7 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
         }
       >
         <span className={state === 'failed' ? 'shrink-0 text-(--color-error)' : 'shrink-0 text-(--color-text-subtle)'}>
-          <ToolActivityIcon name={displayName} />
+          <ToolActivityIcon name={displayName} skill={isSkillActivation} />
         </span>
         {/* Header content: tool-specific summary or fallback to tool name.
             Mono+600 per pencil dqwZw. */}

@@ -84,15 +84,6 @@ export function useTeamCommands({
       description: 'Cycle: Agent → Split', shortcut: 'Ctrl+V', action: cycleViewMode,
     },
     { id: 'workspace-files',  group: 'View',       label: mode === 'coding' ? 'Open Changed & Files' : 'Toggle Workspace Files', description: mode === 'coding' ? 'Browse changed files and workspace files' : 'Browse files the agent has produced', shortcut: 'Ctrl+F', action: handleWorkspaceFiles },
-    ...(mode === 'coding'
-      ? [{
-          id: 'workspace-overview',
-          group: 'View',
-          label: 'Open Workspace Overview',
-          description: 'See Git, session, tools, and recent changes',
-          action: () => useUIStore.getState().openWorkbenchTool('overview'),
-        }]
-      : []),
     ...(mode === 'coding' && workspace
       ? [{
           id: 'ai-review-changes',
@@ -129,7 +120,7 @@ export function useTeamCommands({
     { id: 'go-settings', group: 'Navigation', label: 'Open Settings',  description: 'Manage agents & skills', action: () => useUIStore.getState().openSettings('agents') },
     { id: 'settings-agents', group: 'Settings', label: 'Manage Agents', description: 'Edit agent .md files',  action: () => useUIStore.getState().openSettings('agents') },
     { id: 'settings-new-agent', group: 'Settings', label: 'New Agent',  description: 'Create a new agent',    action: () => useUIStore.getState().openSettings('agents/new') },
-    { id: 'settings-skills', group: 'Settings', label: 'Manage Skills', description: 'Edit skill .md files',  action: () => useUIStore.getState().openSettings('skills') },
+    { id: 'settings-skills', group: 'Settings', label: 'Manage Skills', description: 'Create, edit, and turn skills on or off',  action: () => useUIStore.getState().openSettings('skills') },
     { id: 'settings-new-skill', group: 'Settings', label: 'New Skill',  description: 'Create a new skill',    action: () => useUIStore.getState().openSettings('skills/new') },
     { id: 'settings-memory', group: 'Settings', label: 'Memory Settings',  description: 'Review memory and configure Dream synthesis', action: () => useUIStore.getState().openSettings('memory') },
     {

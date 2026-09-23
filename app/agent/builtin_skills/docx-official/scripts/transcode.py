@@ -35,6 +35,23 @@ class BackendFailure(RuntimeError):
     """The backend ran but did not produce the requested output."""
 
 
+def _pypdfium2_command() -> list[str] | None:
+    """Command prefix that runs the pypdfium2 CLI, or None if unavailable.
+
+    Prefers a bundled interpreter that already has pypdfium2 (EVOFLUX_PYTHON);
+    otherwise lets uv fetch pypdfium2 and Pillow into a throwaway environment,
+    so rasterising never requires installing Poppler.
+    """
+    bundled = os.environ.get("EVOFLUX_PYTHON")
+    if bundled:
+        return [bundled, "-m", "pypdfium2_cli"]
+    uv = shutil.which("uv")
+    if uv:
+        return [uv, "run", "--no-project", "--quiet", "--with", "pypdfium2",
+                "--with", "pillow", "python", "-m", "pypdfium2_cli"]
+    return None
+
+
 class LibreOfficeBackend:
     """Locate and run soffice with a fresh user profile per invocation."""
 
@@ -124,11 +141,13 @@ class Transcode:
 
     def _rasterise(self, pdf: Path, out_dir: Path) -> list[Path]:
         if shutil.which("pdftoppm") is None:
-            if os.environ.get("EVOFLUX_PYTHON"):
-                # No Poppler, but a bundled Python (with pypdfium2 preinstalled) exists.
-                return self._rasterise_pypdfium2(pdf, out_dir)
+            command = _pypdfium2_command()
+            if command is not None:
+                # No Poppler: render with pypdfium2 (bundled Python or uv).
+                return self._rasterise_pypdfium2(pdf, out_dir, command)
             raise BackendMissing(
-                "pdftoppm (Poppler) is not on PATH. Install poppler-utils, "
+                "pdftoppm (Poppler) is not on PATH and no pypdfium2 fallback is "
+                "available (needs `uv` on PATH). Install poppler-utils or uv, "
                 "or convert only as far as PDF."
             )
         cmd = ["pdftoppm", "-png", "-r", str(self.dpi),
@@ -143,8 +162,10 @@ class Transcode:
             raise BackendFailure("pdftoppm produced no PNG output.")
         return pages
 
-    def _rasterise_pypdfium2(self, pdf: Path, out_dir: Path) -> list[Path]:
-        """Poppler-free fallback: render via pypdfium2 in the bundled interpreter.
+    def _rasterise_pypdfium2(
+        self, pdf: Path, out_dir: Path, command: list[str]
+    ) -> list[Path]:
+        """Poppler-free fallback: render via the pypdfium2 CLI (see `_pypdfium2_command`).
 
         Renders into a scratch directory (pre-existing files in `out_dir` are
         never touched), then moves pages to the `<stem>-<NN>.png` convention the
@@ -155,7 +176,7 @@ class Transcode:
         with tempfile.TemporaryDirectory(prefix="pypdfium2-render-") as scratch_str:
             scratch = Path(scratch_str)
             proc = subprocess.run(
-                [os.environ["EVOFLUX_PYTHON"], "-m", "pypdfium2_cli", "render", str(pdf),
+                [*command, "render", str(pdf),
                  "--output", str(scratch), "--format", "png",
                  "--scale", str(self.dpi / 72.0)],
                 capture_output=True, text=True,
@@ -163,8 +184,8 @@ class Transcode:
             if proc.returncode != 0:
                 raise BackendFailure(
                     f"pypdfium2 fallback exit {proc.returncode}: {proc.stderr}\n"
-                    "(is pypdfium2 with its pypdfium2_cli module available in the "
-                    "EVOFLUX_PYTHON interpreter?)"
+                    "(it needs pypdfium2 and Pillow: in EVOFLUX_PYTHON, or "
+                    "fetched by uv)"
                 )
             for page in sorted(scratch.glob(f"{pdf.stem}_*.png")):
                 digits = page.stem.rsplit("_", 1)[1]

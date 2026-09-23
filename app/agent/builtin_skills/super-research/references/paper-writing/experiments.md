@@ -1,5 +1,15 @@
 # Experiments Writing Guide
 
+## Contents
+
+- Goal
+- Three Core Questions
+- Experiment Planning
+- Experiment Section Decomposition
+- Figure/Table Writing Rules (hard rules, readability rules, minimal LaTeX checklist)
+- Recommended Ablation Package
+- Experimental Rigor Checklist
+
 ## Goal
 
 Convince reviewers with complete evidence on effectiveness, causality, and practical value.

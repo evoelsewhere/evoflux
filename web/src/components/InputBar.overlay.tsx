@@ -37,7 +37,7 @@ interface MentionOverlayProps {
    * ``@nonexistent`` and ``@@`` get no color because they don't resolve.
    */
   fileRefs: readonly FileRef[]
-  /** Valid skill names in composer notation (flat or ``parent:sub``). */
+  /** User-invocable skill names; each ``$name`` mention of one is highlighted. */
   skillNames?: ReadonlySet<string>
   /**
    * Slash-command ids currently offered by the picker. Only these light up,
@@ -121,6 +121,7 @@ export function MentionOverlay({
   const segments: React.ReactNode[] = []
   let cursor = 0
   for (const r of ranges) {
+    if (r.start < cursor) continue
     if (r.start > cursor) segments.push(value.slice(cursor, r.start))
     const token = value.slice(r.start, r.end)
     if (r.kind === 'skill' || r.kind === 'command') {

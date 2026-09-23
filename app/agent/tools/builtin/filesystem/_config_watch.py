@@ -5,17 +5,11 @@ after a successful mutation.  The hook decides whether the path falls
 under one of the config trees that have process-level caches, and
 invalidates the right cache.
 
-Today this only matters for ``{SKILLS_DIR}/*/SKILL.md`` — the
-``discover_skills`` cache in ``app.agent.tools.builtin.skill`` is
-mtime-keyed, so it self-heals on the next call, but eagerly clearing
-the LRU avoids relying on filesystem mtime granularity (1s on most
-platforms) when the agent writes a skill and immediately validates it
-in the same turn.
-
-Kept in this module (not in the skill module itself) to avoid pulling
-``functools.lru_cache`` internals across module boundaries from fs-tool
-imports, and to keep the dependency direction one-way:
-filesystem tools → builtin.skill, never the reverse.
+Today this only matters for the user skills directory: the Skill
+discovery cache in ``app.agent.skills.registry`` is keyed by ``SKILL.md``
+mtimes, so it self-heals on the next call, but eagerly clearing it avoids
+relying on filesystem mtime granularity (1s on most platforms) when the
+agent writes a Skill and immediately uses it in the same turn.
 """
 
 from __future__ import annotations
@@ -53,9 +47,9 @@ def notify_fs_change(resolved_path: Path) -> None:
         return
 
     try:
-        from app.agent.tools.builtin.skill import _discover_skills_cached
+        from app.agent.skills.registry import invalidate_skill_cache
 
-        _discover_skills_cached.cache_clear()
+        invalidate_skill_cache()
         logger.debug("fs_config_watch_skill_cache_cleared path={}", resolved_path)
     except Exception as exc:  # noqa: BLE001
         logger.warning(

@@ -14,7 +14,7 @@ import { memo, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Terminal, FileText, Search, Globe, Code2,
-  FolderOpen, GitBranch, Database, ChevronDown, ChevronUp,
+  FolderOpen, GitBranch, ChevronDown, ChevronUp, Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ToolAttachments } from './ToolCall'
@@ -24,7 +24,7 @@ import { ActivityStatus } from './motion/ActivityStatus'
 import { mcpAppResourceUri } from '@/utils/mcp-app-artifacts'
 import { panelTransition, useMotionPreset } from '@/lib/motion'
 import type { ContentBlock, MessageAttachment } from '@/api/types'
-import { getSkillCallPresentation } from './ToolCall/skillPresentation'
+import { getSkillActivationName } from './ToolCall/skillPresentation'
 
 // ── Grouped block type ────────────────────────────────────────────────────────
 
@@ -61,7 +61,6 @@ const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   glob: { icon: FolderOpen, verb: 'Listed', singular: 'directory', plural: 'directories' },
   ls: { icon: FolderOpen, verb: 'Listed', singular: 'directory', plural: 'directories' },
   grep: { icon: Search, verb: 'Searched', singular: 'search', plural: 'searches' },
-  code_context: { icon: Database, verb: 'Queried', singular: 'code-context call', plural: 'code-context calls' },
   browser_use: { icon: Globe, verb: 'Browsed', singular: 'browser call', plural: 'browser calls' },
   webbridge: { icon: Globe, verb: 'Browsed', singular: 'browser call', plural: 'browser calls' },
   git: { icon: GitBranch, verb: 'Ran', singular: 'Git call', plural: 'Git calls' },
@@ -87,7 +86,6 @@ const FILE_ACTIVITY_TOOLS = new Set([
   'glob',
   'ls',
   'grep',
-  'code_context',
 ])
 const BROWSER_ACTIVITY_TOOLS = new Set(['browser_use', 'webbridge'])
 const SHELL_ACTIVITY_TOOLS = new Set(['bash', 'shell', 'run_command'])
@@ -101,13 +99,12 @@ const WRITE_ACTIVITY_TOOLS = new Set([
 
 function toolFamily(block: ContentBlock): string {
   const toolName = block.toolName ?? ''
+  // A full read of a SKILL.md is a Skill activation, not a file read.
+  if (getSkillActivationName(toolName, block.toolArgs)) return 'skill'
   if (FILE_ACTIVITY_TOOLS.has(toolName)) return 'files'
   if (BROWSER_ACTIVITY_TOOLS.has(toolName)) return 'browser'
   if (SHELL_ACTIVITY_TOOLS.has(toolName)) return 'shell'
   if (WRITE_ACTIVITY_TOOLS.has(toolName)) return 'write'
-  if (toolName === 'skill') {
-    return getSkillCallPresentation(block.toolArgs)?.family ?? 'skill'
-  }
   return toolName
 }
 
@@ -119,10 +116,7 @@ function familyLabel(family: string): string {
     case 'write': return 'Changed files'
     case 'python': return 'Ran Python'
     case 'git': return 'Ran Git'
-    case 'skill-load': return 'Loaded a skill'
-    case 'skill-resource': return 'Read skill resources'
-    case 'skill-list': return 'Listed skills'
-    case 'skill': return 'Used skill tool'
+    case 'skill': return 'Used skills'
     default: return 'Used tools'
   }
 }
@@ -214,7 +208,11 @@ export const ToolCallGroupCard = memo(function ToolCallGroupCard({
   const delegationBlocks = toolBlocks.filter((block) => block.toolName === 'team_delegate')
   const detailBlocks = toolBlocks.filter((block) => block.toolName !== 'team_delegate')
   /* eslint-disable react-hooks/static-components */
-  const Icon = getToolIcon(detailBlocks[0]?.toolName ?? group.toolName)
+  const Icon = detailBlocks.length > 0 && detailBlocks.every(
+    (block) => getSkillActivationName(block.toolName, block.toolArgs),
+  )
+    ? Sparkles
+    : getToolIcon(detailBlocks[0]?.toolName ?? group.toolName)
   const label = groupLabel(detailBlocks)
   const actionLabel = `${detailBlocks.length} ${detailBlocks.length === 1 ? 'action' : 'actions'}`
   const groupIsStreaming = isStreaming && detailBlocks.some((block) => !block.toolDone)

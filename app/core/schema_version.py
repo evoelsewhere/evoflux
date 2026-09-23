@@ -13,7 +13,7 @@ from app.core.db import current_sqlite_path
 # Keep this in sync with the single Alembic head. The migration tests and the
 # sidecar build validate the value, so a release cannot silently ship a stale
 # marker.
-SCHEMA_HEAD = "00000073"
+SCHEMA_HEAD = "00000080"
 
 #: Revisions this build no longer ships, mapped to the newest ancestor it does.
 #:
@@ -31,6 +31,15 @@ RETIRED_REVISIONS: dict[str, str] = {
     "00000061": "00000054",
     "00000062": "00000054",
 }
+
+# The remote-channel branch also used 00000067–00000073 before it was merged
+# with main. Main owns 00000067–00000068 now; the remote chain is moved to
+# 00000074–00000080. Databases stamped by the old remote chain must be replayed
+# from 00000066 so both main's cleanup and the new idempotent remote revisions
+# are applied. Revisions 67 and 68 overlap main's ids, so those two are only
+# treated as legacy remote revisions when the remote tables prove their origin.
+LEGACY_REMOTE_REVISIONS = frozenset(f"{revision:08d}" for revision in range(69, 74))
+LEGACY_REMOTE_CONFLICT_REVISIONS = frozenset({"00000067", "00000068"})
 
 
 @dataclass(frozen=True)
@@ -58,10 +67,18 @@ def inspect_database_schema() -> SchemaStatus:
     if not db_path.is_file():
         return SchemaStatus(current=None, at_head=False, compatible=True)
 
+    remote_tables_present = False
     try:
         database_uri = f"{db_path.resolve().as_uri()}?mode=ro"
         with sqlite3.connect(database_uri, uri=True, timeout=2) as db:
             row = db.execute("SELECT version_num FROM alembic_version").fetchone()
+            remote_tables_present = (
+                db.execute(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'remote_connections'"
+                ).fetchone()
+                is not None
+            )
     except sqlite3.OperationalError as exc:
         if "no such table" in str(exc).lower():
             return SchemaStatus(current=None, at_head=False, compatible=True)
@@ -83,7 +100,11 @@ def inspect_database_schema() -> SchemaStatus:
     return SchemaStatus(
         current=current,
         at_head=False,
-        compatible=current in bundled or current in RETIRED_REVISIONS,
+        compatible=(
+            current in bundled
+            or current in RETIRED_REVISIONS
+            or (current in LEGACY_REMOTE_REVISIONS and remote_tables_present)
+        ),
     )
 
 
@@ -112,7 +133,21 @@ def repair_retired_revision(sqlite_path: str | Path | None = None) -> str | None
         with sqlite3.connect(db_path, timeout=5) as db:
             row = db.execute("SELECT version_num FROM alembic_version").fetchone()
             current = str(row[0]) if row and row[0] else None
-            ancestor = RETIRED_REVISIONS.get(current or "")
+            remote_tables_present = (
+                db.execute(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'remote_connections'"
+                ).fetchone()
+                is not None
+            )
+            is_legacy_remote_revision = current in LEGACY_REMOTE_REVISIONS or (
+                current in LEGACY_REMOTE_CONFLICT_REVISIONS and remote_tables_present
+            )
+            ancestor = (
+                "00000066"
+                if is_legacy_remote_revision and remote_tables_present
+                else RETIRED_REVISIONS.get(current or "")
+            )
             if ancestor is None:
                 return None
             db.execute("UPDATE alembic_version SET version_num = ?", (ancestor,))

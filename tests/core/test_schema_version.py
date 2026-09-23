@@ -60,3 +60,33 @@ def test_schema_preflight_rejects_unknown_revision(tmp_path, monkeypatch) -> Non
     assert status.compatible is False
     with pytest.raises(RuntimeError, match="downgrading"):
         schema_version.ensure_database_revision_is_supported(status)
+
+
+@pytest.mark.parametrize(
+    ("revision", "has_remote_tables", "expected"),
+    [
+        ("00000067", True, "00000066"),
+        ("00000068", True, "00000066"),
+        ("00000067", False, None),
+        ("00000068", False, None),
+        ("00000070", True, "00000066"),
+    ],
+)
+def test_repair_legacy_remote_revision_without_rewriting_main_revisions(
+    tmp_path, revision, has_remote_tables, expected
+) -> None:
+    db_path = tmp_path / f"legacy-{revision}-{has_remote_tables}.sqlite"
+    _write_revision(db_path, revision)
+    if has_remote_tables:
+        with sqlite3.connect(db_path) as db:
+            db.execute(
+                "CREATE TABLE remote_connections "
+                "(id TEXT PRIMARY KEY, adapter TEXT NOT NULL)"
+            )
+
+    repaired = schema_version.repair_retired_revision(db_path)
+
+    assert repaired == expected
+    with sqlite3.connect(db_path) as db:
+        current = db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+    assert current == (expected or revision)

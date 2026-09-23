@@ -168,9 +168,9 @@ class TestDefaultDeferredTools:
                 "glob",
                 "shell",
                 "todo_manage",
-                "skill",
             )
         )
+        assert "skill" not in registry
 
     def test_loader_is_core_and_read_only(self):
         from app.agent.loader import _default_tool_registry
@@ -198,14 +198,13 @@ class TestDefaultDeferredTools:
             "read",
             "schedule_task",
             "shell",
-            "skill",
             "todo_manage",
             "update_goal",
             "write",
         }
         for mode in ("work", "coding"):
             granted = set(tier_tools(registry, mode=mode, role="lead"))
-            granted.update({"skill", "todo_manage", "schedule_task", "note"})
+            granted.update({"todo_manage", "schedule_task", "note"})
             eager = {name for name in granted if not registry[name].deferred}
             assert 12 <= len(eager) <= 19
             expected = set(expected_core)
@@ -213,22 +212,8 @@ class TestDefaultDeferredTools:
                 # Coding-only: repository navigation, and parking out-of-scope
                 # work, which has to be reachable the moment the lead notices
                 # something rather than after a load_tool round trip.
-                expected.update({"code_context", "spawn_task"})
+                expected.update({"spawn_task"})
             assert eager == expected
-
-    def test_work_mode_excludes_every_code_context_tool(self):
-        from app.agent.builtin_prompts import tier_tools
-        from app.agent.loader import _default_tool_registry
-
-        registry = _default_tool_registry()
-        graph_tools = {
-            "code_context",
-            "code_context",
-        }
-
-        work_tools = set(tier_tools(registry, mode="work", role="lead"))
-        assert work_tools.isdisjoint(graph_tools)
-        assert graph_tools <= set(tier_tools(registry, mode="coding", role="lead"))
 
     def test_actual_coding_lead_payload_includes_memory_search(self):
         from app.agent.builtin_prompts import tier_tools
@@ -237,7 +222,7 @@ class TestDefaultDeferredTools:
 
         registry = _default_tool_registry()
         names = set(tier_tools(registry, mode="coding", role="lead"))
-        names.update({"skill", "todo_manage", "schedule_task", "note"})
+        names.update({"todo_manage", "schedule_task", "note"})
         agent = Agent(
             name="lead",
             llm_provider=MockTeamProvider(),
@@ -254,7 +239,6 @@ class TestDefaultDeferredTools:
 
         assert eager == {
             "ask_user",
-            "code_context",
             "document_preview",
             "edit",
             "spawn_task",
@@ -268,7 +252,6 @@ class TestDefaultDeferredTools:
             "read",
             "schedule_task",
             "shell",
-            "skill",
             "team_delegate",
             "team_manage",
             "team_message",
@@ -539,7 +522,6 @@ _LEAD_REGISTRY_TOOLS = [
         "web_fetch",
         "image_search",
         "schedule_task",
-        "skill",
         "read",
         "write",
         "shell",
@@ -572,7 +554,6 @@ class TestWebbridgeSessionExcludedTools:
             "read",
             "write",
             "shell",
-            "skill",
             "load_tool",
             "preview",
             "mcp_filesystem_read_file",

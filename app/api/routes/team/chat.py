@@ -158,29 +158,31 @@ async def _validate_thinking_level_for_model(
     raise HTTPException(status_code=422, detail=detail)
 
 
-def discover_skills():  # noqa: ANN201 - compatibility wrapper
-    from app.agent.tools.builtin.skill import discover_skills as discover
-
-    return discover()
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _serialize_agent(agent: Agent, *, is_lead: bool = False) -> dict:
     """Serialize an Agent into the /team/agents response shape."""
     from app.agent.hooks.summarization import prompt_token_threshold_for_model
+    from app.agent.skills.registry import discover_skills
 
     skill_names: list[str] = agent.skills or []
     skills: list[dict] = []
     if skill_names:
         try:
-            available = discover_skills()
-        except Exception:
-            available = {}
+            catalog = discover_skills()
+        except Exception:  # noqa: BLE001 - agent listing must not fail
+            catalog = None
         skills = [
-            {"name": n, "description": available.get(n, {}).get("description", "")}
-            for n in skill_names
+            {
+                "name": name,
+                "description": (
+                    skill.description
+                    if catalog is not None and (skill := catalog.get(name))
+                    else ""
+                ),
+            }
+            for name in skill_names
         ]
 
     return {
@@ -357,9 +359,8 @@ async def _team_for_session_mode(db: DbSession, session_id: str):
     """Resolve the live team that matches *session_id*'s persisted mode.
 
     Never binds a default-mode (work) team to a coding session id:
-    ``_session_teams`` wins in ``find_team_for_session`` (the workflow
-    runner's lookup), so one stray work boot would make every later
-    pipeline in that session run with the work lead.
+    ``_session_teams`` wins in ``find_team_for_session``, so one stray work
+    boot would make every later lookup in that session reach the work lead.
     """
     try:
         _, team_obj = await resolve_team_for_session(db, session_id)
@@ -1789,7 +1790,6 @@ def _validated_permission_mode(mode: str | None) -> str:
     return mode
 
 
-
 class PermissionModeRequest(BaseModel):
     mode: str
 
@@ -1903,30 +1903,10 @@ async def team_history(
 
     next_cursor = history.next_cursor
 
-    workflow_execution: dict | None = None
-    try:
-        from app.workflow.runner import runner as workflow_runner
-
-        wf_state = workflow_runner.get(str(history.lead_session.id))
-        if wf_state is not None:
-            order = wf_state.graph.order
-            current = wf_state.current_node_id or wf_state.pending_node
-            workflow_execution = {
-                "execution_id": str(wf_state.execution_id),
-                "definition_name": wf_state.definition.name,
-                "status": wf_state.status,
-                "node_id": current,
-                "node_index": (order.index(current) + 1) if current in order else None,
-                "total_nodes": len(order),
-            }
-    except Exception:  # noqa: BLE001 — history must never fail on this
-        workflow_execution = None
-
     return TeamHistoryResponse(
         lead=lead_detail,
         members=member_histories,
         goal=goal_response,
-        workflow_execution=workflow_execution,
         has_more=history.has_more,
         next_cursor=next_cursor,
     )

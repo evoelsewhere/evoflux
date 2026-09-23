@@ -406,8 +406,7 @@ def current_team_for_session(session_id: str) -> "AgentTeam | None":
 
 def find_team_for_session(session_id: str) -> "AgentTeam | None":
     """Any live team currently bound to *session_id*, regardless of mode —
-    work teams key by session id, coding teams by (workspace, session).
-    Used by the workflow runner, which only has a session id."""
+    work teams key by session id, coding teams by (workspace, session)."""
     team = _session_teams.get(session_id)
     if team is not None:
         return team
@@ -952,10 +951,11 @@ def refresh_blueprints(team: "AgentTeam") -> None:
 
 
 def invalidate_skill_cache() -> None:
-    """Clear the ``discover_skills`` lru_cache so the next tool call
-    picks up skill content or mode-scope edits. No team reload needed.
-    """
-    from app.agent.tools.builtin.skill import _discover_skills_cached
+    """Clear the Skill discovery cache so the next run sees Skill edits.
 
-    _discover_skills_cached.cache_clear()
+    No team reload is needed: every run rediscovers its catalog.
+    """
+    from app.agent.skills.registry import invalidate_skill_cache as clear
+
+    clear()
     logger.info("team_manager_skill_cache_invalidated")

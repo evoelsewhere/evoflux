@@ -3,16 +3,11 @@ import {
   CalendarClock,
   Files,
   GitBranch,
-  GitPullRequest,
   Globe2,
-  LayoutDashboard,
   MessageCirclePlus,
-  Network,
-  ListTree,
   Blocks,
   CircleAlert,
   Terminal,
-  ListChecks,
   type LucideIcon,
 } from 'lucide-react'
 import type { WorkbenchTool } from '@/stores/useUIStore'
@@ -28,21 +23,11 @@ export const WORKBENCH_TOOLS: Record<
   WorkbenchTool,
   { label: string; description: string; icon: LucideIcon; shortcut?: string }
 > = {
-  overview: {
-    label: 'Overview',
-    description: 'See workspace, Git, session, and tool status at a glance',
-    icon: LayoutDashboard,
-  },
   terminal: {
     label: 'Terminal',
     description: 'Run commands in the active workspace',
     icon: Terminal,
     shortcut: '^`',
-  },
-  processes: {
-    label: 'Processes',
-    description: 'See and stop commands, previews, and terminal sessions',
-    icon: ListTree,
   },
   browser: {
     label: 'Browser',
@@ -55,11 +40,6 @@ export const WORKBENCH_TOOLS: Record<
     description: 'Browse workspace files and generated artifacts',
     icon: Files,
     shortcut: '^F',
-  },
-  graph: {
-    label: 'Graph',
-    description: 'Explore code and cross-repository relationships',
-    icon: Network,
   },
   'side-chat': {
     label: 'Side chat',
@@ -86,25 +66,15 @@ export const WORKBENCH_TOOLS: Record<
     shortcut: '^K',
   },
   'source-control': {
-    label: 'Changes',
-    description: 'Review and commit local workspace changes',
+    label: 'Source Control',
+    description: 'Commit local changes and review pull requests',
     icon: GitBranch,
     shortcut: '^G',
-  },
-  'pull-requests': {
-    label: 'Review',
-    description: 'Review pull requests and merge requests',
-    icon: GitPullRequest,
   },
   problems: {
     label: 'Problems',
     description: 'Review LSP, build, test, AI, security, and plugin findings',
     icon: CircleAlert,
-  },
-  asdd: {
-    label: 'Agent Spec-Driven',
-    description: 'Propose, specify, build and archive changes against the repository spec catalogue (ASDD)',
-    icon: ListChecks,
   },
 }
 
@@ -114,19 +84,12 @@ export function isWorkbenchToolEnabled(
   tool: WorkbenchTool,
   context: WorkbenchContext,
 ): boolean {
-  if (tool === 'overview') {
-    return context.mode === 'coding' && Boolean(context.workspace)
-  }
   if (tool === 'problems') {
     return context.mode === 'coding' && Boolean(context.workspace)
   }
-  if (tool === 'asdd') {
-    return context.mode === 'coding' && Boolean(context.workspace)
-  }
-  if (tool === 'source-control' || tool === 'pull-requests') {
+  if (tool === 'source-control') {
     return context.mode === 'coding'
   }
-  if (tool === 'graph') return context.mode === 'coding' && Boolean(context.workspace)
   if (tool === 'files') return Boolean(context.sessionId || context.workspace)
   if (tool === 'browser') {
     return Boolean(context.sessionId) && isBuiltInBrowserEnabled()

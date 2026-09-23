@@ -186,12 +186,11 @@ def test_default_tool_registry_keys():
         "ls",
         "glob",
         "shell",
-        "skill",
         "todo_manage",
         "memory_search",
     }
     assert expected.issubset(registry.keys())
-    assert "code_context" in registry
+    assert "skill" not in registry
     assert {
         "code_overview",
         "code_path",
@@ -409,9 +408,8 @@ def test_build_agent_mcp_unknown_server_is_skipped(monkeypatch):
 
     cfg = AgentConfig(name="bot", mcp=["does_not_exist"])
     agent = _build_agent(cfg, {}, factory)
-    # No tools from the unknown server; only the always-on ``skill`` tool.
-    assert "skill" in agent._tools
-    assert len(agent._tools) == 1
+    # No tools from the unknown server.
+    assert agent._tools == {}
 
 
 def test_build_agent_mcp_combines_with_tools(monkeypatch):
@@ -445,8 +443,7 @@ def test_build_agent_mcp_not_ready_yields_no_tools(monkeypatch):
 
     cfg = AgentConfig(name="bot", mcp=["filesystem"])
     agent = _build_agent(cfg, {}, factory)
-    # Only the auto-injected `skill` tool is present.
-    assert "skill" in agent._tools
+    assert agent._tools == {}
 
 
 def test_build_agent_description():
@@ -522,11 +519,11 @@ def test_build_agent_no_fallback_when_not_configured():
     assert agent.fallback_model_id is None
 
 
-def test_build_agent_skill_tool_deduped():
+def test_build_agent_has_no_skill_tool():
     factory, _ = _make_provider_factory()
     cfg = AgentConfig(name="bot", system_prompt="Hi", tools=["skill"])
     agent = _build_agent(cfg, {}, factory)
-    assert list(agent._tools.keys()).count("skill") == 1
+    assert "skill" not in agent._tools
 
 
 # ---------------------------------------------------------------------------
@@ -534,62 +531,20 @@ def test_build_agent_skill_tool_deduped():
 # ---------------------------------------------------------------------------
 
 
-def test_build_agent_skills_wire_configured_activation_and_catalog(
-    tmp_path, monkeypatch
-):
-    d = tmp_path / "myskill"
-    d.mkdir()
-    (d / "SKILL.md").write_text(
-        "---\nname: myskill\ndescription: A great skill\n---\nDo the thing carefully."
-    )
-    monkeypatch.setattr("app.agent.tools.builtin.skill._SKILLS_DIR", tmp_path)
+@pytest.mark.parametrize("mode", ["work", "coding"])
+def test_build_agent_wires_one_skills_hook_with_preloads(mode):
+    from app.agent.hooks.skills import SkillsHook
+
     factory, _ = _make_provider_factory()
     cfg = AgentConfig(name="bot", system_prompt="Base prompt", skills=["myskill"])
-    agent = _build_agent(cfg, {}, factory)
+    agent = _build_agent(cfg, {}, factory, mode=mode)
+
+    # Skill metadata is appended per run, never baked into the base prompt.
     assert agent.system_prompt == "Base prompt"
     assert agent.skills == ["myskill"]
-    assert [hook.__class__.__name__ for hook in agent.hooks] == [
-        "ConfiguredSkillsHook",
-        "ExplicitSkillSelectionHook",
-        "SkillResolutionHook",
-        "SkillRuntimeContractHook",
-        "SkillCatalogHook",
-    ]
-    assert agent.hooks[-1]._preferred_skills == ("myskill",)
-    assert agent.hooks[-1]._cache_stable is True
-
-
-def test_build_agent_wires_coding_resolution_without_router_preload():
-    factory, _ = _make_provider_factory()
-    agent = _build_agent(
-        AgentConfig(name="bot", system_prompt="Base prompt"),
-        {},
-        factory,
-        mode="coding",
-    )
-
-    resolver_hook = agent.hooks[-3]
-    runtime_hook = agent.hooks[-2]
-    catalog_hook = agent.hooks[-1]
-    assert resolver_hook.__class__.__name__ == "SkillResolutionHook"
-    assert resolver_hook._mode == "coding"
-    assert runtime_hook.__class__.__name__ == "SkillRuntimeContractHook"
-    assert runtime_hook._mode == "coding"
-    assert catalog_hook.__class__.__name__ == "SkillCatalogHook"
-    assert catalog_hook._preferred_skills == ()
-    assert catalog_hook._cache_stable is True
-    assert agent.skills == []
-
-
-def test_build_agent_missing_skill_metadata_does_not_mutate_prompt(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr("app.agent.tools.builtin.skill._SKILLS_DIR", tmp_path)
-    factory, _ = _make_provider_factory()
-    cfg = AgentConfig(name="bot", system_prompt="Base prompt", skills=["nonexistent"])
-    agent = _build_agent(cfg, {}, factory)
-    assert agent.system_prompt == "Base prompt"
-    assert agent.skills == ["nonexistent"]
+    skill_hooks = [hook for hook in agent.hooks if isinstance(hook, SkillsHook)]
+    assert len(skill_hooks) == 1
+    assert skill_hooks[0]._preloaded == ("myskill",)
 
 
 def test_coding_mode_does_not_inject_graph_navigation_policy():
@@ -658,7 +613,6 @@ def test_mode_tool_grant_supports_explicit_opt_out():
 
     assert "shell" not in agent._tools
     assert "read" in agent._tools
-    assert "skill" in agent._tools
 
 
 # ---------------------------------------------------------------------------

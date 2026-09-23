@@ -1,150 +1,61 @@
 import { useState } from 'react'
 import { Sparkles } from 'lucide-react'
 
-import { useCreateSkillMutation, useUpdateSkillSettingsMutation } from '@/queries'
+import { useCreateSkillMutation } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
 import { EditorHeaderActions } from '@/components/settings/EditorHeaderActions'
 import { SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
 import { SkillBundleEditor } from '@/components/settings/SkillBundleEditor'
-import { SkillModeSelector } from '@/components/settings/SkillModeSelector'
-import { SkillRuntimeControls } from '@/components/settings/SkillRuntimeControls'
 import {
   getSkillBundleChanges,
   type SkillBundleDraftFile,
 } from '@/components/settings/skillBundle'
-import { validateNewSkillDraft } from '@/components/settings/schema'
+import { skillDraftName, validateSkillDraft } from '@/components/settings/schema'
 import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
-import { modesFromAvailability, type SkillAvailability } from '@/lib/skill-modes'
 
-const TEMPLATE = `---
+/**
+ * Starter ``SKILL.md``. Only ``name`` and ``description`` are required; the
+ * description is written in the third person and says both what the Skill
+ * does and when to use it, because that is all the agent sees before it
+ * decides to read the file. See ``documents/architecture/agent-skills.md``.
+ */
+export const NEW_SKILL_TEMPLATE = `---
 name: new-skill
-description: Describe what this skill does and the concrete situations where it should activate. Include boundaries that distinguish it from nearby skills.
+description: Describes what this skill does and when to use it. Replace this with a third-person summary such as "Reviews pull requests for security issues. Use when the user asks for a code review or mentions vulnerabilities."
 ---
 
 # New skill
 
-## Use this skill when
+## Instructions
 
-- State the positive activation conditions.
-- State important near-misses that should not activate it.
+1. State the first concrete step.
+2. Continue with the smallest reliable workflow for this task.
+3. Explain how to check the result before finishing.
 
-## Workflow
+## Additional resources
 
-1. Define required inputs and the intended output.
-2. Perform the smallest reliable workflow for this specialty.
-3. Read a bundled reference only at the step that needs it.
-4. Verify the result with observable checks before handing it off.
-
-## Output contract
-
-- Specify the artifact, answer, or code change the skill must produce.
-- Report evidence, uncertainty, and remaining risks.
+Put long reference material in separate files next to SKILL.md and link them
+here, for example [reference.md](reference.md), so they are read only when
+needed.
 `
-
-const EVOFLUX_METADATA = `interface:
-  display_name: New skill
-  short_description: A focused reusable workflow for EvoFlux
-  default_prompt: Use $new-skill for this task.
-policy:
-  allow_implicit_invocation: true
-`
-
-const TRIGGER_EVALS = `{
-  "skill": "new-skill",
-  "cases": [
-    {
-      "prompt": "A realistic request that should activate this workflow.",
-      "should_trigger": true,
-      "reason": "Replace with the distinguishing activation signal."
-    },
-    {
-      "prompt": "A nearby request that the base agent can handle without this workflow.",
-      "should_trigger": false,
-      "reason": "Replace with the boundary that prevents over-triggering."
-    }
-  ]
-}
-`
-
-function scaffoldFiles(): SkillBundleDraftFile[] {
-  return [
-    {
-      path: 'agents/evoflux.yaml',
-      content: EVOFLUX_METADATA,
-      encoding: 'utf-8',
-      size: 0,
-      mediaType: 'application/yaml',
-      editable: true,
-    },
-    {
-      path: 'evals/trigger-cases.json',
-      content: TRIGGER_EVALS,
-      encoding: 'utf-8',
-      size: 0,
-      mediaType: 'application/json',
-      editable: true,
-    },
-  ]
-}
-
-function scaffoldDisplayName(name: string): string {
-  if (name === 'new-skill') return 'New skill'
-  return name
-    .split('-')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
 
 export function NewSkillPage() {
-  const [content, setContent] = useState(TEMPLATE)
-  const [files, setFiles] = useState<SkillBundleDraftFile[]>(scaffoldFiles)
-  const [name, setName] = useState('new-skill')
-  const [availability, setAvailability] = useState<SkillAvailability>('both')
-  const [allowImplicitInvocation, setAllowImplicitInvocation] = useState(true)
-  const [userInvocable, setUserInvocable] = useState(true)
+  const [content, setContent] = useState(NEW_SKILL_TEMPLATE)
+  const [files, setFiles] = useState<SkillBundleDraftFile[]>([])
   const createMut = useCreateSkillMutation()
-  const updateSettingsMut = useUpdateSkillSettingsMutation()
   const push = useToastStore((s) => s.push)
   const navigate = useSettingsNavigate()
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  const handleContentChange = (raw: string) => {
-    setContent(raw)
-    const match = /^\s*---[\s\S]*?name:\s*([A-Za-z0-9._/-]+)/m.exec(raw)
-    if (match && match[1] !== name) {
-      const nextName = match[1]
-      setFiles((current) =>
-        current.map((file) =>
-          file.originalPath || file.content === null
-            ? file
-            : {
-                ...file,
-                content: file.content
-                  .replaceAll(name, nextName)
-                  .replace(
-                    `display_name: ${scaffoldDisplayName(name)}`,
-                    `display_name: ${scaffoldDisplayName(nextName)}`,
-                  ),
-              },
-        ),
-      )
-      setName(nextName)
-    }
-  }
-
-  const draftErrors = validateNewSkillDraft(content)
+  // The folder name is the frontmatter name.
+  const name = skillDraftName(content) ?? ''
+  const draftErrors = validateSkillDraft(content)
   const invalid = draftErrors !== null
   const firstDraftError = draftErrors ? Object.values(draftErrors)[0] : null
-  const dirty =
-    content !== TEMPLATE ||
-    files.length > 0 ||
-    availability !== 'both' ||
-    !allowImplicitInvocation ||
-    !userInvocable
-  const saving = createMut.isPending || updateSettingsMut.isPending
+  const dirty = content !== NEW_SKILL_TEMPLATE || files.length > 0
+  const saving = createMut.isPending
   useRegisterSettingsDirty(dirty)
 
   const handleCreate = async () => {
@@ -153,50 +64,19 @@ export function NewSkillPage() {
       setSaveError(firstDraftError ?? 'Form has validation errors.')
       return
     }
-    let created = false
     try {
       const bundle = getSkillBundleChanges(files, [])
-      const result = await createMut.mutateAsync({
-        name,
-        content,
-        files: bundle.files,
-        modes: modesFromAvailability(availability),
-      })
-      created = true
-      if (
-        result.allow_implicit_invocation !== allowImplicitInvocation ||
-        result.user_invocable !== userInvocable
-      ) {
-        await updateSettingsMut.mutateAsync({
-          name,
-          settings: {
-            settings_id: result.settings_id,
-            modes: modesFromAvailability(availability),
-            allow_implicit_invocation: allowImplicitInvocation,
-            user_invocable: userInvocable,
-          },
-        })
-      }
+      await createMut.mutateAsync({ name, content, files: bundle.files })
       push({
         tone: 'success',
         title: `Created skill "${name}"`,
-        description: 'Active on next turn.',
+        description: 'Available on the next turn.',
       })
       navigate('/settings/skills/$name', { params: { name }, force: true })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
-      if (created) {
-        const partial = `The skill bundle was created, but its runtime settings were not saved: ${msg}`
-        push({
-          tone: 'info',
-          title: 'Skill created; settings failed',
-          description: partial,
-        })
-        navigate('/settings/skills/$name', { params: { name }, force: true })
-      } else {
-        setSaveError(msg)
-        push({ tone: 'error', title: 'Create failed', description: msg })
-      }
+      setSaveError(msg)
+      push({ tone: 'error', title: 'Create failed', description: msg })
     }
   }
 
@@ -204,6 +84,7 @@ export function NewSkillPage() {
     <SettingsPage
       icon={Sparkles}
       title="New skill"
+      lede="Creates a skill folder in your user skills directory."
       actions={
         <EditorHeaderActions
           dirty={dirty}
@@ -216,42 +97,20 @@ export function NewSkillPage() {
       }
     >
       <SettingsGroup
-        title="Availability"
-        description="Choose the application mode where this workflow is relevant. Both keeps it available across EvoFlux."
-      >
-        <SkillModeSelector
-          value={availability}
-          onChange={setAvailability}
-          disabled={saving}
-          layoutId="new-skill-availability"
-        />
-      </SettingsGroup>
-
-      <SettingsGroup
-        title="Discovery"
-        description="Choose how agents and users can find and activate this skill after creation. These controls are independent."
-      >
-        <SkillRuntimeControls
-          allowImplicitInvocation={allowImplicitInvocation}
-          userInvocable={userInvocable}
-          onAllowImplicitInvocationChange={setAllowImplicitInvocation}
-          onUserInvocableChange={setUserInvocable}
-          disabled={saving}
-        />
-      </SettingsGroup>
-
-      <SettingsGroup
         title="Skill bundle"
         description={
           <>
-            Keep the core workflow in <span className="font-mono">SKILL.md</span>. Add supporting
-            docs, scripts, and assets as bundle files so agents can load only what they need.
+            <span className="font-mono">name</span> becomes the folder name: lowercase letters,
+            digits and single hyphens, up to 64 characters. The agent sees only the name and{' '}
+            <span className="font-mono">description</span> until it decides to read{' '}
+            <span className="font-mono">SKILL.md</span>. Add reference files, scripts, and assets
+            beside it.
           </>
         }
       >
         <SkillBundleEditor
           skillContent={content}
-          onSkillContentChange={handleContentChange}
+          onSkillContentChange={setContent}
           files={files}
           onFilesChange={setFiles}
           disabled={saving}

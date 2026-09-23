@@ -39,7 +39,7 @@ class CacheBoundaryHook(BaseAgentHook):
     Register this immediately before the hooks that append per-turn-volatile
     content (for example, a provider-specific or runtime catalog tail) so
     everything already in ``request.system_prompt`` at this point — role
-    prompt, team protocol, goal/folder/ASDD context, workspace instructions —
+    prompt, team protocol, goal/folder context, workspace instructions —
     stays a stable, cacheable prefix across turns.
     """
 

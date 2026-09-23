@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -891,6 +892,27 @@ class TestTeamStreamRoute:
                 response = await ac.get(f"/api/team/{session_id}/stream")
                 assert response.status_code == 200
                 assert "text/event-stream" in response.headers.get("content-type", "")
+
+    @pytest.mark.asyncio
+    async def test_team_stream_idle_session_closes_empty(self, app_with_team):
+        """No turn in flight: the stream ends at once with no events.
+
+        By design — attach is bound to a single turn, and a new turn opens its
+        own stream. The web client relies on this ending (not hanging) and
+        throttles idle re-attaches instead.
+        """
+        from httpx import ASGITransport, AsyncClient
+
+        session_id = str(uuid.uuid7())
+        transport = ASGITransport(app=app_with_team)
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            response = await asyncio.wait_for(
+                ac.get(f"/api/team/{session_id}/stream"), timeout=5
+            )
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers.get("content-type", "")
+        assert "event:" not in response.text
+        assert "data:" not in response.text
 
 
 class TestTeamAgentsRoute:

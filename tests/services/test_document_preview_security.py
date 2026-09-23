@@ -146,7 +146,69 @@ def test_ooxml_preflight_rejects_invalid_container(tmp_path: Path) -> None:
     source = tmp_path / "broken.pptx"
     source.write_bytes(b"not a zip package")
 
-    with pytest.raises(preview.DocumentPreviewError, match="Could not render"):
+    with pytest.raises(
+        preview.DocumentPreviewUnsupportedError,
+        match=r"has a \.pptx name but is not a PowerPoint presentation",
+    ):
+        preview_security.preflight_ooxml_package(source)
+
+
+def test_ooxml_preflight_still_reports_truncated_packages_as_damaged(
+    tmp_path: Path,
+) -> None:
+    complete = tmp_path / "complete.docx"
+    _minimal_ooxml(complete)
+    source = tmp_path / "truncated.docx"
+    source.write_bytes(complete.read_bytes()[:-40])
+
+    with pytest.raises(preview.DocumentPreviewError, match="invalid or damaged"):
+        preview_security.preflight_ooxml_package(source)
+
+
+def test_ooxml_preflight_names_a_plain_zip_with_an_office_extension(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "jira-docs.docx"
+    with zipfile.ZipFile(source, "w") as archive:
+        archive.writestr("jira-docs/", b"")
+        archive.writestr("jira-docs/00-overview.md", b"# Overview")
+        archive.writestr("jira-docs/01-issue-crud.md", b"# CRUD")
+
+    with pytest.raises(
+        preview.DocumentPreviewUnsupportedError,
+        match=(
+            r"ZIP archive with a \.docx name, not a Word document\. "
+            r"It contains 2 files \(for example 00-overview\.md, 01-issue-crud\.md\)"
+        ),
+    ):
+        preview_security.preflight_ooxml_package(source)
+
+
+def test_ooxml_preflight_names_the_real_format_of_a_misnamed_package(
+    tmp_path: Path,
+) -> None:
+    deck = tmp_path / "deck.pptx"
+    _minimal_ooxml(deck, suffix=".pptx")
+    source = tmp_path / "report.docx"
+    source.write_bytes(deck.read_bytes())
+
+    with pytest.raises(
+        preview.DocumentPreviewUnsupportedError,
+        match=r"PowerPoint presentation saved with a \.docx name\. Rename it to \.pptx",
+    ):
+        preview_security.preflight_ooxml_package(source)
+
+
+def test_ooxml_preflight_explains_legacy_or_password_protected_files(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "budget.xlsx"
+    source.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 512)
+
+    with pytest.raises(
+        preview.DocumentPreviewUnsupportedError,
+        match="password-protected or was saved in the legacy Office 97–2003 format",
+    ):
         preview_security.preflight_ooxml_package(source)
 
 

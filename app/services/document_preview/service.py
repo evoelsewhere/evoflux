@@ -11,16 +11,23 @@ from __future__ import annotations
 import base64
 import hashlib
 import html
+import io
 import math
 import os
 import shutil
 import tempfile
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
+from app.services.document_preview.live_deck import (
+    DeckPlan,
+    deck_is_live,
+    read_deck_plan,
+)
 from app.services.document_preview.xlsx_formula import (
     FormulaEvaluation,
     evaluate_workbook_formulas,
@@ -58,9 +65,26 @@ def _render_lock_for(output: Path) -> threading.Lock:
     return _render_locks[int(output.stem[:8], 16) % len(_render_locks)]
 
 
+_OFFICE_RUNTIME_SUFFIXES = frozenset({".docx", ".xlsx", ".pptx"})
+
+
+def _renderer_identity(source: Path) -> str:
+    """Name the engine that renders ``source`` so switching engines re-renders."""
+    if source.suffix.lower() not in _OFFICE_RUNTIME_SUFFIXES:
+        return "native"
+    if deck_is_live(source):
+        # A deck under construction is re-rendered on every save; the exact
+        # renderer (seconds per conversion) takes over once it is finished.
+        return "native"
+    runtime = installed_runtime_for_preview()
+    return f"libreoffice-{runtime.version}" if runtime is not None else "native"
+
+
 def _cache_path(source: Path) -> Path:
     fingerprint = hashlib.sha256()
     fingerprint.update(_CACHE_SCHEMA_VERSION.encode())
+    fingerprint.update(b"\0")
+    fingerprint.update(_renderer_identity(source).encode())
     fingerprint.update(b"\0")
     fingerprint.update(source.suffix.casefold().encode())
     fingerprint.update(b"\0")
@@ -657,15 +681,75 @@ def _xlsx_anchor_box(sheet: Any, drawing: Any) -> tuple[float, float, float, flo
     return left, top, max(width, 1), max(height, 1)
 
 
-def _render_xlsx(source: Path) -> str:
+def _load_preview_workbooks(source: Path) -> tuple[Any, Any]:
+    """Load formula and cached-value workbooks, repairing unreadable packages.
+
+    openpyxl rejects some valid packages, for example styles written with
+    ``mc:AlternateContent`` by Hancom Office. Retry once from a sanitised copy
+    that keeps only the markup-compatibility fallbacks.
+    """
     from openpyxl import load_workbook
+
+    from app.services.document_preview.xlsx_features import sanitized_workbook_bytes
+
+    try:
+        return (
+            load_workbook(source, data_only=False, read_only=False),
+            load_workbook(source, data_only=True, read_only=False),
+        )
+    except (TypeError, ValueError, KeyError, AttributeError) as first_error:
+        repaired = sanitized_workbook_bytes(source)
+        try:
+            workbooks = (
+                load_workbook(io.BytesIO(repaired), data_only=False, read_only=False),
+                load_workbook(io.BytesIO(repaired), data_only=True, read_only=False),
+            )
+        except (TypeError, ValueError, KeyError, AttributeError):
+            raise first_error from None
+        logger.info("document_preview_xlsx_repaired file={}", source.name)
+        return workbooks
+
+
+def _xlsx_frozen_edges(sheet: Any) -> tuple[int, int]:
+    """Return the number of frozen (columns, rows) for sticky rendering."""
+    from openpyxl.utils.cell import coordinate_from_string, column_index_from_string
+
+    pane = getattr(sheet, "freeze_panes", None)
+    if not pane:
+        return 0, 0
+    try:
+        column, row = coordinate_from_string(str(pane))
+    except ValueError:
+        return 0, 0
+    return column_index_from_string(column) - 1, int(row) - 1
+
+
+def _xlsx_cell_value(
+    sheet: Any, cached_sheet: Any, coordinate: str, evaluation: FormulaEvaluation
+) -> Any:
+    cell = sheet[coordinate]
+    if cell.data_type != "f":
+        return cell.value
+    cached = cached_sheet[coordinate].value
+    return evaluation.display_value(sheet.title, coordinate, cached)
+
+
+def _render_xlsx(source: Path) -> str:
     from openpyxl.utils import get_column_letter
 
-    workbook = load_workbook(source, data_only=False, read_only=False)
-    cached_workbook = load_workbook(source, data_only=True, read_only=False)
+    from app.services.document_preview.xlsx_features import (
+        conditional_formats,
+        drawing_shapes_html,
+        worksheet_drawing_parts,
+    )
+
+    workbook, cached_workbook = _load_preview_workbooks(source)
     evaluation = evaluate_workbook_formulas(workbook)
+    drawing_parts = worksheet_drawing_parts(source)
     sections: list[str] = []
     for sheet in workbook.worksheets:
+        if getattr(sheet, "sheet_state", "visible") == "veryHidden":
+            continue
         cached_sheet = cached_workbook[sheet.title]
         used_max_row = min(max(sheet.max_row, 1), 500)
         used_max_column = min(max(sheet.max_column, 1), 100)
@@ -685,11 +769,37 @@ def _render_xlsx(source: Path) -> str:
             _xlsx_column_width_px(sheet, column) for column in range(1, max_column + 1)
         ]
         row_heights = [_xlsx_row_height_px(sheet, row) for row in range(1, max_row + 1)]
+        hidden_columns = {
+            column
+            for column in range(1, max_column + 1)
+            if sheet.column_dimensions[get_column_letter(column)].hidden
+        }
+        hidden_rows = {
+            row for row in range(1, max_row + 1) if sheet.row_dimensions[row].hidden
+        }
+        # Rendered row pitch: CSS enforces a 25px minimum plus a 1px border,
+        # while hidden rows collapse entirely.
+        row_pitch = [
+            0.0 if row in hidden_rows else max(row_heights[row - 1], 25) + 1
+            for row in range(1, max_row + 1)
+        ]
+        column_pitch = [
+            0.0 if column in hidden_columns else column_widths[column - 1]
+            for column in range(1, max_column + 1)
+        ]
+        frozen_columns, frozen_rows = _xlsx_frozen_edges(sheet)
+        conditional = conditional_formats(
+            sheet,
+            lambda coordinate: _xlsx_cell_value(
+                sheet, cached_sheet, coordinate, evaluation
+            ),
+        )
         columns = ['<col style="width:44px">']
         column_headers = ['<th class="corner" aria-hidden="true"></th>']
         for column in range(1, max_column + 1):
             width_px = column_widths[column - 1]
-            columns.append(f'<col style="width:{width_px:.0f}px">')
+            collapse = ";visibility:collapse" if column in hidden_columns else ""
+            columns.append(f'<col style="width:{width_px:.0f}px{collapse}">')
             column_headers.append(
                 f'<th class="column-header" data-column="{get_column_letter(column)}" '
                 f'style="min-width:{width_px:.0f}px">{get_column_letter(column)}</th>'
@@ -698,7 +808,14 @@ def _render_xlsx(source: Path) -> str:
         rows = [f"<tr>{''.join(column_headers)}</tr>"]
         for row_index in range(1, max_row + 1):
             row_height = row_heights[row_index - 1]
-            cells = [f'<th class="row-number" data-row="{row_index}">{row_index}</th>']
+            header_style = ""
+            if row_index <= frozen_rows:
+                offset = 26 + sum(row_pitch[: row_index - 1])
+                header_style = f' style="top:{offset:.2f}px;z-index:4"'
+            cells = [
+                f'<th class="row-number" data-row="{row_index}"{header_style}>'
+                f"{row_index}</th>"
+            ]
             for column_index in range(1, max_column + 1):
                 if (row_index, column_index) in merged_covered:
                     continue
@@ -735,7 +852,21 @@ def _render_xlsx(source: Path) -> str:
                     border = _border_css(getattr(cell.border, side_name), side_name)
                     if border:
                         styles.append(border)
-                style_attr = f' style="{";".join(styles)}"' if styles else ""
+                rule_format = conditional.get(cell.coordinate)
+                if rule_format is not None:
+                    styles.extend(rule_format.css())
+                classes = ["cell"]
+                frozen_column = column_index <= frozen_columns
+                frozen_row = row_index <= frozen_rows
+                if frozen_column:
+                    offset = 44 + sum(column_pitch[: column_index - 1])
+                    styles.append(f"position:sticky;left:{offset:.2f}px")
+                if frozen_row:
+                    offset = 26 + sum(row_pitch[: row_index - 1])
+                    styles.append(f"position:sticky;top:{offset:.2f}px")
+                if frozen_column or frozen_row:
+                    classes.append("frozen")
+                    styles.append(f"z-index:{2 if frozen_column and frozen_row else 1}")
                 display_value = _display_cell(
                     cell,
                     evaluation=evaluation,
@@ -743,20 +874,49 @@ def _render_xlsx(source: Path) -> str:
                     cached_value=cached_sheet[cell.coordinate].value,
                 )
                 value = html.escape(display_value)
-                formula_class = " formula" if cell.data_type == "f" else ""
+                if rule_format is not None and rule_format.hide_value:
+                    value = ""
+                if rule_format is not None and rule_format.icon:
+                    value = f"{rule_format.icon}{value}"
+                if cell.data_type == "f":
+                    classes.append("formula")
                 formula_attr = ""
                 if cell.data_type == "f":
                     formula = str(cell.value or "")
                     if not formula.startswith("="):
                         formula = f"={formula}"
                     formula_attr = f' data-formula="{html.escape(formula, quote=True)}"'
+                extra_attr = ""
+                hyperlink = cell.hyperlink
+                target = str(
+                    getattr(hyperlink, "target", None)
+                    or getattr(hyperlink, "location", None)
+                    or ""
+                )
+                if target:
+                    classes.append("hyperlink")
+                    extra_attr += f' data-href="{html.escape(target, quote=True)}"'
+                comment = cell.comment
+                if comment is not None and comment.text:
+                    classes.append("has-comment")
+                    note = comment.text.strip()
+                    if comment.author:
+                        note = f"{comment.author}: {note}"
+                    extra_attr += (
+                        f' data-comment="{html.escape(note, quote=True)}"'
+                        f' title="{html.escape(note, quote=True)}"'
+                    )
+                style_attr = f' style="{";".join(styles)}"' if styles else ""
                 cells.append(
-                    f'<td class="cell{formula_class}" data-cell="{cell.coordinate}" '
+                    f'<td class="{" ".join(classes)}" data-cell="{cell.coordinate}" '
                     f'data-qa-label="{html.escape(cell.coordinate, quote=True)}"'
                     f' data-display-value="{html.escape(display_value, quote=True)}"'
-                    f"{formula_attr}{spans}{style_attr}>{value}</td>"
+                    f"{formula_attr}{extra_attr}{spans}{style_attr}>{value}</td>"
                 )
-            rows.append(f'<tr style="height:{row_height:.2f}px">{"".join(cells)}</tr>')
+            row_style = f"height:{row_height:.2f}px"
+            if row_index in hidden_rows:
+                row_style += ";visibility:collapse"
+            rows.append(f'<tr style="{row_style}">{"".join(cells)}</tr>')
         truncated = sheet.max_row > max_row or sheet.max_column > max_column
         notice = (
             '<p class="notice">Preview limited to the first 500 rows and 100 columns.</p>'
@@ -764,15 +924,44 @@ def _render_xlsx(source: Path) -> str:
             else ""
         )
         objects: list[str] = []
-        stage_width = 44 + sum(column_widths)
-        fit_width = 44 + sum(column_widths[:used_max_column])
+        stage_width = 44 + sum(column_pitch)
+        fit_width = 44 + sum(column_pitch[:used_max_column])
         # CSS cells have a 25px minimum height.  Compact workbook profiles may
         # request slightly shorter rows, so use the rendered minimum here or
         # the final rows can extend beyond the stage and be falsely clipped.
-        stage_height = 32 + sum(max(height, 25) + 1 for height in row_heights)
-        fit_height = 32 + sum(
-            max(height, 25) + 1 for height in row_heights[:used_max_row]
-        )
+        stage_height = 32 + sum(row_pitch)
+        fit_height = 32 + sum(row_pitch[:used_max_row])
+
+        def column_left(zero_based: int) -> float:
+            return (
+                44
+                + sum(column_pitch[:zero_based])
+                + sum(
+                    _xlsx_column_width_px(sheet, column)
+                    for column in range(max_column + 1, zero_based + 1)
+                )
+            )
+
+        def row_top(zero_based: int) -> float:
+            return (
+                26
+                + sum(row_pitch[:zero_based])
+                + sum(
+                    max(_xlsx_row_height_px(sheet, row), 25) + 1
+                    for row in range(max_row + 1, zero_based + 1)
+                )
+            )
+
+        drawing_part = drawing_parts.get(sheet.title)
+        if drawing_part:
+            shapes, shapes_right, shapes_bottom = drawing_shapes_html(
+                source, drawing_part, column_left, row_top
+            )
+            objects.extend(shapes)
+            stage_width = max(stage_width, shapes_right)
+            stage_height = max(stage_height, shapes_bottom)
+            fit_width = max(fit_width, shapes_right)
+            fit_height = max(fit_height, shapes_bottom)
         for chart_index, chart in enumerate(sheet._charts, start=1):
             title = f"Chart {chart_index}"
             try:
@@ -806,15 +995,39 @@ def _render_xlsx(source: Path) -> str:
                 f'width:{width:.2f}px;height:{height:.2f}px" '
                 f'src="{_xlsx_image_data_uri(image)}" alt="Image {image_index}">'
             )
+        sheet_classes = ["sheet"]
+        if getattr(getattr(sheet, "sheet_view", None), "showGridLines", True) is False:
+            sheet_classes.append("no-gridlines")
+        label = sheet.title
+        if getattr(sheet, "sheet_state", "visible") == "hidden":
+            label = f"{sheet.title} (hidden)"
         sections.append(
-            f'<section class="sheet" data-preview-item '
-            f'data-preview-label="{html.escape(sheet.title, quote=True)}" '
+            f'<section class="{" ".join(sheet_classes)}" data-preview-item '
+            f'data-preview-label="{html.escape(label, quote=True)}" '
             f'data-preview-fit-width="{fit_width:.2f}" '
             f'data-preview-fit-height="{fit_height:.2f}">'
             f'{notice}<div class="grid-wrap"><div class="grid-stage" '
             f'style="width:{stage_width:.2f}px;height:{stage_height:.2f}px">'
             f"<table><colgroup>{''.join(columns)}</colgroup>"
             f"{''.join(rows)}</table>{''.join(objects)}</div></div></section>"
+        )
+
+    for chartsheet in getattr(workbook, "chartsheets", []):
+        if getattr(chartsheet, "sheet_state", "visible") == "veryHidden":
+            continue
+        figures = (
+            "".join(
+                '<figure class="chartsheet-chart">'
+                f"{_xlsx_chart_svg(workbook, chart, evaluation)}</figure>"
+                for chart in getattr(chartsheet, "_charts", [])
+            )
+            or '<p class="chart-empty">This chart sheet has no readable chart.</p>'
+        )
+        sections.append(
+            '<section class="sheet chartsheet" data-preview-item '
+            f'data-preview-label="{html.escape(chartsheet.title, quote=True)}" '
+            'data-preview-fit-width="960" data-preview-fit-height="600">'
+            f"{figures}</section>"
         )
 
     workbook.close()
@@ -842,6 +1055,18 @@ def _render_xlsx(source: Path) -> str:
     font-weight:600;margin-bottom:5px}.workbook-chart-svg{display:block;width:100%;
     height:calc(100% - 22px)}.workbook-image{position:absolute;object-fit:contain}
     .chart-empty{color:#6b7280}
+    .no-gridlines td{border-right-color:transparent;border-bottom-color:transparent}
+    td.frozen{background-clip:padding-box}.frozen:not([style*="background"]){
+    background:#fff}.cf-icon{display:inline-block;margin-right:4px;font-size:11px}
+    td.hyperlink{color:#1a56c4;text-decoration:underline}td.has-comment{
+    position:relative}td.has-comment::after{content:"";position:absolute;top:0;right:0;
+    border-style:solid;border-width:0 7px 7px 0;border-color:transparent #d93025
+    transparent transparent}
+    .workbook-shape{position:absolute;z-index:5;overflow:hidden;padding:4px 6px;
+    font-size:11pt;white-space:normal;box-sizing:border-box}.workbook-shape p{
+    margin:0}.chartsheet{display:flex;align-items:center;justify-content:center;
+    padding:24px}.chartsheet-chart{width:min(960px,100%);height:min(600px,100%);
+    margin:0}.chartsheet-chart .workbook-chart-svg{height:100%}
     """
     return _page(title=source.name, body="".join(sections), css=css)
 
@@ -905,10 +1130,10 @@ def _shape_box(
 ) -> str:
     width_basis = coordinate_width or slide_width
     height_basis = coordinate_height or slide_height
-    left = 100 * (int(shape.left) - coordinate_left) / max(width_basis, 1)
-    top = 100 * (int(shape.top) - coordinate_top) / max(height_basis, 1)
-    width = 100 * int(shape.width) / max(width_basis, 1)
-    height = 100 * int(shape.height) / max(height_basis, 1)
+    left = 100 * (int(shape.left or 0) - coordinate_left) / max(width_basis, 1)
+    top = 100 * (int(shape.top or 0) - coordinate_top) / max(height_basis, 1)
+    width = 100 * int(shape.width or 0) / max(width_basis, 1)
+    height = 100 * int(shape.height or 0) / max(height_basis, 1)
     styles = f"left:{left:.3f}%;top:{top:.3f}%;width:{width:.3f}%;height:{height:.3f}%"
     transform = _shape_transform_css(shape)
     if transform:
@@ -2093,10 +2318,10 @@ def _connector_svg(
 ) -> str:
     width_basis = coordinate_width or slide_width
     height_basis = coordinate_height or slide_height
-    left = 100 * (int(shape.left) - coordinate_left) / max(width_basis, 1)
-    top = 100 * (int(shape.top) - coordinate_top) / max(height_basis, 1)
-    width = 100 * int(shape.width) / max(width_basis, 1)
-    height = 100 * int(shape.height) / max(height_basis, 1)
+    left = 100 * (int(shape.left or 0) - coordinate_left) / max(width_basis, 1)
+    top = 100 * (int(shape.top or 0) - coordinate_top) / max(height_basis, 1)
+    width = 100 * int(shape.width or 0) / max(width_basis, 1)
+    height = 100 * int(shape.height or 0) / max(height_basis, 1)
     transform = shape._element.xpath(".//*[local-name()='xfrm']")
     flip_horizontal = bool(transform and transform[0].get("flipH") == "1")
     flip_vertical = bool(transform and transform[0].get("flipV") == "1")
@@ -4015,16 +4240,238 @@ def _render_table(
     )
 
 
+_PPTX_SHAPE_ELEMENTS = frozenset({"sp", "pic", "grpSp", "graphicFrame", "cxnSp"})
+_DIAGRAM_DRAWING_NS = "http://schemas.microsoft.com/office/drawing/2008/diagram"
+_PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+_DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_RELATIONSHIP_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+_BROWSER_IMAGE_TYPES = frozenset(
+    {
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+        "image/svg+xml",
+    }
+)
+
+
+def _shape_elements(element: Any) -> Iterator[Any]:
+    """Yield shape elements in z-order, resolving ``mc:AlternateContent``.
+
+    python-pptx only iterates the shape tags it models, so anything PowerPoint
+    wraps in markup-compatibility blocks (equations, icons, newer effects)
+    silently vanished. The ``mc:Fallback`` branch is what every consumer is
+    guaranteed to understand, usually a picture or a plain shape.
+    """
+    for child in element.iterchildren():
+        name = _local_name(child)
+        if name in _PPTX_SHAPE_ELEMENTS:
+            yield child
+        elif name == "AlternateContent":
+            branches = {_local_name(branch): branch for branch in child}
+            branch = branches.get("Fallback")
+            if branch is None:
+                branch = branches.get("Choice")
+            if branch is not None:
+                yield from _shape_elements(branch)
+
+
+def _tree_shapes(shapes: Any) -> list[Any]:
+    """Return a shape collection's members, including compatibility content."""
+    try:
+        tree = shapes._spTree
+        factory = shapes._shape_factory
+    except AttributeError:
+        return list(shapes)
+    return [factory(element) for element in _shape_elements(tree)]
+
+
+def _part_data_uri(part: Any) -> str | None:
+    content_type = str(getattr(part, "content_type", "") or "").lower()
+    if content_type not in _BROWSER_IMAGE_TYPES:
+        return None
+    encoded = base64.b64encode(part.blob).decode("ascii")
+    return f"data:{content_type};base64,{encoded}"
+
+
+def _diagram_drawing_part(frame: Any) -> Any | None:
+    """Locate the drawing PowerPoint cached for a SmartArt graphic frame."""
+    from lxml import etree  # ty: ignore[unresolved-import] - compiled module, no stubs
+
+    relation_ids = frame._element.xpath(".//*[local-name()='relIds']")
+    if not relation_ids:
+        return None
+    part = frame.part
+    data_rid = relation_ids[0].get(f"{{{_RELATIONSHIP_NS}}}dm")
+    drawing_rid = None
+    if data_rid:
+        try:
+            data_root = etree.fromstring(part.related_part(data_rid).blob)
+        except (KeyError, etree.XMLSyntaxError, ValueError):
+            data_root = None
+        if data_root is not None:
+            extensions = data_root.xpath(".//*[local-name()='dataModelExt']")
+            if extensions:
+                drawing_rid = extensions[0].get("relId")
+    if drawing_rid:
+        try:
+            return part.related_part(drawing_rid)
+        except KeyError:
+            pass
+    drawings = [
+        relationship.target_part
+        for relationship in part.rels.values()
+        if str(relationship.reltype).endswith("/diagramDrawing")
+        and not relationship.is_external
+    ]
+    return drawings[0] if len(drawings) == 1 else None
+
+
+def _smartart_group(frame: Any) -> Any | None:
+    """Rebuild a SmartArt frame as a group of ordinary slide shapes.
+
+    SmartArt layout is computed by PowerPoint, which also caches the result as
+    ``dsp:`` shapes in ``ppt/diagrams/drawingN.xml``. Those shapes share the
+    ``p:sp`` content model, so they are re-namespaced into a ``p:grpSp`` whose
+    child coordinate space is the frame, and rendered by the normal pipeline.
+    """
+    from lxml import etree  # ty: ignore[unresolved-import] - compiled module, no stubs
+    from pptx.oxml import parse_xml
+    from pptx.shapes.group import GroupShape
+
+    drawing = _diagram_drawing_part(frame)
+    blob = getattr(drawing, "blob", None)
+    if not isinstance(blob, bytes):
+        return None
+    try:
+        tree = parse_xml(
+            blob.replace(
+                _DIAGRAM_DRAWING_NS.encode("ascii"), _PRESENTATION_NS.encode("ascii")
+            )
+        )
+    except (etree.XMLSyntaxError, ValueError):
+        logger.debug("document_preview_smartart_unparsable name={}", frame.name)
+        return None
+    spec = tree.find(f"{{{_PRESENTATION_NS}}}spTree")
+    if spec is None:
+        return None
+    members = [child for child in spec if _local_name(child) in {"sp", "grpSp"}]
+    if not members:
+        return None
+    for element in members:
+        for node in element.iter(f"{{{_PRESENTATION_NS}}}txXfrm"):
+            node.getparent().remove(node)
+        for properties in element.iter(
+            f"{{{_PRESENTATION_NS}}}nvSpPr", f"{{{_PRESENTATION_NS}}}nvGrpSpPr"
+        ):
+            if _xml_child(properties, "nvPr") is None:
+                etree.SubElement(properties, f"{{{_PRESENTATION_NS}}}nvPr")
+    left, top = int(frame.left or 0), int(frame.top or 0)
+    width, height = max(int(frame.width or 0), 1), max(int(frame.height or 0), 1)
+    name = html.escape(str(frame.name or ""), quote=True)
+    group = parse_xml(
+        f'<p:grpSp xmlns:p="{_PRESENTATION_NS}" xmlns:a="{_DRAWING_NS}">'
+        f'<p:nvGrpSpPr><p:cNvPr id="{int(frame.shape_id)}" name="{name}"/>'
+        "<p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>"
+        f'<p:grpSpPr><a:xfrm><a:off x="{left}" y="{top}"/>'
+        f'<a:ext cx="{width}" cy="{height}"/><a:chOff x="0" y="0"/>'
+        f'<a:chExt cx="{width}" cy="{height}"/></a:xfrm></p:grpSpPr></p:grpSp>'
+    )
+    group.extend(members)
+    return GroupShape(group, frame._parent)
+
+
+def _graphic_frame_fallback(frame: Any, *, identity: str, box: str) -> str:
+    """Render embedded objects PowerPoint shows through a preview picture.
+
+    OLE objects (embedded workbooks, documents, Visio drawings) carry a cached
+    preview image. When the preview is a browser-safe raster/SVG it is shown;
+    otherwise the frame is labelled so the object is visibly present instead
+    of silently disappearing.
+    """
+    element = frame._element
+    ole = element.xpath(".//*[local-name()='oleObj']")
+    prog_id = str(ole[0].get("progId") or "") if ole else ""
+    for blip in element.xpath(".//*[local-name()='blip']"):
+        relation_id = blip.get(f"{{{_RELATIONSHIP_NS}}}embed")
+        if not relation_id:
+            continue
+        try:
+            source = _part_data_uri(frame.part.related_part(relation_id))
+        except KeyError:
+            source = None
+        if source:
+            alt = html.escape(prog_id or str(frame.name or "Embedded object"), True)
+            return (
+                f'<div class="shape picture-frame embedded-object" {identity} '
+                f'style="{box}"><img class="picture" alt="{alt}" src="{source}" '
+                'style="left:0;top:0;width:100%;height:100%"></div>'
+            )
+    label = "Embedded object" if ole else "Unsupported object"
+    detail = html.escape(prog_id or str(frame.name or ""))
+    logger.debug(
+        "document_preview_pptx_object_placeholder name={} prog_id={}",
+        frame.name,
+        prog_id,
+    )
+    return (
+        f'<div class="shape object-placeholder" {identity} style="{box}">'
+        f"<span>{label}</span>{f'<small>{detail}</small>' if detail else ''}</div>"
+    )
+
+
+def _shape_type_name(shape: Any) -> str:
+    """Return python-pptx's shape type name, or "" for unmodelled shapes.
+
+    ``Shape.shape_type`` raises ``NotImplementedError`` for autoshapes without
+    a geometry, which markup-compatibility fallbacks and SmartArt drawings
+    commonly contain.
+    """
+    try:
+        return str(getattr(getattr(shape, "shape_type", None), "name", "") or "")
+    except NotImplementedError:
+        return ""
+
+
+def _render_slide_shapes(slide: Any, **options: Any) -> list[str]:
+    """Render every composited shape, isolating failures to the one shape.
+
+    Real decks carry shapes the renderer does not fully model; one of them
+    must not blank the whole presentation.
+    """
+    rendered: list[str] = []
+    for layer, shape in _composite_slide_shapes(slide):
+        try:
+            rendered.append(
+                _render_pptx_shape(shape, layer=layer, slide=slide, **options)
+            )
+        except (
+            AttributeError,
+            KeyError,
+            TypeError,
+            ValueError,
+            NotImplementedError,
+        ) as exc:
+            logger.warning(
+                "document_preview_pptx_shape_skipped name={} error={}",
+                getattr(shape, "name", ""),
+                exc,
+            )
+    return rendered
+
+
 def _composite_slide_shapes(slide: Any) -> list[tuple[str, Any]]:
     layout = slide.slide_layout
     result: list[tuple[str, Any]] = []
-    for shape in layout.slide_master.shapes:
+    for shape in _tree_shapes(layout.slide_master.shapes):
         if _placeholder_key(shape) is None:
             result.append(("master", shape))
-    for shape in layout.shapes:
+    for shape in _tree_shapes(layout.shapes):
         if _placeholder_key(shape) is None:
             result.append(("layout", shape))
-    for shape in slide.shapes:
+    for shape in _tree_shapes(slide.shapes):
         result.append(("slide", shape))
     return result
 
@@ -4066,7 +4513,7 @@ def _render_pptx_shape(
     coordinate_width: int | None = None,
     coordinate_height: int | None = None,
 ) -> str:
-    shape_type = getattr(getattr(shape, "shape_type", None), "name", "")
+    shape_type = _shape_type_name(shape)
     if shape_type == "GROUP":
         box = _shape_box(
             shape,
@@ -4094,7 +4541,7 @@ def _render_pptx_shape(
                 coordinate_width=child_width,
                 coordinate_height=child_height,
             )
-            for child in shape.shapes
+            for child in _tree_shapes(shape.shapes)
         )
         identity = _shape_identity(shape, layer)
         return (
@@ -4180,6 +4627,24 @@ def _render_pptx_shape(
             "</div>"
         )
 
+    if _local_name(shape._element) == "graphicFrame":
+        diagram = _smartart_group(shape)
+        if diagram is not None:
+            return _render_pptx_shape(
+                diagram,
+                layer=layer,
+                slide=slide,
+                palette=palette,
+                fonts=fonts,
+                slide_width=slide_width,
+                slide_height=slide_height,
+                coordinate_left=coordinate_left,
+                coordinate_top=coordinate_top,
+                coordinate_width=coordinate_width,
+                coordinate_height=coordinate_height,
+            )
+        return _graphic_frame_fallback(shape, identity=identity, box=box)
+
     if getattr(shape, "has_text_frame", False) and shape.text.strip():
         surface = _shape_surface_svg(shape, slide=slide, palette=palette)
         container_styles, alignment_attribute = _shape_text_container_attributes(
@@ -4246,22 +4711,20 @@ def _render_pptx(source: Path) -> str:
     slide_height = int(presentation.slide_height or 0)
     if slide_width <= 0 or slide_height <= 0:
         raise ValueError("Presentation has invalid slide dimensions")
+    plan = read_deck_plan(source)
+    live = plan is not None and not plan.done
+    status_attribute = ' data-slide-status="done"' if live else ""
     rendered_slides: list[str] = []
     for slide_number, slide in enumerate(presentation.slides, start=1):
         palette = _pptx_theme_palette(slide)
         fonts = _pptx_theme_fonts(slide)
-        shapes = [
-            _render_pptx_shape(
-                shape,
-                layer=layer,
-                slide=slide,
-                palette=palette,
-                fonts=fonts,
-                slide_width=slide_width,
-                slide_height=slide_height,
-            )
-            for layer, shape in _composite_slide_shapes(slide)
-        ]
+        shapes = _render_slide_shapes(
+            slide,
+            palette=palette,
+            fonts=fonts,
+            slide_width=slide_width,
+            slide_height=slide_height,
+        )
 
         background = _slide_background(slide, palette)
         ratio = f"{slide_width}/{slide_height}"
@@ -4276,13 +4739,24 @@ def _render_pptx(source: Path) -> str:
                 f'data-preview-notes="{html.escape(notes, quote=True)}">'
                 f"{escaped_notes}</span>"
             )
+        # The newest finished slide of a live deck lands with a short animation.
+        fresh = live and slide_number == len(presentation.slides)
         rendered_slides.append(
             f'<article class="slide-wrap" data-preview-item '
             f'data-preview-label="{html.escape(label, quote=True)}" '
-            f'data-preview-title="{html.escape(title, quote=True)}">'
+            f'data-preview-title="{html.escape(title, quote=True)}"{status_attribute}'
+            f"{' data-slide-fresh' if fresh else ''}>"
             f'<div class="slide-number">{slide_number}</div>'
             f'<section class="slide" style="aspect-ratio:{ratio};background:{background}">'
             f"{''.join(shapes)}</section>{notes_metadata}</article>"
+        )
+    if live and plan is not None:
+        rendered_slides.extend(
+            _pending_slide_skeletons(
+                plan,
+                first=len(rendered_slides),
+                ratio=f"{slide_width}/{slide_height}",
+            )
         )
 
     css = """
@@ -4313,18 +4787,205 @@ def _render_pptx(source: Path) -> str:
     gap:.3cqw}.chart-title{font-size:1.875cqw;line-height:1.1}.chart-svg{width:100%;
     flex:1;min-height:0}.chart-empty,.chart-unsupported{font-size:1.1cqw;color:#6b7280}
     .vector-shape{pointer-events:none}.connector{overflow:visible;pointer-events:none}
+    .object-placeholder{display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:.3cqw;border:1px dashed #9ca3af;background:#f9fafb;
+    color:#4b5563;font-size:1.1cqw;text-align:center}.object-placeholder small{
+    font-size:.9cqw;color:#6b7280}
     .slide-notes-metadata{display:none!important}
     """
-    return _page(title=source.name, body="".join(rendered_slides), css=css)
+    body = "".join(rendered_slides)
+    if live:
+        css += _LIVE_SLIDE_CSS
+        body = f'<main data-deck-live="true">{body}</main>'
+    return _page(title=source.name, body=body, css=css)
+
+
+_LIVE_SLIDE_CSS = """
+.slide-skeleton{display:flex;flex-direction:column;gap:3.2cqw;padding:6% 7%;
+background:#fff;font-family:Arial,sans-serif}
+.sk-head{display:flex;flex-direction:column;align-items:flex-start;gap:1.4cqw}
+.sk-chip{display:inline-flex;align-items:center;gap:.8cqw;padding:.55cqw 1.3cqw;
+border-radius:99px;font:600 1.25cqw/1 Arial,sans-serif;letter-spacing:.02em;
+color:#5f6368;background:#f1f3f4}
+.sk-title{margin:0;max-width:100%;font:700 3.6cqw/1.15 Arial,sans-serif;
+color:#3c4043;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sk-body{flex:1;min-height:0;display:flex;gap:5cqw;align-items:stretch}
+.sk-text{flex:1.3;display:flex;flex-direction:column;justify-content:center;gap:1.6cqw}
+.sk-visual{flex:1;display:flex;align-items:flex-end;justify-content:space-around;
+gap:1.4cqw;padding:2cqw 2cqw 0;border-bottom:.25cqw solid #dadce0}
+.sk-visual span{flex:1;height:var(--h);border-radius:.6cqw .6cqw 0 0;background:#e8eaed;
+transform-origin:bottom}
+.slide-skeleton .bar{border-radius:.6cqw;background:#ececec;transform-origin:left}
+.slide-skeleton .bar.title{height:3.8cqw;width:55%}
+.slide-skeleton .bar.subtitle{height:2cqw;width:32%}
+.slide-skeleton .bar.line{height:1.4cqw;width:var(--w)}
+.sk-progress{position:absolute;left:0;right:0;bottom:0;height:.7cqw;background:#e8eaed;
+display:flex}.sk-progress .done{background:#1a73e8}.sk-progress .now{
+background:linear-gradient(90deg,#8ab4f8,#d2e3fc,#8ab4f8);background-size:200% 100%;
+animation:sk-flow 1.2s linear infinite}
+
+[data-slide-status="building"] .slide{outline:2px solid #1a73e8;outline-offset:3px;
+animation:sk-glow 2.2s ease-in-out infinite}
+[data-slide-status="building"] .slide-skeleton{background:
+radial-gradient(#1a73e81f 1px,transparent 1.2px) 0 0/2.4cqw 2.4cqw,#fff}
+[data-slide-status="building"] .slide-skeleton::after{content:"";position:absolute;
+inset:0;pointer-events:none;background:linear-gradient(100deg,transparent 35%,
+#1a73e814 50%,transparent 65%);animation:sk-scan 2.6s ease-in-out infinite}
+[data-slide-status="building"] .sk-chip{color:#1967d2;background:#e8f0fe}
+[data-slide-status="building"] .sk-spin{width:1.2cqw;height:1.2cqw;border-radius:50%;
+border:.25cqw solid #1a73e84d;border-top-color:#1a73e8;animation:sk-spin .8s linear infinite}
+[data-slide-status="building"] .sk-title{color:#202124;
+animation:sk-type 1.1s steps(24,end) .15s both}
+[data-slide-status="building"] .sk-title::after{content:"";display:inline-block;
+width:.3cqw;height:1em;margin-left:.5cqw;vertical-align:-.12em;background:#1a73e8;
+animation:sk-caret 1s steps(1) infinite}
+[data-slide-status="building"] .bar{background:linear-gradient(90deg,#e3e6ea 0,
+#f4f6f8 40%,#e3e6ea 80%) 0 0/300% 100%;animation:sk-grow .6s cubic-bezier(.2,.7,.2,1)
+calc(.35s + var(--d,0) * .14s) both,sk-shimmer 1.6s ease-in-out 1.2s infinite}
+[data-slide-status="building"] .sk-visual span{background:linear-gradient(#aecbfa,#d2e3fc);
+animation:sk-rise .7s cubic-bezier(.2,.7,.2,1) calc(.6s + var(--d,0) * .12s) both,
+sk-breathe 2.4s ease-in-out calc(1.5s + var(--d,0) * .2s) infinite alternate}
+
+[data-slide-status="pending"] .slide{opacity:.72}
+[data-slide-status="pending"] .slide-skeleton{box-shadow:none;
+outline:1.5px dashed #bdc1c6;outline-offset:-1px}
+[data-slide-status="pending"] .sk-title{color:#9aa0a6;font-weight:600}
+
+[data-slide-fresh] .slide{animation:sk-land .7s cubic-bezier(.2,.7,.2,1) both}
+[data-slide-fresh]::after{content:"\\2713  Added";position:absolute;top:10px;right:10px;
+padding:4px 10px;border-radius:99px;font:600 12px/1.2 Arial,sans-serif;color:#fff;
+background:#188038;box-shadow:0 2px 8px #0003;animation:sk-badge 2.6s ease both}
+
+@keyframes sk-shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+@keyframes sk-flow{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@keyframes sk-scan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@keyframes sk-spin{to{transform:rotate(360deg)}}
+@keyframes sk-caret{50%{opacity:0}}
+@keyframes sk-type{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@keyframes sk-grow{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
+@keyframes sk-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes sk-breathe{from{transform:scaleY(1)}to{transform:scaleY(.72)}}
+@keyframes sk-glow{0%,100%{box-shadow:0 3px 14px #0003,0 0 0 0 #1a73e840}
+50%{box-shadow:0 3px 14px #0003,0 0 0 10px #1a73e800}}
+@keyframes sk-land{from{opacity:0;transform:translateY(14px) scale(.985)}
+to{opacity:1;transform:none}}
+@keyframes sk-badge{0%{opacity:0;transform:translateY(-6px)}12%,70%{opacity:1;
+transform:none}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){[data-deck-live] *,[data-deck-live] *::after{
+animation:none!important}[data-slide-fresh]::after{display:none}}
+"""
+
+# Proportions of the placeholder text lines and chart bars; the chart rises
+# and breathes on the slide being built.
+_SKELETON_LINES = ("88%", "80%", "92%", "64%")
+_SKELETON_BARS = ("42%", "68%", "54%", "86%", "72%")
+
+
+def _pending_slide_skeletons(plan: DeckPlan, *, first: int, ratio: str) -> list[str]:
+    """Placeholders for the planned slides an agent has not saved yet.
+
+    The first missing slide is the one being built: its planned title types
+    in, its content blocks assemble and a progress bar shows how far the deck
+    is. The rest stay still, titled from the plan so the user sees what is next.
+    """
+    skeletons: list[str] = []
+    for index in range(first, plan.total):
+        title = plan.title(index)
+        number = index + 1
+        state = "building" if index == first else "pending"
+        caption = (
+            f"Building slide {number} of {plan.total}"
+            if state == "building"
+            else "Up next"
+        )
+        label = f"Slide {number}" + (f" — {title}" if title else "")
+        heading = (
+            f'<h2 class="sk-title">{html.escape(title)}</h2>'
+            if title
+            else '<div class="bar title"></div>'
+        )
+        lines = "".join(
+            f'<div class="bar line" style="--w:{width};--d:{order}"></div>'
+            for order, width in enumerate(_SKELETON_LINES)
+        )
+        chart = "".join(
+            f'<span style="--h:{height};--d:{order}"></span>'
+            for order, height in enumerate(_SKELETON_BARS)
+        )
+        progress = ""
+        if state == "building":
+            progress = (
+                '<div class="sk-progress" aria-hidden="true">'
+                f'<span class="done" style="width:{100 * first / plan.total:.2f}%"></span>'
+                f'<span class="now" style="width:{100 / plan.total:.2f}%"></span></div>'
+            )
+        spinner = '<span class="sk-spin"></span>' if state == "building" else ""
+        skeletons.append(
+            '<article class="slide-wrap" data-preview-item '
+            f'data-preview-label="{html.escape(label, quote=True)}" '
+            f'data-preview-title="{html.escape(title, quote=True)}" '
+            f'data-slide-status="{state}">'
+            f'<div class="slide-number">{number}</div>'
+            f'<section class="slide slide-skeleton" style="aspect-ratio:{ratio}" '
+            f'aria-label="{html.escape(f"{label}, {caption.lower()}", quote=True)}">'
+            f'<div class="sk-head"><span class="sk-chip">{spinner}{html.escape(caption)}</span>'
+            f'{heading}<div class="bar subtitle" style="--d:1"></div></div>'
+            f'<div class="sk-body"><div class="sk-text">{lines}</div>'
+            f'<div class="sk-visual" aria-hidden="true">{chart}</div></div>'
+            f"{progress}</section></article>"
+        )
+    return skeletons
 
 
 def _render_pdf(source: Path) -> str:
+    return _render_pdf_document(
+        source, title=source.name, cache_path=_cache_path(source)
+    )
+
+
+def _office_page_labels(source: Path, page_count: int) -> list[tuple[str, str]]:
+    """Return (label, notes) per converted page for an Office source."""
+    suffix = source.suffix.lower()
+    labels: list[tuple[str, str]] = []
+    if suffix == ".pptx":
+        try:
+            from pptx import Presentation
+
+            presentation = Presentation(str(source))
+            for number, slide in enumerate(presentation.slides, start=1):
+                title = _slide_preview_title(slide)
+                label = f"Slide {number}" + (f" — {title}" if title else "")
+                labels.append((label, _slide_notes_text(slide)))
+        except Exception as exc:  # noqa: BLE001 - labels are cosmetic
+            logger.debug("document_preview_slide_labels_failed error={}", exc)
+            labels = []
+        if len(labels) != page_count:
+            labels = [(f"Slide {n}", "") for n in range(1, page_count + 1)]
+        return labels
+    if suffix == ".xlsx":
+        from app.services.document_preview.xlsx_features import visible_sheet_names
+
+        names = visible_sheet_names(source)
+        if len(names) == page_count:
+            return [(name, "") for name in names]
+        return [(f"Sheet {n}", "") for n in range(1, page_count + 1)]
+    return [(f"Page {n}", "") for n in range(1, page_count + 1)]
+
+
+def _render_pdf_document(
+    source: Path,
+    *,
+    title: str,
+    cache_path: Path,
+    labels: list[tuple[str, str]] | None = None,
+    renderer: str = "pdf",
+) -> str:
     from app.services.document_preview.pdf import (
         count_pdf_pages,
+        pdf_text_layers,
         render_pdf_pages,
     )
 
-    cache_path = _cache_path(source)
     render_root = cache_path.parent / f"{cache_path.stem}-pages"
     total_pages = count_pdf_pages(source)
     pages: list[Path] = []
@@ -4337,15 +4998,48 @@ def _render_pdf(source: Path) -> str:
             max_total_bytes=MAX_PDF_PREVIEW_RASTER_BYTES,
             max_pixels_per_page=MAX_PDF_PREVIEW_PIXELS_PER_PAGE,
         )
+        try:
+            layers = pdf_text_layers(source, max_pages=len(pages))
+        except Exception as exc:  # noqa: BLE001 - the text layer is optional
+            # Pages still render; they just are not searchable or selectable.
+            logger.debug("document_preview_text_layer_failed error={}", exc)
+            layers = []
         rendered: list[str] = []
         for page_number, page in enumerate(pages, start=1):
             encoded = base64.b64encode(page.read_bytes()).decode("ascii")
+            label, notes = (
+                labels[page_number - 1]
+                if labels and page_number <= len(labels)
+                else (f"Page {page_number}", "")
+            )
+            layer = layers[page_number - 1] if page_number <= len(layers) else None
+            text_html = ""
+            aspect = ""
+            if layer is not None:
+                aspect = f' style="aspect-ratio:{layer.width:.2f}/{layer.height:.2f}"'
+                text_html = "".join(
+                    f'<span style="left:{run.left:.3f}%;top:{run.top:.3f}%;'
+                    f"width:{run.width:.3f}%;height:{run.height:.3f}%;"
+                    f'font-size:{run.font_size:.3f}cqw">{html.escape(run.text)}</span>'
+                    for run in layer.runs
+                )
+            notes_html = (
+                '<span class="slide-notes-metadata" hidden aria-hidden="true" '
+                f'data-preview-notes="{html.escape(notes, quote=True)}">'
+                f"{html.escape(notes)}</span>"
+                if notes
+                else ""
+            )
             rendered.append(
                 '<article class="pdf-page-wrap" data-preview-item '
-                f'data-preview-label="Page {page_number}">'
+                f'data-preview-label="{html.escape(label, quote=True)}" '
+                f'data-page-index="{page_number - 1}">'
                 f'<span class="pdf-page-number">{page_number}</span>'
+                f'<div class="pdf-page-surface"{aspect}>'
                 f'<img class="pdf-page" src="data:image/png;base64,{encoded}" '
-                f'alt="Page {page_number}"></article>'
+                f'alt="{html.escape(label, quote=True)}">'
+                f'<div class="pdf-text-layer">{text_html}</div></div>'
+                f"{notes_html}</article>"
             )
         if len(pages) < total_pages:
             rendered.append(
@@ -4358,13 +5052,59 @@ def _render_pdf(source: Path) -> str:
     css = """
     *{box-sizing:border-box}body{margin:0;padding:28px;background:#e5e7eb;
     color:#242424;font-family:Arial,sans-serif}.pdf-page-wrap{position:relative;
-    width:min(960px,94vw);margin:0 auto 28px}.pdf-page{display:block;width:100%;
-    height:auto;background:#fff;box-shadow:0 2px 14px #0003}.pdf-page-number{
+    width:min(960px,94vw);margin:0 auto 28px}.pdf-page-surface{position:relative;
+    container-type:inline-size;background:#fff;box-shadow:0 2px 14px #0003}
+    .pdf-page{display:block;width:100%;height:auto}.pdf-page-number{
     position:absolute;right:calc(100% + 9px);top:0;color:#616161;font-size:12px}
+    .pdf-text-layer{position:absolute;inset:0;overflow:hidden;line-height:1}
+    .pdf-text-layer span{position:absolute;color:transparent;white-space:pre;
+    overflow:hidden;cursor:text}.pdf-text-layer ::selection{background:#2563eb44}
+    .pdf-text-layer mark{color:transparent;opacity:.55}
+    .slide-notes-metadata{display:none!important}
     .pdf-preview-limit{max-width:720px;margin:20px auto;padding:14px 18px;border-radius:8px;
     background:#fff4ce;color:#5c2e00;box-shadow:0 1px 4px #0002}
     """
-    return _page(title=source.name, body="".join(rendered), css=css)
+    return _page(
+        title=title,
+        body=f'<main data-preview-renderer="{renderer}">{"".join(rendered)}</main>',
+        css=css,
+    )
+
+
+def _render_with_office_runtime(source: Path) -> str | None:
+    """Render an Office file through LibreOffice, or ``None`` to fall back."""
+    from app.services.office_runtime.convert import ConversionError, convert_to_pdf
+
+    runtime = installed_runtime_for_preview()
+    if runtime is None:
+        return None
+    with tempfile.TemporaryDirectory(prefix="evoflux-office-") as directory:
+        try:
+            pdf = convert_to_pdf(source, Path(directory))
+        except (ConversionError, OSError) as exc:
+            logger.warning(
+                "document_preview_office_runtime_failed file={} error={}",
+                source.name,
+                exc,
+            )
+            return None
+        from app.services.document_preview.pdf import count_pdf_pages
+
+        labels = _office_page_labels(source, count_pdf_pages(pdf))
+        return _render_pdf_document(
+            pdf,
+            title=source.name,
+            cache_path=_cache_path(source),
+            labels=labels,
+            renderer=f"libreoffice-{runtime.version}",
+        )
+
+
+def installed_runtime_for_preview() -> Any | None:
+    """Return the installed LibreOffice runtime, if Office files should use it."""
+    from app.services.office_runtime.installer import installed_runtime
+
+    return installed_runtime()
 
 
 def _render_source(source: Path) -> str:
@@ -4375,6 +5115,12 @@ def _render_source(source: Path) -> str:
         ".pdf": _render_pdf,
     }
     try:
+        if source.suffix.lower() in _OFFICE_RUNTIME_SUFFIXES and not deck_is_live(
+            source
+        ):
+            exact = _render_with_office_runtime(source)
+            if exact is not None:
+                return exact
         return renderers[source.suffix.lower()](source)
     except DocumentPreviewError:
         raise

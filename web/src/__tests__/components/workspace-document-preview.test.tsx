@@ -1,14 +1,52 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { workPreviewUrl, codingPreviewUrl } = vi.hoisted(() => ({
+const { workPreviewUrl, codingPreviewUrl, renderDocx, runtime, installRuntime, cancelRuntime } = vi.hoisted(() => ({
   workPreviewUrl: vi.fn((sessionId: string, path: string) => `/work/${sessionId}/${path}`),
   codingPreviewUrl: vi.fn((workspace: string, path: string) => `/coding/${workspace}/${path}`),
+  renderDocx: vi.fn(),
+  runtime: { status: undefined as unknown, installError: null as Error | null },
+  installRuntime: vi.fn(),
+  cancelRuntime: vi.fn(),
 }))
+
+vi.mock('@/queries/useOfficeRuntimeQuery', () => ({
+  useOfficeRuntimeQuery: () => ({ data: runtime.status }),
+  useInstallOfficeRuntimeMutation: () => ({
+    mutate: installRuntime,
+    isPending: false,
+    error: runtime.installError,
+    reset: vi.fn(),
+  }),
+  useDismissOfficeRuntimeErrorMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useCancelOfficeRuntimeInstallMutation: () => ({
+    mutate: cancelRuntime,
+    isPending: false,
+    error: null,
+    reset: vi.fn(),
+  }),
+}))
+
+const availableRuntime = {
+  available: true,
+  platform: 'win32-x64',
+  version: '26.8.0',
+  download_bytes: 191_184_974,
+  install_bytes: 635_851_559,
+  installed_version: null,
+  job: null,
+}
 
 vi.mock('@/api/client', () => ({
   workspaceDocumentPreviewUrl: workPreviewUrl,
   codingWorkspaceDocumentPreviewUrl: codingPreviewUrl,
+  workspaceMediaUrl: (sessionId: string, path: string) => `/media/${sessionId}/${path}`,
+  codingWorkspaceFileUrl: (workspace: string, path: string) => `/raw/${workspace}/${path}`,
+}))
+
+vi.mock('@/lib/docx-preview-render', () => ({
+  MAX_DOCX_SOURCE_BYTES: 100 * 1024 * 1024,
+  renderDocxPreviewHtml: renderDocx,
 }))
 
 import { WorkspaceDocumentPreview } from '@/components/workspace-document-preview'
@@ -67,10 +105,17 @@ function hydrateFrame(html = workbookHtml): HTMLIFrameElement {
 beforeEach(() => {
   workPreviewUrl.mockClear()
   codingPreviewUrl.mockClear()
+  renderDocx.mockReset()
+  renderDocx.mockResolvedValue(documentHtml)
+  runtime.status = undefined
+  runtime.installError = null
+  installRuntime.mockReset()
+  cancelRuntime.mockReset()
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     ok: true,
     status: 200,
     text: () => Promise.resolve(workbookHtml),
+    arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
   }))
   if (!HTMLElement.prototype.scrollIntoView) {
     HTMLElement.prototype.scrollIntoView = vi.fn()
@@ -149,6 +194,93 @@ describe('WorkspaceDocumentPreview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show navigator' }))
     expect(screen.getByRole('navigation', { name: 'Document navigator' })).toBeInTheDocument()
     expect(screen.queryByText('Read only')).not.toBeInTheDocument()
+  })
+
+  it('renders DOCX from the raw file on the client instead of the backend preview', async () => {
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'report.docx', name: 'report.docx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(renderDocx).toHaveBeenCalledWith(expect.any(ArrayBuffer), 'report.docx'))
+    expect(fetch).toHaveBeenCalledWith('/media/session-1/report.docx', expect.any(Object))
+    expect(fetch).not.toHaveBeenCalledWith('/work/session-1/report.docx', expect.any(Object))
+    await waitFor(() => expect(screen.getByTestId('document-preview-frame')).toHaveAttribute('srcdoc', documentHtml))
+  })
+
+  it('offers the exact renderer and starts its download only on request', async () => {
+    runtime.status = availableRuntime
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByText(/This preview is approximate/)).not.toHaveTextContent(/MB/)
+    expect(installRuntime).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Install renderer' }))
+    expect(installRuntime).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports download progress while the renderer installs', async () => {
+    runtime.status = {
+      ...availableRuntime,
+      job: {
+        phase: 'downloading',
+        version: '26.8.0',
+        bytes_done: 95_592_487,
+        bytes_total: 191_184_974,
+        started_at: '2026-09-23T00:00:00Z',
+        error: null,
+      },
+    }
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'forecast.xlsx', name: 'forecast.xlsx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame()
+
+    const progress = screen.getByRole('status', { name: '' })
+    expect(progress).toHaveTextContent('Downloading the exact renderer')
+    expect(progress).toHaveTextContent('50% · 91 MB / 182 MB')
+  })
+
+  it('renders DOCX through the backend once the exact renderer is installed', async () => {
+    runtime.status = { ...availableRuntime, installed_version: '26.8.0' }
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'report.docx', name: 'report.docx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/work/session-1/report.docx', expect.any(Object)))
+    expect(renderDocx).not.toHaveBeenCalled()
+    expect(screen.queryByText(/This preview is approximate/)).not.toBeInTheDocument()
+  })
+
+  it('falls back to the backend DOCX preview when client rendering fails', async () => {
+    renderDocx.mockRejectedValue(new Error('corrupt'))
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    render(
+      <WorkspaceDocumentPreview
+        workspace="/repo"
+        file={{ path: 'report.docx', name: 'report.docx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/coding//repo/report.docx', expect.any(Object)))
+    expect(fetch).toHaveBeenCalledWith('/raw//repo/report.docx', expect.any(Object))
   })
 
   it('searches rendered content and navigates between preview items', async () => {
@@ -284,6 +416,37 @@ describe('WorkspaceDocumentPreview', () => {
     expect(screen.getByRole('button', { name: 'Hide speaker notes' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('gives a deck under construction the whole surface until it is finished', async () => {
+    const liveDeckHtml = slideDeckHtml
+      .replace('<body>', '<body><main data-deck-live="true">')
+      .replace('</body>', '</main></body>')
+    const respond = (html: string) => ({ ok: true, status: 200, text: () => Promise.resolve(html) })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(liveDeckHtml)))
+    const onLiveDeckChange = vi.fn()
+    const deck = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }
+    const { rerender } = render(
+      <WorkspaceDocumentPreview sessionId="session-1" file={deck} onLiveDeckChange={onLiveDeckChange} />,
+    )
+
+    await waitFor(() => expect(onLiveDeckChange).toHaveBeenLastCalledWith(true))
+    hydrateFrame(liveDeckHtml)
+    expect(screen.queryByRole('navigation', { name: 'Slide thumbnails' })).not.toBeInTheDocument()
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(slideDeckHtml)))
+    rerender(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ ...deck, mtime: 3 }}
+        onLiveDeckChange={onLiveDeckChange}
+      />,
+    )
+
+    await waitFor(() => expect(onLiveDeckChange).toHaveBeenLastCalledWith(false))
+    hydrateFrame(slideDeckHtml)
+    expect(await screen.findByRole('navigation', { name: 'Slide thumbnails' })).toBeInTheDocument()
+    expect(onLiveDeckChange).toHaveBeenCalledTimes(2)
+  })
+
   it('navigates PowerPoint slides with arrows, Home, End, and Space', async () => {
     render(
       <WorkspaceDocumentPreview
@@ -372,5 +535,109 @@ describe('WorkspaceDocumentPreview', () => {
         Reflect.deleteProperty(Element.prototype, 'requestFullscreen')
       }
     }
+  })
+})
+
+describe('WorkspaceDocumentPreview exact renderer banner', () => {
+  const pptx = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }
+  const downloadingJob = {
+    phase: 'downloading' as const,
+    version: '26.8.0',
+    bytes_done: 1,
+    bytes_total: 2,
+    started_at: '2026-09-23T00:00:00Z',
+    error: null,
+  }
+
+  it('lets the user cancel a running download', async () => {
+    runtime.status = { ...availableRuntime, job: downloadingJob }
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByRole('progressbar', { name: 'Exact renderer download' })).toHaveAttribute('aria-valuenow', '50')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(cancelRuntime).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces a rejected install request instead of failing silently', async () => {
+    runtime.status = { ...availableRuntime, available: false }
+    runtime.installError = new Error('No verified LibreOffice runtime is published for this platform.')
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByRole('alert')).toHaveTextContent('No verified LibreOffice runtime is published')
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
+  it('offers an update when a newer renderer is pinned', async () => {
+    runtime.status = { ...availableRuntime, version: '26.8.1', installed_version: '26.8.0' }
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByText(/A newer exact renderer \(LibreOffice 26.8.1\)/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Update renderer' }))
+    expect(installRuntime).toHaveBeenCalledTimes(1)
+  })
+
+  it('says so when the installed renderer fell back to the approximate preview', async () => {
+    runtime.status = { ...availableRuntime, installed_version: '26.8.0' }
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+
+    expect(screen.getByText(/could not render this file/)).toBeInTheDocument()
+  })
+
+  it('remembers a hidden install offer per renderer version', async () => {
+    window.localStorage.clear()
+    runtime.status = availableRuntime
+    const { unmount } = render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+    fireEvent.click(screen.getByRole('button', { name: 'Hide renderer suggestion' }))
+    unmount()
+
+    render(<WorkspaceDocumentPreview sessionId="session-1" file={pptx} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+    expect(screen.queryByText(/This preview is approximate/)).not.toBeInTheDocument()
+    window.localStorage.clear()
+  })
+})
+
+describe('WorkspaceDocumentPreview loading skeleton', () => {
+  it.each([
+    ['deck.pptx', 'PowerPoint'],
+    ['model.xlsx', 'Excel'],
+    ['report.docx', 'Word'],
+  ])('shows a %s-shaped skeleton while the preview renders', async (name, label) => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => undefined)))
+    renderDocx.mockReturnValue(new Promise(() => undefined))
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: name, name, mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    expect(await screen.findByTestId('document-preview-skeleton')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(`Rendering ${label} document…`)
+    expect(screen.queryByTestId('document-preview-frame')).not.toBeInTheDocument()
+  })
+
+  it('tells the user the first exact render can take a while', async () => {
+    runtime.status = { ...availableRuntime, installed_version: '26.8.0' }
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => undefined)))
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    expect(await screen.findByRole('status')).toHaveTextContent('first exact render can take up to a minute')
   })
 })

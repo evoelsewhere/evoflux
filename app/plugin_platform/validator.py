@@ -19,12 +19,11 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.agent.skills.discovery import parse_frontmatter
+from app.agent.skills.spec import MAX_SKILL_FILE_BYTES, validate_skill_text
 from app.plugin_platform.models import (
     MCP_SCHEMA_ID,
     MCP_SERVER_ADAPTER,
     PLUGIN_SCHEMA_ID,
-    SKILL_NAME_RE,
     PluginDiagnostic,
     PluginInspection,
     PluginManifest,
@@ -37,7 +36,6 @@ from app.plugin_platform.trust import build_trust_review
 
 
 MAX_MANIFEST_BYTES = 512 * 1024
-MAX_SKILL_BYTES = 512 * 1024
 MAX_MCP_BYTES = 2 * 1024 * 1024
 MAX_PACKAGE_FILES = 2_000
 MAX_PACKAGE_BYTES = 200 * 1024 * 1024
@@ -324,34 +322,20 @@ def _inspect_skills(
         name = child.name
         description = ""
         try:
-            if skill_file.stat().st_size > MAX_SKILL_BYTES:
-                raise ValueError(f"SKILL.md exceeds {MAX_SKILL_BYTES} bytes")
             with skill_file.open("rb") as handle:
-                payload = handle.read(MAX_SKILL_BYTES + 1)
-            if len(payload) > MAX_SKILL_BYTES:
-                raise ValueError(f"SKILL.md exceeds {MAX_SKILL_BYTES} bytes")
-            text = payload.decode("utf-8")
-            metadata, body = parse_frontmatter(text)
-            raw_name = metadata.get("name")
-            raw_description = metadata.get("description")
-            if not isinstance(raw_name, str) or not raw_name:
-                raise ValueError("frontmatter requires a non-empty name")
-            name = raw_name
-            if name != child.name:
-                raise ValueError(
-                    f"frontmatter name {name!r} must match directory {child.name!r}"
+                payload = handle.read(MAX_SKILL_FILE_BYTES + 1)
+            if len(payload) > MAX_SKILL_FILE_BYTES:
+                raise ValueError(f"SKILL.md exceeds {MAX_SKILL_FILE_BYTES} bytes")
+            definition, errors = validate_skill_text(
+                payload.decode("utf-8"), directory_name=child.name
+            )
+            if definition is not None:
+                name = definition.name or child.name
+                description = definition.description
+            for error in errors:
+                component_diagnostics.append(
+                    _diagnostic("error", "skill-invalid", error.message, scope=scope)
                 )
-            if len(name) > 64 or not SKILL_NAME_RE.fullmatch(name):
-                raise ValueError(
-                    "name is not portable lowercase-hyphenated Agent Skills format"
-                )
-            if not isinstance(raw_description, str) or not raw_description.strip():
-                raise ValueError("frontmatter requires a non-empty description")
-            description = raw_description.strip()
-            if len(description) > 1024:
-                raise ValueError("description exceeds 1024 characters")
-            if not body:
-                raise ValueError("instruction body is empty")
         except (OSError, UnicodeError, ValueError) as exc:
             component_diagnostics.append(
                 _diagnostic("error", "skill-invalid", str(exc), scope=scope)

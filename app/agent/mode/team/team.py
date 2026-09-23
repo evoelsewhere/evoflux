@@ -250,27 +250,6 @@ def _is_hidden_continuation_directive(message: object) -> bool:
     )
 
 
-# ── Workflow hooks (plan v5 §6.1) ────────────────────────────────────────────
-# Registered from app startup via set_workflow_hooks to avoid a circular
-# import between team.py and app.workflow.runner. Both are optional; when
-# unset the turn-completion chain behaves exactly as before.
-#
-# capture_cb(session_id): runs unconditionally at the top of the barrier —
-#   if a workflow agent-node turn was in flight, capture its output NOW so
-#   a queued user message can never be mis-captured as node output.
-# advance_cb(session_id) -> bool: runs after the queued-message branch
-#   declines; True = an active execution consumed this boundary (the chain
-#   stops; the runner drives on), False = fall through to Goal/DoneEvent.
-_workflow_capture_cb = None
-_workflow_advance_cb = None
-
-
-def set_workflow_hooks(capture_cb, advance_cb) -> None:
-    global _workflow_capture_cb, _workflow_advance_cb
-    _workflow_capture_cb = capture_cb
-    _workflow_advance_cb = advance_cb
-
-
 class AgentTeam:
     """Singleton team: one lead, N member blueprints, dynamic instance roster.
 
@@ -341,16 +320,10 @@ class AgentTeam:
         self.session_tags: frozenset[str] = session_tags or frozenset()
         self.extra_workspace_paths: list[str] = extra_workspace_paths or []
         self.read_only_paths: list[str] = read_only_paths or []
-
         self.mailbox = TeamMailbox(on_message=self._on_message)
 
         # Guard: only emit done after at least one user turn has started
         self._has_active_turn: bool = False
-        # Workflow-node roster allowlist (plan v5 §6.4 step 2): while an
-        # agent node's turn is in flight, delegation/spawn is limited to
-        # that node's declared subagents. None = no restriction (normal
-        # turns). Set/cleared by the workflow runner.
-        self.turn_allowed_blueprints: set[str] | None = None
 
         # Delegator name -> {task_id: recipient} for durable delegation rows
         # whose status is blocked/pending. The DB is the source of truth; this
@@ -418,14 +391,6 @@ class AgentTeam:
         """Release a deferred ingress reservation that failed before activation."""
         if self.lead.state != "working":
             self._has_active_turn = False
-
-    def set_inline_busy(self, busy: bool) -> None:
-        """Workflow-runner accessor (plan v5 §6.1): while the runner executes
-        inline nodes (tool/gate/switch/...) there is no team turn, but user
-        messages must still queue rather than splice in — so the runner
-        raises the same busy flag a turn would, and lowers it before handing
-        the boundary back."""
-        self._has_active_turn = busy
 
     def register_delegation(
         self,
@@ -515,11 +480,6 @@ class AgentTeam:
         db_factory = resolve_db_factory(self._db_factory or self.lead.db_factory)
         async with self._delegation_lock:
             async with db_factory() as db:
-                # An ASDD change is a folder in the repository, so there is
-                # nothing to validate against here: the slug is recorded, and
-                # the delta the mission names is what the review and verify
-                # phases read back.
-                change_id = spec.get("asdd_change_id")
                 tasks = await delegation_ledger.create_tasks(
                     db,
                     lead_session_id=lead_session_id,
@@ -528,7 +488,6 @@ class AgentTeam:
                     spec=spec,
                     dependencies=dependencies,
                     deadline_at=deadline_at,
-                    asdd_change_id=str(change_id) if change_id else None,
                 )
                 await db.commit()
             self.register_delegation(
@@ -537,43 +496,6 @@ class AgentTeam:
                 task_ids=[str(task.id) for task in tasks],
             )
         return tasks
-
-    async def _record_asdd_handoff_evidence(
-        self, task: DelegationTask, artifact: dict
-    ) -> None:
-        """Leave a page in the change folder saying what this mission proved.
-
-        Best-effort on purpose. The mission is already complete and its result
-        already persisted; failing the handoff because a Markdown page could not
-        be written would lose real work over a bookkeeping step.
-        """
-
-        if not task.asdd_change_id or not self.workspace:
-            return
-        from app.services.asdd_service import record_handoff_evidence
-
-        owned = [
-            str(item)
-            for item in task.spec.get("acceptance_criteria", [])
-            if isinstance(item, str) and item
-        ]
-        try:
-            await asyncio.to_thread(
-                record_handoff_evidence,
-                self.workspace,
-                change_id=task.asdd_change_id,
-                task_id=str(task.id),
-                recipient=task.recipient,
-                artifact=artifact,
-                owned_requirements=owned,
-            )
-        except (OSError, ValueError) as exc:
-            logger.warning(
-                "asdd_handoff_evidence_failed task_id={} change_id={} error={}",
-                task.id,
-                task.asdd_change_id,
-                exc,
-            )
 
     async def _ensure_delegation_worktree(self, task: DelegationTask) -> DelegationTask:
         """Allocate and durably bind an isolated pending task before dispatch."""
@@ -952,7 +874,6 @@ class AgentTeam:
                     recipient=recipient,
                     result=artifact,
                 )
-                await self._record_asdd_handoff_evidence(completed, artifact)
                 ready, failed = await delegation_ledger.release_ready_tasks(
                     db,
                     lead_session_id=lead_session_id,
@@ -1035,9 +956,6 @@ class AgentTeam:
                     lead_session_id=lead_session_id,
                     task_id=task_id,
                     spec=updated_spec,
-                )
-                await self._record_asdd_handoff_evidence(
-                    completed, dict(completed.result or {})
                 )
                 ready, failed = await delegation_ledger.release_ready_tasks(
                     db,
@@ -1441,26 +1359,8 @@ class AgentTeam:
             self._has_active_turn = False  # reset for next turn
             session_id = self.lead.session_id
 
-            # Workflow hook ① (capture): unconditional, BEFORE queued
-            # messages, so a queued user turn can never be mis-captured as
-            # an agent node's output.
-            if _workflow_capture_cb is not None:
-                try:
-                    await _workflow_capture_cb(session_id)
-                except Exception as exc:  # noqa: BLE001 — never break the chain
-                    logger.warning("workflow_capture_hook_failed error={}", exc)
-
             if await self._activate_queued_user_messages(session_id):
                 return
-
-            # Workflow hook ② (advance): an active execution consumes the
-            # boundary before autonomous Goal continuation.
-            if _workflow_advance_cb is not None:
-                try:
-                    if await _workflow_advance_cb(session_id):
-                        return
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("workflow_advance_hook_failed error={}", exc)
 
             if await self._activate_goal_continuation(session_id):
                 return
@@ -1705,81 +1605,6 @@ class AgentTeam:
         logger.info("team_goal_continued session_id={}", session_id)
         return True
 
-    async def inject_synthetic_turn(self, session_id: str, prompt: str) -> str | None:
-        """Start a synthetic lead turn for a workflow agent node.
-
-        Returns the saved message row id (the caller's watermark anchor),
-        or ``None`` on failure.
-        """
-        # Bind the lead to this session first — a freshly-booted team's lead
-        # has no session yet, while normal user dispatch already performs this
-        # binding (session pointer, DB row, member restore).
-        if self.lead.session_id != session_id:
-            self.lead.session_id = session_id
-            try:
-                await self.lead._ensure_db_session(
-                    title=prompt[:100] if prompt else None,
-                    mode=self.mode,
-                    workspace=self.workspace,
-                )
-                for bp in self.blueprints.values():
-                    bp.counter_reconciled_for = None
-                await self._restore_or_drop_members_for_lead(session_id)
-                await self.refresh_delegations(dispatch=False)
-            except Exception as exc:
-                logger.warning("workflow_lead_bind_failed error={}", exc)
-                return None
-        try:
-            await stream_store.init_turn(session_id, keep_subscribers=True)
-        except Exception as exc:
-            logger.warning("workflow_init_turn_failed error={}", exc)
-            return None
-        try:
-            session_uuid = UUID(session_id)
-        except ValueError:
-            return None
-        try:
-            db_factory = resolve_db_factory(self.lead.db_factory)
-            async with db_factory() as db:
-                row = await save_message(db, session_uuid, HumanMessage(content=prompt))
-                await db.commit()
-        except Exception as exc:
-            logger.warning("workflow_save_turn_message_failed error={}", exc)
-            return None
-
-        self._has_active_turn = True
-        await stream_store.push_event(
-            session_id,
-            StreamEnvelope.from_parts(
-                "queued_turn_start",
-                {
-                    "type": "queued_turn_start",
-                    "agent": self.lead.name,
-                    "message_ids": [str(row.id)],
-                    "messages": [{"id": str(row.id), "content": prompt}],
-                },
-            ),
-        )
-        await self.mailbox.send(
-            to=self.lead.name,
-            message=Message(
-                from_agent="user",
-                to_agent=self.lead.name,
-                content=f"[user]: {prompt}",
-            ),
-        )
-        await self.dispatch_recovered_coordination()
-        return str(row.id)
-
-    def interrupt_turn(self) -> list[str]:
-        """Cancel every working member — the F9 interrupt effect without a
-        user message. Used by the workflow runner's per-node timeout."""
-        cancelled = [m for m in self.all_members if m.state == "working"]
-        for member in cancelled:
-            member._cancel_event.set()
-        return [m.name for m in cancelled]
-
-    # ------------------------------------------------------------------
     # User message entry point
     # ------------------------------------------------------------------
 
@@ -1884,15 +1709,6 @@ class AgentTeam:
             cancelled = [m for m in self.all_members if m.state == "working"]
             for member in cancelled:
                 member._cancel_event.set()
-
-            # Stop button also stops an in-flight workflow (plan §6.1):
-            # the runner marks the pending node failed instead of advancing.
-            try:
-                from app.workflow.runner import runner as workflow_runner
-
-                workflow_runner.notify_interrupt(session_id)
-            except Exception as exc:  # noqa: BLE001 — never break interrupts
-                logger.debug("workflow_interrupt_notify_failed error={}", exc)
 
             logger.info(
                 "team_interrupted cancelled={}",
@@ -2598,12 +2414,6 @@ class AgentTeam:
         bp = self.blueprints.get(blueprint)
         if bp is None:
             raise KeyError(self._unknown_blueprint_message(blueprint))
-        if not self.blueprint_allowed_this_turn(blueprint):
-            allowed = sorted(self.turn_allowed_blueprints or [])
-            raise KeyError(
-                f"'{blueprint}' is not on this workflow node's roster "
-                f"(allowed this turn: {allowed or 'lead only'})."
-            )
 
         # ``spawn`` is also a public runtime/test entry point and can be
         # invoked before the first user turn materializes the lead row. Every
@@ -2997,14 +2807,6 @@ class AgentTeam:
     # Recipient resolution (for team_message)
     # ------------------------------------------------------------------
 
-    def blueprint_allowed_this_turn(self, blueprint: str) -> bool:
-        """Whether *blueprint* may be spawned/addressed during the current
-        turn — unrestricted unless a workflow agent node set an allowlist."""
-        return (
-            self.turn_allowed_blueprints is None
-            or blueprint in self.turn_allowed_blueprints
-        )
-
     def resolve_recipient(self, name: str) -> str | None:
         """Resolve a recipient name to a live mailbox key.
 
@@ -3014,19 +2816,12 @@ class AgentTeam:
           ambiguity (caller should produce a tailored error) when zero or
           multiple live instances exist.
         - Lead name → returned as-is.
-        - During a workflow agent node, recipients outside the node's
-          allowlist resolve to ``None`` (plan v5 §6.4).
 
         Returns the live name to address, or ``None`` if there is no
         unambiguous match.
         """
         if name == self.lead.name:
             return name
-        if self.turn_allowed_blueprints is not None:
-            parsed = parse_instance_handle(name)
-            blueprint = parsed[0] if parsed is not None else name
-            if not self.blueprint_allowed_this_turn(blueprint):
-                return None
         if name in self.members:
             return name
         # Bare blueprint name: collect all live ``blueprint#N`` instances.
@@ -3095,9 +2890,6 @@ class AgentTeam:
             make_todo_manage_tool(role),
             make_team_state_tool(agent_name),
         ]
-        # ASDD needs no typed submission tools. Every artifact it produces is a
-        # Markdown file the agent writes with the ordinary file tools, which is
-        # what keeps the repository the only place a change's state lives.
         if agent_name == self.lead.name:
             tools.append(make_team_manage_tool(self))
             tools.append(

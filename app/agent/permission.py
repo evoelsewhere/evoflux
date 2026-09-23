@@ -167,7 +167,6 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "lsp_references",
         "lsp_semantic",
         "static_diagnostics",
-        "code_context",
         # read-only web / info retrieval
         "date",
         "web_search",
@@ -199,8 +198,7 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "team_manage",
         # background-task introspection (start stays gated through shell)
         "process",
-        # instruction/schema loading only; real execution stays permission-gated
-        "skill",
+        # schema loading only; real execution stays permission-gated
         "load_tool",
     }
 )

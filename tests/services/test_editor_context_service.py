@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
-
 import pytest
 
 from app.services.editor_context_service import (
@@ -25,28 +23,23 @@ async def test_context_collects_explicit_bounded_provenance(tmp_path: Path):
     ignored.parent.mkdir()
     ignored.write_text("do not send\n", encoding="utf-8")
 
-    with patch(
-        "app.services.editor_context_service._graph_context",
-        new_callable=AsyncMock,
-        return_value=([{"name": "helper"}], [], []),
-    ):
-        context = await build_editor_context(
-            tmp_path,
-            active_file="src/main.py",
-            content="value = helper()\n",
-            document_version=4,
-            selection={
-                "text": "helper()",
-                "start_line": 1,
-                "start_column": 9,
-                "end_line": 1,
-                "end_column": 17,
-            },
-            cursor_symbol="helper",
-            diagnostics=[{"message": "problem"}],
-            mention_paths=["docs/note.md", "docs", "secret/token.txt"],
-            relevant_terminal_failure="tests failed",
-        )
+    context = await build_editor_context(
+        tmp_path,
+        active_file="src/main.py",
+        content="value = helper()\n",
+        document_version=4,
+        selection={
+            "text": "helper()",
+            "start_line": 1,
+            "start_column": 9,
+            "end_line": 1,
+            "end_column": 17,
+        },
+        cursor_symbol="helper",
+        diagnostics=[{"message": "problem"}],
+        mention_paths=["docs/note.md", "docs", "secret/token.txt"],
+        relevant_terminal_failure="tests failed",
+    )
 
     assert context.active_file == "src/main.py"
     assert context.document_version == 4
@@ -59,12 +52,10 @@ async def test_context_collects_explicit_bounded_provenance(tmp_path: Path):
     assert context.attachments[1]["path"] == "docs/"
     assert "docs/note.md" in context.attachments[1]["content"]
     assert context.project_instructions[0]["path"] == "AGENTS.md"
-    assert context.related_symbols == [{"name": "helper"}]
     assert {item.kind for item in context.provenance} >= {
         "active_file",
         "attachment",
         "project_instructions",
-        "related_symbols",
         "terminal_failure",
     }
     assert "do not send" not in str(context.to_dict())

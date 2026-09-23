@@ -19,7 +19,7 @@ export const HELP_CATEGORIES_JA: HelpCategory[] = [
   {
     id: 'composer',
     label: 'Composer',
-    description: 'メンション、添付、スキル、ワークフロー',
+    description: 'メンション、添付、スキル',
   },
   {
     id: 'slash',
@@ -39,7 +39,7 @@ export const HELP_CATEGORIES_JA: HelpCategory[] = [
   {
     id: 'coding',
     label: 'Coding',
-    description: 'Repos、プロジェクト、git、Graph、PR',
+    description: 'Repos、プロジェクト、git、Files、PR',
   },
   {
     id: 'memory',
@@ -199,8 +199,8 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'サイドバーは折りたたむと完全に消えます。Ctrl+B またはフローティングボタンで再表示できます。',
       'Settings 中はモードスイッチャーが隠れます。再び切り替えるには Settings を離れます。',
       'Work は調査・ドキュメント・ブラウザ作業・捨てスクリプト向け; Coding は永続リポジトリ向け。',
-      '権限モード、スラッシュ、大半の workbench ツールはモード横断; Overview / Graph / Changes / Review は Coding スコープです。',
-      'Work で git モノレポを開き Changes/Review を期待しないでください — Coding に切り替えてソースコントロールを付けます。',
+      '権限モード、スラッシュ、大半の workbench ツールはモード横断; Source Control と Problems は Coding スコープです。',
+      'Work で git モノレポを開き Source Control を期待しないでください — Coding に切り替えてソースコントロールを付けます。',
       '並列調査スレッドには Work フォルダ + share_context; リポジトリを紐づけたままにするなら Coding プロジェクト。',
       'モード記憶はウィンドウ単位ではなくモード単位 — 空白の Coding ホームを期待したなら、古いワークスペースルートが復元されていないか確認。'
 ],
@@ -215,13 +215,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Work セッションはプライベート session folder、または選んだ別のローカルフォルダを使います。永続マルチレポプロジェクトは不要です。Coding は git リポジトリまたはマルチレポプロジェクトを開き、エージェントは Graph、git、worktree、PR Review 付きで実ツリーを編集します。',
+        text: 'Work セッションはプライベート session folder、または選んだ別のローカルフォルダを使います。永続マルチレポプロジェクトは不要です。Coding は git リポジトリまたはマルチレポプロジェクトを開き、エージェントは Files、git、worktree、PR Review 付きで実ツリーを編集します。',
       },
       {
         type: 'tips',
         items: [
           'Work — 調査、ドキュメント、ブラウザ作業、クイックスクリプト、フォルダ整理されたチャット。',
-          'Coding — 単一レポ、マルチレポプロジェクト、worktree、Graph、Changes、Review。',
+          'Coding — 単一レポ、マルチレポプロジェクト、worktree、Files、Source Control。',
           'モード記憶 — 戻ったとき最終ルートが復元される。',
           'Settings — settings ルートを離れるまでモードスイッチャーは非表示。'
 ],
@@ -231,7 +231,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           '横断: Ctrl+B はすべてのモードで同じようにモードサイドバーをトグル。',
           '横断: Scheduler タスクは work または coding モードを明示 — タスク側で正しいモードを設定。',
-          '横断: Skills と workflows は Settings でモードスコープ可能; Coding 専用 workflow は Work では隠れます。'
+          '横断: Skills は両モードで使えます。'
 ],
       },
       {
@@ -490,7 +490,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '良い revise プロンプトはファイル、テスト、スコープ外を明示。',
           '悪い revise は曖昧（「もっと良く」） — まず弱い箇条を引用。',
           '横断: 無関係なメタ質問は side chat へ送り、プランスレッドを清潔に。',
-          '横断: Coding 作業で Accept 後、Changes（Ctrl+G）を開き diff がプランと一致するか確認。'
+          '横断: Coding 作業で Accept 後、Source Control（Ctrl+G）を開き diff がプランと一致するか確認。'
 ],
       },
       {
@@ -505,7 +505,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'composer',
     title: 'Composer の強力機能',
     summary:
-      '/、!、@、# スニペット、添付、引用選択、Work フォルダ指定、ネストスキル、RunInputsDialog 付きワークフローを使います。Undo は添付も復元するので、誤送信後も下書きを回復できます。',
+      '/、!、@、$ スキル、# スニペット、添付、引用選択、Work フォルダ指定を使います。Undo は添付も復元するので、誤送信後も下書きを回復できます。',
     keywords: [
       'composer',
       'mention',
@@ -516,8 +516,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'drag',
       'paste',
       'skill',
-      'workflow',
-      'RunInputsDialog',
+      '$skill-name',
       'WorkFolderSelector',
       'quote',
       '!',
@@ -533,8 +532,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'メッセージを ! で始めるとシェルコマンドを実行（または /shell で bang モードを事前入力）。',
       '@ でアクティブワークスペースからランク付きファイル/フォルダパス参照を挿入。',
       'Coding では # でワークスペースまたはグローバルスニペットを composer に展開。',
-      'ネストスキルは /skill:parent:child（ネスト名ではコロンとスラッシュは互換）。',
-      'ワークフローは必須時に RunInputsDialog を開き、生のスラッシュ文をチャットとして送りません。',
+      '$ を打つとスキルを選べます。$skill-name はメッセージのどこに書いてもよく、複数指定できます（> 引用行とコードブロック内は除く）。',
       'Undo は前のユーザーメッセージとその添付を composer に復元。',
       '添付が有効なら画像/ファイルのペーストや composer へのドラッグ&ドロップ。',
       'トランスクリプト文を選択して Add to chat、詳細、または Send to side chat。',
@@ -544,36 +542,36 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'composer は単なるテキストボックスではありません: スラッシュメニュー（/）、シェル bang（!）、パスメンション（@）、Coding スニペット（#）、ファイル添付、引用コンテキストチップ、Work セッション用 WorkFolderSelector、スキルディレクティブ、承認済みワークフロー。これらのアフォーダンスをマスターすることが、ツリーをプロンプトにダンプすることと精密に操縦することの差です。',
+        text: 'composer は単なるテキストボックスではありません: スラッシュメニュー（/）、シェル bang（!）、パスメンション（@）、スキルメンション（$）、Coding スニペット（#）、ファイル添付、引用コンテキストチップ、Work セッション用 WorkFolderSelector。これらのアフォーダンスをマスターすることが、ツリーをプロンプトにダンプすることと精密に操縦することの差です。',
       },
       {
         type: 'p',
-        text: 'これらの制御はモデルを洪水にせずコンテキストを精密に保ちます。Skills と workflows は反復手順をパッケージ化; 添付と引用は証拠をピン留め; WorkFolderSelector は Files ツールを開かずに session folder を付け替え。シェル bang は意図的コマンド用で、長い対話セッションが必要なときの Terminal の代替ではありません。',
+        text: 'これらの制御はモデルを洪水にせずコンテキストを精密に保ちます。Skills は反復手順をパッケージ化; 添付と引用は証拠をピン留め; WorkFolderSelector は Files ツールを開かずに session folder を付け替え。シェル bang は意図的コマンド用で、長い対話セッションが必要なときの Terminal の代替ではありません。',
       },
       {
         type: 'p',
-        text: '/ でコマンドメニュー（組み込み、/skill: 下のスキル、ワークフロー、カスタム .evoflux/commands/）。! 接頭辞でシェル。@ でパス選択。Coding では # がスニペット展開。ファイルをバーへ DnD またはペースト。Work セッションでは composer 近くの WorkFolderSelector でプライベート session folder または別ローカルディレクトリを指定。/undo 後、テキストと添付の両方が下書きに戻ります。',
+        text: '/ でコマンドメニュー（組み込み、カスタム .evoflux/commands/）。$ でスキルを選択: エージェントは有効なスキルすべての名前と説明を把握しており、タスクが合えば自分で SKILL.md を読みますが、`$skill-name` と書くとそのスキルを今すぐ使わせられます。! 接頭辞でシェル。@ でパス選択。Coding では # がスニペット展開。ファイルをバーへ DnD またはペースト。Work セッションでは composer 近くの WorkFolderSelector でプライベート session folder または別ローカルディレクトリを指定。/undo 後、テキストと添付の両方が下書きに戻ります。',
       },
       {
         type: 'tips',
         items: [
-          '/ — スラッシュコマンド、スキル、ワークフロー、カスタムコマンド',
+          '/ — スラッシュコマンド、カスタムコマンド',
+          '$ — スキル。位置は自由、1 メッセージに複数可',
           '! — 行の残りをシェルモード',
           '@ — ファイル/フォルダメンション',
           '# — スニペット（Coding ワークスペース）',
           'DnD / ペースト — 有効時の添付',
           '引用選択 — Add to chat または Send to side chat',
-          'WorkFolderSelector — Work session folder の付け替え',
-          'RunInputsDialog — 起動前のワークフローパラメータ'
+          'WorkFolderSelector — Work session folder の付け替え'
 ],
       },
       {
         type: 'p',
-        text: '精密な Coding 依頼の手順: (1) 重要なファイルを @、(2) 必要なときだけスクショやログを添付、(3) 成果とテストを述べる、(4) 任意で既知手順の /skill:…、(5) 権限モードを設定、(6) 送信。Work 調査: WorkFolderSelector を設定、ソース添付、前の回答を引用、それから依頼。',
+        text: '精密な Coding 依頼の手順: (1) 重要なファイルを @、(2) 必要なときだけスクショやログを添付、(3) 成果とテストを述べる、(4) 任意で既知手順の $skill-name、(5) 権限モードを設定、(6) 送信。Work 調査: WorkFolderSelector を設定、ソース添付、前の回答を引用、それから依頼。',
       },
       {
         type: 'p',
-        text: 'よくある失敗: 生の `/workflow name` テキストを送って動くと期待（ワークフローはメニュー/ダイアログ経由）; スペースでネストスキル（`:` / `/` を使う）; Work で # を使い Coding スニペットを期待; Providers 設定ではなく composer にシークレットを貼る; /undo が添付も復元することを忘れ、機微ファイルを不用意に再送。',
+        text: 'よくある失敗: スキル名を大文字やスペース入りで書く（スキル名は小文字とハイフン。例: `$code-review`）; Work で # を使い Coding スニペットを期待; Providers 設定ではなく composer にシークレットを貼る; /undo が添付も復元することを忘れ、機微ファイルを不用意に再送。',
       },
       {
         type: 'tips',
@@ -586,7 +584,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'ワークフローは承認済みでセッションスコープ（work / coding）に有効でなければ隠れます。Skills は Settings → Skills で検証後にのみ /skill: 下に出ます。コマンドが欠ける場合は、スラッシュバグと決める前にスコープと検証を確認。',
+        text: '$ ピッカーに出るのは、有効（valid）で Settings → Skills でオンになっており、ユーザー呼び出し可能なスキルだけです。コマンドやスキルが見つからない場合は、composer のバグと決める前にスコープ、検証、スキルのスイッチを確認。',
       }
 ],
     related: [
@@ -639,7 +637,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'バイトが重要なとき添付を使います: スクショ、PDF、CSV、小さなログ、デザイン書き出し。テキストがすでにトランスクリプトやプランにあり、外科的フォローアップが欲しいときは引用。リポジトリ全体の添付は避け — @ メンション、Files、または Coding graph ツールを使います。',
+        text: 'バイトが重要なとき添付を使います: スクショ、PDF、CSV、小さなログ、デザイン書き出し。テキストがすでにトランスクリプトやプランにあり、外科的フォローアップが欲しいときは引用。リポジトリ全体の添付は避け — @ メンション、Files、または Coding source search ツールを使います。',
       },
       {
         type: 'p',
@@ -692,7 +690,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'slash',
     title: '組み込みスラッシュコマンド',
     summary:
-      'composer で / を打ち、stop、compact、undo、init、btw、goal、スキル、ワークフロー、`.evoflux/commands/` のカスタムコマンドを使います。組み込みは即実行; カスタムは通常挿入され引数を仕上げられます。',
+      'composer で / を打ち、stop、compact、undo、init、btw、goal、`.evoflux/commands/` のカスタムコマンドを使います。組み込みは即実行; カスタムは通常挿入され引数を仕上げられます。スキルはスラッシュコマンドではなく $skill-name で使います。',
     keywords: [
       'slash',
       '/stop',
@@ -701,21 +699,16 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '/init',
       '/btw',
       '/goal',
-      '/workflow',
-      '/skill',
       'command',
       '.evoflux/commands',
       'スラッシュ',
-      'コマンド',
-      'スキル',
-      'ワークフロー'
+      'コマンド'
 ],
     tricks: [
       '組み込みは選択で即実行; カスタムは通常 textarea に挿入され $ARGUMENTS を付け足せます。',
-      '最長プレフィックス一致; ネストしたコマンド/スキル名では : と / は互換。',
+      '最長プレフィックス一致; ネストしたコマンド名では : と / は互換。',
       'カスタムコマンドはプロジェクトまたはグローバルの .evoflux/commands/（および互換 OpenCode パス）に置きます。',
-      'Skills は Settings → Skills で検証後にのみ /skill: 下に出ます。',
-      'ワークフローはセッションスコープ（work / coding）で承認・有効でなければ隠れます。',
+      'スキルはスラッシュコマンドではありません: $ で選ぶか、メッセージのどこかに $skill-name と書きます。',
       'コンテキスト予算バーが上がったら早めに /compact — 失敗待ちはターンを無駄にします。',
       '/init は AGENTS.md 向けの Coding 志向; AGENTS.md 向けです。',
       '/stop は runaway specialist fan-out のパニックボタン; 次の明確な指示と組み合わせ。',
@@ -724,7 +717,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'スラッシュコマンドは一級の composer アクションです。組み込みはチーム実行を制御; goal サブコマンドは永続目標を管理; スキルとワークフローは構造化挙動を付与; ユーザー定義の Markdown/YAML コマンドはサーバー側で展開。メニューは検索可能 — 数文字打てば絞り込めます。',
+        text: 'スラッシュコマンドは一級の composer アクションです。組み込みはチーム実行を制御; goal サブコマンドは永続目標を管理; ユーザー定義の Markdown/YAML コマンドはサーバー側で展開。メニューは検索可能 — 数文字打てば絞り込めます。',
       },
       {
         type: 'p',
@@ -747,22 +740,19 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { cmd: '/goal:budget <tokens|none>', desc: 'Goal のトークン予算を設定またはクリア' },
           { cmd: '/goal:pause', desc: 'アクティブな Goal を一時停止' },
           { cmd: '/goal:resume', desc: '一時停止中の Goal を再開' },
-          { cmd: '/goal:stop', desc: 'セッションの Goal を削除' },
-          { cmd: '/skill:…', desc: '次のメッセージにスキルを付与（ネスト: /skill:parent:child）' },
-          { cmd: '/workflow <name>', desc: '承認済みワークフローを実行（RunInputsDialog が開く場合あり）' }
+          { cmd: '/goal:stop', desc: 'セッションの Goal を削除' }
 ],
       },
       {
         type: 'p',
-        text: '/ でコマンドを絞り込み。組み込みを選ぶと実行、カスタム/スキル/ワークフローは挿入または起動。カスタムファイルはプロジェクトまたはグローバル EvoFlux 設定の `.evoflux/commands/` に置きます。ネスト名は最長プレフィックス優先; 区切りは `:` または `/`。ワークフローは RunInputsDialog を開くことがあり、生のスラッシュ行を通常チャットとしては送りません。',
+        text: '/ でコマンドを絞り込み。組み込みを選ぶと実行、カスタムは挿入。カスタムファイルはプロジェクトまたはグローバル EvoFlux 設定の `.evoflux/commands/` に置きます。ネスト名は最長プレフィックス優先; 区切りは `:` または `/`。',
       },
       {
         type: 'tips',
         items: [
           '組み込み — 選択で実行',
           'カスタム — 通常は挿入; $ARGUMENTS を付け足す',
-          'Skill — Settings → Skills 検証後の /skill:',
-          'Workflow — スコープ + 承認が必要、さもなくば非表示',
+          'Skill — スラッシュコマンドではない; $skill-name と入力',
           '最長プレフィックス — : または / での parent:child ネスト'
 ],
       },
@@ -772,7 +762,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: `/scheduler` でページが開くと期待（Ctrl+S を使う — ルートはホームへリダイレクト）; スコープ/承認が悪いのに欠けたワークフローを composer バグ扱い; /compact が遅すぎてまだ必要な制約が要約で落ちる; /undo が git コミットを戻すと思い込む — 戻すのは前のユーザーメッセージ下書きだけ。',
+        text: 'よくある失敗: `/scheduler` でページが開くと期待（Ctrl+S を使う — ルートはホームへリダイレクト）; /compact が遅すぎてまだ必要な制約が要約で落ちる; /undo が git コミットを戻すと思い込む — 戻すのは前のユーザーメッセージ下書きだけ。',
       },
       {
         type: 'tips',
@@ -780,7 +770,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '/new するとき — 汚染されたコンテキストバーでの話題変更。',
           '/compact するとき — 同じ話題、予算上昇、連続性を保つ。',
           '/stop するとき — runaway ツールや誤った fan-out; その後依頼を言い直す。',
-          '横断: 新しいレポを開いたあと /init + Coding Overview。'
+          '横断: 新しいレポを開いたあと /init。'
 ],
       }
 ],
@@ -988,15 +978,14 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench ツール',
     summary:
-      'Terminal、Browser、Files、Graph、Side chat、Memory、Scheduler、Changes、Review をチャット横で開きます。ショートカットは OS に合わせ、macOS は Command、Windows/Linux は Ctrl を使います。',
+      'Terminal、Browser、Files、Side chat、Memory、Scheduler、Source Control をチャット横で開きます。ショートカットは OS に合わせ、macOS は Command、Windows/Linux は Ctrl を使います。',
     keywords: [
       'workbench',
       'panel',
       'terminal',
       'files',
       'dock',
-      'overview',
-      'graph',
+      'Source Control',
       'Changes',
       'Review',
       'Ctrl+F',
@@ -1009,22 +998,21 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ファイル'
 ],
     setup:
-      'まずセッションを開きます。Coding Overview、Graph、Changes、Review には Coding ワークスペースが必要。内蔵 Browser は Settings → Browser で有効にしてから Ctrl+T が役立ちます。',
+      'まずセッションを開きます。Coding の Files と Source Control には Coding ワークスペースが必要。内蔵 Browser は Settings → Browser で有効にしてから Ctrl+T が役立ちます。',
     tricks: [
       'workbench バー、ドック、または下記ショートカットからツールを開きます。',
-      'Coding Overview はワークスペース選択時のみ表示。',
       'ランタイムショートカットとラベルは OS に合わせ、macOS は Command、Windows/Linux は Ctrl。',
       '実マッピング: Files = Ctrl+F（ラベルは ⌘P の場合あり）; Side chat = Ctrl+;（ラベルは ⌥⌘S の場合あり）。',
-      'Graph と Review に専用グローバルショートカットはありません — workbench バーまたはコマンドパレット。',
+      'Source Control はローカルの Changes と pull request の Review を兼ねます — ヘッダーで切り替え。',
       'Terminal と Browser は複数タブインスタンス対応; 他ツールは単一インスタンスのトグル。',
-      'Changes（Ctrl+G）と Review は Coding のみ; Graph には Coding ワークスペースが必要。',
-      '同じツールをもう一度トグルで閉じる — workbench は常設カードの山ではありません。',
-      'Coding ワークスペースあり・ツール未選択で workbench を開くと、既定で Overview が開きます。'
+      'どの Terminal タブでも下部の Running を開くと、全セッションのエージェントコマンド、プレビューサーバー、他のターミナルを確認・停止できます。',
+      'Source Control（Ctrl+G）は Coding のみ。',
+      '同じツールをもう一度トグルで閉じる — workbench は常設カードの山ではありません。'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Workbench はチャット横の右（またはドック）ツール面です。ツール: Overview、Terminal、Browser、Files、Graph、Side chat、Memory（wiki）、Scheduler、Changes（ソースコントロール）、Review（pull/merge requests）。チャットが主; ツールはワンショートカット先の検査とアクション面です。',
+        text: 'Workbench はチャット横の右（またはドック）ツール面です。ツール: Terminal、Browser、Files、Side chat、Memory（wiki）、Scheduler、Source Control（ローカルの Changes と pull/merge request の Review）。チャットが主; ツールはワンショートカット先の検査とアクション面です。',
       },
       {
         type: 'p',
@@ -1040,22 +1028,19 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+M', action: 'Memory（wiki）' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
-          { keys: 'Ctrl+G', action: 'Git Changes（Coding）' }
+          { keys: 'Ctrl+G', action: 'Source Control（Coding）' }
 ],
       },
       {
         type: 'tips',
         items: [
-          'Overview — Coding ワークスペース / git / セッション / ツール状態の一覧。',
-          'Terminal — アクティブワークスペースでコマンド実行。',
+          'Terminal — アクティブワークスペースでコマンド実行; Running バーで管理プロセスを一覧・停止。',
           'Browser — アプリ内ブラウザ（Settings → Browser で有効化）。',
           'Files — ワークスペースファイルと生成成果物。',
-          'Graph — 構造コードグラフ（Coding）。',
           'Side chat — /btw 並列質問。',
           'Memory — wiki + 保留メモ。',
           'Scheduler — cron / ワンショットタスク（パネルのみ; /scheduler はホームへリダイレクト）。',
-          'Changes — stage、commit、ブランチ操作（Coding）。',
-          'Review — 接続ホストの PR/MR 一覧（Coding）。'
+          'Source Control — stage、commit、ブランチ操作、接続ホストの PR/MR を一覧する Review ビュー（Coding）。'
 ],
       },
       {
@@ -1064,14 +1049,22 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: Work モードで Review を探す; フォーカスされた Coding ワークスペースなしで Graph を期待; `/scheduler` をブックマーク; Files に ⌘P ラベルを信じる; composer の ! 向きのワンライナーに Terminal タブを 10 個開く。',
+        text: 'Office ファイル（.docx / .xlsx / .pptx）は読み取り専用ビューアで開きます。内蔵レンダラーのレイアウトは近似です。正確なページが必要なら、ビューアの Install renderer を押してオプションの LibreOffice レンダラー（約 150〜190 MB、Windows と macOS で一度だけ）をダウンロードしてください。依頼するまで何もダウンロードされません。アーカイブは固定されたチェックサムで検証されてからアプリのデータフォルダーにインストールされ、変換はオフラインでマクロ無効のまま実行されます。ファイルの初回の正確なレンダリングには最大 1 分ほどかかり、以降はキャッシュを使います。正確なページでも検索とテキスト選択は使えます。',
+      },
+      {
+        type: 'p',
+        text: 'Work セッションでエージェントが Word・Excel・PowerPoint ファイルを作成すると、ターン実行中に Files がそのプレビューを開き（別の workbench ツールを使用中の場合を除く）、保存のたびに再描画します。PowerPoint Skill で作るデッキはスライドごとに埋まっていきます。完成したスライドは保存されるとすぐ表示され、作成中のスライドには予定タイトルとアニメーション付きのプレースホルダー、以降のスライドは Up next として並びます。作成中はスライドのサムネイルとファイルツリーが隠れ、ビューアは最新のスライドを追いかけます。スクロール・クリック・移動すると自分で操作できます。デッキが完成すると両方が戻り、以降は正確なレンダラーに切り替わります。',
+      },
+      {
+        type: 'p',
+        text: 'よくある失敗: Work モードで Review を探す; フォーカスされた Coding ワークスペースなしで Files を期待; `/scheduler` をブックマーク; Files に ⌘P ラベルを信じる; composer の ! 向きのワンライナーに Terminal タブを 10 個開く。',
       },
       {
         type: 'tips',
         items: [
           'Terminal vs ! — 対話/長時間 vs 短いチャット紐づきコマンド。',
           'Files vs @ — 閲覧/探索 vs 既知パスを依頼にピン留め。',
-          '横断: plan モード Accept 後に Changes で diff を検証。',
+          '横断: plan モード Accept 後に Source Control で diff を検証。',
           '横断: 調査セッション後に Memory を開き Dream の材料を残す。'
 ],
       }
@@ -1197,20 +1190,19 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Coding（`/coding`）に切り替え、リポジトリを追加するかプロジェクトを作成。worktree 配置は Settings → Sandbox（repository vs user_data）。慣例を AGENTS.md に置くタイミングでセッション内 /init。',
     tricks: [
       'リポジトリクリックはフォーカス — チャットは始まらない。Repos の +（または New chat）でセッション作成。',
-      'プロジェクトは複数リポジトリを 1 つの project_id 下に束ね; graph ツールはクロスレポリンクを自動解決。',
+      'プロジェクトは複数リポジトリを 1 つの project_id 下に束ね; source search ツールはクロスレポリンクを自動解決。',
       'Worktree 配置は Settings → Sandbox（repository vs user_data）で制御。',
       '未コミットのソース変更は新しい worktree にコピーされません。',
       '管理 worktree はサイドバーツリーでソースレポの下にネスト。',
       'スタンドアロンレポはプロジェクトなしの有効な単一ワークスペースセッションのまま。',
       'Coding セッションで /init を実行し、エージェント慣例用 AGENTS.md を作成または更新。',
-      'ワークスペース選択時に workbench から Coding Overview を開き状態を一覧。',
       '汚れた変更が別の場所でも必要なら worktree 作成前に commit または stash — 新しいツリーには現れません。',
       'サービスがレポ横断で API を共有するならプロジェクト; 変更セットがローカルなら単一レポを優先。'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Coding モードは git リポジトリ、任意のマルチレポプロジェクト、管理 worktree を扱います。エージェントは Files、Graph、Terminal、Changes、Review をチャット横で使い実ツリーを編集します。永続エンジニアリング作業向けのモードです。',
+        text: 'Coding モードは git リポジトリ、任意のマルチレポプロジェクト、管理 worktree を扱います。エージェントは Files、Terminal、Source Control をチャット横で使い実ツリーを編集します。永続エンジニアリング作業向けのモードです。',
       },
       {
         type: 'p',
@@ -1218,7 +1210,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Coding サイドバーからレポを追加。クリックでフォーカス; + / New chat でセッション。Project を作り複数レポをバインド。レポメニューから worktree を生成; Settings → Sandbox で repository-local vs user_data。/init で AGENTS.md を足場または更新。ワークスペースがアクティブになると Graph と Overview が有効。',
+        text: 'Coding サイドバーからレポを追加。クリックでフォーカス; + / New chat でセッション。Project を作り複数レポをバインド。レポメニューから worktree を生成; Settings → Sandbox で repository-local vs user_data。/init で AGENTS.md を足場または更新。ワークスペースがアクティブになると Files が有効。',
       },
       {
         type: 'tips',
@@ -1227,13 +1219,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Projects — 1 つの project_id 下のマルチレポ。',
           'Worktrees — クリーンツリー; 未コミットソースはコピーされない。',
           '/init — Coding 慣例用 AGENTS.md。',
-          'Sandbox — worktree 配置ポリシー。',
-          'Overview — ワークスペースフォーカス後の状態。'
+          'Sandbox — worktree 配置ポリシー。'
 ],
       },
       {
         type: 'p',
-        text: '最初の Coding セッション手順: (1) Coding へ切り替え、(2) git レポを追加、(3) クリックでフォーカス、(4) + / New chat、(5) AGENTS.md がなければ /init、(6) 権限モード設定、(7) 主要ファイルを @ して変更を記述、(8) Overview でワークスペース健全性を確認。',
+        text: '最初の Coding セッション手順: (1) Coding へ切り替え、(2) git レポを追加、(3) クリックでフォーカス、(4) + / New chat、(5) AGENTS.md がなければ /init、(6) 権限モード設定、(7) 主要ファイルを @ して変更を記述、(8) Source Control でブランチと作業ツリーを確認。',
       },
       {
         type: 'p',
@@ -1248,15 +1239,14 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           'プロジェクトするとき — クロスレポ型、共有契約、マルチサービス変更。',
           'プロジェクトしないとき — めったに触らない vendored 付きの 1 アプリレポ。',
-          '横断: graph のクロスレポ解決には project_id が必要。',
-          '横断: Review/Changes はフォーカスされたワークスペースに付く。'
+          '横断: source search のクロスレポ解決には project_id が必要。',
+          '横断: Source Control はフォーカスされたワークスペースに付く。'
 ],
       }
 ],
     related: [
       'coding-git',
-      'coding-graph',
-      'slash-commands',
+            'slash-commands',
       'sandbox-settings',
       'modes-overview'
 ],
@@ -1265,9 +1255,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
   {
     id: 'coding-git',
     category: 'coding',
-    title: 'Git、Changes、プルリクエスト',
+    title: 'Git、Source Control、プルリクエスト',
     summary:
-      'Coding の Changes（Ctrl+G）、Review パネル、Settings → Git & reviews から stage、commit、branch、merge、rebase、stash、PR/MR レビューを行います。force-with-lease や巨大 diff の前に安全トグルを意図的に。',
+      'Coding の Source Control（Ctrl+G。Changes / Review の 2 ビュー）と Settings → Git & reviews から stage、commit、branch、merge、rebase、stash、PR/MR レビューを行います。force-with-lease や巨大 diff の前に安全トグルを意図的に。',
     keywords: [
       'git',
       'commit',
@@ -1294,12 +1284,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     setup:
       'git ワークスペース付き Coding モード。リモート PR/MR 操作は Settings → Git & reviews でホスト接続。積極的操作の前にタイムアウト、max diff size、force-with-lease を確認。',
     tricks: [
-      'Ctrl+G で Changes（ソースコントロール）を開く。',
-      'Diff レビューパネルからエージェントに Create PR を促せます。',
+      'Ctrl+G で Source Control を開く。',
       'Force-with-lease と max diff size はバージョンコントロール設定でゲート。',
-      'Review workbench は接続時に GitHub、GitLab、Bitbucket、Gitea、Azure DevOps の PR/MR を一覧。',
+      'Source Control の Review ビューは接続時に GitHub、GitLab、Bitbucket、Gitea、Azure DevOps の PR/MR を一覧。',
       'エージェントも権限モードと sandbox に従いツール経由で git 操作可能。',
-      'stash / branch / rebase は快適さに応じて Changes またはエージェントツールから。',
+      'stash / branch / rebase は快適さに応じて Source Control またはエージェントツールから。',
       '小さなコミットと明確なメッセージを優先 — エージェントはきれいな履歴に対してより良いフォローアップを書きます。',
       'Create PR を頼む前にホスト接続 — さもなくばローカルコミットは成功しリモート段階で遅く失敗。',
       'diff が巨大なら max diff size は一時的にだけ上げる — 過大レビューはリスクを隠します。'
@@ -1307,7 +1296,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding はローカルソースコントロール（Changes）とリモートレビュー（Review）を公開します。ローカル操作には stage、commit、branch、merge、rebase、cherry-pick、stash、worktree 対応フローが含まれます。Settings → Git & reviews 設定時、リモートホストが PR/MR 一覧とレビューアクションを支えます。',
+        text: 'Coding は Source Control として、ローカル変更（Changes）とリモートレビュー（Review）を公開します。ローカル操作には stage、commit、branch、merge、rebase、cherry-pick、stash、worktree 対応フローが含まれます。Settings → Git & reviews 設定時、リモートホストが PR/MR 一覧とレビューアクションを支えます。',
       },
       {
         type: 'p',
@@ -1315,12 +1304,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Ctrl+G を押すか workbench から Changes を開く。diff をレビューし、stage し、commit。接続済み PR/MR は Review。ホスト、タイムアウト、安全トグルは Settings → Git & reviews。ホスト接続準備ができたら diff レビューから Create PR を依頼。',
+        text: 'Ctrl+G を押すか workbench から Source Control を開く。diff をレビューし、stage し、commit。接続済み PR/MR は Review。ホスト、タイムアウト、安全トグルは Settings → Git & reviews。ホスト接続準備ができたら diff レビューから Create PR を依頼。',
       },
       {
         type: 'tips',
         items: [
-          'Ctrl+G — Changes / ソースコントロール',
+          'Ctrl+G — Source Control',
           'Review — 接続ホストの PR/MR 一覧',
           'GitHub / GitLab / Bitbucket / Gitea / Azure DevOps — ホスト連携',
           'force-with-lease — ゲート済み; 気軽な既定ではない',
@@ -1343,7 +1332,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          '横断: Plan Accept → Changes で、プランが期待どおりの diff になったか確認。',
+          '横断: Plan Accept → Source Control で、プランが期待どおりの diff になったか確認。',
           '横断: worktree は実験コミットを主チェックアウトから遠ざける。',
           '横断: 本番リモートへの初 push 前は権限 ask モード。'
 ],
@@ -1357,159 +1346,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'plan-review'
 ],
     openAction: { type: 'workbench', tool: 'source-control' },
-  },
-  {
-    id: 'coding-graph',
-    category: 'coding',
-    title: '構造コードグラフ',
-    summary:
-      'リポジトリ単位のインデックスがソース検索、構造パターン、正確なシンボルナビゲーションを統合します。許可された全リポジトリを 1 つの code_context ツールで扱います。',
-    keywords: [
-      'code graph',
-      'symbols',
-      'cross-repo',
-      'index',
-      'code_context',
-      'tree-sitter',
-      'コードグラフ',
-      'シンボル',
-      'インデックス',
-      '構造'
-],
-    setup:
-      'Coding ワークスペースまたはプロジェクト — 最初のクエリが変更済みソースを増分更新します。Graph で現在の動的スナップショットを確認できます。',
-    tricks: [
-      'Coding スキルは統一された code_context ワークフローを段階的に提示します。',
-      '発見には code_context search、コード形状には grep、既知の正確なシンボルには graph action を使います。',
-      'Graph workbench ツールを開き視覚探索し、必要なら再インデックス。',
-      'クロスレポ関係は import、module path、一意な定義から動的に解決され、resolver job や永続化された推測エッジはありません。',
-      'code_context の graph action は definition、callers、callees、references、impact、neighborhood。',
-      '編集後は refresh=true、同一バージョン直後の追跡クエリだけ refresh=false を使います。',
-      '「パッケージ全体を読んで」ではなく構造質問（「誰が X を呼ぶ？」）。',
-      'マルチレポプロジェクトはクロスレポエッジ; スタンドアロンレポも 1 ツリー内で恩恵。',
-      'Coding モードは skill 本文を注入せず、生のリクエスト文をキーワードで graph query にルーティングしません。'
-],
-    blocks: [
-      {
-        type: 'p',
-        text: '各リポジトリは AST 対応チャンク、シンボル、関係、FTS ソースを持つローカル managed index を所有します。ネイティブ code_context がこれらを検索し、Graph は動的スナップショットを表示します。',
-      },
-      {
-        type: 'p',
-        text: 'ファイル全体ダンプはコンテキストを燃やします。Graph 優先ナビはプロジェクト内の「誰が X を呼ぶ？」やクロスレポ質問にトークン効率が良く、静的解決が足りないときはなお grep/LSP/テストが可能です。graph は地図として扱い、ホットパス読解を置き換える真実の根拠にはしない。',
-      },
-      {
-        type: 'tips',
-        items: [
-          'code_context search — 識別子、リテラル、コメント、概念',
-          'code_context grep — 例示による構造マッチ',
-          'code_context definition/callers/callees — 正確なシンボルナビゲーション',
-          'code_context references/impact/neighborhood — 境界付き関係探索'
-],
-      },
-      {
-        type: 'p',
-        text: 'Coding ワークスペースで code_context を使います。最初のクエリが追加・更新・削除をリポジトリ単位の target に反映します。マルチレポエッジは、クエリまたは可視化時に現在許可された target 集合から解決されます。',
-      },
-      {
-        type: 'p',
-        text: '調査手順: (1) search で識別子、または grep でコード形状を発見、(2) exact-symbol action を実行、(3) 重複定義を path/repository で解消、(4) limitation を確認、(5) 動的挙動をテスト、ログ、ランタイム証拠で検証。',
-      },
-      {
-        type: 'p',
-        text: 'graph vs grep: 型付きシンボル、呼び出しエッジ、クロスファイルアーキテクチャは graph; エラー文字列、コメント、フィーチャフラグ、YAML キー、パーサが飛ばし得る生成コードは grep。graph だけを信じないとき: マクロ、重いリフレクション、コンパイル時にシンボルを消すテンプレート。',
-      },
-      {
-        type: 'p',
-        text: 'よくある失敗: exact-symbol action に文章を渡す、ディレクトリ全体をダンプする、未許可の sibling を検索する、外部編集後に refresh しない、suggestion を解決済み root と扱う。',
-      },
-      {
-        type: 'tips',
-        items: [
-          '横断: graph ヒットと Changes を組み合わせ、編集セットが呼び出し近傍と一致するか見る。',
-          '横断: AGENTS.md で graph 優先ナビを指示できる。',
-          '横断: specialist は Settings → Agents ごとにツールを継承 — worker がコード検索できることを確認。'
-],
-      }
-],
-    related: ['coding-workspaces', 'agents-settings', 'composer-power', 'coding-git'],
-    openAction: { type: 'workbench', tool: 'graph' },
-  },
-  {
-    id: 'agent-specs',
-    category: 'coding',
-    title: 'Agent Specification-Driven Development (ASDD)',
-    summary:
-      'Agent Spec-Driven は、意図をリポジトリ内のレビュー可能な仕様に変え、エージェントが動く前に各成果物を承認し、証跡が揃った変更を capability カタログへアーカイブするための画面です。',
-    keywords: [
-      'ASDD',
-      'Agent Spec-Driven',
-      '仕様',
-      'specification',
-      'SDD',
-      'ADD',
-      'OpenSpec',
-      'capability',
-      'requirement',
-      'scenario',
-      'evidence',
-      '証跡',
-      'archive',
-    ],
-    setup:
-      'Coding ワークスペースを開き、各リポジトリに ASDD をインストールします。カタログ、規範ルール、Coding 専用の 6 つの Skill が書き込まれ、いずれも Git 管理下に入るため、リポジトリを clone した人はそのまま同じ方法論を得ます。project.md を埋めてから変更を作成し、レールから各フェーズを実行してください。',
-    tricks: [
-      '変更はリポジトリ内の Markdown フォルダーです。フェーズは `proposal.md` の `status`、契約は `specs/<capability>/spec.md` の差分、同一性はフォルダー名そのものです。',
-      '変更はチャットに束縛されません。複数のチャットが同じ変更を扱えますし、1 つのチャットが変更を移っても、チャットを閉じても何も取り残されません。',
-      'ハッシュを言い直す操作はありません。承認時の `expected_hash` も、委任時の spec hash も存在しません。',
-      '`proposal.md` を手で編集するのは正当です。ファイルが真実の源なので、書いた status とフォルダーの内容が食い違えば、レールがそれを報告し、どちらも書き換えません。',
-      '既存の capability が契約している振る舞いを変えるなら、その capability を再利用してください。同じことを述べる契約が 2 つ増えるのではなく、1 つの契約の次の版になります。',
-      '差分は変わるものだけを書きます: `## ADDED`、`## MODIFIED`、`## REMOVED Requirements`。変わらない要件まで書き写すと、変更が自分の文脈に埋もれます。',
-      'すべての要件は `- **WHEN**` と `- **THEN**` を持つ `#### Scenario:` を少なくとも 1 つ伴います。シナリオのない要件は承認も検証もできません。',
-      '`MODIFIED` と `REMOVED` の見出しは現行 spec の要件と一字一句一致し、`ADDED` の見出しはどれとも一致してはいけません。アーカイブが双方を検査します。',
-      'リスク階層: trivial と standard は design を省きます。cross_layer と critical は design 文書と記録された独立レビューを要求します。労力を示すために階層を上げないでください。',
-      'tasks の承認こそが製品ファイルの変更を許可します。それ以前のフェーズは製品ファイルに触れません。',
-      '検証は読み取り専用です。見つけたことを報告し、直しはしません。自分の指摘を自分で修理する回は、もはやレビューではないからです。',
-      'マシン証跡はランタイムの CompletionContract からのみ得られます。メンバー自身の申告はレビュー証跡として、そうと明示して記録されます。',
-      'アーカイブはすべての差分を `specs/<capability>/spec.md` に畳み込み、フォルダーを `changes/archive/YYYY-MM-DD-<change-id>/` へ退避します。取り消せるのは別の変更だけです。',
-      'フェーズ別なら Board、比較なら Table、コンパクトな一覧なら List。フィルターはタイトル、slug、capability に効きます。',
-      'セットアップは既存のドキュメントをカタログへ移動も複製もしません。取り込みは明示的に承認された変更です。',
-    ],
-    blocks: [
-      {
-        type: 'p',
-        text: 'ASDD は Agent Specification-Driven Development の略です。SDD は実行可能でバージョン管理された仕様を唯一の真実の源として保ち、ADD はエージェントの作業を明確なゲートと実行ログを備えたフェーズとして進めます。ASDD は仕様をリポジトリに置き、そこに向けてフェーズを回します。',
-      },
-      {
-        type: 'p',
-        text: 'インストールにより `.evoflux/asdd/config.json`、`RULES.md`、Coding 専用の 6 つの Skill、そしてリポジトリのデータフォルダー（既定は `documents/asdd`）配下のカタログ（`project.md`、`specs/`、`changes/`）が追加されます。書き込まれるものはすべて Git 管理下です。',
-      },
-      {
-        type: 'p',
-        text: 'Skill は Propose、Specify、Plan、Implement、Verify、Archive を導きます。権限は持ちません。proposal、specs、リスク階層が求める場合の design、tasks を承認するのはユーザーであり、アーカイブするのもユーザーです。',
-      },
-      {
-        type: 'tips',
-        items: [
-          '変更 — slug で名付けられた `changes/` 内のフォルダー。',
-          'capability — システムが保証する 1 つの振る舞いを指す恒久的な slug。',
-          '要件 — 少なくとも 1 つのシナリオを伴う 1 つの SHALL 文。',
-          '差分 — この変更が追加・修正・削除するもの。',
-          '証跡 — 何を実行し何が分かったかを述べるページ。',
-          'アーカイブ — 差分を capability の spec に畳み込むこと。',
-        ],
-      },
-      {
-        type: 'p',
-        text: '楽観的並行制御はありません。2 つのエージェントが同じファイルを書けば互いに上書きします。リポジトリ単位のロックが製品自身の書き込みを直列化し、結果は `git diff` に出ます。ハッシュもセッションロックも持たない方法論と引き換えの取引です。',
-      },
-      {
-        type: 'p',
-        text: 'よくある誤り: 既存の spec が契約済みの振る舞いに新しい capability を作る、シナリオのない要件を書く、存在しない要件を `MODIFIED` に挙げる、変更をアーカイブせず capability の spec を手で直す、差分を読まずに specs を承認する。',
-      },
-    ],
-    related: ['coding-workspaces', 'permissions-modes', 'plan-review', 'coding-git', 'coding-graph'],
-    openAction: { type: 'workbench', tool: 'asdd' },
   },
   {
     id: 'memory-dream',
@@ -1953,7 +1789,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Runtime: enabled plugin の valid Skill は metadata catalog に入り、activate 時だけ本文が load されます。plugin Skill を load すると同じ installation の ready MCP tools がその run で利用可能になりますが permission は維持されます。Settings → Skills は discovery/validation、Settings → MCP servers は plugin badge、runtime state、tool names を表示します。runtime name には installation hash があるため、Skill 内では生成 prefix ではなく安定した server/tool suffix を案内します。',
+        text: 'Runtime: エージェントは有効な plugin Skill の名前と説明を他の Skill と同様に把握し、タスクが合うとき（または `$skill-name` と入力したとき）に SKILL.md を読みます。plugin Skill の SKILL.md が読まれると、同じ installation の ready MCP tools がその run で利用可能になりますが permission は維持されます。Settings → Skills は validation を表示し、plugin Skill を個別にオフにできます。Settings → MCP servers は plugin badge、runtime state、tool names を表示します。runtime name には installation hash があるため、Skill 内では生成 prefix ではなく安定した server/tool suffix を案内します。',
       },
       {
         type: 'p',
@@ -1963,12 +1799,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'tips',
         items: [
           'Install できない — inspection diagnostics を開き、fatal `plugin.json`、unsafe path、archive collision、symlink、size、digest error を修正。',
-          'Skill がない — installation を enable、`skills/<name>/SKILL.md` が直下で frontmatter が valid か、上位 project/user Skill に shadow されていないか確認。',
+          'Skill がない — installation を enable、`skills/<name>/SKILL.md` が直下で frontmatter が valid か、Settings → Skills でオンか、上位 project/user Skill に shadow されていないか確認。',
           'Settings に MCP がない — plugin enabled、`mcp.json` valid、transport が SSE ではなく stdio または Streamable HTTP か確認。',
           'MCP が error — runtime row を開き executable path、args、working directory、startup log、required credentials、stdio protocol 専用 stdout を確認。',
           'Credentials が unsupported — `plugin.json` に `org.evoelsewhere.evoflux.credentials.fields` を追加し Validate 後に戻る。',
           'Remote server が ready でない — URL/host と literal headers を確認。保存済み plugin credentials は Streamable HTTP へ意図的に注入されません。',
-          'Chat で tool が選ばれない — 対応 plugin Skill を activate するか agent に plugin MCP server を明示選択。install だけでは全 tool を grant しません。',
+          'Chat で tool が選ばれない — 対応 plugin Skill を使う（`$skill-name` と入力）か agent に plugin MCP server を明示選択。install だけでは全 tool を grant しません。',
           '変更が古い — Save/Validate、Plugin Center refresh、disable/enable で runtime を reconcile。'
 ],
       },
@@ -2029,11 +1865,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'code',
         language: 'markdown',
         caption: 'skills/release-audit/SKILL.md',
-        code: '---\nname: release-audit\ndescription: 公開前に release evidence、checks、risk を確認します。\n---\n\n# Release audit\n\n1. bounded evidence を収集。\n2. live data が必要なときだけ MCP tool を使用。\n3. fact、inference、不足 evidence を分離。\n4. 明示 authorization なしに publish/mutate しない。',
+        code: '---\nname: release-audit\ndescription: 公開前に release evidence、checks、risk を確認します。release の準備状況を聞かれたときや release checklist に触れられたときに使います。\n---\n\n# Release audit\n\n1. bounded evidence を収集。\n2. live data が必要なときだけ MCP tool を使用。\n3. fact、inference、不足 evidence を分離。\n4. 明示 authorization なしに publish/mutate しない。',
       },
       {
         type: 'p',
-        text: 'Skill name は Agent Skills naming contract に従います。description は discovery に使われるため正確に書きます。主 workflow は SKILL.md、大きな reference は必要時のみ load。EvoFlux runtime prefix は installation ごとに変わるため、MCP tool は安定 suffix で案内します。',
+        text: 'Skill は SKILL.md を持つフォルダです。`name` はフォルダ名と同じで、小文字・数字・単一ハイフンのみ、64 文字以内、"anthropic" や "claude" を含めません。`description`（1,024 文字以内、XML タグ不可）は三人称で、Skill が何をしていつ使うかを書きます — エージェントは SKILL.md を読むと決めるまで name と description しか見ません。SKILL.md は簡潔に保ち、大きな reference は 1 階層下のファイルにリンクして必要なときだけ読ませます。EvoFlux runtime prefix は installation ごとに変わるため、MCP tool は安定 suffix で案内します。',
       },
       {
         type: 'p',
@@ -2138,9 +1974,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'table',
         columns: ['Concern', 'Rule'],
         rows: [
-          ['Skill precedence', 'Project/user/admin > enabled plugins > EvoFlux built-ins。'],
+          ['Skill precedence', 'project と user の skill フォルダ > enabled plugins > EvoFlux built-ins。どの Skill も Settings → Skills でオフにできます。'],
           ['MCP configuration', 'Plugin は別 in-memory manager を使い global mcp.json を変更しない。'],
-          ['Agent availability', '明示 MCP selection または同 installation Skill activation で ready tools を run に追加。'],
+          ['Agent availability', '明示 MCP selection、または同 installation の Skill の SKILL.md を読むことで ready tools を run に追加。'],
           ['WebBridge', '明示 safe capability のみ non-browser server を WebBridge run に保持。'],
           ['Failure isolation', '不正 Skill/server は隔離、fatal manifest/package は reject。'],
         ],
@@ -2183,7 +2019,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           ['MCP error', 'command/args/cwd、credential、network/TLS', 'runtime error と trust/config 比較。'],
           ['Credentials unsupported', 'credential extension なし', 'fields を追加、Save、Validate、Refresh。'],
           ['Credentials incomplete', 'required field 不足、URL/type invalid', 'required を入力、設定済み secret の空欄は保持目的のみ。'],
-          ['Agent に tool がない', 'server not ready、未 select/activate', 'agent MCP 選択または同 plugin Skill activate。'],
+          ['Agent に tool がない', 'server not ready、未選択、または同 plugin Skill 未使用', 'agent MCP 選択または同 plugin Skill を使用（$skill-name）。'],
           ['Linked code が古い', '未 Save、runtime 未 reconcile', 'Save、Validate、Refresh、Disable/Enable。'],
           ['Update fail', 'replacement invalid、安全検査失敗', '新 package を update 前に inspect。'],
         ],
@@ -2246,7 +2082,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'settings',
     title: 'Agents、Skills、MCP',
     summary:
-      'Settings 下で Markdown エージェント、スキルパック、MCP サーバーを設定 — ツールはネイティブと同じ権限ルールを継承します。チームは work / coding にスコープされ、各モードに正しい specialist が出ます。',
+      'Settings 下で Markdown エージェント、スキル（SKILL.md を持つフォルダ）、MCP サーバーを設定 — ツールはネイティブと同じ権限ルールを継承します。チームは work / coding にスコープされ、各モードに正しい specialist が出ます。スキルは両モードで使えます。',
     keywords: [
       'agents',
       'skills',
@@ -2262,10 +2098,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ツール'
 ],
     setup:
-      'チームメンバーは Settings → Agents; パック検証は Settings → Skills; サーバー追加は Settings → MCP。チャットからは /skill: またはコマンドパレットの New Agent / New Skill ショートカット。',
+      'チームメンバーは Settings → Agents; 自分のスキルの作成・編集と各スキルのオン/オフは Settings → Skills; サーバー追加は Settings → MCP。チャットからは $skill-name でスキルを使い、コマンドパレットで New Agent / New Skill ショートカット。',
     tricks: [
       'エージェントは YAML frontmatter 付き .md — diff 可能でバージョン管理しやすい。',
-      'Settings → Skills では Work、Coding、Both ごとにスキルを作成・編集・表示・絞り込みでき、有効なスキルは一致するセッションの /skill: にだけ表示されます。',
+      'スキルは SKILL.md を持つフォルダです。エージェントは有効なスキルの名前と説明を把握し、タスクが合うと自分で SKILL.md を読みます。',
+      'メッセージのどこかに $skill-name と書くとスキルを明示的に使えます。複数指定も可能です。',
+      'Settings → Skills ではユーザーのスキルフォルダにスキルを作成・編集でき、組み込み・plugin・project を含むすべてのスキルにオン/オフのスイッチがあります。',
+      'エージェントの Skills フィールドはそのスキルをエージェントに事前読み込みし、最初から指示を持った状態で始めさせます。',
       'MCP ステータスドット: ready / starting / auth / error / stopped。',
       'MCP ツールはネイティブと同じ権限ルールを継承。',
       'チームは work / coding にスコープ。',
@@ -2277,7 +2116,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Agents は役割、モデル、ツール、システムプロンプトを定義します。Skills は /skill: 経由で需要に応じて読み込む指示パック。MCP サーバーは stdio、HTTP、または SSE で外部ツールを公開。合わせて、製品をフォークせずチーム挙動を形作ります。',
+        text: 'Agents は役割、モデル、ツール、システムプロンプトを定義します。Skills は SKILL.md と任意の reference ファイル・スクリプト・アセットを持つフォルダです: エージェントは有効なスキルの名前と説明を把握し、タスクが合うと SKILL.md を読み、指示が示すときだけ他のファイルを開きます。MCP サーバーは stdio、HTTP、または SSE で外部ツールを公開。合わせて、製品をフォークせずチーム挙動を形作ります。',
       },
       {
         type: 'p',
@@ -2285,13 +2124,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Settings → Agents でチームメンバー編集; Settings → Skills でパック検証; Settings → MCP でサーバー追加とステータスドット監視。チャットでは /skill: またはパレットの New Agent / New Skill。Lead 専用ツール（ask_user、plan mode、worktree ヘルパー）は specialist に付与されません。',
+        text: 'Settings → Agents でチームメンバー編集; Settings → Skills で自分のスキルの作成・編集、検証の確認、各スキルのオン/オフ; Settings → MCP でサーバー追加とステータスドット監視。チャットでは $skill-name でスキルを今すぐ使うか、パレットの New Agent / New Skill。エージェントの Skills フィールドはそのスキルをエージェントに事前読み込みします。Lead 専用ツール（ask_user、plan mode、worktree ヘルパー）は specialist に付与されません。',
       },
       {
         type: 'tips',
         items: [
           'Agents — .md + YAML frontmatter',
-          'Skills — 検証後の /skill:',
+          'Skills — SKILL.md フォルダ; $skill-name で使用; Settings でオン/オフ',
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
           'tools_opt_out — code-owned ツール既定を無効化',
@@ -2305,13 +2144,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: 無効スキルがスラッシュメニューに出ると期待; 頭の中で specialist に Lead 専用ツールを付与; MCP を error のままチャットを再試行; 公開レポにコミットしたエージェント markdown へシークレットを入れる; モードスコープを忘れ Coding specialist が Work に出ない。',
+        text: 'よくある失敗: 無効またはオフのスキルが $ ピッカーに出ると期待; スキルの説明を曖昧に書く（エージェントはそれを見て読むかどうかを決めます）; 頭の中で specialist に Lead 専用ツールを付与; MCP を error のままチャットを再試行; 公開レポにコミットしたエージェント markdown へシークレットを入れる; モードスコープを忘れ Coding specialist が Work に出ない。',
       },
       {
         type: 'tips',
         items: [
-          '横断: 有効化された Coding スキルが workflow を案内し、ネイティブ code_context がすべての retrieval action を検証・実行します。',
-          '横断: workflows と skills はどちらも / に出るにはスコープ有効性が必要。',
+          '横断: Coding スキルが workflow を案内し、ネイティブ source search がすべての retrieval action を検証・実行します。',
+          '横断: skills は $ に出るには valid かつオンである必要があります。',
           '横断: 権限 Always ルールは MCP ツールにも適用 — まず Once を優先。'
 ],
       }
@@ -2319,8 +2158,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     related: [
       'composer-power',
       'permissions-modes',
-      'coding-graph',
-      'slash-commands'
+            'slash-commands'
 ],
     openAction: { type: 'settings', path: 'agents' },
   },
@@ -2541,7 +2379,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           'Providers — API キー、OAuth、ローカルデーモン、モデルレジストリ',
           'Agents — チームメンバーごとのモデル、ツール、システムプロンプト',
-          'Skills — /skill: 用の指示パック',
+          'Skills — SKILL.md フォルダの作成/編集、各スキルのオン/オフ',
           'MCP servers — stdio / HTTP / SSE 外部ツール',
           'Memory — 長期 wiki + Dream スケジュール',
           'Connection — バンドル sidecar vs 外部 URL / アクセスキー',
@@ -2633,7 +2471,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+T', action: '内蔵ブラウザ' },
-          { keys: 'Ctrl+G', action: 'Git Changes（Coding）' },
+          { keys: 'Ctrl+G', action: 'Source Control（Coding）' },
           { keys: 'Ctrl+`', action: 'Terminal' },
           { keys: 'Ctrl+I', action: 'チャット入力にフォーカス' },
           { keys: 'Ctrl+;', action: 'Side chat（ラベルは ⌥⌘S の場合あり）' },
@@ -2643,7 +2481,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'バインディングを忘れたらコマンドパレット（Ctrl+P）を優先 — 大半のアクションは名前で検索でき、同じ入力欄からセッション、過去のメッセージ、Memory ページ、プロジェクト、リポジトリ、スケジュールされたタスク、エージェント、スキル（Coding ワークスペースを開いていればリポジトリのファイルやシンボルも）を検索できます。Guidelines（Help）はドキュメントであり自分のコンテンツではないため別のままです。Graph と Review は専用グローバルショートカットがないため workbench バーまたはパレットに依存。',
+        text: 'バインディングを忘れたらコマンドパレット（Ctrl+P）を優先 — 大半のアクションは名前で検索でき、同じ入力欄からセッション、過去のメッセージ、Memory ページ、プロジェクト、リポジトリ、スケジュールされたタスク、エージェント、スキル（Coding ワークスペースを開いていればリポジトリのファイルやシンボルも）を検索できます。Guidelines（Help）はドキュメントであり自分のコンテンツではないため別のままです。Git は専用グローバルショートカットがないため workbench バーまたはパレットに依存。',
       },
       {
         type: 'tips',
@@ -2658,7 +2496,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: macOS で Cmd+P を押してパレットを期待; Ctrl+R でアプリ全体リロードと思い込む; composer ペースト中に Ctrl+V と戦う; Graph に隠れたホットキーがあると仮定; パレットのつもりで Help（またはその逆）を開く。',
+        text: 'よくある失敗: macOS で Cmd+P を押してパレットを期待; Ctrl+R でアプリ全体リロードと思い込む; composer ペースト中に Ctrl+V と戦う; Files に隠れたホットキーがあると仮定; パレットのつもりで Help（またはその逆）を開く。',
       },
       {
         type: 'tips',
@@ -2737,12 +2575,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '空の telemetry → observability extras 無効（しばしば非ブロッキング）',
           'Goal 詰まり → blocker streak、予算一時停止、または /goal:stop を確認',
           '/scheduler が 404 っぽい → Ctrl+S パネル; ルートはホームへリダイレクト',
-          '古い graph → 巨大な外部編集後に Graph ツールから再インデックス'
+          '古い source search → 巨大な外部編集後に Files ツールから再インデックス'
 ],
       },
       {
         type: 'p',
-        text: '順序付きチェックリスト: (1) HealthDot、(2) Connection モード、(3) Welcome/チーム準備、(4) Diagnostics、(5) Providers、(6) 権限シールド、(7) Sandbox denylist、(8) Browser/WebBridge、(9) モード固有ツール（Changes/Graph/Review は Coding のみ）。最初に失敗した層で止める。',
+        text: '順序付きチェックリスト: (1) HealthDot、(2) Connection モード、(3) Welcome/チーム準備、(4) Diagnostics、(5) Providers、(6) 権限シールド、(7) Sandbox denylist、(8) Browser/WebBridge、(9) モード固有ツール（Source Control と Problems は Coding のみ）。最初に失敗した層で止める。',
       },
       {
         type: 'p',

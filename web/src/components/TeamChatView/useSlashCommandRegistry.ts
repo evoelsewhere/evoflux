@@ -3,24 +3,20 @@
  * TeamChatView (extracted unchanged).
  *
  * Owns the built-in command list (including durable goal controls), the
- * user-defined commands / snippets / runnable workflows queries and their
- * flattening into ``SlashCommand[]`` / ``SnippetCommand[]``, and every
- * submit-time interceptors: built-ins, ``/goal*``, ``/workflow`` (with the
- * RunInputsDialog request state) and server-side expansion of
+ * user-defined commands / snippets queries and their flattening into
+ * ``SlashCommand[]`` / ``SnippetCommand[]``, and every submit-time
+ * interceptors: built-ins, ``/goal*`` and server-side expansion of
  * user-defined commands.
  */
-import { useCallback, useMemo, useState, type RefObject } from 'react'
-import { renderCommand, renderSnippet, resolveApiUrl, runWorkflow } from '@/api/client'
+import { useCallback, useMemo, type RefObject } from 'react'
+import { renderCommand, renderSnippet, resolveApiUrl } from '@/api/client'
 import { useCommandsQuery } from '@/queries/useCommandsQuery'
 import { useSkillFilesQuery } from '@/queries/useSkillFilesQuery'
 import { useSnippetsQuery } from '@/queries/useSnippetsQuery'
-import { useWorkflowsQuery } from '@/queries/useWorkflowsQuery'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { parseGoalCommand } from '@/lib/parseGoalCommand'
 import { splitQuotedContext } from '../InputBar.skills'
-import { mapWorkflowArgs, parseWorkflowCommand } from '@/lib/parseWorkflowCommand'
-import type { RunInputsRequest } from '../RunInputsDialog'
 import type { ComposerSkill, InputBarHandle, SlashCommand, SnippetCommand } from '../InputBar'
 import type { MessageAttachment } from '@/api/types'
 
@@ -43,9 +39,6 @@ interface UseSlashCommandRegistryArgs {
   agentWorkspace: string | null
   /** Every repository root for a project session; single-repo sessions pass one root. */
   workspaceRoots?: readonly string[]
-  /** Route prop — fallback for ``startWorkflowRun`` before the store commits. */
-  sessionId: string | undefined
-  sessionIdState: string | null
   selectedModel: string
   selectedThinkingLevel: string | null
   inputRef: RefObject<InputBarHandle | null>
@@ -57,15 +50,12 @@ export function useSlashCommandRegistry({
   workspace,
   agentWorkspace,
   workspaceRoots,
-  sessionId,
-  sessionIdState,
   selectedModel,
   selectedThinkingLevel,
   inputRef,
   handleNewSession,
 }: UseSlashCommandRegistryArgs) {
   const pushToast = useToastStore((s) => s.push)
-  const [runInputsRequest, setRunInputsRequest] = useState<RunInputsRequest | null>(null)
 
   // Shell shortcut: start a message with `!` to run the rest as a shell command.
   // Slash commands for the input bar (type / to trigger).
@@ -79,28 +69,11 @@ export function useSlashCommandRegistry({
       : agentWorkspace
         ? [agentWorkspace]
         : [],
-    mode,
   })
   const snippetsQ = useSnippetsQuery(mode === 'coding' ? agentWorkspace : null)
   const userCommandNames = useMemo(
     () => new Set<string>((commandsQ.data?.commands ?? []).map((c) => c.name)),
     [commandsQ.data],
-  )
-  const workflowsQ = useWorkflowsQuery(
-    mode === 'coding' ? workspace : null,
-  )
-  // Approved + valid definitions matching the session scope (plan §9.1):
-  // work sessions list work-scope only; coding sessions additionally
-  // list their own scope. Unapproved/invalid → omitted (gating by omission).
-  const runnableWorkflows = useMemo(
-    () =>
-      (workflowsQ.data?.workflows ?? []).filter(
-        (wf) =>
-          wf.approved &&
-          wf.valid &&
-          (wf.scope === 'work' || wf.scope === mode),
-      ),
-    [workflowsQ.data, mode],
   )
   const slashCommands: SlashCommand[] = [
     { id: 'stop', label: 'Stop', description: 'Stop all working agents' },
@@ -117,15 +90,6 @@ export function useSlashCommandRegistry({
     { id: 'goal:pause', label: 'goal:pause', displayName: 'goal:pause', description: 'Pause the active goal' },
     { id: 'goal:resume', label: 'goal:resume', displayName: 'goal:resume', description: 'Resume the paused goal' },
     { id: 'goal:stop', label: 'goal:stop', displayName: 'goal:stop', description: 'Remove the session goal' },
-    ...runnableWorkflows.map((wf) => ({
-      id: `workflow-${wf.name}`,
-      label: `workflow ${wf.name}`,
-      displayName: `workflow ${wf.name}`,
-      insertText: `workflow ${wf.name}`,
-      description: wf.description || `Run the ${wf.name} workflow`,
-      category: 'workflow',
-      keepInputOpen: true,
-    })),
     ...(commandsQ.data?.commands ?? []).map((c) => {
       const displayName = c.name.replace('/', ':')
       return {
@@ -141,39 +105,16 @@ export function useSlashCommandRegistry({
   ]
 
   /**
-   * Skills are picked with ``$`` in the composer, not from the ``/`` menu —
-   * one directive, one affordance. The backend still resolves the legacy
-   * ``/skill:<name>`` text, so nothing already typed or already sent breaks.
+   * Skills are picked with ``$`` in the composer, not from the ``/`` menu.
+   * Only skills the harness would actually activate for ``$name`` are
+   * offered: valid, enabled and user-invocable.
    */
   const composerSkills: ComposerSkill[] = useMemo(
     () =>
       (skillsQ.data?.skills ?? [])
-        .filter(
-          (skill) =>
-            skill.valid &&
-            skill.user_invocable !== false &&
-            (skill.modes ?? ['work', 'coding']).includes(mode),
-        )
-        .map((skill) => {
-          const skillName = skill.name.replace('/', ':')
-          return {
-            name: skillName,
-            label: skill.display_name || skillName,
-            description:
-              skill.short_description || skill.description || `Load the ${skillName} skill`,
-            // Verbatim: ``default_prompt`` is written around its own
-            // directive ("Use $my-skill for …"), and the picker inserts it
-            // whole rather than cutting the token out of the sentence.
-            // Nested skills are ``parent/child`` on the wire and
-            // ``parent:child`` in the composer, so rewrite the prompt's
-            // self-reference into the notation the directive uses.
-            prompt: (skill.default_prompt ?? '').replaceAll(
-              `$${skill.name}`,
-              `$${skillName}`,
-            ),
-          }
-        }),
-    [skillsQ.data, mode],
+        .filter((skill) => skill.valid && skill.enabled && skill.user_invocable)
+        .map((skill) => ({ name: skill.name, description: skill.description })),
+    [skillsQ.data],
   )
 
   const snippetCommands: SnippetCommand[] = (snippetsQ.data?.snippets ?? []).map((item) => ({
@@ -337,68 +278,6 @@ export function useSlashCommandRegistry({
     }
   }, [pushToast, runGoalCommand, noteDroppedQuote])
 
-  const startWorkflowRun = useCallback(
-    async (name: string, values: Record<string, unknown>) => {
-      const sid = sessionIdState ?? sessionId
-      if (!sid) throw new Error('No session yet — send a message first.')
-      await runWorkflow(name, sid, values, agentWorkspace)
-    },
-    [sessionIdState, sessionId, agentWorkspace],
-  )
-
-  /** FE-intercepted /workflow (plan §9.1, F17): the raw slash text is never
-   *  sent as a chat message; positional args map onto declared inputs and
-   *  missing required ones open RunInputsDialog. */
-  const tryHandleWorkflowCommand = useCallback(
-    async (raw: string): Promise<boolean> => {
-      const { quote, body: content } = splitQuotedContext(raw)
-      const parsed = parseWorkflowCommand(content)
-      if (parsed.kind === 'none') return false
-      if (parsed.kind === 'missing_name') {
-        pushToast({
-          tone: 'error',
-          title: '/workflow needs a name',
-          description: 'e.g. "/workflow bug-triage TICKET-1".',
-        })
-        return true
-      }
-      const wf = runnableWorkflows.find((w) => w.name === parsed.name)
-      if (!wf) {
-        pushToast({
-          tone: 'error',
-          title: `No runnable workflow '${parsed.name}'`,
-          description: 'It may be unapproved, invalid, or out of scope here.',
-        })
-        return true
-      }
-      const mapped = mapWorkflowArgs(wf.inputs, parsed.args)
-      if (mapped.errors.length > 0) {
-        pushToast({ tone: 'error', title: 'Bad workflow arguments', description: mapped.errors.join('; ') })
-        return true
-      }
-      // Run inputs are declared and typed; there is no slot a free-text quote
-      // could fill. Said once the command is otherwise valid, so it doesn't
-      // pile on top of a "needs a name" error.
-      if (quote) noteDroppedQuote()
-      if (mapped.missing.length > 0) {
-        setRunInputsRequest({ name: wf.name, inputs: wf.inputs, prefilled: mapped.values })
-        return true
-      }
-      try {
-        await startWorkflowRun(wf.name, mapped.values)
-        pushToast({ tone: 'success', title: `${wf.name} started` })
-      } catch (err) {
-        pushToast({
-          tone: 'error',
-          title: `Failed to start ${wf.name}`,
-          description: err instanceof Error ? err.message : String(err),
-        })
-      }
-      return true
-    },
-    [runnableWorkflows, pushToast, startWorkflowRun, noteDroppedQuote],
-  )
-
   /** If the message body starts with a known user-defined command, render it
    *  server-side and return the expanded message; otherwise return *raw*
    *  unchanged. A leading quote block is split off before matching and put
@@ -449,11 +328,7 @@ export function useSlashCommandRegistry({
     handleSlashCommand,
     handleSnippetCommand,
     tryHandleBuiltinGoalCommand,
-    tryHandleWorkflowCommand,
     expandUserCommand,
-    startWorkflowRun,
-    runInputsRequest,
-    setRunInputsRequest,
     runGoalCommand,
   }
 }

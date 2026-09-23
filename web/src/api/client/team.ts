@@ -38,11 +38,6 @@ import type {
   ProjectCreateRequest,
   AddWorkspaceToProjectRequest,
   ProjectWorkspaceItem,
-  CrossRepoEdge,
-  ProjectRepoStatus,
-  ProjectReindexStartedResponse,
-  ProjectCodeSearchResponse,
-  ProjectCodeGraphData,
   WebBridgeStatusResponse,
   WebBridgeAuditResponse,
   WebBridgeTeachDraft,
@@ -299,7 +294,6 @@ export async function getPendingQuestions(sessionId: string): Promise<{
     items: Array<{
       question: string
       options: string[]
-      strict?: boolean
       kind?: 'text' | 'agent_spawn'
       agent_spawn?: {
         blueprint: string
@@ -1162,129 +1156,6 @@ export async function updateWorkspaceInProject(
     },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'updateWorkspaceInProject')
-  return res.json()
-}
-
-export async function listCrossRepoEdges(
-  projectId: string,
-  status?: 'unresolved' | 'resolved' | 'rejected',
-): Promise<CrossRepoEdge[]> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/graph-data`,
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'listCrossRepoEdges')
-  const data: ProjectCodeGraphData = await res.json()
-  return status ? data.cross_repo_edges.filter((edge) => edge.status === status) : data.cross_repo_edges
-}
-
-// Single entry point for refreshing every repository-local target. The graph
-// endpoint resolves cross-repository relationships from those targets on read.
-export async function reindexProjectCodeGraph(
-  projectId: string,
-  options?: { full?: boolean; languages?: string[] },
-): Promise<ProjectReindexStartedResponse> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/index`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        full: options?.full ?? false,
-      }),
-    },
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'reindexProjectCodeGraph')
-  return res.json()
-}
-
-export async function getProjectCodeGraphStatus(
-  projectId: string,
-): Promise<ProjectRepoStatus[]> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/status`,
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'getProjectCodeGraphStatus')
-  return res.json()
-}
-
-export async function searchProjectCodeGraph(
-  projectId: string,
-  query: string,
-  options?: { kind?: string; limit?: number; signal?: AbortSignal },
-): Promise<ProjectCodeSearchResponse> {
-  const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/query`,
-    {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'search',
-        query,
-        limit: Math.max(1, Math.min(100, options?.limit ?? 40)),
-        refresh: false,
-      }),
-      signal: options?.signal,
-    },
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'searchProjectCodeGraph')
-  const data: {
-    hits: Array<{
-      repository: string
-      file_path: string
-      language: string
-      line_start: number
-      line_end: number
-      symbol: string | null
-      repository_path: string | null
-    }>
-  } = await res.json()
-  return {
-    results: data.hits.map((hit) => {
-      const qualified = hit.symbol ?? hit.file_path
-      const name = qualified === hit.file_path
-        ? hit.file_path.split(/[\\/]/).pop() ?? hit.file_path
-        : qualified.split('.').pop() ?? qualified
-      return {
-        path: hit.repository_path ?? hit.repository,
-        node: {
-          id: `${hit.repository}:${hit.file_path}:${hit.line_start}`,
-          workspace_id: hit.repository,
-          kind: options?.kind ?? 'source',
-          name,
-          qualified_name: qualified,
-          file_path: hit.file_path,
-          language: hit.language,
-          line_start: hit.line_start,
-          line_end: hit.line_end,
-          signature: null,
-          docstring: null,
-        },
-      }
-    }),
-  }
-}
-
-export async function getProjectCodeGraphData(
-  projectId: string,
-  options?: {
-    nodeLimitPerRepo?: number
-    edgeLimitPerRepo?: number
-    signal?: AbortSignal
-  },
-): Promise<ProjectCodeGraphData> {
-  const params = new URLSearchParams()
-  if (options?.nodeLimitPerRepo !== undefined) {
-    params.set('node_limit_per_repo', String(options.nodeLimitPerRepo))
-  }
-  if (options?.edgeLimitPerRepo !== undefined) {
-    params.set('edge_limit_per_repo', String(options.edgeLimitPerRepo))
-  }
-  const qs = params.toString()
-  const res = await fetch(
-    `${apiBaseUrl()}/team/projects/${encodeURIComponent(projectId)}/code-context/graph-data${qs ? `?${qs}` : ''}`,
-    { signal: options?.signal },
-  )
-  if (!res.ok) await parseDetailOrThrow(res, 'getProjectCodeGraphData')
   return res.json()
 }
 

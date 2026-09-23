@@ -15,13 +15,10 @@ class SearchEverywhereItemResponse(BaseModel):
     kind: Literal[
         "file",
         "folder",
-        "symbol",
-        "code",
         "git_branch",
         "git_commit",
         "problem",
         "skill",
-        "workflow",
     ]
     label: str
     description: str

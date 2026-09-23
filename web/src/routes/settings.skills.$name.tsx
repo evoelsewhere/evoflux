@@ -1,13 +1,12 @@
-import { useMemo, useState } from 'react'
-import { AlertTriangle, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { AlertTriangle, Lock, Sparkles, Trash2 } from 'lucide-react'
 
-import type { ManagedResourceProvider } from '@/api/types'
+import type { ManagedResourceProvider, SkillDetail } from '@/api/types'
 import {
   useDeleteSkillMutation,
+  useSetSkillEnabledMutation,
   useSkillFileQuery,
-  useResetSkillSettingsMutation,
   useUpdateSkillMutation,
-  useUpdateSkillSettingsMutation,
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 import { ApiValidationError } from '@/api/client'
@@ -18,20 +17,16 @@ import {
   SettingsCallout,
   SettingsGroup,
   SettingsPage,
+  SettingsRow,
 } from '@/components/settings/SettingsLayout'
 import { SettingsAsyncBoundary } from '@/components/settings/SettingsLoading'
-import {
-  SkillBundleEditor,
-} from '@/components/settings/SkillBundleEditor'
-import {
-  SkillModeSelector,
-} from '@/components/settings/SkillModeSelector'
-import { SkillRuntimeControls } from '@/components/settings/SkillRuntimeControls'
+import { SkillBundleEditor } from '@/components/settings/SkillBundleEditor'
 import {
   getSkillBundleChanges,
   skillBundleFilesFromApi,
   type SkillBundleDraftFile,
 } from '@/components/settings/skillBundle'
+import { SKILL_SOURCE_LABEL } from '@/components/settings/skillFacts'
 import { contentEquals } from '@/components/settings/frontmatter'
 import { validateSkillDraft } from '@/components/settings/schema'
 import { Button } from '@/components/ui/button'
@@ -43,62 +38,37 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import {
-  useSettingsParams,
-  useSettingsNavigate,
-  useSettingsSearch,
-} from '@/contexts/SettingsContext'
+import { Switch } from '@/components/ui/switch'
+import { useSettingsParams, useSettingsNavigate } from '@/contexts/SettingsContext'
 import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
-import { resolveRequestedSkillMode } from '@/lib/skill-detail-mode'
 import { CONDUCTOR_RESOURCE_STATE_LABEL } from '@/lib/conductor-constants'
-import {
-  availabilityFromModes,
-  modesFromAvailability,
-  type SkillAvailability,
-} from '@/lib/skill-modes'
 
 /**
- * Skill editor — lighter than the agent editor because skills have an
- * open-ended schema (only ``name`` + ``description`` are required).
- * We render a single raw .md textarea and let the user go wild.
+ * Skill editor. ``SKILL.md`` and its bundle files are edited as raw text; the
+ * Enabled switch is saved immediately and is the only user preference.
+ * See ``documents/architecture/agent-skills.md``.
  */
 export function SkillEditorPage() {
   const { name } = useSettingsParams()
-  const search = useSettingsSearch()
   const navigate = useSettingsNavigate()
   const push = useToastStore((s) => s.push)
-  const activeSkillScope = useActiveSkillDiscoveryScope()
-  const requestedMode = resolveRequestedSkillMode(search.mode)
-  const skillScope = useMemo(
-    () => ({ ...activeSkillScope, mode: requestedMode }),
-    [activeSkillScope, requestedMode],
-  )
+  const skillScope = useActiveSkillDiscoveryScope()
   const { data, isLoading, isError, error, refetch } = useSkillFileQuery(name, skillScope)
   const updateMut = useUpdateSkillMutation(skillScope)
-  const updateSettingsMut = useUpdateSkillSettingsMutation(skillScope)
-  const resetSettingsMut = useResetSkillSettingsMutation(skillScope)
+  const enableMut = useSetSkillEnabledMutation(skillScope)
   const deleteMut = useDeleteSkillMutation(skillScope)
   const [draft, setDraft] = useState<string>(() => data?.content ?? '')
   const [files, setFiles] = useState<SkillBundleDraftFile[]>(() =>
     skillBundleFilesFromApi(data?.files ?? []),
   )
-  const [availability, setAvailability] = useState<SkillAvailability>(() =>
-    availabilityFromModes(data?.modes),
-  )
-  const [allowImplicitInvocation, setAllowImplicitInvocation] = useState(
-    () => data?.allow_implicit_invocation ?? true,
-  )
-  const [userInvocable, setUserInvocable] = useState(
-    () => data?.user_invocable ?? true,
-  )
   const [deletedFiles, setDeletedFiles] = useState<string[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const discoveryKey = `${name}\u0000${requestedMode ?? 'all'}\u0000${skillScope.workspaces?.join('\u0000') ?? ''}`
-  // Reseed per skill name — SettingsScreen keeps this page mounted across
+  const discoveryKey = `${name}\u0000${data?.location ?? ''}\u0000${skillScope.workspaces?.join('\u0000') ?? ''}`
+  // Reseed per skill — SettingsScreen keeps this page mounted across
   // skill-to-skill and discovery-scope changes, so a boolean "seeded once"
-  // flag could leave a different repo/mode variant's draft in place.
+  // flag could leave a different skill's draft in place.
   const [seededFor, setSeededFor] = useState<string | null>(
     data != null ? discoveryKey : null,
   )
@@ -106,148 +76,64 @@ export function SkillEditorPage() {
     setSeededFor(discoveryKey)
     setDraft(data.content)
     setFiles(skillBundleFilesFromApi(data.files))
-    setAvailability(availabilityFromModes(data.modes))
-    setAllowImplicitInvocation(data.allow_implicit_invocation)
-    setUserInvocable(data.user_invocable)
     setDeletedFiles([])
     setSaveError(null)
   }
 
   const readOnly = data ? !data.editable : false
-  const settingsAmbiguous =
-    requestedMode === null &&
-    Boolean(data?.diagnostics.some((diagnostic) => diagnostic.code === 'mode-specific-collision'))
-  const hasInvalidSettingsOverride = Boolean(
-    data?.diagnostics.some((diagnostic) => diagnostic.code === 'invalid-runtime-settings'),
-  )
-  const repairableSettings = Boolean(data?.settings_overridden || hasInvalidSettingsOverride)
-  const settingsReadOnly = data ? !data.settings_editable || settingsAmbiguous : false
   const resourcesDirty =
     !!data &&
     (JSON.stringify(files) !== JSON.stringify(skillBundleFilesFromApi(data.files)) ||
       deletedFiles.length > 0)
-  const availabilityDirty =
-    !!data && availability !== availabilityFromModes(data.modes)
-  const runtimeSettingsDirty =
-    !!data &&
-    (availabilityDirty ||
-      allowImplicitInvocation !== data.allow_implicit_invocation ||
-      userInvocable !== data.user_invocable)
-  const bundleDirty = !!data && (!contentEquals(draft, data.content) || resourcesDirty)
-  const dirty = bundleDirty || runtimeSettingsDirty
-  const saving = updateMut.isPending || updateSettingsMut.isPending || resetSettingsMut.isPending
+  const dirty = !!data && !readOnly && (!contentEquals(draft, data.content) || resourcesDirty)
+  const saving = updateMut.isPending
   useRegisterSettingsDirty(dirty)
-  const draftErrors = bundleDirty ? validateSkillDraft(draft) : null
+  const draftErrors = dirty ? validateSkillDraft(draft, { expectedName: name }) : null
   const invalid = draftErrors !== null
   const firstDraftError = draftErrors ? Object.values(draftErrors)[0] : null
 
   const handleSave = async () => {
     setSaveError(null)
-    if (!data) return
-    if (bundleDirty && readOnly) {
-      setSaveError(`Read-only skill from ${data?.source ?? 'external source'}.`)
-      return
-    }
-    if (runtimeSettingsDirty && settingsReadOnly) {
-      setSaveError(
-        settingsAmbiguous
-          ? 'Choose Work or Coding before editing a mode-specific skill collision.'
-          : 'Runtime settings are read-only for this skill.',
-      )
-      return
-    }
+    if (!data || readOnly) return
     if (invalid) {
       setSaveError(firstDraftError ?? 'Form has validation errors.')
       return
     }
-    let bundleSaved = false
     try {
-      let res = data
-      if (bundleDirty) {
-        const bundle = getSkillBundleChanges(files, deletedFiles)
-        res = await updateMut.mutateAsync({
-          name,
-          content: draft,
-          files: bundle.files,
-          deletedFiles: bundle.deletedFiles,
-        })
-        bundleSaved = true
-        // Commit the successful bundle baseline immediately. If the settings
-        // request fails next, retries must not replay resource deletions.
-        setDraft(res.content)
-        setFiles(skillBundleFilesFromApi(res.files))
-        setDeletedFiles([])
-      }
-      if (runtimeSettingsDirty) {
-        res = await updateSettingsMut.mutateAsync({
-          name,
-          settings: {
-            settings_id: res.settings_id,
-            modes: modesFromAvailability(availability),
-            allow_implicit_invocation: allowImplicitInvocation,
-            user_invocable: userInvocable,
-          },
-        })
-      }
+      const bundle = getSkillBundleChanges(files, deletedFiles)
+      const res = await updateMut.mutateAsync({
+        name,
+        content: draft,
+        files: bundle.files,
+        deletedFiles: bundle.deletedFiles,
+      })
       push({
         tone: 'success',
         title: `Saved "${name}"`,
-        description: 'Active on next turn.',
+        description: 'Used from the next turn.',
       })
       setDraft(res.content)
       setFiles(skillBundleFilesFromApi(res.files))
-      setAvailability(availabilityFromModes(res.modes))
-      setAllowImplicitInvocation(res.allow_implicit_invocation)
-      setUserInvocable(res.user_invocable)
       setDeletedFiles([])
-      if (requestedMode && !res.modes.includes(requestedMode)) {
-        navigate('/settings/skills', { force: true })
-      } else {
-        void refetch()
-      }
+      void refetch()
     } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err)
-      const partial = bundleSaved && runtimeSettingsDirty
-      const msg = partial
-        ? `The skill bundle was saved, but its runtime settings were not: ${detail}`
-        : detail
-      if (partial) void refetch()
+      const msg = err instanceof Error ? err.message : String(err)
       setSaveError(msg)
-      push({
-        tone: partial ? 'info' : 'error',
-        title: partial ? 'Bundle saved; settings failed' : 'Save failed',
-        description: msg,
-      })
+      push({ tone: 'error', title: 'Save failed', description: msg })
     }
   }
 
-  const handleResetSettings = async () => {
-    if (!data || settingsReadOnly || !repairableSettings) return
-    setSaveError(null)
+  const handleEnabledChange = async (enabled: boolean) => {
     try {
-      const res = await resetSettingsMut.mutateAsync({
-        name,
-        settingsId: data.settings_id,
-      })
-      setAvailability(availabilityFromModes(res.modes))
-      setAllowImplicitInvocation(res.allow_implicit_invocation)
-      setUserInvocable(res.user_invocable)
+      await enableMut.mutateAsync({ name, enabled })
       push({
         tone: 'success',
-        title: hasInvalidSettingsOverride
-          ? `Removed invalid override for "${name}"`
-          : `Reset "${name}"`,
-        description: 'Restored the portable skill defaults. Active on next turn.',
+        title: enabled ? `Enabled "${name}"` : `Disabled "${name}"`,
+        description: 'Applies from the next turn.',
       })
-      if (requestedMode && !res.modes.includes(requestedMode)) {
-        navigate('/settings/skills', { force: true })
-      } else {
-        void refetch()
-      }
     } catch (err) {
-      const msg = err instanceof ApiValidationError ? err.message : String(err)
-      setSaveError(msg)
-      push({ tone: 'error', title: 'Reset failed', description: msg })
+      const msg = err instanceof Error ? err.message : String(err)
+      push({ tone: 'error', title: 'Could not change skill', description: msg })
     }
   }
 
@@ -277,9 +163,6 @@ export function SkillEditorPage() {
     if (!data) return
     setDraft(data.content)
     setFiles(skillBundleFilesFromApi(data.files))
-    setAvailability(availabilityFromModes(data.modes))
-    setAllowImplicitInvocation(data.allow_implicit_invocation)
-    setUserInvocable(data.user_invocable)
     setDeletedFiles([])
   }
 
@@ -288,9 +171,9 @@ export function SkillEditorPage() {
       <SettingsPage
         icon={Sparkles}
         title={name}
-        lede={data?.path ? (
+        lede={data?.location ? (
           <span className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs">{data.path}</span>
+            <span className="font-mono text-xs break-all">{data.location}</span>
             {data.provider && (
               <ManagedResourceProviderBadge provider={data.provider} showState />
             )}
@@ -303,15 +186,6 @@ export function SkillEditorPage() {
             saving={saving}
             error={saveError}
             validationHint={firstDraftError}
-            saveDisabledReason={
-              bundleDirty && readOnly
-                ? `Read-only skill bundle from ${data?.source ?? 'external source'}`
-                : runtimeSettingsDirty && settingsReadOnly
-                  ? settingsAmbiguous
-                    ? 'Choose Work or Coding before editing this collided skill'
-                    : 'Runtime settings are read-only for this skill'
-                  : null
-            }
             onSave={handleSave}
           />
         }
@@ -334,103 +208,68 @@ export function SkillEditorPage() {
                   onPulled={async () => { await refetch() }}
                 />
               )}
-              <SettingsGroup
-                title="Availability"
-                description="Mode scope controls where this skill is listed, selected, and loadable."
-              >
-                <SkillModeSelector
-                  value={availability}
-                  onChange={setAvailability}
-                  disabled={settingsReadOnly || saving}
-                  layoutId={`skill-availability-${name.replaceAll('/', '-')}`}
+              <SettingsGroup title="Status">
+                <SettingsRow
+                  label={<span id="skill-enabled-label">Enabled</span>}
+                  className="flex-col sm:flex-row"
+                  description={
+                    <span id="skill-enabled-description">
+                      When off, the agent does not see this skill, typing{' '}
+                      <span className="font-mono">${name}</span> does nothing, and agents that
+                      list it in their Skills field do not preload it.
+                    </span>
+                  }
+                  control={
+                    <Switch
+                      checked={data.enabled}
+                      onCheckedChange={(checked) => void handleEnabledChange(checked)}
+                      disabled={enableMut.isPending}
+                      aria-labelledby="skill-enabled-label"
+                      aria-describedby="skill-enabled-description"
+                    />
+                  }
                 />
-              </SettingsGroup>
-              <SettingsGroup
-                title="Discovery"
-                description={
-                  hasInvalidSettingsOverride
-                    ? 'An invalid EvoFlux runtime override was ignored. Remove it to restore a clean bundle-default state.'
-                    : data.settings_overridden
-                    ? 'Using an EvoFlux runtime override. The portable skill bundle remains unchanged.'
-                    : 'Using the bundle defaults. Changes are saved as an EvoFlux runtime override without rewriting the portable skill.'
-                }
-                actions={
-                  repairableSettings ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="xs"
-                      className="min-h-11 md:min-h-0"
-                      onClick={() => void handleResetSettings()}
-                      disabled={settingsReadOnly || saving}
-                    >
-                      <RotateCcw size={11} aria-hidden="true" />
-                      {hasInvalidSettingsOverride
-                        ? 'Remove invalid override'
-                        : 'Reset to skill default'}
-                    </Button>
-                  ) : undefined
-                }
-              >
-                <SkillRuntimeControls
-                  allowImplicitInvocation={allowImplicitInvocation}
-                  userInvocable={userInvocable}
-                  onAllowImplicitInvocationChange={setAllowImplicitInvocation}
-                  onUserInvocableChange={setUserInvocable}
-                  disabled={settingsReadOnly || saving}
-                />
-                <div className="p-4 sm:p-5">
-                  <SettingsCallout tone="info">
-                    Discovery changes apply on the next turn. Instructions already loaded into
-                    the current task stay in that task's context.
-                  </SettingsCallout>
-                </div>
-              </SettingsGroup>
-              <SettingsGroup
-                title="Package details"
-                description="Read-only facts and diagnostics for the currently resolved skill bundle."
-              >
-                <div className="grid gap-2 p-4 text-xs sm:grid-cols-3 sm:p-5">
-                  <SkillFact label="Resources" value={String(data.resource_count)} />
-                  <SkillFact label="Dependencies" value={String(data.dependencies?.length ?? 0)} />
-                  <SkillFact label="Source" value={data.source} />
-                  {data.provider && (
-                    <>
-                      <SkillFact label="Provider" value={data.provider.project_name} />
-                      <SkillFact
-                        label="Version"
-                        value={managedVersionLabel(data.provider)}
-                      />
-                      <SkillFact
-                        label="Sync"
-                        value={CONDUCTOR_RESOURCE_STATE_LABEL[data.provider.observed_state]}
-                      />
-                    </>
-                  )}
-                </div>
-                {data.diagnostics.length > 0 && (
-                  <div className="p-4 sm:p-5">
-                    <div className="space-y-1 rounded-lg border border-(--color-border) bg-(--bg-key)/40 p-3">
-                      {data.diagnostics.map((diagnostic) => (
-                        <p key={`${diagnostic.code}:${diagnostic.message}`} className="text-xs text-(--color-text-muted)">
-                          <span className="font-mono font-medium text-(--color-text)">{diagnostic.code}</span>
-                          {' — '}{diagnostic.message}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
+                {!data.model_invocable && (
+                  <SettingsRow
+                    label="Hidden from model"
+                    description={
+                      <>
+                        <span className="font-mono">disable-model-invocation: true</span> keeps
+                        this skill out of the agent&apos;s skill list. It runs only when you type{' '}
+                        <span className="font-mono">${name}</span> or an agent preloads it.
+                      </>
+                    }
+                  />
+                )}
+                {!data.user_invocable && (
+                  <SettingsRow
+                    label="Not user-invocable"
+                    description={
+                      <>
+                        <span className="font-mono">user-invocable: false</span> removes this
+                        skill from the <span className="font-mono">$</span> picker and ignores{' '}
+                        <span className="font-mono">${name}</span> in messages.
+                      </>
+                    }
+                  />
                 )}
               </SettingsGroup>
+              <SkillDetailsGroup skill={data} />
               <SettingsGroup
                 title="Skill bundle"
                 description={
                   <>
-                    <span className="font-mono">SKILL.md</span> holds the core workflow. Related
-                    references, scripts, assets, and UI metadata live beside it and remain part of
-                    the same portable skill.
+                    <span className="font-mono">SKILL.md</span> holds the instructions the agent
+                    reads when it uses this skill. Reference files, scripts, and assets beside it
+                    are read or run only when the instructions point to them.
                   </>
                 }
               >
+                {readOnly && (
+                  <SettingsCallout tone="info" icon={Lock} className="mb-3">
+                    {readOnlyReason(data)} You can still turn it on or off.
+                  </SettingsCallout>
+                )}
                 {data.bundle_truncated && (
                   <div
                     role="status"
@@ -441,7 +280,7 @@ export function SkillEditorPage() {
                       aria-hidden="true"
                     />
                     <p>
-                      This is a bounded bundle preview. Some resources are not shown and will
+                      This is a bounded bundle preview. Some files are not shown and will
                       remain unchanged when you save.
                     </p>
                   </div>
@@ -482,7 +321,7 @@ export function SkillEditorPage() {
               </>
             )}
           </div>
-          {data && data.editable && !data.built_in && (
+          {data && data.editable && (
             <Button
               variant="destructive"
               size="xs"
@@ -502,7 +341,7 @@ export function SkillEditorPage() {
           <DialogHeader>
             <DialogTitle>Delete skill</DialogTitle>
             <DialogDescription>
-              Delete `{name}` from the skills config directory. This cannot be undone.
+              Delete the `{name}` folder and every file in it. This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="p-3">
@@ -524,11 +363,141 @@ export function SkillEditorPage() {
   )
 }
 
-function SkillFact({ label, value }: { label: string; value: string }) {
+function SkillDetailsGroup({ skill }: { skill: SkillDetail }) {
+  const metadata = Object.entries(skill.metadata ?? {})
   return (
-    <div className="rounded-lg border border-(--color-border) bg-(--bg-key)/35 px-3 py-2.5">
+    <SettingsGroup
+      title="Details"
+      description="Read from the SKILL.md frontmatter and the skill folder."
+    >
+      <div className="grid gap-2 p-4 text-xs sm:grid-cols-3 sm:p-5">
+        <SkillFact label="Source" value={SKILL_SOURCE_LABEL[skill.source] ?? skill.source} />
+        {skill.plugin_id && <SkillFact label="Plugin" value={skill.plugin_id} mono />}
+        <SkillFact label="Files" value={String(skill.resource_count)} />
+        {skill.license && <SkillFact label="License" value={skill.license} />}
+        {skill.compatibility && (
+          <SkillFact label="Compatibility" value={skill.compatibility} wide />
+        )}
+        {skill.allowed_tools && (
+          <SkillFact
+            label="Allowed tools"
+            value={skill.allowed_tools}
+            hint="Informational — EvoFlux permissions are unchanged."
+            mono
+            wide
+          />
+        )}
+        {skill.provider && (
+          <>
+            <SkillFact label="Provider" value={skill.provider.project_name} />
+            <SkillFact label="Version" value={managedVersionLabel(skill.provider)} />
+            <SkillFact
+              label="Sync"
+              value={CONDUCTOR_RESOURCE_STATE_LABEL[skill.provider.observed_state]}
+            />
+          </>
+        )}
+        <SkillFact label="Location" value={skill.location} mono wide />
+      </div>
+      {metadata.length > 0 && (
+        <div className="p-4 sm:p-5">
+          <p className="mb-2 text-[10px] font-semibold tracking-wide text-(--color-text-subtle) uppercase">
+            Metadata
+          </p>
+          <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs">
+            {metadata.map(([key, value]) => (
+              <div key={key} className="contents">
+                <dt className="font-mono text-(--color-text-muted)">{key}</dt>
+                <dd className="break-words text-(--color-text)">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+      {skill.shadowed_paths.length > 0 && (
+        <div className="p-4 sm:p-5">
+          <p className="mb-2 text-xs text-(--color-text-muted)">
+            This skill takes precedence over {skill.shadowed_paths.length} other skill
+            {skill.shadowed_paths.length === 1 ? '' : 's'} with the same name:
+          </p>
+          <ul className="space-y-1">
+            {skill.shadowed_paths.map((path) => (
+              <li key={path} className="font-mono text-[11px] break-all text-(--color-text-subtle)">
+                {path}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {skill.diagnostics.length > 0 && (
+        <div className="p-4 sm:p-5">
+          <div className="space-y-1 rounded-lg border border-(--color-border) bg-(--bg-key)/40 p-3">
+            {skill.diagnostics.map((diagnostic) => (
+              <p
+                key={`${diagnostic.code}:${diagnostic.message}`}
+                className="text-xs text-(--color-text-muted)"
+              >
+                <span
+                  className={
+                    diagnostic.severity === 'error'
+                      ? 'font-medium text-(--color-error)'
+                      : 'font-medium text-(--color-warning)'
+                  }
+                >
+                  {diagnostic.severity === 'error' ? 'Error' : 'Warning'}
+                </span>{' '}
+                <span className="font-mono font-medium text-(--color-text)">{diagnostic.code}</span>
+                {' — '}{diagnostic.message}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+    </SettingsGroup>
+  )
+}
+
+function readOnlyReason(skill: SkillDetail): string {
+  if (skill.provider) return 'This skill is managed by Conductor and is read-only here.'
+  if (skill.symlinked) return 'This skill is a symlink and is read-only here.'
+  if (skill.source === 'builtin') return 'Built-in skills are read-only.'
+  if (skill.source === 'plugin') return 'Skills from an Agent Plugin are read-only.'
+  if (skill.source === 'project') return 'Project skills are edited in their repository.'
+  return 'This skill is read-only here.'
+}
+
+function SkillFact({
+  label,
+  value,
+  hint,
+  mono = false,
+  wide = false,
+}: {
+  label: string
+  value: string
+  hint?: string
+  mono?: boolean
+  wide?: boolean
+}) {
+  return (
+    <div
+      className={
+        wide
+          ? 'rounded-lg border border-(--color-border) bg-(--bg-key)/35 px-3 py-2.5 sm:col-span-3'
+          : 'rounded-lg border border-(--color-border) bg-(--bg-key)/35 px-3 py-2.5'
+      }
+    >
       <p className="text-[10px] font-semibold uppercase tracking-wide text-(--color-text-subtle)">{label}</p>
-      <p className="mt-1 font-medium text-(--color-text)">{value}</p>
+      <p
+        className={
+          mono
+            ? 'mt-1 font-mono font-medium break-all text-(--color-text)'
+            : 'mt-1 font-medium break-words text-(--color-text)'
+        }
+      >
+        {value}
+      </p>
+      {hint && <p className="mt-1 text-[11px] text-(--color-text-muted)">{hint}</p>}
     </div>
   )
 }

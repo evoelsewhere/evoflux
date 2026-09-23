@@ -11,7 +11,7 @@ each:
 
 | Tier | Count | What it is |
 |---|---|---|
-| **Curated** | ~37 | A hand-written integration: OAuth or cloud credential flows, a wire dialect, attribution headers, a deliberate endpoint, a dedicated adapter class. Declared in `app/agent/providers/registry.py`. |
+| **Curated** | ~38 | A hand-written integration: OAuth or cloud credential flows, a wire dialect, attribution headers, a deliberate endpoint, a dedicated adapter class. Declared in `app/agent/providers/registry.py`. |
 | **Plugin** | any | Installed through the provider plugin registry. |
 | **Catalogue** | ~165 | Everything else models.dev lists that is reachable from a base URL and a bearer token. No code, no entry — the row, the credential form, the endpoint and model discovery are all derived. |
 
@@ -38,8 +38,8 @@ provider: Codex reads OpenAI's model rows through
 The long tail is not contacted when the settings page loads, and lists its
 models only when the user asks. Beyond saving 165 requests, several
 providers share one credential variable across regional and plan variants
-(`XIAOMI_API_KEY`, `MINIMAX_API_KEY`, `ZHIPU_API_KEY`), and a key must not
-be sent to a variant nobody selected.
+(`XIAOMI_API_KEY`, `STEPFUN_API_KEY`, `MINIMAX_API_KEY`, `ZHIPU_API_KEY`),
+and a key must not be sent to a variant nobody selected.
 
 ### Suggestion order
 
@@ -72,6 +72,31 @@ model but not its limits.
 Sibling metadata fills **gaps only**. A model the provider's own row
 describes always wins, because that row matches the endpoint EvoFlux
 resolves by default.
+
+Rates are the one thing filled the other way, from the provider's own row
+into its siblings. A price belongs to a model at a vendor, not to the door
+you came in through, and models.dev does not model it that way: it leaves
+`cost` off StepFun's two `step_plan` rows, because a plan seat buys a quota
+rather than tokens. Today those are the only blank rows in the catalogue —
+Xiaomi's three token plans, MiniMax's and Zhipu's coding plans all publish
+rates — so read literally, StepFun alone would have the endpoint decide
+whether a turn has a price at all: identical tokens against identical
+weights, costed on `stepfun:` and blank on `stepfun-ai-step-plan:`.
+
+A plan row inherits the open platform's rates instead. That is the number
+EvoFlux already promises everywhere else it meets a subscription — Codex,
+Copilot, Kimi, Ollama are all priced at what the same tokens would have cost
+at API rates, which is what makes a plan turn comparable with a paid one
+rather than free. Only a blank is filled: a vendor that prices its plan
+differently and says so keeps what it published, and a model that only a
+plan row lists — StepFun's `step-router-v1` — stays unpriced, because
+nothing here knows what it costs and a borrowed rate would read as fact.
+
+A vendor on two regional hosts names those rows after the host rather than
+after whichever one EvoFlux defaults to, so the variant test accepts the
+curated ID's own prefix as well as its catalog row's. That is the difference
+between `stepfun-ai-step-plan` and `stepfun-step-plan`, and only StepFun has
+it.
 
 ### Provider logos
 
@@ -234,6 +259,19 @@ EvoFlux owns only what no catalogue publishes:
   real.
 - **Adapter constraints** — controls a model documents that EvoFlux's own
   transport cannot express.
+- **Response-field spellings the endpoint lets the client pick.** The
+  catalogue records which field a reasoning trace arrives in, not that a
+  request can choose it. StepFun documents the trace as `reasoning`, with
+  `reasoning_format: "deepseek-style"` returning it as `reasoning_content`
+  instead — the field EvoFlux reads, since the response schemas ignore
+  unknown ones. Every StepFun request sends that format: the Step Plan
+  endpoint currently returns both spellings regardless, and pinning the
+  documented switch is what keeps that from being a dependency on one host's
+  behaviour. The same handler withholds an enum StepFun never published:
+  it documents `low`/`medium`/`high` and no off switch, so an explicit "do
+  not reason" sends no `reasoning_effort` rather than the `none` an
+  OpenAI-shaped endpoint would take. StepFun answers `none` with a 200 and
+  reasons anyway, so thinking cannot actually be switched off there.
 
 Provider envelopes and per-model metadata are both bundled
 (`provider_catalog.json` at ~42 KB, `model_registry.json` at ~4.4 MB) so a
@@ -361,6 +399,15 @@ Provider cache behavior remains adapter-specific:
   one trailing cache checkpoint. Other Bedrock families are left unchanged.
 - DeepSeek, Gemini/Vertex, QwenCloud, Z.AI and Xiaomi retain their provider-side
   implicit cache behavior and normalize their reported cache-hit tokens.
+- StepFun caches prefixes automatically and reports the hit in OpenAI's own
+  `prompt_tokens_details.cached_tokens` (and again at the top level), with
+  `prompt_tokens` counting the cached share — so it is read, and priced at
+  the catalogue's `cache_read` rate, with no adapter code. Verified live: a
+  4,431-token prompt replayed as 4,224 cached. The effort level is part of
+  what is cached, so switching a session between `low` and `high` starts a
+  new prefix. StepFun reports `reasoning_tokens: 0` even when it reasons;
+  the reasoning is inside `completion_tokens`, so the total is billed
+  correctly and only the separate thoughts line is missing.
 - Session-backed team runs persist a profile-scoped, ordered system/tool prefix
   snapshot and reuse it across turns; snapshots rotate only when the model
   profile or tool contract changes. Dynamic memory recall is persisted as
@@ -376,35 +423,3 @@ Explicit Qwen/GPT-5.6 breakpoints and managed Gemini cached-content resources
 are not enabled automatically because cache writes can cost more than ordinary
 input when a prefix is not reused. Cache controls never change tool permission,
 outbound redaction or sandbox boundaries.
-
-## ASDD role guidance for GPT-5.6 family
-
-When the Codex OAuth catalogue exposes the GPT-5.6 family, ASDD benchmarks and
-high-assurance runs prefer:
-
-| Role | Model | Typical reasoning |
-|---|---|---|
-| Lead/convergence owner | `codex:gpt-5.6-sol` | high/xhigh |
-| Architect or independent verifier | `codex:gpt-5.6-sol` | high |
-| Builder mission | `codex:gpt-5.6-terra` | medium/high |
-| Narrow repeatable exploration | `codex:gpt-5.6-luna` or Terra | medium |
-
-This is a role policy, not hard-coded routing. Provider availability, visible
-models, per-agent configuration, capability validation, user overrides, and
-budget remain authoritative. Official OpenAI documentation recommends GPT-5.6
-for demanding multi-step agents, Terra for efficient read-heavy workers, and
-Luna for narrow repeatable work.
-
-## Source and tests
-
-Primary code: `app/agent/providers/registry.py` (provider resolution),
-`model_registry.py` (catalogue normalization), `model_metadata.py` (per-model
-resolution), `thinking.py` (effort translation), `catalog.py`, `factory.py`,
-`capabilities.py`, `model_discovery.py`, `registry_refresh.py` (background
-catalogue refresh), provider subpackages, Settings routes and model-picker
-components. `scripts/update_model_registry.py` regenerates the bundled
-snapshots.
-
-Every provider has adapter/factory tests; shared suites cover streaming,
-capability resolution, discovery, tool content, unconfigured providers and
-model metadata.

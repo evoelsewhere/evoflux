@@ -4,6 +4,153 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Agent Skills now follow Anthropic's Agent Skills architecture
+  (documents/architecture/agent-skills.md). The system prompt lists each
+  Skill's name, description and `SKILL.md` location; the agent reads
+  `SKILL.md` with `read` when a task matches, reads referenced files on
+  demand and runs bundled scripts with `shell`. This is a clean break with no
+  compatibility layer:
+  - the `skill` tool, the per-turn resolver model call and the bounded,
+    query-ranked catalog are gone;
+  - `SKILL.md` frontmatter is the whole bundle contract (`name`,
+    `description`, `license`, `compatibility`, `metadata`, `allowed-tools`,
+    plus `disable-model-invocation` and `user-invocable`).
+    `agents/evoflux.yaml`, `agents/openai.yaml`, `.evoflux.json` and
+    in-bundle `evals/` are no longer read, and nested `parent/child` names
+    are no longer skills;
+  - Skills are no longer scoped to Work or Coding mode, and Settings keeps a
+    single on/off switch per Skill. Older `skill-settings.json` overrides
+    are ignored;
+  - `$skill-name` works anywhere in a message and may name several Skills;
+    `/skill:<name>` is removed. An agent's `skills:` field preloads those
+    Skills into its system prompt;
+  - discovery scans `.evoflux/skills`, `.agents/skills` and `.claude/skills`
+    in projects and the user directory, then plugins, then built-ins.
+    `.opencode/skills` and `/etc/codex/skills` are no longer scanned.
+  - Every bundled Skill was rewritten to the specification and the authoring
+    best practices; `data-analytics` folds its 17 nested workflows into
+    reference files, and the Codex-only Google Doc/Slides report workflows
+    are removed.
+
+### Removed
+
+- Workflows are gone. `/workflow <name>`, the run-inputs dialog, the progress
+  pill, workflow hits in Search Everywhere and in the WebBridge side-panel
+  composer, `/api/workflows`, and the built-in `pr-hygiene` and
+  `second-opinion` definitions are removed; `.evoflux/workflows/*.yaml` files
+  are no longer read. Revision `00000068` drops the `workflow_approvals`,
+  `workflow_executions`, `workflow_node_runs` and `workflow_gate_requests`
+  tables. WebBridge Teach drafts no longer carry a generated `workflow_yaml`,
+  and `ask_user` questions no longer have a `strict` mode — it existed only
+  for workflow gates.
+
+### Added
+
+- StepFun is now a supported provider. `stepfun:` models resolve to the
+  global open platform by default, with `STEPFUN_BASE_URL` selecting the
+  China host or either Step Plan subscription endpoint. Reasoning traces are
+  requested in the spelling EvoFlux renders (`reasoning_content`) rather
+  than StepFun's documented default, and the reasoning effort stays inside
+  the levels StepFun publishes. StepFun cannot switch thinking off, so the
+  off position leaves it at StepFun's own default.
+
+### Added
+
+- `asdd-explore`, a seventh Agent Spec-Driven Skill, fills a freshly installed
+  catalogue from the repository it was installed into. Setup wrote `project.md`
+  as placeholders and nothing ever filled it, while all six phase Skills read
+  it first — so a fresh install ran every phase against blank rules. Explore
+  reads what exists (`AGENTS.md`, README, build and test configuration, CI),
+  asks only what the repository cannot answer, and writes `project.md` with the
+  source beside each claim, plus the `architecture/` and `reference/` pages the
+  code already justifies. It writes no `specs/` and no ADR — the first would
+  contract whatever the code does today, bugs included, and the second states a
+  rejected alternative that does not survive in code — and it defers `AGENTS.md`
+  to `/init`, which already writes those properly. The board offers it until the
+  repository has been described.
+
+### Changed
+
+- Autopilot now carries a change from phase to phase instead of only signing
+  its gates. An agent would clear `auto_approvals`, move the status on and
+  stop — every phase Skill says to stop — leaving the rail showing **Continue**
+  for a person to click, once per phase. A finished turn now asks the same
+  question that button asks and starts the next phase itself, binding the
+  session to the change through the phase prompt already in the transcript.
+  Whether a hop is allowed stays the rail's decision, so autopilot off, a
+  `hold`, an unmet gate or a blocker all end the chain; so do a hop that moved
+  nothing and a chain that reaches twelve hops. It still stops at `ready`,
+  because archiving is the user's click at every tier.
+- The six Agent Spec-Driven phase Skills are rewritten to one shape: the role
+  and the single hard boundary first, a gate table that answers "should I even
+  be here", the ways an agent arrives at that phase, the decisions it owes with
+  the tables behind them, a worked example of the report in the agent's own
+  voice, and closing guardrails that each say why. `asdd-plan` now splits its
+  two jobs into a Design track and a Tasks track chosen by status rather than
+  running them together. The `code_context` instructions each Skill repeated in
+  full — 23 lines apiece, on top of the reference file installed beside them —
+  are down to the rules that phase actually uses.
+- The Agent Spec-Driven catalogue now has a home for each durable kind of
+  page — `architecture/` for process, storage, concurrency and trust
+  boundaries, `architecture/decisions/` for ADR-style records of why they are
+  where they are, `reference/` for the exact API, configuration, schema and
+  CLI surface, and `analysis/` for dated investigations — each with a
+  `README.md` stating what belongs in it. The phase Skills write into them:
+  the plan phase gives every durable page its own task, implementation ships
+  the page with the code, and the archive phase refuses to fold a change whose
+  decisions and surfaces were never written down. Only `specs/` still waits
+  for the archive. An already-installed repository reports `upgrade_required`
+  and the existing Upgrade action adds the directories without touching
+  anything the repository edited.
+
+### Fixed
+
+- Any turn in which `stepfun:step-5-preview` called a tool died on a schema
+  error before the call could run. StepFun sends `type: ""` on the chunks that
+  continue a streaming tool call, where the shared OpenAI-compatible schema
+  accepted only `"function"` or nothing at all. The kind of a tool call is
+  never read — the call is assembled from its index, id and function — so the
+  field is now a plain string on the way in, for the non-streaming shape as
+  well. What EvoFlux sends is unchanged.
+- A StepFun model cost nothing to run on a Step Plan row and something on the
+  open platform, for identical tokens against identical weights. models.dev
+  leaves `cost` off a subscription row — a plan seat buys a quota, not tokens
+  — and StepFun's two `step_plan` rows are the only blank ones in the whole
+  catalogue. They now inherit the vendor's own API rates, which is the number
+  EvoFlux already reports for every other subscription it meets. A model only
+  a plan row lists, such as `step-router-v1`, stays unpriced rather than
+  borrowing a rate nobody published. StepFun's China plan row also counts as a
+  variant of the curated provider now, so `step-router-v1` arrives with its
+  real name and limits instead of as a bare model ID.
+- The Agent Spec-Driven board showed only the repository a session opened on,
+  so a Coding project whose changes live in a sibling repository reported an
+  empty board — and the panel hid it entirely behind setup until *every*
+  repository was installed. The board now lists the changes of every
+  repository in the project, filters by repository and names the owner of each
+  change, reads and actions a change through the repository it lives in, and
+  treats the repositories still to set up as a banner rather than a wall.
+- The Overview panel described the repository a Coding session opened on as
+  though it were the whole project — one branch, one set of changes, no sign
+  the others existed. It now names the repository it is describing and, in a
+  project, lets the reader switch between them.
+- Context compaction could not shrink a long session. The summariser replayed
+  the raw transcript while ordinary turns send one with old tool results
+  projected to receipts, so its request was about twice the size of the turn
+  that triggered it — a 404K-token compaction call plus a 30K output cap
+  against a 262K window, rejected with `context_length_exceeded` on all 137
+  attempts in one session while the context grew to 950 messages. Compaction
+  now sends the same projected prefix an ordinary turn sends, is budgeted
+  against the model's window (with the summary's own cap clamped to a quarter
+  of it), retries smaller when the endpoint rejects it anyway, and stops
+  attempting every turn once it has failed three times in a row.
+- Turn token totals counted a model call once per streaming chunk when the
+  provider restated the call's usage on every chunk, which StepFun does: a
+  33-minute session reported 1.87 billion tokens. A call's usage is now
+  folded across its chunks and recorded once, when the call ends, and a
+  cache figure that appears on only one chunk is no longer lost.
+
 ## [2.0.5] - 2026-09-19
 
 ### Fixed

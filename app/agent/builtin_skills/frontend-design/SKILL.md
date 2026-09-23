@@ -1,6 +1,7 @@
 ---
 name: frontend-design
-description: "Use this skill for work a user will see rendered: websites, landing pages, dashboards, web applications, interface components, style overhauls, and requests to make an interface look better. It classifies the surface as expressive, conventional, or governed by an existing design system, then commits to palette, typography, layout, states, and visual verification. Do not use it for backend-only changes, static artwork, slide decks, or applying a preselected theme."
+description: "Designs and builds distinctive, production-quality frontend interfaces in HTML/CSS, React, or Tailwind: websites, landing pages, marketing pages, dashboards, web applications, interface components, and style overhauls. Classifies the surface as expressive, conventional, or governed by an existing design system, then commits to a token plan for palette, typography, and layout, covers interactive and empty/error states, and verifies contrast, responsiveness, and reduced motion. Use when the user asks to build, style, redesign, or \"make this look better\" for anything rendered in a browser. Not for backend-only changes, static artwork, slide decks, or applying a preselected theme."
+license: Apache-2.0. LICENSE.txt has complete terms
 ---
 
 # Frontend Design
@@ -84,7 +85,7 @@ Every color and type decision in the build must trace back to a line in this pla
 
 **Pass 2 — self-simulate, then revise.** Before building, run the defaults check: imagine receiving a *generic* brief of the same category ("a landing page for a SaaS product") and sketch what you'd produce for it. Compare against your plan. Any part of your plan that also appears in the generic sketch is a default wearing a costume — revise that part and note what you changed and why.
 
-Known default clusters to check against (this list describes current tendencies and will go stale; the self-simulation above is the durable mechanism, this list is just examples): (1) warm cream background near #F4F1EA with a high-contrast serif display and a terracotta accent; (2) near-black background with a single acid-green or vermilion accent; (3) broadsheet layout with hairline rules, zero border-radius, dense columns. All three are legitimate for some briefs — if the brief explicitly asks for one, follow the brief; the brief's words always win. What's forbidden is *arriving* there on a free axis.
+Example default clusters to check against (illustrations only; the self-simulation above is the mechanism that catches defaults, including ones not listed here): (1) warm cream background near #F4F1EA with a high-contrast serif display and a terracotta accent; (2) near-black background with a single acid-green or vermilion accent; (3) broadsheet layout with hairline rules, zero border-radius, dense columns. All three are legitimate for some briefs — if the brief explicitly asks for one, follow the brief; the brief's words always win. What's forbidden is *arriving* there on a free axis.
 
 Only after the plan survives this check do you write code, following the revised plan exactly.
 

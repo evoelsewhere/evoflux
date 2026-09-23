@@ -22,6 +22,7 @@ from app.agent.agent_loop.retry import (
 )
 from app.agent.agent_loop.streaming import cache_affinity_key
 from app.agent.errors import (
+    ContextOverflowError,
     ProviderAuthenticationError,
     ProviderRateLimitError,
     ProviderRequestError,
@@ -1455,7 +1456,127 @@ def test_classify_provider_http_error_codes():
     # 400 with unparseable body -> still typed, falls back to status line
     err = classify_provider_http_error(make(400, None), provider_label="p")
     assert isinstance(err, ProviderRequestError)
+    assert not isinstance(err, ContextOverflowError)
     assert "400" in str(err)
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (400, {"error": {"message": "too big", "code": "context_length_exceeded"}}),
+        (400, {"error": {"message": "too big", "type": "context_window_exceeded"}}),
+        (
+            400,
+            {
+                "error": {
+                    "message": "This model's maximum context length is 131072 tokens."
+                }
+            },
+        ),
+        (400, {"error": {"message": "prompt is too long: 210000 tokens > 200000"}}),
+        (413, {"error": {"message": "Request Entity Too Large"}}),
+    ],
+)
+def test_classify_provider_http_error_context_overflow(status: int, body: dict):
+    import httpx
+
+    response = httpx.Response(
+        status, request=httpx.Request("POST", "http://x"), json=body
+    )
+    err = classify_provider_http_error(
+        httpx.HTTPStatusError("e", request=response.request, response=response),
+        provider_label="mimo-v2.5-pro",
+    )
+    assert isinstance(err, ContextOverflowError)
+    assert err.status_code == status
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Unsupported parameter: max_tokens",
+        "max_tokens must be at most 8192 (maximum for this model)",
+        "Invalid token in request",
+    ],
+)
+def test_classify_provider_http_error_not_overflow(message: str):
+    import httpx
+
+    response = httpx.Response(
+        400,
+        request=httpx.Request("POST", "http://x"),
+        json={"error": {"message": message}},
+    )
+    err = classify_provider_http_error(
+        httpx.HTTPStatusError("e", request=response.request, response=response),
+        provider_label="p",
+    )
+    assert isinstance(err, ProviderRequestError)
+    assert not isinstance(err, ContextOverflowError)
+
+
+class _ForceSummarizationProbe(BaseAgentHook):
+    """Records whether each model call was preceded by a forced compaction."""
+
+    def __init__(self) -> None:
+        self.forced: list[bool] = []
+
+    async def before_model(self, ctx, state, request=None):
+        self.forced.append(state.metadata.get("force_summarization") is True)
+        return None
+
+
+def _overflow_stream_then(
+    chunks_after: list[list[ChatCompletionChunk]], overflows: int
+):
+    import httpx
+
+    calls = 0
+    remaining = iter(chunks_after)
+
+    async def stream(messages, tools=None, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls <= overflows:
+            response = httpx.Response(
+                400,
+                request=httpx.Request("POST", "http://x"),
+                json={"error": {"code": "context_length_exceeded", "message": "x"}},
+            )
+            raise httpx.HTTPStatusError(
+                "bad request", request=response.request, response=response
+            )
+        for chunk in next(remaining):
+            yield chunk
+
+    return stream
+
+
+async def test_context_overflow_forces_compaction_and_retries_once():
+    provider = MockProvider([[]])
+    provider.stream = _overflow_stream_then(  # type: ignore[method-assign]
+        [[make_text_chunk("recovered")]], overflows=1
+    )
+    probe = _ForceSummarizationProbe()
+    agent = Agent(name="bot", llm_provider=provider, hooks=[probe])
+
+    msgs = await agent.run([HumanMessage(content="hi")])
+
+    assert probe.forced == [False, True]
+    reply = last_assistant(msgs)
+    assert reply is not None and reply.content == "recovered"
+
+
+async def test_context_overflow_twice_surfaces_error():
+    provider = MockProvider([[]])
+    provider.stream = _overflow_stream_then([], overflows=2)  # type: ignore[method-assign]
+    probe = _ForceSummarizationProbe()
+    agent = Agent(name="bot", llm_provider=provider, hooks=[probe])
+
+    with pytest.raises(ContextOverflowError):
+        await agent.run([HumanMessage(content="hi")])
+
+    assert probe.forced == [False, True]
 
 
 async def test_stream_with_retry_on_connect_error():

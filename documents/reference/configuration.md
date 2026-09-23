@@ -36,19 +36,13 @@ Derived values:
 | `<config>/settings.yaml` | Settings/runtime | typed operational preferences |
 | `<config>/agents/**/*.md` | user | agent frontmatter and prompt overrides |
 | `<config>/skills/*/SKILL.md` | user | custom Skill bundles |
-| `<config>/skill-settings.json` | Settings | per-discovered-variant runtime overlay |
+| `<config>/skill-settings.json` | Settings | names of Skills turned off (`{"version": 2, "disabled": [...]}`) |
 | `<config>/mcp.json` | user/Settings | global stdio/HTTP MCP servers |
 | `<config>/sandbox.yaml` | user/Settings | denied paths and outbound policy |
 | `<config>/model_registry.yaml` | operator | model capability/metadata corrections |
-| `<config>/workflows/*.yaml` | user | global Workflow definitions |
 | `<config>/plugins/*.py` | trusted user | legacy in-process hook plugins |
 | `<data>/agent-plugins/` | Plugin Center | installed package registry and private data |
-| `<workspace>/.evoflux/workflows/*.yaml` | repository | project-local Coding Workflows |
 | `<workspace>/.evoflux/launch.json` | repository | preview/process launch definitions |
-| `<workspace>/.evoflux/asdd/config.json` | repository/ASDD setup | the catalogue path, the skills directory and the six installed Skill names |
-| `<workspace>/<data_directory>/` | repository | the ASDD catalogue: `project.md`, `specs/<capability>/spec.md` and `changes/` (default `documents/asdd`) |
-| `<source-workspace>/.evoflux/asdd/locks/` | machine-local | the per-repository catalogue write lock; linked Git worktrees resolve to this canonical source owner |
-| `<workspace>/.evoflux/skills/asdd-*/` | repository | Coding-only portable ASDD phase Skills installed by ASDD setup |
 
 Project `.env` is loaded first and `~/.config/evoflux/.env` overrides it.
 Process environment values follow Pydantic settings precedence. Keep secrets out
@@ -84,7 +78,6 @@ before atomic save. Models use `provider:model`.
 | `CORS_ORIGINS` | allowed development/external API origins |
 | `EVOFLUX_MODEL_REGISTRY_REFRESH` | allow refreshed `models.dev` metadata |
 | `EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS` | background `models.dev` re-fetch interval (24, minimum 1) |
-| `EVOFLUX_CODE_INDEX_EXECUTION` | `process` (production) or test/embedder `thread` |
 | `EVOFLUX_DESKTOP_TOKEN` | random desktop-shell bearer token |
 | `EVOFLUX_ACCESS_KEY` | external/LAN bearer fallback |
 | `EVOFLUX_BASH` | explicit Bash executable on Windows when auto-detection fails |
@@ -94,8 +87,8 @@ before atomic save. Models use `provider:model`.
 
 Common keys include `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY`, `ZAI_API_KEY`, `NVIDIA_API_KEY`, `XAI_API_KEY`,
-`DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, `XIAOMI_API_KEY`, `FCI_API_KEY`,
-`MOONSHOT_API_KEY`,
+`DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, `XIAOMI_API_KEY`, `STEPFUN_API_KEY`,
+`FCI_API_KEY`, `MOONSHOT_API_KEY`,
 `FOUNDRY_API_KEY`, and provider-specific base URL/resource fields. Bedrock uses
 the standard AWS credential chain/profile and region. Vertex uses Google cloud
 project/location credentials. Codex and Copilot use OAuth cache files created
@@ -105,6 +98,18 @@ QwenCloud uses `DASHSCOPE_BASE_URL` when the key belongs to Token Plan, Coding
 Plan, or another host instead of the default international pay-as-you-go API.
 The value is the full OpenAI-compatible root, including `/compatible-mode/v1`
 where QwenCloud documents it, and must match the selected key type.
+
+StepFun defaults to the global open platform (`https://api.stepfun.ai/v1`).
+`STEPFUN_BASE_URL` selects the China host (`https://api.stepfun.com/v1`) or
+either Step Plan subscription endpoint (`.../step_plan/v1`); the value is the
+full OpenAI-compatible root and must match where the key was issued. One key
+authenticates every StepFun host — which one has quota is what differs.
+
+models.dev does not list `step-5-preview` or the `stepaudio-3` family yet, so
+those models appear from live discovery with no context window, price or
+reasoning levels, and compaction falls back to its default threshold rather
+than the model's real window. Add them to the overlay at
+`<config>/model_registry.yaml` to fill that in before the catalogue does.
 
 The canonical credential field catalogue is `app/agent/providers/catalog.py`;
 do not duplicate provider secrets into Agent Markdown.

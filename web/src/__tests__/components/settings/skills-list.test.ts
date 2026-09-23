@@ -1,44 +1,69 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  resolveRequestedSkillMode,
-  resolveSkillDetailMode,
-} from '@/lib/skill-detail-mode'
+  SKILL_SOURCE_LABEL,
+  skillInvalidReason,
+  skillStatusLabels,
+} from '@/components/settings/skillFacts'
 
-describe('skill list detail scope', () => {
-  it('does not infer a detail mode when navigation omitted one', () => {
-    expect(resolveRequestedSkillMode(undefined)).toBeNull()
-    expect(resolveRequestedSkillMode('all')).toBeNull()
-    expect(resolveRequestedSkillMode('coding')).toBe('coding')
+const base = {
+  enabled: true,
+  model_invocable: true,
+  user_invocable: true,
+  valid: true,
+  diagnostics: [],
+  shadowed_paths: [],
+  editable: true,
+  symlinked: false,
+  resource_count: 0,
+}
+
+describe('skill list facts', () => {
+  it('shows nothing extra for an enabled, editable, valid skill', () => {
+    expect(skillStatusLabels(base)).toEqual([])
   })
 
-  it('keeps invalid rows unscoped so mode discovery cannot replace the selected candidate', () => {
+  it('labels disabled, hidden, not-invocable, shadowing, and read-only skills', () => {
     expect(
-      resolveSkillDetailMode({
-        valid: false,
-        modes: ['coding'],
-        modeFilter: 'coding',
-        workspaceScoped: true,
+      skillStatusLabels({
+        ...base,
+        enabled: false,
+        model_invocable: false,
+        user_invocable: false,
+        shadowed_paths: ['/home/u/.claude/skills/pdf/SKILL.md'],
+        editable: false,
+        resource_count: 2,
       }),
-    ).toBeNull()
+    ).toEqual([
+      'Disabled',
+      'Hidden from model',
+      'Not user-invocable',
+      'Shadows 1 other skill',
+      '2 files',
+      'Read-only',
+    ])
   })
 
-  it('keeps valid rows scoped to an explicit filter or a single available mode', () => {
-    expect(
-      resolveSkillDetailMode({
-        valid: true,
-        modes: ['work', 'coding'],
-        modeFilter: 'work',
-        workspaceScoped: true,
-      }),
-    ).toBe('work')
-    expect(
-      resolveSkillDetailMode({
-        valid: true,
-        modes: ['coding'],
-        modeFilter: 'all',
-        workspaceScoped: false,
-      }),
-    ).toBe('coding')
+  it('counts diagnostics and uses the first error as the invalid reason', () => {
+    const invalid = {
+      ...base,
+      valid: false,
+      diagnostics: [
+        { code: 'unknown-field', message: 'Unknown field foo.', severity: 'warning' as const },
+        { code: 'missing-description', message: 'Frontmatter requires a description.', severity: 'error' as const },
+      ],
+    }
+    expect(skillStatusLabels(invalid)).toEqual(['Invalid', '2 diagnostics'])
+    expect(skillInvalidReason(invalid)).toBe('Frontmatter requires a description.')
+    expect(skillInvalidReason(base)).toBeUndefined()
+  })
+
+  it('names every source', () => {
+    expect(SKILL_SOURCE_LABEL).toEqual({
+      project: 'Project',
+      user: 'User',
+      plugin: 'Plugin',
+      builtin: 'Built-in',
+    })
   })
 })

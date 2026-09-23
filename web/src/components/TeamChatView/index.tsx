@@ -16,7 +16,7 @@
  *     (carefully sequenced so ``loadSession`` runs *before*
  *     ``connectStream`` to avoid wiping replayed mid-turn state — see the
  *     comment inside the hook).
- *   - ``useSlashCommandRegistry`` — slash / snippet / workflow command
+ *   - ``useSlashCommandRegistry`` — slash / snippet command
  *     registry and the submit-time interceptors.
  *   - ``useMobileEdgeSwipes``  — mobile drawer edge-swipe gestures.
  *   - ``useTeamCommands``      — Command Palette command list.
@@ -81,7 +81,6 @@ import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBr
 import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
-import type { AsddChatRequest } from '@/components/AgentSpecsPanel'
 import { useSideChat } from '../SideChatPanel/useSideChat'
 import type {
   AgentCapabilities as AgentCapabilitiesType,
@@ -93,6 +92,7 @@ import type {
 import { useTeamCommands } from './useTeamCommands'
 import { useGlobalSearch } from './useGlobalSearch'
 import { useTeamSse } from './useTeamSse'
+import { useGeneratedDocumentWatcher } from '@/hooks/useGeneratedDocumentWatcher'
 import { useSlashCommandRegistry } from './useSlashCommandRegistry'
 import { useMobileEdgeSwipes } from './useMobileEdgeSwipes'
 import { VIEW_MODES, type ViewMode } from './types'
@@ -123,11 +123,6 @@ const WorkspaceFilesPanel = lazy(() =>
     default: module.WorkspaceFilesPanel,
   })),
 )
-const ProcessPanel = lazy(() =>
-  import('@/components/ProcessPanel').then((module) => ({
-    default: module.ProcessPanel,
-  })),
-)
 const CodingFileViewerPanel = lazy(() =>
   import('@/components/CodingFileViewerPanel').then((module) => ({
     default: module.CodingFileViewerPanel,
@@ -141,11 +136,6 @@ const CodingWorkspacePanel = lazy(() =>
 const GitWorkspacePanel = lazy(() =>
   import('@/components/GitWorkspacePanel').then((module) => ({
     default: module.GitWorkspacePanel,
-  })),
-)
-const CodingSummaryPanel = lazy(() =>
-  import('@/components/CodingSummaryPanel').then((module) => ({
-    default: module.CodingSummaryPanel,
   })),
 )
 const SideChatPanel = lazy(() =>
@@ -182,11 +172,6 @@ const PluginCenterPanel = lazy(() =>
 const ProblemsPanel = lazy(() =>
   import('@/components/ProblemsPanel').then((module) => ({
     default: module.ProblemsPanel,
-  })),
-)
-const AgentSpecsPanel = lazy(() =>
-  import('@/components/AgentSpecsPanel').then((module) => ({
-    default: module.AgentSpecsPanel,
   })),
 )
 const loadSplitWorkbench = () =>
@@ -492,6 +477,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
   const toggleTerminal = useUIStore((s) => s.toggleTerminal)
   const openGitChanges = useUIStore((s) => s.openGitChanges)
+  const openGitReviews = useUIStore((s) => s.openGitReviews)
   // Self-terminating: clearing the host makes the predicate false, so this
   // settles on the retry rather than looping.
   if (shouldClearFilesEditor(codingFileViewerHost, workbenchOpen, hasFilesTab)) {
@@ -539,15 +525,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   useEffect(() => {
     if (!sessionIdState && mode !== 'coding') closeWorkbenchTool('files')
     if (mode !== 'coding') {
-      closeWorkbenchTool('graph')
       closeWorkbenchTool('source-control')
-      closeWorkbenchTool('pull-requests')
       closeWorkbenchTool('problems')
     }
+    // Changes stays open without a workspace: its Review view lists pull
+    // requests across repositories, and its Changes view offers to open one.
     if (mode === 'coding' && !workspace) {
       closeWorkbenchTool('files')
-      closeWorkbenchTool('graph')
-      closeWorkbenchTool('source-control')
       closeWorkbenchTool('problems')
     }
   }, [closeWorkbenchTool, mode, sessionIdState, workspace])
@@ -800,6 +784,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     workspace,
     enabled: fileRefsEnabled && (mode === 'coding' ? Boolean(workspace) : Boolean(sessionIdState)),
   })
+
+  // Live previews for Office files the agent writes in a Work session
+  // workspace (Coding repositories have their own watchers).
+  useGeneratedDocumentWatcher(mode === 'coding' ? null : sessionIdState)
 
   // ── Init / reconnect ───────────────────────────────────────────────────────
 
@@ -1319,19 +1307,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     handleSlashCommand,
     handleSnippetCommand,
     tryHandleBuiltinGoalCommand,
-    tryHandleWorkflowCommand,
     expandUserCommand,
-    startWorkflowRun,
-    runInputsRequest,
-    setRunInputsRequest,
     runGoalCommand,
   } = useSlashCommandRegistry({
     mode,
     workspace,
     agentWorkspace,
     workspaceRoots: activeProject?.workspaces.map((item) => item.path),
-    sessionId,
-    sessionIdState,
     selectedModel,
     selectedThinkingLevel,
     inputRef,
@@ -1519,19 +1501,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       )
     : null
 
-  // An ASDD change belongs to the repository, not to a chat, so a phase always
-  // runs in the chat the user is looking at. There is nothing to navigate to
-  // and no session to reconcile — the prompt just lands in this input.
-  const handleAsddRunInChat = useCallback((request: AsddChatRequest) => {
-    inputRef.current?.setValue(request.prompt)
-    inputRef.current?.focus()
-    pushToast({
-      tone: 'info',
-      title: `${request.skill} prompt ready`,
-      description: `Review the kickoff prompt for ${request.changeId}, then send when ready.`,
-    })
-  }, [pushToast])
-
   // A page an agent opened has no tab in the workbench when the preview is
   // what the user asked for, so it hangs here instead — over the
   // conversation, as a card of its own.
@@ -1621,7 +1590,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       return true
     }
     if (await tryHandleBuiltinGoalCommand(content)) return true
-    if (await tryHandleWorkflowCommand(content)) return true
     const shell = body.startsWith('!')
     const expanded = shell
       ? `!${body.slice(1).trim()}`
@@ -1667,7 +1635,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     selectedThinkingLevel,
     sendMessage,
     tryHandleBuiltinGoalCommand,
-    tryHandleWorkflowCommand,
     webBridgeEnabled,
     webBridgeExtensionId,
     workspace,
@@ -1685,32 +1652,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       <Suspense fallback={<PanelLoadingFallback />}>
         {mode === 'coding' && workspace && (
           <>
-            <WorkbenchSurface tool="overview">
-              {(_tab, active) => (
-                <CodingSummaryPanel
-                  workspace={workspace}
-                  sessionId={sessionIdState}
-                  open={active}
-                  isWorking={isTeamWorking}
-                  onOpenFile={(path) => {
-                    setCodingFileViewer({
-                      path,
-                      name: path.split('/').pop() ?? path,
-                      size: 0,
-                      mtime: 0,
-                      mime: 'text/plain',
-                    })
-                    setCodingFileViewerHost('standalone')
-                    setCodingFileViewerMode('diff')
-                  }}
-                />
-              )}
-            </WorkbenchSurface>
             <WorkbenchSurface tool="files">
               <CodingWorkspacePanel
                 workspace={workspace}
                 open
-                view="files"
                 embedded
                 selectedFilePath={codingFileViewer?.path ?? null}
                 selectedFile={codingFileViewer}
@@ -1721,28 +1666,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 onClose={() => closeWorkbenchTool('files')}
                 projectId={projectIdState}
               />
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="graph">
-              <CodingWorkspacePanel
-                workspace={workspace}
-                open
-                view="graph"
-                embedded
-                selectedFilePath={codingFileViewer?.path ?? null}
-                onFileSelect={handleCodingFileSelect}
-                onClose={() => closeWorkbenchTool('graph')}
-                projectId={projectIdState}
-              />
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="asdd">
-              {(_tab, active) => (
-                <AgentSpecsPanel
-                  workspace={workspace}
-                  projectId={projectIdState}
-                  active={active}
-                  onRunInChat={handleAsddRunInChat}
-                />
-              )}
             </WorkbenchSurface>
           </>
         )}
@@ -1765,11 +1688,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               workspace={mode === 'coding' ? workspace : null}
               activeFilePath={codingFileViewer?.path ?? null}
             />
-          )}
-        </WorkbenchSurface>
-        <WorkbenchSurface tool="processes">
-          {(_tab, active) => (
-            <ProcessPanel active={active} currentSessionId={sessionIdState} />
           )}
         </WorkbenchSurface>
         <WorkbenchSurface tool="browser">
@@ -1833,21 +1751,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
               {(_tab, active) => (
                 <GitWorkspacePanel
                   open={active}
-                  view="changes"
-                  scope="session"
-                  workspace={workspace}
-                  projectId={projectIdState}
-                  focus={null}
-                  onOpenInChat={handleOpenCodeReviewChat}
-                  onOpenWorkspace={handleOpenWorkspaceDialog}
-                />
-              )}
-            </WorkbenchSurface>
-            <WorkbenchSurface tool="pull-requests">
-              {(_tab, active) => (
-                <GitWorkspacePanel
-                  open={active}
-                  view="reviews"
                   scope={pullRequestsScope}
                   workspace={workspace}
                   projectId={projectIdState}
@@ -1967,14 +1870,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       paletteCommands={paletteCommands}
       searchPaletteCommands={searchPaletteCommands}
       onClosePalette={() => setShowPalette(false)}
-      runInputsRequest={runInputsRequest}
-      onCancelRunInputs={() => setRunInputsRequest(null)}
-      onRunInputs={async (values) => {
-        if (!runInputsRequest) return
-        await startWorkflowRun(runInputsRequest.name, values)
-        setRunInputsRequest(null)
-        pushToast({ tone: 'success', title: `${runInputsRequest.name} started` })
-      }}
     />
   )
 
@@ -2012,7 +1907,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           workspace={workbenchWorkspace}
           onChooseWorkspace={mode === 'coding' ? handleOpenWorkspaceDialog : undefined}
           reviewContext={mode === 'coding' ? reviewSessionContext : null}
-          onOpenReviewContext={() => openWorkbenchTool('pull-requests')}
+          onOpenReviewContext={openGitReviews}
           webBridgeEnabled={webBridgeEnabled}
           onWebBridgeEnabledChange={handleWebBridgeEnabledChange}
           selectedExtensionId={webBridgeExtensionId}

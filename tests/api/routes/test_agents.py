@@ -41,10 +41,9 @@ def fs_dirs(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(settings, "AGENTS_DIR", str(agents))
     monkeypatch.setattr(settings, "SKILLS_DIR", str(skills))
     monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(config))
-    from app.agent.tools.builtin import skill as skill_module
+    from app.agent.skills.registry import invalidate_skill_cache
 
-    monkeypatch.setattr(skill_module, "_iter_skill_roots", lambda: [skills])
-    skill_module._discover_skills_cached.cache_clear()
+    invalidate_skill_cache()
     return agents, skills
 
 
@@ -404,9 +403,10 @@ async def test_list_existing_coding_explorer_uses_builtin_profile(
     rows = {row["name"]: row for row in res.json()["agents"]}
     explorer = rows["coding/explorer"]
     assert explorer["description"].startswith("Checks the current codebase")
-    assert set(["date", "glob", "grep", "ls", "read", "shell", "skill"]).issubset(
+    assert set(["date", "glob", "grep", "ls", "read", "shell"]).issubset(
         explorer["tools"]
     )
+    assert "skill" not in explorer["tools"]
     # Tier grant: members get every tier tool (write included) but never
     # lead-only tools (user interaction / session structure).
     assert "write" in explorer["tools"]
@@ -467,7 +467,7 @@ model: zai:glm-5-turbo
     assert res.status_code == 200
     row = res.json()["agents"][0]
     assert row["description"] is not None
-    assert "skill" in row["tools"]
+    assert "skill" not in row["tools"]
     assert {"todo_manage", "schedule_task", "note"}.issubset(row["tools"])
     assert "shell" in row["tools"]
     assert row["mcp"] == []
@@ -500,7 +500,6 @@ Extra prompt.
 
     assert res.status_code == 200
     row = res.json()["agents"][0]
-    assert row["tools"].count("skill") == 1
     assert row["tools"].count("todo_manage") == 1
     assert row["tools"].count("shell") == 1
     assert row["tools"].count("memory_search") == 1
@@ -554,22 +553,37 @@ async def test_registry_returns_catalog(
     monkeypatch.setattr(
         agents_routes, "discover_provider_models", AsyncMock(return_value=[])
     )
+    from app.agent.skills.models import Skill
+    from app.agent.skills.registry import SkillCatalog
+    from app.agent.skills.spec import SkillDiagnostic
+
+    def skill(name: str, description: str, **fields) -> Skill:
+        return Skill(
+            name=name,
+            description=description,
+            location=Path("/skills") / name / "SKILL.md",
+            root=Path("/skills"),
+            source="user",
+            **fields,
+        )
+
+    catalog = SkillCatalog(
+        {
+            item.name: item
+            for item in (
+                skill("work-research", "Research work."),
+                skill("hidden-helper", "Helps.", disable_model_invocation=True),
+                skill("self-healing", "Repair configuration.", enabled=False),
+                skill(
+                    "broken",
+                    "",
+                    diagnostics=[SkillDiagnostic("missing-description", "x", "error")],
+                ),
+            )
+        }
+    )
     monkeypatch.setattr(
-        "app.api.routes.skills._discover_runtime_skills",
-        lambda *_args, **_kwargs: {
-            "work-research": {
-                "description": "Research work.",
-                "modes": ["work"],
-            },
-            "coding-investigation": {
-                "description": "Investigate code.",
-                "modes": ["coding"],
-            },
-            "self-healing": {
-                "description": "Repair configuration.",
-                "modes": ["work", "coding"],
-            },
-        },
+        "app.agent.skills.registry.discover_skills", lambda *_a, **_k: catalog
     )
 
     res = await client.get("/api/agents/registry")
@@ -593,10 +607,29 @@ async def test_registry_returns_catalog(
     assert by_name["worktree_start"]["tiers"] == ["coding"]
     assert by_name["read"]["tiers"] is None
 
-    skills_by_name = {skill["name"]: skill for skill in body["skills"]}
-    assert skills_by_name["work-research"]["modes"] == ["work"]
-    assert skills_by_name["coding-investigation"]["modes"] == ["coding"]
-    assert skills_by_name["self-healing"]["modes"] == ["work", "coding"]
+    assert body["skills"] == [
+        {
+            "name": "hidden-helper",
+            "description": "Helps.",
+            "enabled": True,
+            "model_invocable": False,
+            "user_invocable": True,
+        },
+        {
+            "name": "self-healing",
+            "description": "Repair configuration.",
+            "enabled": False,
+            "model_invocable": True,
+            "user_invocable": True,
+        },
+        {
+            "name": "work-research",
+            "description": "Research work.",
+            "enabled": True,
+            "model_invocable": True,
+            "user_invocable": True,
+        },
+    ]
 
 
 @pytest.mark.asyncio
@@ -621,12 +654,18 @@ async def test_registry_discovers_explicit_workspace_skills(
 
     response = await client.get(
         "/api/agents/registry",
-        params=[("workspace", str(workspace)), ("mode", "coding")],
+        params=[("workspace", str(workspace))],
     )
 
     assert response.status_code == 200
     skills = {item["name"]: item for item in response.json()["skills"]}
-    assert skills["project-only"]["modes"] == ["work", "coding"]
+    assert skills["project-only"]["description"] == "Project workflow."
+    assert skills["project-only"]["enabled"] is True
+
+    without_workspace = await client.get("/api/agents/registry")
+    assert "project-only" not in {
+        item["name"] for item in without_workspace.json()["skills"]
+    }
 
 
 @pytest.mark.asyncio

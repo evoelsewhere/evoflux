@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import subprocess
 from types import SimpleNamespace
 
 import pytest
@@ -147,58 +146,6 @@ def test_changed_files_are_grouped_by_authorized_repository(
         backend.resolve(): [Path("app/service.py")],
         frontend.resolve(): [Path("src/App.tsx")],
     }
-
-
-async def test_changes_not_made_by_file_tools_still_require_verification(
-    sandbox: Path,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    subprocess.run(["git", "init", "-q", str(sandbox)], check=True)
-    baseline = sandbox / "baseline.py"
-    baseline.write_text("value = 1\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(sandbox), "add", "baseline.py"], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(sandbox),
-            "-c",
-            "user.name=EvoFlux Test",
-            "-c",
-            "user.email=test@evoflux.local",
-            "commit",
-            "-q",
-            "-m",
-            "baseline",
-        ],
-        check=True,
-    )
-    hook = CompletionVerificationHook()
-    state = SimpleNamespace(
-        metadata={
-            "_asdd_change_ids": ["add-user-auth"],
-        }
-    )
-    ctx = SimpleNamespace(session_id="verification-test")
-    await hook.before_agent(ctx, state)
-
-    seen: dict[str, tuple[str, ...]] = {}
-
-    async def record_checks(
-        workspace, changed_files, artifact_hash, rigor, planned_commands
-    ):
-        seen["changed_files"] = changed_files
-        return []
-
-    monkeypatch.setattr(verification_module, "_run_required_checks", record_checks)
-
-    # Written by a shell command rather than a file tool: only the git baseline
-    # can see it, which is why the hook takes one when ASDD is in use.
-    (sandbox / "outside.py").write_text("value = 2\n", encoding="utf-8")
-    feedback = await hook.before_completion(ctx, state, SimpleNamespace())
-
-    assert any("outside.py" in path for path in seen["changed_files"])
-    assert feedback is not None
 
 
 async def test_changed_file_requires_and_persists_passing_evidence(

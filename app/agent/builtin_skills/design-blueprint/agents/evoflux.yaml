@@ -1,6 +1,0 @@
-interface:
-  display_name: "Design Blueprint"
-  short_description: "Write the design spec before any visual is built"
-  default_prompt: "Use $design-blueprint to produce the design specification before anything is mocked up."
-policy:
-  allow_implicit_invocation: true

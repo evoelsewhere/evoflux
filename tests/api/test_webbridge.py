@@ -239,7 +239,7 @@ def test_side_chat_stream_sanitizes_typed_block_payloads(
     assert "must-not-leak" not in event["data"]
 
 
-def test_side_chat_stream_keeps_only_safe_skill_presentation():
+def test_side_chat_stream_presents_skill_file_read_as_activation():
     event = _browser_panel_stream_event(
         {
             "event": "tool_start",
@@ -247,13 +247,9 @@ def test_side_chat_stream_keeps_only_safe_skill_presentation():
                 {
                     "agent": "lead",
                     "tool_call_id": "skill-1",
-                    "name": "skill",
+                    "name": "read",
                     "arguments": json.dumps(
-                        {
-                            "action": "load",
-                            "skill_name": "work-writing",
-                            "token": "must-not-leak",
-                        }
+                        {"path": "/private/must-not-leak/work-writing/SKILL.md"}
                     ),
                 }
             ),
@@ -265,12 +261,42 @@ def test_side_chat_stream_keeps_only_safe_skill_presentation():
         "type": "tool_start",
         "id": "skill-1",
         "agent": "lead",
-        "name": "skill",
+        "name": "read",
         "skill_action": "load",
         "skill_name": "work-writing",
         "state": "running",
     }
     assert "must-not-leak" not in event["data"]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"path": "/repo/docs/README.md"},
+        {"path": "/skills/work-writing/SKILL.md", "offset": 40},
+        {"path": "/skills/work-writing/SKILL.md", "limit": 10},
+        {"path": "SKILL.md"},
+    ],
+)
+def test_side_chat_stream_ignores_reads_that_are_not_skill_activations(arguments):
+    event = _browser_panel_stream_event(
+        {
+            "event": "tool_start",
+            "data": json.dumps(
+                {
+                    "agent": "lead",
+                    "tool_call_id": "read-1",
+                    "name": "read",
+                    "arguments": json.dumps(arguments),
+                }
+            ),
+        }
+    )
+
+    assert event is not None
+    payload = json.loads(event["data"])
+    assert "skill_name" not in payload
+    assert "skill_action" not in payload
 
 
 def test_side_chat_stream_projects_sanitized_webbridge_arguments():
@@ -538,28 +564,6 @@ def test_side_chat_stream_uses_envelope_event_as_authoritative_type():
             {"type": "inbox", "agent": "lead", "from_agent": "researcher"},
         ),
         (
-            "workflow_progress",
-            {
-                "session_id": "session-1",
-                "execution_id": "execution-1",
-                "definition_name": "must-not-leak",
-                "status": "running",
-                "node_id": "step-1",
-                "node_index": 1,
-                "total_nodes": 3,
-                "error": "must-not-leak",
-            },
-            {
-                "type": "workflow_progress",
-                "session_id": "session-1",
-                "execution_id": "execution-1",
-                "status": "running",
-                "node_id": "step-1",
-                "node_index": 1,
-                "total_nodes": 3,
-            },
-        ),
-        (
             "goal_status",
             {
                 "session_id": "session-1",
@@ -816,13 +820,9 @@ def test_side_chat_history_keeps_safe_skill_presentation_without_arguments():
             {
                 "id": "skill-1",
                 "function": {
-                    "name": "skill",
+                    "name": "read",
                     "arguments": json.dumps(
-                        {
-                            "action": "load",
-                            "skill_name": "work-writing",
-                            "token": "must-not-leak",
-                        }
+                        {"path": "C:\\must-not-leak\\skills\\work-writing\\SKILL.md"}
                     ),
                 },
             }
@@ -835,7 +835,7 @@ def test_side_chat_history_keeps_safe_skill_presentation_without_arguments():
         session_id=session_id,
         role="tool",
         content="private tool output",
-        name="skill",
+        name="read",
         created_at=created_at,
         extra={"duration_ms": 43},
         tool_calls=None,
@@ -850,7 +850,7 @@ def test_side_chat_history_keeps_safe_skill_presentation_without_arguments():
             "id": f"{assistant.id}:tool:skill-1",
             "type": "tool",
             "agent": "lead",
-            "name": "skill",
+            "name": "read",
             "tool_call_id": "skill-1",
             "done": True,
             "skill_action": "load",
@@ -2772,13 +2772,8 @@ async def test_teach_draft_is_pairing_scoped_reviewed_and_replayed(
     assert draft["parameter_names"] == ["report_password"]
     assert draft["capture_warnings"] == ["Recording reached the action limit."]
     assert "value" not in draft["actions"][1]
-    from app.workflow.models import parse_definition
-
-    workflow = parse_definition(draft["workflow_yaml"])
-    assert len(workflow.nodes) == 4
-    assert workflow.inputs[0].name == "report_password"
-    assert "never-persisted" not in draft["workflow_yaml"]
-    assert "{{inputs.report_password}}" in draft["workflow_yaml"]
+    assert "workflow_yaml" not in draft
+    assert "never-persisted" not in json.dumps(draft)
 
     unapproved = client.post(f"{_PREFIX}/teach-drafts/{draft['id']}/replay", json={})
     assert unapproved.status_code == 409
@@ -3388,13 +3383,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
-    from app.api.schemas.skills import SkillListResponse, SkillSummary
-    from app.api.schemas.workflows import (
-        WorkflowInputOut,
-        WorkflowListItem,
-        WorkflowListResponse,
-        WorkflowRunResponse,
-    )
     from app.core import db as db_module
     from app.models.chat import ChatSession
 
@@ -3414,6 +3402,14 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
         encoding="utf-8",
     )
     source_path.write_text("print('hello')\n", encoding="utf-8")
+    project_skills = workspace / ".evoflux" / "skills"
+    for name, extra in (("repo-audit", ""), ("model-only", "user-invocable: false\n")):
+        (project_skills / name).mkdir(parents=True)
+        (project_skills / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Audits this repository.\n{extra}---\n\n"
+            "Audit it.\n",
+            encoding="utf-8",
+        )
 
     async with db_module.async_session_factory() as db:
         session = ChatSession(
@@ -3424,40 +3420,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
         )
         db.add(session)
         await db.commit()
-
-    skills = SkillListResponse(
-        skills=[
-            SkillSummary(
-                name="repo-audit",
-                display_name="Repo Audit",
-                short_description="Audit this repository",
-                default_prompt="$repo-audit focus on risks",
-                source="project-EvoFlux",
-                modes=["coding"],
-            )
-        ]
-    )
-    workflows = WorkflowListResponse(
-        workflows=[
-            WorkflowListItem(
-                name="release-check",
-                description="Verify a release",
-                scope="coding",
-                inputs=[WorkflowInputOut(name="version", type="string", required=True)],
-                hash="a" * 64,
-                root=str(workspace),
-                source_path=str(workspace / "release-check.yaml"),
-                approved=True,
-                valid=True,
-                errors=[],
-                node_count=1,
-            )
-        ]
-    )
-    list_skills = AsyncMock(return_value=skills)
-    list_workflows = AsyncMock(return_value=workflows)
-    monkeypatch.setattr("app.api.routes.skills.list_skills", list_skills)
-    monkeypatch.setattr("app.api.routes.workflows.list_workflows", list_workflows)
 
     owner = _pair_extension(client, "Composer owner")
     other = _pair_extension(client, "Composer outsider")
@@ -3473,19 +3435,17 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
     assert ("builtin", "continue") in commands
     assert commands[("builtin", "shell")]["insert_text"] == "! "
     assert commands[("command", "review")]["source"] == "project-EvoFlux"
-    assert commands[("skill", "skill:repo-audit")]["insert_text"] == (
-        "skill:repo-audit focus on risks"
-    )
-    assert commands[("workflow", "workflow-release-check")]["inputs"] == [
-        {
-            "name": "version",
-            "type": "string",
-            "required": True,
-            "default": None,
-            "options": None,
-            "description": "",
-        }
-    ]
+    assert commands[("skill", "skill:repo-audit")] == {
+        "id": "skill:repo-audit",
+        "label": "repo-audit",
+        "description": "Audits this repository.",
+        "category": "skill",
+        "insert_text": "$repo-audit ",
+        "keep_input_open": True,
+        "source": "project",
+    }
+    assert ("skill", "skill:model-only") not in commands
+    assert ("builtin", "skill") not in commands
     assert catalog["snippets"] == [
         {
             "id": "git/check",
@@ -3497,7 +3457,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
     references = {(item["type"], item["path"]) for item in catalog["references"]}
     assert ("file", "src/app.py") in references
     assert ("directory", "src") in references
-    list_skills.assert_awaited_once_with(workspace=[str(workspace)], mode="coding")
 
     rendered_command = client.post(
         f"{_PREFIX}/sessions/{session.id}/composer/commands/review/render",
@@ -3518,29 +3477,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
         "name": "git/check",
         "content": "Run git status.",
     }
-
-    execution_id = uuid4()
-    run_workflow = AsyncMock(
-        return_value=WorkflowRunResponse(
-            execution_id=execution_id,
-            session_id=str(session.id),
-        )
-    )
-    monkeypatch.setattr("app.api.routes.workflows.run_workflow_route", run_workflow)
-    workflow_run = client.post(
-        (f"{_PREFIX}/sessions/{session.id}/composer/workflows/release-check/run"),
-        headers=headers,
-        json={"inputs": {"version": "1.2.3"}},
-    )
-    assert workflow_run.status_code == 200
-    assert workflow_run.json() == {
-        "execution_id": str(execution_id),
-        "session_id": str(session.id),
-    }
-    assert run_workflow.await_args.args[0] == "release-check"
-    assert run_workflow.await_args.args[1].session_id == str(session.id)
-    assert run_workflow.await_args.args[1].inputs == {"version": "1.2.3"}
-    assert run_workflow.await_args.kwargs["workspace"] == str(workspace)
 
     denied = client.get(
         endpoint,

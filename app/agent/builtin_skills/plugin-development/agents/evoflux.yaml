@@ -1,6 +1,0 @@
-interface:
-  display_name: "Develop Agent Plugins"
-  short_description: "Build and debug portable plugins end to end"
-  default_prompt: "Use $plugin-development to build and verify this portable Agent Plugin through validation, runtime, and lifecycle testing."
-policy:
-  allow_implicit_invocation: false

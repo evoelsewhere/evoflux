@@ -53,23 +53,6 @@ export const queryKeys = {
     preview: (workspace: string) =>
       ['coding-workspace-preview', workspace] as const,
   },
-  // Code knowledge graph panel — keyed by the absolute workspace path, like
-  // the coding sidebar. Status + search share the path so a reindex can
-  // invalidate both with a single prefix.
-  codeGraph: {
-    all: (workspace: string) => ['code-context', workspace] as const,
-    status: (workspace: string) => ['code-context', workspace, 'status'] as const,
-    freshness: (workspace: string) => ['code-context', workspace, 'freshness'] as const,
-    capabilities: (workspace: string) => ['code-context', workspace, 'capabilities'] as const,
-    search: (workspace: string, query: string) =>
-      ['code-context', workspace, 'search', query] as const,
-    query: (workspace: string, query: string) =>
-      ['code-context', workspace, 'query', query] as const,
-    data: (workspace: string, nodeLimit?: number, edgeLimit?: number) =>
-      nodeLimit === undefined && edgeLimit === undefined
-        ? (['code-context', workspace, 'data'] as const)
-        : (['code-context', workspace, 'data', nodeLimit, edgeLimit] as const),
-  },
   // File references for the input bar's @-mention picker. Keyed by the
   // workspace path (coding mode) or session id (normal mode) so the two
   // origins don't share a cache entry.
@@ -91,21 +74,22 @@ export const queryKeys = {
     list: () => ['agentFiles', 'list'] as const,
     detail: (name: string) => ['agentFiles', 'detail', name] as const,
     // No-arg form is the invalidation prefix for every discovery scope.
-    registry: (workspaces?: readonly string[], mode?: string | null) =>
-      workspaces === undefined && mode === undefined
+    registry: (workspaces?: readonly string[]) =>
+      workspaces === undefined
         ? (['agentFiles', 'registry'] as const)
-        : (['agentFiles', 'registry', workspaces ?? [], mode ?? null] as const),
+        : (['agentFiles', 'registry', workspaces] as const),
   },
+  // No-arg forms are the invalidation prefixes for every discovery scope.
   skillFiles: {
     all: () => ['skillFiles'] as const,
-    list: (workspaces?: readonly string[], mode?: string | null) =>
-      workspaces === undefined && mode === undefined
+    list: (workspaces?: readonly string[]) =>
+      workspaces === undefined
         ? (['skillFiles', 'list'] as const)
-        : (['skillFiles', 'list', workspaces ?? [], mode ?? null] as const),
-    detail: (name: string, workspaces?: readonly string[], mode?: string | null) =>
-      workspaces === undefined && mode === undefined
+        : (['skillFiles', 'list', workspaces] as const),
+    detail: (name: string, workspaces?: readonly string[]) =>
+      workspaces === undefined
         ? (['skillFiles', 'detail', name] as const)
-        : (['skillFiles', 'detail', name, workspaces ?? [], mode ?? null] as const),
+        : (['skillFiles', 'detail', name, workspaces] as const),
   },
   commands: {
     list: (workspace?: string | null) => ['commands', 'list', workspace ?? null] as const,
@@ -135,24 +119,6 @@ export const queryKeys = {
   projects: {
     all: () => ['projects'] as const,
     detail: (id: string) => ['projects', 'detail', id] as const,
-    crossRepoEdges: (id: string) => ['projects', 'detail', id, 'cross-repo-edges'] as const,
-    codeGraphStatus: (id: string) => ['projects', 'detail', id, 'code-context-status'] as const,
-    codeGraphSearch: (id: string, query: string) =>
-      ['projects', 'detail', id, 'code-context-search', query] as const,
-    codeGraphData: (id: string, nodeLimit?: number, edgeLimit?: number) =>
-      nodeLimit === undefined && edgeLimit === undefined
-        ? (['projects', 'detail', id, 'code-context-data'] as const)
-        : (['projects', 'detail', id, 'code-context-data', nodeLimit, edgeLimit] as const),
-  },
-  asdd: {
-    setup: (workspace: string, projectId?: string | null) =>
-      ['asdd', 'setup', workspace, projectId ?? null] as const,
-    changes: (workspace: string, projectId?: string | null) =>
-      ['asdd', 'changes', workspace, projectId ?? null] as const,
-    detail: (workspace: string, changeId: string) =>
-      ['asdd', 'changes', workspace, changeId] as const,
-    spec: (workspace: string, capability: string) =>
-      ['asdd', 'specs', workspace, capability] as const,
   },
   git: {
     reviews: (scope?: string) =>
@@ -193,6 +159,7 @@ export const queryKeys = {
     webbridge: () => ['settings', 'webbridge'] as const,
     multimodal: () => ['settings', 'multimodal'] as const,
     providers: () => ['settings', 'providers'] as const,
+    officeRuntime: () => ['settings', 'office-runtime'] as const,
     languageServers: (workspaces: readonly string[]) =>
       ['settings', 'language-servers', workspaces] as const,
     providerModels: (providerId: string) => ['settings', 'providers', providerId, 'models'] as const,

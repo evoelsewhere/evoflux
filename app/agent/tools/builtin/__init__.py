@@ -38,8 +38,6 @@ _EXPORT_MODULES = {
     "python_tool": "python",
     "schedule_task": "schedule",
     "shell_tool": "shell",
-    "discover_skills": "skill",
-    "load_skill": "skill",
     "dismiss_task": "suggested_task",
     "spawn_task": "suggested_task",
     "todo_manage": "todo",
@@ -54,7 +52,6 @@ _SUBMODULES = {
     "process",
     "preview",
     "shell_runtime",
-    "skill",
 }
 
 
@@ -88,7 +85,6 @@ __all__ = [
     "submit_code_review",
     "update_code_review",
     "webbridge",
-    "discover_skills",
     "edit_file",
     "shell_tool",
     "get_date",
@@ -98,7 +94,6 @@ __all__ = [
     "list_directory",
     "load_tool",
     "patch_file",
-    "load_skill",
     "memory_search",
     "note_tool",
     "process_tool",

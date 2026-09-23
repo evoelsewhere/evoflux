@@ -13,8 +13,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from uuid import uuid7
 
-import pytest
-
 import app.agent.mode.team.delegate as delegate_module
 from app.agent.mode.team.delegate import TaskSpec, make_team_delegate_tool
 from app.agent.mode.team.mailbox import TeamMailbox
@@ -46,8 +44,6 @@ class TestTaskSpecSchema:
         assert spec.resolved_isolation == "shared"
         assert spec.target_repos == []
         assert spec.complexity == "auto"
-        assert spec.asdd_change_id is None
-        assert spec.acceptance_criteria == []
 
     def test_full_spec(self):
         """All fields populated."""
@@ -62,39 +58,6 @@ class TestTaskSpecSchema:
         assert spec.priority == "high"
         assert len(spec.constraints) == 2
         assert spec.depends_on == ["task_1"]
-
-    def test_an_asdd_mission_names_a_change_and_the_requirements_it_owns(self):
-        with pytest.raises(ValueError, match="ASDD delegation requires"):
-            TaskSpec(
-                goal="Implement the slug identity requirement",
-                expected_output="Verified implementation",
-                asdd_change_id="add-user-auth",
-            )
-
-        with pytest.raises(ValueError, match="ASDD delegation requires"):
-            TaskSpec(
-                goal="Implement the slug identity requirement",
-                expected_output="Verified implementation",
-                acceptance_criteria=["Slug identity"],
-            )
-
-        spec = TaskSpec(
-            goal="Implement the slug identity requirement",
-            expected_output="Verified implementation",
-            asdd_change_id="add-user-auth",
-            acceptance_criteria=["Slug identity"],
-        )
-        assert spec.asdd_change_id == "add-user-auth"
-        assert spec.acceptance_criteria == ["Slug identity"]
-
-    def test_an_asdd_mission_cannot_own_the_same_requirement_twice(self):
-        with pytest.raises(ValueError, match="must be unique"):
-            TaskSpec(
-                goal="Implement",
-                expected_output="Verified",
-                asdd_change_id="add-user-auth",
-                acceptance_criteria=["Slug identity", "Slug identity"],
-            )
 
     def test_serialization_excludes_none(self):
         """model_dump with exclude_none drops empty optional fields."""
@@ -135,7 +98,6 @@ class TestTeamDelegateTool:
         class FakeTeam:
             mode = "work"
             blueprints = {"executor": object()}
-            turn_allowed_blueprints = None
             lead = SimpleNamespace(session_id=str(uuid7()))
 
             def __init__(self):
@@ -152,9 +114,6 @@ class TestTeamDelegateTool:
                 return [
                     name for name in self.members if name.startswith(f"{blueprint}#")
                 ]
-
-            def blueprint_allowed_this_turn(self, blueprint):
-                return blueprint in self.blueprints
 
             async def spawn(self, blueprint, *, confirm=False):
                 assert confirm is True

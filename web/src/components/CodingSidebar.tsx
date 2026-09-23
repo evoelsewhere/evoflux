@@ -109,6 +109,7 @@ import { MobileDrawerBackdrop } from "@/components/shell/MobileDrawerBackdrop";
 import { CollapsibleSection } from "@/components/shell/CollapsibleSection";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -227,6 +228,46 @@ interface SessionListActionProps {
   onSessionContextActions: (session: SessionResponse, event: React.MouseEvent) => void;
 }
 
+const SESSION_SKELETON_WIDTHS = ["72%", "58%", "66%"];
+
+function SessionRowsSkeleton() {
+  return (
+    <div aria-hidden="true">
+      {SESSION_SKELETON_WIDTHS.map((width, index) => (
+        <div key={index} className="flex min-h-8 items-center gap-1.5 px-2.5 py-2">
+          <Skeleton className="size-1.5 shrink-0 rounded-full" />
+          <Skeleton className="h-3" style={{ width }} />
+          <Skeleton className="ml-auto h-2.5 w-6 shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Stand-in for a project or workspace card while the Coding overview loads. */
+function ScopeCardSkeleton({ label }: { label: string }) {
+  return (
+    <div
+      role="status"
+      aria-label={label}
+      className="mx-1 overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page)/45"
+    >
+      <div className="flex min-h-9 items-center gap-2 px-2">
+        <Skeleton className="size-3.5 shrink-0 rounded-sm" />
+        <Skeleton className="h-3 w-28" />
+        <Skeleton className="h-2.5 w-10" />
+        <Skeleton className="ml-auto size-5 shrink-0" />
+      </div>
+      <div className="border-t border-(--color-border)/60 px-1 pb-1 pt-1.5">
+        <div className="flex h-6 items-center px-2">
+          <Skeleton className="h-2 w-10" />
+        </div>
+        <SessionRowsSkeleton />
+      </div>
+    </div>
+  );
+}
+
 function SessionListPanel({
   sessions,
   currentSessionId,
@@ -273,9 +314,8 @@ function SessionListPanel({
         </p>
       )}
       {sessions.isLoading && (
-        <div className="flex items-center gap-1.5 px-2 py-1.5">
-          <Loader2 size={10} className="animate-spin text-(--color-text-muted)" />
-          <span className="text-[11px] text-(--color-text-muted)">Loading…</span>
+        <div role="status" aria-label="Loading sessions">
+          <SessionRowsSkeleton />
         </div>
       )}
       {projectSessions.map((session) => (
@@ -847,7 +887,6 @@ export function CodingSidebar({
     setSelectedWorkspacePath((current) => (current === path ? null : current));
     void setCodingWorkspaceVisibility(path, true)
       .then(() => {
-        queryClient.removeQueries({ queryKey: queryKeys.codeGraph.all(path) });
         queryClient.removeQueries({ queryKey: queryKeys.coding.all(path) });
         void queryClient.invalidateQueries({
           queryKey: queryKeys.team.sessions.all(),
@@ -1278,10 +1317,7 @@ export function CodingSidebar({
         />
 
         {!projectsSectionCollapsed && overviewQuery.isLoading && (
-          <div className="flex items-center gap-1.5 px-2 py-1.5">
-            <Loader2 size={11} className="animate-spin text-(--color-text-muted)" />
-            <span className="text-xs text-(--color-text-muted)">Loading…</span>
-          </div>
+          <ScopeCardSkeleton label="Loading projects" />
         )}
 
         {!projectsSectionCollapsed && overviewQuery.isError && (
@@ -1506,6 +1542,10 @@ export function CodingSidebar({
           size="large"
           className="px-1 pb-1"
         />
+
+      {!workspacesSectionCollapsed && overviewQuery.isLoading && (
+        <ScopeCardSkeleton label="Loading workspaces" />
+      )}
 
       {!workspacesSectionCollapsed && !overviewQuery.isLoading && !overviewQuery.isError && standaloneWorkspaces.length === 0 && (
         <p className="px-2 py-3 text-xs text-(--color-text-subtle)">
@@ -2559,7 +2599,7 @@ export function CodingSidebar({
                 ? workspaceLabel(removeWorkspaceTarget)
                 : ""}
               &rdquo; will be removed from EvoFlux. All chat sessions, uploads,
-              snapshots, managed worktrees, and code graph/index data for it
+              snapshots and managed worktrees for it
               will be permanently deleted. The source repository stays on disk.
             </DialogDescription>
           </DialogHeader>
@@ -2597,7 +2637,7 @@ export function CodingSidebar({
                 ? workspaceLabel(removeProjectWorkspaceTarget.path)
                 : ""}
               &rdquo; resets all chat sessions for this project and deletes this
-              repository&apos;s code graph/index cache. Source files stay on disk.
+              repository&apos;s app-owned session data. Source files stay on disk.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="p-3">
@@ -2627,7 +2667,6 @@ export function CodingSidebar({
                   {
                     onSuccess: () => {
                       queryClient.removeQueries({
-                        queryKey: queryKeys.codeGraph.all(target.path),
                       });
                       clearLastCodingFocus(target.project.id);
                       if (isRemovingFromActiveProject) {
@@ -2667,7 +2706,7 @@ export function CodingSidebar({
             <DialogTitle>Delete project</DialogTitle>
             <DialogDescription>
               {deleteProjectTarget
-                ? `Delete ${deleteProjectTarget.name}? All project chat sessions, scheduled tasks, generated session data, and unshared code graph/index caches will be permanently deleted. Source repositories stay on disk and remain available in Workspaces.`
+                ? `Delete ${deleteProjectTarget.name}? All project chat sessions, scheduled tasks, generated session data, and managed worktrees will be permanently deleted. Source repositories stay on disk and remain available in Workspaces.`
                 : "Delete this project?"}
             </DialogDescription>
           </DialogHeader>
@@ -2691,11 +2730,6 @@ export function CodingSidebar({
                   currentProjectId === target.id || params.focusId === target.id;
                 deleteProjectMutation.mutate(target.id, {
                   onSuccess: () => {
-                    for (const workspace of target.workspaces ?? []) {
-                      queryClient.removeQueries({
-                        queryKey: queryKeys.codeGraph.all(workspace.path),
-                      });
-                    }
                     clearLastCodingFocus(target.id);
                     setExpandedProjects((current) => {
                       if (!current.has(target.id)) return current;

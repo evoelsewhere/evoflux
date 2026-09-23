@@ -1,7 +1,7 @@
 /**
- * Composer token grammar — the single source of truth for which
- * ``/command``, ``/skill:<name>`` and ``$<name>`` substrings are *live*
- * directives rather than plain prose.
+ * Composer token grammar — the single source of truth for which ``/command``
+ * and ``$skill-name`` substrings are *live* directives rather than plain
+ * prose.
  *
  * Both the composer overlay (while typing) and the transcript renderer
  * (after send) use these helpers, so a token looks the same before and
@@ -9,33 +9,34 @@
  *
  * The rules mirror what actually consumes each token on the way out:
  *
- *   - ``$name`` / ``/skill:name`` — ``ExplicitSkillSelectionHook``
- *     (app/agent/hooks/explicit_skill_selection.py) reads **one** selector
- *     per message: it walks past composer quote lines, then inspects the
- *     first real content line only. A slash directive must open that line;
- *     a ``$`` directive may sit anywhere in it. Directives further down the
- *     message are inert, so they stay unhighlighted here too.
+ *   - ``$skill-name`` — ``app/agent/skills/invocation.py`` (``MENTION_RE``
+ *     and ``skill_mentions``). A mention is ``$`` followed by a valid Skill
+ *     name (lowercase letters, digits, single hyphens), not preceded by a
+ *     word character or another ``$``, and followed by whitespace,
+ *     punctuation or the end of the text. Mentions count anywhere in the
+ *     message — several per message — except in quoted context lines
+ *     (``> ...``) and fenced code blocks. Keep this module in step with that
+ *     Python module.
  *   - ``/command`` — the front-end interceptors (``parseGoalCommand``,
- *     ``parseWorkflowCommand``, ``expandUserCommand``) all test the trimmed
+ *     ``expandUserCommand``) all test the trimmed
  *     message's first token, so only a leading command is live.
  */
 
-/** Skill / command name: ``audit-runtime`` or one level of ``git:commit``. */
-const NAME = '[a-zA-Z0-9][a-zA-Z0-9._-]*(?::[a-zA-Z0-9][a-zA-Z0-9._-]*)?'
-const SLASH_SKILL_RE = new RegExp(`^/skill:(${NAME})(?=\\s|$)`)
-const COMMAND_RE = new RegExp(`^/(?!skill:)(${NAME})(?=\\s|$)`)
+/** Command name: ``compact`` or one level of ``git:commit``. */
+const COMMAND_NAME = '[a-zA-Z0-9][a-zA-Z0-9._-]*(?::[a-zA-Z0-9][a-zA-Z0-9._-]*)?'
+const COMMAND_RE = new RegExp(`^/(${COMMAND_NAME})(?=\\s|$)`)
+/** ``$name`` body plus the backend's terminator lookahead (``MENTION_RE``). */
+const MENTION_NAME_RE = /^([a-z0-9]+(?:-[a-z0-9]+)*)(?=$|[\s.,!?;:)\]}'"])/
+/** A ``$`` glued to one of these is part of a word/variable, not a mention. */
+const MENTION_HEAD_RE = /[A-Za-z0-9_$]/
+/** Opening or closing line of a fenced code block. */
+const FENCE_RE = /^\s*(```|~~~)/
 /**
  * Heuristic used when no skill roster is available (the transcript renders
  * old messages without querying the skill list): the name must start with a
- * lowercase letter and be at least two characters. That keeps ``$5``,
- * ``$100`` and command placeholders like ``$ARGUMENTS`` out of the
- * highlighter while still catching real kebab-case skill names.
+ * letter and be at least two characters, so ``$5`` and ``$100`` stay plain.
  */
-const DOLLAR_HEURISTIC_RE = /^[a-z][a-zA-Z0-9._-]*(?::[a-zA-Z0-9][a-zA-Z0-9._-]*)?$/
-/** ``$name`` body plus the backend's terminator lookahead. */
-const DOLLAR_NAME_RE = new RegExp(`^(${NAME})(?=[\\s.,!?;:]|$)`)
-/** A ``$`` glued to one of these is part of a word/variable, not a directive. */
-const DOLLAR_HEAD_RE = /[a-zA-Z0-9_$]/
+const MENTION_HEURISTIC_RE = /^[a-z][a-z0-9-]+$/
 
 export interface SkillDirectiveRange {
   start: number
@@ -51,7 +52,7 @@ export interface TokenRange {
 
 /**
  * Locate the first real content line — quote-context lines (``>`` prefixed)
- * and blank lines are skipped, exactly as the backend hook does.
+ * and blank lines are skipped.
  *
  * Returns the line text plus its absolute offset in ``text``, or ``null``
  * when the message is nothing but quotes and blanks.
@@ -84,78 +85,59 @@ export function splitQuotedContext(text: string): { quote: string; body: string 
   return { quote: text.slice(0, content.offset), body: text.slice(content.offset) }
 }
 
-function isKnownSkill(name: string, skillNames?: ReadonlySet<string>): boolean {
-  if (!skillNames) return true
-  return skillNames.has(name) || skillNames.has(name.replace(':', '/'))
+/**
+ * Lines where a ``$skill-name`` mention is read: every line except quoted
+ * context lines and lines inside (or opening/closing) a fenced code block.
+ */
+function mentionLines(text: string): Array<{ line: string; offset: number }> {
+  const lines: Array<{ line: string; offset: number }> = []
+  let offset = 0
+  let inFence = false
+  for (const line of text.split('\n')) {
+    const lineOffset = offset
+    offset += line.length + 1
+    if (FENCE_RE.test(line)) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence || line.trimStart().startsWith('>')) continue
+    lines.push({ line, offset: lineOffset })
+  }
+  return lines
 }
 
 /**
- * Find the one skill directive that will actually activate a skill.
+ * Every ``$skill-name`` mention that will activate a Skill.
  *
- * Accepts both composer notations — ``/skill:<name>`` opening the first
- * content line, and ``$<name>`` anywhere inside it. Returns an array (never
- * more than one entry) so callers can concatenate it with the other range
- * lists without special-casing.
+ * ``skillNames`` holds the user-invocable skills; mentions of unknown names
+ * stay plain text. Omit it to fall back to the syntax-only heuristic
+ * described above.
  *
- * ``skillNames`` holds the invocable skills in composer notation (flat or
- * ``parent:sub``); unknown directives stay plain text. Omit it to fall back
- * to the syntax-only heuristic described above.
+ * Hand-rolled instead of a lookbehind regex so the desktop shell's older
+ * WebKit builds stay supported.
  */
 export function findSkillDirectives(
   text: string,
   skillNames?: ReadonlySet<string>,
 ): SkillDirectiveRange[] {
-  const content = firstContentLine(text)
-  if (!content) return []
-  const { line, offset } = content
-
-  // A slash directive wins the line outright — the backend never falls
-  // through to ``$`` once ``^/skill:`` matched.
-  const slash = SLASH_SKILL_RE.exec(line)
-  if (slash) {
-    const name = slash[1]
-    if (!isKnownSkill(name, skillNames)) return []
-    return [{ start: offset, end: offset + slash[0].length, name }]
-  }
-
-  const dollar = findDollarDirective(line, skillNames)
-  if (!dollar) return []
-  return [{
-    start: offset + dollar.start,
-    end: offset + dollar.end,
-    name: dollar.name,
-  }]
-}
-
-/**
- * First ``$name`` in ``line`` that reads as a directive rather than as a
- * price, a shell variable or a ``$ARGUMENTS`` placeholder.
- *
- * Hand-rolled instead of a lookbehind regex so the desktop shell's older
- * WebKit builds stay supported.
- */
-function findDollarDirective(
-  line: string,
-  skillNames?: ReadonlySet<string>,
-): TokenRange | null {
-  for (let i = 0; i < line.length; i++) {
-    if (line.charAt(i) !== '$') continue
-    if (i > 0 && DOLLAR_HEAD_RE.test(line.charAt(i - 1))) continue
-    // The lookahead makes the engine backtrack off trailing sentence
-    // punctuation ("use $work-writing." keeps the period out of the name)
-    // while leaving a nested ``git:commit`` intact.
-    const match = DOLLAR_NAME_RE.exec(line.slice(i + 1))
-    if (!match) continue
-    const name = match[1]
-    const end = i + 1 + name.length
-    if (skillNames) {
-      if (!isKnownSkill(name, skillNames)) continue
-    } else if (!DOLLAR_HEURISTIC_RE.test(name)) {
-      continue
+  const ranges: SkillDirectiveRange[] = []
+  for (const { line, offset } of mentionLines(text)) {
+    for (let i = 0; i < line.length; i++) {
+      if (line.charAt(i) !== '$') continue
+      if (i > 0 && MENTION_HEAD_RE.test(line.charAt(i - 1))) continue
+      // The lookahead keeps trailing sentence punctuation ("use $pdf.")
+      // out of the name, exactly like the backend.
+      const match = MENTION_NAME_RE.exec(line.slice(i + 1))
+      if (!match) continue
+      const name = match[1]
+      const known = skillNames ? skillNames.has(name) : MENTION_HEURISTIC_RE.test(name)
+      if (!known) continue
+      const end = i + 1 + name.length
+      ranges.push({ start: offset + i, end: offset + end, name })
+      i = end - 1
     }
-    return { start: i, end, name }
   }
-  return null
+  return ranges
 }
 
 /**
@@ -187,25 +169,25 @@ export function findCommandDirectives(
  *
  * Mirrors ``findActiveMention``'s contract: the ``$`` must open a word, the
  * token ends at the next whitespace, and the caret has to sit inside it.
- * Restricted to the first content line because that is the only place a
- * skill directive is read — offering the picker anywhere else would insert
- * a token the agent silently ignores.
+ * Offered on any line where a mention is read — not in quoted context lines
+ * or fenced code blocks, where the agent would ignore the inserted token.
  */
 export function findActiveSkillToken(
   text: string,
   caret: number,
 ): { start: number; end: number; query: string } | null {
-  const content = firstContentLine(text)
+  const content = mentionLines(text).find(
+    ({ line, offset }) => caret >= offset && caret <= offset + line.length,
+  )
   if (!content) return null
   const { line, offset } = content
-  if (caret < offset || caret > offset + line.length) return null
 
   const local = caret - offset
   let i = local
   while (i > 0) {
     const ch = line.charAt(i - 1)
     if (ch === '$') {
-      if (i >= 2 && DOLLAR_HEAD_RE.test(line.charAt(i - 2))) return null
+      if (i >= 2 && MENTION_HEAD_RE.test(line.charAt(i - 2))) return null
       return {
         start: offset + i - 1,
         end: caret,

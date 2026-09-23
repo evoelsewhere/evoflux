@@ -18,10 +18,8 @@ from app.models.chat import (
     DreamLog,
     SessionMessage,
 )
-from app.models.workflow import WorkflowExecution, WorkflowNodeRun
 from app.scheduler.models import ScheduledTask
 from app.services import coding_purge_service as purge
-from app.services.code_index.paths import paths_for_repository
 from app.services.coding_project_service import create_project
 from app.services.snapshot_service import snapshot_dir
 
@@ -46,7 +44,6 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
     lead_id = uuid.uuid7()
     child_id = uuid.uuid7()
     side_id = uuid.uuid7()
-    execution_id = uuid.uuid7()
 
     async with db_module.async_session_factory() as db:
         async with db.begin():
@@ -74,21 +71,6 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
                     processed_at=datetime.now(timezone.utc),
                 )
             )
-            db.add(
-                WorkflowExecution(
-                    id=execution_id,
-                    definition_name="test",
-                    definition_hash="b" * 64,
-                    session_id=lead_id,
-                )
-            )
-            db.add(
-                WorkflowNodeRun(
-                    execution_id=execution_id,
-                    node_id="node",
-                    status="succeeded",
-                )
-            )
 
     generated_paths = (
         workspace_dir(str(lead_id)),
@@ -99,23 +81,16 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
     for path in generated_paths:
         path.mkdir(parents=True, exist_ok=True)
         (path / "owned.txt").write_text("delete", encoding="utf-8")
-    index_dir = paths_for_repository(repository).directory
-    index_dir.mkdir(parents=True)
-    (index_dir / "graph.db").write_text("delete", encoding="utf-8")
-
     async with db_module.async_session_factory() as db:
         result = await purge.purge_workspace(db, str(repository))
 
     assert result.session_count == 3
     assert repository.is_dir()
-    assert not index_dir.exists()
     assert all(not path.exists() for path in generated_paths)
     async with db_module.async_session_factory() as db:
         assert (await db.exec(select(ChatSession))).all() == []
         assert (await db.exec(select(SessionMessage))).all() == []
         assert (await db.exec(select(DreamLog))).all() == []
-        assert (await db.exec(select(WorkflowExecution))).all() == []
-        assert (await db.exec(select(WorkflowNodeRun))).all() == []
         assert (await db.exec(select(CodingWorkspace))).all() == []
 
 
@@ -155,16 +130,12 @@ async def test_purge_project_hard_deletes_project_sessions_and_tasks_but_keeps_r
         )
         await db.commit()
 
-    index_dir = paths_for_repository(repository).directory
-    index_dir.mkdir(parents=True)
-    (index_dir / "graph.db").write_text("delete", encoding="utf-8")
     async with db_module.async_session_factory() as db:
         result = await purge.purge_project(db, project_id)
 
     assert result is not None
     assert result.session_count == 1
     assert repository.is_dir()
-    assert not index_dir.exists()
     async with db_module.async_session_factory() as db:
         assert await db.get(CodingProject, project_id) is None
         assert await db.get(ChatSession, session_id) is None

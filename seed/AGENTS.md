@@ -33,4 +33,4 @@ Run focused CLI/init tests when changing seed install behavior or validation log
 
 - Maintainer notes: `README.md`.
 - Harness/frontmatter contract: `../documents/architecture/application-harness.md`.
-- Coding context contract: `../documents/architecture/coding-agent-code-context.md`.
+- Coding context: use the active file, scoped grep, and available LSP tools.

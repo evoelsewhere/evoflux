@@ -8,7 +8,7 @@ bounded by retention settings.
 
 The session SSE stream carries structured events for model deltas, reasoning,
 tool calls/results, agent status, delegations, todos, handoffs, usage, plan and
-permission requests, questions, goals, workflows, queues, compaction and final
+permission requests, questions, goals, queues, compaction and final
 completion/error. The React team store projects these into transcript blocks,
 Activity views and progress controls.
 
@@ -40,6 +40,15 @@ Turn tokens are authoritative only per completed model call, which the usage
 event publishes. Between those events the line extends the last measured total
 with a character-length estimate so the counter keeps moving through a long
 call; the next usage event assigns over the estimate.
+
+"Per completed model call" is enforced at the call boundary rather than at the
+chunk. A usage block on a streaming chunk states the call's totals *to date*,
+and some providers — StepFun among them — put one on every chunk, so adding
+each block counted the same prompt dozens of times and turned a normal session
+into billions of tokens. The stream publisher folds a call's blocks together
+and records the result once, in `after_model`: the last block's prompt and
+completion, and the largest cache, thoughts and tool-use figures seen, because
+a provider may state those on one chunk and omit them from the next.
 
 Session-specific JSONL logs provide a local evidence trail per agent. Sensitive
 values are sanitized before tool/provider errors are logged or streamed.
@@ -94,7 +103,7 @@ estimated USD is omitted.
 
 `GET /metrics` is the unprefixed Prometheus scrape target. Middleware measures
 end-to-end HTTP requests, including rejects by inner auth/size/security layers.
-Agent/team/database/code-index paths add focused counters and histograms where
+Agent/team/database paths add focused counters and histograms where
 operator action is useful.
 
 ## Health and diagnostics
@@ -115,7 +124,7 @@ degraded/unavailable status without being treated as critical sidecar failure.
 ## Domain-specific audit
 
 WebBridge keeps a bounded command audit ring; Git jobs retain bounded status and
-sanitized output; workflow execution/node rows and goal state provide durable
+sanitized output; goal state and scheduler run status provide durable
 automation evidence; Conductor records resource drift and delivery state.
 
 ## Source and tests

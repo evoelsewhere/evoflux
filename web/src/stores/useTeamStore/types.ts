@@ -67,16 +67,6 @@ export interface AgentStream {
   _revertedSuffix?: ContentBlock[]
 }
 
-export interface ActiveWorkflowExecution {
-  executionId: string
-  definitionName: string
-  status: string
-  nodeId: string | null
-  nodeIndex: number | null
-  totalNodes: number
-  error: string | null
-}
-
 export interface BrowserTabInfo {
   index: number
   url: string
@@ -132,7 +122,6 @@ export interface TeamStoreState {
   activeGoal: GoalResponse | null
   /** Open suggestion chips for this session, oldest first. */
   suggestedTasks: SuggestedTask[]
-  activeWorkflowExecution: ActiveWorkflowExecution | null
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
   planApproval: PlanApprovalPending | null
@@ -171,6 +160,12 @@ export interface TeamStoreActions {
   sendGoalCommand: (command: string, objective?: string, options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean }) => Promise<void>
   stopTeam: () => Promise<void>
   connectStream: () => AbortController
+  /**
+   * Recovers a stream that ended without a real terminal event (dropped
+   * fetch, not a finished turn): reconciles truth via ``loadSession`` then
+   * reopens with ``connectStream``, backing off on repeated failures.
+   */
+  _scheduleStreamReconnect: (sessionId: string, generation: number) => void
   loadTeamStatus: (
     workspace?: string | null,
     mode?: 'coding' | null,

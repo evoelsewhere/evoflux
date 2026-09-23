@@ -365,6 +365,63 @@ class TestOpenAIStreamChunk:
         assert tc.function is not None
         assert tc.function.arguments == '{"q":'
 
+    def test_parse_continuation_chunk_with_blank_tool_call_type(self):
+        """StepFun step-5-preview sends type="" on tool call continuations."""
+        data = {
+            "id": "chatcmpl-1",
+            "created": 1,
+            "model": "step-5-preview",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "",
+                                "type": "",
+                                "function": {"arguments": '"click"}'},
+                            }
+                        ]
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        }
+        chunk = OpenAIStreamChunk.model_validate(data)
+        assert chunk.choices[0].delta.tool_calls is not None
+        tc = chunk.choices[0].delta.tool_calls[0]
+        assert tc.type == ""
+        assert tc.function is not None
+        assert tc.function.arguments == '"click"}'
+
+    def test_parse_tool_call_without_index_or_id(self):
+        """Some OpenAI-compatible endpoints omit both index and id."""
+        data = {
+            "id": "chatcmpl-1",
+            "created": 1,
+            "model": "mimo-v2.5-pro",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "type": "function",
+                                "function": {"name": "read", "arguments": "{}"},
+                            }
+                        ]
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+        }
+        chunk = OpenAIStreamChunk.model_validate(data)
+        assert chunk.choices[0].delta.tool_calls is not None
+        tc = chunk.choices[0].delta.tool_calls[0]
+        assert tc.index is None
+        assert tc.id is None
+
     def test_extra_fields_ignored(self):
         data = {
             "id": "x",

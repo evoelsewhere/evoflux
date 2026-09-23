@@ -128,7 +128,7 @@ impl Default for BackendStartupStatus {
     fn default() -> Self {
         Self {
             phase: "preparing".to_string(),
-            message: "Preparing the local engine…".to_string(),
+            message: "Starting EvoFlux…".to_string(),
             attempt: 0,
             max_attempts: SIDECAR_START_ATTEMPTS,
             elapsed_ms: 0,
@@ -4482,7 +4482,7 @@ async fn restart_backend_and_reload_window(app: &AppHandle) -> Result<()> {
     set_backend_startup(
         app,
         "ready",
-        "Local engine ready",
+        "EvoFlux is ready",
         ready.attempt,
         None,
         false,
@@ -5470,9 +5470,9 @@ async fn publish_backend_error(app: &AppHandle, failure: &BackendStartFailure) {
         app,
         "error",
         if failure.fatal {
-            "The local engine needs attention."
+            "EvoFlux needs attention."
         } else {
-            "The local engine could not start."
+            "EvoFlux couldn't start."
         },
         failure.attempt,
         Some(failure.message.clone()),
@@ -5501,7 +5501,7 @@ async fn start_bundled_backend_with_retry(
     let _start_guard = state.backend_start_lock.lock().await;
     let operation_started = Instant::now();
     let mut last_failure = BackendStartFailure {
-        message: "The local engine did not start.".to_string(),
+        message: "EvoFlux did not start.".to_string(),
         fatal: false,
         attempt: 0,
     };
@@ -5510,7 +5510,7 @@ async fn start_bundled_backend_with_retry(
         set_backend_startup(
             app,
             "launching",
-            format!("Launching the local engine… ({attempt}/{SIDECAR_START_ATTEMPTS})"),
+            "Starting EvoFlux…",
             attempt,
             None,
             false,
@@ -5538,7 +5538,7 @@ async fn start_bundled_backend_with_retry(
                     set_backend_startup(
                         app,
                         "retrying",
-                        "Could not launch the engine. Retrying…",
+                        "Still getting things ready…",
                         attempt,
                         Some(last_failure.message.clone()),
                         false,
@@ -5553,7 +5553,7 @@ async fn start_bundled_backend_with_retry(
         set_backend_startup(
             app,
             "starting",
-            "Loading Python and preparing the database…",
+            "Getting things ready…",
             attempt,
             None,
             false,
@@ -5592,7 +5592,7 @@ async fn start_bundled_backend_with_retry(
                     set_backend_startup(
                         app,
                         "retrying",
-                        "The engine stopped during startup. Retrying…",
+                        "Still getting things ready…",
                         attempt,
                         Some(last_failure.message.clone()),
                         false,
@@ -5608,7 +5608,7 @@ async fn start_bundled_backend_with_retry(
         set_backend_startup(
             app,
             "health",
-            "Checking the local engine…",
+            "Almost ready…",
             attempt,
             None,
             false,
@@ -5630,7 +5630,7 @@ async fn start_bundled_backend_with_retry(
                 set_backend_startup(
                     app,
                     "retrying",
-                    "The engine did not answer. Retrying…",
+                    "Still getting things ready…",
                     attempt,
                     Some(last_failure.message.clone()),
                     false,
@@ -6099,7 +6099,7 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
     set_backend_startup(
         &app,
         "ready",
-        "Local engine ready",
+        "EvoFlux is ready",
         ready.attempt,
         None,
         false,

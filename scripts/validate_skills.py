@@ -1,517 +1,349 @@
 #!/usr/bin/env python3
-"""Validate EvoFlux and portable Agent Skills bundles.
+"""Validate Agent Skills bundles against the specification and best practices.
 
-The validator checks the Agent Skills contract, EvoFlux/Codex interface metadata,
-relative resource links, and activation-evaluation fixtures. It deliberately
-does not require arbitrary headings or minimum prose length: a concise skill is
-valid when its workflow is precise, while generic filler does not improve it.
+Checks every direct child of a skills directory that contains ``SKILL.md``:
+
+* frontmatter, strictly, with ``app.agent.skills.spec`` (the runtime parser);
+* bundle hygiene: no nested ``SKILL.md``, no symlinks, no control-plane files
+  (``agents/``, ``evals/``, ``README.md``, ``.evoflux.json``);
+* progressive disclosure: relative links resolve inside the bundle, use forward
+  slashes, and every Markdown file a reference links to is also linked from
+  ``SKILL.md`` (references stay one level deep); reference files over 100
+  lines start with a table of contents;
+* no host placeholders or calls to the removed ``skill`` tool.
+
+See documents/architecture/agent-skills.md.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any
-
-import yaml
-
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.agent.skills.spec import (  # noqa: E402 - needs the project root on sys.path
+    MAX_SKILL_FILE_BYTES,
+    READ_LINE_PREFIX_CHARS,
+    READ_WINDOW_CHARS,
+    parse_skill,
+    SkillFormatError,
+)
+
 DEFAULT_SKILLS_DIR = PROJECT_ROOT / "app" / "agent" / "builtin_skills"
-NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-FRONTMATTER_RE = re.compile(r"^---[ \t]*\r?\n(.*?)\r?\n---[ \t]*\r?\n?(.*)$", re.DOTALL)
-MARKDOWN_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
-MAX_DESCRIPTION_CHARS = 1_024
-MAX_SKILL_BYTES = 512 * 1024
-MAX_AGENT_METADATA_BYTES = 256 * 1024
-MAX_RESOURCE_BYTES = 2 * 1024 * 1024
-MAX_BUNDLE_ENTRIES = 20_000
+# A reference longer than this is previewed partially by models; the best
+# practices ask for a table of contents at its top.
+TOC_LINE_THRESHOLD = 100
+TOC_SEARCH_LINES = 30
 MAX_SKILL_DIRECTORIES = 2_000
-RECOMMENDED_BODY_LINES = 500
-CODE_GRAPH_OPERATIONS = {
-    "definition",
-    "callers",
-    "callees",
-    "references",
-    "impact",
-    "neighborhood",
-}
-AGENT_INTERFACE_FIELD_LIMITS = {
-    "display_name": 128,
-    "short_description": 1_024,
-    "default_prompt": 4_096,
-    "icon_small": 1_024,
-    "icon_large": 1_024,
-    "brand_color": 64,
-}
-EVOFLUX_AGENT_METADATA = "evoflux.yaml"
-PORTABLE_AGENT_METADATA = "openai.yaml"
+MAX_BUNDLE_ENTRIES = 20_000
+FORBIDDEN_ENTRIES = {"agents", "evals", ".evoflux.json", "README.md"}
+_LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+_CODE_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+_PLACEHOLDER_RE = re.compile(
+    r"\{(?:SKILL_DIR|SKILLS_DIR|AGENTS_DIR|EVOFLUX_CONFIG_DIR)\}|<[A-Z_]+_SKILL_DIR>"
+)
+_SKILL_TOOL_RE = re.compile(r"\bskill\(\s*action\s*=")
+_TOC_RE = re.compile(r"^#{1,3}\s*(table of )?contents\b", re.IGNORECASE)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Finding:
-    severity: str
     code: str
     message: str
+    severity: str = "error"
+    path: str = "SKILL.md"
 
 
 @dataclass
-class SkillResult:
+class SkillValidation:
     name: str
     path: str
     findings: list[Finding] = field(default_factory=list)
-    resource_count: int = 0
-    eval_count: int = 0
 
     @property
     def valid(self) -> bool:
         return not any(item.severity == "error" for item in self.findings)
 
-    def add(self, severity: str, code: str, message: str) -> None:
-        self.findings.append(Finding(severity, code, message))
+    def add(
+        self,
+        code: str,
+        message: str,
+        *,
+        severity: str = "error",
+        path: str = "SKILL.md",
+    ) -> None:
+        self.findings.append(Finding(code, message, severity, path))
 
 
-def _read_bounded_utf8(path: Path, *, limit: int, label: str) -> str:
-    """Read bounded UTF-8 without a stat/read race."""
-
-    with path.open("rb") as handle:
-        payload = handle.read(limit + 1)
-    if len(payload) > limit:
-        raise ValueError(f"{label} exceeds {limit} bytes.")
-    try:
-        return payload.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise ValueError(f"{label} is not valid UTF-8 text: {exc}") from exc
-
-
-def _bounded_directory_entries(
-    directory: Path, *, limit: int
-) -> tuple[list[tuple[Path, bool, bool]], bool]:
-    """Consume no more than *limit* scandir entries before sorting them."""
-
-    if limit <= 0:
-        return [], True
-    entries: list[tuple[Path, bool, bool]] = []
-    truncated = False
-    try:
-        with os.scandir(directory) as iterator:
-            for entry in iterator:
-                if len(entries) >= limit:
-                    truncated = True
-                    break
-                try:
-                    is_symlink = entry.is_symlink()
-                    is_directory = entry.is_dir(follow_symlinks=True)
-                except OSError:
-                    is_symlink = False
-                    is_directory = False
-                entries.append((Path(entry.path), is_directory, is_symlink))
-    except OSError:
-        return [], False
-    entries.sort(key=lambda item: item[0].name)
-    return entries, truncated
-
-
-def _parse_skill(skill_file: Path, result: SkillResult) -> tuple[dict[str, Any], str]:
-    try:
-        text = _read_bounded_utf8(skill_file, limit=MAX_SKILL_BYTES, label="SKILL.md")
-    except (OSError, ValueError) as exc:
-        result.add("error", "unreadable-skill", str(exc))
-        return {}, ""
-    match = FRONTMATTER_RE.match(text)
-    if not match:
-        result.add("error", "missing-frontmatter", "SKILL.md needs YAML frontmatter.")
-        return {}, text
-    try:
-        metadata = yaml.safe_load(match.group(1)) or {}
-    except (yaml.YAMLError, RecursionError) as exc:
-        result.add("error", "invalid-frontmatter", str(exc))
-        return {}, match.group(2).strip()
-    if not isinstance(metadata, dict):
-        result.add("error", "invalid-frontmatter", "Frontmatter must be a mapping.")
-        metadata = {}
-    return metadata, match.group(2).strip()
-
-
-def _validate_frontmatter(
-    skill_dir: Path, metadata: dict[str, Any], body: str, result: SkillResult
-) -> None:
-    name = metadata.get("name")
-    description = metadata.get("description")
-    if not isinstance(name, str) or not name:
-        result.add("error", "missing-name", "name is required.")
-    else:
-        if not NAME_RE.fullmatch(name) or len(name) > 64:
-            result.add(
-                "error",
-                "invalid-name",
-                "name must be 1–64 lowercase letters/digits/hyphens.",
-            )
-        if name != skill_dir.name:
-            result.add(
-                "error",
-                "name-directory-mismatch",
-                f"name '{name}' does not match directory '{skill_dir.name}'.",
-            )
-    if not isinstance(description, str) or not description.strip():
-        result.add("error", "missing-description", "description is required.")
-    elif len(description) > MAX_DESCRIPTION_CHARS:
-        result.add(
-            "error",
-            "description-too-long",
-            f"description exceeds {MAX_DESCRIPTION_CHARS} characters.",
-        )
-    if not body:
-        result.add("error", "empty-body", "SKILL.md instructions cannot be empty.")
-    elif len(body.splitlines()) > RECOMMENDED_BODY_LINES:
-        result.add(
-            "warning",
-            "long-body",
-            f"Body exceeds {RECOMMENDED_BODY_LINES} lines; move conditional detail to references.",
-        )
-
-
-def _validate_agent_metadata(skill_dir: Path, result: SkillResult) -> None:
-    agents_dir = skill_dir / "agents"
-    native_path = agents_dir / EVOFLUX_AGENT_METADATA
-    portable_path = agents_dir / PORTABLE_AGENT_METADATA
-    path = native_path if native_path.exists() else portable_path
-    if not path.exists():
-        result.add(
-            "warning",
-            "missing-agent-metadata",
-            "No agents/evoflux.yaml or agents/openai.yaml; runtime defaults will be used.",
-        )
-        return
-    label = path.relative_to(skill_dir).as_posix()
-    try:
-        text = _read_bounded_utf8(
-            path,
-            limit=MAX_AGENT_METADATA_BYTES,
-            label=label,
-        )
-        raw = yaml.safe_load(text) or {}
-    except (OSError, ValueError, yaml.YAMLError, RecursionError) as exc:
-        result.add("error", "invalid-agent-metadata", str(exc))
-        return
-    if not isinstance(raw, dict):
-        result.add("error", "invalid-agent-metadata", "Root must be a mapping.")
-        return
-    interface = raw.get("interface")
-    if not isinstance(interface, dict):
-        result.add("error", "missing-agent-interface", "interface mapping is required.")
-    else:
-        for key in ("display_name", "short_description"):
-            if not isinstance(interface.get(key), str) or not interface[key].strip():
-                result.add(
-                    "error",
-                    "missing-agent-interface-field",
-                    f"interface.{key} is required and must be non-empty.",
-                )
-        for key, limit in AGENT_INTERFACE_FIELD_LIMITS.items():
-            value = interface.get(key)
-            if value is None:
-                continue
-            if not isinstance(value, str):
-                result.add(
-                    "error",
-                    "invalid-agent-interface-field",
-                    f"interface.{key} must be a string.",
-                )
-            elif len(value) > limit:
-                result.add(
-                    "error",
-                    "agent-interface-field-too-long",
-                    f"interface.{key} exceeds {limit} characters.",
-                )
-    policy = raw.get("policy") or {}
-    if not isinstance(policy, dict):
-        result.add("error", "invalid-agent-policy", "policy must be a mapping.")
-    elif "allow_implicit_invocation" in policy and not isinstance(
-        policy["allow_implicit_invocation"], bool
-    ):
-        result.add(
-            "error",
-            "invalid-agent-policy",
-            "policy.allow_implicit_invocation must be boolean.",
-        )
-    dependencies = raw.get("dependencies") or {}
-    if not isinstance(dependencies, dict):
-        result.add(
-            "error", "invalid-agent-dependencies", "dependencies must be a mapping."
-        )
-        return
-    tools = dependencies.get("tools") or []
-    if not isinstance(tools, list):
-        result.add(
-            "error",
-            "invalid-agent-dependencies",
-            "dependencies.tools must be a list.",
-        )
-        return
-    for index, tool in enumerate(tools):
-        if not isinstance(tool, dict):
-            result.add(
-                "error",
-                "invalid-agent-dependency",
-                f"dependencies.tools[{index}] must be a mapping.",
-            )
-            continue
-        dependency_type = tool.get("type")
-        value = tool.get("value")
-        if (
-            not isinstance(dependency_type, str)
-            or not dependency_type.strip()
-            or len(dependency_type.strip()) > 64
-            or not isinstance(value, str)
-            or not value.strip()
-            or len(value.strip()) > MAX_DESCRIPTION_CHARS
-        ):
-            result.add(
-                "error",
-                "invalid-agent-dependency",
-                f"dependencies.tools[{index}] requires bounded type and value strings.",
-            )
-
-
-def _validate_resources(skill_dir: Path, result: SkillResult) -> None:
-    """Validate bundle resources with the same hard limits as Settings CRUD."""
-
-    entries_seen = 0
-    root = skill_dir.resolve()
+def _bundle_files(skill_dir: Path, result: SkillValidation) -> list[Path]:
+    files: list[Path] = []
     stack = [skill_dir]
+    seen = 0
     while stack:
-        base_path = stack.pop()
-        entries, truncated = _bounded_directory_entries(
-            base_path, limit=MAX_BUNDLE_ENTRIES - entries_seen
-        )
-        entries_seen += len(entries)
-        directories: list[Path] = []
-        files: list[Path] = []
-        for path, is_directory, is_symlink in entries:
-            relative = path.relative_to(skill_dir).as_posix()
-            if is_symlink:
-                result.add("error", "symlinked-resource", relative)
-                continue
-            if is_directory:
-                directories.append(path)
-            else:
-                files.append(path)
-        if truncated:
-            result.add(
-                "error",
-                "bundle-entry-limit",
-                f"Bundle exceeds {MAX_BUNDLE_ENTRIES} filesystem entries.",
-            )
-            return
-        stack.extend(reversed(directories))
-        for path in files:
-            relative = path.relative_to(skill_dir).as_posix()
-            if relative in {"SKILL.md", ".evoflux.json"}:
-                continue
-            try:
-                path.resolve().relative_to(root)
-                size = path.stat().st_size
-            except (OSError, ValueError) as exc:
-                result.add("error", "unreadable-resource", f"{relative}: {exc}")
-                continue
-            result.resource_count += 1
-            if size > MAX_RESOURCE_BYTES:
+        current = stack.pop()
+        for entry in sorted(current.iterdir(), key=lambda item: item.name):
+            seen += 1
+            if seen > MAX_BUNDLE_ENTRIES:
                 result.add(
-                    "error",
-                    "resource-too-large",
-                    f"{relative} exceeds {MAX_RESOURCE_BYTES} bytes.",
+                    "bundle-too-large", f"Bundle exceeds {MAX_BUNDLE_ENTRIES} entries."
                 )
+                return files
+            relative = entry.relative_to(skill_dir).as_posix()
+            if entry.name == "__pycache__":
+                continue
+            if entry.is_symlink():
+                result.add(
+                    "symlink", "Bundles must not contain symlinks.", path=relative
+                )
+                continue
+            if entry.is_dir():
+                stack.append(entry)
+            elif entry.is_file():
+                files.append(entry)
+    return files
 
 
-def _validate_links(skill_dir: Path, body: str, result: SkillResult) -> None:
+def _links(text: str) -> list[str]:
+    links: list[str] = []
+    in_fence = False
+    for line in text.splitlines():
+        if _CODE_FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if not in_fence:
+            links.extend(match.group(1) for match in _LINK_RE.finditer(line))
+    return links
+
+
+def _local_target(source: Path, target: str, skill_dir: Path) -> Path | None:
+    """Resolve a relative link target, or ``None`` for URLs and anchors.
+
+    The specification makes paths relative to the skill root, which is also
+    how the model resolves them. A link relative to the linking file is
+    accepted when that is the only reading that exists.
+    """
+
+    if re.match(r"^[a-z][a-z0-9+.-]*:", target, re.IGNORECASE) or target.startswith(
+        "#"
+    ):
+        return None
+    clean = target.split("#", 1)[0]
+    if not clean:
+        return None
+    from_root = (skill_dir / clean).resolve()
+    if from_root.exists():
+        return from_root
+    from_file = (source.parent / clean).resolve()
+    return from_file if from_file.exists() else from_root
+
+
+def _check_markdown(
+    skill_dir: Path,
+    path: Path,
+    text: str,
+    result: SkillValidation,
+) -> set[Path]:
+    """Validate one Markdown file's links; return linked Markdown files."""
+
+    relative = path.relative_to(skill_dir).as_posix()
+    linked: set[Path] = set()
     root = skill_dir.resolve()
-    for raw_target in MARKDOWN_LINK_RE.findall(body):
-        target = raw_target.strip().strip("<>").split("#", 1)[0]
-        if not target or target.startswith(("http://", "https://", "mailto:")):
+    for target in _links(text):
+        if "\\" in target:
+            result.add(
+                "backslash-path", f"Link '{target}' uses a backslash.", path=relative
+            )
             continue
-        relative = PurePosixPath(target)
-        if relative.is_absolute() or ".." in relative.parts or "\\" in target:
-            result.add("error", "unsafe-resource-link", raw_target)
+        resolved = _local_target(path, target, skill_dir)
+        if resolved is None:
             continue
-        path = skill_dir.joinpath(*relative.parts)
-        try:
-            resolved = path.resolve()
-            resolved.relative_to(root)
-        except (OSError, ValueError):
-            result.add("error", "unsafe-resource-link", raw_target)
+        if not resolved.is_relative_to(root):
+            result.add(
+                "link-escapes-bundle",
+                f"Link '{target}' leaves the bundle.",
+                path=relative,
+            )
             continue
-        if not path.exists():
-            result.add("error", "missing-resource-link", target)
-
-
-def _validate_evals(
-    skill_dir: Path, result: SkillResult, *, require_evals: bool
-) -> None:
-    path = skill_dir / "evals" / "trigger-cases.json"
-    if not path.exists():
+        if not resolved.exists():
+            result.add(
+                "missing-link-target", f"Link '{target}' does not exist.", path=relative
+            )
+            continue
+        if resolved.suffix.lower() == ".md":
+            linked.add(resolved)
+    if _PLACEHOLDER_RE.search(text):
         result.add(
-            "error" if require_evals else "warning",
-            "missing-trigger-evals",
-            "No evals/trigger-cases.json activation cases.",
+            "host-placeholder",
+            "Host placeholders are not expanded; use relative paths or the paths "
+            "stated in the Skills system-prompt section.",
+            path=relative,
         )
-        return
+    if _SKILL_TOOL_RE.search(text):
+        result.add(
+            "skill-tool-call",
+            "The skill tool does not exist; read files with the read tool.",
+            path=relative,
+        )
+    return linked
+
+
+def validate_skill(skill_dir: Path) -> SkillValidation:
+    result = SkillValidation(name=skill_dir.name, path=str(skill_dir))
+    skill_file = skill_dir / "SKILL.md"
     try:
-        text = _read_bounded_utf8(
-            path, limit=MAX_RESOURCE_BYTES, label="evals/trigger-cases.json"
-        )
-        raw = json.loads(text)
-    except (OSError, ValueError, json.JSONDecodeError, RecursionError) as exc:
-        result.add("error", "invalid-trigger-evals", str(exc))
-        return
-    cases = raw.get("cases") if isinstance(raw, dict) else raw
-    if not isinstance(cases, list) or not cases:
-        result.add("error", "invalid-trigger-evals", "Expected a non-empty case list.")
-        return
-    positive = 0
-    negative = 0
-    for index, case in enumerate(cases):
-        if not isinstance(case, dict):
+        payload = skill_file.read_bytes()
+        if len(payload) > MAX_SKILL_FILE_BYTES:
             result.add(
-                "error", "invalid-trigger-case", f"Case {index} is not an object."
+                "file-too-large", f"SKILL.md exceeds {MAX_SKILL_FILE_BYTES} bytes."
             )
+            return result
+        text = payload.decode("utf-8")
+        definition = parse_skill(text, directory_name=skill_dir.name, strict=True)
+    except (OSError, UnicodeError) as exc:
+        result.add("unreadable-skill", str(exc))
+        return result
+    except SkillFormatError as exc:
+        result.add("invalid-frontmatter", str(exc))
+        return result
+    if definition.name:
+        result.name = definition.name
+    for item in definition.diagnostics:
+        result.add(item.code, item.message, severity=item.severity)
+
+    for name in sorted(FORBIDDEN_ENTRIES):
+        if (skill_dir / name).exists():
+            result.add(
+                "control-plane-file",
+                f"'{name}' does not belong in a Skill bundle.",
+                path=name,
+            )
+
+    files = _bundle_files(skill_dir, result)
+    root = skill_dir.resolve()
+    markdown = {
+        path.resolve(): path
+        for path in files
+        if path.suffix.lower() == ".md" and path.resolve() != skill_file.resolve()
+    }
+    for path in files:
+        if path.name == "SKILL.md" and path.resolve() != skill_file.resolve():
+            result.add(
+                "nested-skill",
+                "Nested SKILL.md files are not skills; merge them into references.",
+                path=path.relative_to(skill_dir).as_posix(),
+            )
+
+    direct = _check_markdown(skill_dir, skill_file, text, result)
+    for resolved, path in sorted(markdown.items()):
+        relative = path.relative_to(skill_dir).as_posix()
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            result.add("unreadable-resource", str(exc), path=relative)
             continue
-        query = case.get("query", case.get("prompt"))
-        trigger = case.get("should_trigger")
-        if (
-            not isinstance(query, str)
-            or not query.strip()
-            or not isinstance(trigger, bool)
-        ):
-            result.add(
-                "error",
-                "invalid-trigger-case",
-                f"Case {index} requires a query/prompt and boolean should_trigger.",
-            )
-            continue
-        positive += int(trigger)
-        negative += int(not trigger)
-        expected_operation = case.get("expected_operation")
-        if (
-            expected_operation is not None
-            and expected_operation not in CODE_GRAPH_OPERATIONS
-        ):
-            result.add(
-                "error",
-                "invalid-trigger-case",
-                f"Case {index} has unsupported expected_operation '{expected_operation}'.",
-            )
-        for field_name in ("expected_trajectory", "forbidden_behaviors"):
-            values = case.get(field_name)
-            if values is None:
-                continue
-            if (
-                not isinstance(values, list)
-                or not values
-                or any(
-                    not isinstance(value, str) or not value.strip() for value in values
-                )
-            ):
+        linked = _check_markdown(skill_dir, path, content, result)
+        in_assets = PurePosixPath(relative).parts[0] == "assets"
+        if resolved in direct:
+            for target in sorted(linked - direct - {skill_file.resolve()}):
                 result.add(
-                    "error",
-                    "invalid-trigger-case",
-                    f"Case {index} {field_name} must be a non-empty string list.",
+                    "nested-reference",
+                    f"{relative} links to {target.relative_to(root).as_posix()}, which "
+                    "SKILL.md does not link; keep references one level deep.",
+                    path=relative,
                 )
-    result.eval_count = len(cases)
-    if positive == 0 or negative == 0:
-        result.add(
-            "error",
-            "unbalanced-trigger-evals",
-            "Activation evals need both positive and near-miss negative cases.",
-        )
-
-
-def validate_skill(skill_dir: Path, *, require_evals: bool = False) -> SkillResult:
-    result = SkillResult(name=skill_dir.name, path=str(skill_dir / "SKILL.md"))
-    metadata, body = _parse_skill(skill_dir / "SKILL.md", result)
-    _validate_frontmatter(skill_dir, metadata, body, result)
-    _validate_agent_metadata(skill_dir, result)
-    _validate_links(skill_dir, body, result)
-    _validate_evals(skill_dir, result, require_evals=require_evals)
-    _validate_resources(skill_dir, result)
+        elif not in_assets:
+            result.add(
+                "unlinked-reference",
+                "Reference file is not linked from SKILL.md.",
+                severity="warning",
+                path=relative,
+            )
+        lines = content.splitlines()
+        if (
+            not in_assets
+            and len(lines) > TOC_LINE_THRESHOLD
+            and not any(_TOC_RE.match(line) for line in lines[:TOC_SEARCH_LINES])
+        ):
+            result.add(
+                "missing-contents",
+                f"Reference file has {len(lines)} lines; start it with a '## Contents' list.",
+                path=relative,
+            )
+        window = sum(len(line) + READ_LINE_PREFIX_CHARS for line in lines)
+        if window > READ_WINDOW_CHARS:
+            result.add(
+                "exceeds-read-window",
+                f"Reference needs about {window} characters in one read result "
+                f"({READ_WINDOW_CHARS} fit); split it by topic.",
+                severity="warning",
+                path=relative,
+            )
     return result
 
 
-def discover_skill_dirs(root: Path) -> list[Path]:
-    if not root.is_dir():
-        raise FileNotFoundError(f"Skills directory not found: {root}")
-    entries, truncated = _bounded_directory_entries(root, limit=MAX_SKILL_DIRECTORIES)
-    if truncated:
-        raise ValueError(
-            f"Skills root exceeds {MAX_SKILL_DIRECTORIES} immediate entries: {root}"
-        )
-    return [
-        path
-        for path, is_directory, is_symlink in entries
-        if is_directory and not is_symlink and (path / "SKILL.md").is_file()
+def skill_directories(root: Path) -> list[Path]:
+    directories = [
+        entry
+        for entry in sorted(root.iterdir(), key=lambda item: item.name)
+        if entry.is_dir()
+        and not entry.name.startswith(".")
+        and not entry.is_symlink()
+        and (entry / "SKILL.md").is_file()
     ]
+    return directories[:MAX_SKILL_DIRECTORIES]
 
 
-def _print_human(results: list[SkillResult]) -> None:
-    valid = sum(result.valid for result in results)
-    print(
-        f"Validated {len(results)} skill bundles: {valid} valid, {len(results) - valid} invalid"
-    )
-    for result in results:
-        status = "PASS" if result.valid else "FAIL"
-        print(
-            f"{status:4} {result.name} "
-            f"({result.resource_count} resources, {result.eval_count} evals)"
-        )
-        for finding in result.findings:
-            print(f"  {finding.severity.upper():7} {finding.code}: {finding.message}")
+def validate_root(root: Path) -> list[SkillValidation]:
+    return [validate_skill(directory) for directory in skill_directories(root)]
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "skills_dir",
         nargs="?",
         type=Path,
         default=DEFAULT_SKILLS_DIR,
-        help="Root containing skill bundle directories.",
+        help="Directory whose direct children are Skills (default: bundled Skills).",
     )
     parser.add_argument(
-        "--require-evals",
-        action="store_true",
-        help="Treat a missing trigger-case file as an error.",
+        "--json", action="store_true", help="Print machine-readable results."
     )
-    parser.add_argument("--json", action="store_true", help="Emit JSON diagnostics.")
+    parser.add_argument(
+        "--strict-warnings",
+        action="store_true",
+        help="Treat warnings as failures (used for bundled Skills).",
+    )
     args = parser.parse_args(argv)
-    try:
-        results = [
-            validate_skill(path, require_evals=args.require_evals)
-            for path in discover_skill_dirs(args.skills_dir)
-        ]
-    except (FileNotFoundError, ValueError) as exc:
-        print(str(exc), file=sys.stderr)
+    if not args.skills_dir.is_dir():
+        print(f"Skills directory not found: {args.skills_dir}", file=sys.stderr)
         return 2
+    results = validate_root(args.skills_dir)
     if args.json:
         print(
             json.dumps(
-                [
-                    {
-                        **asdict(result),
-                        "valid": result.valid,
-                    }
-                    for result in results
-                ],
+                [{**asdict(result), "valid": result.valid} for result in results],
                 indent=2,
             )
         )
     else:
-        _print_human(results)
-    return 0 if all(result.valid for result in results) else 1
+        for result in results:
+            status = "ok" if result.valid else "invalid"
+            print(f"{result.name}: {status}")
+            for item in result.findings:
+                print(f"  {item.severity} {item.code} {item.path}: {item.message}")
+    failed = any(
+        not result.valid or (args.strict_warnings and result.findings)
+        for result in results
+    )
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

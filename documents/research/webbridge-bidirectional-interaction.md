@@ -104,7 +104,7 @@ bật WebBridge hoặc grant session cho pairing. Tag không cấp capability v�
 - Semantic AX runtime có opaque refs, verified rich-text writes, bounded
   spreadsheet matrix/range và PowerPoint text-object probes. Cross-origin frames
   bị skip; unsupported không silent-fallback sang coordinate write.
-- Teach draft sinh workflow YAML hợp lệ và replay từng bước; watch có multi-item
+- Teach draft được review và replay từng bước; watch có multi-item
   triage và profile-wide kill switch.
 - Teach replay có execution/cursor/in-flight state trong DB, atomic step claim,
   durable `Idempotency-Key` response và fail-closed ambiguity resolution. Secret
@@ -134,7 +134,7 @@ khi công bố compatibility cho một tenant cụ thể.
 | Element picker + local human-control lease | `element_picker.js`, `background.js` | Primitive cho shared focus và takeover |
 | CDP capture/action primitives | `background.js`, `webbridge_tool.py` | Có screenshot, keyboard, DOM extract và generic actions |
 | Domain/sharing settings + bidirectional audit | runtime settings + WebBridge service | Policy phủ mọi ingress/read path đã implement |
-| Teach workflow + multi-watch | extension recorder/worker + API | Workflow YAML, supervised replay và triage đã implement |
+| Teach draft + multi-watch | extension recorder/worker + API | Teach draft, supervised replay và triage đã implement |
 
 ### 1.2 Các gap audit đã phát hiện (historical)
 
@@ -216,7 +216,7 @@ smoke test; việc không có adapter/schema/test là fact đã xác minh.
 | G10 | Artifact/privacy plane | **Done** | Hash/provenance/retention/delete and unified ingress policy | - |
 | G11 | Interactive handoff | **Done for live run** | Durable process-restart resume remains P3+ | P3 |
 | G12 | Report issue diagnostics | **Done** | Opt-in redacted evidence bundle via canonical artifact route | - |
-| G13 | Teach/watch | **Done without Browser Inbox** | Workflow YAML, step replay, multi-watch triage/kill switch | - |
+| G13 | Teach/watch | **Done without Browser Inbox** | Teach draft, step replay, multi-watch triage/kill switch | - |
 
 Bằng chứng implementation chính:
 
@@ -225,7 +225,7 @@ Bằng chứng implementation chính:
 - `sidepanel.js/html`, `markdown.js`: automatic tab-group status, rich safe history,
   authenticated media/files, handoff, artifacts, Teach/watch controls.
 - `webbridge.py`: provenance, pairing-scoped rich projection/media, multipart
-  artifact ingress, retention/delete, typed handoff, workflow YAML và audit.
+  artifact ingress, retention/delete, typed handoff, Teach draft/replay và audit.
 - `webbridge_service.py`: capability negotiation, command/share policy và
   direction-aware audit.
 - `tests/webbridge_extension.test.cjs`: 51 behavior/contract tests, gồm capture
@@ -356,7 +356,7 @@ hash, provenance, pairing owner, retention/delete; audit không giữ raw page b
 
 Automated coverage hiện có cho pairing/idempotency/binding, provenance,
 attachment/media auth, region geometry, redaction, semantic read-back,
-cross-origin exclusion, global history cursor, sharing policy, durable workflow
+cross-origin exclusion, global history cursor, sharing policy, durable Teach
 replay, named-sheet/skip refusal và exact slide targeting.
 Residual verification:
 
@@ -832,9 +832,9 @@ tool output/widget mở qua full EvoFlux renderer.
 | `semantic_runtime.js` | AX opaque targets, same-origin frames, verified text/range/slide operations |
 | Extension UI | Automatic primary/group tab session, rich transcript/media, context/file/region chips, handoff, diagnostics, multi-watch |
 | `webbridge_service.py` | Routing, capability enforcement, control/share policy và bidirectional audit |
-| `api/routes/team/webbridge.py` | Pairing, rich panel projection, artifact lifecycle, handoff, Teach workflow/replay |
+| `api/routes/team/webbridge.py` | Pairing, rich panel projection, artifact lifecycle, handoff, Teach draft/replay |
 | Chat/service layer | Canonical lock/queue/attachment dispatch; global lead/member history cursor |
-| Web UI | Browser-created marker, audit direction, Teach YAML/step review |
+| Web UI | Browser-created marker, audit direction, Teach step review |
 
 ---
 
@@ -940,7 +940,7 @@ cho cả command-plane observation:
   internal session; Page/Selection/File/Region artifact đi qua canonical chat pipeline.
 - **P2:** cursor history + SSE safe projection, media, typed handoff, element/
   control lease, Report issue và Open in EvoFlux đã implement.
-- **P3:** Teach workflow YAML + supervised step replay; multi-watch triage +
+- **P3:** Teach draft + supervised step replay; multi-watch triage +
   Stop all; replay cursor/idempotency/ambiguous outcome được persist; secret
   values không persist ở source/backend.
 

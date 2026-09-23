@@ -6,6 +6,12 @@ export const SIDE_PANEL_LAYOUT = {
    * tablet layout, so they get a larger one.
    */
   contentViewportRatio: 0.62,
+  /**
+   * The workbench dock holds documents, slides and code as well as the
+   * browser, so it may take most of the window; the primary column still
+   * keeps `minPrimaryWidth`.
+   */
+  workbenchViewportRatio: 0.75,
   minPrimaryWidth: 480,
   shellChromeWidth: 32,
 } as const

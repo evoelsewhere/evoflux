@@ -13,10 +13,27 @@ Third case: **XFA** (Adobe LiveCycle). AcroForm libraries can't fill these.
 Open in Adobe Reader — if the form pops in a moment after loading, it's XFA.
 Flatten with Adobe Acrobat first, then treat as AcroForm.
 
+Script packages, used in every command below:
+
+| Script | Command prefix |
+|--------|----------------|
+| `survey.py`, `apply_values.py` | `uv run --with pypdf python` |
+| `probe_fields.py` | `uv run --with pypdf --with pdfplumber --with pypdfium2 --with pillow python` |
+| `overlay_text.py` | `uv run --with pypdf --with reportlab --with pypdfium2 --with pillow python` |
+| `render_pages.py` | `uv run --with pypdfium2 --with pillow python` |
+
+## Contents
+
+- Step 0 — probe first, always
+- 1. Widgets path (AcroForm): list fields, preview, values file, apply, verify
+- 2. Overlay path (non-fillable): coordinates from structure, visual estimation, coordinate systems, dry run
+- 3. Special cases: unusual checkbox values, radio groups, multi-line, hybrid, signatures
+- Verify
+
 ## Step 0 — probe first, always
 
 ```bash
-scripts/survey.py form.pdf --pretty
+uv run --with pypdf python scripts/survey.py form.pdf --pretty
 ```
 
 - `form_field_count > 0` → §1 (widgets path)
@@ -29,7 +46,7 @@ scripts/survey.py form.pdf --pretty
 ### 1.1 List what's there
 
 ```bash
-scripts/probe_fields.py form.pdf --output fields.json
+uv run --with pypdf --with pdfplumber --with pypdfium2 --with pillow python scripts/probe_fields.py form.pdf --output fields.json
 ```
 
 Output (JSON array):
@@ -90,7 +107,7 @@ Field kinds and how to set their `value`:
 ### 1.2 Preview so you can eyeball each field
 
 ```bash
-scripts/probe_fields.py form.pdf --render-marked preview/ --output fields.json
+uv run --with pypdf --with pdfplumber --with pypdfium2 --with pillow python scripts/probe_fields.py form.pdf --render-marked preview/ --output fields.json
 ```
 
 Writes `preview/page_01_marked.png` etc. with each field's rectangle in red
@@ -116,7 +133,7 @@ The value **must match exactly** (case-sensitive for `/Yes`, `/Off`).
 ### 1.4 Apply
 
 ```bash
-scripts/apply_values.py form.pdf values.json --out filled.pdf
+uv run --with pypdf python scripts/apply_values.py form.pdf values.json --out filled.pdf
 ```
 
 `apply_values.py` validates every entry against the probed field types
@@ -134,10 +151,11 @@ and sets `/NeedAppearances = True` on `AcroForm` — some viewers (older
 Preview.app, in-browser PDF viewers) render blank text fields without that
 flag.
 
-Optional flattening (values become permanent, widgets removed):
+Optional flattening (values become permanent, widgets removed; needs `qpdf`
+through `EVOFLUX_QPDF` or `PATH`):
 
 ```bash
-scripts/apply_values.py form.pdf values.json --out filled.pdf --flatten
+uv run --with pypdf python scripts/apply_values.py form.pdf values.json --out filled.pdf --flatten
 ```
 
 Flatten before sending to counterparties who might resave and wipe your
@@ -146,7 +164,7 @@ values.
 ### 1.5 Verify
 
 ```bash
-scripts/render_pages.py filled.pdf verify/ --dpi 200
+uv run --with pypdfium2 --with pillow python scripts/render_pages.py filled.pdf verify/ --dpi 200
 ```
 
 Adobe, Chrome, and Preview all render fields slightly differently — check in
@@ -165,7 +183,7 @@ Works whenever the PDF has real text labels and vector rules — most gov /
 HR forms exported from Word or InDesign.
 
 ```bash
-scripts/probe_fields.py form.pdf --mode skeleton --output skeleton.json
+uv run --with pypdf --with pdfplumber --with pypdfium2 --with pillow python scripts/probe_fields.py form.pdf --mode skeleton --output skeleton.json
 ```
 
 Output:
@@ -221,7 +239,7 @@ Now write a plan file in **PDF points**:
 Then:
 
 ```bash
-scripts/overlay_text.py form.pdf plan.json --out filled.pdf
+uv run --with pypdf --with reportlab --with pypdfium2 --with pillow python scripts/overlay_text.py form.pdf plan.json --out filled.pdf
 ```
 
 ### 2.b Visual estimation (fallback for scans)
@@ -230,7 +248,7 @@ When the PDF is image-only (labels are `(cid:12)` gibberish), pick pixels
 from a rendered page and let the tool convert.
 
 ```bash
-scripts/render_pages.py form.pdf pages/ --dpi 200      # e.g. 1700×2200 px
+uv run --with pypdfium2 --with pillow python scripts/render_pages.py form.pdf pages/ --dpi 200      # e.g. 1700×2200 px
 ```
 
 Zoom-refine each field with ImageMagick to nail the exact pixels:
@@ -275,7 +293,7 @@ refuses to run without a valid `geometry` declaration.
 ### 2.d Sanity check the plan before merging
 
 ```bash
-scripts/overlay_text.py form.pdf plan.json --dry-run --preview qa/
+uv run --with pypdf --with reportlab --with pypdfium2 --with pillow python scripts/overlay_text.py form.pdf plan.json --dry-run --preview qa/
 ```
 
 Writes `qa/page_XX_preview.png` with red rectangles where the text will land
@@ -313,26 +331,52 @@ If `multiline: true`, put literal `\n` in the value:
 
 If most of the form is AcroForm but a few labels have no widgets:
 
-1. `apply_values.py form.pdf values.json --out step1.pdf`
-2. `overlay_text.py step1.pdf plan.json --out final.pdf`
+1. `scripts/apply_values.py form.pdf values.json --out step1.pdf`
+2. `scripts/overlay_text.py step1.pdf plan.json --out final.pdf`
 
-The two passes don't interfere.
+Use the command prefixes from the table at the top. The two passes don't
+interfere.
 
 ### 3.5 Signatures
 
 Digital signatures require an X.509 cert and a signing library — out of
 scope. For a *visual*-only signature (image of a handwritten signature),
-treat it as a plain image overlay via `compose.md` §6.
+draw the image on a transparent overlay and merge it. Save as
+`stamp_signature.py` and run with
+`uv run --with reportlab --with pypdf --with pillow python stamp_signature.py`:
+
+```python
+import io
+from pypdf import PdfReader, PdfWriter
+from reportlab.pdfgen import canvas
+
+writer = PdfWriter(clone_from=PdfReader("filled.pdf"))  # keeps the AcroForm and metadata
+target = writer.pages[0]                                # page that gets the signature
+w, h = float(target.mediabox.width), float(target.mediabox.height)
+
+buf = io.BytesIO()
+c = canvas.Canvas(buf, pagesize=(w, h))
+# PDF points, origin bottom-left: x, y, width, height of the signature box
+c.drawImage("signature.png", 360, 90, width=160, height=50,
+            preserveAspectRatio=True, mask="auto")      # mask="auto" keeps PNG transparency
+c.save(); buf.seek(0)
+
+target.merge_page(PdfReader(buf).pages[0])
+with open("signed_visual.pdf", "wb") as fh:
+    writer.write(fh)
+```
 
 ## Verify
 
 ```bash
-scripts/survey.py filled.pdf --pretty            # counts still right?
-scripts/render_pages.py filled.pdf verify/        # visually confirm
+uv run --with pypdf python scripts/survey.py filled.pdf --pretty                      # counts still right?
+uv run --with pypdfium2 --with pillow python scripts/render_pages.py filled.pdf verify/ # one image per page
 ```
 
-If you flattened, confirm the widgets are gone:
+Run the `document_preview` tool on the filled file to confirm each value sits
+inside its box in the rendered layout. If you flattened, confirm the widgets
+are gone:
 
 ```bash
-scripts/probe_fields.py filled.pdf                # should return []
+uv run --with pypdf --with pdfplumber --with pypdfium2 --with pillow python scripts/probe_fields.py filled.pdf   # should return []
 ```

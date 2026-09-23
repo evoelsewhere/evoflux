@@ -102,18 +102,15 @@ async def test_boundary_holds_still_while_the_conversation_grows():
 
 
 @pytest.mark.asyncio
-async def test_preserves_skill_and_multimodal_results():
+async def test_preserves_skill_activation_reads():
+    skill_read = FunctionCall(name="read", arguments='{"path": "/skills/pdf/SKILL.md"}')
+    other_read = FunctionCall(name="read", arguments='{"path": "/skills/pdf/forms.md"}')
     messages = [
         *_batch(1),
-        AssistantMessage(
-            tool_calls=[
-                ToolCall(
-                    id="skill-1",
-                    function=FunctionCall(name="skill", arguments="{}"),
-                )
-            ]
-        ),
-        ToolMessage(content="s" * 3_000, tool_call_id="skill-1", name="skill"),
+        AssistantMessage(tool_calls=[ToolCall(id="skill-1", function=skill_read)]),
+        ToolMessage(content="s" * 3_000, tool_call_id="skill-1", name="read"),
+        AssistantMessage(tool_calls=[ToolCall(id="ref-1", function=other_read)]),
+        ToolMessage(content="r" * 3_000, tool_call_id="ref-1", name="read"),
         *_batch(2),
     ]
     state = AgentState(messages=messages)
@@ -127,12 +124,13 @@ async def test_preserves_skill_and_multimodal_results():
     )
 
     sent = handler.await_args.args[0]
-    skill_result = next(
-        message
+    results = {
+        message.tool_call_id: message.content
         for message in sent.messages
-        if isinstance(message, ToolMessage) and message.name == "skill"
-    )
-    assert skill_result.content == "s" * 3_000
+        if isinstance(message, ToolMessage)
+    }
+    assert results["skill-1"] == "s" * 3_000
+    assert results["ref-1"] != "r" * 3_000
 
 
 @pytest.mark.asyncio

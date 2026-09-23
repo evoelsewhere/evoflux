@@ -24,8 +24,9 @@ copied into ``Contents/Resources/``. Instead we:
 
 1. Fetch a python-build-standalone tarball for the target triple via
    ``uv python install --install-dir …``.
-2. ``uv pip install --target <site-packages> --python <python-bin>``
-   the local project + chosen extras.
+2. ``uv export --locked`` the pinned dependencies (+ chosen extras) from
+   ``uv.lock``, ``uv pip install --target <site-packages> --python
+   <python-bin>`` them, then install the local project with ``--no-deps``.
 3. Strip the ``site-packages/`` of caches, tests, docs.
 4. Smoke-test the bundle by invoking ``serve --port 0 --handshake``.
 
@@ -49,6 +50,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -236,12 +238,46 @@ def normalise_python_dir(install_root: Path, target: Path, python_bin: Path) -> 
 def install_packages(
     python_bin: Path, project_root: Path, site_packages: Path, extras: list[str]
 ) -> None:
-    """Install the local EvoFlux project + extras into ``site_packages``."""
+    """Install the local EvoFlux project + extras into ``site_packages``.
+
+    Dependencies come from ``uv.lock`` so the bundle ships exactly the versions
+    the dev environment and tests ran against. ``uv pip install <project>``
+    would re-resolve from ``pyproject.toml`` and silently drift.
+    """
     site_packages.mkdir(parents=True, exist_ok=True)
-    spec = "."
-    if extras:
-        spec = f".[{','.join(extras)}]"
-    # uv pip install --target: PEP 668-safe, no virtualenv needed.
+    with tempfile.TemporaryDirectory() as tmp:
+        requirements = Path(tmp) / "requirements.txt"
+        export_cmd = [
+            "uv",
+            "export",
+            "--locked",  # fail if uv.lock is stale against pyproject.toml
+            "--no-dev",
+            "--no-emit-project",
+            "--format",
+            "requirements.txt",
+            "--output-file",
+            str(requirements),
+        ]
+        for extra in extras:
+            export_cmd += ["--extra", extra]
+        run(export_cmd, cwd=project_root)
+        # uv pip install --target: PEP 668-safe, no virtualenv needed. The
+        # exported file carries hashes, so installs run in hash-checking mode.
+        run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                str(python_bin),
+                "--target",
+                str(site_packages),
+                "--requirements",
+                str(requirements),
+            ],
+            cwd=project_root,
+        )
+    # The project itself last, without re-resolving its dependencies.
     run(
         [
             "uv",
@@ -251,7 +287,8 @@ def install_packages(
             str(python_bin),
             "--target",
             str(site_packages),
-            spec,
+            "--no-deps",
+            ".",
         ],
         cwd=project_root,
     )

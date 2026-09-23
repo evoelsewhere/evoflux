@@ -11,12 +11,6 @@ from .prompt_cache import SessionPrefixSnapshot
 from .remote import RemoteConnection, RemotePairing
 from .suggested_task import SessionSuggestedTask
 from .team import DelegationTask
-from .workflow import (
-    WorkflowApproval,
-    WorkflowExecution,
-    WorkflowGateRequest,
-    WorkflowNodeRun,
-)
 from .webbridge import (
     WebBridgeInteraction,
     WebBridgePairing,
@@ -42,10 +36,6 @@ __all__ = [
     "ScheduledTask",
     "SessionGoal",
     "SessionSuggestedTask",
-    "WorkflowApproval",
-    "WorkflowExecution",
-    "WorkflowGateRequest",
-    "WorkflowNodeRun",
     "WebBridgeInteraction",
     "WebBridgePairing",
     "WebBridgeTabBinding",

@@ -19,20 +19,15 @@ const SIDEBAR_COLLAPSED_KEY = STORAGE_KEYS.sidebar.collapsed
 const WORKBENCH_MAXIMIZED_KEY = STORAGE_KEYS.panels.workbenchMaximized
 
 export type WorkbenchTool =
-  | 'overview'
   | 'terminal'
-  | 'processes'
   | 'browser'
   | 'files'
-  | 'graph'
   | 'side-chat'
   | 'wiki'
   | 'scheduler'
   | 'plugins'
   | 'source-control'
-  | 'pull-requests'
   | 'problems'
-  | 'asdd'
 
 export interface WorkbenchTab {
   id: string
@@ -62,17 +57,12 @@ export interface WorkbenchTabOptions {
  * the user into another session. Everything else is global.
  */
 const SESSION_SCOPED_TOOLS: ReadonlySet<WorkbenchTool> = new Set([
-  'overview',
   'terminal',
-  'processes',
   'browser',
   'files',
-  'graph',
   'side-chat',
   'source-control',
-  'pull-requests',
   'problems',
-  'asdd',
 ])
 // 'wiki', 'scheduler' and 'plugins' mean the same thing in every session,
 // so their tabs stay put across a switch.
@@ -121,12 +111,6 @@ export interface CodingScopeRequest {
   projectId: string | null
   workspace: string | null
 }
-
-export interface AsddChangeOpenRequest {
-  id: number
-  changeId: string
-}
-
 interface WorkbenchState {
   workbenchTabs: WorkbenchTab[]
   activeWorkbenchTabId: string | null
@@ -148,7 +132,6 @@ let workbenchTabSequence = 0
 let workspaceFileRequestSequence = 0
 let wikiFileRequestSequence = 0
 let codingScopeRequestSequence = 0
-let asddChangeOpenRequestSequence = 0
 
 function newWorkbenchTab(
   tool: WorkbenchTool,
@@ -391,10 +374,6 @@ interface UIStore extends WorkbenchState {
   wikiFileRequest: WikiFileRequest | null
   /** One-shot request to select a Coding project or repository in the sidebar. */
   codingScopeRequest: CodingScopeRequest | null
-  /** One-shot request to open one ASDD change in the Agent Spec-Driven panel. */
-  asddChangeOpenRequest: AsddChangeOpenRequest | null
-  /** Change currently selected in the Agent Spec-Driven workbench. */
-  asddSelectedChangeId: string | null
   createWorkbenchTab: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
   restoreWorkbenchTabs: (
     tool: WorkbenchTool,
@@ -419,8 +398,8 @@ interface UIStore extends WorkbenchState {
   closeBrowserPip: (sessionId?: string) => void
   toggleWiki: () => void
   toggleScheduler: () => void
-  togglePullRequests: () => void
   openGitChanges: () => void
+  openGitReviews: () => void
   setGitWorkspaceView: (view: GitWorkspaceView) => void
   toggleBrowser: () => void
   toggleTerminal: () => void
@@ -447,9 +426,6 @@ interface UIStore extends WorkbenchState {
   clearWikiFileRequest: (requestId?: number) => void
   requestCodingScope: (scope: { projectId?: string | null; workspace?: string | null }) => void
   clearCodingScopeRequest: (requestId?: number) => void
-  requestAsddChangeOpen: (changeId: string) => void
-  clearAsddChangeOpenRequest: (requestId?: number) => void
-  setAsddSelectedChangeId: (changeId: string | null) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -467,10 +443,7 @@ export const useUIStore = create<UIStore>()(
     pullRequestsScope: 'session',
     gitWorkspaceView: 'changes',
     createWorkbenchTab: (tool, options = {}) => set((state) => {
-      if (tool === 'pull-requests') {
-        state.pullRequestsScope = 'session'
-        state.gitWorkspaceView = 'reviews'
-      } else if (tool === 'source-control') {
+      if (tool === 'source-control') {
         state.gitWorkspaceView = 'changes'
       }
       addOrActivateTool(state, tool, options, true)
@@ -517,19 +490,13 @@ export const useUIStore = create<UIStore>()(
       }
     }),
     openWorkbenchTool: (tool, options = {}) => set((state) => {
-      if (tool === 'pull-requests') {
-        state.pullRequestsScope = 'session'
-        state.gitWorkspaceView = 'reviews'
-      } else if (tool === 'source-control') {
+      if (tool === 'source-control') {
         state.gitWorkspaceView = 'changes'
       }
       addOrActivateTool(state, tool, options)
     }),
     toggleWorkbenchTool: (tool) => set((state) => {
-      if (tool === 'pull-requests') {
-        state.pullRequestsScope = 'session'
-        state.gitWorkspaceView = 'reviews'
-      } else if (tool === 'source-control') {
+      if (tool === 'source-control') {
         state.gitWorkspaceView = 'changes'
       }
       toggleTool(state, tool)
@@ -563,12 +530,6 @@ export const useUIStore = create<UIStore>()(
     }),
     toggleWorkbench: () => set((state) => {
       state.workbenchOpen = !state.workbenchOpen
-      if (
-        state.workbenchOpen
-        && state.activeWorkbenchTool === 'pull-requests'
-      ) {
-        state.pullRequestsScope = 'session'
-      }
       if (!state.workbenchOpen) state.workbenchMaximized = false
     }),
     closeWorkbench: () => set((state) => {
@@ -614,19 +575,14 @@ export const useUIStore = create<UIStore>()(
     // and streamed tool calls. They now all target the shared workbench.
     toggleWiki: () => set((state) => { toggleTool(state, 'wiki') }),
     toggleScheduler: () => set((state) => { toggleTool(state, 'scheduler') }),
-    togglePullRequests: () => set((state) => {
-      const switchScopeOnly =
-        state.pullRequestsScope === 'session'
-        && state.activeWorkbenchTool === 'pull-requests'
-        && state.workbenchOpen
-      state.pullRequestsScope = 'all'
-      state.gitWorkspaceView = 'reviews'
-      if (switchScopeOnly) return
-      toggleTool(state, 'pull-requests')
-    }),
     openGitChanges: () => set((state) => {
       state.pullRequestsScope = 'session'
       state.gitWorkspaceView = 'changes'
+      addOrActivateTool(state, 'source-control')
+    }),
+    openGitReviews: () => set((state) => {
+      state.pullRequestsScope = 'session'
+      state.gitWorkspaceView = 'reviews'
       addOrActivateTool(state, 'source-control')
     }),
     setGitWorkspaceView: (view) => set((state) => {
@@ -720,21 +676,6 @@ export const useUIStore = create<UIStore>()(
     clearCodingScopeRequest: (requestId) => set((state) => {
       if (requestId !== undefined && state.codingScopeRequest?.id !== requestId) return
       state.codingScopeRequest = null
-    }),
-    asddChangeOpenRequest: null,
-    asddSelectedChangeId: null,
-    requestAsddChangeOpen: (changeId) => set((state) => {
-      asddChangeOpenRequestSequence += 1
-      state.asddChangeOpenRequest = { id: asddChangeOpenRequestSequence, changeId }
-      state.asddSelectedChangeId = changeId
-      addOrActivateTool(state, 'asdd')
-    }),
-    clearAsddChangeOpenRequest: (requestId) => set((state) => {
-      if (requestId !== undefined && state.asddChangeOpenRequest?.id !== requestId) return
-      state.asddChangeOpenRequest = null
-    }),
-    setAsddSelectedChangeId: (changeId) => set((state) => {
-      state.asddSelectedChangeId = changeId
     }),
   }))
 )

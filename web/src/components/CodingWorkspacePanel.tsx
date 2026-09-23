@@ -9,7 +9,6 @@ import { formatBytes } from '@/utils/format'
 import { workspaceLabel } from '@/utils/workspace'
 import { useProjectQuery } from '@/queries/useProjectsQuery'
 import { SidePanel } from './shell/SidePanel'
-import { CodeGraphPanel } from './CodeGraphPanel'
 import { CodingFileViewerPanel } from './CodingFileViewerPanel'
 import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
 import {
@@ -19,7 +18,6 @@ import {
 } from './FileExplorerContextMenu'
 import { MultiRepoFileTree } from './MultiRepoFileTree'
 import { NativeFileTree } from './NativeFileTree'
-import { ProjectCodeGraphPanel } from './ProjectCodeGraphPanel'
 import type { WorkspaceFileInfo } from '@/api/types'
 import { isTauriAvailable, tauriOpenWorkspaceFile } from '@/api/tauri-workspace'
 import { openExternalUrl } from '@/lib/open-external'
@@ -194,7 +192,6 @@ export function TreeNodeView({
 export function CodingWorkspacePanel({
   workspace,
   open,
-  view = 'files',
   onClose,
   mobile = false,
   selectedFilePath = null,
@@ -210,7 +207,6 @@ export function CodingWorkspacePanel({
 }: {
   workspace: string
   open: boolean
-  view?: 'files' | 'graph'
   onClose: () => void
   mobile?: boolean
   selectedFilePath?: string | null
@@ -234,7 +230,7 @@ export function CodingWorkspacePanel({
   // project detail is still loading (see work.tsx projectId priming).
   const isProjectMode = projectId != null
   // Single-workspace queries — dead in project mode (Files/Changed render
-  // MultiRepoFileTree/DiffReviewPanel instead), so skip the wasted fetch.
+  // MultiRepoFileTree instead), so skip the wasted fetch.
   const files = useQuery({
     queryKey: queryKeys.coding.files(workspace),
     queryFn: () => listCodingWorkspaceFiles(workspace),
@@ -418,7 +414,7 @@ export function CodingWorkspacePanel({
         {!embedded && (
           <header className="flex shrink-0 items-center justify-between gap-3 border-b border-(--color-border) px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
-            {view === 'files' && mobile && mobilePane === 'preview' && (
+            {mobile && mobilePane === 'preview' && (
               <button
                 type="button"
                 onClick={() => setMobilePane('tree')}
@@ -451,7 +447,7 @@ export function CodingWorkspacePanel({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {view === 'files' && (
+            {
               <button
                 type="button"
                 onClick={() => void refreshFiles()}
@@ -461,8 +457,8 @@ export function CodingWorkspacePanel({
               >
                 <RefreshCw size={14} />
               </button>
-            )}
-            {view === 'files' && !mobile && (
+            }
+            {!mobile && (
               <button
                 type="button"
                 onClick={toggleTree}
@@ -489,22 +485,7 @@ export function CodingWorkspacePanel({
           </div>
           </header>
         )}
-        {view === 'graph' ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            {isProjectMode ? (
-              project ? (
-                <ProjectCodeGraphPanel project={project} onFileSelect={onFileSelect} />
-              ) : (
-                <p className="px-2 py-4 text-xs text-(--color-text-subtle)">Loading project repositories…</p>
-              )
-            ) : (
-              <div className="min-h-0 flex-1">
-                <CodeGraphPanel workspace={workspace} onFileSelect={onFileSelect} />
-              </div>
-            )}
-          </div>
-        ) : (
-          <div ref={splitBodyRef} className="flex min-h-0 flex-1 overflow-hidden">
+        <div ref={splitBodyRef} className="flex min-h-0 flex-1 overflow-hidden">
             {showPreview && (
               <div className="order-1 min-w-0 flex-1">
                 {selectedFile ? (
@@ -703,7 +684,6 @@ export function CodingWorkspacePanel({
               </nav>
             )}
           </div>
-        )}
     </SidePanel>
   )
 }

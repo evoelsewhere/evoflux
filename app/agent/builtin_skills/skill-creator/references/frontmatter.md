@@ -1,138 +1,130 @@
-# Skill metadata reference (EvoFlux)
+# SKILL.md frontmatter reference
 
-EvoFlux keeps `SKILL.md` frontmatter portable and puts every host-specific
-setting in a sibling file. Only the frontmatter is loaded eagerly, so it alone
-decides whether the skill is ever activated.
+## Contents
 
-## SKILL.md frontmatter — exactly two fields
+- Field table
+- name
+- description
+- Optional fields
+- EvoFlux invocation keys
+- Errors and warnings
+- Description examples
+
+`SKILL.md` starts with YAML frontmatter between two `---` lines, followed by a
+non-empty Markdown body. The frontmatter is the only part of a skill that is
+always in context, so it alone decides whether the skill is ever read.
+
+## Field table
+
+| Field | Required | Constraint |
+|---|---|---|
+| `name` | yes | 1-64 lowercase letters, digits, single hyphens; equals the directory name; no `anthropic` or `claude`; no XML tags |
+| `description` | yes | 1-1,024 characters; third person; what the skill does and when to use it; no XML tags |
+| `license` | no | License name or a pointer to a bundled license file |
+| `compatibility` | no | At most 500 characters of environment requirements |
+| `metadata` | no | Map of string keys to string values |
+| `allowed-tools` | no | Space-separated tool list; displayed only |
+| `disable-model-invocation` | no | `true` hides the skill from the model catalog |
+| `user-invocable` | no | `false` removes the skill from the `$` picker |
+
+Any other key is ignored and reported as a warning.
+
+## name
+
+- Pattern `^[a-z0-9]+(-[a-z0-9]+)*$`: no capitals, underscores, spaces, or
+  leading, trailing, or doubled hyphens.
+- Must equal the name of the directory that holds `SKILL.md`.
+- Must not contain the reserved words `anthropic` or `claude`.
+- Prefer a gerund or noun phrase that names the activity:
+  `processing-pdfs`, `analyzing-spreadsheets`, `release-checklist`. Avoid vague
+  names such as `helper`, `utils`, or `tools`.
+
+## description
+
+The description is how the agent picks one skill out of many. Write it in the
+third person because it is injected into the system prompt.
+
+- Say **what** the skill does: the artifacts, file types, and operations.
+- Say **when** to use it: "Use when ..." followed by the phrases and contexts
+  users actually mention.
+- Add a short "Not for ..." sentence when an adjacent request would otherwise
+  trigger it, and name the skill that handles that request.
+- No "I can help you", no "You can use this", no "Use this skill to ...".
+- No XML tags or angle-bracket markup.
+
+## Optional fields
 
 ```yaml
 ---
-name: skill-name-in-kebab-case
-description: What the skill is for, when to apply it, and when not to.
+name: processing-pdfs
+description: Extracts text and tables from PDF files. Use when working with PDFs or document extraction.
+license: Apache-2.0. LICENSE.txt has complete terms
+compatibility: Requires Python 3.10+ and the pypdf package; needs network access only for OCR downloads.
+metadata:
+  author: example-team
+  version: "1.2.0"
+allowed-tools: read shell
 ---
 ```
 
-Anything else in the frontmatter is a contract violation: the bundled-skill
-test asserts the key set is exactly `name` and `description`. Licence text,
-version numbers, platform lists, and tool restrictions belong outside the
-frontmatter.
+- `license`: when the bundle ships a license file, name the SPDX identifier and
+  the real filename.
+- `compatibility`: state only real requirements (runtimes, packages, network,
+  operating system). The agent sees it when it reads `SKILL.md`.
+- `metadata`: every value must be a string; quote version numbers.
+- `allowed-tools`: informational in EvoFlux; permissions are not changed by it.
 
-### name
+## EvoFlux invocation keys
 
-- One to sixty-four characters, lowercase letters, digits, and single hyphens.
-- Must equal the directory name.
+- `disable-model-invocation: true`: the skill is not listed in the model
+  catalog, so the model never activates it on its own. The user can still type
+  `$name`. Use it for long, interrupting, or side-effectful workflows whose
+  timing the user should own (installers, configuration changes, database
+  queries). State the same boundary in the description.
+- `user-invocable: false`: the skill disappears from the `$` picker and `$name`
+  is ignored for it. Use it for skills that only make sense when the model
+  selects them, or that an agent definition preloads.
 
-### description
+## Errors and warnings
 
-- Under 1024 characters, and no XML angle brackets — it is injected into the
-  prompt catalogue.
-- States what the skill is for and, explicitly, what it is not for. The
-  negative half is what stops a skill firing on every adjacent request.
-- Written for the router, not for a human browsing a list. Name the artifacts,
-  file types, and decisions that identify the task.
+Errors (the skill is not loaded): unreadable or non-UTF-8 `SKILL.md`, a file
+larger than 512 KiB, missing or malformed frontmatter, missing `name`, a `name`
+outside the lowercase/digit/hyphen form, missing or empty `description`, an
+empty body.
 
-House phrasing: *Use this skill to … Apply it to … ; do not use it for … .*
+Warnings (the skill loads): `name` longer than 64 characters, `name` not
+matching the directory, reserved words, `description` longer than 1,024
+characters, XML tags, `compatibility` longer than 500 characters, non-string
+`metadata`, unknown keys, a body longer than 500 lines, and a `SKILL.md` that
+does not fit in one `read` result (20,000 characters including line-number
+prefixes).
 
-## agents/evoflux.yaml — interface and policy
-
-```yaml
-interface:
-  display_name: "Human-readable name"
-  short_description: "One line shown in Settings"
-  default_prompt: "Use $skill-name to ..."
-policy:
-  allow_implicit_invocation: true
-dependencies:
-  tools:
-    - type: builtin
-      value: shell
-```
-
-`display_name` and `short_description` are required once the file exists.
-`allow_implicit_invocation: false` keeps the skill out of implicit routing so
-it only runs when the user asks for it by name — use it for long, interrupting,
-or side-effectful workflows, and keep the same rule stated in the description
-and body so the skill still behaves if the flag is ever removed.
-
-A missing `agents/evoflux.yaml` is a warning, not an error: runtime defaults
-apply. Ship one anyway for anything a user will see in Settings.
-
-## evals/trigger-cases.json — activation evidence
-
-```json
-[
-  { "query": "a request that must load the skill", "should_trigger": true },
-  {
-    "query": "an adjacent request that must not",
-    "should_trigger": false,
-    "near_miss": "why this one is out of scope"
-  }
-]
-```
-
-Both a positive and a negative case are required; the validator rejects a
-one-sided set. Near misses are the point — they encode the boundary the
-description promises.
-
-## .evoflux.json — mode scope
-
-```json
-{ "modes": ["coding"] }
-```
-
-Scopes a user or project skill to Work mode, Coding mode, or both. Bundled
-skills do not use this file: their scope lives in
-`app/agent/builtin_skills/catalog.py`, which must list every bundled skill.
-
-## Bundle layout
-
-```
-skill-name/
-├── SKILL.md            required
-├── agents/evoflux.yaml interface and policy
-├── evals/              trigger-cases.json
-├── references/         loaded on demand, never eagerly
-├── scripts/            deterministic helpers
-└── assets/             templates and output material
-```
-
-Recognised resource directories are `agents`, `assets`, `evals`, `evaluations`,
-`examples`, `reference`, `references`, `scripts`, and `templates`. Symlinks are
-rejected, links must stay inside the bundle, and every relative markdown link
-in the body must resolve to a file that exists.
-
-## Validate
-
-```bash
-python scripts/validate_skills.py app/agent/builtin_skills
-python scripts/validate_skills.py path/to/skills --require-evals
-```
-
-Fix every ERROR; treat each WARNING as a review prompt. A body over roughly
-five hundred lines warns — that is a signal to move conditional detail into
-`references/`, not to compress the prose.
+Skills created or edited through Settings are validated strictly: every warning
+except body length and the read-window limit becomes an error. Author to the
+strict rules so a skill never depends on lenient loading.
 
 ## Description examples
 
 Weak, because it never triggers reliably:
 
 ```yaml
-description: Helps with projects.
+description: Helps with documents.
 ```
 
-Weak, because nothing tells the router when to stay out:
+Weak, because it is not third person and names no trigger:
 
 ```yaml
-description: Creates sophisticated multi-page documentation systems.
+description: I can help you process Excel files.
 ```
 
-Strong, because it names the artifact, the trigger, and the boundary:
+Strong, because it names the artifact, the operations, and the triggers:
 
 ```yaml
-description: Use this skill to build, edit, or inspect a spreadsheet file when
-  that file is the deliverable — models, formula-driven summaries, template
-  fills, messy-data repair, and workbook audits. Do not use it when the
-  spreadsheet is only source material for an analysis whose real output is
-  something else.
+description: Analyzes Excel spreadsheets, creates pivot tables, and generates charts. Use when analyzing .xlsx files, spreadsheets, tabular data, or when the user asks for a workbook summary.
+```
+
+Strong, with a boundary against a near miss:
+
+```yaml
+description: Generates descriptive commit messages by analyzing git diffs. Use when the user asks for help writing a commit message or reviewing staged changes. Not for writing pull request descriptions.
 ```

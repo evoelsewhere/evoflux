@@ -59,8 +59,7 @@ export {
   useSkillFileQuery,
   useCreateSkillMutation,
   useUpdateSkillMutation,
-  useUpdateSkillSettingsMutation,
-  useResetSkillSettingsMutation,
+  useSetSkillEnabledMutation,
   useDeleteSkillMutation,
 } from './useSkillFilesQuery'
 export { useObservabilitySummaryQuery } from './useObservabilitySummaryQuery'
@@ -118,20 +117,6 @@ export {
   useInstallSeedMutation,
 } from './useProvidersQuery'
 export { queryKeys } from './keys'
-export {
-  useApproveAsddArtifactMutation,
-  useArchiveAsddChangeMutation,
-  useAsddChangeQuery,
-  useAsddChangesQuery,
-  useAsddSetupQuery,
-  useAsddSpecQuery,
-  useCreateAsddChangeMutation,
-  useDeleteAsddChangeMutation,
-  useInitializeAsddSetupMutation,
-  useMarkAsddChangeReadyMutation,
-  useSetAsddAutopilotMutation,
-  useStartAsddActionMutation,
-} from './useAsddQuery'
 export {
   useLanguageServersQuery,
   useDismissLanguageServerErrorMutation,

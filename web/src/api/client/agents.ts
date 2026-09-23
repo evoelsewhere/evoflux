@@ -14,8 +14,6 @@ import type {
   SkillListResponse,
   SkillDetail,
   SkillBundleFileWrite,
-  SkillMode,
-  SkillRuntimeSettingsUpdate,
   SkillDeleteResponse,
   CommandListResponse,
   CommandRenderResponse,
@@ -23,23 +21,34 @@ import type {
   SnippetRenderResponse,
 } from '../types'
 
-/** Discovery scope shared by the skill catalog and the agent registry. */
+/**
+ * Discovery scope shared by the skill catalog and the agent registry.
+ * Project skills are discovered from these authorized workspace roots;
+ * Skills have no mode scope.
+ */
 export interface SkillDiscoveryScope {
   /** Authorized workspace roots, in discovery-precedence order. */
   workspaces?: readonly string[] | null
-  mode?: SkillMode | null
 }
 
-function skillDiscoveryQuery(scope?: SkillDiscoveryScope): string {
-  const params = new URLSearchParams()
+/** Trimmed, de-duplicated workspace roots in their original order. */
+export function normalizeSkillWorkspaces(scope?: SkillDiscoveryScope): string[] {
   const seen = new Set<string>()
+  const workspaces: string[] = []
   for (const rawWorkspace of scope?.workspaces ?? []) {
     const workspace = rawWorkspace.trim()
     if (!workspace || seen.has(workspace)) continue
     seen.add(workspace)
+    workspaces.push(workspace)
+  }
+  return workspaces
+}
+
+function skillDiscoveryQuery(scope?: SkillDiscoveryScope): string {
+  const params = new URLSearchParams()
+  for (const workspace of normalizeSkillWorkspaces(scope)) {
     params.append('workspace', stripExtendedPathPrefix(workspace))
   }
-  if (scope?.mode) params.set('mode', scope.mode)
   const query = params.toString()
   return query ? `?${query}` : ''
 }
@@ -161,16 +170,17 @@ export async function getSkill(
   return res.json()
 }
 
+/** Create a Skill in the user skills directory. */
 export async function createSkill(
   name: string,
   content: string,
   files: SkillBundleFileWrite[] = [],
-  modes: SkillMode[] = ['work', 'coding'],
+  scope?: SkillDiscoveryScope,
 ): Promise<SkillDetail> {
-  const res = await fetch(`${apiBaseUrl()}/skills`, {
+  const res = await fetch(`${apiBaseUrl()}/skills${skillDiscoveryQuery(scope)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, content, files, modes }),
+    body: JSON.stringify({ name, content, files }),
   })
   if (!res.ok) await parseDetailOrThrow(res, 'POST /skills')
   return res.json()
@@ -186,15 +196,16 @@ export async function updateSkill(
   const res = await fetch(`${apiBaseUrl()}/skills/${encodeURIComponent(name)}${skillDiscoveryQuery(scope)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, content, files, deleted_files: deletedFiles }),
+    body: JSON.stringify({ content, files, deleted_files: deletedFiles }),
   })
   if (!res.ok) await parseDetailOrThrow(res, `PUT /skills/${name}`)
   return res.json()
 }
 
-export async function updateSkillSettings(
+/** Turn a Skill on or off. Works for every Skill, including built-in and plugin ones. */
+export async function setSkillEnabled(
   name: string,
-  settings: SkillRuntimeSettingsUpdate,
+  enabled: boolean,
   scope?: SkillDiscoveryScope,
 ): Promise<SkillDetail> {
   const res = await fetch(
@@ -202,26 +213,10 @@ export async function updateSkillSettings(
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(settings),
+      body: JSON.stringify({ enabled }),
     },
   )
   if (!res.ok) await parseDetailOrThrow(res, `PATCH /skills/${name}`)
-  return res.json()
-}
-
-export async function resetSkillSettings(
-  name: string,
-  settingsId: string,
-  scope?: SkillDiscoveryScope,
-): Promise<SkillDetail> {
-  const scopedQuery = skillDiscoveryQuery(scope)
-  const settingsQuery =
-    `${scopedQuery}${scopedQuery ? '&' : '?'}settings_id=${encodeURIComponent(settingsId)}`
-  const res = await fetch(
-    `${apiBaseUrl()}/skills/${encodeURIComponent(name)}${settingsQuery}`,
-    { method: 'DELETE' },
-  )
-  if (!res.ok) await parseDetailOrThrow(res, `DELETE /skills/${name} runtime settings`)
   return res.json()
 }
 

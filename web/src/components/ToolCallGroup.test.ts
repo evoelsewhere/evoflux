@@ -39,28 +39,24 @@ describe('groupConsecutiveToolCalls', () => {
     expect((result[0] as ToolBlockGroup).blocks).toEqual(blocks)
   })
 
-  it('distinguishes skill activation from resource reads', () => {
-    const load = block('skill-load', 'tool', 'skill')
-    load.toolArgs = JSON.stringify({
-      action: 'load',
-      skill_name: 'coding-investigation',
+  it('distinguishes a SKILL.md activation from reading its reference files', () => {
+    const activation = block('skill-read', 'tool', 'read')
+    activation.toolArgs = JSON.stringify({
+      path: '/home/u/.evoflux/skills/coding-investigation/SKILL.md',
     })
-    const contract = block('skill-contract', 'tool', 'skill')
-    contract.toolArgs = JSON.stringify({
-      action: 'read_resource',
-      skill_name: 'coding-investigation',
-      resource_path: 'references/code-context-contract.md',
+    const reference = block('skill-reference', 'tool', 'read')
+    reference.toolArgs = JSON.stringify({
+      path: '/home/u/.evoflux/skills/coding-investigation/references/evidence-chain.md',
     })
-    const evidence = block('skill-evidence', 'tool', 'skill')
-    evidence.toolArgs = JSON.stringify({
-      action: 'read_resource',
-      skill_name: 'coding-investigation',
-      resource_path: 'references/evidence-chain.md',
+    const partial = block('skill-partial', 'tool', 'read')
+    partial.toolArgs = JSON.stringify({
+      path: '/home/u/.evoflux/skills/coding-investigation/SKILL.md',
+      offset: 200,
     })
 
-    expect(groupLabel([load, contract, evidence])).toBe(
-      'Loaded a skill, read skill resources',
-    )
+    expect(groupLabel([activation])).toBe('Used skills')
+    expect(groupLabel([activation, reference])).toBe('Used skills, read files')
+    expect(groupLabel([partial])).toBe('Read files')
   })
 
   it('keeps thinking as a visible boundary', () => {

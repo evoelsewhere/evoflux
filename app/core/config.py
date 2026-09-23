@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Literal
 
 from pydantic import model_validator
 from pydantic.fields import Field
@@ -101,6 +100,11 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: SecretStr | None = None
     XIAOMI_API_KEY: SecretStr | None = None
     XIAOMI_BASE_URL: str = ""
+    # StepFun publishes one API under four hosts — global and China open
+    # platforms, each with a ``step_plan`` subscription variant — so the base
+    # URL stays configurable and must match where the key was issued.
+    STEPFUN_API_KEY: SecretStr | None = None
+    STEPFUN_BASE_URL: str = ""
     MOONSHOT_API_KEY: SecretStr | None = None
     MOONSHOT_BASE_URL: str = "https://api.kimi.com/coding/v1"
     # K3 is entitlement-dependent: 256K for Moderato, up to 1M for
@@ -195,12 +199,6 @@ class Settings(BaseSettings):
     # is memoized per process, so without this a long-running server never sees
     # a model released after its own boot. Clamped to at least one hour.
     EVOFLUX_MODEL_REGISTRY_REFRESH_INTERVAL_HOURS: int = 24
-
-    # Repository index rebuilds are CPU/GIL heavy. Production isolates them
-    # in one worker process so API, SSE, and aiosqlite threads remain
-    # responsive. ``thread`` is retained for deterministic fault-injection
-    # tests and constrained embedders.
-    EVOFLUX_CODE_INDEX_EXECUTION: Literal["process", "thread"] = "process"
 
     # Agents directory — contains per-agent .md files.
     # Empty string means "derive from EVOFLUX_CONFIG_DIR" → ``{CONFIG_DIR}/agents``.

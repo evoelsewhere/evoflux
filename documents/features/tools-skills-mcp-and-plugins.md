@@ -12,10 +12,10 @@ The built-in registry covers:
 - filesystem read/search/edit/write/patch/remove;
 - shell, Python, managed processes and previews;
 - web search/fetch, persistent browser and WebBridge;
-- code context, LSP and code-review actions;
+- LSP, diagnostics, and code-review actions;
 - todos, notes, memory, goals, plans, scheduling and user questions;
 - worktrees and team delegation/message/handoff/rework/state;
-- Skill and deferred-tool loading;
+- deferred-tool loading;
 - visualization/widget output and multimodal reads.
 
 Each tool declares a JSON-like argument schema and an async handler. Deferred
@@ -25,19 +25,25 @@ checks, output bounding and streaming telemetry.
 
 ## Agent Skills
 
-Skills are directories containing `SKILL.md` plus optional scripts, references
-and assets. Discovery includes built-in, user, project, plugin and managed
-sources. Stable source identity and precedence prevent a lower-priority bundle
-from silently replacing an activated higher-priority Skill.
+EvoFlux follows Anthropic's Agent Skills architecture; the full contract is
+[Agent Skills](../architecture/agent-skills.md).
 
-Only a bounded metadata catalogue is injected eagerly. A Skill body and its
-resources load after exact explicit or router-based activation. Runtime
-settings are stored as an overlay keyed to the discovered variant; EvoFlux does
-not rewrite built-in, managed, symlinked, project or plugin files.
-
-Mode scope (`work`, `coding`, or both), explicit-only behavior, required tools,
-runtime dependencies and diagnostics are resolved before activation. Settings
-can create/edit user Skills and enable, disable or configure variants.
+- A Skill is a directory with `SKILL.md` (YAML `name` + `description`
+  frontmatter and Markdown instructions) plus optional reference files,
+  `scripts/` and `assets/`.
+- Discovery covers project (`.evoflux/skills`, `.agents/skills`,
+  `.claude/skills` up to the Git root), user (`{CONFIG_DIR}/skills`,
+  `~/.agents/skills`, `~/.claude/skills`), enabled plugin and built-in roots,
+  in that precedence order.
+- Only each Skill's name, description and `SKILL.md` location are in the
+  system prompt. The model reads `SKILL.md` with the `read` tool when a task
+  matches, reads referenced files on demand, and runs bundled scripts with
+  `shell`. There is no dedicated Skill tool and no router model call.
+- Users type `$skill-name` to activate a Skill explicitly; an agent's
+  `skills:` field preloads Skills into that agent's system prompt.
+- Skills are available in Work and Coding mode alike. Settings lists every
+  discovered Skill with its diagnostics, creates and edits user Skills, and
+  turns any Skill on or off (`skill-settings.json`).
 
 EvoFlux does not impose an aggregate byte ceiling on Skill bundle resources.
 Managed create/update and validation still enforce the per-resource size and

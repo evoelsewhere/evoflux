@@ -1404,7 +1404,7 @@ async def test_exclude_messages_before_summary_marks_old_summaries_excluded(sess
 
 @pytest.mark.asyncio
 async def test_get_messages_for_llm_preserves_skill_tool_pair_after_summary(session):
-    """Skill tool call/result pairs remain visible after compaction.
+    """Skill activation pairs (a ``read`` of ``SKILL.md``) survive compaction.
 
     The live SummarizationHook already preserves these rows in memory. This
     verifies the persisted summary-window loader keeps the same invariant after
@@ -1422,7 +1422,8 @@ async def test_get_messages_for_llm_preserves_skill_tool_pair_after_summary(sess
                 ToolCall(
                     id="call_skill_1",
                     function=FunctionCall(
-                        name="skill", arguments='{"skill_name":"guidelines"}'
+                        name="read",
+                        arguments='{"path":"/skills/guidelines/SKILL.md"}',
                     ),
                 )
             ],
@@ -1434,7 +1435,7 @@ async def test_get_messages_for_llm_preserves_skill_tool_pair_after_summary(sess
         ToolMessage(
             content="Guideline instructions body",
             tool_call_id="call_skill_1",
-            name="skill",
+            name="read",
         ),
     )
     await save_message(
@@ -1452,10 +1453,10 @@ async def test_get_messages_for_llm_preserves_skill_tool_pair_after_summary(sess
         for m in result
         if isinstance(m, AssistantMessage)
         and m.tool_calls
-        and m.tool_calls[0].function.name == "skill"
+        and m.tool_calls[0].function.name == "read"
     )
     skill_result = next(
-        m for m in result if isinstance(m, ToolMessage) and m.name == "skill"
+        m for m in result if isinstance(m, ToolMessage) and m.name == "read"
     )
 
     assert result[0].is_summary

@@ -50,7 +50,7 @@ The older `evoflux.credentials` alias remains readable for existing packages. Ne
 
 - Open **Settings → Skills** to confirm enabled plugin Skills are discoverable.
 - Open **Settings → MCP servers** to confirm plugin servers carry a `plugin` badge and reach `ready` or expose a bounded startup error.
-- Start a task that matches the Skill description or explicitly select the Skill. Loading that Skill makes ready MCP tools from the same installation available for that run, subject to normal permissions.
+- Start a task that matches the Skill description, or type `$skill-name` to use it explicitly. Once the agent reads that Skill's `SKILL.md`, ready MCP tools from the same installation become available for that run, subject to normal permissions.
 - Disable the plugin to remove its Skills and reconcile its MCP processes without restarting EvoFlux.
 
 Plugin MCP configuration is adapted in memory. EvoFlux never copies it into the user's global MCP configuration.

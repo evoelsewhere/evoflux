@@ -14,8 +14,6 @@ from app.agent.schemas.chat import (
     ChatCompletionDelta,
     FunctionCallDelta,
     ToolCallDelta,
-    FunctionCall,
-    ToolCall,
 )
 from app.agent.state import AgentState, PendingToolLifecycle
 
@@ -69,12 +67,14 @@ class TestModelTiming:
         state.pending_tool_lifecycles.append(
             PendingToolLifecycle(
                 tool_call_id="resolved-1",
-                name="skill",
-                arguments=('{"action":"load","skill_name":"coding-investigation"}'),
-                result=(
-                    '<skill_content name="coding-investigation">body</skill_content>'
-                ),
-                metadata={"duration_ms": 0.0, "activation_source": "resolved"},
+                name="read",
+                arguments='{"path": "/skills/investigation/SKILL.md"}',
+                result="00001| ---",
+                metadata={
+                    "duration_ms": 0.0,
+                    "synthetic": True,
+                    "skill": "investigation",
+                },
             )
         )
         pushed = []
@@ -91,11 +91,11 @@ class TestModelTiming:
             "tool_end",
         ]
         assert {event.data["tool_call_id"] for event in pushed} == {"resolved-1"}
-        assert pushed[1].data["name"] == "skill"
-        assert pushed[1].data["arguments"] == (
-            '{"action":"load","skill_name":"coding-investigation"}'
+        assert pushed[1].data["name"] == "read"
+        assert (
+            pushed[1].data["arguments"] == '{"path": "/skills/investigation/SKILL.md"}'
         )
-        assert pushed[2].data["result"].startswith("<skill_content")
+        assert pushed[2].data["result"].startswith("00001| ---")
         assert pushed[2].data["metadata"]["duration_ms"] == 0.0
         assert state.pending_tool_lifecycles == []
 
@@ -317,37 +317,6 @@ class TestOnModelDeltaToolCall:
 
 
 class TestWrapToolCall:
-    @pytest.mark.asyncio
-    async def test_blocked_tool_closes_pending_action_without_running_handler(self):
-        hook = _make_hook()
-        pushed = []
-
-        async def fake_push(sid, event):
-            pushed.append(event)
-
-        hook._resolver.register("code_context", "queued-query-id")
-        tool_call = ToolCall(
-            id="internal-query-id",
-            function=FunctionCall(name="code_context", arguments='{"symbol":"flow"}'),
-        )
-        state = MagicMock()
-        state.metadata = {}
-
-        with patch("app.services.memory_stream_store.push_event", new=fake_push):
-            await hook.on_tool_blocked(
-                MagicMock(), state, tool_call, "Use existing evidence."
-            )
-
-        assert [event.event for event in pushed] == ["tool_start", "tool_end"]
-        assert all(event.data["tool_call_id"] == "queued-query-id" for event in pushed)
-        assert pushed[0].data["metadata"] == {"blocked": True}
-        assert pushed[1].data["result"] == "Use existing evidence."
-        assert pushed[1].data["metadata"] == {
-            "blocked": True,
-            "duration_ms": 0.0,
-        }
-        assert state.metadata["_tool_duration_ms"]["internal-query-id"] == 0.0
-
     @pytest.mark.asyncio
     async def test_pushes_tool_start_and_tool_end(self):
         hook = _make_hook()

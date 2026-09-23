@@ -30,7 +30,7 @@ Coding requires an authorized filesystem repository or a Coding project.
   scheduled tasks cannot silently retarget another repository.
 
 The default team favors coding, exploration, architecture and debate. Coding
-adds repository tree/editor, Git, code context, language-server, Problems,
+adds repository tree/editor, Git, language-server, Problems,
 ChangeSet and code-review surfaces.
 
 Workspace authorization rejects missing/non-directory paths, traversal and
@@ -67,7 +67,7 @@ Legacy bare Coding session URLs are resolved through the session API when they
 do not identify a current workspace/project.
 
 The session history endpoint returns the lead transcript, specialist
-transcripts, goal and live workflow projection. Cursor pagination keeps long
+transcripts and goal projection. Cursor pagination keeps long
 history bounded. The live SSE stream then layers current activity over the
 durable replay.
 

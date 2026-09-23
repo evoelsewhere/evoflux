@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -9,7 +8,6 @@ import pytest
 from app.services.problems_service import ProblemInput, clear_problems, publish_problems
 from app.services.search_everywhere_service import (
     SearchEverywhereItem,
-    _code_items,
     search_everywhere,
 )
 
@@ -34,12 +32,8 @@ async def test_search_aggregates_repository_paths_and_problems(tmp_path: Path):
     )
     empty_async = AsyncMock(return_value=[])
     with (
-        patch("app.services.search_everywhere_service._code_items", empty_async),
         patch("app.services.search_everywhere_service._git_items", empty_async),
         patch("app.services.search_everywhere_service._skill_items", return_value=[]),
-        patch(
-            "app.services.search_everywhere_service._workflow_items", return_value=[]
-        ),
     ):
         path_rows = await search_everywhere(tmp_path, "auth_service")
         problem_rows = await search_everywhere(tmp_path, "callback")
@@ -61,35 +55,6 @@ async def test_search_aggregates_repository_paths_and_problems(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_natural_language_caller_query_uses_graph_action(tmp_path: Path):
-    symbol = SimpleNamespace(
-        id="symbol-1",
-        qualified_name="send_message",
-        name="send_message",
-        signature="send_message(value)",
-        kind="function",
-        file_path="app/messages.py",
-        line_start=10,
-        language="python",
-    )
-    result = SimpleNamespace(
-        matches=[symbol],
-        suggestions=[],
-        hits=[],
-        relations=[],
-        strategy="graph",
-    )
-    query = AsyncMock(return_value=result)
-    with patch("app.services.code_index.service.query_code_context", query):
-        rows = await _code_items(tmp_path, "tìm callers của send_message", 10)
-
-    assert rows[0].kind == "symbol"
-    assert rows[0].path == "app/messages.py"
-    assert query.await_args.kwargs["action"] == "callers"
-    assert query.await_args.kwargs["query"] == "send_message"
-
-
-@pytest.mark.asyncio
 async def test_search_deduplicates_and_respects_global_limit(tmp_path: Path):
     duplicate = SearchEverywhereItem(
         id="file:app.py",
@@ -100,7 +65,6 @@ async def test_search_deduplicates_and_respects_global_limit(tmp_path: Path):
     )
     async_rows = AsyncMock(return_value=[duplicate, duplicate])
     with (
-        patch("app.services.search_everywhere_service._code_items", async_rows),
         patch("app.services.search_everywhere_service._git_items", async_rows),
         patch(
             "app.services.search_everywhere_service._path_items",
@@ -108,10 +72,37 @@ async def test_search_deduplicates_and_respects_global_limit(tmp_path: Path):
         ),
         patch("app.services.search_everywhere_service._problem_items", return_value=[]),
         patch("app.services.search_everywhere_service._skill_items", return_value=[]),
-        patch(
-            "app.services.search_everywhere_service._workflow_items", return_value=[]
-        ),
     ):
         rows = await search_everywhere(tmp_path, "app", limit=1)
 
     assert rows == [duplicate]
+
+
+def test_skill_items_insert_dollar_mentions_for_user_invocable_skills(tmp_path: Path):
+    from app.agent.skills.registry import invalidate_skill_cache
+    from app.services.search_everywhere_service import _skill_items
+
+    skills_root = tmp_path / ".evoflux" / "skills"
+    for name, extra in (
+        ("zq-release-audit", ""),
+        ("zq-release-hidden", "user-invocable: false\n"),
+    ):
+        (skills_root / name).mkdir(parents=True)
+        (skills_root / name / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: Audits a zq release.\n{extra}---\n\n"
+            "Audit it.\n",
+            encoding="utf-8",
+        )
+    invalidate_skill_cache()
+
+    rows = _skill_items(tmp_path, "zq-release", 10)
+
+    assert rows == [
+        SearchEverywhereItem(
+            id="skill:zq-release-audit",
+            kind="skill",
+            label="zq-release-audit",
+            description="Audits a zq release.",
+            metadata={"name": "zq-release-audit", "insert_text": "$zq-release-audit "},
+        )
+    ]

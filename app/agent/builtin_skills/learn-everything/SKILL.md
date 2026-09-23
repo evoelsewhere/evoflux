@@ -1,6 +1,6 @@
 ---
 name: learn-everything
-description: "Use this skill to turn a supplied document, URL, or topic into an adaptive course taught incrementally, with a course map, chapter lessons, exercises, graded feedback, hints, spaced review, a final assessment, and resumable progress state. Apply it when the user wants to learn, study, or practice a subject over multiple turns. Do not use it for a one-shot summary, a single explanation, or a reference lookup."
+description: "Turns a supplied document (PDF, paper, book, slides, notes), a URL, or a topic into an adaptive course taught incrementally over multiple turns: a course map, chapter lessons, exercises at several difficulty levels, graded feedback with hints, spaced review, a final assessment, and resumable progress state saved to a course-state file or a copyable state block. Use when the user wants to learn, study, master, or practice a subject step by step, says \"teach me\", \"make a course from this\", \"quiz me\", \"continue my course\", or \"教我 / 学习 / 复习\". Not for a one-shot summary, a single explanation, or a reference lookup."
 ---
 
 # Learn Everything
@@ -13,7 +13,7 @@ Convert source material or a topic into an adaptive course that alternates expla
 - Optimize for durable understanding, not merely summarization.
 - Work incrementally. Present a course map, then teach one chapter or lesson at a time.
 - Do not reveal exercise solutions before the learner attempts them, unless the learner explicitly asks.
-- Persist learning state. When file tools are available, maintain `learn/<slug>/course-state.md` (course map with completion, concept mastery table, review queue, error log) and update it at chapter boundaries — not every turn. Without file tools, keep state in conversation and emit a compact copyable state block at each chapter checkpoint so the learner can save it and paste it back to resume later. See `references/session-formats.md` for both formats.
+- Persist learning state. When file tools are available, maintain `learn/<slug>/course-state.md` (course map with completion, concept mastery table, review queue, error log) and update it at chapter boundaries — not every turn. Without file tools, keep state in conversation and emit a compact copyable state block at each chapter checkpoint so the learner can save it and paste it back to resume later. Read [references/session-formats.md](references/session-formats.md) before writing the first state file or state block — it defines both formats.
 - Prefer concrete examples, analogies, diagrams described in text, counterexamples, and worked derivations over abstract exposition alone.
 - Separate source claims from added background knowledge. Never attribute added material to the source.
 - Match depth and notation to the learner. Define unfamiliar terms before relying on them.
@@ -38,7 +38,7 @@ Use topic mode when the learner supplies a subject rather than a source.
 
 1. Define a sensible scope and end capability.
 2. Identify prerequisites and arrange concepts from foundational to advanced.
-3. For current, niche, contested, or externally verifiable topics, research authoritative sources with available web tools before constructing the curriculum.
+3. For current, niche, contested, or externally verifiable topics, research authoritative sources with the available web tools (for example `web_fetch`) before constructing the curriculum.
 4. Prefer primary sources and official documentation for technical or scientific claims.
 5. Distinguish stable fundamentals from current developments.
 6. State material scope and assumptions in the course map.
@@ -71,7 +71,7 @@ Then provide:
 4. **Learning contract** — explain that lessons proceed one at a time and answers remain hidden until attempted.
 5. **Next action** — begin the first lesson or diagnostic immediately.
 
-Use the detailed formats in `references/session-formats.md` when consistency is useful.
+Read [references/session-formats.md](references/session-formats.md) for the course map, lesson, practice, feedback, checkpoint, and progress formats when consistency across turns matters.
 
 ## Build the course map
 
@@ -121,7 +121,7 @@ Select exercises from multiple cognitive levels:
 
 Default to 3–5 exercises per lesson, mixing at least two levels. Prefer one exercise at a time when grading interactively. Use larger sets only when the learner requests a worksheet or exam.
 
-Consult `references/practice-and-mastery.md` for exercise-writing rules, difficulty bands, adaptation, and grading rubrics. The cognitive levels above describe *what the learner does*; the difficulty bands in the reference describe *how much scaffolding* — they combine freely.
+Read [references/practice-and-mastery.md](references/practice-and-mastery.md) before writing the first exercise set or grading the first answer — it has the exercise-writing rules, difficulty bands, adaptation, and grading rubrics. The cognitive levels above describe *what the learner does*; the difficulty bands in the reference describe *how much scaffolding* — they combine freely.
 
 ## Grade and respond to learner answers
 

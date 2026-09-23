@@ -1,14 +1,28 @@
 ---
 name: mcp-installer
-description: Install, inspect, update, restart, authenticate, or remove EvoFlux Model Context Protocol servers and wire their tools to a selected agent. Use only for explicit MCP configuration requests; do not use to call an already-configured integration, author a new MCP server, or install a plugin or skill.
+description: Installs, inspects, updates, restarts, authenticates, or removes EvoFlux Model Context Protocol (MCP) servers in mcp.json and wires their tools to a selected agent. Use when the user explicitly asks to add an MCP server, connect an HTTP or stdio MCP endpoint, fix MCP OAuth, restart a runner, or remove a server. Not for calling an already configured integration, authoring a new MCP server, or installing a plugin or skill.
+disable-model-invocation: true
 ---
 
 # Manage MCP servers
 
-Use the bundled `{SKILL_DIR}/mcp_apply.py` for daemon and configuration
-operations. Do not construct raw daemon requests or edit `mcp.json` by hand
-while the helper can perform the operation. Run the helper with `--help` only
-when the exact subcommand or argument is not already known.
+Use the bundled helper `scripts/mcp_apply.py` for every daemon and
+configuration operation. It uses only the Python standard library. Resolve its
+absolute path from this skill's directory (the parent of this `SKILL.md`) and
+run it with the `shell` tool:
+
+```bash
+python scripts/mcp_apply.py <operation> [args]
+```
+
+Use `python3` instead of `python` only when `python` is not on `PATH`. Do not
+construct raw daemon requests or edit `mcp.json` by hand while the helper can
+perform the operation. Run `python scripts/mcp_apply.py --help` only when the
+exact subcommand or argument is not already known.
+
+`mcp.json` lives in the EvoFlux configuration directory; agent files live in
+its `agents/` subdirectory. Both absolute paths follow from the EvoFlux
+configuration directory stated in the Skills section of the system prompt.
 
 ## State machine
 
@@ -19,7 +33,7 @@ command, required arguments, environment variable names, target agent, and
 whether all or selected tools should be wired. Inspect current state first:
 
 ```bash
-python3 "{SKILL_DIR}/mcp_apply.py" status [name]
+python scripts/mcp_apply.py status [name]
 ```
 
 Do not invent package names, endpoints, headers, OAuth mode, commands, tool
@@ -52,14 +66,14 @@ remove NAME
 apply
 ```
 
-Invoke it as `python3 "{SKILL_DIR}/mcp_apply.py" <operation> ...`. Treat exit
-codes as follows:
+Invoke it as `python scripts/mcp_apply.py <operation> ...`. Treat exit codes as
+follows:
 
 - `0`: configuration applied, or safely written while the daemon was offline;
-- `1`: validation/API error—correct the reported input before retrying;
-- `2`: runner error or authentication required—inspect status and fix that
+- `1`: validation/API error; correct the reported input before retrying;
+- `2`: runner error or authentication required; inspect status and fix that
   condition;
-- `3`: readiness wait timed out—report the current state instead of looping.
+- `3`: readiness wait timed out; report the current state instead of looping.
 
 Do not retry a state-changing operation after an ambiguous result until status
 shows whether it already applied.
@@ -83,15 +97,15 @@ stale next-turn configuration.
 Run:
 
 ```bash
-python3 "{SKILL_DIR}/mcp_apply.py" wait NAME --timeout 30
-python3 "{SKILL_DIR}/mcp_apply.py" status NAME
+python scripts/mcp_apply.py wait NAME --timeout 30
+python scripts/mcp_apply.py status NAME
 ```
 
 Confirm the expected runner state and returned tool names, then reread the
 target agent frontmatter. If the daemon is offline but the helper safely wrote
-configuration, report that readiness remains unverified and when the runtime
-will reconcile it. Do not claim the MCP is usable from a successful file edit
-alone.
+configuration, report that readiness remains unverified and that the running
+desktop app hot-applies the written `mcp.json` when it is next reachable. Do not
+claim the MCP server is usable from a successful file edit alone.
 
 ## Stop conditions
 

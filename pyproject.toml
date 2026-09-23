@@ -38,8 +38,10 @@ dependencies = [
     # in Python 3.14. Shimmed onto `uuid` in app/__init__.py for 3.12/3.13.
     "uuid7>=0.1.0",
     # Core PDF/HTML intake. Office files are view-only and are never converted
-    # into agent context by this dependency.
-    "markitdown>=0.1.5",
+    # into agent context by this dependency. The [pdf] extra (pdfminer.six +
+    # pdfplumber) is required: without it markitdown recognises PDFs but its
+    # PdfConverter raises MissingDependencyException.
+    "markitdown[pdf]>=0.1.5",
     "markdown-it-py>=4.0.0",
     "pyyaml>=6.0.3",
     "fastapi>=0.135.2",
@@ -64,16 +66,12 @@ dependencies = [
     "boto3>=1.35.0",
     "duckdb>=1.1.0",
     "truststore>=0.10.4",
-    # Repository-local code context: tree-sitter parsing. The language pack bundles
-    # 160+ grammars behind the stable ABI, so new languages are added without
-    # extra wheels.
-    "tree-sitter>=0.25.0",
-    "tree-sitter-language-pack>=0.10.0",
     # Filesystem watcher (Rust notify backend) for workspace event streams.
     "watchfiles>=0.24.0",
     # ConPTY backend for the interactive terminal on Windows (POSIX uses the
     # stdlib pty/fcntl/termios stack). Imported lazily by terminal_service.
     "pywinpty>=2.0.14; sys_platform == 'win32'",
+    "cryptography>=44",
 ]
 
 [project.urls]
@@ -102,73 +100,6 @@ dev = [
     "python-pptx>=1.0.2",
     "pypdfium2>=5.7.0",
 ]
-
-[tool.mutmut]
-source_paths = ["app"]
-only_mutate = [
-    "app/services/code_index/parsers/base.py",
-    "app/services/code_index/parsers/c_family.py",
-    "app/services/code_index/parsers/csharp.py",
-    "app/services/code_index/parsers/dart.py",
-    "app/services/code_index/parsers/ecmascript.py",
-    "app/services/code_index/parsers/go.py",
-    "app/services/code_index/parsers/java.py",
-    "app/services/code_index/parsers/kotlin.py",
-    "app/services/code_index/parsers/lua.py",
-    "app/services/code_index/parsers/objc.py",
-    "app/services/code_index/parsers/pascal.py",
-    "app/services/code_index/parsers/php.py",
-    "app/services/code_index/parsers/python.py",
-    "app/services/code_index/parsers/r_lang.py",
-    "app/services/code_index/parsers/ruby.py",
-    "app/services/code_index/parsers/rust.py",
-    "app/services/code_index/parsers/scala.py",
-    "app/services/code_index/parsers/swift.py",
-    "app/services/code_index/parsers/symbol_leaves.py",
-    "app/services/code_index/parsers/web_components.py",
-]
-pytest_add_cli_args = ["--no-cov"]
-pytest_add_cli_args_test_selection = [
-    "tests/services/test_code_graph_base_contract.py",
-    "tests/services/test_code_graph_c_family_contract.py",
-    "tests/services/test_code_graph_csharp_contract.py",
-    "tests/services/test_code_graph_dart_contract.py",
-    "tests/services/test_code_graph_decorators.py",
-    "tests/services/test_code_graph_ecmascript_contract.py",
-    "tests/services/test_code_graph_go_contract.py",
-    "tests/services/test_code_graph_imports_c_cpp.py",
-    "tests/services/test_code_graph_imports_dart.py",
-    "tests/services/test_code_graph_imports_pascal.py",
-    "tests/services/test_code_graph_imports_php.py",
-    "tests/services/test_code_graph_imports_r.py",
-    "tests/services/test_code_graph_imports_ruby.py",
-    "tests/services/test_code_graph_imports_scala.py",
-    "tests/services/test_code_graph_imports_kotlin.py",
-    "tests/services/test_code_graph_imports_lua.py",
-    "tests/services/test_code_graph_imports_objc.py",
-    "tests/services/test_code_graph_imports_swift.py",
-    "tests/services/test_code_graph_java_contract.py",
-    "tests/services/test_code_graph_kotlin_contract.py",
-    "tests/services/test_code_graph_lua_contract.py",
-    "tests/services/test_code_graph_objc_contract.py",
-    "tests/services/test_code_graph_pascal_contract.py",
-    "tests/services/test_code_graph_parsers_tier3.py",
-    "tests/services/test_code_graph_python_contract.py",
-    "tests/services/test_code_graph_php_contract.py",
-    "tests/services/test_code_graph_r_contract.py",
-    "tests/services/test_code_graph_rust_contract.py",
-    "tests/services/test_code_graph_ruby_contract.py",
-    "tests/services/test_code_graph_scala_contract.py",
-    "tests/services/test_code_graph_swift_contract.py",
-    "tests/services/test_code_graph_symbol_coverage.py",
-    "tests/services/test_code_graph_variables.py",
-    "tests/services/test_code_graph_type_refs.py",
-    "tests/services/test_code_graph_web_components_contract.py",
-]
-mutate_only_covered_lines = true
-timeout_multiplier = 8.0
-timeout_constant = 2.0
-use_git_change_detection = false
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
@@ -214,6 +145,9 @@ exclude = ["tests", "**/__pycache__", ".venv"]
 
 [tool.ruff]
 target-version = "py313"
+# Skill evaluation scenarios are data: their toy programs are deliberately
+# imperfect inputs for the Skill under test.
+extend-exclude = ["tests/fixtures/skill-evals"]
 
 [tool.ruff.lint.per-file-ignores]
 # Imports after truststore.inject_into_ssl() / apply_ssl_patch() are intentional.

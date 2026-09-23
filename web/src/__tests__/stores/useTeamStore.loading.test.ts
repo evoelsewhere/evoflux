@@ -375,7 +375,7 @@ describe('useTeamStore turn usage', () => {
         calls: 3,
         phases: {
           main: { input: 14_200, output: 17, cache: 2_000, calls: 1 },
-          skill_resolver: { input: 2_800, output: 12, cache: 500, calls: 1 },
+          title: { input: 2_800, output: 12, cache: 500, calls: 1 },
         },
       },
     })
@@ -388,7 +388,7 @@ describe('useTeamStore turn usage', () => {
       turnCachedTokens: 2_500,
       turnCalls: 3,
       turnPhases: {
-        skill_resolver: { input: 2_800, output: 12, cache: 500, calls: 1 },
+        title: { input: 2_800, output: 12, cache: 500, calls: 1 },
       },
     })
 

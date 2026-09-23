@@ -1,0 +1,144 @@
+name: Office runtime
+
+# Builds the trimmed LibreOffice runtime the document viewer installs on
+# request, proves it end to end on every platform (real installer, checksum
+# check, DOCX/PPTX/XLSX conversion through the preview pipeline) and, when
+# asked, publishes the archives as a GitHub release.
+#
+# Pull requests that touch the runtime build or install code run the same
+# build and verification; nothing is published.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: LibreOffice version from download.documentfoundation.org/libreoffice/stable
+        required: true
+        default: "26.8.0"
+      publish:
+        description: Publish the release assets
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - app/services/office_runtime/**
+      - scripts/build_libreoffice_runtime.py
+      - scripts/verify_office_runtime.py
+      - .github/workflows/office-runtime.yml
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  LIBREOFFICE_VERSION: ${{ inputs.version || '26.8.0' }}
+  PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
+  RELEASE_TAG: office-runtime-${{ inputs.version || '26.8.0' }}
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS · Apple Silicon
+            os: macos-15
+            platform: darwin-arm64
+          - name: macOS · Intel
+            os: macos-15-intel
+            platform: darwin-x64
+          - name: Windows x64
+            os: windows-2022
+            platform: win32-x64
+          - name: Linux x64
+            os: ubuntu-22.04
+            platform: linux-x64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v5
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: uv sync --extra office-preview
+
+      - name: Build trimmed runtime
+        run: |
+          uv run python scripts/build_libreoffice_runtime.py \
+            --version "$LIBREOFFICE_VERSION" \
+            --platform "${{ matrix.platform }}" \
+            --output dist/office-runtime \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
+
+      - name: Verify install and conversion
+        run: |
+          uv run python scripts/verify_office_runtime.py \
+            --manifest "dist/office-runtime/libreoffice-$LIBREOFFICE_VERSION-${{ matrix.platform }}.json" \
+            --archive "dist/office-runtime/libreoffice-$LIBREOFFICE_VERSION-${{ matrix.platform }}.tar.gz"
+
+      - name: Upload runtime
+        if: env.PUBLISH == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: office-runtime-${{ matrix.platform }}
+          path: dist/office-runtime/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish release assets
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download runtimes
+        uses: actions/download-artifact@v5
+        with:
+          pattern: office-runtime-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Merge manifest
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          merged = {}
+          for path in sorted(Path("release-assets").glob("libreoffice-*.json")):
+              merged.update(json.loads(path.read_text()))
+          Path("release-assets/office-runtime-manifest.json").write_text(json.dumps(merged, indent=2) + "\n")
+          print(json.dumps(merged, indent=2))
+          PY
+          {
+            echo "### Pin these assets in app/services/office_runtime/manifest.py"
+            echo '```json'
+            cat release-assets/office-runtime-manifest.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --title "Office runtime (LibreOffice $LIBREOFFICE_VERSION)" \
+              --notes "Trimmed LibreOffice $LIBREOFFICE_VERSION for the EvoFlux document viewer, built from official The Document Foundation packages. LibreOffice is licensed under MPL-2.0; source: https://www.libreoffice.org/download/source-code/" \
+              --latest=false
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber

@@ -19,7 +19,7 @@ export const HELP_CATEGORIES_EN: HelpCategory[] = [
   {
     id: 'composer',
     label: 'Composer',
-    description: 'Mentions, attachments, skills, and workflows',
+    description: 'Mentions, attachments, and skills',
   },
   {
     id: 'slash',
@@ -39,7 +39,7 @@ export const HELP_CATEGORIES_EN: HelpCategory[] = [
   {
     id: 'coding',
     label: 'Coding',
-    description: 'Repos, projects, git, graph, and PRs',
+    description: 'Repos, projects, git, source search, and PRs',
   },
   {
     id: 'memory',
@@ -155,7 +155,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'When to stay in Work vs jump modes: use Work for browser tasks, docs, and folder-organized research with no git lifecycle. Switch to Coding as soon as you need Changes, Graph, Review, worktrees, or AGENTS.md.',
+        text: 'When to stay in Work vs jump modes: use Work for browser tasks, docs, and folder-organized research with no git lifecycle. Switch to Coding as soon as you need Source Control, Review, worktrees, or AGENTS.md.',
       },
       {
         type: 'tips',
@@ -206,8 +206,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Collapsed sidebar disappears completely; use Ctrl+B or the floating sidebar button to restore it.',
       'Settings hides the mode switcher while you configure the app; leave Settings to switch modes again.',
       'Work is best for research, docs, browser tasks, and throwaway scripts; Coding for persistent repos.',
-      'Permission modes, slash commands, and most workbench tools work across modes; Overview / Graph / Changes / Review are Coding-scoped.',
-      'Do not open a git monorepo in Work expecting Changes/Review — switch to Coding so source-control tools attach.',
+      'Permission modes, slash commands, and most workbench tools work across modes; Source Control and Problems are Coding-scoped.',
+      'Do not open a git monorepo in Work expecting Source Control — switch to Coding so source-control tools attach.',
       'Use Work folders + share_context for parallel research threads; use Coding projects when repos must stay linked.',
       'Mode memory is per mode, not per window — if you expected a blank Coding home, check whether an old workspace route was restored.'
 ],
@@ -222,13 +222,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Work sessions use a private session folder or another local folder you select; no persistent multi-repo project is required. Coding opens a git repo or multi-repo project; agents edit real trees with graph, git, worktrees, and PR review.',
+        text: 'Work sessions use a private session folder or another local folder you select; no persistent multi-repo project is required. Coding opens a git repo or multi-repo project; agents edit real trees with source search, git, worktrees, and PR review.',
       },
       {
         type: 'tips',
         items: [
           'Work — research, documents, browser tasks, quick scripts, folder-organized chats.',
-          'Coding — single repos, multi-repo projects, worktrees, graph, Changes, Review.',
+          'Coding — single repos, multi-repo projects, worktrees, source search, Source Control.',
           'Mode memory — last route per mode is restored when you switch back.',
           'Settings — mode switcher hidden until you leave the settings routes.'
 ],
@@ -242,7 +242,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Cross-feature: Ctrl+B toggles the mode sidebar the same way in every mode.',
           'Cross-feature: Scheduler tasks target work or coding mode explicitly — set the right mode on the task.',
-          'Cross-feature: Skills and workflows can be scoped per mode in Settings; a Coding-only workflow stays hidden in Work.'
+          'Cross-feature: Skills are available in both modes.'
 ],
       },
       {
@@ -503,7 +503,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Good revise prompts name files, tests, and out-of-scope items explicitly.',
           'Bad revise prompts are vague (“make it better”) — quote the weak bullet first.',
           'Cross-feature: Send unrelated meta questions to side chat so the plan thread stays clean.',
-          'Cross-feature: after Accept on Coding work, open Changes (Ctrl+G) to verify the diff matches the plan.'
+          'Cross-feature: after Accept on Coding work, open Source Control (Ctrl+G) to verify the diff matches the plan.'
 ],
       },
       {
@@ -518,7 +518,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'composer',
     title: 'Composer power features',
     summary:
-      'Use /, !, @, # snippets, attachments, quote selection, Work folder targeting, nested skills, and workflows with RunInputsDialog. Undo restores attachments too, so drafts stay recoverable after a bad send.',
+      'Use /, !, @, $ skills, # snippets, attachments, quote selection, and Work folder targeting. Undo restores attachments too, so drafts stay recoverable after a bad send.',
     keywords: [
       'composer',
       'mention',
@@ -529,8 +529,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'drag',
       'paste',
       'skill',
-      'workflow',
-      'RunInputsDialog',
+      '$skill-name',
       'WorkFolderSelector',
       'quote',
       '!',
@@ -548,8 +547,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Start a message with ! to run a shell command (or pick /shell to prefill bang mode).',
       'Type @ to insert ranked file/folder path references from the active workspace.',
       'In Coding, type # to expand workspace or global snippets into the composer.',
-      'Nested skills use /skill:parent:child (colon and slash are interchangeable for nested names).',
-      'Workflows open RunInputsDialog when required and never send the raw slash text as chat.',
+      'Type $ to pick a skill; $skill-name works anywhere in the message and you can name several (not inside > quote lines or code blocks).',
       'Undo restores the previous user message and its attachments into the composer.',
       'Paste images/files or drag-drop onto the composer when attachments are enabled.',
       'Select transcript text for Add to chat, more details, or Send to side chat.',
@@ -559,36 +557,36 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'The composer is more than a text box: slash menu (/), shell bang (!), path mentions (@), Coding snippets (#), file attachments, quote context chips, WorkFolderSelector for Work sessions, skill directives, and approved workflows. Mastering these affordances is the difference between dumping trees into the prompt and steering with precision.',
+        text: 'The composer is more than a text box: slash menu (/), shell bang (!), path mentions (@), skill mentions ($), Coding snippets (#), file attachments, quote context chips, and WorkFolderSelector for Work sessions. Mastering these affordances is the difference between dumping trees into the prompt and steering with precision.',
       },
       {
         type: 'p',
-        text: 'These controls keep context precise without flooding the model. Skills and workflows package repeatable procedures; attachments and quotes pin evidence; WorkFolderSelector retargets the session folder without opening the Files tool. Shell bang is for deliberate commands, not a substitute for Terminal when you need a long interactive session.',
+        text: 'These controls keep context precise without flooding the model. Skills package repeatable procedures; attachments and quotes pin evidence; WorkFolderSelector retargets the session folder without opening the Files tool. Shell bang is for deliberate commands, not a substitute for Terminal when you need a long interactive session.',
       },
       {
         type: 'p',
-        text: 'Type / to open the command menu (built-ins, skills under /skill:, workflows, custom .evoflux/commands/). Prefix with ! for shell. Use @ to pick paths. In Coding, # expands snippets. Drag-drop or paste files onto the bar. On Work sessions, use WorkFolderSelector near the composer to point at a private session folder or another local directory. After /undo, both text and attachments return to the draft.',
+        text: 'Type / to open the command menu (built-ins, custom .evoflux/commands/). Type $ to pick a skill: the agent already sees every enabled skill\'s name and description and reads its SKILL.md when a task matches, but `$skill-name` makes it use that skill now. Prefix with ! for shell. Use @ to pick paths. In Coding, # expands snippets. Drag-drop or paste files onto the bar. On Work sessions, use WorkFolderSelector near the composer to point at a private session folder or another local directory. After /undo, both text and attachments return to the draft.',
       },
       {
         type: 'tips',
         items: [
-          '/ — slash commands, skills, workflows, custom commands',
+          '/ — slash commands, custom commands',
+          '$ — skills; any position, several per message',
           '! — shell mode for the rest of the line',
           '@ — file/folder mentions',
           '# — snippets (Coding workspaces)',
           'DnD / paste — attachments when enabled',
           'Quote selection — Add to chat or Send to side chat',
-          'WorkFolderSelector — retarget Work session folder',
-          'RunInputsDialog — workflow parameters before launch'
+          'WorkFolderSelector — retarget Work session folder'
 ],
       },
       {
         type: 'p',
-        text: 'Step-by-step for a precise Coding ask: (1) @ the files that matter, (2) attach a screenshot or log only if needed, (3) state the outcome and tests, (4) optionally /skill:… for a known procedure, (5) set permission mode, (6) send. For Work research: set WorkFolderSelector, attach sources, quote prior answers, then ask.',
+        text: 'Step-by-step for a precise Coding ask: (1) @ the files that matter, (2) attach a screenshot or log only if needed, (3) state the outcome and tests, (4) optionally $skill-name for a known procedure, (5) set permission mode, (6) send. For Work research: set WorkFolderSelector, attach sources, quote prior answers, then ask.',
       },
       {
         type: 'p',
-        text: 'Common mistakes: sending raw `/workflow name` text hoping it runs (workflows launch through the menu/dialog); nesting skills with spaces instead of `:` / `/`; using # in Work expecting Coding snippets; pasting secrets into the composer instead of configuring Providers; forgetting that /undo restores attachments — re-send carefully if the files were sensitive.',
+        text: 'Common mistakes: typing a skill name with capitals or spaces (skill names are lowercase with hyphens, e.g. `$code-review`); using # in Work expecting Coding snippets; pasting secrets into the composer instead of configuring Providers; forgetting that /undo restores attachments — re-send carefully if the files were sensitive.',
       },
       {
         type: 'tips',
@@ -601,7 +599,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Workflows must be approved and valid for the session scope (work / coding) or they stay hidden. Skills appear under /skill: only after they validate in Settings → Skills. If a command is missing, check scope and validation before assuming a slash bug.',
+        text: 'The $ picker lists only skills that are valid, turned on in Settings → Skills, and user-invocable. If a command or skill is missing, check scope, validation, and the skill\'s switch before assuming a composer bug.',
       }
 ],
     related: [
@@ -655,7 +653,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Use attachments when the bytes matter: screenshots, PDFs, CSVs, small logs, design exports. Use quotes when the text already lives in the transcript or plan and you want surgical follow-up. Avoid attaching entire repositories — use @ mentions, Files, or Coding graph tools instead.',
+        text: 'Use attachments when the bytes matter: screenshots, PDFs, CSVs, small logs, design exports. Use quotes when the text already lives in the transcript or plan and you want surgical follow-up. Avoid attaching entire repositories — use @ mentions, Files, or Coding source search tools instead.',
       },
       {
         type: 'p',
@@ -685,7 +683,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'When not to attach — huge build artifacts, node_modules zips, full database dumps.',
-          'When to quote — disagreeing with one paragraph, revising one plan bullet, asking “explain this”.',
+          'When to quote — disagreeing with one parasource search, revising one plan bullet, asking “explain this”.',
           'Cross-feature: after /undo, review restored attachments before re-send.',
           'Cross-feature: WorkFolderSelector does not attach a folder; it retargets the session root.'
 ],
@@ -708,7 +706,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'slash',
     title: 'Built-in slash commands',
     summary:
-      'Type / in the composer for stop, compact, undo, init, btw, goal, skills, workflows, and custom commands from .evoflux/commands/. Built-ins run immediately; custom entries usually insert so you can finish arguments.',
+      'Type / in the composer for stop, compact, undo, init, btw, goal, and custom commands from .evoflux/commands/. Built-ins run immediately; custom entries usually insert so you can finish arguments. Skills use $skill-name instead of a slash command.',
     setup:
       'Focus the composer and type /. Place project or global custom commands under `.evoflux/commands/` (compatible OpenCode paths also work).',
     keywords: [
@@ -719,8 +717,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       '/init',
       '/btw',
       '/goal',
-      '/workflow',
-      '/skill',
       'command',
       '.evoflux/commands',
       'lệnh',
@@ -730,10 +726,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
     tricks: [
       'Built-ins execute immediately on pick; custom commands usually insert into the textarea so you can append $ARGUMENTS.',
-      'Longest-prefix match; : and / are interchangeable for nested command and skill names.',
+      'Longest-prefix match; : and / are interchangeable for nested command names.',
       'Custom commands live under project or global .evoflux/commands/ (and compatible OpenCode paths).',
-      'Skills appear under /skill: only after they validate in Settings → Skills.',
-      'Workflows must be approved and valid for the session scope (work / coding) or they stay hidden.',
+      'Skills are not slash commands: type $ to pick one, or write $skill-name anywhere in the message.',
       '/compact early when the context budget bar climbs — waiting for failure wastes a turn.',
       '/init is Coding-oriented for AGENTS.md scaffolding.',
       '/stop is the panic button for runaway specialist fan-out; pair with a clearer next instruction.',
@@ -742,7 +737,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Slash commands are first-class composer actions. Built-ins control the team run; goal subcommands manage durable objectives; skills and workflows attach structured behavior; user-defined Markdown/YAML commands expand server-side. The menu is searchable — type a few letters to filter.',
+        text: 'Slash commands are first-class composer actions. Built-ins control the team run; goal subcommands manage durable objectives; user-defined Markdown/YAML commands expand server-side. The menu is searchable — type a few letters to filter.',
       },
       {
         type: 'p',
@@ -765,22 +760,19 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { cmd: '/goal:budget <tokens|none>', desc: 'Set or clear the goal token budget' },
           { cmd: '/goal:pause', desc: 'Pause the active goal' },
           { cmd: '/goal:resume', desc: 'Resume a paused goal' },
-          { cmd: '/goal:stop', desc: 'Remove the session goal' },
-          { cmd: '/skill:…', desc: 'Attach a skill for the next message (nested: /skill:parent:child)' },
-          { cmd: '/workflow <name>', desc: 'Run an approved workflow (may open RunInputsDialog)' }
+          { cmd: '/goal:stop', desc: 'Remove the session goal' }
 ],
       },
       {
         type: 'p',
-        text: 'Type / to filter commands. Pick a built-in to run it, or a custom/skill/workflow entry to insert or launch. Place custom files under `.evoflux/commands/` in the project or your global EvoFlux config. Nested names prefer longest prefix; use either `:` or `/` as separators. Workflows may open RunInputsDialog and never send the raw slash line as ordinary chat.',
+        text: 'Type / to filter commands. Pick a built-in to run it, or a custom entry to insert it. Place custom files under `.evoflux/commands/` in the project or your global EvoFlux config. Nested names prefer longest prefix; use either `:` or `/` as separators.',
       },
       {
         type: 'tips',
         items: [
           'Built-in — executes on pick',
           'Custom — usually inserts; append $ARGUMENTS',
-          'Skill — /skill: after Settings → Skills validation',
-          'Workflow — scope + approval required or hidden',
+          'Skill — not a slash command; type $skill-name',
           'Longest prefix — parent:child nesting with : or /'
 ],
       },
@@ -790,7 +782,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: expecting `/scheduler` to open a page (use Ctrl+S — the route redirects home); treating missing workflows as a composer bug when scope/approval is wrong; running /compact so late that the summary drops the constraint you still needed; using /undo thinking it reverts git commits — it only restores the prior user message draft.',
+        text: 'Common mistakes: expecting `/scheduler` to open a page (use Ctrl+S — the route redirects home); running /compact so late that the summary drops the constraint you still needed; using /undo thinking it reverts git commits — it only restores the prior user message draft.',
       },
       {
         type: 'tips',
@@ -798,7 +790,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'When to /new — topic change with a polluted context bar.',
           'When to /compact — same topic, rising budget, keep continuity.',
           'When to /stop — runaway tools or wrong fan-out; then restate the ask.',
-          'Cross-feature: /init + Coding Overview after opening a new repo.'
+          'Cross-feature: /init after opening a new repo.'
 ],
       }
 ],
@@ -1009,43 +1001,47 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'workbench',
     title: 'Workbench tools',
     summary:
-      'Open Terminal, Browser, Files, Graph, Side chat, Memory, Scheduler, Changes, and Review beside chat — with platform-native shortcuts: Command on macOS, Ctrl on Windows/Linux.',
+      'Open Terminal, Browser, Files, Side chat, Memory, Scheduler, and Source Control beside chat — with platform-native shortcuts: Command on macOS, Ctrl on Windows/Linux.',
     keywords: [
       'workbench',
       'panel',
       'terminal',
       'files',
       'dock',
-      'overview',
-      'graph',
+      'Source Control',
       'Changes',
       'Review',
       'Ctrl+F',
       'Ctrl+;',
       '⌘P',
       '⌥⌘S',
+      'Office preview',
+      'LibreOffice',
+      'docx',
+      'xlsx',
+      'pptx',
       'bảng',
       'bảng công cụ',
       'ワークベンチ',
       'パネル'
 ],
     setup:
-      'Open a session first. Coding Overview, Graph, Changes, and Review need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
+      'Open a session first. Coding Files and Source Control need a Coding workspace. Built-in Browser must be enabled under Settings → Browser before Ctrl+T is useful.',
     tricks: [
       'Open tools from the workbench bar, dock, or keyboard shortcuts listed below.',
-      'Coding Overview appears only when a workspace is selected.',
       'Runtime shortcuts and labels adapt to the OS: Command on macOS, Ctrl on Windows/Linux.',
       'Live mappings: Files = Ctrl+F (label may show ⌘P); Side chat = Ctrl+; (label may show ⌥⌘S).',
-      'Graph and Review have no dedicated global shortcuts — use the workbench bar or command palette.',
+      'Source Control holds both local Changes and pull-request Review — switch between them in its header.',
       'Terminal and Browser support multiple tab instances; other tools are single-instance toggles.',
-      'Changes (Ctrl+G) and Review are Coding-only; Graph needs a Coding workspace.',
-      'Toggle the same tool again to close it — the workbench is not a pile of permanent cards.',
-      'When opening the workbench with a Coding workspace and no tool selected, Overview opens by default.'
+      'Expand Running at the foot of any Terminal tab to see and stop agent commands, preview servers, and other terminals across sessions.',
+      'Source Control (Ctrl+G) is Coding-only.',
+      'Word, Excel and PowerPoint previews are approximate until you click Install renderer in the viewer; the optional LibreOffice renderer then shows pages as Office lays them out.',
+      'Toggle the same tool again to close it — the workbench is not a pile of permanent cards.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Overview, Terminal, Browser, Files, Graph, Side chat, Memory (wiki), Scheduler, Changes (source control), and Review (pull/merge requests). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
+        text: 'The workbench is the right-hand (or docked) tool surface beside chat. Tools: Terminal, Browser, Files, Side chat, Memory (wiki), Scheduler, and Source Control (local Changes plus pull/merge request Review). Chat stays primary; tools are inspection and action surfaces one shortcut away.',
       },
       {
         type: 'p',
@@ -1061,22 +1057,19 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+M', action: 'Memory (wiki)' },
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
-          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' }
+          { keys: 'Ctrl+G', action: 'Source Control (Coding)' }
 ],
       },
       {
         type: 'tips',
         items: [
-          'Overview — Coding workspace / git / session / tool status at a glance.',
-          'Terminal — run commands in the active workspace.',
+          'Terminal — run commands in the active workspace; its Running bar lists and stops managed processes.',
           'Browser — in-app browser (enable in Settings → Browser).',
           'Files — workspace files and generated artifacts.',
-          'Graph — structural code graph (Coding).',
           'Side chat — /btw parallel questions.',
           'Memory — wiki + pending notes.',
           'Scheduler — cron / one-shot tasks (panel only; /scheduler redirects home).',
-          'Changes — stage, commit, branch operations (Coding).',
-          'Review — PR/MR list for connected hosts (Coding).'
+          'Source Control — stage, commit, branch operations, and the Review view of PRs/MRs for connected hosts (Coding).'
 ],
       },
       {
@@ -1085,14 +1078,22 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: hunting Review in Work mode; expecting Graph without a focused Coding workspace; bookmarking `/scheduler`; trusting a ⌘P label for Files; opening ten Terminal tabs for one-liners better sent with ! in the composer.',
+        text: 'Office files (.docx, .xlsx, .pptx) open in a read-only viewer. The built-in renderers approximate layout; for exact pages, click Install renderer in the viewer to download the optional LibreOffice renderer (about 150–190 MB, once, on Windows and macOS). Nothing downloads until you ask. The archive is checked against a pinned checksum before it is installed into the app data folder, and conversion runs offline with macros disabled. The first exact render of a file can take up to a minute; later opens use the cache. Search and text selection still work on exact pages.',
+      },
+      {
+        type: 'p',
+        text: 'When an agent creates a Word, Excel or PowerPoint file in a Work session, Files opens its preview while the turn runs (unless you are using another workbench tool) and redraws it on every save. A deck built with the PowerPoint Skill fills in slide by slide: finished slides appear as they land, the slide being built shows its planned title and an animated placeholder, and later slides are listed as Up next. While it is being built the slide thumbnails and the file tree step aside and the viewer follows the newest slide; scroll, click or navigate to take over. Both come back when the deck is finished, and the exact renderer takes over from there.',
+      },
+      {
+        type: 'p',
+        text: 'Common mistakes: hunting Review in Work mode; expecting Files without a focused Coding workspace; bookmarking `/scheduler`; trusting a ⌘P label for Files; opening ten Terminal tabs for one-liners better sent with ! in the composer.',
       },
       {
         type: 'tips',
         items: [
           'When to use Terminal vs ! — interactive/long vs short chat-tied commands.',
           'When to use Files vs @ — browse/explore vs pin a known path into the ask.',
-          'Cross-feature: Changes after Accept in plan mode to verify diffs.',
+          'Cross-feature: Source Control after Accept in plan mode to verify diffs.',
           'Cross-feature: Memory after research sessions so Dream has material.'
 ],
       }
@@ -1164,7 +1165,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step during a long Coding run: (1) select the confusing assistant paragraph, (2) Send to side chat, (3) ask “is this claiming X or Y?”, (4) if Y was wrong, return to the main composer with a corrective instruction or plan revise, (5) close Side chat.',
+        text: 'Step-by-step during a long Coding run: (1) select the confusing assistant parasource search, (2) Send to side chat, (3) ask “is this claiming X or Y?”, (4) if Y was wrong, return to the main composer with a corrective instruction or plan revise, (5) close Side chat.',
       },
       {
         type: 'p',
@@ -1220,20 +1221,19 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Switch to Coding (`/coding`) and add a repository or create a project. Configure worktree location under Settings → Sandbox (repository vs user_data). Run /init in a session once conventions should live in AGENTS.md.',
     tricks: [
       'Clicking a repo focuses it — it does not start a chat. Use + on Repos (or New chat) to create a session.',
-      'Projects span multiple repositories under one project_id; graph tools resolve cross-repo links automatically.',
+      'Projects span multiple repositories under one project_id; source search tools resolve cross-repo links automatically.',
       'Worktree location is controlled in Settings → Sandbox (repository vs user_data).',
       'Uncommitted source changes are not copied into new worktrees.',
       'Managed worktrees nest under the source repo in the sidebar tree.',
       'Standalone repos remain valid single-workspace sessions without a project.',
       'Run /init in a Coding session to create or update AGENTS.md for agent conventions.',
-      'Open Coding Overview from the workbench when a workspace is selected for status at a glance.',
       'Commit or stash before spawning a worktree if you need those dirty changes elsewhere — they will not appear in the new tree.',
       'Prefer a project when services share APIs across repos; prefer a single repo when the change set is local.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Coding mode manages git repositories, optional multi-repo projects, and managed worktrees. Agents edit real trees with Files, Graph, Terminal, Changes, and Review tools available beside chat. This is the mode for persistent engineering work.',
+        text: 'Coding mode manages git repositories, optional multi-repo projects, and managed worktrees. Agents edit real trees with Files, Terminal, and Source Control available beside chat. This is the mode for persistent engineering work.',
       },
       {
         type: 'p',
@@ -1241,7 +1241,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Add a repo from the Coding sidebar. Click to focus; press + / New chat for a session. Create a Project to bind multiple repos. Spawn a worktree from the repo menu; choose repository-local vs user_data location in Settings → Sandbox. Use /init to scaffold or refresh AGENTS.md. Graph and Overview enable once a workspace is active.',
+        text: 'Add a repo from the Coding sidebar. Click to focus; press + / New chat for a session. Create a Project to bind multiple repos. Spawn a worktree from the repo menu; choose repository-local vs user_data location in Settings → Sandbox. Use /init to scaffold or refresh AGENTS.md. Files enables once a workspace is active.',
       },
       {
         type: 'tips',
@@ -1250,13 +1250,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Projects — multi-repo under one project_id.',
           'Worktrees — clean trees; uncommitted source not copied.',
           '/init — AGENTS.md for Coding conventions.',
-          'Sandbox — worktree location policy.',
-          'Overview — status once a workspace is focused.'
+          'Sandbox — worktree location policy.'
 ],
       },
       {
         type: 'p',
-        text: 'Step-by-step first Coding session: (1) switch to Coding, (2) add the git repo, (3) click to focus, (4) + / New chat, (5) /init if AGENTS.md is missing, (6) set permission mode, (7) @ key files and describe the change, (8) open Overview to confirm workspace health.',
+        text: 'Step-by-step first Coding session: (1) switch to Coding, (2) add the git repo, (3) click to focus, (4) + / New chat, (5) /init if AGENTS.md is missing, (6) set permission mode, (7) @ key files and describe the change, (8) open Source Control to confirm the branch and working tree.',
       },
       {
         type: 'p',
@@ -1271,15 +1270,14 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'When to project — cross-repo types, shared contracts, multi-service changes.',
           'When not to project — one app repo with vendored code you rarely touch.',
-          'Cross-feature: graph cross-repo resolution needs a project_id.',
-          'Cross-feature: Review/Changes attach to the focused workspace.'
+          'Cross-feature: source search cross-repo resolution needs a project_id.',
+          'Cross-feature: Source Control attaches to the focused workspace.'
 ],
       }
 ],
     related: [
       'coding-git',
-      'coding-graph',
-      'slash-commands',
+            'slash-commands',
       'sandbox-settings',
       'modes-overview'
 ],
@@ -1288,9 +1286,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
   {
     id: 'coding-git',
     category: 'coding',
-    title: 'Git, changes, and pull requests',
+    title: 'Git, Source Control, and pull requests',
     summary:
-      'Stage, commit, branch, merge, rebase, stash, and review PRs/MRs from Coding via Changes (Ctrl+G), the Review panel, and Settings → Git & reviews. Keep safety toggles intentional before force-with-lease or huge diffs.',
+      'Stage, commit, branch, merge, rebase, stash, and review PRs/MRs from Coding via Source Control (Ctrl+G) — with its Changes and Review views — and Settings → Git & reviews. Keep safety toggles intentional before force-with-lease or huge diffs.',
     keywords: [
       'git',
       'commit',
@@ -1318,12 +1316,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     setup:
       'Coding mode with a git workspace. Connect hosts under Settings → Git & reviews for remote PR/MR actions. Review timeouts, max diff size, and force-with-lease before aggressive operations.',
     tricks: [
-      'Ctrl+G opens Changes (source control).',
-      'Diff review panels can prompt the agent to Create PRs.',
+      'Ctrl+G opens Source Control.',
       'Force-with-lease and max diff size are gated in version-control settings.',
-      'Review workbench lists PRs/MRs for GitHub, GitLab, Bitbucket, Gitea, and Azure DevOps when connected.',
+      'The Review view of Source Control lists PRs/MRs for GitHub, GitLab, Bitbucket, Gitea, and Azure DevOps when connected.',
       'Agents can also run git operations through tools subject to permission mode and sandbox.',
-      'Use stash / branch / rebase from Changes or agent tools depending on comfort level.',
+      'Use stash / branch / rebase from Source Control or agent tools depending on comfort level.',
       'Prefer small commits with clear messages — agents write better follow-ups against clean history.',
       'Connect the host before asking for Create PR; otherwise local commits succeed and remote steps fail late.',
       'If a diff is huge, raise max diff size only temporarily — oversized reviews hide risk.'
@@ -1331,7 +1328,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Coding exposes local source control (Changes) and remote review (Review). Supported local operations include stage, commit, branch, merge, rebase, cherry-pick, stash, and worktree-aware flows. Remote hosts power PR/MR listing and review actions when Settings → Git & reviews is configured.',
+        text: 'Coding exposes Source Control: local changes (Changes) and remote review (Review). Supported local operations include stage, commit, branch, merge, rebase, cherry-pick, stash, and worktree-aware flows. Remote hosts power PR/MR listing and review actions when Settings → Git & reviews is configured.',
       },
       {
         type: 'p',
@@ -1339,12 +1336,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Press Ctrl+G or open Changes from the workbench. Review diffs, stage, and commit. Open Review for connected PR/MRs. Configure hosts, timeouts, and safety toggles under Settings → Git & reviews. Ask the agent to create PRs from diff review when the host connection is ready.',
+        text: 'Press Ctrl+G or open Source Control from the workbench. Review diffs, stage, and commit. Open Review for connected PR/MRs. Configure hosts, timeouts, and safety toggles under Settings → Git & reviews. Ask the agent to create PRs from diff review when the host connection is ready.',
       },
       {
         type: 'tips',
         items: [
-          'Ctrl+G — Changes / source control',
+          'Ctrl+G — Source Control',
           'Review — PR/MR list for connected hosts',
           'GitHub / GitLab / Bitbucket / Gitea / Azure DevOps — host integrations',
           'force-with-lease — gated; not a casual default',
@@ -1367,7 +1364,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Cross-feature: Plan Accept → Changes to verify the plan became the diff you expected.',
+          'Cross-feature: Plan Accept → Source Control to verify the plan became the diff you expected.',
           'Cross-feature: worktrees keep experimental commits off your main checkout.',
           'Cross-feature: permission ask mode before first push on a production remote.'
 ],
@@ -1381,157 +1378,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'plan-review'
 ],
     openAction: { type: 'workbench', tool: 'source-control' },
-  },
-  {
-    id: 'coding-graph',
-    category: 'coding',
-    title: 'Repository code context',
-    summary:
-      'Repository-local indexes combine source search, structural patterns, and exact symbol navigation. Use one code_context tool across every authorized repository.',
-    keywords: [
-      'code graph',
-      'symbols',
-      'cross-repo',
-      'index',
-      'code_context',
-      'tree-sitter',
-      'đồ thị mã',
-      'biểu tượng',
-      'コードグラフ',
-      'シンボル'
-],
-    setup:
-      'Coding workspace or project — the first query refreshes changed source components. Open Graph to inspect the current dynamic repository snapshot.',
-    tricks: [
-      'Coding skills progressively disclose one code_context workflow.',
-      'Use code_context search for discovery, grep for code shapes, and graph actions for one known exact symbol.',
-      'Open the Graph workbench tool to explore visually and reindex when needed.',
-      'Cross-repo relationships resolve dynamically from imports, module paths, and unique definitions; no resolver job or persisted guessed edge exists.',
-      'code_context graph actions cover definition, callers, callees, references, impact, and neighborhood.',
-      'Use refresh=true after edits and refresh=false only for immediate same-version follow-ups.',
-      'Ask structural questions (“who calls X?”) instead of “read the whole package.”',
-      'Multi-repo projects get cross-repo edges; standalone repos still benefit inside one tree.',
-      'The skill body is never injected by Coding mode, and raw request prose is never keyword-routed into a graph query.'
-],
-    blocks: [
-      {
-        type: 'p',
-        text: 'Each repository owns a local managed index of AST-aware chunks, symbols, relations, and FTS source. The native code_context tool queries those targets, and Graph renders a dynamic snapshot.',
-      },
-      {
-        type: 'p',
-        text: 'Whole-file dumps burn context. Graph-first navigation is token-efficient for “who calls X?” and cross-repo questions inside a project, while still allowing grep/LSP/tests when static resolution is insufficient. Treat the graph as a map, not as ground truth that replaces reading hot paths.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'code_context search — identifiers, literals, comments, and concepts',
-          'code_context grep — by-example structural matching',
-          'code_context definition/callers/callees — exact symbol navigation',
-          'code_context references/impact/neighborhood — bounded relationship traversal'
-],
-      },
-      {
-        type: 'p',
-        text: 'Open a Coding workspace and query code_context. The first query reconciles additions, updates, and deletions into repository-local targets. Multi-repo edges resolve over the current authorized target set when queried or visualized.',
-      },
-      {
-        type: 'p',
-        text: 'Step-by-step investigation: (1) discover an identifier with search or a code shape with grep, (2) call an exact-symbol action, (3) disambiguate duplicates by path or repository, (4) inspect limitations, and (5) verify dynamic behavior with tests, logs, or runtime evidence.',
-      },
-      {
-        type: 'p',
-        text: 'When to use graph vs grep: graph for typed symbols, call edges, and cross-file architecture; grep for error strings, comments, feature flags, YAML keys, and generated code the parser may skip. When not to trust graph alone: macros, heavy reflection, and templates that erase symbols at compile time.',
-      },
-      {
-        type: 'p',
-        text: 'Common mistakes: passing prose to an exact-symbol action, dumping directories into chat, querying unauthorized siblings, skipping refresh after external edits, or treating suggestions as resolved roots.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Cross-feature: pair graph hits with Changes to see if your edit set matches the call neighborhood.',
-          'Cross-feature: AGENTS.md can tell agents to prefer graph-first navigation.',
-          'Cross-feature: specialists inherit tools per Settings → Agents — ensure workers can search code.'
-],
-      }
-],
-    related: ['coding-workspaces', 'agents-settings', 'composer-power', 'coding-git'],
-    openAction: { type: 'workbench', tool: 'graph' },
-  },
-  {
-    id: 'agent-specs',
-    category: 'coding',
-    title: 'Agent Specification-Driven Development (ASDD)',
-    summary:
-      'Use Agent Spec-Driven to turn intent into a reviewable specification in your repository, approve each artifact before agents act on it, and archive a change into the capability catalogue when its evidence holds.',
-    keywords: [
-      'ASDD',
-      'Agent Spec-Driven',
-      'specification',
-      'SDD',
-      'ADD',
-      'OpenSpec',
-      'capability',
-      'requirement',
-      'scenario',
-      'evidence',
-      'archive',
-    ],
-    setup:
-      'Open a Coding workspace and install ASDD for every repository. Setup writes a catalogue, the core rules and six Coding-only Skills — all tracked, so anyone who clones the repository gets the method. Fill in project.md, then create a change and run the phases from the rail.',
-    tricks: [
-      'A change is a folder of Markdown in the repository. Its phase is the `status` field in `proposal.md`, its contract is the delta under `specs/<capability>/spec.md`, and its identity is the folder name.',
-      'Nothing binds a change to a chat. Several chats can work on one change, one chat can move between changes, and closing a chat strands nothing.',
-      'No operation asks you to restate a hash. There is no `expected_hash` at approval and no spec hash in a delegation.',
-      'Editing `proposal.md` by hand is legitimate — the file is the source of truth. If the status you write disagrees with the folder, the rail says so and changes neither side.',
-      'Reuse an existing capability whenever the change alters behavior it already contracts. That produces another revision of one contract instead of two describing the same thing.',
-      'A delta says only what changes: `## ADDED`, `## MODIFIED` and `## REMOVED Requirements`. Restating unchanged requirements hides the change inside its own context.',
-      'Every requirement carries at least one `#### Scenario:` with a `- **WHEN**` and a `- **THEN**`. A requirement without one cannot be approved or verified.',
-      'A `MODIFIED` or `REMOVED` heading must match a requirement in the current spec character for character; an `ADDED` heading must match nothing there. Archive enforces both.',
-      'Risk tiers: trivial and standard skip design; cross_layer and critical require a design document and a recorded independent review. Do not raise the tier to signal effort.',
-      'Approving tasks is what authorizes product-file changes. Nothing before that phase may touch product files.',
-      'Verification is read-only. It reports what it found; it does not fix it, because a pass that repairs its own findings is not a review.',
-      'Machine evidence comes only from a runtime CompletionContract. A member’s own account of what it checked is recorded as review evidence and labelled as such.',
-      'Archive folds every delta into `specs/<capability>/spec.md` and retires the folder to `changes/archive/YYYY-MM-DD-<change-id>/`. It is undone only by another change.',
-      'Use Board for phase, Table for comparison, or List for compact navigation. The filter spans title, slug and capability.',
-      'Setup never moves or copies existing documentation into the catalogue. Adoption is an explicit approved change.',
-    ],
-    blocks: [
-      {
-        type: 'p',
-        text: 'ASDD means Agent Specification-Driven Development. SDD keeps an executable, version-controlled specification as the single source of truth; ADD runs agent work in phases with defined gates and an execution log. ASDD keeps the specification in your repository and runs the phases against it.',
-      },
-      {
-        type: 'p',
-        text: 'Installation adds `.evoflux/asdd/config.json`, `RULES.md`, six Coding-only Skills, and a catalogue under the repository data folder (default `documents/asdd`): `project.md`, `specs/` and `changes/`. Everything it writes is tracked.',
-      },
-      {
-        type: 'p',
-        text: 'The Skills guide Propose, Specify, Plan, Implement, Verify and Archive. They hold no authority: the user approves the proposal, the specs, the design where the risk tier requires one, and the tasks, and the user archives.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Change — a folder in `changes/`, named by its slug.',
-          'Capability — a durable slug naming one behavior the system guarantees.',
-          'Requirement — one SHALL statement, with at least one scenario.',
-          'Delta — what this change adds, modifies or removes.',
-          'Evidence — a page saying what was run and what it showed.',
-          'Archive — folding the deltas into the capability specs.',
-        ],
-      },
-      {
-        type: 'p',
-        text: 'There is no optimistic concurrency. Two agents writing one file overwrite each other; a per-repository lock serializes the product’s own writes, and `git diff` shows the result. That is the trade for a method with no hashes and no session locks.',
-      },
-      {
-        type: 'p',
-        text: 'Common mistakes: coining a new capability for behavior an existing spec already contracts, writing a requirement with no scenario, naming a `MODIFIED` requirement that does not exist, editing a capability spec by hand instead of archiving a change, and approving specs before reading the delta.',
-      },
-    ],
-    related: ['coding-workspaces', 'permissions-modes', 'plan-review', 'coding-git', 'coding-graph'],
-    openAction: { type: 'workbench', tool: 'asdd' },
   },
   {
     id: 'memory-dream',
@@ -2045,7 +1891,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Runtime behavior: an enabled valid Skill joins the normal metadata catalog and loads only when activated. Loading a plugin Skill makes ready MCP tools from the same installation available for that run, subject to permission rules. Settings → Skills shows discovery/validation; Settings → MCP servers shows plugin-badged runtime state and tool names. Runtime names contain installation hashes, so author instructions should refer to stable server/tool suffixes rather than copying a generated prefix.',
+        text: 'Runtime behavior: the agent sees each enabled, valid plugin Skill\'s name and description like any other Skill and reads its SKILL.md when a task matches (or when you type `$skill-name`). Once a plugin Skill\'s SKILL.md is read, ready MCP tools from the same installation become available for that run, subject to permission rules. Settings → Skills shows validation and lets you turn a single plugin Skill off; Settings → MCP servers shows plugin-badged runtime state and tool names. Runtime names contain installation hashes, so author instructions should refer to stable server/tool suffixes rather than copying a generated prefix.',
       },
       {
         type: 'p',
@@ -2055,12 +1901,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'Plugin does not install — open inspection diagnostics; fix fatal `plugin.json`, unsafe path, archive collision, symlink, size, or digest errors.',
-          'Skill is missing — enable the installation; confirm `skills/<name>/SKILL.md` is one level below `skills/`, has valid frontmatter, and is not shadowed by a higher-precedence project/user Skill.',
+          'Skill is missing — enable the installation; confirm `skills/<name>/SKILL.md` is one level below `skills/`, has valid frontmatter, is switched on in Settings → Skills, and is not shadowed by a higher-precedence project/user Skill.',
           'MCP is missing from Settings — confirm the plugin is enabled, `mcp.json` validates, and the transport is stdio or Streamable HTTP rather than SSE.',
           'MCP is error — expand the runtime row; check executable path, arguments, working directory, startup logs, required credentials, and whether stdout is reserved for stdio protocol messages.',
           'Credentials page says unsupported — add `org.evoelsewhere.evoflux.credentials.fields` to `plugin.json`, then validate and return.',
           'Remote server is not ready — verify URL/host reachability and literal headers; stored plugin credentials are intentionally not injected into Streamable HTTP.',
-          'Tools are not selected in chat — activate the matching plugin Skill or explicitly select the plugin MCP server for the agent; installation alone does not grant all tools.',
+          'Tools are not selected in chat — use the matching plugin Skill (type `$skill-name`) or explicitly select the plugin MCP server for the agent; installation alone does not grant all tools.',
           'Changes look stale — Validate or save again, refresh Plugin Center, then disable/enable to reconcile the runtime.'
 ],
       },
@@ -2121,11 +1967,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'code',
         language: 'markdown',
         caption: 'skills/release-audit/SKILL.md',
-        code: '---\nname: release-audit\ndescription: Inspect release evidence, checks, and risk before publishing.\n---\n\n# Release audit\n\n1. Gather bounded evidence.\n2. Use the plugin MCP tools only when live data is required.\n3. Separate facts, inference, and missing evidence.\n4. Never publish or mutate a release without explicit authorization.',
+        code: '---\nname: release-audit\ndescription: Inspects release evidence, checks, and risk before publishing. Use when the user asks whether a release is ready or mentions a release checklist.\n---\n\n# Release audit\n\n1. Gather bounded evidence.\n2. Use the plugin MCP tools only when live data is required.\n3. Separate facts, inference, and missing evidence.\n4. Never publish or mutate a release without explicit authorization.',
       },
       {
         type: 'p',
-        text: 'Skill name must match the portable Agent Skills naming contract. Write a precise description because it drives discovery. Keep the core workflow in SKILL.md and load large references only when needed. Refer to MCP tools by stable suffix because EvoFlux prefixes runtime names per installation.',
+        text: 'A Skill is a folder with a SKILL.md. `name` matches the folder: lowercase letters, digits, and single hyphens, up to 64 characters, without "anthropic" or "claude". `description` (up to 1,024 characters, no XML tags) says in the third person what the Skill does and when to use it — the agent sees only the name and description until it decides to read SKILL.md. Keep SKILL.md focused and link larger reference files one level deep so they are read only when needed. Refer to MCP tools by stable suffix because EvoFlux prefixes runtime names per installation.',
       },
       {
         type: 'p',
@@ -2230,9 +2076,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'table',
         columns: ['Concern', 'Rule'],
         rows: [
-          ['Skill precedence', 'Project/user/admin roots override enabled plugins; enabled plugins override EvoFlux built-ins.'],
+          ['Skill precedence', 'Project and user skill folders override enabled plugins; enabled plugins override EvoFlux built-ins. Any Skill can be turned off in Settings → Skills.'],
           ['MCP configuration', 'Plugin declarations stay in a separate in-memory manager and never modify global mcp.json.'],
-          ['Agent availability', 'Explicit MCP selection or activation of a same-installation Skill makes ready tools available for that run.'],
+          ['Agent availability', 'Explicit MCP selection, or reading the SKILL.md of a Skill from the same installation, makes ready tools available for that run.'],
           ['WebBridge', 'Only explicitly declared safe capabilities may keep a non-browser plugin server visible in a WebBridge run.'],
           ['Failure isolation', 'Bad Skill/server entries are isolated; fatal manifest/package errors reject the package.'],
         ],
@@ -2275,7 +2121,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           ['MCP error', 'Bad command/args/cwd, missing credential, network/TLS failure', 'Expand runtime error and compare trust/config.'],
           ['Credentials unsupported', 'No canonical/legacy credential extension', 'Add fields extension, save, validate, refresh.'],
           ['Credentials incomplete', 'Required field missing or invalid URL/type', 'Fill required fields; leave configured secret blank only to preserve it.'],
-          ['Tools not offered to agent', 'Server not ready or not selected/activated', 'Select MCP for agent or activate same-plugin Skill.'],
+          ['Tools not offered to agent', 'Server not ready, not selected, or no same-plugin Skill used', 'Select MCP for agent or use a same-plugin Skill ($skill-name).'],
           ['Linked code looks stale', 'Unsaved file or runtime not reconciled', 'Save, Validate, refresh, disable/enable.'],
           ['Update fails', 'Invalid replacement or identity/package safety failure', 'Inspect new directory/archive before update; keep old installation.'],
         ],
@@ -2338,7 +2184,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'settings',
     title: 'Agents, skills, and MCP',
     summary:
-      'Configure Markdown agents, skill packs, and MCP servers under Settings — tools inherit the same permission rules as native tools. Teams stay scoped to work / coding so the right specialists appear in each mode.',
+      'Configure Markdown agents, Skills (folders with a SKILL.md), and MCP servers under Settings — tools inherit the same permission rules as native tools. Teams stay scoped to work / coding so the right specialists appear in each mode; Skills are available in both.',
     keywords: [
       'agents',
       'skills',
@@ -2356,10 +2202,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'MCP'
 ],
     setup:
-      'Settings → Agents for team members; Settings → Skills to validate packs; Settings → MCP to add servers. From chat, use /skill: or the command palette for New Agent / New Skill shortcuts.',
+      'Settings → Agents for team members; Settings → Skills to create or edit your skills and turn any skill on or off; Settings → MCP to add servers. From chat, type $skill-name to use a skill, or use the command palette for New Agent / New Skill shortcuts.',
     tricks: [
       'Agents are .md files with YAML frontmatter — diffable and versionable.',
-      'Settings → Skills creates, edits, displays, and filters skills by Work, Coding, or Both; valid skills appear under /skill: only in matching sessions.',
+      'A Skill is a folder with a SKILL.md. The agent sees each enabled skill\'s name and description and reads SKILL.md itself when a task matches.',
+      'Type $skill-name anywhere in a message to use a skill explicitly; you can name several.',
+      'Settings → Skills creates and edits skills in your user skills folder and has an on/off switch for every skill, including built-in, plugin, and project ones.',
+      'An agent\'s Skills field preloads those skills into that agent, so it starts with their instructions.',
       'MCP status dots: ready / starting / auth / error / stopped.',
       'MCP tools inherit the same permission rules as native tools.',
       'Teams are scoped to work / coding.',
@@ -2371,7 +2220,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Agents define role, model, tools, and system prompt. Skills are instruction packs loaded on demand via /skill:. MCP servers expose external tools over stdio, HTTP, or SSE. Together they are how you shape team behavior without forking the product.',
+        text: 'Agents define role, model, tools, and system prompt. Skills are folders with a SKILL.md plus optional reference files, scripts, and assets: the agent sees each enabled skill\'s name and description, reads SKILL.md when a task matches, and opens the other files only when the instructions point to them. MCP servers expose external tools over stdio, HTTP, or SSE. Together they are how you shape team behavior without forking the product.',
       },
       {
         type: 'p',
@@ -2379,13 +2228,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Settings → Agents to edit team members; Settings → Skills to validate packs; Settings → MCP to add servers and watch status dots. From chat, type /skill: or open the palette for New Agent / New Skill. Lead-only tools (ask_user, plan mode, worktree helpers) are never granted to specialists.',
+        text: 'Settings → Agents to edit team members; Settings → Skills to create or edit your skills, check validation, and turn any skill on or off; Settings → MCP to add servers and watch status dots. From chat, type $skill-name to use a skill now, or open the palette for New Agent / New Skill. An agent\'s Skills field preloads those skills into that agent. Lead-only tools (ask_user, plan mode, worktree helpers) are never granted to specialists.',
       },
       {
         type: 'tips',
         items: [
           'Agents — .md + YAML frontmatter',
-          'Skills — /skill: after validation',
+          'Skills — SKILL.md folders; $skill-name to use one; on/off in Settings',
           'MCP — stdio / HTTP / SSE',
           'Status dots — ready / starting / auth / error / stopped',
           'tools_opt_out — disable code-owned tool defaults',
@@ -2399,13 +2248,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: expecting invalid skills in the slash menu; granting specialists Lead-only tools in your head; leaving MCP on error and retrying chat; putting secrets in agent markdown committed to a public repo; forgetting mode scope so a Coding specialist never appears in Work.',
+        text: 'Common mistakes: expecting an invalid or switched-off skill in the $ picker; writing a vague skill description (the agent decides from it whether to read the skill); granting specialists Lead-only tools in your head; leaving MCP on error and retrying chat; putting secrets in agent markdown committed to a public repo; forgetting mode scope so a Coding specialist never appears in Work.',
       },
       {
         type: 'tips',
         items: [
-          'Cross-feature: activated Coding skills teach the workflow; native code_context validates and executes every retrieval action.',
-          'Cross-feature: workflows and skills both need scope validity to show in /.',
+          'Cross-feature: a Coding skill teaches the workflow; native source search validates and executes every retrieval action.',
+          'Cross-feature: skills need to be valid and switched on to show in $.',
           'Cross-feature: permission Always rules apply to MCP tools too — prefer Once first.'
 ],
       }
@@ -2413,8 +2262,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     related: [
       'composer-power',
       'permissions-modes',
-      'coding-graph',
-      'slash-commands'
+            'slash-commands'
 ],
     openAction: { type: 'settings', path: 'agents' },
   },
@@ -2637,7 +2485,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'Providers — API keys, OAuth, local daemons, model registry',
           'Agents — model, tools, system prompt per team member',
-          'Skills — instruction packs for /skill:',
+          'Skills — create/edit SKILL.md folders, turn any skill on or off',
           'MCP servers — stdio / HTTP / SSE external tools',
           'Memory — long-term wiki + Dream schedule',
           'Connection — bundled sidecar vs external URL / access key',
@@ -2729,7 +2577,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+S', action: 'Scheduler' },
           { keys: 'Ctrl+K', action: 'Plugins' },
           { keys: 'Ctrl+T', action: 'Built-in browser' },
-          { keys: 'Ctrl+G', action: 'Git Changes (Coding)' },
+          { keys: 'Ctrl+G', action: 'Source Control (Coding)' },
           { keys: 'Ctrl+`', action: 'Terminal' },
           { keys: 'Ctrl+I', action: 'Focus chat input' },
           { keys: 'Ctrl+;', action: 'Side chat (label may show ⌥⌘S)' },
@@ -2739,7 +2587,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Prefer the command palette (Ctrl+P) when you forget a binding — most actions are searchable by name, and the same box searches your sessions, past messages, Memory pages, projects, repositories, scheduled tasks, agents and skills (plus repository files and symbols once a Coding workspace is open). Guidelines (Help) stays separate: it is documentation, not your content. Graph and Review rely on the workbench bar or palette because they have no dedicated global shortcut.',
+        text: 'Prefer the command palette (Ctrl+P) when you forget a binding — most actions are searchable by name, and the same box searches your sessions, past messages, Memory pages, projects, repositories, scheduled tasks, agents and skills (plus repository files and symbols once a Coding workspace is open). Guidelines (Help) stays separate: it is documentation, not your content. Git relies on the workbench bar or palette because it has no dedicated global shortcut.',
       },
       {
         type: 'tips',
@@ -2754,7 +2602,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: pressing Cmd+P on macOS expecting the palette; using Ctrl+R thinking it reloads the whole app; fighting Ctrl+V in the composer during paste; assuming Graph has a hidden hotkey; opening Help when you meant the palette (or vice versa).',
+        text: 'Common mistakes: pressing Cmd+P on macOS expecting the palette; using Ctrl+R thinking it reloads the whole app; fighting Ctrl+V in the composer during paste; assuming Files has a hidden hotkey; opening Help when you meant the palette (or vice versa).',
       },
       {
         type: 'tips',
@@ -2834,12 +2682,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Empty telemetry → observability extras disabled (often non-blocking)',
           'Goal stuck → inspect blocker streak, budget pause, or /goal:stop',
           '/scheduler 404-feeling → use Ctrl+S panel; route redirects home',
-          'Stale graph → reindex from Graph tool after huge external edits'
+          'Stale source search → reindex from Files tool after huge external edits'
 ],
       },
       {
         type: 'p',
-        text: 'Ordered checklist: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) mode-specific tools (Changes/Graph/Review only in Coding). Stop at the first failing layer.',
+        text: 'Ordered checklist: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) mode-specific tools (Source Control and Problems only in Coding). Stop at the first failing layer.',
       },
       {
         type: 'p',

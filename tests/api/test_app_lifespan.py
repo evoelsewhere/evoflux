@@ -25,7 +25,6 @@ def test_app_import_keeps_optional_runtime_modules_lazy() -> None:
                 "print('app.agent.agent_loop.core' in sys.modules); "
                 "print('app.agent.tools.builtin.browser_use_tool' in sys.modules); "
                 "print('app.agent.tools.builtin.webbridge_tool' in sys.modules); "
-                "print('app.services.code_index.project' in sys.modules); "
                 # AC-1: with no enabled connection, importing app.api.app
                 # (which now registers the /api/remote routes) must never
                 # pull either Telegram module into sys.modules.
@@ -45,7 +44,6 @@ def test_app_import_keeps_optional_runtime_modules_lazy() -> None:
         "False",
         "False",
         "False",
-        "True",
         "False",
         "False",
     ]

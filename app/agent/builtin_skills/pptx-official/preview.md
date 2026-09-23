@@ -5,6 +5,17 @@ file is written. This phase sits between Phase 2 (outline) and Phase 3 (prepare
 assets). It is optional: skip when the user says "just build it", the deck is
 small and straightforward, or `show_widget` is unavailable.
 
+## Contents
+
+- When to preview
+- Setup
+- Preview type 1: Theme picker
+- Preview type 2: Slide preview grid
+- Preview type 3: Style comparison (optional)
+- HTML size budget
+- Constraints
+- Fallback
+
 ## When to preview
 
 | Condition | Action |
@@ -30,7 +41,9 @@ This returns the HTML/CSS/JS guidelines required by `show_widget`. The
 
 ## Preview type 1: Theme picker
 
-Show 2-3 recommended themes as clickable cards. Each card contains:
+Show 2-3 recommended themes as clickable cards, with the role colours from
+`themes.md` (the template below already carries Boardroom and Ledger). Each
+card contains:
 
 - Theme name and suitability note
 - Color swatches: bg, surface, accent, positive, negative
@@ -287,5 +300,7 @@ Keep total HTML under 8KB for responsive streaming (500-char chunks).
 ## Fallback
 
 When `show_widget` is unavailable or the user skips preview, the pipeline
-continues with the existing text-based `ask_user` flow from `interview.md`.
-No regression in capability.
+continues with the text flow: one `ask_user` call offering two or three
+themes (recommendation first, each with who it suits) plus the imagery
+question, and the outline shown as text for approval when approval is
+required. No regression in capability.

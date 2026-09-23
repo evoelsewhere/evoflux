@@ -36,8 +36,8 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import math
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -53,9 +53,14 @@ from app.agent.outbound_redaction import (
 )
 from app.agent.providers.base import LLMProviderBase, get_qualified_model_id
 from app.agent.providers.model_metadata import get_model_limits
-from app.agent.skills.activation import is_skill_activation_content
+from app.agent.skills.activation import full_read_path, is_skill_file_read
+from app.agent.hooks.tool_context_projection import (
+    keep_recent_batches_for_mode,
+    project_tool_results,
+)
 from app.agent.schemas.chat import (
     AssistantMessage,
+    ChatMessage,
     HumanMessage,
     SystemMessage,
     ToolMessage,
@@ -134,15 +139,175 @@ DEFAULT_KEEP_LAST_ASSISTANTS = 3
 CODING_KEEP_LAST_ASSISTANTS = 2
 DEFAULT_MAX_TOKEN_LENGTH = 30000
 DEFAULT_MIN_MESSAGES_SINCE_LAST_SUMMARY = 4
+
+# ── Fitting the compaction request inside the window ──────────────────────
+# The summariser replays the transcript so the provider's prefix cache still
+# applies, which means its own request is bounded by the same context window
+# the conversation just ran into. Nothing used to enforce that: a session
+# whose turns fit in 200K (the provider boundary projects old tool results)
+# sent an unprojected 404K compaction request plus a 30K output cap against a
+# 262K window, took a ``context_length_exceeded`` 400 on all 137 attempts,
+# and so never shrank — every turn paid for a compaction that could not work.
+
+#: Chars per token when sizing a request before sending it. Deliberately low:
+#: over-estimating tokens trims a little more than strictly needed, which is
+#: the safe direction. ``agent_loop.core`` sizes tool results the same way.
+_CHARS_PER_TOKEN = 3
+#: Flat cost charged for a non-text content part (an image, mostly), whose
+#: token count has nothing to do with its character length.
+_NON_TEXT_PART_TOKENS = 1_000
+#: Headroom left free beyond the prompt and the summary's own output cap, for
+#: the tool schemas and the wire envelope this estimate does not model.
+_CONTEXT_SAFETY_MARGIN_TOKENS = 8_000
+#: Retries for a compaction the endpoint rejected as too long, each on half
+#: the history. The estimate can be wrong; the endpoint cannot.
+_OVERFLOW_RETRIES = 2
+#: Consecutive failures after which a session stops trying to compact on
+#: every turn. Each attempt costs a full-history call and several seconds.
+_FAILURE_STREAK_LIMIT = 3
+
+#: Consecutive compaction failures per session. Runtime state, not durable:
+#: the hook is rebuilt every turn, and a restart is a fine reason to try
+#: again. Cleared on the first success.
+_failure_streaks: dict[str, int] = {}
+
+
+def compaction_failure_streak(session_id: str | None) -> int:
+    """How many compactions in a row have failed for this session."""
+    return _failure_streaks.get(session_id or "", 0)
+
+
+def reset_compaction_failures(session_id: str | None) -> None:
+    """Forget a session's failure streak, letting compaction run again."""
+    _failure_streaks.pop(session_id or "", None)
+
+
+def _record_compaction_failure(session_id: str | None) -> int:
+    streak = _failure_streaks.get(session_id or "", 0) + 1
+    _failure_streaks[session_id or ""] = streak
+    return streak
+
+
+def _message_tokens(message: ChatMessage) -> int:
+    """Rough token cost of one message, erring high."""
+    chars = len(message.content or "")
+    for call in getattr(message, "tool_calls", None) or ():
+        function = getattr(call, "function", None)
+        chars += len(getattr(function, "name", "") or "")
+        arguments = getattr(function, "arguments", "") or ""
+        chars += len(arguments) if isinstance(arguments, str) else 0
+    tokens = chars // _CHARS_PER_TOKEN
+    for part in getattr(message, "parts", None) or ():
+        text = getattr(part, "text", None)
+        if isinstance(text, str):
+            tokens += len(text) // _CHARS_PER_TOKEN
+        else:
+            tokens += _NON_TEXT_PART_TOKENS
+    # Role, delimiters and tool-call scaffolding, per message.
+    return tokens + 8
+
+
+def _estimate_tokens(messages: "list[ChatMessage]") -> int:
+    return sum(_message_tokens(message) for message in messages)
+
+
+def _summariser_budget(model_id: str | None, output_cap: int) -> tuple[int | None, int]:
+    """``(prompt budget, output cap)`` for the compaction call.
+
+    Both matter, because the endpoint charges the request for both: StepFun's
+    rejection read "you requested 434091 tokens (404091 in the messages,
+    30000 in the completion)". The configured cap is therefore clamped too —
+    a summary allowed a quarter of the window is already far larger than any
+    summary needs, and letting one setting exceed that is enough to make
+    compaction impossible on a small-window model.
+
+    The budget is ``None`` when the catalogue does not publish a window. An
+    unknown model is left alone rather than trimmed against a guess: sending
+    what the endpoint accepts today matters more than defending a limit
+    nobody published.
+    """
+    context_length = get_model_limits(model_id).context_length
+    if not context_length:
+        return None, max(0, output_cap)
+
+    reserved = min(max(0, output_cap), context_length // 4)
+    budget = context_length - reserved - _CONTEXT_SAFETY_MARGIN_TOKENS
+    if budget <= 0:
+        # A window smaller than the margin itself. Half of it is a poor
+        # budget but a real one, and beats sending the whole transcript at
+        # something that certainly cannot take it.
+        budget = max(1, context_length // 2)
+    return budget, reserved
+
+
+def _drop_orphan_tool_results(messages: "list[ChatMessage]") -> "list[ChatMessage]":
+    """Drop tool results whose assistant call is no longer in the list.
+
+    Trimming from the front can cut an assistant turn away from the tool
+    outputs that answered it, and a bare tool message is a 400 on every
+    provider that checks.
+    """
+    seen_call_ids: set[str] = set()
+    kept: list[ChatMessage] = []
+    for message in messages:
+        if isinstance(message, AssistantMessage):
+            for call in message.tool_calls or ():
+                if call.id:
+                    seen_call_ids.add(call.id)
+            kept.append(message)
+        elif isinstance(message, ToolMessage):
+            if message.tool_call_id and message.tool_call_id in seen_call_ids:
+                kept.append(message)
+        else:
+            kept.append(message)
+    return kept
+
+
+def _fit_to_budget(
+    messages: "list[ChatMessage]", budget: int
+) -> tuple["list[ChatMessage]", int]:
+    """Drop the oldest messages until the rest fits *budget*.
+
+    Returns the kept messages and how many were dropped. What is dropped is
+    lost to the summary — but it is lost either way once the request cannot
+    be sent, and the newest history is the part the next turn needs.
+    """
+    sizes = [_message_tokens(message) for message in messages]
+    total = sum(sizes)
+    cut = 0
+    while cut < len(messages) and total > budget:
+        total -= sizes[cut]
+        cut += 1
+    if cut == 0:
+        return messages, 0
+    return _drop_orphan_tool_results(messages[cut:]), cut
+
+
+def _is_context_overflow(exc: Exception) -> bool:
+    """Whether *exc* is the endpoint saying the request was too long."""
+    response = getattr(exc, "response", None)
+    if getattr(response, "status_code", None) not in (400, 413):
+        return False
+    try:
+        body = (response.text or "").lower()
+    except Exception:  # pragma: no cover - a body that cannot be read
+        body = ""
+    if not body:
+        # A 400 whose body we cannot read: sending less is the only lever
+        # this code has, and it is cheap to try once.
+        return True
+    return any(
+        marker in body
+        for marker in ("context", "too long", "too large", "maximum", "token")
+    )
+
+
 # Activated skills are executable policy, not ordinary conversation history.
 # Preserve the newest exact activation for each skill across compaction up to a
 # bounded aggregate. The bound is measured over the UTF-8 bytes of the complete
 # assistant/tool group, not only the skill result, so a mixed tool-call batch
 # cannot smuggle unrelated output into durable context.
 MAX_DURABLE_SKILL_BYTES = 100_000
-# Compatibility for extensions importing the old constant. Budget accounting
-# itself is byte-based below.
-MAX_DURABLE_SKILL_CHARS = MAX_DURABLE_SKILL_BYTES
 
 
 # ── Bundled summariser prompts ────────────────────────────────────────────
@@ -380,12 +545,11 @@ def _durable_skill_message_ids(
     *,
     max_bytes: int = MAX_DURABLE_SKILL_BYTES,
 ) -> set[int]:
-    """Return exact activation pairs that must survive summarisation.
+    """Return Skill activation pairs that must survive summarisation.
 
-    Resource reads and catalog listings are ordinary evidence and may be
-    compacted. Only successful ``action=load`` calls whose result contains the
-    canonical ``<skill_content>`` wrapper are durable. Newest activations win
-    when duplicate history exists.
+    A Skill activation is a successful full ``read`` of a ``SKILL.md``. Reads
+    of a Skill's other files are ordinary evidence and may be compacted. The
+    newest read of each ``SKILL.md`` wins when history repeats it.
     """
 
     tool_messages_by_call: dict[str, ToolMessage] = {
@@ -417,23 +581,11 @@ def _durable_skill_message_ids(
         durable_names: list[str] = []
         durable_results: list[ToolMessage] = []
         for call in message.tool_calls:
-            if call.function.name != "skill":
-                continue
-            try:
-                arguments = json.loads(call.function.arguments or "{}")
-            except (json.JSONDecodeError, TypeError):
-                continue
-            if arguments.get("action", "load") != "load":
-                continue
-            name = arguments.get("skill_name")
             result = tool_messages_by_call.get(call.id)
-            if (
-                not isinstance(name, str)
-                or not name
-                or name in protected_names
-                or result is None
-                or not is_skill_activation_content(result.content, name)
-            ):
+            if result is None or not is_skill_file_read(call, result):
+                continue
+            name = os.path.normcase(full_read_path(call) or "")
+            if name in protected_names:
                 continue
             durable_names.append(name)
             durable_results.append(result)
@@ -540,6 +692,7 @@ def build_summarization_hook(
         prompt_token_threshold=prompt_token_threshold_for_model(model_id),
         keep_last_assistants=keep_last_for_mode(mode),
         max_token_length=summary_max_tokens(),
+        keep_recent_tool_batches=keep_recent_batches_for_mode(mode),
     )
 
 
@@ -584,6 +737,7 @@ def build_team_summarization_hook(
         prompt_token_threshold=prompt_token_threshold_for_model(model_id),
         keep_last_assistants=keep_last_for_mode("coding"),
         max_token_length=summary_max_tokens(),
+        keep_recent_tool_batches=keep_recent_batches_for_mode(mode),
     )
 
 
@@ -627,6 +781,7 @@ class SummarizationHook(BaseAgentHook):
         keep_last_assistants: int = DEFAULT_KEEP_LAST_ASSISTANTS,
         max_token_length: int = DEFAULT_MAX_TOKEN_LENGTH,
         min_messages_since_last_summary: int = DEFAULT_MIN_MESSAGES_SINCE_LAST_SUMMARY,
+        keep_recent_tool_batches: int | None = None,
     ) -> None:
         if not summary_prompt or not summary_prompt.strip():
             raise ValueError(
@@ -640,6 +795,14 @@ class SummarizationHook(BaseAgentHook):
         self._summary_prompt = summary_prompt
         self._max_token_length = max_token_length
         self._min_messages_since_last_summary = min_messages_since_last_summary
+        # Match the provider boundary's projection window so the compaction
+        # request is the same prefix an ordinary turn sends — same size, and
+        # the provider's cache still recognises it.
+        self._keep_recent_tool_batches = (
+            keep_recent_batches_for_mode(None)
+            if keep_recent_tool_batches is None
+            else max(1, keep_recent_tool_batches)
+        )
         # Snapshot of len(state.messages) at the last summarisation — used
         # by the minimum-delta guard in before_model to prevent thrashing.
         self._messages_at_last_summary: int = 0
@@ -667,6 +830,19 @@ class SummarizationHook(BaseAgentHook):
             return None
 
         if state.usage.last_prompt_tokens < self._prompt_token_threshold and not force:
+            return None
+
+        # A session whose compactions keep failing was retrying a full-history
+        # call every single turn — seconds and tokens spent on something that
+        # had already failed the same way three times. An explicit force still
+        # tries, and so does the next restart.
+        streak = compaction_failure_streak(ctx.session_id)
+        if streak >= _FAILURE_STREAK_LIMIT and not force:
+            logger.warning(
+                "summarization_skipped_stalled session_id={} failures={}",
+                ctx.session_id,
+                streak,
+            )
             return None
 
         if self._min_messages_since_last_summary > 0 and not force:
@@ -811,13 +987,41 @@ class SummarizationHook(BaseAgentHook):
         has_prior_summary = any(m.is_summary for m in to_summarise)
         request_line = _MERGE_REQUEST if has_prior_summary else _SUMMARISE_REQUEST
         prompt = system_prompt if system_prompt is not None else state.system_prompt
-        summariser_messages = [
-            *([SystemMessage(content=prompt)] if prompt else []),
-            *to_summarise,
-            HumanMessage(content=f"{request_line}\n\n{self._summary_prompt}"),
-        ]
+
+        # The provider boundary replaces old, bulky tool results with
+        # receipts before every ordinary turn. Send what it sends: the same
+        # prefix keeps the cache aligned *and* is the size the window was
+        # measured against, instead of the raw transcript that is twice as
+        # large as the turn which triggered this.
+        sendable, projection = project_tool_results(
+            to_summarise, keep_recent_batches=self._keep_recent_tool_batches
+        )
+        if projection:
+            span.set_attribute("summarization.projected_results", projection["results"])
+            span.set_attribute(
+                "summarization.projected_saved_chars", projection["saved_chars"]
+            )
+
+        model_id = get_qualified_model_id(self._llm_provider)
+        budget, output_cap = _summariser_budget(model_id, self._max_token_length)
+        dropped = 0
+        if budget is not None:
+            overhead = _message_tokens(
+                HumanMessage(content=f"{request_line}\n\n{self._summary_prompt}")
+            ) + (_message_tokens(SystemMessage(content=prompt)) if prompt else 0)
+            sendable, dropped = _fit_to_budget(sendable, budget - overhead)
+            span.set_attribute("summarization.token_budget", budget)
+            if dropped:
+                logger.warning(
+                    "summarization_history_trimmed session_id={} dropped={} budget={}",
+                    ctx.session_id,
+                    dropped,
+                    budget,
+                )
 
         span.set_attribute("summarization.messages_to_summarise", len(to_summarise))
+        span.set_attribute("summarization.messages_sent", len(sendable))
+        span.set_attribute("summarization.messages_dropped", dropped)
         span.set_attribute(
             "summarization.keep_last_assistants", self._keep_last_assistants
         )
@@ -833,25 +1037,69 @@ class SummarizationHook(BaseAgentHook):
         if emit_session_id:
             await self._emit_start(emit_session_id, agent_name)
 
-        try:
-            summary_text = await self._call_llm(
-                ctx,
-                summariser_messages,
-                tools=state.tool_defs or None,
-            )
-        except Exception as exc:
-            logger.error(
-                "summarization_llm_failed session_id={} error={}",
-                ctx.session_id,
-                exc,
-            )
-            span.set_attribute("error.type", type(exc).__name__)
-            span.set_status(StatusCode.ERROR, str(exc))
-            if emit_session_id:
-                await self._emit_end(emit_session_id, agent_name, error=True)
-            return
+        summary_text = ""
+        for attempt in range(_OVERFLOW_RETRIES + 1):
+            summariser_messages = [
+                *([SystemMessage(content=prompt)] if prompt else []),
+                *sendable,
+                HumanMessage(content=f"{request_line}\n\n{self._summary_prompt}"),
+            ]
+            try:
+                summary_text = await self._call_llm(
+                    ctx,
+                    summariser_messages,
+                    tools=state.tool_defs or None,
+                    max_tokens=output_cap,
+                )
+                break
+            except Exception as exc:
+                retryable = (
+                    attempt < _OVERFLOW_RETRIES
+                    and len(sendable) > 1
+                    and _is_context_overflow(exc)
+                )
+                if not retryable:
+                    streak = _record_compaction_failure(ctx.session_id)
+                    logger.error(
+                        "summarization_llm_failed session_id={} streak={} error={}",
+                        ctx.session_id,
+                        streak,
+                        exc,
+                    )
+                    if streak >= _FAILURE_STREAK_LIMIT:
+                        logger.error(
+                            "summarization_stalled session_id={} attempts={} — "
+                            "compaction disabled for this session; the context "
+                            "cannot shrink and turns will keep growing",
+                            ctx.session_id,
+                            streak,
+                        )
+                        span.set_attribute("summarization.stalled", True)
+                    span.set_attribute("error.type", type(exc).__name__)
+                    span.set_status(StatusCode.ERROR, str(exc))
+                    if emit_session_id:
+                        await self._emit_end(emit_session_id, agent_name, error=True)
+                    return
+                # The endpoint is the authority on what fits; halve and retry.
+                halved = _estimate_tokens(sendable) // 2
+                sendable, just_dropped = _fit_to_budget(sendable, halved)
+                dropped += just_dropped
+                logger.warning(
+                    "summarization_retry_smaller session_id={} attempt={} "
+                    "dropped={} remaining={}",
+                    ctx.session_id,
+                    attempt + 1,
+                    just_dropped,
+                    len(sendable),
+                )
+                span.set_attribute("summarization.overflow_retries", attempt + 1)
+                span.set_attribute("summarization.messages_sent", len(sendable))
+                span.set_attribute("summarization.messages_dropped", dropped)
 
         if not summary_text:
+            # A summariser that answers nothing has failed as surely as one
+            # that 400s, and repeating it every turn is the same waste.
+            _record_compaction_failure(ctx.session_id)
             logger.warning(
                 "summarization_skipped_empty_response session_id={} agent={}",
                 ctx.session_id,
@@ -862,6 +1110,18 @@ class SummarizationHook(BaseAgentHook):
             if emit_session_id:
                 await self._emit_end(emit_session_id, agent_name, error=True)
             return
+
+        reset_compaction_failures(ctx.session_id)
+
+        if dropped:
+            # The oldest messages did not fit the compaction request, so the
+            # summary does not cover them. Say so in the summary itself
+            # rather than letting a later reader assume it is complete.
+            summary_text = (
+                f"{summary_text}\n\n[{dropped} older message(s) were dropped "
+                "without being summarised: they did not fit the model's "
+                "context window.]"
+            )
 
         to_summarise_set = {id(m) for m in to_summarise}
         for m in state.messages:
@@ -890,16 +1150,6 @@ class SummarizationHook(BaseAgentHook):
             is_summary=True,
         )
         state.messages.insert(first_kept_idx, summary_msg)
-        # Reconcile the ephemeral fast-path cache with exact activations that
-        # are still visible. If an old skill fell outside the durable budget,
-        # the next exact use may load it again instead of incorrectly claiming
-        # that paraphrased/hidden instructions remain active.
-        try:
-            from app.agent.tools.builtin.skill import _loaded_skills_from_messages
-
-            state.metadata["loaded_skills"] = _loaded_skills_from_messages(state)
-        except Exception as exc:  # noqa: BLE001 - compaction must remain available
-            logger.warning("skill_activation_reconcile_failed error={}", exc)
         # checkpointer.sync() (called by the loop after before_model)
         # persists the mutated state.messages.
 
@@ -965,13 +1215,15 @@ class SummarizationHook(BaseAgentHook):
         messages,
         *,
         tools: list[dict] | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """Stream the summariser internally and return its full text response."""
         # Inherit the agent's ``thinking_level`` — forcing ``"none"`` here
         # breaks Codex, whose endpoint rejects requests with no ``reasoning``.
         kwargs: dict = {}
-        if self._max_token_length > 0:
-            kwargs["max_tokens"] = self._max_token_length
+        cap = self._max_token_length if max_tokens is None else max_tokens
+        if cap > 0:
+            kwargs["max_tokens"] = cap
 
         tracer = get_tracer()
         with tracer.start_as_current_span(

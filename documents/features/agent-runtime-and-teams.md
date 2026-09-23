@@ -38,17 +38,48 @@ authorized calls, appends observations and continues until a final response.
 Hooks add bounded behavior around the model and tools:
 
 - workspace instructions, folder context and dynamic prompts;
-- explicit/automatic Skill resolution and lazy Skill bodies;
+- the Agent Skills catalog, `$skill-name` activation and preloaded Skills;
 - relevant scoped memory and wiki identity context;
 - title generation, context compaction and continuation;
 - streaming, session JSONL and OpenTelemetry events;
 - post-edit diagnostics and Problems capture;
 - usage accounting, Goal state and background memory extraction.
-- the open ASDD changes in the repository, and the requirements a delegated
   mission owns.
 
 Tool results are normalized and large outputs are offloaded. Provider-specific
 wire formats stay behind a generic message/tool/usage schema.
+
+### Compaction fits the window it is relieving
+
+Compaction replays the transcript as the provider-visible prefix, so its own
+request is bounded by the same context window the conversation just ran into.
+Three rules keep it inside:
+
+- It sends what an ordinary turn sends. The provider boundary replaces old,
+  bulky tool results with receipts, and the summariser applies the same
+  projection with the same recent-batch window — the prefix stays
+  cache-aligned, and it is the size the window was measured against rather
+  than a raw transcript twice as large.
+- It is budgeted against the model's published window, minus the summary's
+  own output cap and a margin. The configured cap is itself clamped to a
+  quarter of the window, so one setting cannot make compaction impossible on
+  a small-window model. What still does not fit is dropped oldest-first, and
+  the summary says so instead of implying it covered everything. A model
+  whose window the catalogue does not publish is left untrimmed.
+- If the endpoint rejects the request as too long anyway, it retries twice on
+  half the history — the estimate can be wrong, the endpoint cannot.
+
+After three consecutive failures a session stops attempting compaction every
+turn and says so in the log; an explicit force, or a restart, tries again.
+Without that guard a session whose compaction could not succeed spent several
+seconds and a full-history call per turn, forever, while its context kept
+growing.
+
+An ordinary turn that the endpoint rejects as too long — HTTP 413, an
+`error.code`/`error.type` of `context_length_exceeded` or
+`context_window_exceeded`, or a message naming the context length — forces
+one compaction and replays the call, instead of ending the turn. A second
+overflow before any call succeeds is surfaced as the provider's error.
 
 ## Lead and specialists
 
@@ -103,9 +134,6 @@ until the moment it is activated. Editing keeps its place in the queue —
 boundary claims the row, all three report that it is already on its way. Rows
 queued before lanes existed are treated as `steer`. Queued rows are durable:
 they survive a restart and are restored in queue order.
-
-Suppressed while a workflow drives the session — queued messages then land at
-node boundaries only.
 
 ## Parked out-of-scope work
 
