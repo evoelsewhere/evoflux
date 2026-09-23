@@ -85,7 +85,6 @@ const AskUserQuestionForm = forwardRef<
 
   const spawnSpec = q.kind === 'agent_spawn' ? q.agentSpawn ?? null : null
   const isAgentSpawn = spawnSpec !== null
-  const allowsFreeText = !q.strict
   const spawnSelection = (() => {
     if (spawnSpec === null) return null
     try {
@@ -309,7 +308,7 @@ const AskUserQuestionForm = forwardRef<
                 ))}
               </div>
             )}
-            {!isAgentSpawn && allowsFreeText && <input
+            {!isAgentSpawn && <input
               type="text"
               value={answers[step] ?? ''}
               onChange={(e) => setAnswer(e.target.value)}

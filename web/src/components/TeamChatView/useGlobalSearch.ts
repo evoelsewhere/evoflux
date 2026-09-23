@@ -15,7 +15,7 @@
  * Group conventions (the palette renders one header per group):
  *   `Chats`, `Mentioned in chats`, `Memory`, `Projects`, `Repositories`,
  *   `Scheduled tasks`, `Agents`, `Skills` — application-wide;
- *   `Recent files`, `Files`, `Code`, `Git`, `Problems`, `Workflows` — repository.
+ *   `Recent files`, `Files`, `Code`, `Git`, `Problems` — repository.
  */
 import { useCallback } from 'react'
 import type { useNavigate } from '@tanstack/react-router'
@@ -35,7 +35,7 @@ interface UseGlobalSearchArgs {
   navigate: ReturnType<typeof useNavigate>
   /** Open a workspace file in the standalone viewer. */
   openFile: (file: WorkspaceFileInfo) => void
-  /** Put text in the composer and focus it (used by skill/workflow hits). */
+  /** Put text in the composer and focus it (used by skill hits). */
   fillComposer: (text: string) => void
 }
 
@@ -197,11 +197,9 @@ export function useGlobalSearch({
             ? 'Problems'
             : item.kind === 'skill'
               ? 'Skills'
-              : item.kind === 'workflow'
-                ? 'Workflows'
-                : item.kind === 'file' || item.kind === 'folder'
-                  ? 'Files'
-                  : 'Code',
+              : item.kind === 'file' || item.kind === 'folder'
+                ? 'Files'
+                : 'Code',
         label: item.label,
         description: item.description,
         action: () => {
@@ -216,10 +214,6 @@ export function useGlobalSearch({
           }
           if (item.kind === 'skill') {
             fillComposer(`$${String(item.metadata?.name ?? item.label)} `)
-            return
-          }
-          if (item.kind === 'workflow') {
-            fillComposer(`/workflow ${String(item.metadata?.name ?? item.label)} `)
             return
           }
           if (item.kind === 'folder') {

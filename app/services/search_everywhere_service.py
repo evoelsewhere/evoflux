@@ -23,7 +23,6 @@ SearchKind = Literal[
     "git_commit",
     "problem",
     "skill",
-    "workflow",
 ]
 
 
@@ -86,7 +85,6 @@ async def _parallel_sources(
         asyncio.to_thread(_problem_items, workspace, query, limit),
         _git_items(workspace, query, limit),
         asyncio.to_thread(_skill_items, workspace, query, limit),
-        asyncio.to_thread(_workflow_items, workspace, query, limit),
         return_exceptions=True,
     )
     return [result if isinstance(result, list) else [] for result in results]
@@ -229,32 +227,3 @@ def _skill_items(workspace: Path, query: str, limit: int) -> list[SearchEverywhe
         for skill in discover_skills([workspace]).user_visible()
         if needle in f"{skill.name} {skill.description}".casefold()
     ][:limit]
-
-
-def _workflow_items(
-    workspace: Path, query: str, limit: int
-) -> list[SearchEverywhereItem]:
-    from app.services.workflows_fs import discover_workflows
-
-    needle = query.casefold()
-    rows: list[SearchEverywhereItem] = []
-    for workflow in discover_workflows(str(workspace)):
-        description = (
-            workflow.definition.description
-            if workflow.definition is not None
-            else "; ".join(workflow.errors)
-        )
-        if needle not in f"{workflow.name} {description}".casefold():
-            continue
-        rows.append(
-            SearchEverywhereItem(
-                id=f"workflow:{workflow.name}",
-                kind="workflow",
-                label=workflow.name,
-                description=description or f"{workflow.root} workflow",
-                metadata={"name": workflow.name, "root": workflow.root},
-            )
-        )
-        if len(rows) >= limit:
-            break
-    return rows

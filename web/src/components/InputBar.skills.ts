@@ -18,7 +18,7 @@
  *     (``> ...``) and fenced code blocks. Keep this module in step with that
  *     Python module.
  *   - ``/command`` — the front-end interceptors (``parseGoalCommand``,
- *     ``parseWorkflowCommand``, ``expandUserCommand``) all test the trimmed
+ *     ``expandUserCommand``) all test the trimmed
  *     message's first token, so only a leading command is live.
  */
 

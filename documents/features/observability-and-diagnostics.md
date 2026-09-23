@@ -8,7 +8,7 @@ bounded by retention settings.
 
 The session SSE stream carries structured events for model deltas, reasoning,
 tool calls/results, agent status, delegations, todos, handoffs, usage, plan and
-permission requests, questions, goals, workflows, queues, compaction and final
+permission requests, questions, goals, queues, compaction and final
 completion/error. The React team store projects these into transcript blocks,
 Activity views and progress controls.
 
@@ -124,7 +124,7 @@ degraded/unavailable status without being treated as critical sidecar failure.
 ## Domain-specific audit
 
 WebBridge keeps a bounded command audit ring; Git jobs retain bounded status and
-sanitized output; workflow execution/node rows and goal state provide durable
+sanitized output; goal state and scheduler run status provide durable
 automation evidence; Conductor records resource drift and delivery state.
 
 ## Source and tests

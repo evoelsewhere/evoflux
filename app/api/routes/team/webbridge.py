@@ -63,7 +63,6 @@ from app.api.deps import DbSession, WriteDbSession
 from app.api.schemas.commands import CommandRenderRequest, CommandRenderResponse
 from app.api.schemas.snippets import SnippetRenderResponse
 from app.api.schemas.team import PermissionReplyRequest, PlanReplyRequest
-from app.api.schemas.workflows import WorkflowRunRequest, WorkflowRunResponse
 from app.webbridge_tags import (
     WEBBRIDGE_BROWSER_ORIGIN_TAG,
     WEBBRIDGE_SESSION_TAG,
@@ -566,11 +565,10 @@ class BrowserComposerCommand(BaseModel):
     id: str
     label: str
     description: str
-    category: Literal["builtin", "command", "skill", "workflow"]
+    category: Literal["builtin", "command", "skill"]
     insert_text: str | None = None
     keep_input_open: bool = False
     source: str | None = None
-    inputs: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class BrowserComposerSnippet(BaseModel):
@@ -595,12 +593,6 @@ class BrowserComposerCatalog(BaseModel):
     snippets: list[BrowserComposerSnippet] = Field(default_factory=list)
     references: list[BrowserComposerReference] = Field(default_factory=list)
     references_truncated: bool = False
-
-
-class BrowserWorkflowRunRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    inputs: dict[str, Any] = Field(default_factory=dict)
 
 
 class BrowserPanelElement(BaseModel):
@@ -1247,7 +1239,6 @@ async def get_browser_panel_composer_catalog(
     )
 
     from app.agent.skills.registry import discover_skills
-    from app.api.routes import workflows as workflow_routes
 
     skill_catalog = await asyncio.to_thread(
         discover_skills, [workspace] if workspace else []
@@ -1263,27 +1254,6 @@ async def get_browser_panel_composer_catalog(
             source=skill.source,
         )
         for skill in skill_catalog.user_visible()
-    )
-
-    workflow_response = await workflow_routes.list_workflows(
-        db,
-        workspace=(str(workspace) if workspace and session.mode == "coding" else None),
-    )
-    commands.extend(
-        BrowserComposerCommand(
-            id=f"workflow-{workflow.name}",
-            label=f"workflow {workflow.name}",
-            description=workflow.description or f"Run the {workflow.name} workflow",
-            category="workflow",
-            insert_text=f"workflow {workflow.name}",
-            keep_input_open=True,
-            inputs=[item.model_dump(mode="json") for item in workflow.inputs],
-            source="approved",
-        )
-        for workflow in workflow_response.workflows
-        if workflow.approved
-        and workflow.valid
-        and workflow.scope in {"work", session.mode}
     )
 
     snippets: list[BrowserComposerSnippet] = []
@@ -1360,33 +1330,6 @@ async def render_browser_panel_snippet(
     if snippet is None:
         raise HTTPException(status_code=404, detail=f"Snippet '{name}' not found.")
     return SnippetRenderResponse(name=snippet.name, content=snippet.body)
-
-
-@router.post(
-    "/sessions/{session_id}/composer/workflows/{name}/run",
-    response_model=WorkflowRunResponse,
-)
-async def run_browser_panel_workflow(
-    session_id: uuid.UUID,
-    name: str,
-    body: BrowserWorkflowRunRequest,
-    request: Request,
-    db: DbSession,
-) -> WorkflowRunResponse:
-    """Run an approved catalog workflow against the pairing-owned session."""
-    pairing = await _paired_request(
-        request, db, required_scope="session:messages:write"
-    )
-    session = await _require_pairing_webbridge_session(db, session_id, pairing.id)
-
-    from app.api.routes import workflows as workflow_routes
-
-    return await workflow_routes.run_workflow_route(
-        name,
-        WorkflowRunRequest(session_id=str(session_id), inputs=body.inputs),
-        db,
-        workspace=session.workspace,
-    )
 
 
 def _browser_panel_attachment(
@@ -2016,7 +1959,6 @@ _BROWSER_PANEL_STREAM_EVENT_TYPES = frozenset(
         "handoff",
         "delegation",
         "queued_turn_start",
-        "workflow_progress",
         "goal_status",
         "desktop_notification",
         "agent_status",
@@ -2211,9 +2153,6 @@ def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
                 and isinstance(item.get("id"), str)
                 and isinstance(item.get("content"), str)
             ]
-    elif event_type == "workflow_progress":
-        copy_strings("session_id", "execution_id", "status", "node_id")
-        copy_numbers("node_index", "total_nodes")
     elif event_type == "goal_status":
         copy_strings("session_id")
         goal = data.get("goal")
@@ -3710,7 +3649,6 @@ class TeachDraftResponse(BaseModel):
     replay_next_step: int = 0
     replay_state: str = "idle"
     replay_in_flight_step: int | None = None
-    workflow_yaml: str
 
 
 class TeachDraftReplayResponse(BaseModel):
@@ -3726,56 +3664,6 @@ class TeachDraftReplayResolveRequest(BaseModel):
     execution_id: uuid.UUID
     outcome: Literal["completed", "not_completed"]
     user_confirmed: bool = False
-
-
-def _teach_workflow_yaml(draft: WebBridgeTeachDraft) -> str:
-    from app.workflow.models import (
-        Edge,
-        Node,
-        WorkflowDefinition,
-        WorkflowInput,
-        dump_definition_yaml,
-    )
-
-    actions = [{"kind": "navigate", "url": draft.start_url}, *(draft.actions or [])]
-    nodes: list[Node] = []
-    edges: list[Edge] = []
-    for index, action in enumerate(actions):
-        command, params = _teach_replay_command(
-            action,
-            {name: f"{{{{inputs.{name}}}}}" for name in (draft.parameter_names or [])},
-        )
-        node_id = f"browser_step_{index + 1}"
-        nodes.append(
-            Node(
-                id=node_id,
-                kind="tool",
-                tool="webbridge",
-                args={"actions": [{"action": command, **params}]},
-            )
-        )
-        if index:
-            edges.append(
-                Edge.model_validate({"from": f"browser_step_{index}", "to": node_id})
-            )
-    workflow = WorkflowDefinition(
-        schema_version=1,
-        name=f"webbridge_teach_{str(draft.id).replace('-', '_')}",
-        description=f"Recorded from {draft.origin}. Review before running.",
-        scope="work",
-        inputs=[
-            WorkflowInput(
-                name=name,
-                type="string",
-                required=True,
-                description="Secret browser input supplied only at run time.",
-            )
-            for name in (draft.parameter_names or [])
-        ],
-        nodes=nodes,
-        edges=edges,
-    )
-    return dump_definition_yaml(workflow)
 
 
 def _teach_draft_response(draft: WebBridgeTeachDraft) -> TeachDraftResponse:
@@ -3804,7 +3692,6 @@ def _teach_draft_response(draft: WebBridgeTeachDraft) -> TeachDraftResponse:
         replay_next_step=draft.replay_next_step,
         replay_state=draft.replay_state,
         replay_in_flight_step=draft.replay_in_flight_step,
-        workflow_yaml=_teach_workflow_yaml(draft),
     )
 
 

@@ -29,7 +29,7 @@ afterEach(() => {
   useTeamStore.setState({ sessionId: null, askUserQuestion: null })
 })
 
-function showQuestion(strict: boolean) {
+function showQuestion() {
   useTeamStore.setState({
     sessionId: 'session-1',
     askUserQuestion: {
@@ -38,7 +38,6 @@ function showQuestion(strict: boolean) {
       questions: [{
         question: 'Choose a workspace',
         options: ['Current workspace', 'Choose another'],
-        strict,
       }],
     },
   })
@@ -47,7 +46,7 @@ function showQuestion(strict: boolean) {
 
 describe('AskUserQuestionModal', () => {
   it('submits a free-text answer when options are suggestions', async () => {
-    showQuestion(false)
+    showQuestion()
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Choose a workspace' }), {
       target: { value: '/work/custom-repo' },
@@ -64,10 +63,10 @@ describe('AskUserQuestionModal', () => {
     expect(useTeamStore.getState().askUserQuestion).toBeNull()
   })
 
-  it('does not offer a free-text field for a strict workflow gate', () => {
-    showQuestion(true)
+  it('always offers a free-text field next to the suggested answers', () => {
+    showQuestion()
 
-    expect(screen.queryByRole('textbox', { name: 'Choose a workspace' })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Choose a workspace' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Current workspace' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Choose another' })).toBeInTheDocument()
   })

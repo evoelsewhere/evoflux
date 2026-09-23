@@ -359,9 +359,8 @@ async def _team_for_session_mode(db: DbSession, session_id: str):
     """Resolve the live team that matches *session_id*'s persisted mode.
 
     Never binds a default-mode (work) team to a coding session id:
-    ``_session_teams`` wins in ``find_team_for_session`` (the workflow
-    runner's lookup), so one stray work boot would make every later
-    pipeline in that session run with the work lead.
+    ``_session_teams`` wins in ``find_team_for_session``, so one stray work
+    boot would make every later lookup in that session reach the work lead.
     """
     try:
         _, team_obj = await resolve_team_for_session(db, session_id)
@@ -1904,30 +1903,10 @@ async def team_history(
 
     next_cursor = history.next_cursor
 
-    workflow_execution: dict | None = None
-    try:
-        from app.workflow.runner import runner as workflow_runner
-
-        wf_state = workflow_runner.get(str(history.lead_session.id))
-        if wf_state is not None:
-            order = wf_state.graph.order
-            current = wf_state.current_node_id or wf_state.pending_node
-            workflow_execution = {
-                "execution_id": str(wf_state.execution_id),
-                "definition_name": wf_state.definition.name,
-                "status": wf_state.status,
-                "node_id": current,
-                "node_index": (order.index(current) + 1) if current in order else None,
-                "total_nodes": len(order),
-            }
-    except Exception:  # noqa: BLE001 — history must never fail on this
-        workflow_execution = None
-
     return TeamHistoryResponse(
         lead=lead_detail,
         members=member_histories,
         goal=goal_response,
-        workflow_execution=workflow_execution,
         has_more=history.has_more,
         next_cursor=next_cursor,
     )

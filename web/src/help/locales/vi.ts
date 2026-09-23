@@ -19,7 +19,7 @@ export const HELP_CATEGORIES_VI: HelpCategory[] = [
   {
     id: 'composer',
     label: 'Composer',
-    description: 'Mention, attachment, skill và workflow',
+    description: 'Mention, attachment và skill',
   },
   {
     id: 'slash',
@@ -235,7 +235,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Ctrl+B toggle sidebar giống nhau ở mọi mode.',
           'Scheduler task nhắm work hoặc coding mode tường minh — chọn đúng mode trên task.',
-          'Workflow có thể scope theo mode nên workflow chỉ Coding sẽ ẩn ở Work; Skill dùng được ở cả hai mode.'
+          'Skill dùng được ở cả hai mode.'
 ],
       },
       {
@@ -505,7 +505,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'composer',
     title: 'Composer — tính năng mạnh',
     summary:
-      'Dùng /, !, @, $ skill, # snippet, attachment, quote selection, Work folder targeting và workflow với RunInputsDialog. Undo cũng khôi phục attachment — draft còn cứu được sau lần send hỏng.',
+      'Dùng /, !, @, $ skill, # snippet, attachment, quote selection và Work folder targeting. Undo cũng khôi phục attachment — draft còn cứu được sau lần send hỏng.',
     keywords: [
       'composer',
       'mention',
@@ -517,8 +517,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'paste',
       'skill',
       '$skill-name',
-      'workflow',
-      'RunInputsDialog',
       'WorkFolderSelector',
       'quote',
       '!',
@@ -534,7 +532,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Gõ @ để chèn path file/folder xếp hạng từ workspace đang active.',
       'Ở Coding, gõ # để bung workspace hoặc global snippet vào composer.',
       'Gõ $ để chọn skill; $tên-skill đặt ở vị trí nào trong tin cũng được và có thể ghi nhiều skill (trừ dòng quote > và code block).',
-      'Workflow mở RunInputsDialog khi cần tham số và không bao giờ gửi raw slash text như chat thường.',
       'Undo khôi phục user message trước và cả attachment vào composer.',
       'Paste ảnh/file hoặc kéo-thả lên composer khi attachment được bật.',
       'Bôi transcript để Add to chat, more details, hoặc Send to side chat.',
@@ -544,28 +541,27 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Composer không chỉ là ô text: slash menu (/), shell bang (!), path mention (@), skill mention ($), Coding snippet (#), file attachment, chip quote, WorkFolderSelector cho session Work và workflow đã duyệt. Nắm các affordance này là khác biệt giữa đổ cả cây vào prompt và lái chính xác.',
+        text: 'Composer không chỉ là ô text: slash menu (/), shell bang (!), path mention (@), skill mention ($), Coding snippet (#), file attachment, chip quote và WorkFolderSelector cho session Work. Nắm các affordance này là khác biệt giữa đổ cả cây vào prompt và lái chính xác.',
       },
       {
         type: 'p',
-        text: 'Các control này giữ context đúng chỗ, không ngập model. Skill và workflow đóng gói quy trình lặp; attachment và quote ghim evidence; WorkFolderSelector đổi session folder mà không cần mở Files. Shell bang cho lệnh chủ đích — không thay Terminal khi cần session tương tác dài.',
+        text: 'Các control này giữ context đúng chỗ, không ngập model. Skill đóng gói quy trình lặp; attachment và quote ghim evidence; WorkFolderSelector đổi session folder mà không cần mở Files. Shell bang cho lệnh chủ đích — không thay Terminal khi cần session tương tác dài.',
       },
       {
         type: 'p',
-        text: 'Gõ / mở command menu (built-in, workflow, custom .evoflux/commands/). Gõ $ để chọn skill: agent vốn đã thấy tên và mô tả của mọi skill đang bật và tự đọc SKILL.md khi việc khớp, còn `$tên-skill` bắt agent dùng skill đó ngay. Prefix ! cho shell. Dùng @ chọn path. Ở Coding, # bung snippet. Kéo-thả hoặc paste file lên bar. Session Work: WorkFolderSelector gần composer để trỏ private session folder hoặc thư mục local khác. Sau /undo, cả text và attachment về draft.',
+        text: 'Gõ / mở command menu (built-in, custom .evoflux/commands/). Gõ $ để chọn skill: agent vốn đã thấy tên và mô tả của mọi skill đang bật và tự đọc SKILL.md khi việc khớp, còn `$tên-skill` bắt agent dùng skill đó ngay. Prefix ! cho shell. Dùng @ chọn path. Ở Coding, # bung snippet. Kéo-thả hoặc paste file lên bar. Session Work: WorkFolderSelector gần composer để trỏ private session folder hoặc thư mục local khác. Sau /undo, cả text và attachment về draft.',
       },
       {
         type: 'tips',
         items: [
-          '/ — slash command, workflow, custom command',
+          '/ — slash command, custom command',
           '$ — skill; vị trí bất kỳ, nhiều skill mỗi tin',
           '! — shell mode cho phần còn lại của dòng',
           '@ — mention file/folder',
           '# — snippet (Coding workspace)',
           'DnD / paste — attachment khi được bật',
           'Quote selection — Add to chat hoặc Send to side chat',
-          'WorkFolderSelector — đổi Work session folder',
-          'RunInputsDialog — tham số workflow trước khi launch'
+          'WorkFolderSelector — đổi Work session folder'
 ],
       },
       {
@@ -574,7 +570,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: gửi raw `/workflow name` mong nó chạy (workflow launch qua menu/dialog); gõ tên skill có chữ hoa hoặc dấu cách (tên skill là chữ thường nối bằng gạch ngang, ví dụ `$code-review`); dùng # ở Work chờ snippet Coding; paste secret vào composer thay vì cấu hình Providers; quên /undo cũng restore attachment — gửi lại cẩn nếu file nhạy cảm.',
+        text: 'Sai thường gặp: gõ tên skill có chữ hoa hoặc dấu cách (tên skill là chữ thường nối bằng gạch ngang, ví dụ `$code-review`); dùng # ở Work chờ snippet Coding; paste secret vào composer thay vì cấu hình Providers; quên /undo cũng restore attachment — gửi lại cẩn nếu file nhạy cảm.',
       },
       {
         type: 'tips',
@@ -587,7 +583,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Workflow phải được approve và hợp scope session (work / coding) nếu không sẽ ẩn. Picker $ chỉ liệt kê skill hợp lệ, đang bật trong Settings → Skills và cho phép người dùng gọi. Thiếu command hoặc skill → kiểm scope, validation và công tắc của skill trước khi đổ lỗi composer.',
+        text: 'Picker $ chỉ liệt kê skill hợp lệ, đang bật trong Settings → Skills và cho phép người dùng gọi. Thiếu command hoặc skill → kiểm scope, validation và công tắc của skill trước khi đổ lỗi composer.',
       }
 ],
     related: [
@@ -691,7 +687,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'slash',
     title: 'Slash command có sẵn',
     summary:
-      'Gõ / trong composer cho stop, compact, undo, init, btw, goal, workflow và custom command từ .evoflux/commands/. Built-in chạy ngay; custom thường insert để bạn điền argument. Skill dùng $tên-skill chứ không phải slash command.',
+      'Gõ / trong composer cho stop, compact, undo, init, btw, goal và custom command từ .evoflux/commands/. Built-in chạy ngay; custom thường insert để bạn điền argument. Skill dùng $tên-skill chứ không phải slash command.',
     keywords: [
       'slash',
       '/stop',
@@ -700,7 +696,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       '/init',
       '/btw',
       '/goal',
-      '/workflow',
       'command',
       '.evoflux/commands',
       'lệnh',
@@ -711,7 +706,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Khớp longest-prefix; `:` và `/` đổi cho nhau với tên command nested.',
       'Custom command nằm dưới project hoặc global .evoflux/commands/ (và path OpenCode tương thích).',
       'Skill không phải slash command: gõ $ để chọn, hoặc viết $tên-skill ở bất kỳ đâu trong tin.',
-      'Workflow phải approve và hợp scope session (work / coding) nếu không sẽ ẩn.',
       '/compact sớm khi context budget bar leo — chờ failure phí một lượt.',
       '/init hướng Coding cho AGENTS.md; nó hướng tới AGENTS.md.',
       '/stop là nút panic khi specialist fan-out loạn; kèm instruction rõ hơn sau đó.',
@@ -720,7 +714,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Slash command là lối tắt chính trên composer. Built-in điều khiển team run; goal subcommand quản objective bền; workflow chạy quy trình có cấu trúc; command Markdown/YAML do bạn định nghĩa được server bung ra. Menu có search — gõ vài chữ để lọc.',
+        text: 'Slash command là lối tắt chính trên composer. Built-in điều khiển team run; goal subcommand quản objective bền; command Markdown/YAML do bạn định nghĩa được server bung ra. Menu có search — gõ vài chữ để lọc.',
       },
       {
         type: 'p',
@@ -743,13 +737,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { cmd: '/goal:budget <tokens|none>', desc: 'Đặt hoặc xóa token budget của Goal' },
           { cmd: '/goal:pause', desc: 'Tạm dừng Goal đang active' },
           { cmd: '/goal:resume', desc: 'Tiếp tục Goal đã pause' },
-          { cmd: '/goal:stop', desc: 'Gỡ Goal khỏi session' },
-          { cmd: '/workflow <name>', desc: 'Chạy workflow đã duyệt (có thể mở RunInputsDialog)' }
+          { cmd: '/goal:stop', desc: 'Gỡ Goal khỏi session' }
 ],
       },
       {
         type: 'p',
-        text: 'Gõ / để lọc command. Chọn built-in để chạy, hoặc custom/workflow để insert hoặc launch. Đặt file custom dưới `.evoflux/commands/` trong project hoặc config EvoFlux global. Tên nested ưu tiên longest prefix; dùng `:` hoặc `/` làm separator. Workflow có thể mở RunInputsDialog và không gửi raw slash line như chat thường.',
+        text: 'Gõ / để lọc command. Chọn built-in để chạy, hoặc custom để insert. Đặt file custom dưới `.evoflux/commands/` trong project hoặc config EvoFlux global. Tên nested ưu tiên longest prefix; dùng `:` hoặc `/` làm separator.',
       },
       {
         type: 'tips',
@@ -757,7 +750,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Built-in — chạy ngay khi chọn',
           'Custom — thường insert; nối $ARGUMENTS',
           'Skill — không phải slash command; gõ $tên-skill',
-          'Workflow — cần scope + approval nếu không sẽ ẩn',
           'Longest prefix — nest parent:child với : hoặc /'
 ],
       },
@@ -767,7 +759,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: chờ `/scheduler` mở trang (dùng Ctrl+S — route redirect home); coi workflow thiếu là bug composer khi scope/approval sai; /compact quá muộn đến mức summary mất constraint vẫn cần; dùng /undo tưởng revert git commit — nó chỉ restore draft user message trước.',
+        text: 'Sai thường gặp: chờ `/scheduler` mở trang (dùng Ctrl+S — route redirect home); /compact quá muộn đến mức summary mất constraint vẫn cần; dùng /undo tưởng revert git commit — nó chỉ restore draft user message trước.',
       },
       {
         type: 'tips',
@@ -2142,7 +2134,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'tips',
         items: [
           'Coding skill hướng dẫn workflow; source search native validate và thực thi mọi retrieval action.',
-          'Workflow cần scope hợp lệ mới hiện trong /; skill cần hợp lệ và đang bật mới hiện trong $.',
+          'Skill cần hợp lệ và đang bật mới hiện trong $.',
           'Rule Always của permission áp cả MCP tool — ưu tiên Once trước.'
 ],
       }

@@ -8,9 +8,8 @@
  *     slot as Work's WorkspaceFilesPanel) so they cover the right corner
  *     beside the main card instead of sitting under the topbar.
  *   - ``ChatOverlayPanels`` — rendered after the body row (fixed-position —
- *     DOM order only matters for z-stacking): CommandPalette,
- *     RunInputsDialog. WikiPanel and SchedulerPanel
- *     moved to the route root (``__root.tsx``) so they open in every mode.
+ *     DOM order only matters for z-stacking): CommandPalette.
+ *     WikiPanel and SchedulerPanel moved to the route root (``__root.tsx``) so they open in every mode.
  *
  * Props-driven; every conditional and the exact DOM order are preserved.
  */
@@ -18,7 +17,6 @@ import { PlanReviewPanel } from '../PlanReviewPanel'
 import { ChangesReviewPanel } from '../ChangesReviewPanel'
 import { ChangeSetReviewPanel } from '../ChangeSetReviewPanel'
 import { CommandPalette, type Command } from '../CommandPalette'
-import { RunInputsDialog, type RunInputsRequest } from '../RunInputsDialog'
 
 interface ChatTrailingPanelsProps {
   onQuoteComment: (quote: string, comment: string) => void
@@ -52,9 +50,6 @@ interface ChatOverlayPanelsProps {
   paletteCommands: Command[]
   searchPaletteCommands?: (query: string, signal: AbortSignal) => Promise<Command[]>
   onClosePalette: () => void
-  runInputsRequest: RunInputsRequest | null
-  onCancelRunInputs: () => void
-  onRunInputs: (values: Record<string, unknown>) => Promise<void>
 }
 
 // Modals rendered after the body row (fixed-position —
@@ -64,10 +59,7 @@ export function ChatOverlayPanels({
   paletteCommands,
   searchPaletteCommands,
   onClosePalette,
-  runInputsRequest,
-  onCancelRunInputs,
-  onRunInputs,
-}: ChatOverlayPanelsProps) {
+}:ChatOverlayPanelsProps) {
   return (
     <>
       {showPalette && (
@@ -75,13 +67,6 @@ export function ChatOverlayPanels({
           commands={paletteCommands}
           searchCommands={searchPaletteCommands}
           onClose={onClosePalette}
-        />
-      )}
-      {runInputsRequest && (
-        <RunInputsDialog
-          request={runInputsRequest}
-          onCancel={onCancelRunInputs}
-          onRun={onRunInputs}
         />
       )}
     </>

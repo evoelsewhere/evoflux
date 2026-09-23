@@ -280,7 +280,7 @@ describe('sent messages', () => {
     expect(chips[0]).toHaveClass('font-semibold')
   })
 
-  it('highlights built-in, workflow, and custom slash commands after send', () => {
+  it('highlights built-in and custom slash commands after send', () => {
     const { rerender } = render(
       <BlockRenderer
         block={{ id: 'user-goal', type: 'user', content: '/goal Ship the release' }}
@@ -288,14 +288,6 @@ describe('sent messages', () => {
       />,
     )
     expect(screen.getByTestId('command-chip')).toHaveTextContent('/goal')
-
-    rerender(
-      <BlockRenderer
-        block={{ id: 'user-workflow', type: 'user', content: '/workflow release-check' }}
-        isStreaming={false}
-      />,
-    )
-    expect(screen.getByTestId('command-chip')).toHaveTextContent('/workflow')
 
     rerender(
       <BlockRenderer

@@ -98,7 +98,6 @@ class TestTeamDelegateTool:
         class FakeTeam:
             mode = "work"
             blueprints = {"executor": object()}
-            turn_allowed_blueprints = None
             lead = SimpleNamespace(session_id=str(uuid7()))
 
             def __init__(self):
@@ -115,9 +114,6 @@ class TestTeamDelegateTool:
                 return [
                     name for name in self.members if name.startswith(f"{blueprint}#")
                 ]
-
-            def blueprint_allowed_this_turn(self, blueprint):
-                return blueprint in self.blueprints
 
             async def spawn(self, blueprint, *, confirm=False):
                 assert confirm is True

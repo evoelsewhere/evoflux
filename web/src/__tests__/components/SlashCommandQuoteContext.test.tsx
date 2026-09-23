@@ -13,7 +13,6 @@ const apiMocks = vi.hoisted(() => ({
   renderCommand: vi.fn(),
   renderSnippet: vi.fn(),
   resolveApiUrl: vi.fn(),
-  runWorkflow: vi.fn(),
   postTeamChat: vi.fn(),
   getTeamGoal: vi.fn(),
   cancelQueuedTeamMessage: vi.fn(),
@@ -36,22 +35,6 @@ vi.mock('@/queries/useSkillFilesQuery', () => ({
 vi.mock('@/queries/useSnippetsQuery', () => ({
   useSnippetsQuery: () => ({ data: { snippets: [] } }),
 }))
-vi.mock('@/queries/useWorkflowsQuery', () => ({
-  useWorkflowsQuery: () => ({
-    data: {
-      workflows: [
-        {
-          name: 'bug-triage',
-          description: 'Triage inbound bugs',
-          approved: true,
-          valid: true,
-          scope: 'work',
-          inputs: [],
-        },
-      ],
-    },
-  }),
-}))
 
 import { useSlashCommandRegistry } from '@/components/TeamChatView/useSlashCommandRegistry'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -65,8 +48,6 @@ function setup() {
       mode: 'work',
       workspace: null,
       agentWorkspace: null,
-      sessionId: 'session-1',
-      sessionIdState: 'session-1',
       selectedModel: '',
       selectedThinkingLevel: null,
       inputRef: { current: null },
@@ -100,12 +81,12 @@ describe('slash commands sent with quoted chat context', () => {
     expect(objective).toBe('fix the backoff\n\n> the retry loop never backs off')
   })
 
-  it('runs a workflow and says the quote could not come along', async () => {
+  it('runs a goal control and says the quote could not come along', async () => {
     const { result } = setup()
 
-    expect(await result.current.tryHandleWorkflowCommand(`${QUOTE}/workflow bug-triage`)).toBe(true)
+    expect(await result.current.tryHandleBuiltinGoalCommand(`${QUOTE}/goal:pause`)).toBe(true)
 
-    expect(apiMocks.runWorkflow).toHaveBeenCalledWith('bug-triage', 'session-1', {}, null)
+    expect(sendGoalCommand.mock.calls[0][0]).toBe('/goal:pause')
     expect(useToastStore.getState().toasts.map((t) => t.title)).toContain(
       'Quoted context was not included',
     )
@@ -126,7 +107,6 @@ describe('slash commands sent with quoted chat context', () => {
     const message = `${QUOTE}what causes this?`
 
     expect(await result.current.tryHandleBuiltinGoalCommand(message)).toBe(false)
-    expect(await result.current.tryHandleWorkflowCommand(message)).toBe(false)
     expect(await result.current.expandUserCommand(message)).toBe(message)
     expect(apiMocks.renderCommand).not.toHaveBeenCalled()
   })

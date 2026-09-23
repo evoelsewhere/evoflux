@@ -40,7 +40,7 @@ Start with:
 ## Architecture boundaries
 
 - Keep FastAPI routes thin. Durable behavior belongs in `app/services/`,
-  `app/agent/`, `app/workflow/`, `app/scheduler/`, or `app/core/`.
+  `app/agent/`, `app/scheduler/`, or `app/core/`.
 - Keep provider-specific payloads behind `app/agent/providers/`; generic API and
   team schemas must remain provider-neutral.
 - Use TanStack Query for frontend server state, Zustand for live/client state,

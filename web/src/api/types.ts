@@ -70,7 +70,6 @@ export type PlanDecision = 'approved' | 'rejected' | 'revise'
 export interface AskUserQuestionItem {
   question: string
   options: string[]
-  strict?: boolean
   kind?: 'text' | 'agent_spawn'
   agentSpawn?: {
     blueprint: string
@@ -487,7 +486,6 @@ export type SearchEverywhereKind =
   | 'git_commit'
   | 'problem'
   | 'skill'
-  | 'workflow'
 
 export interface SearchEverywhereItem {
   id: string
@@ -784,99 +782,8 @@ export interface TeamHistoryResponse {
   }>
   /** Durable autonomous objective attached to this session. */
   goal?: GoalResponse | null
-  // Live workflow snapshot from the runner (gone after restart).
-  workflow_execution?: {
-    execution_id: string
-    definition_name: string
-    status: string
-    node_id: string | null
-    node_index: number | null
-    total_nodes: number
-  } | null
   has_more: boolean
   next_cursor: string | null
-}
-
-// ── Workflows (documents/plans/workflows-feature-plan.md) ────────────────────
-
-export interface WorkflowInputSpec {
-  name: string
-  type: 'string' | 'number' | 'boolean' | 'enum'
-  required: boolean
-  default?: unknown
-  options?: string[] | null
-  description: string
-}
-
-export interface WorkflowListItem {
-  name: string
-  description: string
-  scope: 'work' | 'coding'
-  inputs: WorkflowInputSpec[]
-  hash: string
-  root: string
-  source_path: string
-  approved: boolean
-  valid: boolean
-  errors: string[]
-  node_count: number
-}
-
-export interface WorkflowDetail {
-  name: string
-  raw_yaml: string
-  graph: Record<string, unknown>
-  hash: string
-  root: string
-  scope: string | null
-  approved: boolean
-  manifest: Record<string, unknown>
-  lint_warnings: string[]
-  errors: string[]
-}
-
-export interface WorkflowRunResult {
-  execution_id: string
-  session_id: string
-}
-
-export interface WorkflowExecutionSummary {
-  id: string
-  definition_name: string
-  definition_hash: string
-  session_id: string
-  // running | waiting_gate | completed | failed | stopped
-  status: string
-  error: string | null
-  inputs: Record<string, unknown>
-  retry_of_execution_id: string | null
-  outputs: Record<string, unknown>
-  started_at: string
-  ended_at: string | null
-  // True while the in-memory runner is driving this execution; a running
-  // row without it is an orphan from a backend restart ("interrupted").
-  live: boolean
-}
-
-export interface WorkflowNodeRun {
-  id: string
-  node_id: string
-  iteration: number | null
-  // running | succeeded | failed | skipped
-  status: string
-  output: Record<string, unknown> | null
-  error: string | null
-  started_at: string
-  ended_at: string | null
-}
-
-export interface WorkflowExecutionDetail {
-  execution: WorkflowExecutionSummary
-  node_runs: WorkflowNodeRun[]
-}
-
-export interface WorkflowExecutionListResponse {
-  executions: WorkflowExecutionSummary[]
 }
 
 // SSE Event Types
@@ -2036,7 +1943,6 @@ export interface WebBridgeTeachDraft {
   replay_next_step: number
   replay_state: 'idle' | 'ready' | 'in_flight' | 'ambiguous' | 'completed'
   replay_in_flight_step: number | null
-  workflow_yaml: string
 }
 
 export interface WebBridgeTeachDraftReplayResponse {

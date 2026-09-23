@@ -4,11 +4,12 @@ Runs ``alembic upgrade head`` against a temp database using the real
 ``app/alembic.ini`` and asserts the latest schema state lands (currently:
 WebBridge pairing, interaction, tab-binding, Teach Mode state, delegation
 tasks, Git server connections, the Work mode rename, retired session-section
-cleanup, durable goals, durable workflow gates, the AIM table drop, scheduler
-routing, and application-database graph removal through revision 00000046).
+cleanup, durable goals, the AIM table drop, scheduler routing, and
+application-database graph removal through revision 00000046).
 Revision 00000048 repairs project-owned Coding sessions hidden by the sidebar;
-revision 00000049 removes the retired parallel Memory processing table, and
-revision 00000051 removes the retired Artifact Fabric tables.
+revision 00000049 removes the retired parallel Memory processing table,
+revision 00000051 removes the retired Artifact Fabric tables, and revision
+00000068 removes the retired Workflows tables.
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -160,27 +161,13 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         assert "aim_runs" not in inspector.get_table_names()
         assert "aim_links" not in inspector.get_table_names()
         assert "aim_claims" not in inspector.get_table_names()
-        assert "workflow_gate_requests" in inspector.get_table_names()
-        workflow_execution_columns = {
-            column["name"] for column in inspector.get_columns("workflow_executions")
-        }
-        assert {"inputs", "retry_of_execution_id"} <= workflow_execution_columns
-        gate_request_columns = {
-            column["name"] for column in inspector.get_columns("workflow_gate_requests")
-        }
-        assert {
-            "execution_id",
-            "node_run_id",
-            "node_id",
-            "kind",
-            "request_id",
-            "question",
-            "options",
-            "status",
-            "answers",
-            "created_at",
-            "resolved_at",
-        } <= gate_request_columns
+        for table in (
+            "workflow_approvals",
+            "workflow_executions",
+            "workflow_node_runs",
+            "workflow_gate_requests",
+        ):
+            assert table not in inspector.get_table_names()
         binding_unique_indexes = {
             index["name"]
             for index in inspector.get_indexes("webbridge_tab_bindings")

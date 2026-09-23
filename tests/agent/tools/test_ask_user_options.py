@@ -9,8 +9,6 @@ also lit both chips, because selection is compared by value.
 
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
 
 from app.agent.tools.builtin.ask_user import (
     AskUserQuestionSpec,
@@ -66,24 +64,7 @@ class TestQuestionSpec:
         )
         assert spec.options == ["Yes, in-memory only"]
 
-    def test_strict_question_rejects_collapsed_choices(self):
-        with pytest.raises(ValidationError) as excinfo:
-            QuestionSpec(
-                question="Route the branch",
-                options=["Approve", "approve"],
-                strict=True,
-            )
-        assert "two distinct options" in str(excinfo.value)
-
-    def test_strict_question_accepts_distinct_choices(self):
-        spec = QuestionSpec(
-            question="Route the branch",
-            options=["Approve", "Reject"],
-            strict=True,
-        )
-        assert spec.options == ["Approve", "Reject"]
-
-    def test_non_strict_question_may_have_no_options(self):
+    def test_question_may_have_no_options(self):
         assert QuestionSpec(question="Anything else?").options == []
 
 

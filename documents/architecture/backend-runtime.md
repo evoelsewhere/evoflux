@@ -53,7 +53,7 @@ One `Agent.run()` iteration does the following:
 6. the loop continues until a final response, interruption, recoverable pause,
    or terminal error;
 7. completion hooks persist usage, extract memory, publish events and maintain
-   goal/workflow state.
+   goal state.
 
 The core loop caps concurrent tools at ten, supports provider retries/fallbacks,
 and uses evidence-budget checkpoints instead of treating a small global
@@ -77,7 +77,7 @@ lead. An idle lead change persists before the old cached team is evicted.
 - delegation ledger and durable `DelegationTask` rows;
 - handoff, reject/rework, shared team state, todo and worktree tools;
 - unified lead/member streaming into the parent session;
-- continuation for queued input, Goal mode and workflow turn boundaries.
+- continuation for queued input and Goal mode turn boundaries.
 
 Session teardown increments a lifecycle epoch before eviction so a concurrent
 cold build cannot publish a deleted team.
@@ -114,4 +114,4 @@ diagnostics without making the critical loopback API unavailable.
 - `tests/api/` covers route contracts, auth, streaming and WebSockets.
 - `tests/services/` covers durable business rules and integrations.
 - `tests/core/` covers database, migrations, middleware, paths and metrics.
-- `tests/workflow/` and `tests/scheduler/` cover automation engines.
+- `tests/scheduler/` covers the scheduling engine.

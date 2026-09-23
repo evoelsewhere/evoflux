@@ -59,7 +59,7 @@ Use focused suites during iteration:
 uv run pytest --no-cov -q tests/agent
 uv run pytest --no-cov -q tests/api
 uv run pytest --no-cov -q tests/services
-uv run pytest --no-cov -q tests/workflow tests/scheduler
+uv run pytest --no-cov -q tests/scheduler
 ```
 
 The nearest `AGENTS.md` contains component-specific commands and invariants.

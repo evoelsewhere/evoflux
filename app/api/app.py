@@ -31,7 +31,6 @@ from app.api.routes.skills import router as skills_router
 from app.api.routes.snippets import router as snippets_router
 from app.api.routes.team import router as team_router
 from app.api.routes.wiki import router as wiki_router
-from app.api.routes.workflows import router as workflows_router
 from app.core.config import settings
 from app.core.desktop_auth import DesktopTokenMiddleware
 from app.core.exception_handlers import EXCEPTION_HANDLERS
@@ -187,26 +186,6 @@ async def lifespan(app: FastAPI):
     phase_started = perf_counter()
     ensure_workspace_initialized()
     _log_startup_timing("workspace_init", phase_started, process_started)
-
-    # ── Workflow runner ↔ team turn-boundary hooks (plan v5 §6.1) ─────────
-    # Registered here rather than imported by team.py to avoid a circular
-    # import between the team package and app.workflow.
-    from app.agent.mode.team.team import set_workflow_hooks
-    from app.workflow.runner import runner as workflow_runner
-
-    set_workflow_hooks(
-        workflow_runner.on_turn_boundary_capture,
-        workflow_runner.on_turn_boundary_advance,
-    )
-
-    # Fail any execution left ``running``/``waiting_gate`` by a previous
-    # process: the in-memory runner starts empty, so a paused gate from
-    # before the restart is unanswerable and must not show as live.
-    from app.workflow.runner import reconcile_orphaned_executions
-
-    phase_started = perf_counter()
-    await reconcile_orphaned_executions()
-    _log_startup_timing("workflow_reconcile", phase_started, process_started)
 
     # ── Auto-migrate DB in production ───────────────────────────────
     if settings.APP_ENV == "production":
@@ -369,7 +348,6 @@ def create_app() -> FastAPI:
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
     app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
     app.include_router(commands_router, prefix="/api/commands", tags=["commands"])
-    app.include_router(workflows_router, prefix="/api/workflows", tags=["workflows"])
     app.include_router(snippets_router, prefix="/api/snippets", tags=["snippets"])
     app.include_router(
         observability_router, prefix="/api/observability", tags=["observability"]

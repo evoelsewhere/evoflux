@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agent.tools.registry import Tool
 
@@ -74,12 +74,6 @@ class QuestionSpec(BaseModel):
             "questions where suggesting options wouldn't help."
         ),
     )
-    #: When True the answer MUST be one of ``options`` — the reply endpoint
-    #: rejects anything else with a 422. Workflow *gate* nodes set this (a
-    #: gate's choices route edges, so a free-text answer would silently
-    #: dead-end the branch); the ask_user tool leaves it False, where
-    #: ``options`` are only soft suggestions over a free-text field.
-    strict: bool = Field(default=False)
     browser_handoff: BrowserHandoffSpec | None = None
     kind: Literal["text", "agent_spawn"] = "text"
     agent_spawn: AgentSpawnSpec | None = None
@@ -89,24 +83,12 @@ class QuestionSpec(BaseModel):
     def _unique_options(cls, value: list[str]) -> list[str]:
         return normalize_question_options(value)
 
-    @model_validator(mode="after")
-    def _strict_needs_distinct_choices(self) -> "QuestionSpec":
-        # A strict question routes on its choices, so collapsing to one leaves
-        # the branch with no reachable alternative.
-        if self.strict and len(self.options) < 2:
-            raise ValueError(
-                "a strict question needs at least two distinct options; "
-                "duplicates were removed"
-            )
-        return self
-
 
 class AskUserQuestionSpec(BaseModel):
     """Question fields exposed to the model-facing ``ask_user`` tool.
 
-    ``strict`` is intentionally absent. Options from an ordinary agent are
-    suggestions and the user may always type another answer. Workflow gates
-    use :class:`QuestionSpec` directly when they need edge-safe strict choices.
+    Options are suggestions and the user may always type another answer.
+    Internal question kinds (``agent_spawn``) stay on :class:`QuestionSpec`.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -157,7 +139,6 @@ async def _ask_user(questions: list[AskUserQuestionSpec]) -> str:
         QuestionSpec(
             question=question.question,
             options=question.options,
-            strict=False,
             browser_handoff=question.browser_handoff,
         )
         for question in questions

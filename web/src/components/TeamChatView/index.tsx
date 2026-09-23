@@ -16,7 +16,7 @@
  *     (carefully sequenced so ``loadSession`` runs *before*
  *     ``connectStream`` to avoid wiping replayed mid-turn state — see the
  *     comment inside the hook).
- *   - ``useSlashCommandRegistry`` — slash / snippet / workflow command
+ *   - ``useSlashCommandRegistry`` — slash / snippet command
  *     registry and the submit-time interceptors.
  *   - ``useMobileEdgeSwipes``  — mobile drawer edge-swipe gestures.
  *   - ``useTeamCommands``      — Command Palette command list.
@@ -1321,19 +1321,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     handleSlashCommand,
     handleSnippetCommand,
     tryHandleBuiltinGoalCommand,
-    tryHandleWorkflowCommand,
     expandUserCommand,
-    startWorkflowRun,
-    runInputsRequest,
-    setRunInputsRequest,
     runGoalCommand,
   } = useSlashCommandRegistry({
     mode,
     workspace,
     agentWorkspace,
     workspaceRoots: activeProject?.workspaces.map((item) => item.path),
-    sessionId,
-    sessionIdState,
     selectedModel,
     selectedThinkingLevel,
     inputRef,
@@ -1610,7 +1604,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       return true
     }
     if (await tryHandleBuiltinGoalCommand(content)) return true
-    if (await tryHandleWorkflowCommand(content)) return true
     const shell = body.startsWith('!')
     const expanded = shell
       ? `!${body.slice(1).trim()}`
@@ -1656,7 +1649,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     selectedThinkingLevel,
     sendMessage,
     tryHandleBuiltinGoalCommand,
-    tryHandleWorkflowCommand,
     webBridgeEnabled,
     webBridgeExtensionId,
     workspace,
@@ -1934,14 +1926,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       paletteCommands={paletteCommands}
       searchPaletteCommands={searchPaletteCommands}
       onClosePalette={() => setShowPalette(false)}
-      runInputsRequest={runInputsRequest}
-      onCancelRunInputs={() => setRunInputsRequest(null)}
-      onRunInputs={async (values) => {
-        if (!runInputsRequest) return
-        await startWorkflowRun(runInputsRequest.name, values)
-        setRunInputsRequest(null)
-        pushToast({ tone: 'success', title: `${runInputsRequest.name} started` })
-      }}
     />
   )
 

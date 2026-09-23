@@ -1,5 +1,5 @@
-"""Gate-reply validation: a strict question (workflow gate) rejects an answer
-that isn't one of its declared choices, and enforces one answer per question.
+"""Reply validation: one answer per question, and options stay soft
+suggestions over a free-text answer.
 """
 
 from __future__ import annotations
@@ -18,25 +18,17 @@ from app.agent.tools.builtin.ask_user import (
 
 
 @pytest.mark.asyncio
-async def test_validate_answers_enforces_strict_choices_and_arity():
+async def test_validate_answers_enforces_arity():
     svc = AskUserService("sess-1")
     task = asyncio.create_task(
-        svc.ask(
-            [
-                QuestionSpec(
-                    question="Cut over?", options=["cutover", "hold"], strict=True
-                )
-            ]
-        )
+        svc.ask([QuestionSpec(question="Cut over?", options=["cutover", "hold"])])
     )
     await asyncio.sleep(0)  # let ask() register the pending request
     request_id = next(iter(svc._pending))
 
-    # Off-menu answer to a strict gate -> rejected (would strand the run).
-    assert svc.validate_answers(request_id, ["maybe"]) is not None
     # Wrong number of answers -> rejected.
     assert svc.validate_answers(request_id, ["cutover", "extra"]) is not None
-    # A declared choice -> accepted.
+    # One answer -> accepted.
     assert svc.validate_answers(request_id, ["cutover"]) is None
 
     svc.reply(request_id, ["cutover"])
@@ -44,10 +36,10 @@ async def test_validate_answers_enforces_strict_choices_and_arity():
 
 
 @pytest.mark.asyncio
-async def test_validate_answers_allows_free_text_when_not_strict():
+async def test_validate_answers_allows_free_text():
     svc = AskUserService("sess-2")
     task = asyncio.create_task(
-        svc.ask([QuestionSpec(question="Name?", options=["a", "b"], strict=False)])
+        svc.ask([QuestionSpec(question="Name?", options=["a", "b"])])
     )
     await asyncio.sleep(0)
     request_id = next(iter(svc._pending))
@@ -79,7 +71,7 @@ async def test_model_facing_ask_user_options_are_always_soft(monkeypatch):
         [AskUserQuestionSpec(question="Choose?", options=["one", "two"])]
     )
 
-    assert captured[0].strict is False
+    assert captured[0].options == ["one", "two"]
     assert result == "Q: Choose?\nA: a different answer"
     question_items = ask_user.definition["function"]["parameters"]["properties"][
         "questions"
@@ -92,7 +84,6 @@ def test_browser_handoff_metadata_is_typed_and_secret_free():
         {
             "question": "Complete sign-in, then continue.",
             "options": ["completed", "cancelled"],
-            "strict": True,
             "browser_handoff": {
                 "kind": "provide_secret",
                 "title": "Sign in",

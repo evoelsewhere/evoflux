@@ -564,28 +564,6 @@ def test_side_chat_stream_uses_envelope_event_as_authoritative_type():
             {"type": "inbox", "agent": "lead", "from_agent": "researcher"},
         ),
         (
-            "workflow_progress",
-            {
-                "session_id": "session-1",
-                "execution_id": "execution-1",
-                "definition_name": "must-not-leak",
-                "status": "running",
-                "node_id": "step-1",
-                "node_index": 1,
-                "total_nodes": 3,
-                "error": "must-not-leak",
-            },
-            {
-                "type": "workflow_progress",
-                "session_id": "session-1",
-                "execution_id": "execution-1",
-                "status": "running",
-                "node_id": "step-1",
-                "node_index": 1,
-                "total_nodes": 3,
-            },
-        ),
-        (
             "goal_status",
             {
                 "session_id": "session-1",
@@ -2794,13 +2772,8 @@ async def test_teach_draft_is_pairing_scoped_reviewed_and_replayed(
     assert draft["parameter_names"] == ["report_password"]
     assert draft["capture_warnings"] == ["Recording reached the action limit."]
     assert "value" not in draft["actions"][1]
-    from app.workflow.models import parse_definition
-
-    workflow = parse_definition(draft["workflow_yaml"])
-    assert len(workflow.nodes) == 4
-    assert workflow.inputs[0].name == "report_password"
-    assert "never-persisted" not in draft["workflow_yaml"]
-    assert "{{inputs.report_password}}" in draft["workflow_yaml"]
+    assert "workflow_yaml" not in draft
+    assert "never-persisted" not in json.dumps(draft)
 
     unapproved = client.post(f"{_PREFIX}/teach-drafts/{draft['id']}/replay", json={})
     assert unapproved.status_code == 409
@@ -3410,12 +3383,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ):
-    from app.api.schemas.workflows import (
-        WorkflowInputOut,
-        WorkflowListItem,
-        WorkflowListResponse,
-        WorkflowRunResponse,
-    )
     from app.core import db as db_module
     from app.models.chat import ChatSession
 
@@ -3454,26 +3421,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
         db.add(session)
         await db.commit()
 
-    workflows = WorkflowListResponse(
-        workflows=[
-            WorkflowListItem(
-                name="release-check",
-                description="Verify a release",
-                scope="coding",
-                inputs=[WorkflowInputOut(name="version", type="string", required=True)],
-                hash="a" * 64,
-                root=str(workspace),
-                source_path=str(workspace / "release-check.yaml"),
-                approved=True,
-                valid=True,
-                errors=[],
-                node_count=1,
-            )
-        ]
-    )
-    list_workflows = AsyncMock(return_value=workflows)
-    monkeypatch.setattr("app.api.routes.workflows.list_workflows", list_workflows)
-
     owner = _pair_extension(client, "Composer owner")
     other = _pair_extension(client, "Composer outsider")
     _assign_pairing_session(client, owner, session.id)
@@ -3496,20 +3443,9 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
         "insert_text": "$repo-audit ",
         "keep_input_open": True,
         "source": "project",
-        "inputs": [],
     }
     assert ("skill", "skill:model-only") not in commands
     assert ("builtin", "skill") not in commands
-    assert commands[("workflow", "workflow-release-check")]["inputs"] == [
-        {
-            "name": "version",
-            "type": "string",
-            "required": True,
-            "default": None,
-            "options": None,
-            "description": "",
-        }
-    ]
     assert catalog["snippets"] == [
         {
             "id": "git/check",
@@ -3541,29 +3477,6 @@ async def test_side_panel_composer_catalog_and_render_reuse_desktop_discovery(
         "name": "git/check",
         "content": "Run git status.",
     }
-
-    execution_id = uuid4()
-    run_workflow = AsyncMock(
-        return_value=WorkflowRunResponse(
-            execution_id=execution_id,
-            session_id=str(session.id),
-        )
-    )
-    monkeypatch.setattr("app.api.routes.workflows.run_workflow_route", run_workflow)
-    workflow_run = client.post(
-        (f"{_PREFIX}/sessions/{session.id}/composer/workflows/release-check/run"),
-        headers=headers,
-        json={"inputs": {"version": "1.2.3"}},
-    )
-    assert workflow_run.status_code == 200
-    assert workflow_run.json() == {
-        "execution_id": str(execution_id),
-        "session_id": str(session.id),
-    }
-    assert run_workflow.await_args.args[0] == "release-check"
-    assert run_workflow.await_args.args[1].session_id == str(session.id)
-    assert run_workflow.await_args.args[1].inputs == {"version": "1.2.3"}
-    assert run_workflow.await_args.kwargs["workspace"] == str(workspace)
 
     denied = client.get(
         endpoint,
