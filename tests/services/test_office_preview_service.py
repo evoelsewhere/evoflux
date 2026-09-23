@@ -1692,3 +1692,69 @@ def test_resolve_markup_compatibility_keeps_fallback_content():
     assert "<choice/>" not in resolved
     assert resolved.index("<a/>") < resolved.index("<fallback/>")
     assert resolved.index("<second/>") < resolved.index("<z/>")
+
+
+def test_render_pptx_preview_survives_geometry_less_fallback_shapes(
+    monkeypatch, tmp_path
+):
+    source = tmp_path / "geometry-less.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    slide.shapes.add_textbox(
+        Inches(1), Inches(1), Inches(3), Inches(1)
+    ).text = "Still rendered"
+    _append_shape_xml(
+        slide,
+        f'<mc:AlternateContent xmlns:mc="{_MC_NS}" xmlns:p="{_P_NS}" xmlns:a="{_A_NS}">'
+        '<mc:Fallback><p:sp><p:nvSpPr><p:cNvPr id="30" name="No geometry"/>'
+        "<p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/></p:sp></mc:Fallback>"
+        "</mc:AlternateContent>",
+    )
+    presentation.save(source)
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+
+    rendered = preview.render_document_preview(source).read_text(encoding="utf-8")
+
+    assert "Still rendered" in rendered
+
+
+def test_sanitized_workbook_detaches_pivot_caches_openpyxl_cannot_read(tmp_path):
+    import io
+
+    from openpyxl import load_workbook
+
+    from app.services.document_preview.xlsx_features import sanitized_workbook_bytes
+
+    source = tmp_path / "pivot.xlsx"
+    Workbook().save(source)
+    rewritten = source.with_suffix(".tmp.xlsx")
+    pivot_rel = (
+        '<Relationship Id="rIdPivot" Type="http://schemas.openxmlformats.org/'
+        'officeDocument/2006/relationships/pivotTable" '
+        'Target="../pivotTables/pivotTable1.xml"/>'
+    )
+    with ZipFile(source) as reader, ZipFile(rewritten, "w", ZIP_DEFLATED) as writer:
+        for member in reader.infolist():
+            payload = reader.read(member.filename)
+            if member.filename == "xl/workbook.xml":
+                payload = payload.replace(
+                    b"</workbook>",
+                    f'<pivotCaches><pivotCache xmlns:r="{_R_NS}" cacheId="9" '
+                    'r:id="rIdMissing"/></pivotCaches></workbook>'.encode(),
+                )
+            writer.writestr(member, payload)
+        writer.writestr(
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/'
+            f'relationships">{pivot_rel}</Relationships>',
+        )
+    rewritten.replace(source)
+    with pytest.raises((KeyError, AttributeError)):
+        load_workbook(source)
+
+    repaired = sanitized_workbook_bytes(source)
+
+    with ZipFile(io.BytesIO(repaired)) as archive:
+        assert b"pivotCaches" not in archive.read("xl/workbook.xml")
+        assert b"pivotTable" not in archive.read("xl/worksheets/_rels/sheet1.xml.rels")
+    assert load_workbook(io.BytesIO(repaired)).sheetnames == ["Sheet"]

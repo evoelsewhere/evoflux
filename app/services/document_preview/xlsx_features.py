@@ -13,6 +13,7 @@ look emptier than the workbook really is:
 from __future__ import annotations
 
 import html
+import io
 import math
 import posixpath
 import re
@@ -85,23 +86,58 @@ def _name_unnamed_cell_styles(xml: bytes) -> bytes:
     return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
 
 
-def sanitized_workbook_copy(source: Path, target: Path) -> Path:
-    """Write a copy of ``source`` whose XML parts openpyxl can load."""
+def _drop_pivot_caches(xml: bytes) -> bytes:
+    """Remove pivot cache references, which the grid preview never renders.
+
+    openpyxl fails outright on some pivot cache definitions (for example ones
+    with nested extension lists), taking the whole workbook down with them.
+    """
+    if b"pivotCaches" not in xml:
+        return xml
+    root = etree.fromstring(xml, _XML_PARSER)
+    for caches in root.xpath("./*[local-name()='pivotCaches']"):
+        root.remove(caches)
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+
+
+def _drop_pivot_table_relationships(xml: bytes) -> bytes:
+    """Detach worksheet pivot tables whose caches :func:`_drop_pivot_caches` removed."""
+    if b"pivotTable" not in xml:
+        return xml
+    root = etree.fromstring(xml, _XML_PARSER)
+    for relationship in list(root.iter(f"{{{_PACKAGE_REL_NS}}}Relationship")):
+        if str(relationship.get("Type") or "").endswith("/pivotTable"):
+            root.remove(relationship)
+    return etree.tostring(root, xml_declaration=True, encoding="UTF-8", standalone=True)
+
+
+def sanitized_workbook_bytes(source: Path) -> bytes:
+    """Return a copy of ``source`` whose XML parts openpyxl can load.
+
+    The copy stays in memory: openpyxl reads embedded images lazily from the
+    archive, so a temporary file would still be open (and undeletable on
+    Windows) long after loading.
+    """
+    buffer = io.BytesIO()
     with (
         zipfile.ZipFile(source) as reader,
-        zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as writer,
+        zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as writer,
     ):
         for member in reader.infolist():
             payload = reader.read(member.filename)
-            if member.filename.endswith(".xml"):
-                try:
+            try:
+                if member.filename.endswith(".xml"):
                     payload = resolve_markup_compatibility(payload)
                     if member.filename == "xl/styles.xml":
                         payload = _name_unnamed_cell_styles(payload)
-                except etree.XMLSyntaxError:
-                    pass
+                    elif member.filename == "xl/workbook.xml":
+                        payload = _drop_pivot_caches(payload)
+                elif member.filename.startswith("xl/worksheets/_rels/"):
+                    payload = _drop_pivot_table_relationships(payload)
+            except etree.XMLSyntaxError:
+                pass
             writer.writestr(member, payload)
-    return target
+    return buffer.getvalue()
 
 
 # ---------------------------------------------------------------------------

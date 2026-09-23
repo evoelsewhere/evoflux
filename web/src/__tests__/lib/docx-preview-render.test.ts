@@ -43,6 +43,20 @@ describe('docx-preview-render', () => {
     expect(inline.getAttribute('src')).toBe('data:image/png;base64,AAAA')
   })
 
+  it('keeps inline image data on SVG images but never on links', () => {
+    const root = fragment(`
+      <svg><image href="data:image/png;base64,AAAA"></image><image href="https://tracker.example/p.png"></image></svg>
+      <a href="data:text/html,<b>x</b>">data link</a>`)
+
+    neutralizeRenderedDocx(root)
+
+    const [inline, remote] = Array.from(root.querySelectorAll('image'))
+    expect(inline.getAttribute('href')).toBe('data:image/png;base64,AAAA')
+    expect(remote.hasAttribute('href')).toBe(false)
+    expect(remote.getAttribute('data-href')).toBe('https://tracker.example/p.png')
+    expect(root.querySelector('a')?.hasAttribute('href')).toBe(false)
+  })
+
   it('repairs VML fallback shapes so their paint and text are visible', () => {
     const root = fragment(`
       <svg><rect width="100%" fill="#156082 [3204]"><foreignObject><p>Boxed</p></foreignObject></rect></svg>

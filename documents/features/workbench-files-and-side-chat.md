@@ -88,17 +88,21 @@ overwritten. Session workspaces are addressed by session id
   handlers, remote sources or navigable links) and serialized into the same
   inert CSP document and `[data-preview-item]` page contract as the backend.
   The backend python-docx renderer stays the fallback when client rendering
-  fails or no raw file URL is available.
+  fails or no raw file URL is available. `web/patches/docx-preview@0.4.1.patch`
+  loads pictures nested inside VML groups and skips a detached-DOM `getBBox`
+  that collapsed shapes to 0×0. DrawingML-only shapes (`wps`/`wpg` without a
+  VML fallback) are still not drawn by docx-preview.
 - PPTX renders on the backend. SmartArt is rebuilt from the drawing PowerPoint
   caches in `ppt/diagrams/drawingN.xml`, `mc:AlternateContent` resolves to its
   fallback branch, and OLE objects show their preview image or a labelled
-  placeholder instead of disappearing.
+  placeholder instead of disappearing. A shape that fails to render is logged
+  and skipped rather than failing the whole deck.
 - XLSX renders on the backend with conditional formatting (cell rules, colour
   scales, data bars, icon sets), hidden rows/columns, freeze panes, hidden
   gridlines, comments, hyperlinks (inert), drawing shapes/text boxes, chart
   sheets and hidden-sheet labels (`app/services/document_preview/xlsx_features.py`).
-  Packages openpyxl rejects are retried once from a copy with
-  markup-compatibility fallbacks resolved.
+  Packages openpyxl rejects are retried once from an in-memory copy with
+  markup-compatibility fallbacks resolved and unreadable pivot caches detached.
 - XLSX formula display is calculated conservatively and never executes workbook
   macros or arbitrary formulas.
 

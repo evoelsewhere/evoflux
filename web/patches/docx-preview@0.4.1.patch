@@ -1,0 +1,30 @@
+diff --git a/dist/docx-preview.mjs b/dist/docx-preview.mjs
+index febba6e335804b25c90670989d493061c6255aa5..c9c8bc1149c541a9a845935a9c20901a9b87674b 100644
+--- a/dist/docx-preview.mjs
++++ b/dist/docx-preview.mjs
+@@ -3742,12 +3742,10 @@ section.${c}>footer { z-index: 1; }
+     renderVmlElement(elem) {
+         var container = this.h({ ns: ns.svg, tagName: "svg", style: elem.cssStyleText });
+         const result = this.renderVmlChildElement(elem);
+-        if (elem.imageHref?.id) {
+-            this.tasks.push(this.document?.loadDocumentImage(elem.imageHref.id, this.currentPart)
+-                .then(x => result.setAttribute("href", x)));
+-        }
+         container.appendChild(result);
+         requestAnimationFrame(() => {
++            if (!container.isConnected)
++                return;
+             const bb = container.firstElementChild.getBBox();
+             container.setAttribute("width", `${Math.ceil(bb.x + bb.width)}`);
+             container.setAttribute("height", `${Math.ceil(bb.y + bb.height)}`);
+@@ -3757,6 +3755,10 @@ section.${c}>footer { z-index: 1; }
+     renderVmlChildElement(elem) {
+         const result = this.createSvgElement(elem.tagName);
+         Object.entries(elem.attrs).forEach(([k, v]) => result.setAttribute(k, v));
++        if (elem.imageHref?.id) {
++            this.tasks.push(this.document?.loadDocumentImage(elem.imageHref.id, this.currentPart)
++                .then(x => result.setAttribute("href", x)));
++        }
+         for (let child of elem.children) {
+             if (child.type == DomType.VmlElement) {
+                 result.appendChild(this.renderVmlChildElement(child));
