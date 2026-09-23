@@ -1225,6 +1225,10 @@ export const useTeamStore = create<TeamStore>()(
         current._handleSSEEvent(type, data)
       })
       abort.signal.addEventListener('abort', streamScheduler.cancel, { once: true })
+      // The backend closes the stream straight away when no turn is in
+      // flight (memory_stream_store.attach). Tracked so that empty attach
+      // doesn't count as "something changed" in onDone.
+      let sawEvent = false
 
       teamStream(
         sessionId,
@@ -1240,6 +1244,7 @@ export const useTeamStore = create<TeamStore>()(
             // behind us — the next unexpected drop gets a full fresh backoff
             // budget rather than picking up where an unrelated one left off.
             reconnectAttempt = 0
+            sawEvent = true
             streamScheduler.push(type, data)
           },
           onParseError: (err) => {
@@ -1269,7 +1274,10 @@ export const useTeamStore = create<TeamStore>()(
             if (current.sessionId !== sessionId || current._sessionGeneration !== generation) return
             set((draft) => {
               draft.isConnected = false
-              draft.cacheInvalidations.push({ kind: 'team_sessions' })
+              // An idle session's empty attach changes nothing server-side;
+              // refetching every session list on it turned each tab refocus
+              // into three list requests.
+              if (sawEvent || draft.isTeamWorking) draft.cacheInvalidations.push({ kind: 'team_sessions' })
               // Empty attach (turn already finished) never replays gates —
               // drop any leftover UI if the team is idle.
               if (!draft.isTeamWorking) {

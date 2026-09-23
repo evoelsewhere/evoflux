@@ -12,6 +12,8 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { useTeamStore } from '@/stores/useTeamStore'
 
+export const IDLE_RESUME_MIN_INTERVAL_MS = 30_000
+
 interface UseTeamSseArgs {
   sessionId: string | undefined
   agentWorkspace: string | null
@@ -147,12 +149,23 @@ export function useTeamSse({
 
   useEffect(() => {
     if (!sessionId) return
+    // The init effect above has just attached for this session.
+    let lastIdleResumeAt = Date.now()
 
     const resumeStream = () => {
       const state = useTeamStore.getState()
       if (state.sessionId !== sessionId) return
       if (state._workspace !== agentWorkspace) return
       if (isLiveStream(state, sessionId, agentWorkspace) && !state._unloading) return
+      // An idle session's attach closes at once, so the socket always looks
+      // dead here. Re-attaching on every visibility flip (window switching,
+      // automation screenshots) looped every few seconds; while idle, only
+      // re-check for a turn started elsewhere once per window.
+      if (!state.isTeamWorking && !state._unloading) {
+        const now = Date.now()
+        if (now - lastIdleResumeAt < IDLE_RESUME_MIN_INTERVAL_MS) return
+        lastIdleResumeAt = now
+      }
 
       useTeamStore.setState({ _unloading: false })
       if (state.isTeamWorking) {
