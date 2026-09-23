@@ -593,6 +593,11 @@ class RemoteProjection:
     def _handle_done(self, turn: _TurnDeliveryState, envelope) -> None:
         if turn.completion_sent:
             return
+        logger.info(
+            "remote_handle_done session_id={} phone_admitted={}",
+            turn.session_id,
+            turn.phone_admitted,
+        )
         turn.completion_sent = True
         self._cancel_draft_task(turn)
         self._pending_finalizations.append((turn, None))
@@ -1108,6 +1113,26 @@ class RemoteProjection:
                         turn.session_id,
                         exc,
                     )
+                    # Fallback: send a plain terminal message so the user
+                    # always knows the turn finished, even if the rich
+                    # card failed to render.
+                    try:
+                        fallback = (
+                            f"\u274c Task failed: {error_message}"
+                            if error_message
+                            else "\u2705 Task complete."
+                        )
+                        await adapter.send(
+                            RemoteOutboundMessage(
+                                connection_id=turn.connection_id,
+                                destination_id=turn.destination_id,
+                                text=fallback,
+                                buttons=(),
+                                priority=RemoteOutboundPriority.HIGH,
+                            )
+                        )
+                    except Exception:
+                        pass
             # Finalization can enqueue a fallback completion send when the
             # status send failed, so drain that work before the final-card
             # edit queue. A successful status send is already recorded above,
