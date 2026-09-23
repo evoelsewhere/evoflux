@@ -60,9 +60,22 @@ def _render_lock_for(output: Path) -> threading.Lock:
     return _render_locks[int(output.stem[:8], 16) % len(_render_locks)]
 
 
+_OFFICE_RUNTIME_SUFFIXES = frozenset({".docx", ".xlsx", ".pptx"})
+
+
+def _renderer_identity(source: Path) -> str:
+    """Name the engine that renders ``source`` so switching engines re-renders."""
+    if source.suffix.lower() not in _OFFICE_RUNTIME_SUFFIXES:
+        return "native"
+    runtime = installed_runtime_for_preview()
+    return f"libreoffice-{runtime.version}" if runtime is not None else "native"
+
+
 def _cache_path(source: Path) -> Path:
     fingerprint = hashlib.sha256()
     fingerprint.update(_CACHE_SCHEMA_VERSION.encode())
+    fingerprint.update(b"\0")
+    fingerprint.update(_renderer_identity(source).encode())
     fingerprint.update(b"\0")
     fingerprint.update(source.suffix.casefold().encode())
     fingerprint.update(b"\0")
@@ -4761,12 +4774,54 @@ def _render_pptx(source: Path) -> str:
 
 
 def _render_pdf(source: Path) -> str:
+    return _render_pdf_document(
+        source, title=source.name, cache_path=_cache_path(source)
+    )
+
+
+def _office_page_labels(source: Path, page_count: int) -> list[tuple[str, str]]:
+    """Return (label, notes) per converted page for an Office source."""
+    suffix = source.suffix.lower()
+    labels: list[tuple[str, str]] = []
+    if suffix == ".pptx":
+        try:
+            from pptx import Presentation
+
+            presentation = Presentation(str(source))
+            for number, slide in enumerate(presentation.slides, start=1):
+                title = _slide_preview_title(slide)
+                label = f"Slide {number}" + (f" — {title}" if title else "")
+                labels.append((label, _slide_notes_text(slide)))
+        except Exception as exc:  # noqa: BLE001 - labels are cosmetic
+            logger.debug("document_preview_slide_labels_failed error={}", exc)
+            labels = []
+        if len(labels) != page_count:
+            labels = [(f"Slide {n}", "") for n in range(1, page_count + 1)]
+        return labels
+    if suffix == ".xlsx":
+        from app.services.document_preview.xlsx_features import visible_sheet_names
+
+        names = visible_sheet_names(source)
+        if len(names) == page_count:
+            return [(name, "") for name in names]
+        return [(f"Sheet {n}", "") for n in range(1, page_count + 1)]
+    return [(f"Page {n}", "") for n in range(1, page_count + 1)]
+
+
+def _render_pdf_document(
+    source: Path,
+    *,
+    title: str,
+    cache_path: Path,
+    labels: list[tuple[str, str]] | None = None,
+    renderer: str = "pdf",
+) -> str:
     from app.services.document_preview.pdf import (
         count_pdf_pages,
+        pdf_text_layers,
         render_pdf_pages,
     )
 
-    cache_path = _cache_path(source)
     render_root = cache_path.parent / f"{cache_path.stem}-pages"
     total_pages = count_pdf_pages(source)
     pages: list[Path] = []
@@ -4779,15 +4834,48 @@ def _render_pdf(source: Path) -> str:
             max_total_bytes=MAX_PDF_PREVIEW_RASTER_BYTES,
             max_pixels_per_page=MAX_PDF_PREVIEW_PIXELS_PER_PAGE,
         )
+        try:
+            layers = pdf_text_layers(source, max_pages=len(pages))
+        except Exception as exc:  # noqa: BLE001 - the text layer is optional
+            # Pages still render; they just are not searchable or selectable.
+            logger.debug("document_preview_text_layer_failed error={}", exc)
+            layers = []
         rendered: list[str] = []
         for page_number, page in enumerate(pages, start=1):
             encoded = base64.b64encode(page.read_bytes()).decode("ascii")
+            label, notes = (
+                labels[page_number - 1]
+                if labels and page_number <= len(labels)
+                else (f"Page {page_number}", "")
+            )
+            layer = layers[page_number - 1] if page_number <= len(layers) else None
+            text_html = ""
+            aspect = ""
+            if layer is not None:
+                aspect = f' style="aspect-ratio:{layer.width:.2f}/{layer.height:.2f}"'
+                text_html = "".join(
+                    f'<span style="left:{run.left:.3f}%;top:{run.top:.3f}%;'
+                    f"width:{run.width:.3f}%;height:{run.height:.3f}%;"
+                    f'font-size:{run.font_size:.3f}cqw">{html.escape(run.text)}</span>'
+                    for run in layer.runs
+                )
+            notes_html = (
+                '<span class="slide-notes-metadata" hidden aria-hidden="true" '
+                f'data-preview-notes="{html.escape(notes, quote=True)}">'
+                f"{html.escape(notes)}</span>"
+                if notes
+                else ""
+            )
             rendered.append(
                 '<article class="pdf-page-wrap" data-preview-item '
-                f'data-preview-label="Page {page_number}">'
+                f'data-preview-label="{html.escape(label, quote=True)}" '
+                f'data-page-index="{page_number - 1}">'
                 f'<span class="pdf-page-number">{page_number}</span>'
+                f'<div class="pdf-page-surface"{aspect}>'
                 f'<img class="pdf-page" src="data:image/png;base64,{encoded}" '
-                f'alt="Page {page_number}"></article>'
+                f'alt="{html.escape(label, quote=True)}">'
+                f'<div class="pdf-text-layer">{text_html}</div></div>'
+                f"{notes_html}</article>"
             )
         if len(pages) < total_pages:
             rendered.append(
@@ -4800,13 +4888,59 @@ def _render_pdf(source: Path) -> str:
     css = """
     *{box-sizing:border-box}body{margin:0;padding:28px;background:#e5e7eb;
     color:#242424;font-family:Arial,sans-serif}.pdf-page-wrap{position:relative;
-    width:min(960px,94vw);margin:0 auto 28px}.pdf-page{display:block;width:100%;
-    height:auto;background:#fff;box-shadow:0 2px 14px #0003}.pdf-page-number{
+    width:min(960px,94vw);margin:0 auto 28px}.pdf-page-surface{position:relative;
+    container-type:inline-size;background:#fff;box-shadow:0 2px 14px #0003}
+    .pdf-page{display:block;width:100%;height:auto}.pdf-page-number{
     position:absolute;right:calc(100% + 9px);top:0;color:#616161;font-size:12px}
+    .pdf-text-layer{position:absolute;inset:0;overflow:hidden;line-height:1}
+    .pdf-text-layer span{position:absolute;color:transparent;white-space:pre;
+    overflow:hidden;cursor:text}.pdf-text-layer ::selection{background:#2563eb44}
+    .pdf-text-layer mark{color:transparent;opacity:.55}
+    .slide-notes-metadata{display:none!important}
     .pdf-preview-limit{max-width:720px;margin:20px auto;padding:14px 18px;border-radius:8px;
     background:#fff4ce;color:#5c2e00;box-shadow:0 1px 4px #0002}
     """
-    return _page(title=source.name, body="".join(rendered), css=css)
+    return _page(
+        title=title,
+        body=f'<main data-preview-renderer="{renderer}">{"".join(rendered)}</main>',
+        css=css,
+    )
+
+
+def _render_with_office_runtime(source: Path) -> str | None:
+    """Render an Office file through LibreOffice, or ``None`` to fall back."""
+    from app.services.office_runtime.convert import ConversionError, convert_to_pdf
+
+    runtime = installed_runtime_for_preview()
+    if runtime is None:
+        return None
+    with tempfile.TemporaryDirectory(prefix="evoflux-office-") as directory:
+        try:
+            pdf = convert_to_pdf(source, Path(directory))
+        except (ConversionError, OSError) as exc:
+            logger.warning(
+                "document_preview_office_runtime_failed file={} error={}",
+                source.name,
+                exc,
+            )
+            return None
+        from app.services.document_preview.pdf import count_pdf_pages
+
+        labels = _office_page_labels(source, count_pdf_pages(pdf))
+        return _render_pdf_document(
+            pdf,
+            title=source.name,
+            cache_path=_cache_path(source),
+            labels=labels,
+            renderer=f"libreoffice-{runtime.version}",
+        )
+
+
+def installed_runtime_for_preview() -> Any | None:
+    """Return the installed LibreOffice runtime, if Office files should use it."""
+    from app.services.office_runtime.installer import installed_runtime
+
+    return installed_runtime()
 
 
 def _render_source(source: Path) -> str:
@@ -4817,6 +4951,10 @@ def _render_source(source: Path) -> str:
         ".pdf": _render_pdf,
     }
     try:
+        if source.suffix.lower() in _OFFICE_RUNTIME_SUFFIXES:
+            exact = _render_with_office_runtime(source)
+            if exact is not None:
+                return exact
         return renderers[source.suffix.lower()](source)
     except DocumentPreviewError:
         raise

@@ -1015,6 +1015,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Ctrl+;',
       '⌘P',
       '⌥⌘S',
+      'Office preview',
+      'LibreOffice',
+      'docx',
+      'xlsx',
+      'pptx',
       'bảng',
       'bảng công cụ',
       'ワークベンチ',
@@ -1030,6 +1035,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Terminal and Browser support multiple tab instances; other tools are single-instance toggles.',
       'Expand Running at the foot of any Terminal tab to see and stop agent commands, preview servers, and other terminals across sessions.',
       'Source Control (Ctrl+G) is Coding-only.',
+      'Word, Excel and PowerPoint previews are approximate until you click Install renderer in the viewer; the optional LibreOffice renderer then shows pages as Office lays them out.',
       'Toggle the same tool again to close it — the workbench is not a pile of permanent cards.'
 ],
     blocks: [
@@ -1069,6 +1075,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'p',
         text: 'Click a tool in the workbench bar or press its shortcut. Toggle the same tool again to close it. Prefer the command palette (Ctrl+P) when you forget which tool owns an action. Do not confuse built-in Browser (Ctrl+T) with WebBridge pairing for real Chrome/Edge.',
+      },
+      {
+        type: 'p',
+        text: 'Office files (.docx, .xlsx, .pptx) open in a read-only viewer. The built-in renderers approximate layout; for exact pages, click Install renderer in the viewer to download the optional LibreOffice renderer (about 150–190 MB, once, on Windows and macOS). Nothing downloads until you ask. The archive is checked against a pinned checksum and signature before it is installed into the app data folder, and conversion runs offline with macros disabled. The first exact render of a file can take up to a minute; later opens use the cache. Search and text selection still work on exact pages.',
       },
       {
         type: 'p',

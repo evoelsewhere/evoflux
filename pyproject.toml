@@ -69,6 +69,7 @@ dependencies = [
     # ConPTY backend for the interactive terminal on Windows (POSIX uses the
     # stdlib pty/fcntl/termios stack). Imported lazily by terminal_service.
     "pywinpty>=2.0.14; sys_platform == 'win32'",
+    "cryptography>=44",
 ]
 
 [project.urls]

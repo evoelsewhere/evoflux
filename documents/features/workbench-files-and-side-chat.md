@@ -106,6 +106,48 @@ overwritten. Session workspaces are addressed by session id
 - XLSX formula display is calculated conservatively and never executes workbook
   macros or arbitrary formulas.
 
+### Exact rendering runtime (LibreOffice)
+
+The built-in renderers above approximate Office layout. For exact pages the
+viewer offers an optional LibreOffice runtime that the user installs from the
+viewer banner (`web/src/components/document-preview-runtime-banner.tsx`);
+nothing downloads until they ask.
+
+- **Bundle.** `scripts/build_libreoffice_runtime.py` turns an official The
+  Document Foundation package (checksum-verified against
+  download.documentfoundation.org) into a trimmed `soffice/` tree — help,
+  translations, extensions, galleries, templates, Python/Java and unused icon
+  themes removed; metric-compatible fonts kept — packs it as
+  `libreoffice-<version>-<platform>.tar.gz` (about 180 MB on Windows) and signs
+  its asset record with the team ed25519 key. macOS apps are re-sealed with an
+  ad-hoc signature after trimming.
+- **CI.** `.github/workflows/office-runtime.yml` builds and verifies every
+  platform (macOS Apple Silicon and Intel, Windows x64, Linux x64) with
+  `scripts/verify_office_runtime.py`, which installs through the real
+  installer and converts generated DOCX/PPTX/XLSX through the preview
+  pipeline. With `publish` it signs with the release key and uploads the
+  archives to the `office-runtime-<version>` release; the step summary prints
+  the entries to pin in `app/services/office_runtime/manifest.py`
+  (`PINNED_ASSETS`, `TRUSTED_KEYS`). Until then the runtime reports
+  unavailable and the banner stays hidden.
+- **Install.** `app/services/office_runtime/installer.py` streams the archive
+  with byte progress (`GET/POST /api/team/office-runtime/…`), rejects any size,
+  SHA-256 or signature mismatch, refuses archive entries outside `soffice/`,
+  links that escape it and special files, then activates the tree under
+  `<data dir>/runtimes/libreoffice/<version>` (renames retry through transient
+  Windows antivirus locks). `EVOFLUX_OFFICE_RUNTIME_MANIFEST` can point at a
+  local manifest to test an unpublished bundle; it passes the same checks.
+- **Conversion.** `app/services/office_runtime/convert.py` runs headless
+  `soffice` with one hardened profile (macros disabled, untrusted remote
+  references blocked, external links never refreshed), serialized, with a
+  timeout that kills the process tree. A fresh profile's silent first run is
+  retried. Workbooks export one page per sheet.
+- **Viewer.** DOCX, XLSX and PPTX then render as PDF pages with a positioned,
+  transparent text layer (search and selection keep working), slide/sheet
+  labels and speaker notes. The preview cache key includes the renderer, so
+  installing the runtime re-renders open files; a failed conversion falls back
+  to the built-in renderers.
+
 Preview cache is regeneratable and stored outside user workspaces. Unsafe
 external URLs, path escapes and active embedded content are rejected.
 

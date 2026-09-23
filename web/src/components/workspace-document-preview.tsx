@@ -33,8 +33,14 @@ import {
   workspaceMediaUrl,
 } from '@/api/client'
 import type { WorkspaceFileInfo } from '@/api/types'
+import { DocumentPreviewRuntimeBanner } from '@/components/document-preview-runtime-banner'
 import { MAX_DOCX_SOURCE_BYTES, renderDocxPreviewHtml } from '@/lib/docx-preview-render'
 import { cn } from '@/lib/utils'
+import {
+  useDismissOfficeRuntimeErrorMutation,
+  useInstallOfficeRuntimeMutation,
+  useOfficeRuntimeQuery,
+} from '@/queries/useOfficeRuntimeQuery'
 import {
   workspaceFileKind,
   type WorkspaceDocumentKind,
@@ -309,15 +315,22 @@ export function WorkspaceDocumentPreview({
     if (sessionId) return workspaceDocumentPreviewUrl(sessionId, file.path)
     return ''
   }, [file.path, providedSourceUrl, sessionId, workspace])
+  const officeKind = kind === 'docx' || kind === 'xlsx' || kind === 'pptx'
+  const officeRuntime = useOfficeRuntimeQuery(officeKind)
+  const installRuntime = useInstallOfficeRuntimeMutation()
+  const dismissRuntimeError = useDismissOfficeRuntimeErrorMutation()
+  // Once LibreOffice is installed the backend renders Office files exactly;
+  // the key changes so an open preview re-renders the moment it lands.
+  const exactRenderer = officeKind ? officeRuntime.data?.installed_version ?? '' : ''
   const rawUrl = useMemo(() => {
-    if (kind !== 'docx') return ''
+    if (kind !== 'docx' || exactRenderer) return ''
     if (providedRawUrl) return providedRawUrl
     if (providedSourceUrl) return ''
     if (workspace) return codingWorkspaceFileUrl(workspace, file.path)
     if (sessionId) return workspaceMediaUrl(sessionId, file.path)
     return ''
-  }, [file.path, kind, providedRawUrl, providedSourceUrl, sessionId, workspace])
-  const requestKey = `${sourceUrl}:${file.size}:${file.mtime}`
+  }, [exactRenderer, file.path, kind, providedRawUrl, providedSourceUrl, sessionId, workspace])
+  const requestKey = `${sourceUrl}:${file.size}:${file.mtime}:${exactRenderer}`
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const viewerRef = useRef<HTMLElement>(null)
@@ -814,10 +827,22 @@ export function WorkspaceDocumentPreview({
     return (
       <div className="flex h-full items-center justify-center gap-2 text-(--color-text-subtle)">
         <Loader2 size={17} className="animate-spin" aria-hidden="true" />
-        <span className="text-xs">Rendering {meta.label} document…</span>
+        <span className="text-xs">
+          Rendering {meta.label} document…
+          {exactRenderer && ' The first exact render can take up to a minute.'}
+        </span>
       </div>
     )
   }
+
+  const runtimeBanner = officeKind && presentationView !== 'reading' && (
+    <DocumentPreviewRuntimeBanner
+      status={officeRuntime.data}
+      starting={installRuntime.isPending}
+      onInstall={() => installRuntime.mutate()}
+      onDismissError={() => dismissRuntimeError.mutate()}
+    />
+  )
 
   const itemName = kind === 'xlsx' ? 'Sheet' : kind === 'pptx' ? 'Slide' : 'Page'
   const itemCount = entries.length
@@ -863,6 +888,7 @@ export function WorkspaceDocumentPreview({
       onKeyDown={handleViewerKeyDown}
       style={{ borderTop: presentationView === 'reading' ? 'none' : `1px solid ${meta.accent}` }}
     >
+      {runtimeBanner}
       {presentationView !== 'reading' && kind !== 'xlsx' && <header className="flex h-9 shrink-0 items-center justify-between gap-1 border-b border-(--color-border) bg-(--bg-card) px-1.5">
         <div className="flex min-w-0 items-center gap-1">
           {hasNavigator && (
