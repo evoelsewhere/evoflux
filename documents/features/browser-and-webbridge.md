@@ -72,6 +72,22 @@ Implemented capabilities include:
 - interaction ingestion, Teach drafts, approval, replay and step resolution;
 - appearance synchronization, status and audit views.
 
+Agent-facing behavior of the `webbridge` tool:
+
+- The model receives the full tool guide (ref-first work, chaining actions in
+  one call, `snapshot {diff: true}`, background tabs, crawl recipes).
+- `navigate`, `back`, `forward` and `reload` wait for the page to load and
+  report the address reached (including a redirect), its title and whether
+  the load timed out. When one of them ends a call, a compact snapshot (first
+  40 interactive elements) of the new page is returned with it.
+- Coding sessions drive the pointer without the human-paced glide the
+  extension draws for Work sessions; one `mouseMoved` still reaches the
+  target, so hover state and the on-page cursor are unchanged.
+- A batched run of clicks, fills and keys stays on the session's bound tab and
+  its origin pin, like each of those actions sent alone.
+- In a WebBridge session, `preview start` points the agent at
+  `webbridge open_tab` instead of the excluded `browser_use`.
+
 ## Policy and trust
 
 The manager enforces allow/block domain suffix policies, can disable arbitrary

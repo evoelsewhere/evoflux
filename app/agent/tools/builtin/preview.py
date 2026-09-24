@@ -1,8 +1,9 @@
 """preview tool — dev-server lifecycle for in-browser verification.
 
-Companion to ``browser_use``: start the project's dev server from a
-declarative config, wait until its port accepts connections, then verify
-the app through the browser (navigate → console/snapshot → screenshot).
+Companion to the session's browser tool (``browser_use``, or ``webbridge``
+in a WebBridge session): start the project's dev server from a declarative
+config, wait until its port accepts connections, then verify the app through
+the browser (navigate → console/snapshot → screenshot).
 
 Configuration lives in ``.evoflux/launch.json`` at the workspace root
 (``.claude/launch.json`` is read as a fallback so existing projects work
@@ -446,8 +447,29 @@ async def _wait_for_port(server: PreviewServer, timeout: float) -> str | None:
 
 # ── Actions ───────────────────────────────────────────────────────────────────
 
+BrowserTool = Literal["browser_use", "webbridge"]
 
-async def _start(name: str | None, workspace: Path) -> str:
+
+def _open_hint(port: int, browser_tool: BrowserTool) -> str:
+    """Point the agent at the browser tool its session actually has.
+
+    A WebBridge session excludes ``browser_use``, so a hint naming it sends
+    the agent after a tool it cannot load.
+    """
+    url = f"http://localhost:{port}/"
+    if browser_tool == "webbridge":
+        return (
+            f"Next: webbridge open_tab {url} (pass the returned tab_id on later "
+            "actions), then snapshot."
+        )
+    return f"Next: browser_use navigate to {url}, then check console + snapshot."
+
+
+async def _start(
+    name: str | None,
+    workspace: Path,
+    browser_tool: BrowserTool = "browser_use",
+) -> str:
     cfg, _source = _find_configuration(workspace, name)
 
     # Resolve dependsOn: ensure the dependency is running before starting.
@@ -455,7 +477,7 @@ async def _start(name: str | None, workspace: Path) -> str:
         dep_server = _servers.get((str(workspace), cfg.depends_on))
         if dep_server is None:
             # Dependency not started yet — start it first (recursive).
-            dep_result = await _start(cfg.depends_on, workspace)
+            dep_result = await _start(cfg.depends_on, workspace, browser_tool)
             if "ready on" not in dep_result and "reusing" not in dep_result:
                 return (
                     f"Failed to start dependency '{cfg.depends_on}' "
@@ -476,13 +498,14 @@ async def _start(name: str | None, workspace: Path) -> str:
         if existing is not None:
             ports.add(existing.port)
         async with _locked_ports(ports):
-            return await _start_locked(cfg, workspace, key)
+            return await _start_locked(cfg, workspace, key, browser_tool)
 
 
 async def _start_locked(
     cfg: LaunchConfiguration,
     workspace: Path,
     key: tuple[str, str],
+    browser_tool: BrowserTool = "browser_use",
 ) -> str:
     from app.agent.sandbox import get_sandbox
     from app.agent.tools.builtin.shell import _scrubbed_env
@@ -496,7 +519,7 @@ async def _start_locked(
             label = "external (reused)" if existing.reused else f"pid {existing.pid}"
             return (
                 f"Server '{cfg.name}' already running on http://localhost:{existing.port} "
-                f"({label}). Use browser_use navigate to open it."
+                f"({label}).\n{_open_hint(existing.port, browser_tool)}"
             )
         if existing._process is not None:
             await existing._process.terminate()
@@ -542,7 +565,8 @@ async def _start_locked(
         return (
             f"Port {cfg.port} is already serving — reusing the existing server.\n"
             f"URL: http://localhost:{cfg.port}\n"
-            f"Note: logs are unavailable for reused servers."
+            f"Note: logs are unavailable for reused servers.\n"
+            f"{_open_hint(cfg.port, browser_tool)}"
         )
 
     argv = cfg.command_argv
@@ -640,8 +664,7 @@ async def _start_locked(
         return f"{error}\nThe managed process was stopped and removed from tracking."
     return (
         f"Server '{cfg.name}' ready on http://localhost:{cfg.port} (pid {server.pid}).\n"
-        f"Next: browser_use navigate to http://localhost:{cfg.port}, then check "
-        f"console + snapshot."
+        f"{_open_hint(cfg.port, browser_tool)}"
     )
 
 
@@ -999,14 +1022,18 @@ async def _preview(
 
     ``start`` reuses a server that is already listening on the configured
     port; otherwise it spawns the command, captures its output, and waits
-    for the port to accept connections. Then use ``browser_use`` to
-    navigate to the returned URL and verify (console → snapshot →
+    for the port to accept connections. Then open the returned URL with
+    the session's browser tool and verify (console → snapshot →
     screenshot). ``logs`` returns captured stdout/stderr — check it when
     the page misbehaves or the server fails to start.
     """
     workspace = _workspace_root()
     if action == "start":
-        return await _start(name, workspace)
+        metadata = getattr(_state, "metadata", None) or {}
+        browser_tool: BrowserTool = (
+            "webbridge" if metadata.get("webbridge_session") else "browser_use"
+        )
+        return await _start(name, workspace, browser_tool)
     if action == "stop":
         return await _stop(name, workspace)
     if action == "status":

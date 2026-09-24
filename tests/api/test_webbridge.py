@@ -1783,6 +1783,52 @@ async def test_internal_tab_binding_restores_chat_ownership_but_blocks_page_acti
     assert (await opened)["success"] is True
 
 
+async def test_live_binding_pins_batched_commands_to_the_bound_tab(
+    manager: WebBridgeManager,
+):
+    """A batch of clicks and fills stays on the bound tab and its origin.
+
+    Without this a chain of simple actions — the one the tool sends as a
+    single ``batch`` — went to whichever tab was active.
+    """
+    sent: list[str] = []
+
+    async def fake_send(text: str) -> None:
+        sent.append(text)
+
+    manager.register_extension(
+        extension_id="e1", browser="chrome", version="1", send=fake_send
+    )
+    extension = manager.get_extension("e1")
+    assert extension is not None
+    extension.tabs = [{"id": 42, "url": "https://docs.example.com/start"}]
+    manager.bind_session_tab("sess", "e1", 42, "https://docs.example.com")
+
+    pending = asyncio.create_task(
+        manager.send_command(
+            "sess",
+            "batch",
+            {"commands": [{"action": "click_selector", "params": {"ref": "e1"}}]},
+        )
+    )
+    await asyncio.sleep(0)
+    command = json.loads(sent.pop())
+    assert command["params"]["tab_id"] == 42
+    assert command["params"]["_webbridge_expected_origin"] == "https://docs.example.com"
+    manager.handle_response(command["request_id"], success=True, data={}, error=None)
+    assert (await pending)["success"] is True
+
+    extension.tabs = [{"id": 42, "url": "https://mail.example.net/inbox"}]
+    refused = await manager.send_command(
+        "sess",
+        "batch",
+        {"commands": [{"action": "click_selector", "params": {"ref": "e1"}}]},
+    )
+    assert refused["success"] is False
+    assert "changed page scope" in refused["error"]
+    assert sent == []
+
+
 async def test_live_binding_refuses_commands_after_cross_origin_navigation(
     manager: WebBridgeManager,
 ):
@@ -5271,8 +5317,95 @@ async def test_tool_navigate_success_text(
     result = await webbridge(
         actions=[_action({"action": "navigate", "url": "https://example.com"})]
     )
-    assert result == "Navigated to https://example.com"
-    assert seen == [("navigate", {"url": "https://example.com"})]
+    assert isinstance(result, str)
+    assert "Navigated to https://example.com" in result
+    # An empty landing snapshot adds nothing.
+    assert "Interactive elements" not in result
+    assert seen == [
+        ("navigate", {"url": "https://example.com"}),
+        ("snapshot", {"max_elements": 40}),
+    ]
+
+
+async def test_tool_navigate_reports_landing_page_and_snapshot(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    def handler(action: str, params: dict):
+        if action == "navigate":
+            return {
+                "success": True,
+                "data": {
+                    "url": "http://localhost:3000/login",
+                    "title": "Sign in",
+                    "redirected": True,
+                    "timed_out": False,
+                },
+                "error": None,
+            }
+        return {
+            "success": True,
+            "data": {
+                "url": "http://localhost:3000/login",
+                "elements": [{"ref": "e1", "role": "button", "text": "Sign in"}],
+            },
+            "error": None,
+        }
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[_action({"action": "navigate", "url": "http://localhost:3000"})]
+    )
+
+    assert isinstance(result, str)
+    assert (
+        "Navigated to http://localhost:3000/login "
+        "(redirected from http://localhost:3000)"
+    ) in result
+    assert "Title: Sign in" in result
+    assert "e1 [button] 'Sign in'" in result
+    # One untrusted banner for the page, not one per part of it.
+    assert result.count("Untrusted browser content") == 1
+
+
+async def test_tool_navigate_mid_chain_takes_no_landing_snapshot(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[str] = []
+
+    def handler(action: str, params: dict):
+        seen.append(action)
+        return {"success": True, "data": {}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    await webbridge(
+        actions=[
+            _action({"action": "navigate", "url": "https://example.com"}),
+            _action({"action": "wait_for_load"}),
+        ]
+    )
+    assert seen == ["navigate", "wait_for_load"]
+
+
+async def test_tool_coding_session_asks_for_instant_pointer(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[dict] = []
+
+    def handler(action: str, params: dict):
+        seen.append(params)
+        return {"success": True, "data": {}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    await webbridge(
+        actions=[_action({"action": "click", "x": 1, "y": 2})],
+        _state=SimpleNamespace(metadata={"session_id": "s", "team_mode": "coding"}),
+    )
+    await webbridge(
+        actions=[_action({"action": "click", "x": 1, "y": 2})],
+        _state=SimpleNamespace(metadata={"session_id": "s", "team_mode": "work"}),
+    )
+    assert seen[0]["_webbridge_pointer_motion"] == "instant"
+    assert seen[1]["_webbridge_pointer_motion"] == "human"
 
 
 async def test_tool_routes_commands_to_session_selected_extension(
@@ -5295,7 +5428,8 @@ async def test_tool_routes_commands_to_session_selected_extension(
         first,
     )
 
-    assert len(first) == 1
+    # The navigate and the snapshot of the page it landed on.
+    assert [json.loads(frame)["action"] for frame in first] == ["navigate", "snapshot"]
     assert second == []
 
 
@@ -6153,9 +6287,9 @@ async def test_tool_tab_id_omitted_when_unset(
         ),
     )
     await webbridge(actions=[_action({"action": "back"})])
-    assert seen == [
-        ("back", {})
-    ]  # tab_id omitted entirely when the model didn't set one
+    # tab_id omitted entirely when the model didn't set one — on the step and
+    # on the snapshot of the page it landed on.
+    assert seen == [("back", {}), ("snapshot", {"max_elements": 40})]
 
     seen.clear()
     await webbridge(actions=[_action({"action": "extract"})])

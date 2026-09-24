@@ -56,11 +56,22 @@ _webbridge_command_failed: ContextVar[bool] = ContextVar(
     "webbridge_command_failed", default=False
 )
 
+#: How the extension animates the agent's pointer. Work sessions keep the
+#: human-paced cursor so the user can follow what the agent does in a browser
+#: they share; a Coding session is verifying its own app, where that
+#: 72–360 ms glide before every press is only latency.
+_webbridge_pointer_motion: ContextVar[Literal["human", "instant"] | None] = ContextVar(
+    "webbridge_pointer_motion", default=None
+)
+
 
 async def _send_command(
     session_id: str, action: str, params: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Send a command to the extension via the manager and wait for response."""
+    motion = _webbridge_pointer_motion.get()
+    if motion is not None:
+        params = {**(params or {}), "_webbridge_pointer_motion": motion}
     response = await webbridge_manager.send_command(
         session_id,
         action,
@@ -796,6 +807,11 @@ need a snapshot afterwards to find out whether the click did anything.
 After an action, `snapshot {diff: true}` returns only what changed — a few
 lines instead of the whole listing.
 
+navigate, back, forward and reload wait for the page to load and report the
+address it landed on (including a redirect) and its title. When one of them
+is the last action of a call, a compact snapshot of the new page comes back
+with it, so there is no separate snapshot turn just to see where you are.
+
 Screenshots are the fallback, not the method: use them for canvas/WebGL
 apps, for a cross-origin frame the snapshot marks as unreadable, or when the
 question is genuinely about how something looks. Screenshot pixels equal CSS
@@ -868,7 +884,8 @@ page in the background. Caveat: screenshots of a fully hidden/occluded tab may
 be blank or stale (it isn't painting) — for background tabs prefer the DOM
 actions (snapshot / extract / click_selector / fill / evaluate).
 
-Verify workflow: status → navigate → wait_for_load → snapshot → click_selector/fill → extract.
+Verify workflow: navigate (returns the page and its snapshot) →
+click_selector/fill by ref → snapshot {diff: true} or extract.
 Crawl workflow (one page): navigate → wait_for_load (or wait_for_network_idle
 for an SPA that fetches its data after load) → scroll_to_bottom (if lazy) →
 extract_elements {selector, fields} for lists, or extract {format:"markdown"}
@@ -881,6 +898,11 @@ result together. Pass wait:"networkidle" when the target pages are SPAs.\
 
 _UNTRUSTED_BROWSER_ACTIONS = frozenset(
     {
+        # Page-loading actions report the page's own title.
+        "navigate",
+        "back",
+        "forward",
+        "reload",
         "crawl",
         "evaluate",
         "extract",
@@ -899,6 +921,7 @@ _UNTRUSTED_BROWSER_ACTIONS = frozenset(
 
 @tool(
     name="webbridge",
+    description=_DESCRIPTION,
     deferred=True,
     deferred_summary=(
         "Drive an external Chrome/Edge browser through the opt-in WebBridge extension."
@@ -929,6 +952,10 @@ async def webbridge(
     target_token = _webbridge_target_id.set(
         metadata.get("webbridge_extension_id") if metadata else None
     )
+    motion: Literal["human", "instant"] | None = None
+    if metadata:
+        motion = "instant" if metadata.get("team_mode") == "coding" else "human"
+    motion_token = _webbridge_pointer_motion.set(motion)
     results: list[str | ToolResult] = []
     try:
         index = 0
@@ -945,14 +972,23 @@ async def webbridge(
                     index += run
                 else:
                     result = await _dispatch_webbridge(act, session_id)
-                    if act.action in _UNTRUSTED_BROWSER_ACTIONS:
-                        result = mark_untrusted_browser_result(result)
-                    results.append(result)
                     # A crawl is a batch of its own and reports each URL's
                     # outcome in its result; one unreachable page is not a
                     # broken chain.
                     failed = _webbridge_command_failed.get() and act.action != "crawl"
                     index += 1
+                    if (
+                        not failed
+                        and index == len(actions)
+                        and act.action in _PAGE_LOADING_ACTIONS
+                        and isinstance(result, str)
+                    ):
+                        landed = await _landing_snapshot(session_id, act)
+                        if landed:
+                            result = f"{result}\n{landed}"
+                    if act.action in _UNTRUSTED_BROWSER_ACTIONS:
+                        result = mark_untrusted_browser_result(result)
+                    results.append(result)
             except Exception as e:
                 logger.debug("webbridge_error action={} error={}", act.action, e)
                 results.append(f"Error ({act.action}): {e}")
@@ -971,7 +1007,51 @@ async def webbridge(
                 break
         return combine_browser_results(results)
     finally:
+        _webbridge_pointer_motion.reset(motion_token)
         _webbridge_target_id.reset(target_token)
+
+
+#: Actions that leave the tab on a different document. The model's next move
+#: after one is almost always "what is on this page now?".
+_PAGE_LOADING_ACTIONS = frozenset({"navigate", "back", "forward", "reload"})
+
+#: Enough of the new page to orient by without paying for the full listing.
+_LANDING_SNAPSHOT_ELEMENTS = 40
+
+
+async def _landing_snapshot(session_id: str, act: Any) -> str | None:
+    """A compact snapshot of the page a call ended on.
+
+    Returned only when the page-loading action was the last one: a chain that
+    goes on to click something has already decided what it needs, and a
+    snapshot in the middle of it would be read by nobody. Best-effort — the
+    navigation itself succeeded, so a snapshot that cannot be taken is left
+    out rather than reported as a failure.
+    """
+    failed_token = _webbridge_command_failed.set(False)
+    try:
+        resp = await _send_command(
+            session_id,
+            "snapshot",
+            _tab_params(act, max_elements=_LANDING_SNAPSHOT_ELEMENTS),
+        )
+    except Exception as e:
+        logger.debug("webbridge_landing_snapshot_error error={}", e)
+        return None
+    finally:
+        _webbridge_command_failed.reset(failed_token)
+    if not resp.get("success"):
+        return None
+    data = resp.get("data") or {}
+    elements = data.get("elements") or []
+    if not elements:
+        return None
+    url = data.get("url") or ""
+    lines = [f"Interactive elements ({len(elements)}):"]
+    lines.extend(_snapshot_line(el, url) for el in elements)
+    if len(elements) >= _LANDING_SNAPSHOT_ELEMENTS:
+        lines.append("(First elements only — take a snapshot for the full listing.)")
+    return "\n".join(lines)
 
 
 def _supports_batch(session_id: str) -> bool:
@@ -1162,10 +1242,29 @@ async def _handle_status(session_id: str) -> str:
     )
 
 
+def _landed(verb: str, data: Any, requested: str | None = None) -> str:
+    """Where a page-loading action actually ended up.
+
+    The address asked for is not always the one reached — a login redirect
+    is the ordinary case — and the model decides its next step from the page
+    it is on, not the one it named.
+    """
+    data = data if isinstance(data, dict) else {}
+    url = str(data.get("url") or requested or "")
+    line = f"{verb} {url}" if url else verb
+    if requested and data.get("redirected"):
+        line += f" (redirected from {requested})"
+    if data.get("title"):
+        line += f"\nTitle: {data['title']}"
+    if data.get("timed_out"):
+        line += "\nThe page had not finished loading when the wait ran out."
+    return line
+
+
 async def _handle_navigate(session_id: str, act: NavigateAction) -> str:
     resp = await _send_command(session_id, "navigate", _tab_params(act, url=act.url))
     if resp.get("success"):
-        return f"Navigated to {act.url}"
+        return _landed("Navigated to", resp.get("data"), act.url)
     return f"Navigate failed: {resp.get('error', 'unknown')}"
 
 
@@ -1481,21 +1580,21 @@ async def _handle_evaluate(session_id: str, act: EvaluateAction) -> str:
 async def _handle_back(session_id: str, act: BackAction) -> str:
     resp = await _send_command(session_id, "back", _tab_params(act))
     if resp.get("success"):
-        return "Navigated back."
+        return _landed("Navigated back to", resp.get("data"))
     return f"Back failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_forward(session_id: str, act: ForwardAction) -> str:
     resp = await _send_command(session_id, "forward", _tab_params(act))
     if resp.get("success"):
-        return "Navigated forward."
+        return _landed("Navigated forward to", resp.get("data"))
     return f"Forward failed: {resp.get('error', 'unknown')}"
 
 
 async def _handle_reload(session_id: str, act: ReloadAction) -> str:
     resp = await _send_command(session_id, "reload", _tab_params(act))
     if resp.get("success"):
-        return "Page reloaded."
+        return _landed("Reloaded", resp.get("data"))
     return f"Reload failed: {resp.get('error', 'unknown')}"
 
 

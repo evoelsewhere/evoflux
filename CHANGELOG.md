@@ -4,6 +4,27 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- The `webbridge` tool now ships its full usage guide to the model; it was
+  defined but never attached, so the model saw a one-line description.
+- WebBridge `navigate` no longer stalls until timeout when the page lands on
+  a different spelling of the requested URL (`http://localhost:3000` →
+  `http://localhost:3000/`) or redirects (`/` → `/login`). `back`, `forward`
+  and `reload` now wait for the page instead of returning immediately.
+  Requires evo-webbridge with the matching extension change.
+- Batched WebBridge actions stay on the session's bound tab and origin
+  instead of running on whichever tab is active.
+- In a WebBridge session, `preview start` names `webbridge` as the next step
+  instead of the unavailable `browser_use`.
+
+### Improved
+
+- WebBridge page-loading actions report the address reached, redirects and
+  title, and return a compact snapshot of the page when they end a call.
+- Coding sessions drive WebBridge clicks and hovers without the human-paced
+  pointer glide (72–360 ms per press in Work sessions).
+
 ## [2.0.7] - 2026-09-24
 
 ### Added
