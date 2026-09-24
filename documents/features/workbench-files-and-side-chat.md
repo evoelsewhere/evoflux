@@ -185,12 +185,25 @@ nothing downloads until they ask.
   `data-slide-status="done"` (the newest also `data-slide-fresh`, which
   animates it in), the next planned slide is `building` (planned title,
   animated placeholder, deck progress bar) and the rest are `pending`.
-  Motion is disabled under `prefers-reduced-motion`. The viewer keeps the
+  Each placeholder takes a shape (`data-layout`): the agent may pass one
+  optional `--placeholder` per `--title` to `deck_live.py init` (`cover`,
+  `bullets`, `split`, `cards`, `chart`, `line`, `donut`, `stats`, `table`,
+  `timeline`, `diagram`, `quote`, `closing`; `PLACEHOLDER_KINDS` in
+  `live_deck.py`). It is cosmetic: the Skill tells the agent it never
+  constrains the slide's design. A plan without placeholders, or with a
+  shape the preview does not know, falls back to a cover first, a closing
+  slide last and a varying cycle in between (`_skeleton_layout` in
+  `service.py`), whatever the titles' language. On the slide being built
+  the blocks assemble in sequence, lines draw and charts fill. Motion is
+  disabled under `prefers-reduced-motion`. The viewer keeps the
   last good render while a save re-renders, keeps zoom and scroll across
   saves of the same file, collapses the slide thumbnails and reports the
   state through `onLiveDeckChange` so Files hides its tree, and follows the
-  slide being built until the user scrolls, clicks or navigates. Both are
-  restored when the deck is finished unless the user toggled them meanwhile.
+  slide being built until the user scrolls, clicks or navigates. Scrolling
+  back to the slide being built (or, one slide at a time, going to the
+  latest finished one) follows the build again, and a refit after the panel
+  resizes keeps the followed slide centred. Both are restored when the deck
+  is finished unless the user toggled them meanwhile.
 - **Generated documents.** `web/src/hooks/useGeneratedDocumentWatcher.ts`
   subscribes a Work session to `/api/team/{session}/files/watch`, refreshes
   the file list on every Office save and opens the preview of a document the

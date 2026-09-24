@@ -918,7 +918,7 @@ def test_render_pptx_preview_supports_bullets_columns_and_connectors(
     presentation.save(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
 
-    rendered = preview.render_document_preview(source).read_text()
+    rendered = preview.render_document_preview(source).read_text(encoding="utf-8")
 
     assert 'class="bullet-marker"' in rendered
     assert "column-count:2" in rendered
@@ -1354,7 +1354,7 @@ def test_render_document_preview_rejects_oversized_generated_html(
     _docx(source)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setattr(preview, "MAX_DOCUMENT_PREVIEW_HTML_BYTES", 16)
-    monkeypatch.setattr(preview, "_render_source", lambda _source: "x" * 17)
+    monkeypatch.setattr(preview, "_render_source", lambda _source, _live=None: "x" * 17)
 
     with pytest.raises(
         preview.DocumentPreviewUnsupportedError,

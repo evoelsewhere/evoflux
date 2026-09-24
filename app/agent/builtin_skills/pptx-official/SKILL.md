@@ -67,7 +67,9 @@ Anything unresolved here becomes a placeholder in the deck.
 **Phase 4 — Build.** Build from the outline: one layout per recurring slide
 shape, palette as named constants, real content in every visible slot.
 Build live, one slide per command: first run `scripts/deck_live.py init`
-with one `--title` per outlined slide so the deck file exists immediately,
+with one `--title` per outlined slide so the deck file exists immediately
+(an optional `--placeholder` per title only picks the look of the grey
+stand-in shown until that slide exists; it never constrains the design),
 then for each slide write one slide file and run `deck_live.py add` on it
 before writing the next, and finish with `deck_live.py finish`. The user
 watches the preview fill in while you write; a single script that builds

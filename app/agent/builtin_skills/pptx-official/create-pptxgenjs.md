@@ -74,6 +74,10 @@ build, and only then design slide 2.
      --title "Q3 Product Review" --title "What shipped" --title "What's next"
    ```
 
+   An optional `--placeholder` per title only changes the look of the grey
+   stand-in before that slide exists; it has no effect on the slide itself
+   (see *Live build* in [create-python.md](create-python.md)).
+
 2. Write `build_deck.ts`, which loads every `slides/NN_*.ts` present (each
    `export default (pres: pptxgen) => { ... }` adding one slide), writes the
    deck and re-embeds the plan. PptxGenJS cannot reopen a file, so it

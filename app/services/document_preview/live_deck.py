@@ -24,6 +24,24 @@ _CUSTOM_PART = "docProps/custom.xml"
 _CUSTOM_NS = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
 _MAX_PLAN_BYTES = 64 * 1024
 _MAX_SLIDES = 500
+# Shapes a plan may pick for each slide's stand-in (``deck_live.py init
+# --placeholder``): purely the look of the loading preview until the slide
+# exists, with no bearing on the slide itself.
+PLACEHOLDER_KINDS = (
+    "cover",
+    "bullets",
+    "split",
+    "cards",
+    "chart",
+    "line",
+    "donut",
+    "stats",
+    "table",
+    "timeline",
+    "diagram",
+    "quote",
+    "closing",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,9 +51,15 @@ class DeckPlan:
     done: bool
     # The EvoFlux session whose agent is building the deck, when known.
     session: str | None = None
+    # Stand-in shape per slide (one of ``PLACEHOLDER_KINDS``, or "" when the
+    # plan does not say).
+    placeholders: tuple[str, ...] = ()
 
     def title(self, index: int) -> str:
         return self.titles[index] if 0 <= index < len(self.titles) else ""
+
+    def placeholder(self, index: int) -> str:
+        return self.placeholders[index] if 0 <= index < len(self.placeholders) else ""
 
     def live_for(self, session_id: str | None) -> bool:
         """Whether ``session_id`` (a session whose turn is running) builds it.
@@ -75,6 +99,12 @@ def read_deck_plan(source: Path) -> DeckPlan | None:
             titles = tuple(str(title) for title in data.get("titles", []))[:_MAX_SLIDES]
             state = str(data.get("state", "building"))
             session = data.get("session")
+            # An unknown kind (a newer script, a typo) falls back to the default.
+            planned = data.get("placeholders")
+            placeholders = tuple(
+                str(item) if str(item) in PLACEHOLDER_KINDS else ""
+                for item in (planned if isinstance(planned, list) else [])
+            )[:_MAX_SLIDES]
         except (ValueError, KeyError, TypeError, AttributeError):
             return None
         if not 0 < total <= _MAX_SLIDES:
@@ -84,6 +114,7 @@ def read_deck_plan(source: Path) -> DeckPlan | None:
             titles=titles,
             done=state == "done",
             session=str(session)[:64] if session else None,
+            placeholders=placeholders,
         )
     return None
 
@@ -106,6 +137,7 @@ def deck_is_live_for_any(source: Path, session_ids: Iterable[str]) -> bool:
 
 __all__ = [
     "PLAN_PROPERTY",
+    "PLACEHOLDER_KINDS",
     "DeckPlan",
     "deck_is_live",
     "deck_is_live_for_any",
