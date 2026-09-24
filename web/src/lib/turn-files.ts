@@ -5,6 +5,16 @@ import { workspaceFileKind, type WorkspaceFileKind } from '@/lib/workspace-file-
 /** Kinds the Files panel previews richly, and so worth a card in the chat. */
 const PREVIEWABLE_KINDS = new Set<WorkspaceFileKind>(['pptx', 'xlsx', 'docx', 'pdf', 'image'])
 
+// Folders agents keep scratch renders in (QA screenshots, crops); images
+// there are working material, not results, so they get no card.
+const SCRATCH_IMAGE_FOLDERS = new Set(['qa', 'crops'])
+
+function isScratchImage(file: WorkspaceFileInfo): boolean {
+  if (workspaceFileKind(file) !== 'image') return false
+  const folders = normalize(file.path).toLowerCase().split('/').slice(0, -1)
+  return folders.some((folder) => SCRATCH_IMAGE_FOLDERS.has(folder))
+}
+
 // A path-like token ending in a previewable extension, inside a command line.
 const COMMAND_FILE_RE = /[^\s"'`<>|;&()=]+\.(?:pptx|xlsx|docx|pdf|png|jpe?g|gif|webp|svg)\b/gi
 
@@ -57,7 +67,8 @@ export function turnFileMentions(blocks: readonly ContentBlock[]): string[] {
 /**
  * The workspace files behind ``mentions`` that the Files panel previews:
  * matched by relative path, by an absolute path under ``root``, or by a
- * file name that is unique in the workspace.
+ * file name that is unique in the workspace. Images in scratch folders
+ * (``qa/``, ``crops/``) are left out.
  */
 export function resolveTurnFiles(
   mentions: readonly string[],
@@ -79,6 +90,7 @@ export function resolveTurnFiles(
     }
     const file = byPath.get(relative) ?? byName.get(relative.split('/').pop() ?? '') ?? null
     if (!file || picked.has(file.path) || !PREVIEWABLE_KINDS.has(workspaceFileKind(file))) continue
+    if (isScratchImage(file)) continue
     picked.add(file.path)
     resolved.push(file)
   }

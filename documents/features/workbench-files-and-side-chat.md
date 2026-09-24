@@ -212,8 +212,12 @@ nothing downloads until they ask.
   or changed: `write`/`edit`/`patch` targets and files named on a `shell` or
   `process` command line, minus files the turn removed, matched against the
   session's file list (`web/src/lib/turn-files.ts`); prose mentions do not
-  count. Documents come before images; four show, the rest fold behind
-  "+N more". A card opens the file in Files (`requestWorkspaceFile`); its
+  count, nor do images in scratch folders (`qa/`, `crops/`). Documents come
+  before images; four show, the rest fold behind "+N more". Each card shows
+  a thumbnail once it scrolls into view: the image itself, or the first
+  slide or page of the cached document preview, re-hosted in a sandboxed
+  frame (`web/src/lib/document-thumbnail.ts`, shared with the viewer's slide
+  thumbnails). A card opens the file in Files (`requestWorkspaceFile`); its
   hover button opens it in the default app (`web/src/components/TurnFilesCard.tsx`).
 - **Annotation edits (PPTX).** In a Work session the viewer's *Select an area
   to edit* toggle (`web/src/components/document-annotator.tsx`) outlines the

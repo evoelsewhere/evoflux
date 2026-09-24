@@ -1,9 +1,15 @@
-import { fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render as renderElement, fireEvent, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ContentBlock } from '@/api/types'
 import { TurnFilesCard } from '@/components/TurnFilesCard'
 import { useUIStore } from '@/stores/useUIStore'
+
+const render = (element: ReactElement) => renderElement(
+  <QueryClientProvider client={new QueryClient()}>{element}</QueryClientProvider>,
+)
 
 const renders = ['slide-01.png', 'slide-02.png', 'crop_01.png', 'crop_02.png', 'sheet.png']
 
@@ -16,7 +22,7 @@ vi.mock('@/queries/useWorkspaceFilesQuery', () => ({
           files: [
             { path: 'GalaxyCore_Q3.pptx', name: 'GalaxyCore_Q3.pptx', size: 83_763, mtime: 1, mime: '' },
             { path: 'build_deck.ts', name: 'build_deck.ts', size: 900, mtime: 1, mime: 'text/plain' },
-            ...renders.map((name) => ({ path: `qa/${name}`, name, size: 1_000, mtime: 1, mime: 'image/png' })),
+            ...renders.map((name) => ({ path: `renders/${name}`, name, size: 1_000, mtime: 1, mime: 'image/png' })),
           ],
         }
       : undefined,
@@ -49,6 +55,10 @@ beforeEach(() => {
   useUIStore.setState({ requestWorkspaceFile })
 })
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 describe('TurnFilesCard', () => {
   it('shows a card per previewable file the turn produced and opens it in Files', () => {
     render(<TurnFilesCard blocks={blocks} sessionId="session-1" />)
@@ -67,7 +77,7 @@ describe('TurnFilesCard', () => {
       type: 'tool',
       content: '',
       toolName: 'shell',
-      toolArgs: JSON.stringify({ command: `python crop.py ${renders.map((name) => `qa/${name}`).join(' ')}` }),
+      toolArgs: JSON.stringify({ command: `python crop.py ${renders.map((name) => `renders/${name}`).join(' ')}` }),
       toolDone: true,
     }
     // The renders are touched before the deck, yet the deck leads.
@@ -85,6 +95,39 @@ describe('TurnFilesCard', () => {
     expect(previews()).toHaveLength(6)
     fireEvent.click(screen.getByRole('button', { name: 'Show less' }))
     expect(previews()).toHaveLength(4)
+  })
+
+  it('shows the first slide of a deck and the image itself as thumbnails once in view', async () => {
+    vi.stubGlobal('IntersectionObserver', class {
+      callback: IntersectionObserverCallback
+      constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback
+      }
+      observe() {
+        this.callback([{ isIntersecting: true } as IntersectionObserverEntry], this as unknown as IntersectionObserver)
+      }
+      disconnect() {}
+    })
+    const deckHtml = '<html><head><style>.slide{color:red}</style></head><body>'
+      + '<article data-preview-item><section class="slide">First slide</section></article>'
+      + '<article data-preview-item><section class="slide">Second slide</section></article></body></html>'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(deckHtml)))
+    const image: ContentBlock = {
+      id: 'png',
+      type: 'tool',
+      content: '',
+      toolName: 'write',
+      toolArgs: JSON.stringify({ path: 'renders/slide-01.png' }),
+      toolDone: true,
+    }
+
+    const { container } = render(<TurnFilesCard blocks={[...blocks, image]} sessionId="session-1" />)
+
+    await waitFor(() => expect(container.querySelector('iframe')).not.toBeNull())
+    const thumbnail = container.querySelector('iframe')?.getAttribute('srcdoc') ?? ''
+    expect(thumbnail).toContain('First slide')
+    expect(thumbnail).not.toContain('Second slide')
+    expect(container.querySelector('img[loading="lazy"]')?.getAttribute('src')).toContain('renders/slide-01.png')
   })
 
   it('renders nothing for a turn that produced no previewable file', () => {

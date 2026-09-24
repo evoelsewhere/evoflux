@@ -74,6 +74,21 @@ describe('resolveTurnFiles', () => {
     ])
   })
 
+  it('leaves out images in scratch folders, but not documents there', () => {
+    const scratch = [
+      file('qa/slide-01.png', 'image/png'),
+      file('deck/crops/crop_04.png', 'image/png'),
+      file('QA/contact_sheet.jpg', 'image/jpeg'),
+      file('qa/notes.pdf'),
+      file('qa_final.png', 'image/png'),
+    ]
+
+    expect(resolveTurnFiles(scratch.map((entry) => entry.path), scratch).map((entry) => entry.path)).toEqual([
+      'qa/notes.pdf',
+      'qa_final.png',
+    ])
+  })
+
   it('lists a file once even when it was touched several ways', () => {
     expect(resolveTurnFiles(['review.pptx', './review.pptx'], files).map((entry) => entry.path)).toEqual([
       'review.pptx',

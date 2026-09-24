@@ -37,6 +37,7 @@ import { DocumentPreviewRuntimeBanner } from '@/components/document-preview-runt
 import { DocumentPreviewSkeleton } from '@/components/document-preview-skeleton'
 import { DeckAnnotator } from '@/components/document-annotator'
 import { DocumentVersionControls } from '@/components/document-version-controls'
+import { previewItems, slideThumbnailDocument } from '@/lib/document-thumbnail'
 import { MAX_DOCX_SOURCE_BYTES, renderDocxPreviewHtml } from '@/lib/docx-preview-render'
 import { cn } from '@/lib/utils'
 import {
@@ -112,36 +113,10 @@ function clampZoom(value: number): number {
   return Math.min(300, Math.max(25, Math.round(value)))
 }
 
-function previewItems(document: Document): HTMLElement[] {
-  const items = Array.from(document.querySelectorAll<HTMLElement>('[data-preview-item]'))
-  return items.length > 0 ? items : document.body ? [document.body] : []
-}
-
 function slideNotes(element: HTMLElement): string {
   const inlineNotes = element.dataset.previewNotes?.trim()
   if (inlineNotes) return inlineNotes
   return element.querySelector<HTMLElement>('[data-preview-notes]')?.textContent?.trim() ?? ''
-}
-
-function slideThumbnailDocument(document: Document, element: HTMLElement): string {
-  const clone = element.cloneNode(true) as HTMLElement
-  clone.removeAttribute('hidden')
-  clone.querySelectorAll('[data-preview-notes]').forEach((notes) => notes.remove())
-  const styles = Array.from(document.querySelectorAll('style'))
-    .filter((style) => style.dataset.evofluxViewer !== 'true')
-    .map((style) => style.outerHTML)
-    .join('')
-  return `<!doctype html><html><head>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:">
-    ${styles}
-    <style>
-      html,body{width:100%;height:100%;margin:0!important;padding:0!important;overflow:hidden!important;background:#fff!important}
-      body{display:block!important;min-width:0!important;min-height:0!important}
-      [data-preview-item]{position:absolute!important;inset:0!important;display:block!important;width:100%!important;max-width:none!important;height:100%!important;margin:0!important;padding:0!important}
-      [data-preview-item]>.slide{width:100%!important;height:100%!important;box-shadow:none!important}
-      .slide-number,[data-preview-notes]:not([data-preview-item]){display:none!important}
-    </style>
-  </head><body>${clone.outerHTML}</body></html>`
 }
 
 function SlideThumbnail({
