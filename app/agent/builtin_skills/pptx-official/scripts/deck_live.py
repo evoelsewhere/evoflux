@@ -144,6 +144,11 @@ def init(deck: Path, titles: list[str]) -> dict:
     buffer = io.BytesIO()
     presentation.save(buffer)
     plan = {"v": 1, "total": len(titles), "titles": titles, "state": "building"}
+    # EvoFlux names the session running this command; only that session's
+    # viewer shows the build live, and only while its turn runs.
+    session = os.environ.get("EVOFLUX_SESSION", "").strip()
+    if session:
+        plan["session"] = session
     deck.parent.mkdir(parents=True, exist_ok=True)
     _write(deck, buffer.getvalue(), plan)
     return plan

@@ -51,7 +51,7 @@ from app.api.schemas.team import (
 from app.core.db import async_session_factory
 from app.core.paths import session_workspace_dir, uploads_dir, workspace_dir
 from app.models.chat import ChatSession
-from app.services import team_manager
+from app.services import memory_stream_store as stream_store, team_manager
 from app.services.document_preview import (
     DOCUMENT_PREVIEW_CSP,
     DocumentPreviewError,
@@ -267,8 +267,14 @@ async def get_workspace_document_preview(
         raise HTTPException(status_code=400, detail="Invalid session id.")
 
     resolved = _safe_resolve(await _session_workspace(session_id), file_path)
+    # A deck renders live only for the session building it, while its turn runs.
+    live_session = (
+        session_id if session_id in stream_store.running_session_ids() else None
+    )
     try:
-        preview = await asyncio.to_thread(render_document_preview, resolved)
+        preview = await asyncio.to_thread(
+            render_document_preview, resolved, live_session=live_session
+        )
     except DocumentPreviewUnsupportedError as exc:
         raise HTTPException(status_code=415, detail=str(exc))
     except DocumentPreviewError as exc:

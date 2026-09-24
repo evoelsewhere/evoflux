@@ -20,6 +20,7 @@ import {
   Presentation,
   RefreshCw,
   Search,
+  SquareDashedMousePointer,
   X,
   ZoomIn,
   ZoomOut,
@@ -34,6 +35,8 @@ import {
 import type { WorkspaceFileInfo } from '@/api/types'
 import { DocumentPreviewRuntimeBanner } from '@/components/document-preview-runtime-banner'
 import { DocumentPreviewSkeleton } from '@/components/document-preview-skeleton'
+import { DeckAnnotator } from '@/components/document-annotator'
+import { DocumentVersionControls } from '@/components/document-version-controls'
 import { MAX_DOCX_SOURCE_BYTES, renderDocxPreviewHtml } from '@/lib/docx-preview-render'
 import { cn } from '@/lib/utils'
 import {
@@ -92,6 +95,8 @@ export interface WorkspaceDocumentPreviewProps {
   rawUrl?: string
   /** Called when a deck starts or stops being built live by an agent. */
   onLiveDeckChange?: (live: boolean) => void
+  /** Whether the session's agent is working (annotations shimmer meanwhile). */
+  agentWorking?: boolean
 }
 
 const FORMAT_META: Record<WorkspaceDocumentKind, { accent: string; label: string }> = {
@@ -310,6 +315,7 @@ export function WorkspaceDocumentPreview({
   sourceUrl: providedSourceUrl,
   rawUrl: providedRawUrl,
   onLiveDeckChange,
+  agentWorking = false,
 }: WorkspaceDocumentPreviewProps) {
   const kind = workspaceFileKind(file) as WorkspaceDocumentKind
   const meta = FORMAT_META[kind]
@@ -336,7 +342,11 @@ export function WorkspaceDocumentPreview({
     return ''
   }, [exactRenderer, file.path, kind, providedRawUrl, providedSourceUrl, sessionId, workspace])
   const documentKey = `${sourceUrl}:${file.size}:${file.mtime}`
-  const requestKey = `${documentKey}:${exactRenderer}`
+  // A deck renders live only while this session's turn runs, so a turn
+  // starting or ending re-renders it even when the file did not change
+  // (an interrupted build falls back to its finished slides).
+  const turnKey = kind === 'pptx' ? String(agentWorking) : ''
+  const requestKey = `${documentKey}:${exactRenderer}:${turnKey}`
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const viewerRef = useRef<HTMLElement>(null)
@@ -361,13 +371,9 @@ export function WorkspaceDocumentPreview({
   const navigatorOpenRef = useRef(false)
   const [result, setResult] = useState<{ key: string; html?: string; error?: string } | null>(null)
   const [retryKey, setRetryKey] = useState(0)
-  const [navigatorOpen, setNavigatorOpen] = useState(() => (
-    kind === 'pptx' && (
-      typeof window === 'undefined'
-      || !window.matchMedia
-      || !window.matchMedia('(max-width: 640px)').matches
-    )
-  ))
+  // Slide thumbnails start hidden: the deck scrolls like a document and the
+  // viewer gets the full width; the toolbar button shows them.
+  const [navigatorOpen, setNavigatorOpen] = useState(false)
   const [entries, setEntries] = useState<NavigatorEntry[]>([])
   const [activeIndex, setActiveIndex] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -383,6 +389,7 @@ export function WorkspaceDocumentPreview({
   const [slidePreviewMeta, setSlidePreviewMeta] = useState<SlidePreviewMeta[]>([])
   const [slideAspectRatio, setSlideAspectRatio] = useState('16 / 9')
   const [lastGood, setLastGood] = useState<{ source: string; renderer: string; html: string } | null>(null)
+  const [annotating, setAnnotating] = useState(false)
   const freshResult = result?.key === `${requestKey}:${retryKey}` ? result : null
   // Keep showing this file's last good pages while a newer version renders —
   // an agent saving a deck slide by slide, or the exact renderer landing —
@@ -812,9 +819,11 @@ export function WorkspaceDocumentPreview({
         html[data-evoflux-continuous] { height: 100% !important; overflow: auto !important; }
         html[data-evoflux-continuous] body {
           height: auto !important; min-height: 100%; overflow: visible !important;
-          flex-direction: column; justify-content: flex-start !important; gap: 20px;
+          flex-direction: column; justify-content: flex-start !important;
         }
-        html[data-evoflux-continuous] [data-preview-item] { flex: none; }
+        html[data-evoflux-continuous] [data-preview-item] { flex: none; box-shadow: 0 1px 3px #0000002e, 0 6px 18px #0000001f; }
+        /* Pages may sit inside a wrapper (exact renders), so space siblings. */
+        html[data-evoflux-continuous] [data-preview-item] ~ [data-preview-item] { margin-top: 28px !important; }
       ` : ''}
     `
     document.head?.append(style)
@@ -1006,6 +1015,16 @@ export function WorkspaceDocumentPreview({
     && navigatorOpen
     && (!isPresentation || presentationView === 'normal')
   const toolbarButtonClass = 'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-30'
+  // Versions and annotations belong to a session workspace file; a Coding
+  // repository has source control for that instead.
+  const sessionDocument = Boolean(sessionId) && !workspace && !providedSourceUrl && officeKind
+  const deckBeingBuilt = Boolean(currentResult?.html?.includes('data-deck-live="true"'))
+  const canAnnotate = sessionDocument
+    && isPresentation
+    && presentationView === 'normal'
+    && !deckBeingBuilt
+    && Boolean(currentResult?.html)
+  const annotateActive = annotating && canAnnotate
 
   const enterReadingView = () => {
     readingReturnViewRef.current = presentationView === 'sorter' ? 'sorter' : 'normal'
@@ -1114,6 +1133,31 @@ export function WorkspaceDocumentPreview({
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
+          {sessionDocument && sessionId && (
+            <div className="flex items-center gap-0.5 border-r border-(--color-border) pr-1.5">
+              {isPresentation && (
+                <button
+                  type="button"
+                  onClick={() => setAnnotating((value) => !value)}
+                  disabled={!canAnnotate}
+                  aria-label={annotateActive ? 'Stop selecting areas to edit' : 'Select an area to edit'}
+                  aria-pressed={annotateActive}
+                  title={deckBeingBuilt
+                    ? 'Available when the deck is finished'
+                    : 'Select a shape or area and tell the agent what to change'}
+                  className={cn(toolbarButtonClass, annotateActive && 'bg-(--color-accent)/15 text-(--color-accent)')}
+                >
+                  <SquareDashedMousePointer size={15} aria-hidden="true" />
+                </button>
+              )}
+              <DocumentVersionControls
+                sessionId={sessionId}
+                path={file.path}
+                revision={file.mtime}
+                buttonClassName={toolbarButtonClass}
+              />
+            </div>
+          )}
           {isPresentation && <div className="flex items-center gap-0.5 sm:pr-1.5" role="toolbar" aria-label="PowerPoint View controls">
           <button
             type="button"
@@ -1307,6 +1351,17 @@ export function WorkspaceDocumentPreview({
               )}
               data-testid="document-preview-frame"
             />
+            {canAnnotate && sessionId && (
+              <DeckAnnotator
+                iframeRef={iframeRef}
+                frameKey={currentResult.html}
+                sessionId={sessionId}
+                filePath={file.path}
+                active={annotateActive}
+                agentWorking={agentWorking}
+                onExit={() => setAnnotating(false)}
+              />
+            )}
             {isPresentation && presentationView === 'sorter' && (
               <section
                 className="absolute inset-0 overflow-y-auto bg-[#e5e5e5] p-4 sm:p-6"

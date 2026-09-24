@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { ArrowUp, ChevronDown, File, Folder, ListTodo, Loader2, MessageCircle, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, File, Folder, ListTodo, Loader2, MessageCircle, MessageSquareText, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
@@ -8,6 +8,8 @@ import { SessionPillsRow, type SessionPillsRowProps } from './SessionPillsRow'
 import { ModeSelector } from './ModeSelector'
 import { TodosList } from './TodosList'
 import { cn } from '@/lib/utils'
+import { composeAnnotatedMessage, describeAnnotation } from '@/lib/document-annotations'
+import { useDocumentAnnotationsStore, usePendingAnnotations } from '@/stores/useDocumentAnnotationsStore'
 import type { AgentCapabilities, TodoItem } from '@/api/types'
 import { useIsMobile } from '@/hooks/use-mobile'
 
@@ -278,6 +280,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 }, ref) {
   const [value, setValue] = useState('')
   const [quoteContext, setQuoteContext] = useState<string | null>(null)
+  // Parts of a document selected in the viewer, sent with the next message.
+  const annotations = usePendingAnnotations(sessionId)
+  const [annotationsOpen, setAnnotationsOpen] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [slashMenuIndex, setSlashMenuIndex] = useState(0)
   const [snippetMenuIndex, setSnippetMenuIndex] = useState(0)
@@ -545,8 +550,9 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   const submit = useCallback(async (delivery: 'steer' | 'queue' = primaryLane) => {
     const trimmed = value.trim()
     const context = quoteContext?.trim() ?? ''
+    const submittedAnnotations = shellMode ? [] : annotations
     if (
-      (!trimmed && !context && files.length === 0)
+      (!trimmed && !context && files.length === 0 && submittedAnnotations.length === 0)
       || disabled
       || submittingRef.current
       || slashFilter !== null
@@ -561,7 +567,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     const attachmentPrompt = files.length > 0 && !trimmed && !quotedContext
       ? `Please inspect the attached file${files.length === 1 ? '' : 's'}.`
       : ''
-    const message = [quotedContext, trimmed, attachmentPrompt].filter(Boolean).join('\n\n')
+    const message = composeAnnotatedMessage(
+      [quotedContext, trimmed, attachmentPrompt].filter(Boolean).join('\n\n'),
+      submittedAnnotations,
+    )
     const submitted = shellMode ? `!${trimmed}` : message
     const submittedFiles = files
     const submittedShellMode = shellMode
@@ -579,11 +588,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setSkillRange(null)
     setHistoryIndex(-1)
     draftsRef.current.delete(sessionId ?? '')
+    if (sessionId && submittedAnnotations.length > 0) {
+      useDocumentAnnotationsStore.getState().clear(sessionId)
+      setAnnotationsOpen(false)
+    }
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
 
     const restoreDraft = () => {
       setValue((current) => current || value)
       setQuoteContext((current) => current ?? quoteContext)
+      if (sessionId) useDocumentAnnotationsStore.getState().restore(sessionId, submittedAnnotations)
       setShellMode((current) => current || submittedShellMode)
       setFiles((current) => current.length > 0 ? current : submittedFiles)
       requestAnimationFrame(resize)
@@ -618,6 +632,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     primaryLane,
     value,
     quoteContext,
+    annotations,
     disabled,
     onSubmit,
     files,
@@ -626,6 +641,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     resize,
     sessionId,
   ])
+
+  // The viewer's send button submits the batch through this composer.
+  const submitRequest = useDocumentAnnotationsStore((state) => state.submitRequest)
+  const handledSubmitRef = useRef(submitRequest?.nonce ?? 0)
+  useEffect(() => {
+    if (!submitRequest || submitRequest.sessionId !== sessionId) return
+    if (submitRequest.nonce === handledSubmitRef.current) return
+    handledSubmitRef.current = submitRequest.nonce
+    void submit(primaryLane)
+  }, [primaryLane, sessionId, submit, submitRequest])
 
   const addFile = useCallback((file: File) => {
     setFiles((prev) => [...prev, file])
@@ -1213,7 +1238,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     resize()
   }
 
-  const hasText = value.trim().length > 0 || Boolean(quoteContext)
+  const hasText = value.trim().length > 0 || Boolean(quoteContext) || annotations.length > 0
   const hasFiles = files.length > 0
   const canSend = (hasText || hasFiles) && !disabled && !submitting
   const canStop = isStreaming && !disabled && onStop != null
@@ -1857,6 +1882,62 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       >
                         <X size={13} aria-hidden="true" />
                       </button>
+                    </div>
+                  )}
+                  {annotations.length > 0 && sessionId && (
+                    <div className="mb-2 rounded-lg border border-(--color-accent)/25 bg-(--color-accent)/5 px-2.5 py-1.5">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <MessageSquareText size={13} className="shrink-0 text-(--color-accent)" aria-hidden="true" />
+                        <button
+                          type="button"
+                          onClick={() => setAnnotationsOpen((open) => !open)}
+                          aria-expanded={annotationsOpen}
+                          className="flex min-w-0 flex-1 items-center gap-1 text-left text-[11px] font-medium text-(--color-text-2) outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent)/30"
+                        >
+                          Annotations: {annotations.length}
+                          <ChevronDown
+                            size={12}
+                            className={cn('shrink-0 transition-transform', annotationsOpen && 'rotate-180')}
+                            aria-hidden="true"
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => useDocumentAnnotationsStore.getState().clear(sessionId)}
+                          aria-label="Remove all annotations"
+                          title="Remove all annotations"
+                          className="flex size-6 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) outline-none transition-colors hover:bg-(--color-surface) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--color-accent)/30"
+                        >
+                          <X size={13} aria-hidden="true" />
+                        </button>
+                      </div>
+                      {annotationsOpen && (
+                        <ol className="mt-1 space-y-1">
+                          {annotations.map((annotation, index) => (
+                            <li key={annotation.id} className="flex min-w-0 items-start gap-2 text-xs">
+                              <span className="mt-px flex size-4 shrink-0 items-center justify-center rounded-full bg-(--color-accent) text-[10px] font-semibold text-white">
+                                {index + 1}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[11px] text-(--color-text-muted)">
+                                  {annotation.file} · {describeAnnotation(annotation)}
+                                </span>
+                                <span className="block break-words text-(--color-text-2) [overflow-wrap:anywhere]">
+                                  {annotation.instruction || 'Quoted — no instruction'}
+                                </span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => useDocumentAnnotationsStore.getState().remove(sessionId, annotation.id)}
+                                aria-label={`Remove annotation ${index + 1}`}
+                                className="flex size-5 shrink-0 items-center justify-center rounded text-(--color-text-muted) hover:bg-(--color-surface) hover:text-(--color-text)"
+                              >
+                                <X size={11} aria-hidden="true" />
+                              </button>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
                     </div>
                   )}
                   {messageSlot}

@@ -1082,7 +1082,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'When an agent creates a Word, Excel or PowerPoint file in a Work session, Files opens its preview while the turn runs (unless you are using another workbench tool) and redraws it on every save. A deck built with the PowerPoint Skill fills in slide by slide: finished slides appear as they land, the slide being built shows its planned title and an animated placeholder, and later slides are listed as Up next. While it is being built the slide thumbnails and the file tree step aside and the viewer follows the newest slide; scroll, click or navigate to take over. Both come back when the deck is finished, and the exact renderer takes over from there.',
+        text: 'When an agent creates a Word, Excel or PowerPoint file in a Work session, Files opens its preview while the turn runs (unless you are using another workbench tool) and redraws it on every save. A deck built with the PowerPoint Skill fills in slide by slide in the session building it, while its agent works (other sessions and later opens show the slides that exist): finished slides appear as they land, the slide being built shows its planned title and an animated placeholder, and later slides are listed as Up next. While it is being built the slide thumbnails and the file tree step aside and the viewer follows the newest slide; scroll, click or navigate to take over. Both come back when the deck is finished, and the exact renderer takes over from there.',
+      },
+      {
+        type: 'p',
+        text: 'To change one part of a deck, click Select an area to edit in the viewer, then click a shape or drag across an area of a slide. Type what to change and press Enter to send it, or use Add to batch to collect several areas and send them together from the composer (shown as Annotations: N; leave the text empty to only point at an area). The agent edits just those parts, and the areas shimmer while it works. Undo, Redo and Version history in the viewer header step through every saved version of a Word, Excel or PowerPoint file in the session, or restore an earlier one, without touching the chat or other files.',
       },
       {
         type: 'p',

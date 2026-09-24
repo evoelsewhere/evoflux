@@ -78,6 +78,7 @@ import { formatBytes } from '@/utils/format'
 import { errorMessage } from '@/utils/errors'
 import { MarkdownBlock } from '@/utils/markdown'
 import { SidePanel } from './shell/SidePanel'
+import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
 import { getWorkspacePanelLayout } from '@/lib/workspace-panel-layout'
 import { ImageLightbox } from './ImageLightbox'
@@ -563,6 +564,7 @@ function PreviewArea({
   const kind = workspaceFileKind(file)
   const extension = workspaceFileExtension(file.name)
   const isHtml = extension === 'html' || extension === 'htm'
+  const agentWorking = useTeamStore((state) => state.sessionId === sessionId && state.isTeamWorking)
   const [htmlView, setHtmlView] = useState<'preview' | 'source'>('preview')
   return (
     <div className="flex h-full flex-col">
@@ -683,6 +685,7 @@ function PreviewArea({
               sessionId={sessionId}
               file={file}
               onLiveDeckChange={onLiveDeckChange}
+              agentWorking={agentWorking}
             />
           </Suspense>
         ) : (

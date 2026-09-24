@@ -160,7 +160,8 @@ nothing downloads until they ask.
   to the built-in renderers and the banner says so; the banner also offers
   an update when a newer runtime is pinned, and a hidden offer is remembered
   per version.
-- **Slides.** With the slide thumbnails collapsed, a deck lays out every
+- **Slides.** Slide thumbnails start hidden; the toolbar shows them. With the
+  thumbnails collapsed, a deck lays out every
   slide vertically and scrolls like a document; the slide counter follows
   the scroll and previous/next scroll to a slide. The workbench dock can be
   widened to 75% of the window (up to 1600 px) while the chat column keeps
@@ -169,9 +170,17 @@ nothing downloads until they ask.
   time with `scripts/deck_live.py`: `init` creates the file with its plan
   (slide count and titles) in the `evoflux.deck` custom document property,
   each slide is appended and saved atomically, `mark` re-embeds the plan
-  after PptxGenJS rewrites the file, and `finish` marks it done.
-  `app/services/document_preview/live_deck.py` reads the plan. While it is
-  not done the deck always renders natively (never through LibreOffice),
+  after PptxGenJS rewrites the file, and `finish` marks it done. The plan
+  also names the building session: the agent's `shell` exports
+  `EVOFLUX_SESSION` and `init` records it.
+  `app/services/document_preview/live_deck.py` reads the plan. A deck renders
+  live only for the session that builds it and only while that session's
+  turn runs (`GET …/document-preview` passes the session when it is running;
+  the live render has its own cache key). Another session opening the same
+  file, the agent's own `document_preview` tool, and an interrupted build see
+  the slides that exist. The viewer re-requests a deck when its session's
+  turn starts or ends. While live, the deck always renders natively (never
+  through LibreOffice),
   inside `<main data-deck-live="true">`: finished slides carry
   `data-slide-status="done"` (the newest also `data-slide-fresh`, which
   animates it in), the next planned slide is `building` (planned title,
@@ -187,6 +196,34 @@ nothing downloads until they ask.
   the file list on every Office save and opens the preview of a document the
   agent just created, once per file, while a turn runs — unless another
   workbench tool is active or `oa.documents.autoOpenGenerated` is `"false"`.
+- **Annotation edits (PPTX).** In a Work session the viewer's *Select an area
+  to edit* toggle (`web/src/components/document-annotator.tsx`) outlines the
+  slide shape under the pointer (native render: `data-shape-id`, slide layer
+  only), selects it on click, and selects a free area on drag — the only mode
+  on exact LibreOffice pages. A popover takes the instruction: send now, or
+  add to the composer's batch (`stores/useDocumentAnnotationsStore.ts`, up to
+  20; batched areas stay pinned with their number). The composer folds the
+  batch into the next message as a `$office-annotation-edit` mention plus an
+  `<evoflux-annotations>` JSON block (`lib/document-annotations.ts`: file,
+  1-based slide, shape ids/names, area in percent, visible text,
+  instruction); the chat shows it as an *Annotations: N* chip. Sent areas
+  shimmer until the turn ends. The `office-annotation-edit` Skill resolves
+  targets with `scripts/targets.py`, edits only them (through the deck's
+  generator when one exists), saves once per batch and verifies the
+  annotated slides. Unavailable while a deck is still being built live.
+- **Document versions.** `app/services/document_versions.py` keeps a linear
+  history per session and Office file under
+  `EVOFLUX_STATE_DIR/document-versions/<session>/`: a manifest and
+  content-addressed blobs, at most 50 versions. Versions are recorded when
+  the viewer loads the history (`GET /api/team/{session}/document-versions?path=`),
+  at the checkpoint taken before an annotation is queued (its instruction
+  labels the next version), and by a workspace-watcher callback registered on
+  first use. Live decks and files read mid-write are skipped. `POST` with
+  `undo`, `redo` or `restore` writes that version back atomically; a new save
+  after undo drops the redo branch, and unrecorded changes on disk are kept
+  as a version before any restore. The viewer header shows undo, redo and a
+  version list (`document-version-controls.tsx`). Coding repositories rely on
+  source control instead.
 - **Mislabelled files.** Office preflight names what a rejected file really
   is — a ZIP archive with an Office extension, a package saved under the
   wrong extension, or a legacy/password-protected file — instead of calling

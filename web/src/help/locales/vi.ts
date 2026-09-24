@@ -1046,7 +1046,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Khi agent tạo file Word, Excel hay PowerPoint trong session Work, Files tự mở preview trong lúc turn đang chạy (trừ khi bạn đang dùng tool workbench khác) và vẽ lại sau mỗi lần lưu. Deck dựng bằng Skill PowerPoint hiện dần từng slide: slide xong hiện ngay khi được lưu, slide đang dựng hiện tiêu đề dự kiến kèm placeholder động, các slide sau được liệt kê là Up next. Trong lúc dựng, cột thumbnail và cây file tạm ẩn và viewer đi theo slide mới nhất; cuộn, bấm hoặc chuyển slide để tự điều khiển. Cả hai hiện lại khi deck xong, và renderer chính xác tiếp quản từ đó.',
+        text: 'Khi agent tạo file Word, Excel hay PowerPoint trong session Work, Files tự mở preview trong lúc turn đang chạy (trừ khi bạn đang dùng tool workbench khác) và vẽ lại sau mỗi lần lưu. Deck dựng bằng Skill PowerPoint hiện dần từng slide trong session đang dựng nó, khi agent còn đang chạy (session khác hoặc lần mở sau chỉ thấy các slide đã có): slide xong hiện ngay khi được lưu, slide đang dựng hiện tiêu đề dự kiến kèm placeholder động, các slide sau được liệt kê là Up next. Trong lúc dựng, cột thumbnail và cây file tạm ẩn và viewer đi theo slide mới nhất; cuộn, bấm hoặc chuyển slide để tự điều khiển. Cả hai hiện lại khi deck xong, và renderer chính xác tiếp quản từ đó.',
+      },
+      {
+        type: 'p',
+        text: 'Muốn sửa một phần của deck, bấm Select an area to edit trong viewer rồi bấm vào một shape hoặc kéo chọn một vùng trên slide. Gõ điều cần sửa và nhấn Enter để gửi, hoặc dùng Add to batch để gom nhiều vùng và gửi cùng lúc từ ô chat (hiện là Annotations: N; để trống lời dặn nếu chỉ muốn chỉ vào vùng đó). Agent chỉ sửa đúng các phần đó, vùng đã chọn sẽ nhấp nháy trong lúc agent làm. Undo, Redo và Version history trên header viewer cho phép đi qua từng phiên bản đã lưu của file Word, Excel, PowerPoint trong session hoặc khôi phục bản cũ, không ảnh hưởng tới chat hay file khác.',
       },
       {
         type: 'p',
