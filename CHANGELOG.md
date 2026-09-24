@@ -4,6 +4,8 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-09-24
+
 ### Changed
 
 - Agent Skills now follow Anthropic's Agent Skills architecture
@@ -45,6 +47,8 @@ All notable changes to EvoFlux are documented in this file.
   tables. WebBridge Teach drafts no longer carry a generated `workflow_yaml`,
   and `ask_user` questions no longer have a `strict` mode — it existed only
   for workflow gates.
+- The legacy ASDD and code-graph product surfaces are removed from the
+  application and repository runtime.
 
 ### Added
 
@@ -537,6 +541,7 @@ EvoFlux 1.0.0 is the first stable release.
 For the curated release overview, see
 [`documents/releases/v1.0.0.md`](documents/releases/v1.0.0.md).
 
+[2.0.6]: https://github.com/evoelsewhere/evoflux/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/evoelsewhere/evoflux/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/evoelsewhere/evoflux/compare/v2.0.3...v2.0.4
 [2.0.2]: https://github.com/evoelsewhere/evoflux/compare/v2.0.1...v2.0.2
