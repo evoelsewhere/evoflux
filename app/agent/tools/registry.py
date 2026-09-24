@@ -124,6 +124,51 @@ def _resolve_refs(schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _compact_schema(node: Any) -> Any:
+    """Drop what a model never reads from a Pydantic schema.
+
+    Every tool definition is sent on every turn, so the generated noise is
+    paid for again and again — for the largest tools it was a third of the
+    schema:
+
+    * ``title`` on each nested model and property (the property's own name
+      already says it). Keys of a ``properties`` map are names, not schema
+      keywords, so a parameter called ``title`` survives.
+    * ``discriminator`` — OpenAPI, not JSON Schema, and after
+      :func:`_resolve_refs` its mapping points at ``$defs`` that no longer
+      exist. The ``const`` in each ``oneOf`` branch already discriminates.
+    * The ``null`` branch of an optional field (``anyOf: [X, {type: null}]``
+      with ``default: null``): an omitted argument is the absent value. The
+      Pydantic model still validates an explicit ``null``.
+    """
+    if isinstance(node, list):
+        return [_compact_schema(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    out: dict[str, Any] = {}
+    for key, value in node.items():
+        if key in ("title", "discriminator"):
+            continue
+        if key in ("properties", "$defs", "definitions") and isinstance(value, dict):
+            out[key] = {name: _compact_schema(sub) for name, sub in value.items()}
+        elif key in ("default", "const", "enum", "examples"):
+            # Values, not schemas: a default dict may well have a "title" key.
+            out[key] = value
+        else:
+            out[key] = _compact_schema(value)
+    branches = out.get("anyOf")
+    if isinstance(branches, list) and {"type": "null"} in branches:
+        rest = [branch for branch in branches if branch != {"type": "null"}]
+        if len(rest) == 1 and isinstance(rest[0], dict):
+            del out["anyOf"]
+            merged = {**rest[0], **out}
+            if merged.get("default", ...) is None:
+                del merged["default"]
+            return merged
+        out["anyOf"] = rest
+    return out
+
+
 class Tool:
     """A callable function decorated with LLM function-calling metadata.
 
@@ -359,14 +404,10 @@ class Tool:
         # Resolve $ref pointers — Pydantic emits $defs + $ref for nested
         # models (e.g. list[SomeModel]).  Gemini and other providers reject
         # $ref, so we inline every reference and drop the $defs block.
-        schema = _resolve_refs(schema)
+        schema = _compact_schema(_resolve_refs(schema))
 
         properties: dict[str, Any] = schema.get("properties", {})
         required: list[str] = schema.get("required", [])
-
-        # Strip Pydantic-generated noise (title on each property)
-        for prop in properties.values():
-            prop.pop("title", None)
 
         definition: dict[str, Any] = {
             "type": "function",

@@ -4,6 +4,15 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Tool schemas sent to the model are smaller: the registry no longer emits
+  Pydantic's nested `title`s, OpenAPI `discriminator` mappings that pointed at
+  removed `$defs`, or the `null` branch of optional fields. With a shorter
+  guide and one tab-targeting explanation instead of one per action, the
+  `webbridge` definition shrank from about 67k to 35k characters and
+  `browser_use` from 32k to 23k.
+
 ### Added
 
 - WebBridge debugging actions: `debug_summary`, `console`, `network` and

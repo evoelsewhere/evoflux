@@ -514,3 +514,54 @@ async def test_arun_with_optional_field_default():
     # Override optional param
     result = await greet.arun(name="Bob", greeting="Hi")
     assert result == "Hi, Bob!"
+
+
+# ---------------------------------------------------------------------------
+# Schema compaction
+# ---------------------------------------------------------------------------
+
+
+async def test_definition_drops_pydantic_noise_but_keeps_meaning():
+    """Nested titles, dangling discriminators and null branches are gone;
+    parameter names, defaults and validation are not."""
+    from pydantic import BaseModel
+
+    class Open(BaseModel):
+        kind: Literal["open"]
+        title: str = Field(description="A parameter that is called title.")
+        tab: int | None = None
+
+    class Close(BaseModel):
+        kind: Literal["close"]
+        options: dict = Field(default_factory=lambda: {"title": "kept"})
+
+    @tool
+    def act(
+        steps: Annotated[
+            list[Annotated[Open | Close, Field(discriminator="kind")]],
+            Field(description="Steps."),
+        ],
+        label: Annotated[str | None, Field(description="Optional label.")] = None,
+    ) -> str:
+        """Act."""
+        return ",".join(step.kind for step in steps) + f":{label}"
+
+    params = act.definition["function"]["parameters"]
+    items = params["properties"]["steps"]["items"]
+    assert "discriminator" not in items
+    open_schema, close_schema = items["oneOf"]
+    assert "title" not in open_schema
+    assert open_schema["properties"]["title"] == {
+        "description": "A parameter that is called title.",
+        "type": "string",
+    }
+    assert open_schema["properties"]["tab"] == {"type": "integer"}
+    assert close_schema["properties"]["options"]["type"] == "object"
+    assert params["properties"]["label"] == {
+        "type": "string",
+        "description": "Optional label.",
+    }
+    # An explicit null still validates against the Pydantic model.
+    assert await act.arun(
+        steps=[{"kind": "open", "title": "t", "tab": None}], label=None
+    ) == ("open:None")
