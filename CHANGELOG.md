@@ -4,6 +4,24 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+## [2.0.7] - 2026-09-24
+
+### Added
+
+- Added turn file cards with thumbnails and direct navigation into the Files
+  workbench for generated artifacts.
+- Let agents choose which generated images should appear as turn cards, while
+  skipping transient scratch renders.
+
+### Improved
+
+- Improved live PowerPoint deck previews with per-slide placeholders, compact
+  page controls, and stable toolbar layout as rendering progresses.
+- Let deck QA repair a finished deck without restarting the original live
+  preview or reprocessing unrelated slides.
+- Scoped slide edits to their target slides and refined the PPTX/Office Skills
+  that drive live deck generation and annotation workflows.
+
 ## [2.0.6] - 2026-09-24
 
 ### Changed
@@ -541,6 +559,7 @@ EvoFlux 1.0.0 is the first stable release.
 For the curated release overview, see
 [`documents/releases/v1.0.0.md`](documents/releases/v1.0.0.md).
 
+[2.0.7]: https://github.com/evoelsewhere/evoflux/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/evoelsewhere/evoflux/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/evoelsewhere/evoflux/compare/v2.0.4...v2.0.5
 [2.0.4]: https://github.com/evoelsewhere/evoflux/compare/v2.0.3...v2.0.4
