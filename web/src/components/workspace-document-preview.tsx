@@ -1164,10 +1164,16 @@ export function WorkspaceDocumentPreview({
           )}
         </div>
 
-        <div className="hidden shrink-0 items-center gap-0.5 @[32rem]/preview-toolbar:flex">
-          <button type="button" onClick={() => goToItem(activeIndex - 1)} disabled={activeIndex <= 0} aria-label={`Previous ${itemName.toLowerCase()}`} className={toolbarButtonClass}><ChevronLeft size={15} /></button>
-          <span className="min-w-20 text-center text-[10px] tabular-nums text-(--color-text-muted)" role="status">{status}</span>
-          <button type="button" onClick={() => goToItem(activeIndex + 1)} disabled={activeIndex >= itemCount - 1} aria-label={`Next ${itemName.toLowerCase()}`} className={toolbarButtonClass}><ChevronRight size={15} /></button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button type="button" onClick={() => goToItem(activeIndex - 1)} disabled={activeIndex <= 0} aria-label={`Previous ${itemName.toLowerCase()}`} className={cn(toolbarButtonClass, 'hidden @[32rem]/preview-toolbar:flex')}><ChevronLeft size={15} /></button>
+          {/* A narrow toolbar keeps a compact "1/4" counter. */}
+          <span className="text-center text-[10px] tabular-nums text-(--color-text-muted) @[32rem]/preview-toolbar:min-w-20" role="status" title={status}>
+            {itemCount > 0 && (
+              <span className="px-1 @[32rem]/preview-toolbar:hidden">{activeIndex + 1}/{itemCount}</span>
+            )}
+            <span className="hidden @[32rem]/preview-toolbar:inline">{status}</span>
+          </span>
+          <button type="button" onClick={() => goToItem(activeIndex + 1)} disabled={activeIndex >= itemCount - 1} aria-label={`Next ${itemName.toLowerCase()}`} className={cn(toolbarButtonClass, 'hidden @[32rem]/preview-toolbar:flex')}><ChevronRight size={15} /></button>
         </div>
 
         <div className="flex shrink-0 items-center gap-0.5">
@@ -1196,7 +1202,7 @@ export function WorkspaceDocumentPreview({
               />
             </div>
           )}
-          {isPresentation && <div className="hidden items-center gap-0.5 @[20rem]/preview-toolbar:flex @[38rem]/preview-toolbar:pr-1.5" role="toolbar" aria-label="PowerPoint View controls">
+          {isPresentation && <div className="hidden items-center gap-0.5 @[23rem]/preview-toolbar:flex @[38rem]/preview-toolbar:pr-1.5" role="toolbar" aria-label="PowerPoint View controls">
           <button
             type="button"
             onClick={() => setPresentationView('normal')}
@@ -1243,7 +1249,7 @@ export function WorkspaceDocumentPreview({
             </button>
           )}
           </div>}
-          <div className="hidden items-center gap-0.5 border-l border-(--color-border) pl-1.5 @[38rem]/preview-toolbar:flex">
+          <div className="hidden items-center gap-0.5 border-l border-(--color-border) pl-1.5 @[40rem]/preview-toolbar:flex">
             <button type="button" onClick={() => applyZoom(zoom - 10)} aria-label="Zoom out" title="Zoom out" className={toolbarButtonClass}><ZoomOut size={14} /></button>
             <span className="w-9 text-center text-[10px] tabular-nums text-(--color-text-muted)" aria-label={`Zoom ${zoom} percent`}>{zoom}%</span>
             <button type="button" onClick={() => applyZoom(zoom + 10)} aria-label="Zoom in" title="Zoom in" className={toolbarButtonClass}><ZoomIn size={14} /></button>
