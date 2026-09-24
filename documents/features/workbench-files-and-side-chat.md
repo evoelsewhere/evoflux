@@ -208,12 +208,15 @@ nothing downloads until they ask.
   agent just created, once per file, while a turn runs — unless another
   workbench tool is active or `oa.documents.autoOpenGenerated` is `"false"`.
 - **Turn file cards.** In Work mode each finished assistant turn ends with a
-  card per previewable file (PPTX, XLSX, DOCX, PDF, image) its tools created
-  or changed: `write`/`edit`/`patch` targets and files named on a `shell` or
-  `process` command line, minus files the turn removed, matched against the
-  session's file list (`web/src/lib/turn-files.ts`); prose mentions do not
-  count, nor do images in scratch folders (`qa/`, `crops/`). Documents come
-  before images; four show, the rest fold behind "+N more". Each card shows
+  card per file it delivered, matched against the session's file list
+  (`web/src/lib/turn-files.ts`): every document (PPTX, XLSX, DOCX, PDF) its
+  tools produced — `write`/`edit`/`patch` targets and documents named on a
+  `shell` or `process` command line — and any previewable file, images
+  included, its reply links in Markdown. The agent decides which images are
+  results by linking them (the Work lead prompt asks it to link what it hands
+  over and not scratch renders); files the turn removed and plain or
+  inline-code mentions get no card. Documents come before images; four show,
+  the rest fold behind "+N more". Each card shows
   a thumbnail once it scrolls into view: the image itself, or the first
   slide or page of the cached document preview, re-hosted in a sandboxed
   frame (`web/src/lib/document-thumbnail.ts`, shared with the viewer's slide

@@ -187,13 +187,14 @@ function WorkspaceFileCard({
 }
 
 /**
- * Cards for the previewable files (decks, sheets, documents, PDFs, images)
- * a finished turn created or changed, each with a thumbnail of the file;
- * clicking one opens it in Files.
+ * Cards for what a finished turn delivered — the documents its tools
+ * produced and any previewable file (images too) its reply links — each
+ * with a thumbnail; clicking one opens it in Files.
  */
 export function TurnFilesCard({ blocks, sessionId }: { blocks: readonly ContentBlock[]; sessionId?: string }) {
-  const mentions = useMemo(() => turnFileMentions(blocks), [blocks])
-  const { data } = useWorkspaceFilesQuery(mentions.length > 0 ? sessionId : null)
+  const mentions = useMemo(() => turnFileMentions(blocks, sessionId), [blocks, sessionId])
+  const touched = mentions.produced.length + mentions.linked.length > 0
+  const { data } = useWorkspaceFilesQuery(touched ? sessionId : null)
   const files = useMemo(
     () => resolveTurnFiles(mentions, data?.files ?? [], data?.workspace_root)
       .map((file, index) => ({ file, index, rank: KIND_ORDER[workspaceFileKind(file)] ?? 1 }))
