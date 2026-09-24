@@ -248,9 +248,12 @@ nothing downloads until they ask.
   generator when one exists), saves once per batch and verifies the
   annotated slides. Unavailable while a deck is still being built live.
   Workbooks get *Select cells to edit* (with the version controls) in the
-  formula bar. Exact (LibreOffice) pages are images without cells, so while
-  it is on the viewer requests `GET …/document-preview/{path}?renderer=native`
-  (the built-in render, cached apart). The agent's `document_preview` tool
+  formula bar. A workbook previews as its cell grid by default — the viewer
+  requests `GET …/document-preview/{path}?renderer=native` (the built-in
+  render, cached apart), since exact (LibreOffice) pages are print-layout
+  images without cells; with LibreOffice installed a *Print layout* toggle in
+  the formula bar shows the exact pages, and selecting cells always returns
+  to the grid. The agent's `document_preview` tool
   always uses that built-in render too, since exact pages report no element
   geometry to check. On a sheet's cell grid a click selects a cell and a drag the
   block of cells it spans, sent as `sheet` + A1 `range` in the same block;

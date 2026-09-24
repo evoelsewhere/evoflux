@@ -138,6 +138,9 @@ def describe(shape, group, width: int, height: int) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Slide text is often not ASCII; a Windows console defaults to a legacy code page.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(
         description="Describe the shapes an EvoFlux annotation points at."
     )
