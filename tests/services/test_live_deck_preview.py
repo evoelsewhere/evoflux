@@ -95,7 +95,6 @@ def test_live_deck_previews_finished_slides_and_placeholders(
     assert not deck_is_live(deck, SESSION)
     assert "data-deck-live" not in rendered
     assert _slide_statuses(rendered) == []
-    assert not deck_live._plan_path(deck).exists()
 
 
 def _slide_file(folder: Path, name: str, text: str) -> Path:
@@ -248,3 +247,62 @@ def test_every_skeleton_looks_the_same_whatever_the_plan(deck_live, tmp_path):
 def test_init_needs_a_slide_count(deck_live, tmp_path):
     with pytest.raises(deck_live.DeckLiveError, match="--slides"):
         deck_live.init(tmp_path / "deck.pptx", 0)
+
+
+def _built_deck(deck_live, tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """A finished two-slide deck built from slide files."""
+    deck = tmp_path / "deck.pptx"
+    slides = tmp_path / "slides"
+    slides.mkdir()
+    (slides / "theme.py").write_text("LABEL = '> '\n", encoding="utf-8")
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    deck_live.init(deck, 2)
+    deck_live.add(deck, _slide_file(slides, "01_cover.py", "Cover"))
+    deck_live.add(deck, _slide_file(slides, "02_why.py", "Why"))
+    deck_live.mark(deck, done=True)
+    return deck, slides
+
+
+def test_fixing_a_finished_deck_never_brings_the_loading_state_back(
+    deck_live, monkeypatch, tmp_path
+):
+    deck, slides = _built_deck(deck_live, tmp_path, monkeypatch)
+
+    # QA fixes one slide in place, then a shared helper for all of them.
+    deck_live.add(deck, _slide_file(slides, "02_why.py", "Why v2"), replace=2)
+    assert _texts(deck) == ["> Cover", "> Why v2"]
+    assert not deck_is_live(deck, SESSION)
+    # A different length, so bytecode cached this same second is not reused.
+    (slides / "theme.py").write_text("LABEL = '## '\n", encoding="utf-8")
+    assert deck_live.rebuild(deck, slides) == 2
+    assert _texts(deck) == ["## Cover", "## Why v2"]
+
+    rendered = _render(deck)
+    assert not deck_is_live(deck, SESSION)
+    assert "data-deck-live" not in rendered and "slide-skeleton" not in rendered
+
+
+def test_fixes_work_even_when_the_scratch_plan_is_gone(
+    deck_live, monkeypatch, tmp_path
+):
+    deck, slides = _built_deck(deck_live, tmp_path, monkeypatch)
+    deck_live._plan_path(deck).unlink()  # e.g. the temp folder was cleaned
+
+    deck_live.add(deck, _slide_file(slides, "01_cover.py", "Cover v2"), replace=1)
+    deck_live.mark(deck)
+
+    plan = read_deck_plan(deck)
+    assert plan is not None and plan.done
+    assert _texts(deck) == ["> Cover v2", "> Why"]
+
+
+def test_init_refuses_to_empty_a_deck_that_has_slides(deck_live, monkeypatch, tmp_path):
+    deck, _slides = _built_deck(deck_live, tmp_path, monkeypatch)
+
+    with pytest.raises(deck_live.DeckLiveError, match="--replace N"):
+        deck_live.init(deck, 2)
+    assert _texts(deck) == ["> Cover", "> Why"]
+
+    deck_live.init(deck, 2, force=True)
+    assert _texts(deck) == []
+    assert deck_is_live(deck, SESSION)
