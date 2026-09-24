@@ -5,8 +5,8 @@ Supports multimodal file types:
 - **Images** (.png, .jpg, .gif, .webp, ...): base64-encoded and returned as
   ``ToolResult`` with ``ImageDataBlock`` parts for vision-capable models.
   Non-vision models receive a text notice instead.
-- **Documents** (.pdf, .html): converted to markdown text via
-  markitdown. If conversion fails, PDFs are sent as raw bytes to vision models.
+- **Documents** (.pdf, .html): converted to text (PDF) or Markdown (HTML).
+  If conversion fails, PDFs are sent as raw bytes to vision models.
 - **Office files** (.docx, .xlsx, .pptx): intentionally view-only in the UI.
 - **Text** (everything else): read as UTF-8/Latin-1 text (original behaviour).
 """
@@ -173,7 +173,7 @@ async def _read_file(
             )
         return handle_image(resolved, rel)
 
-    # ── Document files → markitdown conversion ────────────────────────────
+    # ── Document files → text conversion ──────────────────────────────────
     if category == "document":
         return handle_document(resolved, rel, vision=vision)
 

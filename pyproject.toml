@@ -37,11 +37,12 @@ dependencies = [
     # Backport of uuid.uuid7(), which only lands in the stdlib `uuid` module
     # in Python 3.14. Shimmed onto `uuid` in app/__init__.py for 3.12/3.13.
     "uuid7>=0.1.0",
-    # Core PDF/HTML intake. Office files are view-only and are never converted
-    # into agent context by this dependency. The [pdf] extra (pdfminer.six +
-    # pdfplumber) is required: without it markitdown recognises PDFs but its
-    # PdfConverter raises MissingDependencyException.
-    "markitdown[pdf]>=0.1.5",
+    # Core PDF/HTML intake (app/services/document_text.py): PDFium for PDF
+    # text, BeautifulSoup + markdownify for HTML. Office files are view-only
+    # and are never converted into agent context.
+    "pypdfium2>=5.7.0",
+    "beautifulsoup4>=4.14.3",
+    "markdownify>=1.2.2",
     "markdown-it-py>=4.0.0",
     "pyyaml>=6.0.3",
     "fastapi>=0.135.2",
@@ -98,7 +99,6 @@ dev = [
     "python-docx>=1.2.0",
     "openpyxl>=3.1.5",
     "python-pptx>=1.0.2",
-    "pypdfium2>=5.7.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -113,31 +113,21 @@ packages = ["app"]
 
 [project.optional-dependencies]
 # Runtime dependencies for the host-owned, read-only workspace viewer. Desktop
-# packages install this extra; slim/API-only installs can omit Office/PDF
-# rendering without importing those libraries at process startup.
+# packages install this extra; slim/API-only installs can omit Office
+# rendering without importing those libraries at process startup. PDF
+# rendering uses pypdfium2, which is a core dependency.
 office-preview = [
     "python-docx>=1.2.0",
     "openpyxl>=3.1.5",
     "python-pptx>=1.0.2",
-    "pypdfium2>=5.7.0",
 ]
 
-# Azure Document Intelligence routing in markitdown — server-side OCR fallback.
-# Brings in the azure-ai-* SDK family. Adds ~30 MB.
-azure-doc-intel = ["markitdown[az-doc-intel]>=0.1.5"]
-
-# Convenience: everything-but-the-kitchen-sink. Used by
-# ``uv tool install evoflux[full]`` for users who don't care about size.
-full = ["evoflux[azure-doc-intel,office-preview]"]
+# Convenience: every optional extra. Used by ``uv tool install evoflux[full]``
+# for users who don't care about size.
+full = ["evoflux[office-preview]"]
 
 [tool.uv]
 package = true
-# onnxruntime dropped macOS x86_64 (Intel) wheels starting with 1.24; magika
-# (pulled in transitively by markitdown for MIME sniffing) puts no upper
-# bound on onnxruntime, so the resolver otherwise picks a version with no
-# installable artifact for Intel Macs. Pin to the last version with a
-# macosx x86_64 wheel.
-constraint-dependencies = ["onnxruntime<1.24"]
 
 [tool.ty.src]
 include = ["app"]
@@ -153,4 +143,3 @@ extend-exclude = ["tests/fixtures/skill-evals"]
 # Imports after truststore.inject_into_ssl() / apply_ssl_patch() are intentional.
 "app/cli/main.py" = ["E402"]
 "app/server.py" = ["E402"]
-"scripts/download_embedding_model.py" = ["E402"]

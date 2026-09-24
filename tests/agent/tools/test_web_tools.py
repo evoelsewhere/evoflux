@@ -144,8 +144,8 @@ async def test_web_search_exa_fallback_success():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_web_fetch_html_converted_via_markitdown():
-    """HTML responses are converted to Markdown via MarkItDown."""
+async def test_web_fetch_html_converted_to_markdown():
+    """HTML responses are converted to Markdown."""
     url = "https://example.com"
     respx.get(url).mock(
         return_value=httpx.Response(
@@ -155,19 +155,14 @@ async def test_web_fetch_html_converted_via_markitdown():
         )
     )
 
-    with patch("markitdown.MarkItDown") as mock_mid_class:
-        mock_mid = mock_mid_class.return_value
-        mock_mid.convert_stream.return_value.markdown = "# Hello"
-
-        result = await web_fetch(url)
-        assert result == "# Hello"
-        mock_mid.convert_stream.assert_called_once()
+    result = await web_fetch(url)
+    assert result == "# Hello"
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_web_fetch_native_markdown_returned_asis():
-    """Responses with text/markdown MIME type are returned as-is without MarkItDown."""
+    """Responses with text/markdown MIME type are returned as-is, unconverted."""
     url = "https://example.com/readme.md"
     respx.get(url).mock(
         return_value=httpx.Response(
@@ -177,10 +172,27 @@ async def test_web_fetch_native_markdown_returned_asis():
         )
     )
 
-    with patch("markitdown.MarkItDown") as mock_mid_class:
+    with patch("app.agent.tools.builtin.web.convert_to_text") as mock_convert:
         result = await web_fetch(url)
         assert result == "# Native Markdown"
-        mock_mid_class.return_value.convert_stream.assert_not_called()
+        mock_convert.assert_not_called()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_web_fetch_binary_response_is_an_error():
+    """A binary body with no text layer reads as an error, not mojibake."""
+    url = "https://example.com/logo.png"
+    respx.get(url).mock(
+        return_value=httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\n\xff\xfe\x00",
+            headers={"content-type": "image/png"},
+        )
+    )
+
+    result = await web_fetch(url)
+    assert result.startswith("Error: No readable text")
 
 
 @pytest.mark.asyncio
@@ -195,18 +207,14 @@ async def test_web_fetch_no_scheme_prefixed():
         )
     )
 
-    with patch("markitdown.MarkItDown") as mock_mid_class:
-        mock_mid = mock_mid_class.return_value
-        mock_mid.convert_stream.return_value.markdown = "Test"
-
-        result = await web_fetch("example.com")
-        assert result == "Test"
+    result = await web_fetch("example.com")
+    assert result == "Test"
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_web_fetch_format_html_uses_markitdown():
-    """format='html' still uses MarkItDown for conversion."""
+async def test_web_fetch_format_html_still_converts():
+    """format='html' still converts the body to Markdown."""
     url = "https://example.com"
     respx.get(url).mock(
         return_value=httpx.Response(
@@ -216,13 +224,8 @@ async def test_web_fetch_format_html_uses_markitdown():
         )
     )
 
-    with patch("markitdown.MarkItDown") as mock_mid_class:
-        mock_mid = mock_mid_class.return_value
-        mock_mid.convert_stream.return_value.markdown = "Raw"
-
-        result = await web_fetch(url, format="html")
-        assert result == "Raw"
-        mock_mid.convert_stream.assert_called_once()
+    result = await web_fetch(url, format="html")
+    assert result == "Raw"
 
 
 @pytest.mark.asyncio
@@ -299,13 +302,9 @@ async def test_web_fetch_cloudflare_retry():
 
     respx.get(url).mock(side_effect=side_effect)
 
-    with patch("markitdown.MarkItDown") as mock_mid_class:
-        mock_mid = mock_mid_class.return_value
-        mock_mid.convert_stream.return_value.markdown = "OK"
-
-        result = await web_fetch(url)
-        assert result == "OK"
-        assert call_count == 2
+    result = await web_fetch(url)
+    assert result == "OK"
+    assert call_count == 2
 
 
 @pytest.mark.asyncio
@@ -345,12 +344,8 @@ async def test_web_fetch_timeout_capped_at_120():
         )
     )
 
-    with patch("markitdown.MarkItDown") as mock_mid_class:
-        mock_mid = mock_mid_class.return_value
-        mock_mid.convert_stream.return_value.markdown = "hi"
-
-        result = await web_fetch(url, timeout=9999)
-        assert result == "hi"
+    result = await web_fetch(url, timeout=9999)
+    assert result == "hi"
 
 
 # ── SSRF / private-network policy ────────────────────────────────────────────

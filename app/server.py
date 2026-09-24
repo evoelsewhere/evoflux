@@ -9,15 +9,7 @@ Run with:
 import asyncio
 import sys
 
-from app._onnx_preload import preload_onnxruntime
-
 if sys.platform == "win32":
-    # Preload onnxruntime's native DLLs before importing other C extensions
-    # (truststore/_ssl, SQLAlchemy's Cython modules, …). Otherwise, on
-    # Python 3.14, loading onnxruntime.dll as a static dependency later runs its
-    # DllMain under the loader lock and fails with an initialisation error
-    # (1114). No-op when onnxruntime is not installed.
-    preload_onnxruntime()
     # asyncio defaults to ProactorEventLoop on Windows, but Uvicorn's --reload
     # mode can leave a SelectorEventLoop active in the worker process;
     # asyncio.create_subprocess_exec() then raises NotImplementedError, breaking

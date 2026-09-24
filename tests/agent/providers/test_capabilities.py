@@ -33,8 +33,8 @@ class TestModelInputCapabilities:
     def test_defaults(self) -> None:
         caps = ModelInputCapabilities()
         assert caps.vision is False
-        # document_text defaults true because markitdown handles
-        # conversion on the client side, never reaches the model.
+        # document_text defaults true because document conversion
+        # happens on the client side, never reaches the model.
         assert caps.document_text is True
         assert caps.audio is False
         assert caps.video is False

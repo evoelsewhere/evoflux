@@ -20,7 +20,7 @@ def test_install_packages_installs_locked_versions(tmp_path, monkeypatch) -> Non
             )
         if cmd[1] == "export":
             Path(cmd[cmd.index("--output-file") + 1]).write_text(
-                "onnxruntime==1.23.2\n", encoding="utf-8"
+                "pypdfium2==5.7.0\n", encoding="utf-8"
             )
 
     monkeypatch.setattr(build_sidecar, "run", fake_run)
@@ -33,7 +33,7 @@ def test_install_packages_installs_locked_versions(tmp_path, monkeypatch) -> Non
     assert export[:3] == ["uv", "export", "--locked"]
     assert {"--no-dev", "--no-emit-project"} <= set(export)
     assert export[export.index("--extra") + 1] == "office-preview"
-    assert exported == ["onnxruntime==1.23.2\n"]
+    assert exported == ["pypdfium2==5.7.0\n"]
     assert "--no-deps" not in deps
     assert project[-2:] == ["--no-deps", "."]
 

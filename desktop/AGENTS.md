@@ -22,7 +22,6 @@ README.md        Architecture and packaging notes
 
 ```bash
 make -C desktop sidecar       # include the host-owned Office preview engines
-make -C desktop sidecar-full  # include Documents + Azure Document Intelligence
 make -C desktop icons         # regenerate icons from src-tauri/icons/icon.png
 make -C desktop dev           # Tauri shell against root make dev-web
 make -C desktop dev-bundled   # Tauri shell with bundled sidecar

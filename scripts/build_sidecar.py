@@ -34,7 +34,7 @@ Usage::
 
     python scripts/build_sidecar.py \\
         --root ./ --out ./desktop/sidecar-bundle \\
-        --python-version 3.12 [--extras azure-doc-intel]
+        --python-version 3.12 [--extras office-preview]
 
 CI uses this same script on each runner (macos-26, ubuntu-22.04). The
 output is consumed by the Tauri bundler via the ``bundle.resources``
@@ -748,7 +748,7 @@ def main() -> int:
         default="office-preview",
         help=(
             "Comma-separated optional-dep extras to install "
-            "(default: office-preview; e.g. office-preview,azure-doc-intel or full)."
+            "(default: office-preview; e.g. office-preview or full)."
         ),
     )
     ap.add_argument(

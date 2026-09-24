@@ -170,7 +170,7 @@ def test_text_attachment_has_no_path_hint():
 
 
 def test_document_with_converted_text_has_no_path_hint():
-    """Documents that markitdown-converted successfully use the fast path
+    """Documents that converted successfully use the fast path
     and must not get a path hint either."""
     att = {
         "converted_text": "PDF text content",
