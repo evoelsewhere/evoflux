@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 from contextvars import ContextVar
+from datetime import datetime
 import json
 from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlsplit
@@ -64,6 +65,15 @@ _webbridge_pointer_motion: ContextVar[Literal["human", "instant"] | None] = Cont
     "webbridge_pointer_motion", default=None
 )
 
+#: Coding sessions have the extension record console and network from their
+#: first command, so the page load the agent triggers is already there when it
+#: asks. Work sessions start recording only on an explicit console/network
+#: read — the page-visible `Runtime.enable` is not something to switch on
+#: unasked in the user's everyday browsing.
+_webbridge_devtools_capture: ContextVar[bool] = ContextVar(
+    "webbridge_devtools_capture", default=False
+)
+
 
 async def _send_command(
     session_id: str, action: str, params: dict[str, Any] | None = None
@@ -72,6 +82,8 @@ async def _send_command(
     motion = _webbridge_pointer_motion.get()
     if motion is not None:
         params = {**(params or {}), "_webbridge_pointer_motion": motion}
+    if _webbridge_devtools_capture.get():
+        params = {**(params or {}), "_webbridge_devtools": "capture"}
     response = await webbridge_manager.send_command(
         session_id,
         action,
@@ -179,6 +191,72 @@ class HandleDialogAction(BaseModel):
     action: Literal["handle_dialog"]
     accept: bool = False
     prompt_text: str | None = Field(default=None, max_length=10_000)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+_DEVTOOLS_SCOPE_DESC = (
+    "'page' (default): only what the current page produced since it loaded. "
+    "'all': include earlier pages of this tab too."
+)
+
+
+class ConsoleAction(BaseModel):
+    action: Literal["console"]
+    level: Literal["all", "debug", "log", "info", "warning", "error"] = Field(
+        default="all",
+        description="Minimum level: 'warning' returns warnings and errors.",
+    )
+    contains: str | None = Field(
+        default=None, description="Only messages containing this text."
+    )
+    limit: int = Field(default=50, ge=1, le=200, description="Newest N messages.")
+    scope: Literal["page", "all"] = Field(
+        default="page", description=_DEVTOOLS_SCOPE_DESC
+    )
+    clear: bool = Field(
+        default=False,
+        description="Empty the recorded console after reading, so the next read shows only what happens from here.",
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class NetworkAction(BaseModel):
+    action: Literal["network"]
+    filter: Literal["all", "failed"] = Field(
+        default="all", description="'failed': HTTP status >= 400 or no response."
+    )
+    resource: Literal[
+        "all", "fetch", "document", "script", "stylesheet", "image", "font", "websocket"
+    ] = Field(default="all", description="'fetch' covers fetch, XHR and EventSource.")
+    url_contains: str | None = None
+    method: (
+        Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] | None
+    ) = None
+    limit: int = Field(default=50, ge=1, le=200, description="Newest N requests.")
+    scope: Literal["page", "all"] = Field(
+        default="page", description=_DEVTOOLS_SCOPE_DESC
+    )
+    clear: bool = Field(
+        default=False, description="Empty the recorded requests after reading."
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class NetworkBodyAction(BaseModel):
+    action: Literal["network_body"]
+    request_id: str = Field(description="The request id shown by the network action.")
+    max_chars: int = Field(default=20_000, ge=100, le=100_000)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class DebugSummaryAction(BaseModel):
+    action: Literal["debug_summary"]
+    limit: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Most recent errors / failed requests listed.",
+    )
     tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
@@ -747,6 +825,10 @@ AnyAction = Annotated[
     | ResetViewportAction
     | DialogsAction
     | HandleDialogAction
+    | ConsoleAction
+    | NetworkAction
+    | NetworkBodyAction
+    | DebugSummaryAction
     | ScreenshotAction
     | ExtractAction
     | GetTabsAction
@@ -827,6 +909,16 @@ Consecutive simple actions (clicks, fills, keys, scrolls) are sent to the
 browser as a single message, so a long form costs one crossing, not one per
 field.
 
+Debugging a web app: debug_summary is the one-call check after a change —
+console errors and warnings with their source location and stack, failed
+requests (status >= 400 or no response) and in-flight ones, for the current
+page. console and network list everything (filter by level, text, resource
+type, method or URL); network_body reads a recorded response by the id network
+shows. In a Coding session recording runs from the first command; elsewhere
+it starts with the first console/network read, and a read that started it
+says so — reload the page to capture its load. Typical loop: preview start →
+open_tab the dev URL → debug_summary → fix the code → reload → debug_summary.
+
 A snapshot lists a link's address only when the link has no label to be
 recognised by. To collect URLs, use extract_elements with an attribute field
 (e.g. {'url': 'a@href'}) rather than reading them out of a snapshot.
@@ -856,6 +948,10 @@ Actions:
   reset_viewport  — Clear viewport/device emulation and return to the real browser size.
   dialogs         — Inspect the active JavaScript alert/confirm/prompt and recent dialog history.
   handle_dialog   — Accept or dismiss the active dialog; prompt_text supplies a prompt response.
+  debug_summary   — Console errors/warnings and failed requests of the current page, in one call.
+  console         — Recorded console messages and uncaught exceptions (level/contains/scope filters).
+  network         — Recorded requests: method, status, type, URL, timing (failed/resource/method/url filters).
+  network_body    — Response body of one recorded request, by its id.
   wait            — Pause for N milliseconds.
   wait_for_selector — Wait until a selector is visible/attached/hidden.
     wait_for_text   — Wait until text becomes visible or hidden, optionally within a selector.
@@ -903,6 +999,11 @@ _UNTRUSTED_BROWSER_ACTIONS = frozenset(
         "back",
         "forward",
         "reload",
+        # Console text, URLs and response bodies are the page's words.
+        "console",
+        "network",
+        "network_body",
+        "debug_summary",
         "crawl",
         "evaluate",
         "extract",
@@ -952,10 +1053,12 @@ async def webbridge(
     target_token = _webbridge_target_id.set(
         metadata.get("webbridge_extension_id") if metadata else None
     )
+    coding = bool(metadata) and metadata.get("team_mode") == "coding"
     motion: Literal["human", "instant"] | None = None
     if metadata:
-        motion = "instant" if metadata.get("team_mode") == "coding" else "human"
+        motion = "instant" if coding else "human"
     motion_token = _webbridge_pointer_motion.set(motion)
+    devtools_token = _webbridge_devtools_capture.set(coding)
     results: list[str | ToolResult] = []
     try:
         index = 0
@@ -1007,6 +1110,7 @@ async def webbridge(
                 break
         return combine_browser_results(results)
     finally:
+        _webbridge_devtools_capture.reset(devtools_token)
         _webbridge_pointer_motion.reset(motion_token)
         _webbridge_target_id.reset(target_token)
 
@@ -1130,6 +1234,14 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
         return await _handle_reset_viewport(session_id, act)
     if action == "dialogs":
         return await _handle_dialogs(session_id, act)
+    if action == "console":
+        return await _handle_console(session_id, act)
+    if action == "network":
+        return await _handle_network(session_id, act)
+    if action == "network_body":
+        return await _handle_network_body(session_id, act)
+    if action == "debug_summary":
+        return await _handle_debug_summary(session_id, act)
     if action == "handle_dialog":
         return await _handle_dialog(session_id, act)
     if action == "screenshot":
@@ -1258,6 +1370,11 @@ def _landed(verb: str, data: Any, requested: str | None = None) -> str:
         line += f"\nTitle: {data['title']}"
     if data.get("timed_out"):
         line += "\nThe page had not finished loading when the wait ran out."
+    if data.get("devtools_started"):
+        line += (
+            "\nConsole/network recording started after this load (the previous "
+            "page could not be recorded); reload to capture the load itself."
+        )
     return line
 
 
@@ -1393,6 +1510,216 @@ async def _handle_dialog(session_id: str, act: HandleDialogAction) -> str:
     data = resp.get("data") or {}
     verb = "Accepted" if data.get("accepted", act.accept) else "Dismissed"
     return f"{verb} {data.get('type', 'JavaScript')} dialog."
+
+
+# ── Devtools: console, network, debug summary ────────────────────────────────
+
+
+def _clock(ms: Any) -> str:
+    try:
+        return datetime.fromtimestamp(float(ms) / 1000).strftime("%H:%M:%S.%f")[:-3]
+    except (TypeError, ValueError, OverflowError, OSError):
+        return "?"
+
+
+def _devtools_notes(data: dict[str, Any], kind: str) -> list[str]:
+    """What the listing does not contain, so an empty one is not misread."""
+    notes: list[str] = []
+    if data.get("started_now"):
+        notes.append(
+            f"Recording started just now — {kind} from before this moment was not "
+            "captured. Reload the page to see what its load produces."
+        )
+    earlier = int(data.get("earlier_pages") or 0)
+    if earlier:
+        notes.append(f"({earlier} more from earlier pages of this tab — scope: 'all'.)")
+    dropped = int(data.get("dropped") or 0)
+    if dropped:
+        notes.append(
+            f"({dropped} oldest entries were dropped to stay within the buffer.)"
+        )
+    return notes
+
+
+def _console_line(entry: dict[str, Any]) -> list[str]:
+    level = entry.get("level", "log")
+    source = entry.get("source") or "console"
+    tag = {"exception": " uncaught", "console": ""}.get(source, f" {source}")
+    text = str(entry.get("text") or "").rstrip()
+    first, *rest = text.split("\n") or [""]
+    location = ""
+    if entry.get("url") and entry.get("line"):
+        location = f" — {entry['url']}:{entry['line']}"
+        if entry.get("column"):
+            location += f":{entry['column']}"
+    lines = [f"  [{level}{tag}] {_clock(entry.get('ts'))} {first}{location}"]
+    lines.extend(f"      {line.strip()}" for line in rest[:12])
+    # An Error's description already carries its stack; don't print it twice.
+    if not any(line.strip().startswith("at ") for line in rest):
+        lines.extend(f"      at {frame}" for frame in entry.get("stack") or [])
+    return lines
+
+
+def _network_line(entry: dict[str, Any]) -> str:
+    if entry.get("failed"):
+        outcome = "failed"
+        if entry.get("canceled"):
+            outcome = "canceled"
+    elif entry.get("status"):
+        outcome = str(entry["status"])
+        if entry.get("status_text"):
+            outcome += f" {entry['status_text']}"
+    else:
+        outcome = "pending"
+    parts = [
+        f"  [{entry.get('request_id', '?')}]",
+        str(entry.get("method") or "GET"),
+        outcome,
+        str(entry.get("type") or "Other").lower(),
+        str(entry.get("url") or ""),
+    ]
+    if entry.get("redirected_to"):
+        parts.append(f"→ {entry['redirected_to']}")
+    if entry.get("error"):
+        parts.append(f"({entry['error']})")
+    if entry.get("duration_ms") is not None:
+        parts.append(f"{entry['duration_ms']} ms")
+    if entry.get("from_cache"):
+        parts.append("(cache)")
+    return " ".join(parts)
+
+
+async def _handle_console(session_id: str, act: ConsoleAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "console",
+        _tab_params(
+            act,
+            level=None if act.level == "all" else act.level,
+            contains=act.contains,
+            limit=act.limit,
+            scope=act.scope,
+            clear=act.clear or None,
+        ),
+    )
+    if not resp.get("success"):
+        return f"console failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    entries = data.get("entries") or []
+    total = int(data.get("total") or len(entries))
+    header = f"Console for {data.get('page_url') or 'this tab'}"
+    if not entries:
+        lines = [f"{header}: no messages match."]
+    else:
+        shown = f"{len(entries)} of {total}" if total > len(entries) else str(total)
+        lines = [f"{header} ({shown}, oldest first):"]
+        for entry in entries:
+            lines.extend(_console_line(entry))
+    lines.extend(_devtools_notes(data, "console output"))
+    if act.clear:
+        lines.append("(Console cleared.)")
+    return "\n".join(lines)
+
+
+async def _handle_network(session_id: str, act: NetworkAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "network",
+        _tab_params(
+            act,
+            filter=None if act.filter == "all" else act.filter,
+            resource=None if act.resource == "all" else act.resource,
+            url_contains=act.url_contains,
+            method=act.method,
+            limit=act.limit,
+            scope=act.scope,
+            clear=act.clear or None,
+        ),
+    )
+    if not resp.get("success"):
+        return f"network failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    entries = data.get("entries") or []
+    total = int(data.get("total") or len(entries))
+    header = f"Network for {data.get('page_url') or 'this tab'}"
+    if not entries:
+        lines = [f"{header}: no requests match."]
+    else:
+        shown = f"{len(entries)} of {total}" if total > len(entries) else str(total)
+        lines = [f"{header} ({shown}, oldest first; [id] feeds network_body):"]
+        lines.extend(_network_line(entry) for entry in entries)
+    pending = int(data.get("pending") or 0)
+    if pending:
+        lines.append(f"({pending} still in flight.)")
+    lines.extend(_devtools_notes(data, "network traffic"))
+    if act.clear:
+        lines.append("(Network log cleared.)")
+    return "\n".join(lines)
+
+
+async def _handle_network_body(session_id: str, act: NetworkBodyAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "network_body",
+        _tab_params(act, request_id=act.request_id, max_chars=act.max_chars),
+    )
+    if not resp.get("success"):
+        return f"network_body failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    request = data.get("request") or {}
+    lines = [_network_line(request).strip()]
+    if request.get("mime_type"):
+        lines.append(f"Content-Type: {request['mime_type']}")
+    if data.get("base64_encoded"):
+        lines.append(f"Binary body ({data.get('size', 0)} bytes) — not shown.")
+        return "\n".join(lines)
+    body = str(data.get("body") or "")
+    size = int(data.get("size") or len(body))
+    lines.append(
+        f"Body ({size} chars{', truncated' if data.get('truncated') else ''}):"
+    )
+    lines.append(body if body else "(empty)")
+    return "\n".join(lines)
+
+
+async def _handle_debug_summary(session_id: str, act: DebugSummaryAction) -> str:
+    resp = await _send_command(
+        session_id, "debug_summary", _tab_params(act, limit=act.limit)
+    )
+    if not resp.get("success"):
+        return f"debug_summary failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    counts = data.get("console_counts") or {}
+    net = data.get("network_counts") or {}
+    lines = [f"Debug summary for {data.get('page_url') or 'this tab'}"]
+    if data.get("title"):
+        lines.append(f"Title: {data['title']}")
+    lines.append(
+        f"Console: {counts.get('error', 0)} error(s), {counts.get('warning', 0)} "
+        f"warning(s), {counts.get('total', 0)} message(s) on this page."
+    )
+    lines.append(
+        f"Network: {net.get('total', 0)} request(s), {net.get('failed', 0)} failed, "
+        f"{net.get('pending', 0)} pending."
+    )
+    errors = data.get("errors") or []
+    if errors:
+        lines.append("Errors (newest last):")
+        for entry in errors:
+            lines.extend(_console_line(entry))
+    warnings = data.get("warnings") or []
+    if warnings:
+        lines.append("Warnings (newest last):")
+        for entry in warnings:
+            lines.extend(_console_line(entry))
+    failed = data.get("failed_requests") or []
+    if failed:
+        lines.append("Failed requests:")
+        lines.extend(_network_line(entry) for entry in failed)
+    if not errors and not failed:
+        lines.append("No console errors or failed requests on this page.")
+    lines.extend(_devtools_notes(data, "console and network activity"))
+    return "\n".join(lines)
 
 
 async def _handle_screenshot(session_id: str, act: ScreenshotAction) -> ToolResult:

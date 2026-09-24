@@ -4,6 +4,15 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- WebBridge debugging actions: `debug_summary`, `console`, `network` and
+  `network_body` read the console messages, uncaught exceptions and requests
+  (status, type, timing, failures, response bodies) of a tab in the user's real
+  browser. Coding sessions record from their first command, so the agent can
+  run the edit → reload → check-errors loop against a local dev server.
+  Requires evo-webbridge 2.7.0.
+
 ### Fixed
 
 - The `webbridge` tool now ships its full usage guide to the model; it was

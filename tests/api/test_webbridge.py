@@ -1818,6 +1818,14 @@ async def test_live_binding_pins_batched_commands_to_the_bound_tab(
     manager.handle_response(command["request_id"], success=True, data={}, error=None)
     assert (await pending)["success"] is True
 
+    # Reading the tab's console is as tab-bound as acting on it.
+    reading = asyncio.create_task(manager.send_command("sess", "console", {}))
+    await asyncio.sleep(0)
+    command = json.loads(sent.pop())
+    assert command["params"]["tab_id"] == 42
+    manager.handle_response(command["request_id"], success=True, data={}, error=None)
+    assert (await reading)["success"] is True
+
     extension.tabs = [{"id": 42, "url": "https://mail.example.net/inbox"}]
     refused = await manager.send_command(
         "sess",
@@ -5406,6 +5414,190 @@ async def test_tool_coding_session_asks_for_instant_pointer(
     )
     assert seen[0]["_webbridge_pointer_motion"] == "instant"
     assert seen[1]["_webbridge_pointer_motion"] == "human"
+    # Coding sessions record console/network from the first command.
+    assert seen[0]["_webbridge_devtools"] == "capture"
+    assert "_webbridge_devtools" not in seen[1]
+
+
+async def test_tool_console_formats_levels_locations_and_stacks(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        return {
+            "success": True,
+            "data": {
+                "page_url": "http://localhost:5173/",
+                "total": 3,
+                "earlier_pages": 4,
+                "entries": [
+                    {
+                        "source": "console",
+                        "level": "warning",
+                        "text": "Each child in a list should have a unique key",
+                        "url": "http://localhost:5173/src/List.tsx",
+                        "line": 9,
+                        "column": 3,
+                        "stack": ["List (http://localhost:5173/src/List.tsx:9:3)"],
+                        "ts": 0,
+                    },
+                    {
+                        "source": "exception",
+                        "level": "error",
+                        "text": (
+                            "TypeError: Cannot read properties of undefined (reading 'map')\n"
+                            "    at TodoList (http://localhost:5173/src/TodoList.tsx:14:22)"
+                        ),
+                        "stack": [
+                            "TodoList (http://localhost:5173/src/TodoList.tsx:14:22)"
+                        ],
+                        "ts": 0,
+                    },
+                    {
+                        "source": "browser:network",
+                        "level": "error",
+                        "text": "Failed to load resource: the server responded with a status of 404",
+                        "ts": 0,
+                    },
+                ],
+            },
+            "error": None,
+        }
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(
+        actions=[_action({"action": "console", "level": "warning", "contains": "x"})]
+    )
+
+    assert seen == [
+        ("console", {"level": "warning", "contains": "x", "limit": 50, "scope": "page"})
+    ]
+    assert isinstance(result, str)
+    assert "Untrusted browser content" in result
+    assert "Console for http://localhost:5173/ (3, oldest first):" in result
+    assert (
+        "[warning] " in result
+        and "unique key — http://localhost:5173/src/List.tsx:9:3" in result
+    )
+    assert "at List (http://localhost:5173/src/List.tsx:9:3)" in result
+    assert "[error uncaught]" in result
+    # The exception's own description carries its stack — printed once.
+    assert result.count("TodoList.tsx:14:22") == 1
+    assert "[error browser:network]" in result
+    assert "4 more from earlier pages" in result
+
+
+async def test_tool_network_lists_requests_with_ids_for_body(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        if action == "network_body":
+            return {
+                "success": True,
+                "data": {
+                    "request": {
+                        "request_id": "77.2",
+                        "method": "GET",
+                        "status": 500,
+                        "type": "Fetch",
+                        "url": "http://localhost:8000/api/todos",
+                        "mime_type": "application/json",
+                    },
+                    "body": '{"detail": "boom"}',
+                    "size": 18,
+                    "truncated": False,
+                },
+                "error": None,
+            }
+        return {
+            "success": True,
+            "data": {
+                "page_url": "http://localhost:5173/",
+                "total": 2,
+                "pending": 1,
+                "entries": [
+                    {
+                        "request_id": "77.2",
+                        "method": "GET",
+                        "status": 500,
+                        "status_text": "Internal Server Error",
+                        "type": "Fetch",
+                        "url": "http://localhost:8000/api/todos",
+                        "duration_ms": 12,
+                    },
+                    {
+                        "request_id": "77.3",
+                        "method": "POST",
+                        "failed": True,
+                        "error": "net::ERR_CONNECTION_REFUSED",
+                        "type": "XHR",
+                        "url": "http://localhost:9000/x",
+                    },
+                ],
+            },
+            "error": None,
+        }
+
+    _stub_send(monkeypatch, manager, handler)
+    listing = await webbridge(
+        actions=[
+            _action({"action": "network", "filter": "failed", "resource": "fetch"})
+        ]
+    )
+    body = await webbridge(
+        actions=[_action({"action": "network_body", "request_id": "77.2"})]
+    )
+
+    assert seen[0] == (
+        "network",
+        {"filter": "failed", "resource": "fetch", "limit": 50, "scope": "page"},
+    )
+    assert (
+        "[77.2] GET 500 Internal Server Error fetch http://localhost:8000/api/todos 12 ms"
+        in listing
+    )
+    assert (
+        "[77.3] POST failed xhr http://localhost:9000/x (net::ERR_CONNECTION_REFUSED)"
+        in listing
+    )
+    assert "(1 still in flight.)" in listing
+    assert seen[1] == ("network_body", {"request_id": "77.2", "max_chars": 20000})
+    assert "Content-Type: application/json" in body
+    assert '{"detail": "boom"}' in body
+
+
+async def test_tool_debug_summary_flags_a_fresh_recording(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _stub_send(
+        monkeypatch,
+        manager,
+        lambda action, params: {
+            "success": True,
+            "data": {
+                "started_now": True,
+                "page_url": "http://localhost:5173/",
+                "title": "Todos",
+                "console_counts": {"error": 0, "warning": 0, "total": 0},
+                "network_counts": {"total": 0, "failed": 0, "pending": 0},
+                "errors": [],
+                "warnings": [],
+                "failed_requests": [],
+            },
+            "error": None,
+        },
+    )
+    result = await webbridge(actions=[_action({"action": "debug_summary"})])
+
+    assert "Debug summary for http://localhost:5173/" in result
+    assert "Console: 0 error(s), 0 warning(s)" in result
+    assert "Recording started just now" in result
+    assert "Reload the page" in result
 
 
 async def test_tool_routes_commands_to_session_selected_extension(
