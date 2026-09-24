@@ -119,6 +119,12 @@ Agent-facing behavior of the `webbridge` tool:
   `mock add` are gated by `webbridge.allow_evaluate`, since each is as strong
   as running script in the page; HttpOnly cookie values are returned only on
   loopback pages.
+- In Coding sessions console stacks, uncaught-exception locations and React 19
+  owner-stack locations from `inspect` are mapped through the scripts' source
+  maps (inline `data:` or fetched, cached per map) back to the original files,
+  and marked `(source-mapped)`. The extension enables CDP `Debugger` only to
+  learn which script carries which map, with every pause skipped so a
+  `debugger;` statement cannot stall the page. Work sessions never enable it.
 - `upload_file` puts files into an `<input type=file>` through
   `DOM.setFileInputFiles`; paths must resolve inside the session's workspace
   roots or its uploads.
