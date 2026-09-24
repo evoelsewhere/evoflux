@@ -323,7 +323,10 @@ export function WorkspaceDocumentPreview({
   // Decks and workbooks can be built live, slide by slide or sheet by sheet.
   const liveBuildable = kind === 'pptx' || kind === 'xlsx'
   const turnKey = liveBuildable ? String(agentWorking) : ''
-  const requestKey = `${documentKey}:${exactRenderer}:${turnKey}`
+  const [annotating, setAnnotating] = useState(false)
+  // Selecting workbook cells needs the built-in render: exact pages are images.
+  const cellMode = kind === 'xlsx' && annotating
+  const requestKey = `${documentKey}:${exactRenderer}:${turnKey}:${cellMode ? 'cells' : ''}`
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const viewerRef = useRef<HTMLElement>(null)
@@ -370,7 +373,6 @@ export function WorkspaceDocumentPreview({
   const [slidePreviewMeta, setSlidePreviewMeta] = useState<SlidePreviewMeta[]>([])
   const [slideAspectRatio, setSlideAspectRatio] = useState('16 / 9')
   const [lastGood, setLastGood] = useState<{ source: string; renderer: string; html: string } | null>(null)
-  const [annotating, setAnnotating] = useState(false)
   const freshResult = result?.key === `${requestKey}:${retryKey}` ? result : null
   // Keep showing this file's last good pages while a newer version renders —
   // an agent saving a deck slide by slide, or the exact renderer landing —
@@ -387,7 +389,9 @@ export function WorkspaceDocumentPreview({
     && !freshResult.html.includes('data-preview-renderer="libreoffice-')
     // A deck an agent is still building renders natively on purpose; the
     // exact render follows once it is finished.
-    && !freshResult.html.includes('data-deck-live="true"'),
+    && !freshResult.html.includes('data-deck-live="true"')
+    // So does a workbook while its cells are being selected.
+    && !cellMode,
   )
   const isPresentation = kind === 'pptx'
   // With the slide thumbnails collapsed, a deck reads top to bottom like a
@@ -414,7 +418,10 @@ export function WorkspaceDocumentPreview({
       return () => controller.abort()
     }
 
-    const fetchBackendHtml = () => fetch(sourceUrl, { signal: controller.signal })
+    const previewUrl = cellMode
+      ? `${sourceUrl}${sourceUrl.includes('?') ? '&' : '?'}renderer=native`
+      : sourceUrl
+    const fetchBackendHtml = () => fetch(previewUrl, { signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(await errorMessage(response))
         return previewResponseText(response)
@@ -473,7 +480,7 @@ export function WorkspaceDocumentPreview({
       })
 
     return () => controller.abort()
-  }, [exactRenderer, file.name, kind, liveBuildable, rawUrl, requestKey, retryKey, sourceUrl])
+  }, [cellMode, exactRenderer, file.name, kind, liveBuildable, rawUrl, requestKey, retryKey, sourceUrl])
 
   useEffect(() => () => frameCleanupRef.current?.(), [])
 

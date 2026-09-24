@@ -139,7 +139,11 @@ async def _document_preview(
         raise IsADirectoryError(f"Path is not a file: {rel}")
 
     try:
-        rendered = await asyncio.to_thread(render_document_preview, resolved)
+        # The built-in engine even when the exact renderer is installed: its
+        # pages are images, which report no elements to check.
+        rendered = await asyncio.to_thread(
+            render_document_preview, resolved, native=True
+        )
     except DocumentPreviewUnsupportedError as exc:
         return (
             f"[Cannot preview: {rel}]\n{exc}\n"
@@ -164,9 +168,7 @@ async def _document_preview(
         preview,
         len(summary.items),
     )
-    return _render_report(
-        source=rel, preview=preview, summary=summary, verbose=verbose
-    )
+    return _render_report(source=rel, preview=preview, summary=summary, verbose=verbose)
 
 
 document_preview = Tool(

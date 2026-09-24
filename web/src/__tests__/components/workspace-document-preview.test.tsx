@@ -878,6 +878,8 @@ describe('WorkspaceDocumentPreview annotations', () => {
     cell('C4').getBoundingClientRect = () => new DOMRect(100, 25, 100, 25)
     doc.elementFromPoint = () => cell('C4')
     fireEvent.click(await screen.findByRole('button', { name: 'Select cells to edit' }))
+    // Exact pages are images, so cell selection asks for the built-in render.
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.at(-1)?.[0]).toContain('renderer=native'))
 
     // A click picks one cell…
     pointer(frame, 'pointerdown', cell('B3'), 10, 10)
