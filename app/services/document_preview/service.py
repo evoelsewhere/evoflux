@@ -75,13 +75,15 @@ def _renderer_identity(source: Path, live: bool = False, native: bool = False) -
     installed: its output carries cells and shapes (with geometry), which
     cell selection and the agent's layout checks need.
     """
-    if source.suffix.lower() not in _OFFICE_RUNTIME_SUFFIXES or native:
+    if source.suffix.lower() not in _OFFICE_RUNTIME_SUFFIXES:
         return "native"
     if live:
         # A deck under construction is re-rendered on every save; the exact
         # renderer (seconds per conversion) takes over once it is finished.
         # Its own key: the same bytes render plainly for everyone else.
         return "native-live"
+    if native:
+        return "native"
     runtime = installed_runtime_for_preview()
     return f"libreoffice-{runtime.version}" if runtime is not None else "native"
 

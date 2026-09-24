@@ -64,6 +64,9 @@ def describe(cell, cached, merged: dict[str, str]) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Cell text is often not ASCII; a Windows console defaults to a legacy code page.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Describe the cells of an annotated range.")
     parser.add_argument("workbook", type=Path)
     parser.add_argument("--sheet", required=True, help="sheet name from the annotation")

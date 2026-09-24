@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Search,
   SquareDashedMousePointer,
+  Printer,
   X,
   ZoomIn,
   ZoomOut,
@@ -324,9 +325,12 @@ export function WorkspaceDocumentPreview({
   const liveBuildable = kind === 'pptx' || kind === 'xlsx'
   const turnKey = liveBuildable ? String(agentWorking) : ''
   const [annotating, setAnnotating] = useState(false)
-  // Selecting workbook cells needs the built-in render: exact pages are images.
-  const cellMode = kind === 'xlsx' && annotating
-  const requestKey = `${documentKey}:${exactRenderer}:${turnKey}:${cellMode ? 'cells' : ''}`
+  // A workbook shows its cell grid (the built-in render) by default; the
+  // exact renderer's pages are print layout, a toggle away. Selecting cells
+  // always needs the grid.
+  const [printLayout, setPrintLayout] = useState(false)
+  const gridMode = kind === 'xlsx' && (!printLayout || annotating)
+  const requestKey = `${documentKey}:${exactRenderer}:${turnKey}:${gridMode ? 'grid' : ''}`
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const viewerRef = useRef<HTMLElement>(null)
@@ -390,8 +394,8 @@ export function WorkspaceDocumentPreview({
     // A deck an agent is still building renders natively on purpose; the
     // exact render follows once it is finished.
     && !freshResult.html.includes('data-deck-live="true"')
-    // So does a workbook while its cells are being selected.
-    && !cellMode,
+    // So does a workbook's cell grid.
+    && !gridMode,
   )
   const isPresentation = kind === 'pptx'
   // With the slide thumbnails collapsed, a deck reads top to bottom like a
@@ -418,7 +422,7 @@ export function WorkspaceDocumentPreview({
       return () => controller.abort()
     }
 
-    const previewUrl = cellMode
+    const previewUrl = gridMode
       ? `${sourceUrl}${sourceUrl.includes('?') ? '&' : '?'}renderer=native`
       : sourceUrl
     const fetchBackendHtml = () => fetch(previewUrl, { signal: controller.signal })
@@ -480,7 +484,7 @@ export function WorkspaceDocumentPreview({
       })
 
     return () => controller.abort()
-  }, [cellMode, exactRenderer, file.name, kind, liveBuildable, rawUrl, requestKey, retryKey, sourceUrl])
+  }, [exactRenderer, file.name, gridMode, kind, liveBuildable, rawUrl, requestKey, retryKey, sourceUrl])
 
   useEffect(() => () => frameCleanupRef.current?.(), [])
 
@@ -1266,6 +1270,21 @@ export function WorkspaceDocumentPreview({
               >
                 <SquareDashedMousePointer size={14} aria-hidden="true" />
               </button>
+              {exactRenderer && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAnnotating(false)
+                    setPrintLayout((value) => !value)
+                  }}
+                  aria-label="Print layout"
+                  aria-pressed={printLayout}
+                  title={printLayout ? 'Back to the cell grid' : 'Show the exact print layout'}
+                  className={cn(toolbarButtonClass, printLayout && 'bg-(--bg-key) text-(--color-text)')}
+                >
+                  <Printer size={14} aria-hidden="true" />
+                </button>
+              )}
               <DocumentVersionControls
                 sessionId={sessionId}
                 path={file.path}

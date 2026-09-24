@@ -147,3 +147,18 @@ def test_a_sheet_file_must_add_exactly_one_sheet(workbook_live, tmp_path):
     with pytest.raises(workbook_live.WorkbookLiveError, match="exactly one sheet"):
         workbook_live.add(book, broken)
     assert book.read_bytes() == before
+
+
+def test_a_native_request_never_shares_the_live_render(workbook_live, sheets, tmp_path):
+    book = tmp_path / "book.xlsx"
+    workbook_live.init(book, 2)
+    workbook_live.add(book, _sheet_file(sheets, "01_inputs.py", "Inputs", "rates"))
+
+    live = preview._render_document_preview(book, live_session=SESSION, native=True)
+    plain = preview._render_document_preview(
+        book, live_session="session-b", native=True
+    )
+
+    assert live != plain
+    assert "sheet-skeleton" in live.read_text(encoding="utf-8")
+    assert "sheet-skeleton" not in plain.read_text(encoding="utf-8")

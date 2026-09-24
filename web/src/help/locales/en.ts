@@ -1086,7 +1086,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'To change one part of a deck, click Select an area to edit in the viewer, then click a shape or drag across an area of a slide. Type what to change and press Enter to send it, or use Add to batch to collect several areas and send them together from the composer (shown as Annotations: N; leave the text empty to only point at an area). The agent edits just those parts, and the areas shimmer while it works. In a workbook, use Select cells to edit in the formula bar: click a cell or drag across a block of cells. Undo, Redo and Version history in the viewer header step through every saved version of a Word, Excel or PowerPoint file in the session, or restore an earlier one, without touching the chat or other files.',
+        text: 'To change one part of a deck, click Select an area to edit in the viewer, then click a shape or drag across an area of a slide. Type what to change and press Enter to send it, or use Add to batch to collect several areas and send them together from the composer (shown as Annotations: N; leave the text empty to only point at an area). The agent edits just those parts, and the areas shimmer while it works. In a workbook, use Select cells to edit in the formula bar: click a cell or drag across a block of cells. Workbooks open as their cell grid; with the exact renderer installed, Print layout in the formula bar shows the pages as they print. Undo, Redo and Version history in the viewer header step through every saved version of a Word, Excel or PowerPoint file in the session, or restore an earlier one, without touching the chat or other files.',
       },
       {
         type: 'p',

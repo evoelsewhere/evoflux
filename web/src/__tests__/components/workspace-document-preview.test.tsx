@@ -156,7 +156,8 @@ describe('WorkspaceDocumentPreview', () => {
       />,
     )
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/work/session-1/models/forecast.xlsx', expect.any(Object)))
+    // A workbook shows its cell grid: the built-in render, even with LibreOffice.
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/work/session-1/models/forecast.xlsx?renderer=native', expect.any(Object)))
     hydrateFrame()
 
     expect(await screen.findByRole('navigation', { name: 'Workbook sheets' })).toBeInTheDocument()
@@ -272,6 +273,25 @@ describe('WorkspaceDocumentPreview', () => {
     const progress = screen.getByRole('status', { name: '' })
     expect(progress).toHaveTextContent('Downloading the exact renderer')
     expect(progress).toHaveTextContent('50% · 91 MB / 182 MB')
+  })
+
+  it('keeps a workbook on its cell grid and offers the exact print layout on request', async () => {
+    runtime.status = { ...availableRuntime, installed_version: '26.8.0' }
+    render(
+      <WorkspaceDocumentPreview
+        sessionId="session-1"
+        file={{ path: 'model.xlsx', name: 'model.xlsx', mime: '', size: 10, mtime: 2 }}
+      />,
+    )
+
+    await waitFor(() => expect(fetch).toHaveBeenLastCalledWith('/work/session-1/model.xlsx?renderer=native', expect.any(Object)))
+    // The grid is native on purpose: no "exact renderer failed" banner.
+    hydrateFrame()
+    expect(screen.queryByText(/exact renderer could not/i)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print layout' }))
+    await waitFor(() => expect(fetch).toHaveBeenLastCalledWith('/work/session-1/model.xlsx', expect.any(Object)))
+    expect(screen.getByRole('button', { name: 'Print layout' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('renders DOCX through the backend once the exact renderer is installed', async () => {
