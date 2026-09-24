@@ -248,6 +248,7 @@ interface ActiveAgentTranscriptProps {
   onContinue?: () => void
   onRequestSelectionDetails: (selectedText: string) => void
   onSendToSideChat: (selectedText: string) => void
+  showTurnFiles: boolean
   turnChanges: TurnChangesPending | null
 }
 
@@ -267,6 +268,7 @@ function ActiveAgentTranscript({
   onContinue,
   onRequestSelectionDetails,
   onSendToSideChat,
+  showTurnFiles,
   turnChanges,
 }: ActiveAgentTranscriptProps) {
   const blocks = useTeamStore(
@@ -295,6 +297,7 @@ function ActiveAgentTranscript({
       onRequestSelectionDetails={onRequestSelectionDetails}
       onSendToSideChat={onSendToSideChat}
       turnChanges={turnChanges}
+      showTurnFiles={showTurnFiles}
       emptyState={emptyState}
     />
   )
@@ -1981,6 +1984,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
                 onContinue={continueTeam}
                 onSelectAgent={setActiveAgent}
                 showTurnChanges={mode === 'coding'}
+                showTurnFiles={mode !== 'coding'}
               />
             </Suspense>
           </div>
@@ -2058,6 +2062,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             onAddSelectionToChat={handleAddSelectionToChat}
             onRequestSelectionDetails={handleRequestSelectionDetails}
             onSendToSideChat={handleSendToSideChat}
+            showTurnFiles={mode !== 'coding'}
             turnChanges={
               mode === 'coding'
                 && agentViewAgent === leadName

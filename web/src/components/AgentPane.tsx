@@ -32,6 +32,7 @@ import { TurnStatusLine } from './TurnStatusLine'
 import { useHeldTrue } from '@/hooks/useHeldTrue'
 import { resolveAgentRole } from '@/lib/agent-roles'
 import { TurnChangesCard } from './TurnChangesCard'
+import { TurnFilesCard } from './TurnFilesCard'
 import { TranscriptHistoryControl } from './TranscriptHistoryControl'
 import type { ContentBlock, TodoItem } from '@/api/types'
 
@@ -56,6 +57,8 @@ interface AgentPaneProps {
   onMoveRight?: () => void
   collapsible?: boolean
   showTurnChanges?: boolean
+  /** Show cards for the previewable files each turn produced (Work mode). */
+  showTurnFiles?: boolean
 }
 
 function isDirectUserBlock(block: ContentBlock): boolean {
@@ -147,7 +150,7 @@ const STATUS_HOLD_MS = 900
 export function AgentPane({
   name, stream, isLead, todos, isContinuing = false, onContinue,
   canMoveLeft, canMoveRight, onMoveLeft, onMoveRight,
-  collapsible = true, showTurnChanges = false,
+  collapsible = true, showTurnChanges = false, showTurnFiles = false,
 }: AgentPaneProps) {
   const [paneCollapsed, setPaneCollapsed] = useState(false)
   const [renderedTurnCount, setRenderedTurnCount] = useState(INITIAL_RENDERED_TURNS)
@@ -428,6 +431,9 @@ export function AgentPane({
                          sessionId={sessionId}
                          latestMCPAppBlockIds={latestMCPAppBlockIds}
                        />
+                       {showTurnFiles && !(isWorking && isTrailingTurn) && (
+                         <div className="mt-2"><TurnFilesCard blocks={item.blocks} sessionId={sessionId} /></div>
+                       )}
                        {showTurnChanges
                          && isLead
                          && !isWorking

@@ -207,6 +207,14 @@ nothing downloads until they ask.
   the file list on every Office save and opens the preview of a document the
   agent just created, once per file, while a turn runs — unless another
   workbench tool is active or `oa.documents.autoOpenGenerated` is `"false"`.
+- **Turn file cards.** In Work mode each finished assistant turn ends with a
+  card per previewable file (PPTX, XLSX, DOCX, PDF, image) its tools created
+  or changed: `write`/`edit`/`patch` targets and files named on a `shell` or
+  `process` command line, minus files the turn removed, matched against the
+  session's file list (`web/src/lib/turn-files.ts`); prose mentions do not
+  count. Documents come before images; four show, the rest fold behind
+  "+N more". A card opens the file in Files (`requestWorkspaceFile`); its
+  hover button opens it in the default app (`web/src/components/TurnFilesCard.tsx`).
 - **Annotation edits (PPTX).** In a Work session the viewer's *Select an area
   to edit* toggle (`web/src/components/document-annotator.tsx`) outlines the
   slide shape under the pointer (native render: `data-shape-id`, slide layer

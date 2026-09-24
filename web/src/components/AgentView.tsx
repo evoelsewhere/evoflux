@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { TextSelectionAction } from './TextSelectionAction'
 import { TurnChangesCard } from './TurnChangesCard'
+import { TurnFilesCard } from './TurnFilesCard'
 import { UserMessageNavigationRail } from './UserMessageNavigationRail'
 import { AnimatePresence } from 'framer-motion'
 import { TurnStatusLine } from './TurnStatusLine'
@@ -90,6 +91,8 @@ interface AgentViewProps {
   onSendToSideChat?: (selectedText: string) => void
   /** Latest completed turn changes, shown only by Coding mode for the lead. */
   turnChanges?: TurnChangesPending | null
+  /** Show cards for the previewable files each turn produced (Work mode). */
+  showTurnFiles?: boolean
 }
 
 interface AssistantTranscriptTurnProps {
@@ -98,6 +101,7 @@ interface AssistantTranscriptTurnProps {
   isTrailing: boolean
   latestMCPAppBlockIds: Set<string>
   sessionId?: string
+  showTurnFiles: boolean
   turnChanges: TurnChangesPending | null
   turnIsStreaming: boolean
 }
@@ -145,6 +149,7 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
   isTrailing,
   latestMCPAppBlockIds,
   sessionId,
+  showTurnFiles,
   turnChanges,
   turnIsStreaming,
 }: AssistantTranscriptTurnProps) {
@@ -165,6 +170,7 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
             />
           )}
         />
+        {!turnIsStreaming && showTurnFiles && <TurnFilesCard blocks={blocks} sessionId={sessionId} />}
         {!turnIsStreaming && (
           <AssistantTurnFooter
             turnBlocks={blocks}
@@ -180,7 +186,7 @@ const AssistantTranscriptTurn = memo(function AssistantTranscriptTurn({
   )
 })
 
-export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges }: AgentViewProps) {
+export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError, isContinuing = false, onContinue, emptyState, onAddSelectionToChat, onRequestSelectionDetails, onSendToSideChat, turnChanges, showTurnFiles = false }: AgentViewProps) {
   const [renderedTurnCount, setRenderedTurnCount] = useState(HISTORY_INITIAL_RENDERED_TURNS)
   const sessionId = useTeamStore((s) => s.sessionId) ?? undefined
   const historyLoadStartBlockCountRef = useRef<number | null>(null)
@@ -454,6 +460,7 @@ export function AgentView({ blocks, currentBlocks, isWorking, isError, lastError
                      canContinue={isTrailingTurn && !isWorking ? onContinue : undefined}
                      sessionId={sessionId}
                      latestMCPAppBlockIds={latestMCPAppBlockIds}
+                     showTurnFiles={showTurnFiles}
                      turnChanges={
                        !isWorking
                          && isTrailingTurn
