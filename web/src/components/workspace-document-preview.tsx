@@ -369,7 +369,10 @@ export function WorkspaceDocumentPreview({
   const [searchCount, setSearchCount] = useState(0)
   const [searchIndex, setSearchIndex] = useState(0)
   const [zoom, setZoom] = useState(100)
-  const [fitMode, setFitMode] = useState<FitMode>(kind === 'pptx' ? 'page' : 'width')
+  // The zoom a reloaded frame gets back when it is not refitted.
+  const zoomRef = useRef(100)
+  const initialFitMode: FitMode = kind === 'pptx' ? 'page' : kind === 'xlsx' ? 'custom' : 'width'
+  const [fitMode, setFitMode] = useState<FitMode>(initialFitMode)
   const [selectedCell, setSelectedCell] = useState<SelectedCell | null>(null)
   const [presentationView, setPresentationView] = useState<PresentationView>('normal')
   const [notesOpen, setNotesOpen] = useState(false)
@@ -454,7 +457,8 @@ export function WorkspaceDocumentPreview({
           setSlidePreviewMeta([])
           setSlideAspectRatio('16 / 9')
           setZoom(100)
-          setFitMode(kind === 'pptx' ? 'page' : 'width')
+          zoomRef.current = 100
+          setFitMode(initialFitMode)
         } else if (!deckLiveRef.current && html.includes('data-deck-live="true"')) {
           // The agent started building this deck again: follow it again.
           followLiveRef.current = true
@@ -484,7 +488,7 @@ export function WorkspaceDocumentPreview({
       })
 
     return () => controller.abort()
-  }, [exactRenderer, file.name, gridMode, kind, liveBuildable, rawUrl, requestKey, retryKey, sourceUrl])
+  }, [exactRenderer, file.name, gridMode, initialFitMode, kind, liveBuildable, rawUrl, requestKey, retryKey, sourceUrl])
 
   useEffect(() => () => frameCleanupRef.current?.(), [])
 
@@ -539,6 +543,7 @@ export function WorkspaceDocumentPreview({
     const value = clampZoom(nextZoom)
     const document = iframeRef.current?.contentDocument
     document?.body?.style.setProperty('zoom', String(value / 100))
+    zoomRef.current = value
     setZoom(value)
     setFitMode(mode)
   }, [])
@@ -561,8 +566,10 @@ export function WorkspaceDocumentPreview({
     const widthScale = (frame.clientWidth - 32) / Math.max(width, 1)
     const heightScale = (frame.clientHeight - 32) / Math.max(height, 1)
     const scale = mode === 'page' ? Math.min(widthScale, heightScale) : widthScale
-    applyZoom(scale * 100, mode)
-  }, [applyZoom])
+    // Fitting shrinks a page or sheet to the view but never blows it up past
+    // its real size; slides scale up to fill the view, as in PowerPoint.
+    applyZoom((kind === 'pptx' ? scale : Math.min(scale, 1)) * 100, mode)
+  }, [applyZoom, kind])
 
   const selectSpreadsheetCell = useCallback((target: HTMLElement, focus = false) => {
     const document = target.ownerDocument
@@ -943,7 +950,10 @@ export function WorkspaceDocumentPreview({
 
     if (searchQuery) refreshSearch(searchQuery)
     frameWindow.requestAnimationFrame(() => {
-      fitDocument(fitMode === 'custom' ? 'width' : fitMode)
+      // A workbook keeps its zoom (100% at first): sheets scroll, they are
+      // not squeezed to the view.
+      if (kind === 'xlsx' && fitMode === 'custom') applyZoom(zoomRef.current)
+      else fitDocument(fitMode === 'custom' ? 'width' : fitMode)
       if (tracksContinuousScroll && (kind !== 'pptx' || continuousSlides)) {
         // A refreshed document keeps its place; a followed deck moves on. A
         // new renderer (the exact render replacing the native one) lays pages
@@ -953,7 +963,7 @@ export function WorkspaceDocumentPreview({
         else if (savedScrollRef.current) frameWindow.scrollTo(0, savedScrollRef.current)
       }
     })
-  }, [fitDocument, fitMode, kind, liveBuildable, refreshSearch, searchQuery, selectSpreadsheetCell])
+  }, [applyZoom, fitDocument, fitMode, kind, liveBuildable, refreshSearch, searchQuery, selectSpreadsheetCell])
 
   // Switch an already loaded deck between one-slide and scrolling layouts
   // when the thumbnails are shown or collapsed, keeping the current slide.

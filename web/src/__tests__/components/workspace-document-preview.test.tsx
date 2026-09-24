@@ -275,6 +275,31 @@ describe('WorkspaceDocumentPreview', () => {
     expect(progress).toHaveTextContent('50% · 91 MB / 182 MB')
   })
 
+  it('never zooms a page or sheet past 100% on its own, while slides fill the view', async () => {
+    const nextFrame = (frame: HTMLIFrameElement) => new Promise<void>((resolve) => {
+      frame.contentWindow?.requestAnimationFrame(() => resolve())
+    })
+    // Items are 400px wide in an 832px frame: an uncapped fit would double them.
+    const cases: Array<[string, string, (percent: number) => boolean]> = [
+      ['model.xlsx', workbookHtml, (percent) => percent === 100],
+      ['report.pdf', documentHtml, (percent) => percent === 100],
+      ['deck.pptx', slideDeckHtml, (percent) => percent > 100],
+    ]
+    for (const [name, html, expected] of cases) {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve(html) }))
+      const { unmount } = render(
+        <WorkspaceDocumentPreview sessionId="session-1" file={{ path: name, name, mime: '', size: 10, mtime: 2 }} />,
+      )
+      await waitFor(() => expect(screen.getByTestId('document-preview-frame')).toHaveAttribute('srcdoc', html))
+      await nextFrame(hydrateFrame(html))
+      const zoomOf = () => Number(/\d+/.exec(screen.getByLabelText(/^Zoom \d+ percent$/).getAttribute('aria-label') ?? '')?.[0])
+      // Fitting (as on load, or from the button) keeps pages at their real size.
+      fireEvent.click(screen.getAllByRole('button', { name: name.endsWith('.pptx') ? 'Fit page' : 'Fit width' })[0])
+      await waitFor(() => expect(expected(zoomOf()), `${name}: ${zoomOf()}%`).toBe(true))
+      unmount()
+    }
+  })
+
   it('keeps a workbook on its cell grid and offers the exact print layout on request', async () => {
     runtime.status = { ...availableRuntime, installed_version: '26.8.0' }
     render(
