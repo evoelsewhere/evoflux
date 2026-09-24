@@ -71,17 +71,28 @@ describe('TurnFilesCard', () => {
     expect(requestWorkspaceFile).toHaveBeenCalledWith('session-1', 'GalaxyCore_Q3.pptx')
   })
 
-  it('puts documents first and folds everything past four files behind "+N more"', () => {
-    const qa: ContentBlock = {
+  it('cards images only when the reply links them', () => {
+    const render_ = {
       id: 'render',
       type: 'tool',
       content: '',
       toolName: 'shell',
-      toolArgs: JSON.stringify({ command: `python crop.py ${renders.map((name) => `renders/${name}`).join(' ')}` }),
+      toolArgs: JSON.stringify({ command: 'python render.py GalaxyCore_Q3.pptx --out renders/slide-01.png' }),
       toolDone: true,
+    } satisfies ContentBlock
+    render(<TurnFilesCard blocks={[...blocks, render_]} sessionId="session-1" />)
+
+    expect(screen.getAllByRole('button', { name: /^Preview / })).toHaveLength(1)
+  })
+
+  it('puts documents first and folds everything past four files behind "+N more"', () => {
+    const reply: ContentBlock = {
+      id: 'reply',
+      type: 'text',
+      content: renders.map((name) => `![${name}](renders/${name})`).join('\n'),
     }
-    // The renders are touched before the deck, yet the deck leads.
-    render(<TurnFilesCard blocks={[qa, ...blocks]} sessionId="session-1" />)
+    // The images are linked before the deck is named, yet the deck leads.
+    render(<TurnFilesCard blocks={[reply, ...blocks]} sessionId="session-1" />)
 
     const previews = () => screen.getAllByRole('button', { name: /^Preview / })
     expect(previews().map((button) => button.getAttribute('aria-label'))).toEqual([
@@ -112,14 +123,7 @@ describe('TurnFilesCard', () => {
       + '<article data-preview-item><section class="slide">First slide</section></article>'
       + '<article data-preview-item><section class="slide">Second slide</section></article></body></html>'
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(deckHtml)))
-    const image: ContentBlock = {
-      id: 'png',
-      type: 'tool',
-      content: '',
-      toolName: 'write',
-      toolArgs: JSON.stringify({ path: 'renders/slide-01.png' }),
-      toolDone: true,
-    }
+    const image: ContentBlock = { id: 'reply', type: 'text', content: 'The cover: ![cover](renders/slide-01.png)' }
 
     const { container } = render(<TurnFilesCard blocks={[...blocks, image]} sessionId="session-1" />)
 
