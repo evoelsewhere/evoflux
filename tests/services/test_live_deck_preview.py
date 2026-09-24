@@ -9,7 +9,11 @@ import pytest
 from pptx.util import Inches
 
 from app.services.document_preview import service as preview
-from app.services.document_preview.live_deck import deck_is_live, read_deck_plan
+from app.services.document_preview.live_deck import (
+    PLACEHOLDER_KINDS,
+    deck_is_live,
+    read_deck_plan,
+)
 
 SCRIPT = (
     Path(__file__).resolve().parents[2]
@@ -222,3 +226,62 @@ def test_only_the_building_session_sees_the_deck_live_while_it_runs(
     # …and so does the building session once its turn is over (abandoned build).
     assert "data-deck-live" not in _render(deck, None)
     assert not deck_is_live(deck, "session-b")
+
+
+def _placeholder_shapes(rendered: str) -> list[str]:
+    return re.findall(r'class="slide slide-skeleton" data-layout="([a-z]+)"', rendered)
+
+
+def test_placeholders_take_the_shapes_the_plan_picks(deck_live, tmp_path):
+    deck = tmp_path / "deck.pptx"
+    # Titles in any language; the plan picks each stand-in's shape.
+    deck_live.init(
+        deck,
+        ["EvoFlux", "Lộ trình", "Thị phần", "Bảng giá", "Cảm ơn"],
+        ["cover", "timeline", "donut", "table", "closing"],
+    )
+
+    assert _placeholder_shapes(_render(deck)) == [
+        "cover",
+        "timeline",
+        "donut",
+        "table",
+        "closing",
+    ]
+
+
+def test_placeholders_without_picked_shapes_still_vary(deck_live, tmp_path):
+    deck = tmp_path / "deck.pptx"
+    deck_live.init(deck, ["A", "B", "C", "D", "E"])
+
+    shapes = _placeholder_shapes(_render(deck))
+
+    assert shapes[0] == "cover" and shapes[-1] == "closing"
+    assert len(set(shapes[1:-1])) == 3
+
+
+def test_init_rejects_mismatched_or_unknown_placeholders(deck_live, tmp_path):
+    deck = tmp_path / "deck.pptx"
+    with pytest.raises(deck_live.DeckLiveError, match="one --placeholder per --title"):
+        deck_live.init(deck, ["A", "B"], ["cover"])
+    with pytest.raises(deck_live.DeckLiveError, match="Unknown placeholder"):
+        deck_live.init(deck, ["A"], ["hexagon"])
+
+
+def test_plan_reader_ignores_placeholders_it_does_not_know(deck_live, tmp_path):
+    deck = tmp_path / "deck.pptx"
+    deck_live.init(deck, ["A", "B"], ["cover", "table"])
+    plan = read_deck_plan(deck)
+    assert plan is not None and plan.placeholders == ("cover", "table")
+
+    # A plan written by a newer script may pick a shape this preview lacks.
+    newer = dict(deck_live._read_plan(deck), placeholders=["cover", "hexagon"])
+    deck_live._write(deck, deck.read_bytes(), newer)
+
+    plan = read_deck_plan(deck)
+    assert plan is not None
+    assert plan.placeholder(0) == "cover" and plan.placeholder(1) == ""
+
+
+def test_skill_script_and_preview_agree_on_placeholder_names(deck_live):
+    assert deck_live.PLACEHOLDERS == PLACEHOLDER_KINDS

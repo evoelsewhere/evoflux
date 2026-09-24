@@ -363,6 +363,8 @@ export function WorkspaceDocumentPreview({
   const followLiveRef = useRef(true)
   // Whether the frame last showed a deck still being built.
   const deckLiveRef = useRef(false)
+  // The slide a deck under construction is followed to (-1: not live).
+  const liveTargetRef = useRef(-1)
   const savedScrollRef = useRef(0)
   // The layout a live build collapsed, restored once the deck is finished
   // unless the user reopened the thumbnails in the meantime.
@@ -603,7 +605,15 @@ export function WorkspaceDocumentPreview({
 
   useEffect(() => {
     if (fitMode === 'custom') return
-    const handleResize = () => fitDocument(fitMode)
+    const handleResize = () => {
+      fitDocument(fitMode)
+      // Refitting moves the slides; a followed deck keeps the slide being
+      // built in view (the panel resizing as the build starts, for example).
+      const target = itemElementsRef.current[liveTargetRef.current]
+      if (followLiveRef.current && slideScrollRef.current && target) {
+        target.scrollIntoView?.({ block: 'center' })
+      }
+    }
     const observer = typeof ResizeObserver === 'undefined'
       ? null
       : new ResizeObserver(handleResize)
@@ -616,9 +626,10 @@ export function WorkspaceDocumentPreview({
   }, [currentResult?.html, fitDocument, fitMode])
 
   const goToItem = useCallback((index: number) => {
-    // Navigating yourself stops following a deck an agent is building.
-    followLiveRef.current = false
     const normalized = Math.max(0, Math.min(index, itemElementsRef.current.length - 1))
+    // Navigating away stops following a deck an agent is building; going
+    // back to the slide it follows picks the build up again.
+    followLiveRef.current = liveTargetRef.current >= 0 && normalized === liveTargetRef.current
     const singleSurface = kind === 'xlsx' || (kind === 'pptx' && !slideScrollRef.current)
     itemElementsRef.current.forEach((item, itemIndex) => {
       if (singleSurface) item.toggleAttribute('hidden', itemIndex !== normalized)
@@ -790,6 +801,7 @@ export function WorkspaceDocumentPreview({
     // The save that finishes a followed deck lands on its last slide.
     const justFinished = kind === 'pptx' && !liveDeck && deckLiveRef.current && followLiveRef.current
     deckLiveRef.current = liveDeck
+    liveTargetRef.current = liveDeck ? followTarget : -1
     const following = justFinished || (liveDeck && followLiveRef.current && followTarget >= 0)
     const restoredIndex = justFinished
       ? elements.length - 1
@@ -845,6 +857,14 @@ export function WorkspaceDocumentPreview({
         })
         activeIndexRef.current = closest
         setActiveIndex(closest)
+        // Scrolling back to the slide being built picks the build up again,
+        // like a chat that sticks to its newest message.
+        const target = elements[liveTargetRef.current]
+        if (liveDeck && !followLiveRef.current && target) {
+          const box = target.getBoundingClientRect()
+          const viewport = frameWindow.innerHeight
+          if (box.top < viewport * 0.75 && box.bottom > viewport * 0.25) followLiveRef.current = true
+        }
       })
     }
     const tracksContinuousScroll = kind === 'pdf' || kind === 'docx' || kind === 'pptx'
@@ -955,7 +975,8 @@ export function WorkspaceDocumentPreview({
     if (!isPresentation) return
     const document = iframeRef.current?.contentDocument
     const background = presentationView === 'reading' ? '#111111' : '#e8eaed'
-    document?.documentElement.style.setProperty('--evoflux-stage-background', background)
+    // A frame still swapping in a new srcDoc has no documentElement yet.
+    document?.documentElement?.style.setProperty('--evoflux-stage-background', background)
     document?.body?.style.setProperty('--evoflux-stage-background', background)
   }, [currentResult?.html, isPresentation, presentationView])
 

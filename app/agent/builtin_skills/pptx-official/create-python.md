@@ -87,6 +87,14 @@ extend it when a slide needs a new helper.
      --title "Q3 Product Review" --title "What shipped" --title "What's next"
    ```
 
+   Optionally add one `--placeholder` per `--title`, in order, to make the
+   grey stand-in the user sees before a slide exists roughly resemble it.
+   This is cosmetic only: it does not change, limit or template the slide
+   you build, so design every slide from the outline as usual and skip
+   this when unsure. Shapes: `cover`, `bullets`, `split`, `cards`, `chart`,
+   `line`, `donut`, `stats`, `table`, `timeline`, `diagram`, `quote`,
+   `closing` (pick the nearest; none needs to match exactly).
+
 2. Put the palette, fonts and shared helpers in `slides/theme.py`.
 3. For each outline slide, in order: write one slide file that defines
    `build(prs)` and adds exactly one slide, then add it. One file, one

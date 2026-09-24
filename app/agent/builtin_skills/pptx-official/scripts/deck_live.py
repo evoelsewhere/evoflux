@@ -11,7 +11,12 @@ user only ever sees the finished deck.
 Commands:
 
     init   DECK --title "Cover" --title "Agenda" ...  create an empty deck
-                                                      carrying the plan
+           [--placeholder cover ...]                  carrying the plan; the
+                                                      optional placeholders
+                                                      (one per title) only
+                                                      shape the grey preview
+                                                      shown until each slide
+                                                      exists
     add    DECK slides/02_agenda.py [--replace N]     run the file's
                                                       ``build(prs)`` to add
                                                       exactly one slide, then
@@ -52,6 +57,25 @@ CUSTOM_REL_TYPE = (
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties"
 )
 _FMTID = "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"
+# Shapes the preview can draw for a slide that does not exist yet. They only
+# decorate the loading state; the slide itself is designed from the outline.
+# Keep in step with ``PLACEHOLDER_KINDS`` in
+# app/services/document_preview/live_deck.py.
+PLACEHOLDERS = (
+    "cover",
+    "bullets",
+    "split",
+    "cards",
+    "chart",
+    "line",
+    "donut",
+    "stats",
+    "table",
+    "timeline",
+    "diagram",
+    "quote",
+    "closing",
+)
 
 
 class DeckLiveError(RuntimeError):
@@ -131,19 +155,38 @@ def _write(deck: Path, package: bytes, plan: dict) -> None:
     _atomic_write(deck, _with_plan(package, plan))
 
 
-def init(deck: Path, titles: list[str]) -> dict:
-    """Create an empty 16:9 deck that carries the build plan."""
+def init(deck: Path, titles: list[str], placeholders: list[str] | None = None) -> dict:
+    """Create an empty 16:9 deck that carries the build plan.
+
+    ``placeholders`` picks, per title, the rough shape (see ``PLACEHOLDERS``)
+    of the grey stand-in the preview shows until that slide is added. It has
+    no effect on the deck. Without it the first stand-in is a cover, the last
+    a closing slide and the rest vary.
+    """
     from pptx import Presentation
     from pptx.util import Inches
 
     if not titles:
         raise DeckLiveError("Give one --title per planned slide.")
+    placeholders = placeholders or []
+    if placeholders and len(placeholders) != len(titles):
+        raise DeckLiveError(
+            f"Give one --placeholder per --title, or none ({len(titles)} titles, "
+            f"{len(placeholders)} placeholders)."
+        )
+    unknown = sorted(set(placeholders) - set(PLACEHOLDERS))
+    if unknown:
+        raise DeckLiveError(
+            f"Unknown placeholder {', '.join(unknown)}; choose from {', '.join(PLACEHOLDERS)}."
+        )
     presentation = Presentation()
     presentation.slide_width = Inches(13.333)
     presentation.slide_height = Inches(7.5)
     buffer = io.BytesIO()
     presentation.save(buffer)
     plan = {"v": 1, "total": len(titles), "titles": titles, "state": "building"}
+    if placeholders:
+        plan["placeholders"] = placeholders
     # EvoFlux names the session running this command; only that session's
     # viewer shows the build live, and only while its turn runs.
     session = os.environ.get("EVOFLUX_SESSION", "").strip()
@@ -262,6 +305,14 @@ def main() -> int:
     start = commands.add_parser("init", help="create an empty deck carrying the plan")
     start.add_argument("deck", type=Path)
     start.add_argument("--title", action="append", default=[], help="one per planned slide")
+    start.add_argument(
+        "--placeholder",
+        action="append",
+        default=[],
+        choices=PLACEHOLDERS,
+        help="optional, one per --title in order: the loading preview's rough shape "
+        "(cosmetic; does not affect the slide)",
+    )
     one = commands.add_parser("add", help="add the one slide a slide file's build(prs) makes")
     one.add_argument("deck", type=Path)
     one.add_argument("script", type=Path)
@@ -273,7 +324,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         if args.command == "init":
-            plan = init(args.deck, args.title)
+            plan = init(args.deck, args.title, args.placeholder)
             print(f"created {args.deck} with {plan['total']} planned slides")
         elif args.command == "add":
             count = add(args.deck, args.script, replace=args.replace)

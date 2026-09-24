@@ -477,6 +477,49 @@ describe('WorkspaceDocumentPreview', () => {
     expect(onLiveDeckChange).toHaveBeenCalledTimes(2)
   })
 
+  it('follows the slide being built until the user scrolls away, and again once they scroll back', async () => {
+    const liveDeckOf = (statuses: string[]) => `<!doctype html><html><head></head><body><main data-deck-live="true">${
+      statuses.map((status, index) => (
+        `<article data-preview-item data-preview-label="Slide ${index + 1}" data-slide-status="${status}"><section class="slide"></section></article>`
+      )).join('')
+    }</main></body></html>`
+    const deck = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 1 }
+    const view = (mtime: number) => (
+      <WorkspaceDocumentPreview sessionId="session-1" file={{ ...deck, mtime }} agentWorking />
+    )
+    const { rerender } = render(view(0))
+    const nextFrame = (frame: HTMLIFrameElement) => new Promise<void>((resolve) => {
+      frame.contentWindow?.requestAnimationFrame(() => resolve())
+    })
+    // The agent saves the deck: the viewer re-renders it in place.
+    const save = async (mtime: number, statuses: string[]) => {
+      const html = liveDeckOf(statuses)
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve(html) }))
+      rerender(view(mtime))
+      await waitFor(() => expect(screen.getByTestId('document-preview-frame')).toHaveAttribute('srcdoc', html))
+      const frame = hydrateFrame(html)
+      const slides = Array.from(frame.contentDocument?.querySelectorAll<HTMLElement>('[data-preview-item]') ?? [])
+      slides.forEach((slide) => { slide.scrollIntoView = vi.fn() })
+      await nextFrame(frame)
+      return { frame, slides }
+    }
+    const followed = { block: 'center', behavior: 'smooth' }
+
+    let { frame, slides } = await save(1, ['done', 'building', 'pending', 'pending'])
+    expect(slides[1].scrollIntoView).toHaveBeenCalledWith(followed)
+
+    // Scrolling away hands the viewer to the user…
+    fireEvent.wheel(frame.contentWindow as Window)
+    ;({ frame, slides } = await save(2, ['done', 'done', 'building', 'pending']))
+    expect(slides[2].scrollIntoView).not.toHaveBeenCalled()
+
+    // …and scrolling back to the slide being built follows it again.
+    fireEvent.scroll(frame.contentWindow as Window)
+    await nextFrame(frame)
+    ;({ frame, slides } = await save(3, ['done', 'done', 'done', 'building']))
+    expect(slides[3].scrollIntoView).toHaveBeenCalledWith(followed)
+  })
+
   it('re-renders a deck when the agent turn ends, since only a running build is shown live', async () => {
     const deck = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }
     const { rerender } = render(<WorkspaceDocumentPreview sessionId="session-1" file={deck} agentWorking />)
