@@ -170,9 +170,15 @@ nothing downloads until they ask.
   time with `scripts/deck_live.py`: `init --slides N` creates the file with
   its plan (slide count only) in the `evoflux.deck` custom document property,
   each slide is appended and saved atomically, `mark` re-embeds the plan
-  after PptxGenJS rewrites the file, and `finish` marks it done. The plan
-  also names the building session: the agent's `shell` exports
-  `EVOFLUX_SESSION` and `init` records it.
+  after PptxGenJS rewrites the file, and `finish` marks it done. A finished
+  deck keeps its plan (state `done`), so QA fixes — `add … --replace N` for
+  one slide, `rebuild DECK slides/` after changing shared helpers or several
+  slides, or re-running a PptxGenJS build — redraw the deck instead of
+  bringing the loading state back; when the scratch copy of the plan is gone
+  the commands read the one embedded in the deck. `init` refuses a deck that
+  already has slides (`--force` starts it over). The CLI writes no bytecode
+  beside the slide files. The plan also names the building session: the
+  agent's `shell` exports `EVOFLUX_SESSION` and `init` records it.
   `app/services/document_preview/live_deck.py` reads the plan. A deck renders
   live only for the session that builds it and only while that session's
   turn runs (`GET …/document-preview` passes the session when it is running;

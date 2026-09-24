@@ -75,7 +75,11 @@ every slide at once, or drafting every slide before adding the first,
 defeats this. See *Live build* in the create guides.
 
 **Phase 5 — Verify and repair.** Run the QA checklist and `document_preview`,
-fix what they report, run them again. Machine checks passing is a technical
+fix what they report, run them again. Repair the built deck in place: edit
+a slide file and `deck_live.py add DECK FILE --replace N`, or `deck_live.py
+rebuild DECK slides/` after changing shared helpers or several slides. Never
+run `init` again on a deck that has slides; it empties the deck and the user
+watches it load from nothing. Machine checks passing is a technical
 baseline, not acceptance — see *Acceptance* below.
 
 **Phase 6 — Hand off.** File path, theme used, the checks that actually ran,

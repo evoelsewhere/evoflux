@@ -108,11 +108,15 @@ extend it when a slide needs a new helper.
 
 4. After the last slide: `deck_live.py finish review.pptx`, then run the QA
    steps. To fix one slide, edit its file and re-add it in place with
-   `add review.pptx slides/02_shipped.py --replace 2`.
+   `add review.pptx slides/02_shipped.py --replace 2`. After changing
+   `theme.py` or several slides, rebuild them all in one save with
+   `rebuild review.pptx slides/`. Both keep the finished deck finished, so
+   the preview just redraws.
 
-Keep `--slides` equal to the number of slides you add (run `init` again if
-the outline changes before the first `add`). A slide file that fails leaves
-the deck as it was; fix it and run `add` again.
+Keep `--slides` equal to the number of slides you add. Never run `init`
+again on a deck that has slides: it refuses (`--force` would empty the deck
+and the user would watch it load from nothing). A slide file that fails
+leaves the deck as it was; fix it and run `add` again.
 
 ## Text on a slide
 

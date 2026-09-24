@@ -96,7 +96,10 @@ build, and only then design slide 2.
 3. For each outline slide, in order: write its slide file, then run
    `bun run build_deck.ts`. One slide file, one command, then the next
    slide. Shared palette and helpers go in `slides/theme.ts`.
-4. After the last slide: `deck_live.py finish review.pptx`, then QA.
+4. After the last slide: `deck_live.py finish review.pptx`, then QA. To fix
+   slides, edit their files and run `bun run build_deck.ts` again: the
+   finished deck stays finished. Never run `init` again on a deck that has
+   slides.
 
 Available `pres.layout` values: `LAYOUT_16x9` (10 × 5.625), `LAYOUT_WIDE`
 (13.333 × 7.5), `LAYOUT_16x10` (10 × 6.25), `LAYOUT_4x3` (10 × 7.5). Use

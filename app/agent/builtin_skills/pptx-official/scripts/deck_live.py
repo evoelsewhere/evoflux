@@ -21,6 +21,14 @@ Commands:
                                                       a generator rewrote the
                                                       file (PptxGenJS)
     finish DECK                                       mark the deck complete
+    rebuild DECK slides/                              rebuild every slide from
+                                                      the numbered slide files
+                                                      in one save
+
+After `finish`, fix a slide with `add DECK slides/04_x.py --replace 4`, or run
+`rebuild` after changing shared helpers or several slides: the deck stays
+finished and the preview simply redraws. Never run `init` again on a deck that
+has slides; it empties the deck and the preview starts over from nothing.
 
 A slide file defines ``build(prs)`` and adds one slide to ``prs``. Its folder
 is importable, so shared palette and helpers can live beside it (for example
@@ -35,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import io
 import json
 import os
@@ -120,11 +129,55 @@ def _atomic_write(deck: Path, payload: bytes) -> None:
             time.sleep(0.1)
 
 
+def _embedded_plan(deck: Path) -> dict | None:
+    """The plan stored in the deck itself, if any."""
+    import xml.etree.ElementTree as ElementTree
+
+    try:
+        with zipfile.ZipFile(deck) as archive:
+            info = archive.getinfo(CUSTOM_PART)
+            if info.file_size > 64 * 1024:
+                return None
+            root = ElementTree.fromstring(archive.read(info))
+    except (OSError, KeyError, zipfile.BadZipFile, ElementTree.ParseError):
+        return None
+    for prop in root.iter():
+        if prop.get("name") == PLAN_PROPERTY:
+            try:
+                plan = json.loads("".join(prop.itertext()))
+            except ValueError:
+                return None
+            return plan if isinstance(plan, dict) and "total" in plan else None
+    return None
+
+
 def _read_plan(deck: Path) -> dict:
     try:
         return json.loads(_plan_path(deck).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise DeckLiveError(f"No live plan for {deck.name}; run `init` first.") from exc
+    except (OSError, ValueError):
+        pass
+    plan = _embedded_plan(deck)  # the scratch copy was cleaned up
+    if plan is None:
+        raise DeckLiveError(f"No live plan for {deck.name}; run `init` first.")
+    return plan
+
+
+def _plan_or_finished(deck: Path, slides: int) -> dict:
+    """The deck's plan, or a finished one for a deck that has none."""
+    try:
+        return _read_plan(deck)
+    except DeckLiveError:
+        return {"v": 1, "total": max(slides, 1), "state": "done"}
+
+
+def _slide_count(deck: Path) -> int:
+    from pptx import Presentation
+    from pptx.exc import PackageNotFoundError
+
+    try:
+        return len(Presentation(str(deck)).slides)
+    except (OSError, ValueError, KeyError, zipfile.BadZipFile, PackageNotFoundError):
+        return 0
 
 
 def _write(deck: Path, package: bytes, plan: dict) -> None:
@@ -132,17 +185,25 @@ def _write(deck: Path, package: bytes, plan: dict) -> None:
     _atomic_write(deck, _with_plan(package, plan))
 
 
-def init(deck: Path, slides: int) -> dict:
+def init(deck: Path, slides: int, *, force: bool = False) -> dict:
     """Create an empty 16:9 deck that expects ``slides`` slides.
 
     The count only sizes the preview's loading state: one skeleton per slide
-    not added yet.
+    not added yet. A deck that already has slides is left alone unless
+    ``force`` starts it over.
     """
     from pptx import Presentation
     from pptx.util import Inches
 
     if not 0 < slides <= _MAX_SLIDES:
         raise DeckLiveError(f"--slides must be between 1 and {_MAX_SLIDES}.")
+    existing = _slide_count(deck) if deck.exists() else 0
+    if existing and not force:
+        raise DeckLiveError(
+            f"{deck.name} already has {existing} slides. Fix a slide with "
+            "`add DECK SLIDE_FILE --replace N` or rebuild them all with `rebuild DECK "
+            "slides/`; `init --force` empties the deck and the preview starts over."
+        )
     presentation = Presentation()
     presentation.slide_width = Inches(13.333)
     presentation.slide_height = Inches(7.5)
@@ -160,18 +221,38 @@ def init(deck: Path, slides: int) -> dict:
 
 
 def mark(deck: Path, *, done: bool = False) -> dict:
-    """Re-embed the plan into ``deck`` as it is now (e.g. after PptxGenJS)."""
-    plan = _read_plan(deck)
-    if done:
-        plan["state"] = "done"
+    """Re-embed the plan into ``deck`` as it is now (e.g. after PptxGenJS).
+
+    The plan is kept once the deck is done, so later fixes (``add --replace``,
+    ``rebuild``, PptxGenJS re-runs) keep it finished instead of live.
+    """
     try:
         package = deck.read_bytes()
     except OSError as exc:
         raise DeckLiveError(f"Cannot read {deck}") from exc
-    _write(deck, package, plan)
+    plan = _plan_or_finished(deck, _slide_count(deck))
     if done:
-        _plan_path(deck).unlink(missing_ok=True)
+        plan["state"] = "done"
+    _write(deck, package, plan)
     return plan
+
+
+# Folders slide files were loaded from; their helpers are re-imported fresh.
+_SLIDE_FOLDERS: set[Path] = set()
+
+
+def _forget_helpers(folder: Path) -> None:
+    """Drop cached helper modules (``theme.py`` …) of every slide folder, so
+    edits made since they were imported take effect and one deck's helpers
+    never stand in for another's."""
+    _SLIDE_FOLDERS.add(folder.resolve())
+    # A helper named like one here may have been imported from elsewhere.
+    local = {path.stem for path in folder.glob("*.py")}
+    for name, module in list(sys.modules.items()):
+        location = getattr(module, "__file__", None)
+        if name in local or (location and Path(location).resolve().parent in _SLIDE_FOLDERS):
+            del sys.modules[name]
+    importlib.invalidate_caches()
 
 
 def _load_builder(script: Path):
@@ -216,9 +297,10 @@ def add(deck: Path, script: Path, *, replace: int | None = None) -> int:
     """
     from pptx import Presentation
 
-    plan = _read_plan(deck)
     presentation = Presentation(str(deck))
     before = len(presentation.slides)
+    plan = _plan_or_finished(deck, before)
+    _forget_helpers(script.parent)
     if replace is not None and not 1 <= replace <= before:
         raise DeckLiveError(f"--replace {replace}: the deck has {before} slides")
     _load_builder(script)(presentation)
@@ -232,6 +314,38 @@ def add(deck: Path, script: Path, *, replace: int | None = None) -> int:
     presentation.save(buffer)
     _write(deck, buffer.getvalue(), plan)
     return len(presentation.slides)
+
+
+def rebuild(deck: Path, folder: Path) -> int:
+    """Rebuild every slide from ``folder``'s numbered slide files, in one save.
+
+    For fixes that touch shared helpers or several slides once the deck is
+    built: the deck keeps its plan (a finished deck stays finished), so the
+    preview redraws it instead of starting over. Returns the slide count.
+    """
+    from pptx import Presentation
+
+    scripts = sorted(path for path in folder.glob("*.py") if path.name[:1].isdigit())
+    if not scripts:
+        raise DeckLiveError(f"No numbered slide files (01_cover.py, …) in {folder}")
+    current = Presentation(str(deck))
+    plan = _plan_or_finished(deck, len(current.slides))
+    presentation = Presentation()
+    presentation.slide_width = current.slide_width
+    presentation.slide_height = current.slide_height
+    _forget_helpers(folder)
+    for script in scripts:
+        before = len(presentation.slides)
+        _load_builder(script)(presentation)
+        added = len(presentation.slides) - before
+        if added != 1:
+            raise DeckLiveError(f"{script.name} must add exactly one slide (it added {added})")
+    if plan.get("state") == "done":
+        plan["total"] = len(scripts)
+    buffer = io.BytesIO()
+    presentation.save(buffer)
+    _write(deck, buffer.getvalue(), plan)
+    return len(scripts)
 
 
 class LiveDeck:
@@ -258,15 +372,20 @@ class LiveDeck:
     def finish(self, presentation) -> None:
         self.plan["state"] = "done"
         self.save(presentation)
-        _plan_path(self.path).unlink(missing_ok=True)
 
 
 def main() -> int:
+    # Slide files and helpers change between commands; never leave bytecode
+    # beside them (stale caches, and __pycache__ folders among the user's files).
+    sys.dont_write_bytecode = True
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     commands = parser.add_subparsers(dest="command", required=True)
     start = commands.add_parser("init", help="create an empty deck carrying the plan")
     start.add_argument("deck", type=Path)
     start.add_argument("--slides", type=int, required=True, help="how many slides you will add")
+    start.add_argument(
+        "--force", action="store_true", help="empty a deck that already has slides and start over"
+    )
     one = commands.add_parser("add", help="add the one slide a slide file's build(prs) makes")
     one.add_argument("deck", type=Path)
     one.add_argument("script", type=Path)
@@ -275,16 +394,25 @@ def main() -> int:
     again.add_argument("deck", type=Path)
     end = commands.add_parser("finish", help="mark the deck complete")
     end.add_argument("deck", type=Path)
+    redo = commands.add_parser("rebuild", help="rebuild every slide from the slide files")
+    redo.add_argument("deck", type=Path)
+    redo.add_argument("folder", type=Path, help="folder with the numbered slide files")
     args = parser.parse_args()
     try:
         if args.command == "init":
-            plan = init(args.deck, args.slides)
+            plan = init(args.deck, args.slides, force=args.force)
             print(f"created {args.deck} with {plan['total']} planned slides")
+        elif args.command == "rebuild":
+            count = rebuild(args.deck, args.folder)
+            print(f"rebuilt {count} slides of {args.deck}")
         elif args.command == "add":
             count = add(args.deck, args.script, replace=args.replace)
-            total = _read_plan(args.deck)["total"]
+            plan = _read_plan(args.deck)
+            total = plan["total"]
             if args.replace is not None:
                 print(f"rebuilt slide {args.replace} of {args.deck}")
+            elif plan.get("state") == "done":
+                print(f"slide {count} saved; the deck stays finished")
             elif count < total:
                 print(f"slide {count} of {total} saved; write the next slide file")
             else:
