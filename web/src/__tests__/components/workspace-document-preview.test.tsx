@@ -1,13 +1,31 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { workPreviewUrl, codingPreviewUrl, renderDocx, runtime, installRuntime, cancelRuntime } = vi.hoisted(() => ({
+const {
+  workPreviewUrl,
+  codingPreviewUrl,
+  renderDocx,
+  runtime,
+  installRuntime,
+  cancelRuntime,
+  versions,
+  changeVersion,
+  checkpoint,
+} = vi.hoisted(() => ({
   workPreviewUrl: vi.fn((sessionId: string, path: string) => `/work/${sessionId}/${path}`),
   codingPreviewUrl: vi.fn((workspace: string, path: string) => `/coding/${workspace}/${path}`),
   renderDocx: vi.fn(),
   runtime: { status: undefined as unknown, installError: null as Error | null },
   installRuntime: vi.fn(),
   cancelRuntime: vi.fn(),
+  versions: { data: undefined as unknown },
+  changeVersion: vi.fn(),
+  checkpoint: vi.fn(() => Promise.resolve({})),
+}))
+
+vi.mock('@/queries/useDocumentVersionsQuery', () => ({
+  useDocumentVersionsQuery: () => ({ data: versions.data }),
+  useDocumentVersionMutation: () => ({ mutate: changeVersion, isPending: false, error: null }),
 }))
 
 vi.mock('@/queries/useOfficeRuntimeQuery', () => ({
@@ -42,6 +60,7 @@ vi.mock('@/api/client', () => ({
   codingWorkspaceDocumentPreviewUrl: codingPreviewUrl,
   workspaceMediaUrl: (sessionId: string, path: string) => `/media/${sessionId}/${path}`,
   codingWorkspaceFileUrl: (workspace: string, path: string) => `/raw/${workspace}/${path}`,
+  changeDocumentVersion: checkpoint,
 }))
 
 vi.mock('@/lib/docx-preview-render', () => ({
@@ -321,12 +340,18 @@ describe('WorkspaceDocumentPreview', () => {
       </body></html>`,
       query: 'Roadmap',
       activeControl: 'Go to slide 2: Slide 2',
+      // One slide at a time only with the thumbnails shown.
+      thumbnails: true,
     },
-  ])('reveals the hidden $name containing a search result', async ({ file, html, query, activeControl }) => {
+  ])('reveals the hidden $name containing a search result', async ({ file, html, query, activeControl, thumbnails }) => {
     render(<WorkspaceDocumentPreview sessionId="session-1" file={file} />)
 
     await waitFor(() => expect(fetch).toHaveBeenCalled())
-    const frame = hydrateFrame(html)
+    let frame = hydrateFrame(html)
+    if (thumbnails) {
+      fireEvent.click(await screen.findByRole('button', { name: 'Show slide thumbnails' }))
+      frame = hydrateFrame(html)
+    }
     fireEvent.click(screen.getByRole('button', { name: 'Search document' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Find in document' }), { target: { value: query } })
 
@@ -397,6 +422,9 @@ describe('WorkspaceDocumentPreview', () => {
     const normalView = await screen.findByRole('button', { name: 'Normal view' })
     expect(normalView).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('toolbar', { name: 'PowerPoint View controls' })).toBeInTheDocument()
+    // Thumbnails start hidden and open from the toolbar.
+    expect(screen.queryByRole('navigation', { name: 'Slide thumbnails' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Show slide thumbnails' }))
     expect(screen.getByRole('navigation', { name: 'Slide thumbnails' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Go to slide 1: Opening' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getAllByTitle(/Thumbnail for slide/)).toHaveLength(2)
@@ -421,30 +449,41 @@ describe('WorkspaceDocumentPreview', () => {
       .replace('<body>', '<body><main data-deck-live="true">')
       .replace('</body>', '</main></body>')
     const respond = (html: string) => ({ ok: true, status: 200, text: () => Promise.resolve(html) })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(liveDeckHtml)))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(slideDeckHtml)))
     const onLiveDeckChange = vi.fn()
     const deck = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }
-    const { rerender } = render(
-      <WorkspaceDocumentPreview sessionId="session-1" file={deck} onLiveDeckChange={onLiveDeckChange} />,
+    const view = (mtime: number) => (
+      <WorkspaceDocumentPreview sessionId="session-1" file={{ ...deck, mtime }} onLiveDeckChange={onLiveDeckChange} />
     )
+    const { rerender } = render(view(2))
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show slide thumbnails' }))
+    expect(screen.getByRole('navigation', { name: 'Slide thumbnails' })).toBeInTheDocument()
 
+    // The agent starts rebuilding the deck: the thumbnails step aside…
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(liveDeckHtml)))
+    rerender(view(3))
     await waitFor(() => expect(onLiveDeckChange).toHaveBeenLastCalledWith(true))
     hydrateFrame(liveDeckHtml)
     expect(screen.queryByRole('navigation', { name: 'Slide thumbnails' })).not.toBeInTheDocument()
 
+    // …and come back once it is finished.
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(slideDeckHtml)))
-    rerender(
-      <WorkspaceDocumentPreview
-        sessionId="session-1"
-        file={{ ...deck, mtime: 3 }}
-        onLiveDeckChange={onLiveDeckChange}
-      />,
-    )
-
+    rerender(view(4))
     await waitFor(() => expect(onLiveDeckChange).toHaveBeenLastCalledWith(false))
     hydrateFrame(slideDeckHtml)
     expect(await screen.findByRole('navigation', { name: 'Slide thumbnails' })).toBeInTheDocument()
     expect(onLiveDeckChange).toHaveBeenCalledTimes(2)
+  })
+
+  it('re-renders a deck when the agent turn ends, since only a running build is shown live', async () => {
+    const deck = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }
+    const { rerender } = render(<WorkspaceDocumentPreview sessionId="session-1" file={deck} agentWorking />)
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+
+    rerender(<WorkspaceDocumentPreview sessionId="session-1" file={deck} agentWorking={false} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
   })
 
   it('navigates PowerPoint slides with arrows, Home, End, and Space', async () => {
@@ -456,6 +495,8 @@ describe('WorkspaceDocumentPreview', () => {
     )
 
     await waitFor(() => expect(fetch).toHaveBeenCalled())
+    hydrateFrame(slideDeckHtml)
+    fireEvent.click(await screen.findByRole('button', { name: 'Show slide thumbnails' }))
     const frame = hydrateFrame(slideDeckHtml)
     if (!frame.contentWindow) throw new Error('Slide frame window is unavailable')
 
@@ -639,5 +680,105 @@ describe('WorkspaceDocumentPreview loading skeleton', () => {
     )
 
     expect(await screen.findByRole('status')).toHaveTextContent('first exact render can take up to a minute')
+  })
+})
+
+describe('WorkspaceDocumentPreview annotations', () => {
+  const annotatableDeckHtml = `<!doctype html><html><head></head><body>
+    <article class="slide-wrap" data-preview-item data-preview-label="Slide 1 — Revenue">
+      <section class="slide" style="aspect-ratio:16/9">
+        <div class="shape chart" data-shape-id="12" data-shape-name="Chart 3" data-source-layer="slide"><span>Quarterly P&amp;L</span></div>
+        <div class="shape" data-shape-id="2" data-shape-name="Logo" data-source-layer="master">Brand</div>
+      </section>
+    </article>
+  </body></html>`
+  const deck = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }
+
+  function pointer(frame: HTMLIFrameElement, type: string, target: Element, x: number, y: number) {
+    const FrameMouseEvent = (frame.contentWindow as unknown as typeof globalThis).MouseEvent
+    target.dispatchEvent(new FrameMouseEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0 }))
+  }
+
+  async function openAnnotatableDeck() {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(annotatableDeckHtml),
+    }))
+    render(<WorkspaceDocumentPreview sessionId="session-a" file={deck} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    const frame = hydrateFrame(annotatableDeckHtml)
+    const doc = frame.contentDocument as Document
+    const slide = doc.querySelector('.slide') as HTMLElement
+    const chart = doc.querySelector('[data-shape-id="12"]') as HTMLElement
+    const logo = doc.querySelector('[data-shape-id="2"]') as HTMLElement
+    slide.getBoundingClientRect = () => new DOMRect(0, 0, 800, 450)
+    chart.getBoundingClientRect = () => new DOMRect(80, 90, 400, 180)
+    logo.getBoundingClientRect = () => new DOMRect(700, 10, 80, 40)
+    fireEvent.click(await screen.findByRole('button', { name: 'Select an area to edit' }))
+    return { frame, slide, chart }
+  }
+
+  beforeEach(async () => {
+    const { useDocumentAnnotationsStore } = await import('@/stores/useDocumentAnnotationsStore')
+    useDocumentAnnotationsStore.setState({ pending: {}, submitRequest: null })
+    checkpoint.mockClear()
+  })
+
+  it('selects a clicked shape and adds it to the batch with its instruction', async () => {
+    const { useDocumentAnnotationsStore } = await import('@/stores/useDocumentAnnotationsStore')
+    const { frame, chart } = await openAnnotatableDeck()
+
+    pointer(frame, 'pointerdown', chart, 100, 100)
+    pointer(frame, 'pointerup', chart, 100, 100)
+
+    const popover = await screen.findByTestId('annotation-popover')
+    expect(popover).toHaveTextContent('Slide 1 · Chart 3')
+    fireEvent.change(within(popover).getByLabelText('Instruction for the selection'), {
+      target: { value: 'Keep the colors in a unified tone.' },
+    })
+    fireEvent.click(within(popover).getByRole('button', { name: 'Add annotation to batch' }))
+
+    const [annotation] = useDocumentAnnotationsStore.getState().pending['session-a']
+    expect(annotation).toMatchObject({
+      file: 'deck.pptx',
+      slide: 1,
+      shapes: [{ id: 12, name: 'Chart 3' }],
+      area: { x: 10, y: 20, w: 50, h: 40 },
+      text: 'Quarterly P&L',
+      instruction: 'Keep the colors in a unified tone.',
+    })
+    expect(checkpoint).toHaveBeenCalledWith('session-a', 'deck.pptx', {
+      action: 'checkpoint',
+      label: 'Keep the colors in a unified tone.',
+    })
+    expect(useDocumentAnnotationsStore.getState().submitRequest).toBeNull()
+    // The batched selection stays pinned on the slide with its number.
+    expect(frame.contentDocument?.querySelector('[data-evoflux-anno="pin"]')).toHaveAttribute('data-n', '1')
+  })
+
+  it('selects a dragged area, skips master shapes, and sends at once', async () => {
+    const { useDocumentAnnotationsStore } = await import('@/stores/useDocumentAnnotationsStore')
+    const { frame, slide } = await openAnnotatableDeck()
+
+    pointer(frame, 'pointerdown', slide, 0, 0)
+    pointer(frame, 'pointermove', slide, 800, 450)
+    pointer(frame, 'pointerup', slide, 800, 450)
+
+    const popover = await screen.findByTestId('annotation-popover')
+    fireEvent.click(within(popover).getByRole('button', { name: 'Send annotation now' }))
+
+    const state = useDocumentAnnotationsStore.getState()
+    expect(state.pending['session-a'][0].shapes).toEqual([{ id: 12, name: 'Chart 3' }])
+    expect(state.pending['session-a'][0].area).toEqual({ x: 0, y: 0, w: 100, h: 100 })
+    expect(state.submitRequest).toMatchObject({ sessionId: 'session-a' })
+    expect(screen.queryByTestId('annotation-popover')).not.toBeInTheDocument()
+  })
+
+  it('offers no annotation or history controls outside a session workspace', async () => {
+    render(<WorkspaceDocumentPreview workspace="C:/repo" file={deck} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Select an area to edit' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Document versions' })).not.toBeInTheDocument()
   })
 })

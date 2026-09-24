@@ -68,23 +68,24 @@ def _render_lock_for(output: Path) -> threading.Lock:
 _OFFICE_RUNTIME_SUFFIXES = frozenset({".docx", ".xlsx", ".pptx"})
 
 
-def _renderer_identity(source: Path) -> str:
+def _renderer_identity(source: Path, live: bool = False) -> str:
     """Name the engine that renders ``source`` so switching engines re-renders."""
     if source.suffix.lower() not in _OFFICE_RUNTIME_SUFFIXES:
         return "native"
-    if deck_is_live(source):
+    if live:
         # A deck under construction is re-rendered on every save; the exact
         # renderer (seconds per conversion) takes over once it is finished.
-        return "native"
+        # Its own key: the same bytes render plainly for everyone else.
+        return "native-live"
     runtime = installed_runtime_for_preview()
     return f"libreoffice-{runtime.version}" if runtime is not None else "native"
 
 
-def _cache_path(source: Path) -> Path:
+def _cache_path(source: Path, live: bool = False) -> Path:
     fingerprint = hashlib.sha256()
     fingerprint.update(_CACHE_SCHEMA_VERSION.encode())
     fingerprint.update(b"\0")
-    fingerprint.update(_renderer_identity(source).encode())
+    fingerprint.update(_renderer_identity(source, live).encode())
     fingerprint.update(b"\0")
     fingerprint.update(source.suffix.casefold().encode())
     fingerprint.update(b"\0")
@@ -4703,7 +4704,7 @@ def _slide_notes_text(slide: Any) -> str:
         return ""
 
 
-def _render_pptx(source: Path) -> str:
+def _render_pptx(source: Path, *, live: bool = False) -> str:
     from pptx import Presentation
 
     presentation = Presentation(str(source))
@@ -4711,7 +4712,8 @@ def _render_pptx(source: Path) -> str:
     slide_height = int(presentation.slide_height or 0)
     if slide_width <= 0 or slide_height <= 0:
         raise ValueError("Presentation has invalid slide dimensions")
-    plan = read_deck_plan(source)
+    # ``live``: the viewer's session is building this deck right now.
+    plan = read_deck_plan(source) if live else None
     live = plan is not None and not plan.done
     status_attribute = ' data-slide-status="done"' if live else ""
     rendered_slides: list[str] = []
@@ -5107,17 +5109,15 @@ def installed_runtime_for_preview() -> Any | None:
     return installed_runtime()
 
 
-def _render_source(source: Path) -> str:
+def _render_source(source: Path, live: bool = False) -> str:
     renderers = {
         ".docx": _render_docx,
         ".xlsx": _render_xlsx,
-        ".pptx": _render_pptx,
+        ".pptx": lambda path: _render_pptx(path, live=live),
         ".pdf": _render_pdf,
     }
     try:
-        if source.suffix.lower() in _OFFICE_RUNTIME_SUFFIXES and not deck_is_live(
-            source
-        ):
+        if source.suffix.lower() in _OFFICE_RUNTIME_SUFFIXES and not live:
             exact = _render_with_office_runtime(source)
             if exact is not None:
                 return exact
@@ -5133,8 +5133,13 @@ def _render_source(source: Path) -> str:
         raise DocumentPreviewError(f"Could not render this document: {exc}") from exc
 
 
-def _render_document_preview(source: Path) -> Path:
-    """Render ``source`` to a cached, self-contained HTML document."""
+def _render_document_preview(source: Path, *, live_session: str | None = None) -> Path:
+    """Render ``source`` to a cached, self-contained HTML document.
+
+    ``live_session`` is the viewer's session when its agent turn is running:
+    a deck that session is building renders live (finished slides plus
+    placeholders); everyone else gets the slides as they are.
+    """
     suffix = source.suffix.lower()
     if suffix not in SUPPORTED_DOCUMENT_PREVIEW_EXTENSIONS:
         raise DocumentPreviewUnsupportedError(
@@ -5147,7 +5152,8 @@ def _render_document_preview(source: Path) -> Path:
         )
     preflight_ooxml_package(source, suffix)
 
-    output = _cache_path(source)
+    live = deck_is_live(source, live_session)
+    output = _cache_path(source, live)
     with _render_lock_for(output):
         prepare_preview_cache_directory(output.parent)
         if cached_preview_is_valid(
@@ -5178,7 +5184,7 @@ def _render_document_preview(source: Path) -> Path:
         )
         temporary = Path(temporary_name)
         try:
-            rendered = _render_source(source).encode("utf-8")
+            rendered = _render_source(source, live).encode("utf-8")
             if len(rendered) > MAX_DOCUMENT_PREVIEW_HTML_BYTES:
                 raise DocumentPreviewUnsupportedError(
                     "The generated preview is too large for the in-app viewer. "

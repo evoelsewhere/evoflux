@@ -310,6 +310,16 @@ async def test_shell_subprocess_does_not_inherit_pythonpath(sandbox, monkeypatch
     assert "done" in result
 
 
+@_posix_only
+@pytest.mark.asyncio
+async def test_shell_names_its_session_for_skills(sandbox_workspace, monkeypatch):
+    """Skills (the live deck preview) tie their output to the running session."""
+    monkeypatch.setenv("EVOFLUX_SESSION", "host-value-never-inherited")
+    result = await shell_tool.arun(command='echo "session=$EVOFLUX_SESSION"')
+
+    assert "session=session-1" in result
+
+
 # ---------------------------------------------------------------------------
 # Shell detection (app.agent.tools.builtin.shell_runtime)
 # ---------------------------------------------------------------------------

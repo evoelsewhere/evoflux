@@ -28,6 +28,22 @@ def deck_live():
     sys.modules.pop("deck_live", None)
 
 
+SESSION = "session-a"
+
+
+@pytest.fixture(autouse=True)
+def building_session(monkeypatch):
+    # The agent's shell names its session; ``init`` records it in the plan.
+    monkeypatch.setenv("EVOFLUX_SESSION", SESSION)
+
+
+def _render(deck: Path, session: str | None = SESSION) -> str:
+    """The preview as ``session`` sees it while its turn runs (None: idle)."""
+    return preview._render_document_preview(deck, live_session=session).read_text(
+        encoding="utf-8"
+    )
+
+
 def _slide_statuses(rendered: str) -> list[str]:
     return re.findall(r'<article[^>]*data-slide-status="(\w+)"', rendered)
 
@@ -50,7 +66,8 @@ def test_live_deck_previews_finished_slides_and_placeholders(
 
     plan = read_deck_plan(deck)
     assert plan is not None and plan.total == 3 and not plan.done
-    rendered = preview._render_source(deck)
+    assert plan.session == SESSION
+    rendered = _render(deck)
     assert 'data-deck-live="true"' in rendered
     assert _slide_statuses(rendered) == ["building", "pending", "pending"]
     assert 'data-preview-label="Slide 2 — Why now"' in rendered
@@ -63,7 +80,7 @@ def test_live_deck_previews_finished_slides_and_placeholders(
     _add_slide(prs, "Cover text")
     live.save(prs)
 
-    rendered = preview._render_source(deck)
+    rendered = _render(deck)
     assert _slide_statuses(rendered) == ["done", "building", "pending"]
     assert "Cover text" in rendered
     assert "Building slide 2 of 3" in rendered
@@ -75,8 +92,8 @@ def test_live_deck_previews_finished_slides_and_placeholders(
         _add_slide(prs, text)
     live.finish(prs)
 
-    rendered = preview._render_source(deck)
-    assert not deck_is_live(deck)
+    rendered = _render(deck)
+    assert not deck_is_live(deck, SESSION)
     assert "data-deck-live" not in rendered
     assert _slide_statuses(rendered) == []
     assert not deck_live._plan_path(deck).exists()
@@ -114,7 +131,7 @@ def test_add_builds_one_slide_per_command(deck_live, monkeypatch, tmp_path):
     deck_live.init(deck, ["Cover", "Why now", "Roadmap"])
 
     assert deck_live.add(deck, _slide_file(slides, "01_cover.py", "Cover")) == 1
-    rendered = preview._render_source(deck)
+    rendered = _render(deck)
     assert _slide_statuses(rendered) == ["done", "building", "pending"]
 
     deck_live.add(deck, _slide_file(slides, "02_why.py", "Why now"))
@@ -122,10 +139,10 @@ def test_add_builds_one_slide_per_command(deck_live, monkeypatch, tmp_path):
     # Rebuild slide 2 in place: order and count stay, the old slide is gone.
     deck_live.add(deck, _slide_file(slides, "02_why.py", "Why now v2"), replace=2)
     assert _texts(deck) == ["> Cover", "> Why now v2", "> Roadmap"]
-    assert deck_is_live(deck)
+    assert deck_is_live(deck, SESSION)
 
     deck_live.mark(deck, done=True)
-    assert not deck_is_live(deck)
+    assert not deck_is_live(deck, SESSION)
 
 
 def test_add_leaves_the_deck_alone_when_a_slide_file_fails(deck_live, tmp_path):
@@ -158,8 +175,9 @@ def test_mark_restores_the_plan_after_a_generator_rewrites_the_deck(
 
     plan = read_deck_plan(deck)
     assert plan is not None and plan.titles == ("One", "Two") and not plan.done
+    assert plan.session == SESSION
     deck_live.mark(deck, done=True)
-    assert not deck_is_live(deck)
+    assert not deck_is_live(deck, SESSION)
 
 
 def test_live_deck_renders_natively_even_with_the_exact_renderer(
@@ -181,5 +199,26 @@ def test_live_deck_renders_natively_even_with_the_exact_renderer(
 
     monkeypatch.setattr(preview, "_render_with_office_runtime", fail)
 
-    assert preview._renderer_identity(deck) == "native"
-    assert 'data-deck-live="true"' in preview._render_source(deck)
+    assert preview._renderer_identity(deck, live=True) == "native-live"
+    assert 'data-deck-live="true"' in _render(deck)
+
+
+def test_only_the_building_session_sees_the_deck_live_while_it_runs(
+    deck_live, monkeypatch, tmp_path
+):
+    deck = tmp_path / "deck.pptx"
+    deck_live.init(deck, ["Cover", "Why now"])
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    live = deck_live.LiveDeck(deck)
+    prs = live.open()
+    _add_slide(prs, "Cover text")
+    live.save(prs)
+
+    assert _slide_statuses(_render(deck)) == ["done", "building"]
+    # Another session editing the same file sees just the finished slide…
+    other = _render(deck, "session-b")
+    assert "data-deck-live" not in other and "Cover text" in other
+    assert "slide-skeleton" not in other
+    # …and so does the building session once its turn is over (abandoned build).
+    assert "data-deck-live" not in _render(deck, None)
+    assert not deck_is_live(deck, "session-b")

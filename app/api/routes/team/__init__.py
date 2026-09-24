@@ -32,6 +32,7 @@ from app.api.routes.team import (
     change_sets,
     editor,
     chat,
+    document_versions,
     files,
     folders,
     git,
@@ -72,6 +73,7 @@ router.include_router(app_search.router)
 router.include_router(office_runtime.router)
 router.include_router(chat.router)
 router.include_router(files.router)
+router.include_router(document_versions.router)
 router.include_router(change_sets.router)
 router.include_router(editor.router)
 router.include_router(problems.router)

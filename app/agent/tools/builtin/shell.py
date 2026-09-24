@@ -302,6 +302,11 @@ async def _shell(
         yield_time_ms,
         description,
     )
+    env = _command_env(shell_bin, inherit=sandbox.inherit_shell_environment)
+    if sandbox.session_id:
+        # Lets Skills tie what they build to this session (e.g. the live
+        # deck preview), like the integrated terminal does.
+        env["EVOFLUX_SESSION"] = sandbox.session_id
     try:
         proc = await asyncio.create_subprocess_exec(
             shell_bin,
@@ -310,10 +315,7 @@ async def _shell(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(cwd),
-            env=_command_env(
-                shell_bin,
-                inherit=sandbox.inherit_shell_environment,
-            ),
+            env=env,
             **extra,
         )
     except NotImplementedError:

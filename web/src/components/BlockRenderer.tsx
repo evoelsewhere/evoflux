@@ -13,7 +13,8 @@
  */
 
 import { memo, useState } from 'react'
-import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal, Quote, Globe2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Check, Undo2, Terminal, Quote, Globe2, MessageSquareText } from 'lucide-react'
+import { describeAnnotation, parseAnnotatedMessage } from '@/lib/document-annotations'
 import { LazyMarkdownBlock } from '@/utils/LazyMarkdownBlock'
 import { Thinking } from './Thinking'
 import { ToolCall } from './ToolCall'
@@ -155,8 +156,13 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
   const [copied, setCopied] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const modelName = shortModelName(modelId)
-  const quotedContext = renderLeadingQuoteAsContext ? splitLeadingQuote(content) : null
-  const messageContent = quotedContext?.message ?? content
+  // Document annotations ride the message as a machine block; show a chip.
+  const annotated = shell ? null : parseAnnotatedMessage(content)
+  const [annotationsOpen, setAnnotationsOpen] = useState(false)
+  const baseContent = annotated?.text ?? content
+  const quotedContext = renderLeadingQuoteAsContext ? splitLeadingQuote(baseContent) : null
+  const messageContent = quotedContext?.message ?? baseContent
+  const showBubble = !annotated || Boolean(messageContent.trim()) || Boolean(quotedContext)
 
   const handleCopy = async () => {
     try {
@@ -212,7 +218,7 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
            </div>
          )}
 
-          <div className={`relative min-w-0 max-w-full overflow-hidden rounded-lg border px-3 py-2.5 text-sm leading-relaxed text-(--color-text) ${shell ? 'border-(--accent-blue)/35 bg-(--bg-key)' : 'border-(--color-border-subtle) bg-(--bg-key)'}`}>
+          {showBubble && <div className={`relative min-w-0 max-w-full overflow-hidden rounded-lg border px-3 py-2.5 text-sm leading-relaxed text-(--color-text) ${shell ? 'border-(--accent-blue)/35 bg-(--bg-key)' : 'border-(--color-border-subtle) bg-(--bg-key)'}`}>
            {/* Expand / collapse button — top-right inside bubble */}
            {needsCollapse && (
              <button
@@ -271,7 +277,37 @@ function UserBubble({ content, timestamp, attachments, onRevert, modelId, shell,
                }}
              />
            )}
-         </div>
+         </div>}
+
+         {annotated && annotated.annotations.length > 0 && (
+           <div className="flex max-w-full flex-col items-end gap-1">
+             <button
+               type="button"
+               onClick={() => setAnnotationsOpen((open) => !open)}
+               aria-expanded={annotationsOpen}
+               data-testid="annotations-chip"
+               className="flex items-center gap-1.5 rounded-md border border-(--color-accent)/25 bg-(--color-accent)/5 px-2 py-1 text-xs font-medium text-(--color-accent) transition-colors hover:bg-(--color-accent)/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)"
+             >
+               <MessageSquareText size={12} aria-hidden="true" />
+               Annotations: {annotated.annotations.length}
+               <ChevronDown size={12} className={annotationsOpen ? 'rotate-180' : ''} aria-hidden="true" />
+             </button>
+             {annotationsOpen && (
+               <ol className="max-w-full space-y-1 rounded-lg border border-(--color-border-subtle) bg-(--bg-key) px-3 py-2 text-xs">
+                 {annotated.annotations.map((annotation) => (
+                   <li key={annotation.n} className="min-w-0">
+                     <span className="text-(--color-text-muted)">
+                       #{annotation.n} {annotation.file} · {describeAnnotation(annotation)}
+                     </span>
+                     <span data-i18n-ignore className="block break-words text-(--color-text-2) [overflow-wrap:anywhere]">
+                       {annotation.instruction || 'Quoted — no instruction'}
+                     </span>
+                   </li>
+                 ))}
+               </ol>
+             )}
+           </div>
+         )}
 
          {/* Copy / revert / timestamp — always visible on touch; hover/focus on md+ */}
           <div className="flex items-center gap-1.5 opacity-100 transition-opacity duration-(--motion-fast) md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
