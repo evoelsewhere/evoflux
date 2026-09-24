@@ -202,6 +202,16 @@ nothing downloads until they ask.
   latest finished one) follows the build again, and a refit after the panel
   resizes keeps the followed slide centred. Both are restored when the deck
   is finished unless the user toggled them meanwhile.
+- **Live workbooks.** The `xlsx-official` Skill builds a new workbook the same
+  way, one sheet per command, with `scripts/workbook_live.py` (`init --sheets
+  N`, `add BOOK sheets/NN_x.py [--replace N]`, `rebuild BOOK sheets/`,
+  `finish`). Each sheet file's `build(wb)` adds exactly one worksheet. A
+  workbook cannot be empty, so `init` writes a stand-in sheet and the plan
+  counts the sheets actually `added`; the preview (`_render_xlsx(live=True)`)
+  shows that many sheets as `done` and a generic grid skeleton per sheet still
+  to come (`_pending_sheet_skeletons`). The same session scoping, repair-in-
+  place and `init` guard apply, and the viewer follows the newest finished
+  sheet the way it follows slides one at a time.
 - **Generated documents.** `web/src/hooks/useGeneratedDocumentWatcher.ts`
   subscribes a Work session to `/api/team/{session}/files/watch`, refreshes
   the file list on every Office save and opens the preview of a document the

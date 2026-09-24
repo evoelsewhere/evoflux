@@ -7,9 +7,12 @@ Write the generator to a `.py` file in the workspace and run it with
 `uv run --with openpyxl python build_model.py`; add `--with pandas` when it
 uses pandas, `--with xlsxwriter` for that engine, and `--with pillow` for
 images. Scripts run as `uv run --with openpyxl python scripts/<name>.py`.
+A new workbook is built live, one sheet file per sheet (see *Live build*);
+the snippets below show what goes inside a sheet file's `build(wb)`.
 
 ## Contents
 
+- Live build
 - Library choice
 - Minimum viable workbook
 - Writing data: list of dicts, DataFrame, multiple sheets
@@ -22,6 +25,57 @@ images. Scripts run as `uv run --with openpyxl python scripts/<name>.py`.
 - Print setup
 - Full working example
 - After saving — always
+
+## Live build
+
+The user watches the workbook take shape in the preview, one sheet per step,
+so **write and add each sheet in its own command**. Never build every sheet
+from one script: it runs in a second and the user only sees the end result.
+Do not draft later sheets ahead either: finish sheet 1, add it, then design
+sheet 2.
+
+1. Create the file with the sheet plan's count. It opens in the preview
+   straight away, with a loading skeleton for each sheet still to come:
+
+   ```bash
+   uv run --with openpyxl python <skill>/scripts/workbook_live.py init model.xlsx --sheets 3
+   ```
+
+2. Put shared styles, number formats and helpers in `sheets/theme.py`.
+3. For each planned sheet, in order: write one sheet file whose `build(wb)`
+   adds exactly one worksheet, then add it. Formulas may refer to sheets
+   added before it:
+
+   ```python
+   # sheets/02_model.py
+   from theme import HEADER_FONT          # helpers beside the sheet files
+
+   def build(wb):
+       ws = wb.create_sheet("Model")
+       ws["A1"] = "Revenue"
+       ws["A1"].font = HEADER_FONT
+       ws["B1"] = "=SUM(Inputs!B2:B13)"
+   ```
+
+   ```bash
+   uv run --with openpyxl python <skill>/scripts/workbook_live.py add model.xlsx sheets/02_model.py
+   ```
+
+   Add `--with pillow` to every `add` once a sheet holds images, so they
+   survive the later saves; add `--with pandas` when a sheet file uses it
+   (write frames with `openpyxl.utils.dataframe.dataframe_to_rows`, not
+   `df.to_excel`, which cannot write into the open workbook).
+4. After the last sheet: `workbook_live.py finish model.xlsx`, then Phase 4
+   (`bake.py`) and the QA checks. To fix one sheet, edit its file and re-add
+   it in place with `add model.xlsx sheets/02_model.py --replace 2`; after
+   changing `theme.py` or several sheets, `rebuild model.xlsx sheets/`. Both
+   keep the finished workbook finished, so the preview just redraws.
+
+Keep `--sheets` equal to the number of sheets you add. Never run `init`
+again on a workbook that has sheets: it refuses (`--force` would empty it
+and the user would watch it load from nothing). A sheet file that fails
+leaves the workbook as it was; fix it and run `add` again. `xlsxwriter`
+cannot reopen a file, so it is not for live builds.
 
 ## Library choice
 

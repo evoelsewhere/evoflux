@@ -320,7 +320,9 @@ export function WorkspaceDocumentPreview({
   // A deck renders live only while this session's turn runs, so a turn
   // starting or ending re-renders it even when the file did not change
   // (an interrupted build falls back to its finished slides).
-  const turnKey = kind === 'pptx' ? String(agentWorking) : ''
+  // Decks and workbooks can be built live, slide by slide or sheet by sheet.
+  const liveBuildable = kind === 'pptx' || kind === 'xlsx'
+  const turnKey = liveBuildable ? String(agentWorking) : ''
   const requestKey = `${documentKey}:${exactRenderer}:${turnKey}`
 
   const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -449,7 +451,7 @@ export function WorkspaceDocumentPreview({
         // A deck an agent is building gets the whole surface: the thumbnails
         // collapse (so the slides scroll and the viewer follows the one being
         // built) and the host is told, so it can hide its own chrome too.
-        const live = kind === 'pptx' && html.includes('data-deck-live="true"')
+        const live = liveBuildable && html.includes('data-deck-live="true"')
         const layout = liveLayoutRef.current
         if (live !== layout.live) {
           layout.live = live
@@ -471,7 +473,7 @@ export function WorkspaceDocumentPreview({
       })
 
     return () => controller.abort()
-  }, [exactRenderer, file.name, kind, rawUrl, requestKey, retryKey, sourceUrl])
+  }, [exactRenderer, file.name, kind, liveBuildable, rawUrl, requestKey, retryKey, sourceUrl])
 
   useEffect(() => () => frameCleanupRef.current?.(), [])
 
@@ -769,7 +771,7 @@ export function WorkspaceDocumentPreview({
     const continuousSlides = kind === 'pptx' && slideScrollRef.current
     // A deck an agent is still building: follow the slide being built (or,
     // one slide at a time, the latest finished one) until the user takes over.
-    const liveDeck = kind === 'pptx' && Boolean(document.querySelector('[data-deck-live]'))
+    const liveDeck = liveBuildable && Boolean(document.querySelector('[data-deck-live]'))
     const statuses = elements.map((element) => element.dataset.slideStatus ?? '')
     const building = statuses.indexOf('building')
     const lastDone = statuses.lastIndexOf('done')
@@ -777,7 +779,7 @@ export function WorkspaceDocumentPreview({
       ? (building >= 0 ? building : lastDone)
       : (lastDone >= 0 ? lastDone : building)
     // The save that finishes a followed deck lands on its last slide.
-    const justFinished = kind === 'pptx' && !liveDeck && deckLiveRef.current && followLiveRef.current
+    const justFinished = liveBuildable && !liveDeck && deckLiveRef.current && followLiveRef.current
     deckLiveRef.current = liveDeck
     liveTargetRef.current = liveDeck ? followTarget : -1
     const renderer = document.querySelector('[data-preview-renderer]')?.getAttribute('data-preview-renderer') ?? 'native'
@@ -940,7 +942,7 @@ export function WorkspaceDocumentPreview({
         else if (savedScrollRef.current) frameWindow.scrollTo(0, savedScrollRef.current)
       }
     })
-  }, [fitDocument, fitMode, kind, refreshSearch, searchQuery, selectSpreadsheetCell])
+  }, [fitDocument, fitMode, kind, liveBuildable, refreshSearch, searchQuery, selectSpreadsheetCell])
 
   // Switch an already loaded deck between one-slide and scrolling layouts
   // when the thumbnails are shown or collapsed, keeping the current slide.

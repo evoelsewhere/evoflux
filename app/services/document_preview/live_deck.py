@@ -1,14 +1,16 @@
-"""Read the build plan a deck carries while an agent generates it.
+"""Read the build plan a deck or workbook carries while an agent generates it.
 
-The ``pptx-official`` Skill's ``scripts/deck_live.py`` creates a deck before
-its slides exist and stores the plan (slide count, state) as the
-``evoflux.deck`` custom document property. Slides are appended one at a time
-and the file is saved after each, so the slides present are the finished
+The ``pptx-official`` Skill's ``scripts/deck_live.py`` (and the
+``xlsx-official`` Skill's ``scripts/workbook_live.py``) creates the file before
+its slides (sheets) exist and stores the plan (count, state) as the
+``evoflux.deck`` custom document property. Parts are appended one at a time
+and the file is saved after each, so the parts present are the finished
 ones; the preview renders skeletons for the rest until the plan says
-``done``. The plan names the building session (``EVOFLUX_SESSION`` in the
-agent's shell): only that session sees the build live, and only while its
-turn runs, so another session editing the same file, or an abandoned build,
-shows a plain deck.
+``done``. A workbook cannot have zero sheets, so its plan also counts the
+sheets actually ``added`` (the first sheet is a stand-in until then). The plan
+names the building session (``EVOFLUX_SESSION`` in the agent's shell): only
+that session sees the build live, and only while its turn runs, so another
+session editing the same file, or an abandoned build, shows a plain file.
 """
 
 from __future__ import annotations
@@ -24,6 +26,8 @@ _CUSTOM_PART = "docProps/custom.xml"
 _CUSTOM_NS = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"
 _MAX_PLAN_BYTES = 64 * 1024
 _MAX_SLIDES = 500
+# Files an agent can build live, part by part.
+LIVE_SUFFIXES = frozenset({".pptx", ".xlsx"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +36,9 @@ class DeckPlan:
     done: bool
     # The EvoFlux session whose agent is building the deck, when known.
     session: str | None = None
+    # Workbooks: how many sheets have been added so far (None for decks,
+    # whose slides present are exactly the finished ones).
+    added: int | None = None
 
     def live_for(self, session_id: str | None) -> bool:
         """Whether ``session_id`` (a session whose turn is running) builds it.
@@ -70,6 +77,8 @@ def read_deck_plan(source: Path) -> DeckPlan | None:
             total = int(data["total"])
             state = str(data.get("state", "building"))
             session = data.get("session")
+            added = data.get("added")
+            added = max(0, int(added)) if added is not None else None
         except (ValueError, KeyError, TypeError, AttributeError):
             return None
         if not 0 < total <= _MAX_SLIDES:
@@ -78,13 +87,14 @@ def read_deck_plan(source: Path) -> DeckPlan | None:
             total=total,
             done=state == "done",
             session=str(session)[:64] if session else None,
+            added=added,
         )
     return None
 
 
 def deck_is_live(source: Path, session_id: str | None) -> bool:
-    """Whether ``session_id``'s running turn is building ``source`` slide by slide."""
-    if source.suffix.lower() != ".pptx":
+    """Whether ``session_id``'s running turn is building ``source`` part by part."""
+    if source.suffix.lower() not in LIVE_SUFFIXES:
         return False
     plan = read_deck_plan(source)
     return plan is not None and plan.live_for(session_id)
@@ -92,13 +102,14 @@ def deck_is_live(source: Path, session_id: str | None) -> bool:
 
 def deck_is_live_for_any(source: Path, session_ids: Iterable[str]) -> bool:
     """Whether any of ``session_ids`` (running sessions) is building ``source``."""
-    if source.suffix.lower() != ".pptx":
+    if source.suffix.lower() not in LIVE_SUFFIXES:
         return False
     plan = read_deck_plan(source)
     return plan is not None and any(plan.live_for(sid) for sid in session_ids)
 
 
 __all__ = [
+    "LIVE_SUFFIXES",
     "PLAN_PROPERTY",
     "DeckPlan",
     "deck_is_live",
