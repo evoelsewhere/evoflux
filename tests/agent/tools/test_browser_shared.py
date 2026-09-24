@@ -94,14 +94,18 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     from app.agent.tools.builtin.webbridge_tool import webbridge
 
     # Changed deliberately: `resize.orientation` no longer defaults to
-    # "portrait", which was rotating every landscape viewport request.
+    # "portrait", which was rotating every landscape viewport request; then
+    # the registry stopped emitting nested titles, dangling discriminator
+    # mappings and null branches of optional fields.
     assert _definition_digest(browser_use) == (
-        "a25995c3f20d22e35a1d24f9cc41f3763eb27dcf24fb1d0957dfb71b910fab1f"
+        "9b007c0542d39d4801c794dcdeace81368f30a960868d7b229ab23917a514ae7"
     )
     # Changed deliberately: the tool guide (`_DESCRIPTION`) was defined but
     # never passed to `@tool`, so the model saw only the one-line docstring;
     # then console/network/network_body/debug_summary, and then storage,
-    # cookies, inspect, upload_file, emulate, mock and performance were added.
+    # cookies, inspect, upload_file, emulate, mock and performance were added;
+    # then the schema was compacted (registry noise, per-field tab_id text)
+    # and the guide rewritten, 67k → 35k characters.
     assert _definition_digest(webbridge) == (
-        "b9b663555cf5e068137d98600b907521a715b72af19c6359da7c6eae4046b040"
+        "456e400e62e90f56f477d7c9dd9a87764b43d3f881662c7f2f76e25fe6b65611"
     )

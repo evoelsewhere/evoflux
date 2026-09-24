@@ -100,20 +100,13 @@ async def _send_command(
 # Action models
 # ---------------------------------------------------------------------------
 
-#: Shared description for the per-action tab target. Any action can carry a
-#: ``tab_id`` (from ``get_tabs``) to drive that exact tab — including a
-#: background tab — without switching Chrome's focus to it. Omit it to act on
-#: the currently active tab.
-_TAB_ID_DESC = (
-    "Target tab ID from get_tabs. Drives that tab in the background without "
-    "focusing/switching to it. Omit to use the active tab."
-)
+#: Every action takes an optional ``tab_id`` (from ``get_tabs``) to drive that
+#: exact tab — including a background tab — without switching Chrome's focus
+#: to it; omitted, it acts on the active tab. That is explained once, in the
+#: tool guide: repeated as a field description on ~50 actions it was the
+#: largest single cost of the schema.
 
-_REF_DESC = (
-    "Element handle from a snapshot (e.g. 'e12'). Preferred over selector: it "
-    "is exact, costs nothing to quote, and is the only way to reach an element "
-    "inside a shadow root or a frame. Valid until the page navigates."
-)
+_REF_DESC = "Snapshot ref such as 'e12'; preferred over a selector."
 
 
 class StatusAction(BaseModel):
@@ -123,7 +116,7 @@ class StatusAction(BaseModel):
 class NavigateAction(BaseModel):
     action: Literal["navigate"]
     url: str = Field(description="URL to navigate to.")
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class ClickAction(BaseModel):
@@ -131,20 +124,20 @@ class ClickAction(BaseModel):
     x: float = Field(description="X coordinate to click.")
     y: float = Field(description="Y coordinate to click.")
     button: Literal["left", "right", "middle"] = Field(default="left")
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class DblClickAction(BaseModel):
     action: Literal["dblclick"]
     x: float = Field(description="X coordinate to double-click.")
     y: float = Field(description="Y coordinate to double-click.")
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class TypeAction(BaseModel):
     action: Literal["type"]
     text: str = Field(description="Text to type.")
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class KeyAction(BaseModel):
@@ -154,14 +147,14 @@ class KeyAction(BaseModel):
         default_factory=list,
         description="Modifier keys held during the press (e.g. ['Meta'] for Cmd on macOS).",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class ScrollAction(BaseModel):
     action: Literal["scroll"]
     dx: int = Field(default=0, description="Horizontal scroll delta.")
     dy: int = Field(default=0, description="Vertical scroll delta.")
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class ResizeAction(BaseModel):
@@ -173,7 +166,7 @@ class ResizeAction(BaseModel):
     mobile: bool | None = None
     touch: bool | None = None
     color_scheme: Literal["light", "dark"] | None = None
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
     @model_validator(mode="after")
     def _validate_size(self) -> "ResizeAction":
@@ -184,21 +177,21 @@ class ResizeAction(BaseModel):
 
 class ResetViewportAction(BaseModel):
     action: Literal["reset_viewport"]
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class DialogsAction(BaseModel):
     action: Literal["dialogs"]
     clear: bool = False
     limit: int = Field(default=20, ge=1, le=100)
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class HandleDialogAction(BaseModel):
     action: Literal["handle_dialog"]
     accept: bool = False
     prompt_text: str | None = Field(default=None, max_length=10_000)
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 _DEVTOOLS_SCOPE_DESC = (
@@ -224,7 +217,7 @@ class ConsoleAction(BaseModel):
         default=False,
         description="Empty the recorded console after reading, so the next read shows only what happens from here.",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class NetworkAction(BaseModel):
@@ -246,14 +239,14 @@ class NetworkAction(BaseModel):
     clear: bool = Field(
         default=False, description="Empty the recorded requests after reading."
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class NetworkBodyAction(BaseModel):
     action: Literal["network_body"]
     request_id: str = Field(description="The request id shown by the network action.")
     max_chars: int = Field(default=20_000, ge=100, le=100_000)
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 _PAGE_POWER_DESC = (
@@ -274,7 +267,7 @@ class StorageAction(BaseModel):
         default=False,
         description=f"Return values, not just keys and sizes. {_PAGE_POWER_DESC}",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class CookiesAction(BaseModel):
@@ -300,7 +293,7 @@ class CookiesAction(BaseModel):
     same_site: Literal["Strict", "Lax", "None"] | None = None
     secure: bool = False
     http_only: bool = False
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class InspectAction(BaseModel):
@@ -313,7 +306,7 @@ class InspectAction(BaseModel):
         max_length=60,
         description="Computed CSS properties to read; default is a layout/visibility set.",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
     @model_validator(mode="after")
     def _needs_target(self) -> InspectAction:
@@ -332,7 +325,7 @@ class UploadFileAction(BaseModel):
         max_length=10,
         description="Files in the workspace (or this session's uploads) to put in the <input type=file>.",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
     @model_validator(mode="after")
     def _needs_target(self) -> UploadFileAction:
@@ -365,7 +358,7 @@ class EmulateAction(BaseModel):
         default=None, description="Such as 'vi-VN'; '' restores it."
     )
     clear: bool = Field(default=False, description="Remove every override first.")
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class MockAction(BaseModel):
@@ -403,7 +396,7 @@ class MockAction(BaseModel):
         default=0, ge=0, description="Stop after this many hits; 0 = until removed."
     )
     id: str | None = Field(default=None, description="Rule id to remove.")
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
     @model_validator(mode="after")
     def _check(self) -> MockAction:
@@ -416,7 +409,7 @@ class MockAction(BaseModel):
 
 class PerformanceAction(BaseModel):
     action: Literal["performance"]
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class DebugSummaryAction(BaseModel):
@@ -427,7 +420,7 @@ class DebugSummaryAction(BaseModel):
         le=50,
         description="Most recent errors / failed requests listed.",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class ScreenshotAction(BaseModel):
@@ -438,9 +431,7 @@ class ScreenshotAction(BaseModel):
         default=False,
         description="Capture the whole scrollable page instead of just the viewport.",
     )
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = None
 
 
 class ExtractAction(BaseModel):
@@ -461,9 +452,7 @@ class ExtractAction(BaseModel):
         description="Scope to the first element matching this CSS selector (default: whole page).",
     )
     max_chars: int = Field(default=15000, ge=100, le=200000)
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = None
 
 
 class ExtractElementsAction(BaseModel):
@@ -493,9 +482,7 @@ class ExtractElementsAction(BaseModel):
             "components returns nothing without it."
         ),
     )
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = None
 
 
 class ScrollToBottomAction(BaseModel):
@@ -518,9 +505,7 @@ class ScrollToBottomAction(BaseModel):
     selector: str | None = Field(
         default=None, description="The scrolling element, if no ref."
     )
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = None
 
 
 class CrawlAction(BaseModel):
@@ -589,9 +574,7 @@ class WaitForSelectorAction(BaseModel):
     selector: str = Field(description="CSS selector to wait for.")
     state: Literal["visible", "attached", "hidden"] = Field(default="visible")
     timeout_ms: int = Field(default=10000, ge=100, le=60000)
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = None
 
 
 class WaitForTextAction(BaseModel):
@@ -604,16 +587,14 @@ class WaitForTextAction(BaseModel):
     state: Literal["visible", "hidden"] = Field(default="visible")
     exact: bool = Field(default=False, description="Match the normalized text exactly.")
     timeout_ms: int = Field(default=10000, ge=100, le=60000)
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class WaitForLoadAction(BaseModel):
     action: Literal["wait_for_load"]
     state: Literal["load", "domcontentloaded"] = Field(default="load")
     timeout_ms: int = Field(default=30000, ge=100, le=60000)
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = None
 
 
 class WaitForNetworkIdleAction(BaseModel):
@@ -625,9 +606,7 @@ class WaitForNetworkIdleAction(BaseModel):
         description="Consider the network idle after this many ms with no in-flight requests.",
     )
     timeout_ms: int = Field(default=20000, ge=500, le=60000)
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = None
 
 
 class WaitForUrlAction(BaseModel):
@@ -644,7 +623,7 @@ class WaitForUrlAction(BaseModel):
         "e.g. 'https://app.example.com/orders/*'.",
     )
     timeout_ms: int = Field(default=15000, ge=100, le=60000)
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class TargetMixin(BaseModel):
@@ -665,7 +644,7 @@ class TargetMixin(BaseModel):
         ge=0,
         description="Which match to use when a selector matches several.",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
     @model_validator(mode="after")
     def _one_target(self) -> "TargetMixin":
@@ -687,9 +666,7 @@ class ClickTextAction(BaseModel):
     exact: bool = Field(
         default=False, description="Require an exact (not substring) text match."
     )
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = None
 
 
 class HoverAction(TargetMixin):
@@ -736,7 +713,7 @@ class DragAction(BaseModel):
         le=50,
         description="Number of pointer-move steps between source and target.",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
     @model_validator(mode="after")
     def _both_ends(self) -> "DragAction":
@@ -768,7 +745,7 @@ class DragToPointAction(BaseModel):
         le=60,
         description="Number of pointer-move steps along the way.",
     )
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
     @model_validator(mode="after")
     def _needs_source(self) -> "DragToPointAction":
@@ -810,9 +787,7 @@ class SnapshotAction(BaseModel):
             "Falls back to a full snapshot when there is nothing to compare to."
         ),
     )
-    tab_id: int | None = Field(
-        default=None, description="Target tab ID (default: active tab)."
-    )
+    tab_id: int | None = None
 
 
 class SemanticRefTarget(BaseModel):
@@ -930,7 +905,7 @@ class SemanticSnapshotAction(BaseModel):
     include_values: bool = False
     max_items: int = Field(default=80, ge=1, le=200)
     max_chars: int = Field(default=20_000, ge=100, le=50_000)
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class SemanticReadAction(BaseModel):
@@ -939,13 +914,13 @@ class SemanticReadAction(BaseModel):
     value_mode: Literal["display", "formula", "both"] = "both"
     max_chars: int = Field(default=20_000, ge=100, le=50_000)
     max_cells: int = Field(default=500, ge=1, le=500)
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class SemanticSelectAction(BaseModel):
     action: Literal["semantic_select"]
     target: SemanticTarget
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class SemanticWriteAction(BaseModel):
@@ -954,28 +929,28 @@ class SemanticWriteAction(BaseModel):
     change: SemanticChange
     verify: Literal["none", "normalized"] = "normalized"
     timeout_ms: int = Field(default=15_000, ge=1_000, le=60_000)
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class EvaluateAction(BaseModel):
     action: Literal["evaluate"]
     script: str = Field(description="JavaScript to evaluate.")
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class BackAction(BaseModel):
     action: Literal["back"]
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class ForwardAction(BaseModel):
     action: Literal["forward"]
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 class ReloadAction(BaseModel):
     action: Literal["reload"]
-    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+    tab_id: int | None = None
 
 
 AnyAction = Annotated[
@@ -1038,147 +1013,74 @@ AnyAction = Annotated[
 ]
 
 _DESCRIPTION = """\
-Control the user's real Chrome/Edge browser via the WebBridge extension.
+Control the user's real Chrome/Edge browser — their logins, cookies and tabs —
+through the WebBridge extension, which must be installed and connected.
+(browser_use drives EvoFlux's in-app browser instead.)
 
-Unlike browser_use (which controls EvoFlux's visible in-app browser), this
-tool connects to an external Chrome/Edge browser through an extension. The
-user must explicitly enable WebBridge, install the EvoFlux WebBridge
-extension, and have it connected.
+How to work
+- Snapshot, then act by ref. snapshot lists interactive elements, inside
+  shadow roots and same-origin frames too, each with a ref like `e12`; pass
+  `ref` to click_selector, fill, hover, focus, set_checked, select_option,
+  drag, drag_to_point, inspect or upload_file. Refs are exact and survive
+  re-renders; they end when the page navigates. A good CSS selector works too.
+- Targeted actions scroll to the element, name what covers it ("covered by
+  div.cookie-banner") and report whether the page changed.
+  `snapshot {diff: true}` returns only what changed since the last one.
+- navigate, back, forward and reload wait for the page and report the URL it
+  landed on (redirects included) and its title; ending a call with one also
+  returns a compact snapshot of the new page.
+- Put a whole sequence in one call: actions run in order and stop at the
+  first failure (`continue_on_error: true` only for independent actions).
+  Consecutive clicks, fills, keys and scrolls travel as one message.
+- Screenshots are for canvas/WebGL, cross-origin frames the snapshot cannot
+  read, or questions about appearance. Their pixels are CSS pixels, so x,y
+  read off one can be clicked directly.
+- tab_id (from get_tabs) on any action drives that tab in the background
+  without switching focus; open_tab {active: false} opens one there. A hidden
+  tab may screenshot blank — use the DOM actions on it.
+- A snapshot shows a link's address only when it has no label; collect URLs
+  with extract_elements and a field such as {'url': 'a@href'}.
 
-Work from a snapshot, act by ref. Each element in a snapshot carries a handle
-like `e12`; pass `ref: "e12"` to click_selector, fill, hover, focus,
-set_checked, select_option, drag or drag_to_point. A ref is exact, costs
-nothing to quote, survives a re-render that would break a CSS path, and is
-the only way to reach an element inside a shadow root or a frame — the
-snapshot walks into both. Refs last until the page navigates; after that,
-take a new snapshot. A selector still works where you have a good one.
+Debugging a web app
+debug_summary is the check after each change: the current page's console
+errors and warnings with source location and stack (source-mapped in Coding
+sessions), and its failed and pending requests. console and network list
+everything with filters; network_body reads a recorded response by its id.
+Coding sessions record from their first command; elsewhere the first read
+starts recording and says so — reload to capture the page load. inspect shows
+an element's box, computed styles and, in development builds, the component
+chain and source files that rendered it. mock fakes or fails matching
+requests; emulate throttles network or CPU, goes offline, or fakes location,
+time zone and locale; performance reports load timing and Web Vitals.
+storage and cookies list keys and names — values, writes and mock add need
+webbridge.allow_evaluate. Loop: preview start → open_tab the dev URL →
+debug_summary → fix → reload → debug_summary.
 
-Every targeted action scrolls to its element and checks nothing is covering
-it, and says what is in the way when something is ("covered by div.cookie
--banner"). It also reports whether the page changed, so you usually do not
-need a snapshot afterwards to find out whether the click did anything.
-
-After an action, `snapshot {diff: true}` returns only what changed — a few
-lines instead of the whole listing.
-
-navigate, back, forward and reload wait for the page to load and report the
-address it landed on (including a redirect) and its title. When one of them
-is the last action of a call, a compact snapshot of the new page comes back
-with it, so there is no separate snapshot turn just to see where you are.
-
-Screenshots are the fallback, not the method: use them for canvas/WebGL
-apps, for a cross-origin frame the snapshot marks as unreadable, or when the
-question is genuinely about how something looks. Screenshot pixels equal CSS
-pixels (the extension normalizes device scaling), so click x,y read off a
-screenshot map directly.
-
-Put the whole sequence in one call. Actions run in order and stop at the
-first failure, so `navigate → wait_for_load → click_selector → fill →
-click_text` is one call, not five — and a step that fails does not leave the
-rest of the chain acting on a page that never opened. Pass
-`continue_on_error: true` only for actions that do not depend on each other.
-Consecutive simple actions (clicks, fills, keys, scrolls) are sent to the
-browser as a single message, so a long form costs one crossing, not one per
-field.
-
-Debugging a web app: debug_summary is the one-call check after a change —
-console errors and warnings with their source location and stack, failed
-requests (status >= 400 or no response) and in-flight ones, for the current
-page. console and network list everything (filter by level, text, resource
-type, method or URL); network_body reads a recorded response by the id network
-shows. In a Coding session recording runs from the first command; elsewhere
-it starts with the first console/network read, and a read that started it
-says so — reload the page to capture its load. Typical loop: preview start →
-open_tab the dev URL → debug_summary → fix the code → reload → debug_summary.
-
-To find the code behind something on screen, inspect it by ref: its box and
-computed styles, and — in a development build — the component chain that
-rendered it with source files (React, Vue, Svelte, or a locator plugin's
-data attributes). mock answers or fails matching requests to test error and
-loading states without touching the backend; emulate throttles the network or
-CPU, goes offline, or fakes location, time zone and locale; performance
-reports load timing, Web Vitals and runtime counters. storage and cookies list
-keys and names; their values and any writes, like mock add, need
-webbridge.allow_evaluate. upload_file fills a file input with workspace files.
-
-A snapshot lists a link's address only when the link has no label to be
-recognised by. To collect URLs, use extract_elements with an attribute field
-(e.g. {'url': 'a@href'}) rather than reading them out of a snapshot.
-
-Actions:
-  status          — Check if the extension is connected.
-  navigate        — Go to a URL in the active tab.
-  snapshot        — List interactive elements with a ref, role, text and coordinates — including inside shadow roots and same-origin frames. `diff: true` lists only what changed since the last one.
-    semantic_snapshot — AX-first semantic targets for rich editors, grids, and slides.
-    semantic_read   — Read an opaque semantic target, active text, document, range, or slide object.
-    semantic_select — Select an opaque target, spreadsheet range, or slide object without coordinate fallback.
-    semantic_write  — Verified text or bounded matrix write; unsupported operations fail explicitly.
-  click_selector  — Click the element matching a CSS selector.
-  click_text      — Click the element whose visible text matches.
-    hover           — Hover an element to reveal menus, tooltips, or controls.
-    focus           — Focus an element before typing or pressing keys.
-    select_option   — Select one or more native select options by value or label.
-    set_checked     — Set a checkbox, radio, switch, or ARIA toggle state.
-    drag            — Drag an element to a target using native pointer events.
-  fill            — Set an input/textarea value by selector (optionally submit).
-  click           — Click at x,y coordinates (fallback when no selector fits).
-  dblclick        — Double-click at x,y coordinates.
-  type            — Type text into the focused element.
-  key             — Press a key (Enter, Tab, Escape, etc.).
-  scroll          — Scroll by dx,dy pixels.
-  resize          — Emulate an exact mobile/tablet/desktop viewport, DPR, touch, and color scheme.
-  reset_viewport  — Clear viewport/device emulation and return to the real browser size.
-  dialogs         — Inspect the active JavaScript alert/confirm/prompt and recent dialog history.
-  handle_dialog   — Accept or dismiss the active dialog; prompt_text supplies a prompt response.
-  debug_summary   — Console errors/warnings and failed requests of the current page, in one call.
-  console         — Recorded console messages and uncaught exceptions (level/contains/scope filters).
-  network         — Recorded requests: method, status, type, URL, timing (failed/resource/method/url filters).
-  network_body    — Response body of one recorded request, by its id.
-  inspect         — Box, computed styles, attributes and rendering component/source of one element.
-  mock            — Add/list/remove/clear fake responses or failures for matching requests.
-  emulate         — Network throttling/offline, CPU slowdown, geolocation, time zone, locale.
-  performance     — Load timing, FCP/LCP/CLS, slowest resources, heap and DOM counters.
-  storage         — localStorage/sessionStorage keys (values and writes need allow_evaluate).
-  cookies         — Cookies of the page (values and writes need allow_evaluate).
-  upload_file     — Put workspace files into an <input type=file>.
-  wait            — Pause for N milliseconds.
-  wait_for_selector — Wait until a selector is visible/attached/hidden.
-    wait_for_text   — Wait until text becomes visible or hidden, optionally within a selector.
-  wait_for_load   — Wait until the page finishes loading.
-  wait_for_network_idle — Wait until in-flight XHR/fetch requests go quiet (SPA data loads).
-    wait_for_url    — Wait until the address matches (use '*' as a wildcard) — the wait for an SPA route change that loads no document.
-    drag_to_point   — Drag an element to x,y — sliders, canvases, maps, resize handles.
-  screenshot      — Capture the viewport (or full_page) as PNG/JPEG image.
-  extract         — Extract page content as text / markdown / html (optionally scoped to a selector).
-  extract_elements— Scrape many records by selector into structured JSON (with per-field sub-selectors / attributes). Searches through shadow roots and frames by default.
-  scroll_to_bottom— Auto-scroll to load lazy / infinite-scroll content before extracting. Pass ref/selector when the list scrolls inside a pane rather than the window.
-  crawl           — Fetch + extract many URLs at once, running concurrently across background tabs.
-  get_tabs        — List all open tabs.
-  switch_tab      — Switch to a tab by index or ID.
-  open_tab        — Open a URL in a new tab.
-  close_tab       — Close a tab by ID or index.
-  evaluate        — Run JavaScript in the page context (may be disabled by policy).
-  back / forward / reload — History and reload.
-
-Multiple tabs at once (no focus switching): call get_tabs to read each tab's
-id, then pass tab_id on any action to drive that exact tab in the background.
-The debugger attaches per-tab, so you can navigate/click/fill/extract across
-several tabs without ever switching Chrome's active tab (only switch_tab
-changes focus — you rarely need it). Use open_tab {active:false} to open a
-page in the background. Caveat: screenshots of a fully hidden/occluded tab may
-be blank or stale (it isn't painting) — for background tabs prefer the DOM
-actions (snapshot / extract / click_selector / fill / evaluate).
-
-Verify workflow: navigate (returns the page and its snapshot) →
-click_selector/fill by ref → snapshot {diff: true} or extract.
-Crawl workflow (one page): navigate → wait_for_load (or wait_for_network_idle
-for an SPA that fetches its data after load) → scroll_to_bottom (if lazy) →
-extract_elements {selector, fields} for lists, or extract {format:"markdown"}
-for article/body content → follow links (open_tab {active:false}) and repeat.
-Crawl workflow (many pages, one call): use crawl {urls, wait, elements_selector
-or format} — it opens each URL in its own background tab and runs them
-concurrently (default 3 at a time via ``concurrency``), returning every page's
-result together. Pass wait:"networkidle" when the target pages are SPAs.\
+Actions
+- Pages and tabs: status, navigate, back, forward, reload, get_tabs,
+  open_tab, switch_tab (the only one that changes focus), close_tab.
+- Reading: snapshot, extract (text/markdown/html, optionally one selector),
+  extract_elements (records by selector with per-field sub-selectors and
+  attributes), screenshot (viewport or full_page), dialogs, evaluate (page
+  JavaScript; may be disabled by policy).
+- Acting: click_selector, click_text, fill (optionally submit),
+  select_option, set_checked, hover, focus, drag, drag_to_point (sliders,
+  canvases, maps), type (into the focused element), key (with modifiers),
+  scroll, click/dblclick (x,y fallback), handle_dialog, upload_file.
+- Waiting: wait, wait_for_load, wait_for_selector, wait_for_text,
+  wait_for_url (`*` wildcard — an SPA route change), wait_for_network_idle
+  (an SPA's data loads).
+- Viewport and environment: resize (device, DPR, touch, color scheme),
+  reset_viewport, emulate.
+- Debugging: debug_summary, console, network, network_body, inspect,
+  performance, mock, storage, cookies.
+- Rich editors (Google Docs/Sheets, Excel/PowerPoint online):
+  semantic_snapshot, semantic_read, semantic_select, semantic_write —
+  accessibility-first targets; unsupported operations fail rather than fall
+  back to coordinates.
+- Collecting: scroll_to_bottom (lazy lists; ref/selector for a scrolling
+  pane), crawl {urls, wait, elements_selector or format} — many URLs at once
+  in background tabs (3 at a time by default; wait: "networkidle" for SPAs).\
 """
 
 _UNTRUSTED_BROWSER_ACTIONS = frozenset(
