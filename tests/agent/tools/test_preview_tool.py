@@ -647,3 +647,36 @@ async def test_depends_on_self_reference_rejected(workspace):
     )
     with pytest.raises(Exception, match="Circular dependsOn"):
         await pv.preview_tool.arun(action="start", name="web")
+
+
+def test_server_error_lines_strip_colour_and_keep_context():
+    from types import SimpleNamespace
+
+    output = "\n".join(
+        [
+            "\x1b[32mVITE v8 ready\x1b[39m",
+            "\x1b[2m11:51 PM\x1b[22m \x1b[31m[vite] Internal server error: Transform failed\x1b[39m",
+            "  Plugin: vite:oxc",
+            "  File: src/SaveButton.tsx:1:28",
+            "",
+            "build finished with 0 errors",
+        ]
+    )
+    server = pv.PreviewServer(
+        name="web",
+        port=5173,
+        command="vite",
+        workdir=".",
+        config_fingerprint="x",
+        _process=SimpleNamespace(read_output=lambda last_n=None: output),  # type: ignore[arg-type]
+    )
+    assert pv.server_error_lines(server) == [
+        "11:51 PM [vite] Internal server error: Transform failed\n"
+        "  Plugin: vite:oxc\n"
+        "  File: src/SaveButton.tsx:1:28"
+    ]
+    # A reused external server's output is not ours to read.
+    external = pv.PreviewServer(
+        name="web", port=5173, command="(external)", workdir=".", config_fingerprint="x"
+    )
+    assert pv.server_error_lines(external) == []

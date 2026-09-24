@@ -15,6 +15,31 @@ DEFAULT_UNTRUSTED_BROWSER_NOTICE = (
 
 BrowserResult = str | ToolResult
 
+#: The verification loop both browser tools speak with the same action names
+#: — browser_use in the in-app browser, webbridge in the user's Chrome — so a
+#: prompt or skill can describe one loop without knowing which one a session
+#: has. webbridge also accepts browser_use's parameter spellings for them.
+SHARED_VERIFICATION_ACTIONS: frozenset[str] = frozenset(
+    {
+        "navigate",
+        "reload",
+        "snapshot",
+        "screenshot",
+        "click",
+        "fill",
+        "type",
+        "console",
+        "network",
+        "debug_summary",
+        "inspect",
+        "evaluate",
+        "performance",
+        "storage",
+        "cookies",
+        "resize",
+    }
+)
+
 
 @overload
 def mark_untrusted_browser_result(

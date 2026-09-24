@@ -8,9 +8,53 @@ import json
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.builtin.browser_shared import (
     DEFAULT_UNTRUSTED_BROWSER_NOTICE,
+    SHARED_VERIFICATION_ACTIONS,
     combine_browser_results,
     mark_untrusted_browser_result,
 )
+
+
+def _action_names(tool) -> set[str]:
+    items = tool.definition["function"]["parameters"]["properties"]["actions"]["items"]
+    return {branch["properties"]["action"]["const"] for branch in items["oneOf"]}
+
+
+def test_both_browser_tools_speak_the_shared_verification_loop() -> None:
+    from app.agent.tools.builtin.browser_use_tool import browser_use
+    from app.agent.tools.builtin.webbridge_tool import webbridge
+
+    assert SHARED_VERIFICATION_ACTIONS <= _action_names(browser_use)
+    assert SHARED_VERIFICATION_ACTIONS <= _action_names(webbridge)
+
+
+def test_webbridge_accepts_browser_use_spellings() -> None:
+    from pydantic import TypeAdapter
+
+    from app.agent.tools.builtin.webbridge_tool import WebBridgeAction
+
+    adapter = TypeAdapter(WebBridgeAction)
+    click = adapter.validate_python({"action": "click", "ref": "e3"})
+    assert click.action == "click_selector" and click.ref == "e3"
+    assert (
+        adapter.validate_python({"action": "click", "x": 1, "y": 2}).action == "click"
+    )
+    fill = adapter.validate_python({"action": "fill", "ref": "e1", "text": "hi"})
+    assert fill.value == "hi"
+    upload = adapter.validate_python(
+        {"action": "set_files", "ref": "e2", "paths": ["a.csv"]}
+    )
+    assert upload.action == "upload_file" and upload.paths == ["a.csv"]
+    inspect = adapter.validate_python(
+        {"action": "inspect", "ref": "e1", "styles": ["color"]}
+    )
+    assert inspect.properties == ["color"]
+    summary = adapter.validate_python(
+        {"action": "debug_summary", "console_limit": 30, "network_limit": 5}
+    )
+    assert summary.limit == 30
+    assert (
+        adapter.validate_python({"action": "console", "level": "warn"}).level == "warn"
+    )
 
 
 def test_marks_text_as_untrusted() -> None:
@@ -105,7 +149,8 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     # then console/network/network_body/debug_summary, and then storage,
     # cookies, inspect, upload_file, emulate, mock and performance were added;
     # then the schema was compacted (registry noise, per-field tab_id text)
-    # and the guide rewritten, 67k → 35k characters.
+    # and the guide rewritten, 67k → 35k characters; then wait_for_hmr and
+    # console level "warn" were added.
     assert _definition_digest(webbridge) == (
-        "456e400e62e90f56f477d7c9dd9a87764b43d3f881662c7f2f76e25fe6b65611"
+        "2726677b3367e6b2f44a28da3eab3bdd403a0a03a700ee83465887fa4c5ff25c"
     )

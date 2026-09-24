@@ -23,11 +23,12 @@ from contextvars import ContextVar
 from datetime import datetime
 import json
 from pathlib import Path
+import re
 from typing import Annotated, Any, Literal, cast
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from loguru import logger
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, Field, model_validator
 
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.builtin.browser_shared import (
@@ -202,9 +203,9 @@ _DEVTOOLS_SCOPE_DESC = (
 
 class ConsoleAction(BaseModel):
     action: Literal["console"]
-    level: Literal["all", "debug", "log", "info", "warning", "error"] = Field(
+    level: Literal["all", "debug", "log", "info", "warn", "warning", "error"] = Field(
         default="all",
-        description="Minimum level: 'warning' returns warnings and errors.",
+        description="Minimum level: 'warning' (or 'warn') returns warnings and errors.",
     )
     contains: str | None = Field(
         default=None, description="Only messages containing this text."
@@ -409,6 +410,17 @@ class MockAction(BaseModel):
 
 class PerformanceAction(BaseModel):
     action: Literal["performance"]
+    tab_id: int | None = None
+
+
+class WaitForHmrAction(BaseModel):
+    action: Literal["wait_for_hmr"]
+    timeout_ms: int = Field(
+        default=10_000,
+        ge=500,
+        le=60_000,
+        description="How long to wait for the dev server's update to reach the page.",
+    )
     tab_id: int | None = None
 
 
@@ -969,6 +981,7 @@ AnyAction = Annotated[
     | NetworkAction
     | NetworkBodyAction
     | DebugSummaryAction
+    | WaitForHmrAction
     | StorageAction
     | CookiesAction
     | InspectAction
@@ -1012,6 +1025,41 @@ AnyAction = Annotated[
     Field(discriminator="action"),
 ]
 
+
+def _from_browser_use_spelling(raw: Any) -> Any:
+    """Accept an action written the way ``browser_use`` spells it.
+
+    Prompts and skills describe one browser-verification loop for both
+    browser tools, and a model that has just driven the in-app browser keeps
+    its habits: ``click`` by ref, ``set_files``, ``fill {text}``,
+    ``inspect {styles}``. Rewriting those here keeps the call working
+    without adding a second spelling to the schema the model reads.
+    """
+    if not isinstance(raw, dict):
+        return raw
+    action = raw.get("action")
+    out = dict(raw)
+    if action == "click" and "x" not in out and ("ref" in out or "selector" in out):
+        out["action"] = "click_selector"
+    elif action == "set_files":
+        out["action"] = "upload_file"
+    elif action == "fill" and "value" not in out and "text" in out:
+        out["value"] = out.pop("text")
+    elif action == "inspect" and "properties" not in out and "styles" in out:
+        out["properties"] = out.pop("styles")
+    elif action == "debug_summary" and "limit" not in out:
+        limits = [
+            out.pop(key) for key in ("console_limit", "network_limit") if key in out
+        ]
+        if limits:
+            out["limit"] = min(50, max(int(value) for value in limits))
+    return out
+
+
+#: One action as the tool accepts it: its own schema, or browser_use's
+#: spelling of the same step (see :func:`_from_browser_use_spelling`).
+WebBridgeAction = Annotated[AnyAction, BeforeValidator(_from_browser_use_spelling)]
+
 _DESCRIPTION = """\
 Control the user's real Chrome/Edge browser — their logins, cookies and tabs —
 through the WebBridge extension, which must be installed and connected.
@@ -1042,9 +1090,14 @@ How to work
   with extract_elements and a field such as {'url': 'a@href'}.
 
 Debugging a web app
-debug_summary is the check after each change: the current page's console
-errors and warnings with source location and stack (source-mapped in Coding
-sessions), and its failed and pending requests. console and network list
+debug_summary is the check after each change: a dev server's build-error
+overlay, the current page's console errors and warnings with source location
+and stack (source-mapped in Coding sessions), its failed and pending
+requests, hot updates since the last check, cross-origin frames, and new
+error output of the `preview` server behind the page; in Coding sessions it
+also mirrors them into the Problems panel. After editing a file,
+wait_for_hmr reports whether the hot update applied, reloaded the page or
+failed (with the overlay's error). console and network list
 everything with filters; network_body reads a recorded response by its id.
 Coding sessions record from their first command; elsewhere the first read
 starts recording and says so — reload to capture the page load. inspect shows
@@ -1054,7 +1107,7 @@ requests; emulate throttles network or CPU, goes offline, or fakes location,
 time zone and locale; performance reports load timing and Web Vitals.
 storage and cookies list keys and names — values, writes and mock add need
 webbridge.allow_evaluate. Loop: preview start → open_tab the dev URL →
-debug_summary → fix → reload → debug_summary.
+debug_summary → edit → wait_for_hmr → debug_summary.
 
 Actions
 - Pages and tabs: status, navigate, back, forward, reload, get_tabs,
@@ -1072,8 +1125,8 @@ Actions
   (an SPA's data loads).
 - Viewport and environment: resize (device, DPR, touch, color scheme),
   reset_viewport, emulate.
-- Debugging: debug_summary, console, network, network_body, inspect,
-  performance, mock, storage, cookies.
+- Debugging: debug_summary, wait_for_hmr, console, network, network_body,
+  inspect, performance, mock, storage, cookies.
 - Rich editors (Google Docs/Sheets, Excel/PowerPoint online):
   semantic_snapshot, semantic_read, semantic_select, semantic_write —
   accessibility-first targets; unsupported operations fail rather than fall
@@ -1095,6 +1148,7 @@ _UNTRUSTED_BROWSER_ACTIONS = frozenset(
         "network",
         "network_body",
         "debug_summary",
+        "wait_for_hmr",
         "storage",
         "cookies",
         "inspect",
@@ -1125,7 +1179,7 @@ _UNTRUSTED_BROWSER_ACTIONS = frozenset(
 )
 async def webbridge(
     actions: Annotated[
-        list[AnyAction],
+        list[WebBridgeAction],
         Field(description="Ordered list of browser actions to execute."),
     ],
     continue_on_error: Annotated[
@@ -1337,6 +1391,8 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
         return await _handle_network_body(session_id, act)
     if action == "debug_summary":
         return await _handle_debug_summary(session_id, act)
+    if action == "wait_for_hmr":
+        return await _handle_wait_for_hmr(session_id, act)
     if action == "storage":
         return await _handle_storage(session_id, act)
     if action == "cookies":
@@ -1667,6 +1723,8 @@ def _console_line(entry: dict[str, Any]) -> list[str]:
         if entry.get("source_mapped"):
             # Positions were moved from the bundle to the original source.
             location += " (source-mapped)"
+    if entry.get("frame_url"):
+        location += f" [in frame {_origin(str(entry['frame_url']))}]"
     lines = [f"  [{level}{tag}] {_clock(entry.get('ts'))} {first}{location}"]
     lines.extend(f"      {line.strip()}" for line in rest[:12] if line.strip())
     # An Error's description already carries its stack; don't print it twice.
@@ -1705,7 +1763,14 @@ def _network_line(entry: dict[str, Any]) -> str:
         parts.append(f"{entry['duration_ms']} ms")
     if entry.get("from_cache"):
         parts.append("(cache)")
+    if entry.get("frame_url"):
+        parts.append(f"[in frame {_origin(str(entry['frame_url']))}]")
     return " ".join(parts)
+
+
+def _origin(url: str) -> str:
+    parts = urlsplit(url)
+    return f"{parts.scheme}://{parts.netloc}" if parts.netloc else url
 
 
 async def _handle_console(session_id: str, act: ConsoleAction) -> str:
@@ -1714,7 +1779,10 @@ async def _handle_console(session_id: str, act: ConsoleAction) -> str:
         "console",
         _tab_params(
             act,
-            level=None if act.level == "all" else act.level,
+            # "warn" is browser_use's spelling of the same level.
+            level=None
+            if act.level == "all"
+            else ("warning" if act.level == "warn" else act.level),
             contains=act.contains,
             limit=act.limit,
             scope=act.scope,
@@ -1801,6 +1869,223 @@ async def _handle_network_body(session_id: str, act: NetworkBodyAction) -> str:
     return "\n".join(lines)
 
 
+def _is_loopback(host: str | None) -> bool:
+    value = (host or "").strip("[]").lower()
+    return (
+        value in {"localhost", "::1"}
+        or value.endswith(".localhost")
+        or value.startswith("127.")
+    )
+
+
+def _page_port(url: str) -> int | None:
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not _is_loopback(parts.hostname):
+        return None
+    try:
+        return parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return None
+
+
+def _workspace_path(file: str, page_url: str = "") -> str | None:
+    """The workspace file a browser-reported location refers to, if any.
+
+    A dev server serves project files at their project path (`/src/App.tsx`),
+    Vite serves files outside its root under `/@fs/<absolute path>`, React
+    reports absolute paths, and webpack maps report `./src/...`. Each is
+    tried against the server's own directory (from `preview`) and the
+    workspace root; only a file that exists inside the workspace counts.
+    """
+    from app.agent.tools.builtin import preview
+
+    if not file:
+        return None
+    try:
+        workspace = preview._workspace_root().resolve()
+    except Exception:  # no sandbox — nothing to resolve against
+        return None
+    parts = urlsplit(file)
+    candidates: list[Path] = []
+    if parts.scheme in {"http", "https"}:
+        if not _is_loopback(parts.hostname):
+            return None
+        path = unquote(parts.path)
+        if path.startswith("/@fs/"):
+            rest = path[len("/@fs/") :]
+            candidates.append(
+                Path(rest if re.match(r"^[A-Za-z]:", rest) else "/" + rest)
+            )
+        else:
+            relative = path.lstrip("/")
+            port = _page_port(file)
+            server = preview.server_for_port(workspace, port) if port else None
+            if server is not None:
+                candidates.append(Path(server.workdir) / relative)
+            candidates.append(workspace / relative)
+    elif re.match(r"^[A-Za-z]:[\\/]", file) or file.startswith("/"):
+        candidates.append(Path(file))
+    elif not parts.scheme:
+        relative = file.removeprefix("./")
+        port = _page_port(page_url)
+        server = preview.server_for_port(workspace, port) if port else None
+        if server is not None:
+            candidates.append(Path(server.workdir) / relative)
+        candidates.append(workspace / relative)
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+            if resolved.is_file() and resolved.is_relative_to(workspace):
+                return resolved.relative_to(workspace).as_posix()
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+#: (session, server, port) → error lines of the dev server already reported,
+#: so each summary shows what is new since the last one.
+_dev_server_reported: dict[tuple[str, str, int], set[str]] = {}
+
+
+def _dev_server_lines(session_id: str, page_url: str) -> list[str]:
+    """New problem lines from the `preview`-managed server behind the page."""
+    from app.agent.tools.builtin import preview
+
+    port = _page_port(page_url)
+    if port is None:
+        return []
+    try:
+        server = preview.server_for_port(preview._workspace_root(), port)
+    except Exception:
+        return []
+    if server is None or server.reused:
+        return []
+    errors = preview.server_error_lines(server)
+    seen = _dev_server_reported.setdefault((session_id, server.name, port), set())
+    # An error is known by its own line: the context printed under it grows
+    # as later output arrives, and must not make the same error new again.
+    new = [entry for entry in errors if entry.splitlines()[0] not in seen]
+    if len(seen) > 2000:
+        seen.clear()
+    seen.update(entry.splitlines()[0] for entry in errors)
+    if not new:
+        return [f"Dev server '{server.name}' (:{port}): no new errors in its output."]
+    lines = [f"Dev server '{server.name}' (:{port}) — new error output:"]
+    for entry in new[-5:]:
+        lines.extend(f"  {line[:300]}" for line in entry.splitlines())
+    return lines
+
+
+def _overlay_lines(overlay: dict[str, Any]) -> list[str]:
+    lines = [f"BUILD ERROR overlay ({overlay.get('tool', 'dev server')}):"]
+    for key in ("message", "file", "frame"):
+        value = str(overlay.get(key) or "").strip()
+        if value:
+            lines.extend(
+                f"  {line}" for line in value.splitlines()[:20] if line.strip()
+            )
+    return lines
+
+
+def _publish_browser_problems(session_id: str, data: dict[str, Any]) -> None:
+    """Mirror the page's errors into the workspace Problems panel.
+
+    Coding sessions only, where the page is the app under development. One
+    scope per page origin, replaced by every summary, so a fixed error
+    leaves the panel the next time the page is checked.
+    """
+    if not _webbridge_devtools_capture.get():
+        return
+    try:
+        from app.agent.tools.builtin import preview
+        from app.services.problems_service import ProblemInput, publish_problems
+
+        page = str(data.get("page_url") or "")
+        parts = urlsplit(page)
+        if parts.scheme not in {"http", "https"}:
+            return
+        origin = f"{parts.scheme}://{parts.netloc}"
+        inputs: list[ProblemInput] = []
+        overlay = data.get("overlay") or {}
+        if overlay:
+            # The overlay's file line may lack a position; the message's code
+            # frame header (" ╭─[ src/App.tsx:1:28 ]") usually has one.
+            file = str(overlay.get("file") or "")
+            match = re.match(r"^(.*?):(\d+)(?::(\d+))?\s*$", file) or re.search(
+                r"([\w./\\:-]+\.\w+):(\d+):(\d+)", str(overlay.get("message") or "")
+            )
+            path = _workspace_path(match.group(1) if match else file, page)
+            if match and path is None:
+                path = _workspace_path(file, page)
+            inputs.append(
+                ProblemInput(
+                    message=str(overlay.get("message") or "Build error").splitlines()[
+                        0
+                    ][:500],
+                    severity="error",
+                    path=path,
+                    line=int(match.group(2)) if match and path else None,
+                    column=int(match.group(3))
+                    if match and match.group(3) and path
+                    else None,
+                    code="build-overlay",
+                    title=f"Dev server build error ({overlay.get('tool', 'dev server')})",
+                    details=str(overlay.get("frame") or "")[:2000] or None,
+                    provenance={"page_url": page, "tool": "webbridge"},
+                )
+            )
+        for entry in data.get("errors") or []:
+            if str(entry.get("source") or "").startswith("browser:network"):
+                continue  # the failed request itself is listed below
+            path = (
+                None
+                if entry.get("library")
+                else _workspace_path(str(entry.get("url") or ""), page)
+            )
+            text = str(entry.get("text") or "Error").strip()
+            inputs.append(
+                ProblemInput(
+                    message=text.splitlines()[0][:500],
+                    severity="error",
+                    path=path,
+                    line=entry.get("line") if path else None,
+                    column=entry.get("column") if path else None,
+                    code=str(entry.get("source") or "console"),
+                    title="Browser runtime error",
+                    details="\n".join(entry.get("stack") or []) or None,
+                    provenance={
+                        "page_url": page,
+                        "url": entry.get("url"),
+                        "tool": "webbridge",
+                    },
+                )
+            )
+        for request in data.get("failed_requests") or []:
+            if request.get("canceled"):
+                continue  # the page abandoned it; not a fault of the app
+            outcome = request.get("error") or request.get("status") or "failed"
+            inputs.append(
+                ProblemInput(
+                    message=f"{request.get('method', 'GET')} {request.get('url', '')} → {outcome}"[
+                        :500
+                    ],
+                    severity="warning",
+                    code="network",
+                    title="Failed request",
+                    provenance={"page_url": page, "tool": "webbridge"},
+                )
+            )
+        publish_problems(
+            preview._workspace_root(),
+            source="browser",
+            scope=f"browser:{origin}",
+            problems=inputs,
+            session_id=session_id,
+        )
+    except Exception as e:  # Problems are a mirror; never fail the read.
+        logger.debug("webbridge_problems_publish_failed error={}", e)
+
+
 async def _handle_debug_summary(session_id: str, act: DebugSummaryAction) -> str:
     resp = await _send_command(
         session_id, "debug_summary", _tab_params(act, limit=act.limit)
@@ -1813,6 +2098,19 @@ async def _handle_debug_summary(session_id: str, act: DebugSummaryAction) -> str
     lines = [f"Debug summary for {data.get('page_url') or 'this tab'}"]
     if data.get("title"):
         lines.append(f"Title: {data['title']}")
+    if data.get("overlay"):
+        lines.extend(_overlay_lines(data["overlay"]))
+    hmr = data.get("hmr") or []
+    if hmr:
+        lines.append(
+            "Hot updates since the last check: "
+            + "; ".join(
+                f"{event.get('kind')} ({event.get('detail', '')})" for event in hmr
+            )
+        )
+    frames = data.get("frames") or []
+    if frames:
+        lines.append(f"Cross-origin frames recorded: {', '.join(frames[:5])}")
     lines.append(
         f"Console: {counts.get('error', 0)} error(s), {counts.get('warning', 0)} "
         f"warning(s), {counts.get('total', 0)} message(s) on this page."
@@ -1835,9 +2133,57 @@ async def _handle_debug_summary(session_id: str, act: DebugSummaryAction) -> str
     if failed:
         lines.append("Failed requests:")
         lines.extend(_network_line(entry) for entry in failed)
-    if not errors and not failed:
+    if not errors and not failed and not data.get("overlay"):
         lines.append("No console errors or failed requests on this page.")
+    resolved = int(data.get("resolved") or 0)
+    if resolved:
+        lines.append(
+            f"({resolved} earlier error(s) fixed by a later hot update are not listed.)"
+        )
+    lines.extend(_dev_server_lines(session_id, str(data.get("page_url") or "")))
     lines.extend(_devtools_notes(data, "console and network activity"))
+    _publish_browser_problems(session_id, data)
+    return "\n".join(lines)
+
+
+async def _handle_wait_for_hmr(session_id: str, act: WaitForHmrAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "wait_for_hmr",
+        # The wait is bounded by wait_ms; the command gets headroom above it
+        # so its answer always arrives.
+        _tab_params(act, wait_ms=act.timeout_ms, timeout_ms=act.timeout_ms + 5_000),
+    )
+    if not resp.get("success"):
+        return f"wait_for_hmr failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    outcome = data.get("outcome")
+    events = data.get("events") or []
+    waited = data.get("waited_ms", 0)
+    details = [
+        str(event.get("detail") or "") for event in events if event.get("detail")
+    ]
+    if outcome == "updated":
+        lines = [f"Hot update applied ({waited} ms)."]
+    elif outcome == "reloaded":
+        lines = [f"The dev server reloaded the page ({waited} ms)."]
+    elif outcome == "error" and data.get("still_broken"):
+        lines = ["The build is still failing: the dev server's error overlay is up."]
+    elif outcome == "error":
+        lines = ["The update failed to apply."]
+    else:
+        lines = [
+            f"No hot update reached this page within {act.timeout_ms} ms — the edited "
+            "module may not be loaded by this page, or the dev server did not "
+            "rebuild. Reload to be sure."
+        ]
+    if details:
+        lines.append("Dev server said: " + " | ".join(details[-5:]))
+    if data.get("overlay"):
+        lines.extend(_overlay_lines(data["overlay"]))
+    if outcome in {"updated", "reloaded"}:
+        lines.append("Next: debug_summary to check the page after the update.")
+    lines.extend(_devtools_notes(data, "hot-update activity"))
     return "\n".join(lines)
 
 
@@ -1980,7 +2326,12 @@ async def _handle_inspect(session_id: str, act: InspectAction) -> str:
         framework = data.get("framework") or "framework"
         lines.append(f"Rendered by ({framework}, innermost first):")
         for item in components:
-            where = _source_location(item)
+            workspace_file = _workspace_path(str(item.get("file") or ""))
+            # A workspace path is what the agent can open; the served URL is
+            # the fallback.
+            where = _source_location(
+                {**item, "file": workspace_file} if workspace_file else item
+            )
             if where and item.get("site") == "jsx":
                 # React's location is the JSX that created the element — in
                 # the parent — not the file defining the component.

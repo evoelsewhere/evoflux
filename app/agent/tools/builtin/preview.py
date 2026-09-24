@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import shlex
 import shutil
 import time
@@ -462,7 +463,7 @@ def _open_hint(port: int, browser_tool: BrowserTool) -> str:
             f"Next: webbridge open_tab {url} (pass the returned tab_id on later "
             "actions), then debug_summary for console errors and failed requests."
         )
-    return f"Next: browser_use navigate to {url}, then check console + snapshot."
+    return f"Next: browser_use navigate to {url}, then debug_summary."
 
 
 async def _start(
@@ -947,6 +948,58 @@ async def _logs(
         if not out_lines:
             return "(no matching log output)" if search else "(no log output yet)"
         return "\n".join(out_lines)
+
+
+def server_for_port(workspace: Path, port: int) -> PreviewServer | None:
+    """The tracked server of *workspace* listening on *port*, if any."""
+    for (root, _name), server in _servers.items():
+        if root == str(workspace) and server.port == port:
+            return server
+    return None
+
+
+_ERROR_LINE = re.compile(
+    r"\b(error|failed|failure|exception|traceback|cannot|unable to|ERR_[A-Z_]+)\b"
+    r"|✘|×",
+    re.IGNORECASE,
+)
+_NOT_AN_ERROR = re.compile(
+    r"\b0 errors?\b|\bno errors?\b|without errors", re.IGNORECASE
+)
+
+
+_ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+#: Lines kept after an error line: the message a dev server prints under its
+#: "Internal server error:" header (the parse error, the code frame).
+_ERROR_CONTEXT_LINES = 4
+
+
+def server_error_lines(server: PreviewServer, *, last_lines: int = 300) -> list[str]:
+    """Recent problems in a managed server's output, one entry per error.
+
+    Each entry is the error line plus the few lines under it, colour codes
+    stripped. Empty for a reused external server — its output is not ours to
+    read.
+    """
+    if server._process is None:
+        return []
+    output = _ANSI.sub("", server._process.read_output(last_n=last_lines))
+    lines = [line.rstrip() for line in output.splitlines()]
+    entries: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if _ERROR_LINE.search(line) and not _NOT_AN_ERROR.search(line):
+            block = [line]
+            for follow in lines[index + 1 : index + 1 + _ERROR_CONTEXT_LINES]:
+                if not follow.strip() or _ERROR_LINE.search(follow):
+                    break
+                block.append(follow)
+            entries.append("\n".join(block))
+            index += len(block)
+            continue
+        index += 1
+    return entries
 
 
 async def stop_all_servers() -> None:

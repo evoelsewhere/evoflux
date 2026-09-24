@@ -17,6 +17,9 @@ ProblemSource = Literal[
     "ai_review",
     "security",
     "plugin",
+    # Runtime errors and failed requests of the app's page in a browser the
+    # agent drives (WebBridge debug_summary).
+    "browser",
 ]
 ProblemSeverity = Literal["error", "warning", "info", "hint"]
 ProblemStatus = Literal["open", "dismissed", "suppressed"]

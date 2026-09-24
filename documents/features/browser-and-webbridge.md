@@ -131,6 +131,34 @@ Agent-facing behavior of the `webbridge` tool:
   extension enables CDP `Debugger` only to
   learn which script carries which map, with every pause skipped so a
   `debugger;` statement cannot stall the page. Work sessions never enable it.
+- Hot updates: the extension recognises Vite, webpack(-dev-server) and Next
+  Fast Refresh messages in the page console and reads a dev server's
+  build-error overlay (`vite-error-overlay`, `nextjs-portal`, the
+  webpack-dev-server overlay). `wait_for_hmr` reports whether the update since
+  the previous check applied, reloaded the page or failed; a success counts
+  only once a following failure has had time to show, and an overlay left
+  from before the edit does not fail it. `debug_summary` includes the
+  overlay, hot updates since the last check, and hides errors a later
+  successful update fixed.
+- Cross-origin iframes are auto-attached (`Target.setAutoAttach`, flattened
+  sessions) while recording, so their console, exceptions and requests enter
+  the tab's log tagged with the frame's origin. Snapshots still do not read
+  inside them.
+- For a page served by a `preview`-managed server on loopback,
+  `debug_summary` adds the server's new error output since the previous
+  summary (colour codes stripped, a few lines of context).
+- In Coding sessions `debug_summary` mirrors the page's build overlay, runtime
+  errors and failed requests into the Problems panel as source `browser`,
+  one scope per page origin, replaced by each summary. Served paths
+  (`/src/App.tsx`, `/@fs/…`, webpack `./src/…`, React absolute paths) are
+  mapped to workspace files through the serving `preview` server's directory;
+  errors raised inside libraries, duplicate "Failed to load resource" lines
+  and requests the page abandoned are left out.
+- `webbridge` accepts `browser_use`'s spellings of the shared verification
+  actions (`click` by ref, `set_files`, `fill {text}`, `inspect {styles}`,
+  `console {level: "warn"}`, `debug_summary {console_limit, network_limit}`);
+  `SHARED_VERIFICATION_ACTIONS` in `browser_shared.py` names the loop both
+  tools support.
 - `upload_file` puts files into an `<input type=file>` through
   `DOM.setFileInputFiles`; paths must resolve inside the session's workspace
   roots or its uploads.

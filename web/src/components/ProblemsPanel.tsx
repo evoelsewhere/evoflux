@@ -30,6 +30,7 @@ const SOURCE_LABELS: Record<ProblemSource, string> = {
   ai_review: 'AI review',
   security: 'Security',
   plugin: 'Plugin',
+  browser: 'Browser',
 }
 
 function SeverityIcon({ severity }: { severity: ProblemSeverity }) {
