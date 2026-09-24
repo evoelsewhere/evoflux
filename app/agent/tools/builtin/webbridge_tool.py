@@ -1757,6 +1757,9 @@ def _console_line(entry: dict[str, Any]) -> list[str]:
         location = f" — {entry['url']}:{entry['line']}"
         if entry.get("column"):
             location += f":{entry['column']}"
+        if entry.get("source_mapped"):
+            # Positions were moved from the bundle to the original source.
+            location += " (source-mapped)"
     lines = [f"  [{level}{tag}] {_clock(entry.get('ts'))} {first}{location}"]
     lines.extend(f"      {line.strip()}" for line in rest[:12])
     # An Error's description already carries its stack; don't print it twice.

@@ -20,6 +20,8 @@ All notable changes to EvoFlux are documented in this file.
   `upload_file` fills file inputs with workspace files. Storage/cookie values,
   writes and mocks follow `webbridge.allow_evaluate`. Requires evo-webbridge
   2.8.0.
+- WebBridge console stacks and component source locations are source-mapped
+  to the original files in Coding sessions (evo-webbridge 2.9.0).
 
 ### Fixed
 

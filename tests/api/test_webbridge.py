@@ -5491,6 +5491,40 @@ async def test_tool_console_formats_levels_locations_and_stacks(
     assert "4 more from earlier pages" in result
 
 
+async def test_tool_console_marks_source_mapped_positions(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    _stub_send(
+        monkeypatch,
+        manager,
+        lambda action, params: {
+            "success": True,
+            "data": {
+                "entries": [
+                    {
+                        "source": "exception",
+                        "level": "error",
+                        "text": "TypeError: x.map is not a function",
+                        "url": "http://localhost:4173/src/App.tsx",
+                        "line": 14,
+                        "column": 22,
+                        "stack": ["a (http://localhost:4173/src/App.tsx:14:22)"],
+                        "source_mapped": True,
+                        "ts": 0,
+                    }
+                ]
+            },
+            "error": None,
+        },
+    )
+    result = await webbridge(actions=[_action({"action": "console"})])
+    assert (
+        "x.map is not a function — http://localhost:4173/src/App.tsx:14:22 "
+        "(source-mapped)"
+    ) in result
+    assert "at a (http://localhost:4173/src/App.tsx:14:22)" in result
+
+
 async def test_tool_network_lists_requests_with_ids_for_body(
     manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
 ):
