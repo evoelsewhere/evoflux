@@ -327,6 +327,56 @@ def test_build_agent_unknown_tool_is_skipped():
     assert "nonexistent_tool" not in agent._tools
 
 
+def test_build_agent_rejects_disallowed_provider_instead_of_substituting(monkeypatch):
+    """A provider outside the resolved policy's allow-list is rejected —
+    never silently swapped for a different, allowed one."""
+    from app.agent.providers.unconfigured import UnconfiguredProvider
+    from app.core.ai_policy import ResolvedAiPolicy
+
+    factory, mock_provider = _make_provider_factory()
+    monkeypatch.setattr(
+        "app.agent.loader.resolve_ai_policy",
+        lambda: ResolvedAiPolicy(allowed_providers=["anthropic"]),
+    )
+    cfg = AgentConfig(name="bot", model="openai:gpt-5")
+    agent = _build_agent(cfg, {}, factory)
+    assert isinstance(agent.llm_provider, UnconfiguredProvider)
+    assert agent.llm_provider is not mock_provider
+
+
+def test_build_agent_allows_provider_within_policy(monkeypatch):
+    from app.core.ai_policy import ResolvedAiPolicy
+
+    factory, mock_provider = _make_provider_factory()
+    monkeypatch.setattr(
+        "app.agent.loader.resolve_ai_policy",
+        lambda: ResolvedAiPolicy(allowed_providers=["anthropic"]),
+    )
+    cfg = AgentConfig(name="bot", model="anthropic:claude-sonnet-5")
+    agent = _build_agent(cfg, {}, factory)
+    assert agent.llm_provider is mock_provider
+
+
+def test_build_agent_drops_tools_outside_policy(monkeypatch):
+    from app.agent.tools.registry import Tool
+
+    def my_fn(x: int) -> int:
+        """A tool."""
+        return x
+
+    factory, _ = _make_provider_factory()
+    real_tool = Tool(my_fn, name="my_tool", description="A tool")
+    from app.core.ai_policy import ResolvedAiPolicy
+
+    monkeypatch.setattr(
+        "app.agent.loader.resolve_ai_policy",
+        lambda: ResolvedAiPolicy(allowed_tools=["other_tool"]),
+    )
+    cfg = AgentConfig(name="bot", tools=["my_tool"])
+    agent = _build_agent(cfg, {"my_tool": real_tool}, factory)
+    assert "my_tool" not in agent._tools
+
+
 def _make_tool(name: str):
     from app.agent.tools.registry import Tool
 

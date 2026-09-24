@@ -112,6 +112,7 @@ class HeartbeatResponse(BaseModel):
     server_time: datetime
     heartbeat_interval_seconds: int = Field(ge=30, le=300)
     connection_state: Literal["active"]
+    member: RegisteredMember
 
 
 class ResourceVersionNotice(BaseModel):
@@ -275,6 +276,23 @@ class ResourceInventoryRequest(BaseModel):
 
     installation_id: str
     items: list[ResourceInventoryItem] = Field(default_factory=list, max_length=500)
+
+
+class AiPolicyView(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    scope: Literal["project", "role"]
+    subject_id: str
+    default_provider: str | None = None
+    default_model: str | None = None
+    allowed_providers: list[str] = Field(default_factory=list)
+    allowed_tools: list[str] = Field(default_factory=list)
+
+
+class AiPolicyListResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    policies: list[AiPolicyView] = Field(default_factory=list)
 
 
 class TelemetryDeliverySummary(BaseModel):

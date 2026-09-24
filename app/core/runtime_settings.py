@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 import yaml
@@ -12,6 +12,19 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.core.config import settings
 
 PROVIDER_MODEL_PLACEHOLDER = "__PROVIDER_MODEL__"
+
+
+class PermissionSettings(BaseModel):
+    """Global tool-permission rules, in `ruleset_from_config()`'s config
+    shape (`app/agent/permission.py`). Empty by default: `ruleset_from_config({})`
+    produces an empty ruleset, so no admin-configured rule changes today's
+    behavior (only the hardcoded safe-tools default and session replies
+    matter) until one is actually set here.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    rules: dict[str, Any] = Field(default_factory=dict)
 
 
 class TitleGenerationSettings(BaseModel):
@@ -229,6 +242,12 @@ class ConductorSettings(BaseModel):
     member_display_name: str | None = None
     member_primary_role: Literal["admin", "contribute", "user"] | None = None
     collection_level: Literal["L0", "L1", "L2"] | None = None
+    # Raw rows synced from Conductor's `project_ai_policies` (Phase 1, T1.2):
+    # each a dict with scope/subject_id/default_provider/default_model/
+    # allowed_providers/allowed_tools. Resolved on read by
+    # `app.core.ai_policy.resolve_ai_policy()` — never merged here, so a
+    # sync just replaces this list wholesale.
+    ai_policy_rows: list[dict[str, Any]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _validate_connection(self) -> "ConductorSettings":
@@ -294,6 +313,7 @@ class RuntimeSettings(BaseModel):
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
     team_spawn: TeamSpawnModeSettings = Field(default_factory=TeamSpawnModeSettings)
     follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)
+    permission: PermissionSettings = Field(default_factory=PermissionSettings)
 
 
 def follow_up_delivery_default() -> str:

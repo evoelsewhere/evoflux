@@ -57,6 +57,8 @@ from typing import Callable, Literal
 
 from loguru import logger
 
+from app.core.ai_policy import ResolvedAiPolicy
+
 # ── Types ─────────────────────────────────────────────────────────────────────
 
 Action = Literal["allow", "deny", "ask"]
@@ -274,11 +276,17 @@ class PermissionService:
         mode: Mode = "ask",
         stream_session_id: str | None = None,
         on_ask: Callable[[PermissionRequest], None] | None = None,
+        project_ruleset: Ruleset | None = None,
     ) -> None:
         self.session_id = session_id
         self.mode: Mode = mode
         self.stream_session_id = stream_session_id or session_id
         self.base_ruleset: Ruleset = list(base_ruleset or [])
+        #: Conductor's synced, already-role-merged AI policy (Phase 1/2) —
+        #: sits between the global base ruleset and the session's own
+        #: "always allow" replies, so a live human decision in *this* run
+        #: still wins over a standing policy row.
+        self.project_ruleset: Ruleset = list(project_ruleset or [])
         self.session_ruleset: Ruleset = []
         #: (tool, pattern) pairs the user refused during this run. A reply of
         #: "always" writes an allow rule and is honoured forever after; a
@@ -324,6 +332,7 @@ class PermissionService:
                 pattern,
                 _DEFAULT_BASE_RULESET,
                 self.base_ruleset,
+                self.project_ruleset,
                 self.session_ruleset,
             )
             if rule.action == "deny":
@@ -642,3 +651,24 @@ def ruleset_from_config(config: dict) -> Ruleset:
             for pattern, action in value.items():
                 rules.append(Rule(permission=tool_glob, pattern=pattern, action=action))  # type: ignore[arg-type]
     return rules
+
+
+def project_ruleset_from_policy(policy: ResolvedAiPolicy) -> Ruleset:
+    """Build a Ruleset from Conductor's synced, already-role-merged AI policy.
+
+    `policy.allowed_tools` is the single already-narrowed list (Phase 1's
+    `resolve_ai_policy()` intersects the project and role rows itself), so
+    this needs only one ruleset, not the project/role pair the original
+    design sketched — the narrowing already happened before this function
+    ever sees the policy.
+
+    No restriction (empty `allowed_tools`) returns an empty `Ruleset`, which
+    changes nothing when merged via `evaluate()`'s findLast semantics — the
+    "inherit, don't override" behavior an absent policy must have.
+    """
+    if not policy.allowed_tools:
+        return []
+    config: dict[str, str] = {"*": "deny"}
+    for tool in policy.allowed_tools:
+        config[tool] = "allow"
+    return ruleset_from_config(config)

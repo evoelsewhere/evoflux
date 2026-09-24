@@ -82,9 +82,13 @@ from app.core.paths import session_workspace_dir
 from app.agent.permission import (
     Mode,
     PermissionService,
+    project_ruleset_from_policy,
     reset_permission_service,
+    ruleset_from_config,
     set_permission_service,
 )
+from app.core.ai_policy import resolve_ai_policy
+from app.core.runtime_settings import load_runtime_settings
 from app.agent.plan import (
     PlanModeService,
     reset_plan_mode_service,
@@ -1739,8 +1743,13 @@ class TeamMemberBase(abc.ABC):
         # permission_mode (ask | accept-edits | plan | auto | bypass).  Events
         # publish to the lead's stream; the service registers globally so the
         # reply endpoint can resolve requests from its own request context.
+        # `base_ruleset` is the admin-configured global rules (Phase 2);
+        # `project_ruleset` is Conductor's synced, role-merged AI policy
+        # (Phase 1/2) — both were previously never wired in here.
         permission_service = PermissionService(
             session_id=self.session_id,
+            base_ruleset=ruleset_from_config(load_runtime_settings().permission.rules),
+            project_ruleset=project_ruleset_from_policy(resolve_ai_policy()),
             mode=cast(Mode, self._team.permission_mode),
             stream_session_id=lead_session_id,
         )

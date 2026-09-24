@@ -435,9 +435,17 @@ class ConductorService:
         lane.last_success_at = self.status.last_heartbeat_at
         next_interval = float(heartbeat.heartbeat_interval_seconds)
         self.status.heartbeat_interval_seconds = next_interval
-        if next_interval != config.heartbeat_interval_seconds:
+        self.status.member_display_name = heartbeat.member.display_name
+        self.status.member_primary_role = heartbeat.member.primary_role
+        member_changed = (
+            heartbeat.member.display_name != config.member_display_name
+            or heartbeat.member.primary_role != config.member_primary_role
+        )
+        if next_interval != config.heartbeat_interval_seconds or member_changed:
             runtime = load_runtime_settings()
             runtime.conductor.heartbeat_interval_seconds = next_interval
+            runtime.conductor.member_display_name = heartbeat.member.display_name
+            runtime.conductor.member_primary_role = heartbeat.member.primary_role
             save_runtime_settings(runtime)
         return self.status
 
@@ -502,6 +510,7 @@ class ConductorService:
             await self._flush_usage_queues()
             try:
                 await self._sync_governed(config)
+                await self._sync_ai_policy(config)
                 self.status.etag = None
                 self.status.offline = False
                 self.status.error = None
@@ -536,6 +545,26 @@ class ConductorService:
                     type(exc).__name__,
                 )
             return self.status
+
+    async def _sync_ai_policy(self, config: ConductorSettings) -> None:
+        """Refresh the locally cached project/role AI policy (Phase 1, T1.2).
+
+        Best-effort and swallows its own errors: a hiccup fetching policy
+        must never regress resource sync's own success/error status, which
+        is why this is not allowed to raise into `sync_now()`'s try/except.
+        """
+        if self._client is None:
+            return
+        try:
+            response = await self._client.get_ai_policy()
+        except Exception:
+            logger.warning("conductor_ai_policy_sync_failed", exc_info=True)
+            return
+        runtime = load_runtime_settings()
+        runtime.conductor.ai_policy_rows = [
+            policy.model_dump() for policy in response.policies
+        ]
+        save_runtime_settings(runtime)
 
     async def _sync_governed(self, config: ConductorSettings) -> None:
         """Reconcile the project's governed resources from the change feed."""
