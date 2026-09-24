@@ -520,6 +520,44 @@ describe('WorkspaceDocumentPreview', () => {
     expect(slides[3].scrollIntoView).toHaveBeenCalledWith(followed)
   })
 
+  it('keeps the current slide, not the pixel offset, when the exact render replaces the native one', async () => {
+    const deckOf = (renderer: string | null) => `<!doctype html><html><head></head><body>${
+      renderer ? `<main data-preview-renderer="${renderer}">` : '<main>'
+    }${[1, 2, 3, 4].map((n) => `<article data-preview-item data-preview-label="Slide ${n}"><section class="slide"></section></article>`).join('')
+    }</main></body></html>`
+    const deck = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 1 }
+    const respond = (html: string) => ({ ok: true, status: 200, text: () => Promise.resolve(html) })
+    const native = deckOf(null)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(native)))
+    const { rerender } = render(<WorkspaceDocumentPreview sessionId="session-1" file={deck} />)
+    await waitFor(() => expect(screen.getByTestId('document-preview-frame')).toHaveAttribute('srcdoc', native))
+    let frame = hydrateFrame(native)
+    const frameWindow = frame.contentWindow as Window
+    await new Promise<void>((resolve) => frameWindow.requestAnimationFrame(() => resolve()))
+
+    // Scrolled to the end: the last slide is current even though its top
+    // never reaches the top of the view.
+    Object.defineProperty(frameWindow, 'scrollY', { configurable: true, value: 500 })
+    Object.defineProperty(frameWindow.document.documentElement, 'scrollHeight', { configurable: true, value: frameWindow.innerHeight + 500 })
+    fireEvent.scroll(frameWindow)
+    expect(await screen.findByText(/Slide 4 of 4/)).toBeInTheDocument()
+
+    // The exact render lays slides out differently: land on slide 4 again.
+    const exact = deckOf('libreoffice-26.8.0')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(respond(exact)))
+    rerender(<WorkspaceDocumentPreview sessionId="session-1" file={{ ...deck, mtime: 2 }} />)
+    await waitFor(() => expect(screen.getByTestId('document-preview-frame')).toHaveAttribute('srcdoc', exact))
+    frame = hydrateFrame(exact)
+    const slides = Array.from(frame.contentDocument?.querySelectorAll<HTMLElement>('[data-preview-item]') ?? [])
+    slides.forEach((slide) => { slide.scrollIntoView = vi.fn() })
+    const scrollTo = vi.spyOn(frame.contentWindow as Window, 'scrollTo').mockImplementation(() => undefined)
+    await new Promise<void>((resolve) => frame.contentWindow?.requestAnimationFrame(() => resolve()))
+
+    expect(slides[3].scrollIntoView).toHaveBeenCalledWith({ block: 'start' })
+    expect(scrollTo).not.toHaveBeenCalled()
+    expect(screen.getByText(/Slide 4 of 4/)).toBeInTheDocument()
+  })
+
   it('re-renders a deck when the agent turn ends, since only a running build is shown live', async () => {
     const deck = { path: 'deck.pptx', name: 'deck.pptx', mime: '', size: 10, mtime: 2 }
     const { rerender } = render(<WorkspaceDocumentPreview sessionId="session-1" file={deck} agentWorking />)
