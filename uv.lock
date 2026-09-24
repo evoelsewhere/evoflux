@@ -513,11 +513,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-full = [
-    { name = "openpyxl" },
-    { name = "python-docx" },
-    { name = "python-pptx" },
-]
 office-preview = [
     { name = "openpyxl" },
     { name = "python-docx" },
@@ -551,7 +546,6 @@ requires-dist = [
     { name = "cryptography", specifier = ">=44" },
     { name = "ddgs", specifier = ">=9.12.0" },
     { name = "duckdb", specifier = ">=1.1.0" },
-    { name = "evoflux", extras = ["office-preview"], marker = "extra == 'full'" },
     { name = "fastapi", specifier = ">=0.135.2" },
     { name = "greenlet", specifier = ">=3.1.1" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -581,7 +575,7 @@ requires-dist = [
     { name = "watchfiles", specifier = ">=0.24.0" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
-provides-extras = ["office-preview", "full"]
+provides-extras = ["office-preview"]
 
 [package.metadata.requires-dev]
 dev = [

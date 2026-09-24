@@ -748,7 +748,7 @@ def main() -> int:
         default="office-preview",
         help=(
             "Comma-separated optional-dep extras to install "
-            "(default: office-preview; e.g. office-preview or full)."
+            "(default: office-preview)."
         ),
     )
     ap.add_argument(
