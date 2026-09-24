@@ -735,7 +735,7 @@ def _xlsx_cell_value(
     return evaluation.display_value(sheet.title, coordinate, cached)
 
 
-def _render_xlsx(source: Path) -> str:
+def _render_xlsx(source: Path, *, live: bool = False) -> str:
     from openpyxl.utils import get_column_letter
 
     from app.services.document_preview.xlsx_features import (
@@ -1033,6 +1033,22 @@ def _render_xlsx(source: Path) -> str:
 
     workbook.close()
     cached_workbook.close()
+    # ``live``: the viewer's session is building this workbook right now.
+    plan = read_deck_plan(source) if live else None
+    live = plan is not None and not plan.done
+    if live and plan is not None:
+        # Until the first sheet is added the workbook holds a stand-in sheet.
+        finished = min(plan.added or 0, len(sections))
+        sections = [
+            section.replace(
+                " data-preview-item ",
+                ' data-preview-item data-slide-status="done"'
+                f"{' data-slide-fresh' if index == finished - 1 else ''} ",
+                1,
+            )
+            for index, section in enumerate(sections[:finished])
+        ]
+        sections.extend(_pending_sheet_skeletons(plan, first=finished))
     css = """
     *{box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden}
     body{margin:0;background:#fff;color:#202124;font-family:Arial,sans-serif}
@@ -1069,7 +1085,105 @@ def _render_xlsx(source: Path) -> str:
     padding:24px}.chartsheet-chart{width:min(960px,100%);height:min(600px,100%);
     margin:0}.chartsheet-chart .workbook-chart-svg{height:100%}
     """
-    return _page(title=source.name, body="".join(sections), css=css)
+    body = "".join(sections)
+    if live:
+        css += _LIVE_SHEET_CSS
+        body = f'<main data-deck-live="true">{body}</main>'
+    return _page(title=source.name, body=body, css=css)
+
+
+_LIVE_SHEET_CSS = """
+main[data-deck-live]{width:100%;height:100%}
+.sheet-skeleton{display:flex;flex-direction:column;gap:18px;padding:28px 36px;
+font-family:Arial,sans-serif}
+.sheet-skeleton .sk-chip{align-self:flex-start;display:inline-flex;align-items:center;
+gap:8px;padding:5px 12px;border-radius:99px;font:600 12px/1 Arial,sans-serif;
+color:#5f6368;background:#f1f3f4}
+.sk-grid{display:grid;grid-template-columns:44px repeat(6,minmax(0,1fr));gap:0;
+border-top:1px solid #e3e6ea;border-left:1px solid #e3e6ea;max-width:960px}
+.sk-grid span{height:26px;border-right:1px solid #e3e6ea;border-bottom:1px solid #e3e6ea;
+position:relative}
+.sk-grid span.head{background:#f3f4f6}
+.sk-grid span i{position:absolute;left:8px;top:9px;height:8px;width:var(--w);
+border-radius:4px;background:#ececec;transform-origin:left}
+.sk-progress{position:absolute;left:0;right:0;bottom:0;height:5px;background:#e8eaed;
+display:flex}.sk-progress .done{background:#107c41}.sk-progress .now{
+background:linear-gradient(90deg,#7fc49a,#d3ecdd,#7fc49a);background-size:200% 100%;
+animation:sk-flow 1.2s linear infinite}
+[data-slide-status="building"] .sk-chip{color:#0b6a36;background:#e3f4ea}
+[data-slide-status="building"] .sk-spin{width:11px;height:11px;border-radius:50%;
+border:2px solid #107c414d;border-top-color:#107c41;animation:sk-spin .8s linear infinite}
+[data-slide-status="building"] .sk-grid span i{background:linear-gradient(90deg,#e3e6ea 0,
+#f4f6f8 40%,#e3e6ea 80%) 0 0/300% 100%;animation:sk-grow .5s cubic-bezier(.2,.7,.2,1)
+calc(.2s + var(--d,0) * .08s) both,sk-shimmer 1.6s ease-in-out 1s infinite}
+[data-slide-status="pending"] .sheet-skeleton{opacity:.7}
+[data-slide-fresh]::after{content:"\\2713  Added";position:absolute;top:10px;right:14px;
+z-index:8;padding:4px 10px;border-radius:99px;font:600 12px/1.2 Arial,sans-serif;
+color:#fff;background:#188038;box-shadow:0 2px 8px #0003;animation:sk-badge 2.6s ease both}
+@keyframes sk-shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+@keyframes sk-flow{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@keyframes sk-spin{to{transform:rotate(360deg)}}
+@keyframes sk-grow{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
+@keyframes sk-badge{0%{opacity:0;transform:translateY(-6px)}12%,70%{opacity:1;
+transform:none}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){[data-deck-live] *,[data-deck-live] *::after{
+animation:none!important}[data-slide-fresh]::after{display:none}}
+"""
+
+# Widths of the skeleton's cell bars, row by row (the header row first).
+_SHEET_SKELETON_ROWS = (
+    ("70%", "60%", "64%", "56%", "62%", "58%"),
+    ("82%", "40%", "46%", "38%", "44%", "50%"),
+    ("64%", "48%", "36%", "52%", "40%", "46%"),
+    ("76%", "42%", "50%", "44%", "38%", "54%"),
+    ("58%", "52%", "40%", "48%", "56%", "36%"),
+    ("70%", "38%", "54%", "42%", "46%", "44%"),
+    ("62%", "46%", "44%", "50%", "40%", "52%"),
+    ("80%", "56%", "48%", "40%", "52%", "42%"),
+)
+
+
+def _pending_sheet_skeletons(plan: DeckPlan, *, first: int) -> list[str]:
+    """Loading skeletons for the sheets an agent has not added yet.
+
+    Every one is the same generic grid; the first missing sheet is the one
+    being built (its cells shimmer and a progress bar shows how far the
+    workbook is), the rest stay still.
+    """
+    cells = []
+    for row, widths in enumerate(_SHEET_SKELETON_ROWS):
+        head = ' class="head"' if row == 0 else ""
+        cells.append(f"<span{head}></span>")
+        cells.extend(
+            f'<span{head}><i style="--w:{width};--d:{row}"></i></span>'
+            for width in widths
+        )
+    grid = f'<div class="sk-grid" aria-hidden="true">{"".join(cells)}</div>'
+    skeletons: list[str] = []
+    for index in range(first, plan.total):
+        number = index + 1
+        state = "building" if index == first else "pending"
+        caption = (
+            f"Building sheet {number} of {plan.total}"
+            if state == "building"
+            else "Up next"
+        )
+        spinner = '<span class="sk-spin"></span>' if state == "building" else ""
+        progress = ""
+        if state == "building":
+            progress = (
+                '<div class="sk-progress" aria-hidden="true">'
+                f'<span class="done" style="width:{100 * first / plan.total:.2f}%"></span>'
+                f'<span class="now" style="width:{100 / plan.total:.2f}%"></span></div>'
+            )
+        skeletons.append(
+            '<section class="sheet sheet-skeleton" data-preview-item '
+            f'data-preview-label="Sheet {number}" data-slide-status="{state}" '
+            'data-preview-fit-width="960" data-preview-fit-height="600" '
+            f'aria-label="Sheet {number}, {caption.lower()}">'
+            f'<span class="sk-chip">{spinner}{caption}</span>{grid}{progress}</section>'
+        )
+    return skeletons
 
 
 def _picture_data_uri(shape: Any) -> str | None:
@@ -5077,7 +5191,7 @@ def installed_runtime_for_preview() -> Any | None:
 def _render_source(source: Path, live: bool = False) -> str:
     renderers = {
         ".docx": _render_docx,
-        ".xlsx": _render_xlsx,
+        ".xlsx": lambda path: _render_xlsx(path, live=live),
         ".pptx": lambda path: _render_pptx(path, live=live),
         ".pdf": _render_pdf,
     }

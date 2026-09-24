@@ -44,7 +44,12 @@ the source data with its reason. Wait for approval. Silent cleaning is how an
 irreproducible number reaches a decision.
 
 **Phase 3 — Build.** Drivers as labelled input cells, results as formulas, one
-grain per sheet, palette and number formats as the conventions below.
+grain per sheet, palette and number formats as the conventions below. Build a
+new workbook live, one sheet per command: `scripts/workbook_live.py init
+--sheets N` first so the file exists immediately, then one sheet file and one
+`workbook_live.py add` per sheet, and `workbook_live.py finish` at the end.
+The user watches the preview fill in while you write; see *Live build* in
+[create.md](create.md).
 
 **Phase 4 — Recalculate and reconcile.** `openpyxl` writes formulas and never
 evaluates them, so a workbook it produced carries no computed values until
@@ -55,7 +60,9 @@ total.
 
 **Phase 5 — Verify and repair.** Run the QA checks below once, fix what they
 report, and re-check only the sheets you changed; stop after two repair
-rounds and report what is still open.
+rounds and report what is still open. Repair a live-built workbook in place
+(`workbook_live.py add BOOK FILE --replace N`, or `rebuild BOOK sheets/`);
+never run `init` again on a workbook that has sheets.
 
 **Phase 6 — Hand off.** File path, whether formulas actually recalculated,
 what reconciled, and every assumption and unresolved figure.
