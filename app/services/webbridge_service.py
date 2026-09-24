@@ -109,6 +109,7 @@ _TAB_SCOPED_ACTIONS: frozenset[str] = frozenset(
         "wait_for_text",
         "wait_for_load",
         "wait_for_network_idle",
+        "wait_for_url",
         "click_selector",
         "click_text",
         "hover",
@@ -116,7 +117,12 @@ _TAB_SCOPED_ACTIONS: frozenset[str] = frozenset(
         "select_option",
         "set_checked",
         "drag",
+        "drag_to_point",
         "fill",
+        # A batch of clicks and fills acts on a tab like any one of them; the
+        # extension hands its tab_id and origin pin to each step that names
+        # no tab of its own.
+        "batch",
         "snapshot",
         "semantic_snapshot",
         "semantic_read",
