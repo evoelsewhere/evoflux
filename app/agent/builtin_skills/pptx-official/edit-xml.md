@@ -246,12 +246,12 @@ The scheme colors themselves are in `ppt/theme/theme1.xml` under
 
 ## After you edit
 
-Always run the QA checklist from `SKILL.md`:
+Run the QA checks from `SKILL.md` once:
 
 ```bash
 uv run --with python-pptx python scripts/diagnose.py output.pptx
 uv run --with python-pptx python scripts/dump_text.py output.pptx --notes | grep -Ei "\{\{|TODO|TBD|lorem|click to add"
 ```
 
-Then run the `document_preview` tool on the output. Assume something is
-wrong; a grep with no match exits non-zero, which is the check passing.
+Then run the `document_preview` tool on the output and fix only what they
+report; a grep with no match exits non-zero, which is the check passing.

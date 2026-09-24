@@ -471,5 +471,4 @@ s.addText("Part 2 — What's Next", { placeholder: "title" });
 
 ## After you generate
 
-Always run the QA checklist from `SKILL.md` — even three-slide decks fail QA
-more often than you'd think. Assume something is wrong; find it.
+Run the QA checks from `SKILL.md` once and fix only what they report.

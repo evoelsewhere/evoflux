@@ -10,7 +10,7 @@ workflow is in `edit-xml.md`.
 | **Slide surgery** — reorder, add, delete slides | Structure changes but content per slide stays the same |
 | **Raw XML** — explode → edit → assemble (`edit-xml.md`) | Anything the python-pptx API doesn't expose: custom XML parts, uncommon shapes, deep master edits, chart-bearing slide duplication |
 
-Never overwrite the original file: write to a new path, run the QA checklist,
+Never overwrite the original file: write to a new path, run the QA checks,
 then hand off. Python snippets go into a `.py` file in the workspace and run
 with `uv run --with python-pptx python edit_deck.py`.
 
@@ -283,13 +283,13 @@ uv run --with python-pptx python scripts/assemble.py unpacked/ output-clean.pptx
 
 ## After you edit
 
-Always run the QA checklist from `SKILL.md`:
+Run the QA checks from `SKILL.md` once:
 
 ```bash
 uv run --with python-pptx python scripts/diagnose.py output.pptx
 uv run --with python-pptx python scripts/dump_text.py output.pptx --notes | grep -Ei "\{\{|TODO|TBD|lorem|click to add"
 ```
 
-Then run the `document_preview` tool on the output. Assume something is
-wrong. The most common failure is placeholder text that survived template
-fill; grep is cheap, use it.
+Then run the `document_preview` tool on the output and fix only what they
+report. The most common failure is placeholder text that survived template
+fill, which the grep catches.
