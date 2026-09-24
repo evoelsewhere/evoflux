@@ -365,6 +365,8 @@ export function WorkspaceDocumentPreview({
   const deckLiveRef = useRef(false)
   // The slide a deck under construction is followed to (-1: not live).
   const liveTargetRef = useRef(-1)
+  // Which renderer drew the frame last (null: nothing shown yet).
+  const frameRendererRef = useRef<string | null>(null)
   const savedScrollRef = useRef(0)
   // The layout a live build collapsed, restored once the deck is finished
   // unless the user reopened the thumbnails in the meantime.
@@ -457,6 +459,7 @@ export function WorkspaceDocumentPreview({
           viewedSourceRef.current = sourceUrl
           followLiveRef.current = true
           deckLiveRef.current = false
+          frameRendererRef.current = null
           savedScrollRef.current = 0
           setPresentationView('normal')
           setNotesOpen(false)
@@ -802,6 +805,9 @@ export function WorkspaceDocumentPreview({
     const justFinished = kind === 'pptx' && !liveDeck && deckLiveRef.current && followLiveRef.current
     deckLiveRef.current = liveDeck
     liveTargetRef.current = liveDeck ? followTarget : -1
+    const renderer = document.querySelector('[data-preview-renderer]')?.getAttribute('data-preview-renderer') ?? 'native'
+    const rendererChanged = frameRendererRef.current !== null && frameRendererRef.current !== renderer
+    frameRendererRef.current = renderer
     const following = justFinished || (liveDeck && followLiveRef.current && followTarget >= 0)
     const restoredIndex = justFinished
       ? elements.length - 1
@@ -855,6 +861,12 @@ export function WorkspaceDocumentPreview({
             distance = currentDistance
           }
         })
+        // At the end of the document the last page or slide is the current
+        // one, even when it is too short to reach the top of the view.
+        const root = frameWindow.document.documentElement
+        if (frameWindow.scrollY > 0 && frameWindow.scrollY + frameWindow.innerHeight >= root.scrollHeight - 2) {
+          closest = elements.length - 1
+        }
         activeIndexRef.current = closest
         setActiveIndex(closest)
         // Scrolling back to the slide being built picks the build up again,
@@ -945,8 +957,11 @@ export function WorkspaceDocumentPreview({
     frameWindow.requestAnimationFrame(() => {
       fitDocument(fitMode === 'custom' ? 'width' : fitMode)
       if (tracksContinuousScroll && (kind !== 'pptx' || continuousSlides)) {
-        // A refreshed document keeps its place; a followed deck moves on.
+        // A refreshed document keeps its place; a followed deck moves on. A
+        // new renderer (the exact render replacing the native one) lays pages
+        // out differently, so it keeps the page rather than the pixel offset.
         if (following) elements[restoredIndex]?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+        else if (rendererChanged) elements[restoredIndex]?.scrollIntoView?.({ block: 'start' })
         else if (savedScrollRef.current) frameWindow.scrollTo(0, savedScrollRef.current)
       }
     })
