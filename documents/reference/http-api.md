@@ -42,6 +42,39 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/snippets` | snippet catalogue/rendering | `snippets.py` |
 | `/api/auth` | provider OAuth login/callback | `auth.py` |
 | `/api/quote` | cached quote-of-the-day | `quote.py` |
+| `/api/settings/remote` | remote access settings | `settings_remote.py` |
+| `/api/remote` | connections, pairing links and pairing state | `remote.py` |
+
+## Remote access
+
+Remote access routes manage a user-owned Telegram bot connection and phone
+pairing.
+
+### Settings
+
+- `GET /api/settings/remote` returns remote settings (`outbound_data_policy`,
+  `outbound_pii_policy`).
+- `PUT /api/settings/remote` updates remote settings atomically.
+
+### Connections
+
+- `GET /api/remote/connections` lists connections (0 or 1; v1 allows one per
+  installation).
+- `POST /api/remote/connections` creates a connection. The request body includes
+  the bot token (write-only; never returned in responses). The endpoint verifies
+  the token with the Telegram API and stores it in the OS vault.
+- `PATCH /api/remote/connections/{id}` updates `label` or `enabled`.
+- `PUT /api/remote/connections/{id}/token` replaces the bot token (write-only).
+- `DELETE /api/remote/connections/{id}` removes the connection and revokes any
+  active pairing.
+
+### Pairing
+
+- `POST /api/remote/connections/{id}/pairing-links` issues a pairing link (and
+  optional QR). The link contains a short-lived token the phone bot resolves.
+- `GET /api/remote/connections/{id}/pairing` reads the current pairing state
+  (`pending`, `paired`, `revoked`).
+- `DELETE /api/remote/connections/{id}/pairing` revokes the active pairing.
 
 ## Team subresources
 

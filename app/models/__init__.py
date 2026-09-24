@@ -8,6 +8,7 @@ from .chat import (
 from .goal import SessionGoal
 from .memory import MemoryExtractionState, MemoryFact, MemoryFactEvidence
 from .prompt_cache import SessionPrefixSnapshot
+from .remote import RemoteConnection, RemotePairing
 from .suggested_task import SessionSuggestedTask
 from .team import DelegationTask
 from .webbridge import (
@@ -28,6 +29,8 @@ __all__ = [
     "MemoryExtractionState",
     "MemoryFact",
     "MemoryFactEvidence",
+    "RemoteConnection",
+    "RemotePairing",
     "SessionMessage",
     "SessionPrefixSnapshot",
     "ScheduledTask",

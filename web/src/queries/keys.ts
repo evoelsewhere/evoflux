@@ -169,5 +169,13 @@ export const queryKeys = {
     conductorStatus: () => ['settings', 'conductor', 'status'] as const,
     teamSpawn: () => ['settings', 'team-spawn'] as const,
     followUp: () => ['settings', 'follow-up'] as const,
+    remote: () => ['settings', 'remote'] as const,
+  },
+  remote: {
+    connections: () => ['remote', 'connections'] as const,
+    connection: (id: string) => ['remote', 'connections', id] as const,
+    pairing: (id: string) => ['remote', 'connections', id, 'pairing'] as const,
+    pairingLink: (id: string) => ['remote', 'connections', id, 'pairing-link'] as const,
+    pairingCode: (id: string) => ['remote', 'connections', id, 'pairing-code'] as const,
   },
 }

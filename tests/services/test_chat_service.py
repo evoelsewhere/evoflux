@@ -26,6 +26,7 @@ from app.services.chat_service import (
     get_side_chat_context,
     heal_orphaned_tool_calls,
     hide_messages_before_summary,
+    mark_channel_source_delivered,
     redo_session_messages,
     pop_queued_user_messages,
     save_queued_user_message,
@@ -33,6 +34,38 @@ from app.services.chat_service import (
     undo_session_messages,
     save_message,
 )
+
+
+@pytest.mark.asyncio
+async def test_mark_channel_source_delivered_marks_interactive_source(session):
+    """Remote-source rows must become replay-safe after mailbox delivery."""
+    chat_session = await create_chat_session(session, title="Remote task")
+    message = SessionMessage(
+        session_id=chat_session.id,
+        role="user",
+        content="Continue the task",
+        extra={
+            "interactive_source": {
+                "key": "telegram:connection-1:42",
+                "state": "persisted",
+            }
+        },
+    )
+    session.add(message)
+    await session.commit()
+
+    changed = await mark_channel_source_delivered(session, message)
+    await session.commit()
+
+    assert changed is True
+    refreshed = await session.get(SessionMessage, message.id)
+    assert refreshed is not None
+    assert refreshed.extra == {
+        "interactive_source": {
+            "key": "telegram:connection-1:42",
+            "state": "delivered",
+        }
+    }
 
 
 @pytest_asyncio.fixture

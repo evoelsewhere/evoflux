@@ -22,6 +22,7 @@ import {
   KeyRound,
   Layers,
   Palette,
+  Phone,
   Plug,
   Search,
   Server,
@@ -39,6 +40,7 @@ import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import {
   useAgentFilesQuery,
+  useConnectionsQuery,
   useConductorStatusQuery,
   useMcpServersQuery,
   useSandboxSettingsQuery,
@@ -57,6 +59,7 @@ import {
 type SidebarPath =
   | '/settings/providers'
   | '/settings/connection'
+  | '/settings/remote-access'
   | '/settings/version-control'
   | '/settings/agents'
   | '/settings/skills'
@@ -203,6 +206,7 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
   const mcpQ = useMcpServersQuery()
   const sandboxQ = useSandboxSettingsQuery()
   const conductorQ = useConductorStatusQuery()
+  const remoteConnectionQ = useConnectionsQuery()
   const enterpriseProject =
     conductorQ.data?.project_display_name ?? conductorQ.data?.project_name
   const enterpriseNotifications = enterpriseAttentionCount(conductorQ.data)
@@ -297,6 +301,14 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             label: t('Connection'),
             icon: Server,
             matchPrefix: '/settings/connection',
+          },
+          {
+            to: '/settings/remote-access',
+            label: t('Remote access'),
+            icon: Phone,
+            matchPrefix: '/settings/remote-access',
+            badge: remoteConnectionQ.data?.[0]?.enabled ? 'On' : null,
+            connected: remoteConnectionQ.data?.[0]?.status.state === 'polling',
           },
           {
             to: '/settings/version-control',

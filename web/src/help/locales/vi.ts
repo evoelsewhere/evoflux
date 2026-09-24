@@ -2585,5 +2585,79 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'browser-webbridge'
 ],
     openAction: { type: 'settings', path: 'diagnostics' },
+  },
+  {
+    id: 'remote-access',
+    category: 'settings',
+    title: 'Truy cập từ xa',
+    summary:
+      'Điều khiển EvoFlux từ điện thoại qua Telegram bot cá nhân. Nhận cập nhật task, duyệt quyền và giải quyết gate mà không cần ngồi máy. Mỗi máy cần bot riêng.',
+    keywords: [
+      'remote',
+      'telegram',
+      'bot',
+      'phone',
+      'mobile',
+      'pair',
+      'pairing',
+      'unpair',
+      'remote access',
+      'truy cập từ xa',
+      'điện thoại',
+      'kết nối từ xa'
+],
+    setup:
+      'Tạo Telegram bot qua BotFather, copy token, mở Settings → Remote access, dán token, bấm Connect. Mở link pairing trên điện thoại và bấm Start trong bot chat.',
+    tricks: [
+      'Mỗi cài đặt máy tính cần Telegram bot riêng — không dùng chung một bot cho nhiều máy.',
+      'EvoFlux phải đang chạy trên desktop thì bot mới hoạt động. Tin nhắn gửi khi EvoFlux dừng sẽ không chạy lại sau.',
+      'Bot chat rời khỏi máy — mọi văn bản đi ra được redact secret và PII, nhưng cuộc trò chuyện nằm trên server Telegram.',
+      'Allow once là quyền cao nhất được cấp từ xa. Không có Always từ điện thoại.',
+      'Dùng /help trong bot chat để xem danh sách lệnh.',
+      'Dùng /status để xem bot đang ghép với session nào và agent có đang chạy không.',
+      'Dùng /new để bắt đầu session mới từ điện thoại.',
+      'Dùng /stop để dừng mọi agent đang làm việc ngay.',
+      'Dùng /unpair để ngắt kết nối điện thoại với desktop. Cũng có thể xóa kết nối từ Settings → Remote access trên desktop.',
+      'Tin gate (permission, question, plan) đến kèm nút inline — bấm để giải quyết, không cần gõ.'
+],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Remote access cho phép bạn điều khiển EvoFlux từ điện thoại qua Telegram bot cá nhân. Khi agent cần input — quyết định quyền, câu hỏi, hoặc xem plan — bot gửi tin kèm nút inline. Bạn bấm để approve hoặc reject, session tiếp tục. Tóm tắt hoàn thành task đến dưới dạng text để bạn biết khi nào kiểm tra lại.',
+      },
+      {
+        type: 'p',
+        text: 'Cầu nối chỉ gửi đi: EvoFlux poll Telegram lấy phản hồi nhưng không mở inbound listener. Bot token lưu trong OS credential vault (keyring), không trong database hay file config. Mọi văn bản đi ra đều qua redaction nên secret và PII không tới Telegram.',
+      },
+      {
+        type: 'p',
+        text: 'Các bước cài đặt: (1) Mở Telegram, tìm @BotFather. (2) Gửi /newbot và làm theo hướng dẫn. (3) Copy bot token. (4) Trong EvoFlux, mở Settings → Remote access. (5) Dán token và bấm Connect. (6) UI hiện link pairing — mở trên điện thoại. (7) Bấm Start trong bot chat. Pairing đã active.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'EvoFlux phải đang chạy thì bot mới phản hồi. Tin nhắn gửi lúc dừng không được xếp hàng.',
+          'Mỗi máy cần bot riêng. Hai máy không dùng chung một bot token.',
+          'Bot chat lưu trên server Telegram — coi như bên ngoài.',
+          'Quyền xa cao nhất là Allow once. Always không khả dụng từ điện thoại.',
+          'Lệnh: /help, /status, /new, /stop, /unpair, /actions.',
+          'Tin gate dùng nút inline — không cần gõ để approve hay reject.'
+],
+      },
+      {
+        type: 'p',
+        text: 'Để thu hồi: trên desktop, vào Settings → Remote access → Remove. Trên điện thoại, gửi /unpair cho bot. Cả hai bên ngắt kết nối và token pairing bị vô hiệu.',
+      },
+      {
+        type: 'p',
+        text: 'Sai thường gặp: dùng chung bot cho nhiều máy; tắt EvoFlux rồi chờ bot xếp hàng tin nhắn; tưởng quyền remote đặt được Always; gửi dữ liệu nhạy cảm trong bot chat mà không kiểm tra cài đặt redaction.',
+      }
+],
+    related: [
+      'settings-safety',
+      'permissions-modes',
+      'troubleshooting-connection'
+],
+    openAction: { type: 'settings', path: 'remote-access' },
   }
 ]

@@ -28,7 +28,11 @@ from app.agent.schemas.chat import (
 
 OutboundDataPolicy = Literal["block", "redact", "off"]
 OutboundPiiPolicy = Literal["off", "standard", "strict"]
-OutboundChannel = Literal["model", "web", "mcp", "other"]
+#: ``remote`` is the phone-facing Telegram channel (a later task). Its
+#: policy is selected explicitly by the caller rather than inherited from
+#: the ambient sandbox state the other channels default to, because a
+#: remote message is addressed to a device outside the sandboxed run.
+OutboundChannel = Literal["model", "web", "mcp", "other", "remote"]
 
 
 @dataclass(frozen=True)

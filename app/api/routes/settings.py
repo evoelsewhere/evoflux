@@ -25,6 +25,7 @@ from app.core.runtime_settings import (
     ConductorSettings,
     ContextSettings,
     GitSettings,
+    RemoteSettings,
     WebBridgeSettings,
     load_runtime_settings,
     load_runtime_settings_report,
@@ -55,6 +56,7 @@ from app.api.schemas.settings import (
     TeamSpawnSettingsBody,
     ProviderVisibleModelsResponse,
     ProvidersListBody,
+    RemoteSettingsBody,
     SandboxSettingsBody,
     SeedInstallRequest,
     SeedInstallResponse,
@@ -633,6 +635,39 @@ async def save_follow_up_settings(body: FollowUpSettingsBody) -> FollowUpSetting
     cfg.follow_up.delivery = body.delivery
     save_runtime_settings(cfg)
     return FollowUpSettingsBody(delivery=cfg.follow_up.delivery)
+
+
+# Remote access (Settings -> Remote access tab)
+
+
+def _remote_settings_body() -> RemoteSettingsBody:
+    cfg = load_runtime_settings()
+    return RemoteSettingsBody(
+        outbound_data_policy=cfg.remote.outbound_data_policy,
+        outbound_pii_policy=cfg.remote.outbound_pii_policy,
+    )
+
+
+@router.get("/remote")
+async def get_remote_settings() -> RemoteSettingsBody:
+    try:
+        return _remote_settings_body()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/remote")
+async def update_remote_settings(body: RemoteSettingsBody) -> RemoteSettingsBody:
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.remote = RemoteSettings(
+        outbound_data_policy=body.outbound_data_policy,
+        outbound_pii_policy=body.outbound_pii_policy,
+    )
+    save_runtime_settings(cfg)
+    return _remote_settings_body()
 
 
 # Providers (Settings -> Providers tab)

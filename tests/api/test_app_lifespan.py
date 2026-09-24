@@ -24,7 +24,12 @@ def test_app_import_keeps_optional_runtime_modules_lazy() -> None:
                 "print('app.agent.loader' in sys.modules); "
                 "print('app.agent.agent_loop.core' in sys.modules); "
                 "print('app.agent.tools.builtin.browser_use_tool' in sys.modules); "
-                "print('app.agent.tools.builtin.webbridge_tool' in sys.modules)"
+                "print('app.agent.tools.builtin.webbridge_tool' in sys.modules); "
+                # AC-1: with no enabled connection, importing app.api.app
+                # (which now registers the /api/remote routes) must never
+                # pull either Telegram module into sys.modules.
+                "print('app.remote.telegram.adapter' in sys.modules); "
+                "print('app.remote.telegram.client' in sys.modules)"
             ),
         ],
         capture_output=True,
@@ -33,6 +38,8 @@ def test_app_import_keeps_optional_runtime_modules_lazy() -> None:
     )
 
     assert completed.stdout.splitlines() == [
+        "False",
+        "False",
         "False",
         "False",
         "False",
@@ -129,3 +136,77 @@ async def test_lifespan_starts_configured_services(
     app_module.mcp_manager.start.assert_awaited_once()
     app_module.task_scheduler.start.assert_awaited_once()
     slim_lifespan.start.assert_awaited_once()
+
+
+def _quiet_optional_services(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Silence the other optional services so a remote-runtime test isn't
+    coupled to their behavior."""
+    monkeypatch.setattr(app_module.mcp_manager, "start", AsyncMock())
+    monkeypatch.setattr(
+        app_module.task_scheduler, "has_enabled_tasks", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(app_module.task_scheduler, "start", AsyncMock())
+
+
+@pytest.mark.asyncio
+async def test_lifespan_starts_remote_runtime(
+    monkeypatch: pytest.MonkeyPatch, slim_lifespan
+) -> None:
+    """The remote runtime is started alongside the other optional services
+    (AC-1's lazy behavior itself is proven in tests/remote/test_runtime.py;
+    this only proves the lifespan actually calls ``start()``)."""
+    _quiet_optional_services(monkeypatch)
+    from app.remote.runtime import remote_runtime
+
+    start_mock = AsyncMock()
+    monkeypatch.setattr(remote_runtime, "start", start_mock)
+
+    app = await _run_lifespan()
+
+    start_mock.assert_awaited_once()
+    assert app.state.optional_services_ready is True
+
+
+@pytest.mark.asyncio
+async def test_lifespan_remote_runtime_start_failure_keeps_health_ready(
+    monkeypatch: pytest.MonkeyPatch, slim_lifespan
+) -> None:
+    """A remote-runtime startup failure must not fail app startup or health
+    readiness — it is wrapped the same defensive way every other optional
+    service is in ``_start_optional_services``."""
+    _quiet_optional_services(monkeypatch)
+    from app.remote.runtime import remote_runtime
+
+    monkeypatch.setattr(
+        remote_runtime, "start", AsyncMock(side_effect=RuntimeError("boom"))
+    )
+
+    app = await _run_lifespan()
+
+    assert app.state.optional_services_ready is True
+
+
+@pytest.mark.asyncio
+async def test_lifespan_shutdown_stops_remote_runtime(
+    monkeypatch: pytest.MonkeyPatch, slim_lifespan
+) -> None:
+    """``remote_runtime.stop()`` runs during shutdown — after the optional
+    startup task has been awaited/cancelled — placed next to the existing
+    Conductor/Scheduler cleanup calls."""
+    _quiet_optional_services(monkeypatch)
+    from app.remote.runtime import remote_runtime
+
+    start_mock = AsyncMock()
+    stop_mock = AsyncMock()
+    monkeypatch.setattr(remote_runtime, "start", start_mock)
+    monkeypatch.setattr(remote_runtime, "stop", stop_mock)
+
+    app = FastAPI()
+    async with app_module.lifespan(app):
+        await app.state.optional_startup_task
+        # Still "up": shutdown has not run yet, so stop() must not have
+        # fired even though startup already completed.
+        stop_mock.assert_not_awaited()
+
+    start_mock.assert_awaited_once()
+    stop_mock.assert_awaited_once()

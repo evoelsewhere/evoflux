@@ -27,6 +27,13 @@ TAURI_DIR = ROOT / "desktop" / "src-tauri"
 VITE_PORT = 5173
 SHUTDOWN_TIMEOUT_SECONDS = 5.0
 
+#: Neither ``os.killpg`` nor ``signal.SIGKILL`` exist on Windows — every
+#: unconditional reference to either raised an uncaught ``AttributeError``
+#: whenever this script actually needed to stop or force-kill a process on
+#: that platform (both stop_dev_ports's startup cleanup and
+#: signal_process_group's shutdown path).
+_IS_WINDOWS = sys.platform == "win32"
+
 
 @dataclass(frozen=True)
 class Service:
@@ -101,6 +108,25 @@ def listening_pids(port: int) -> list[int]:
     return [int(value) for value in result.stdout.split()]
 
 
+def _force_kill_pid(pid: int) -> None:
+    """Hard-kill an arbitrary PID discovered via port inspection — unlike
+    :func:`signal_process_group`, this PID wasn't spawned by us, so there
+    is no tracked ``Popen`` to call ``.kill()`` on. ``signal.SIGKILL``
+    doesn't exist on Windows; ``taskkill`` is the direct equivalent."""
+    if _IS_WINDOWS:
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def stop_dev_ports(ports: list[int]) -> None:
     for port in ports:
         pids = listening_pids(port)
@@ -123,10 +149,7 @@ def stop_dev_ports(ports: list[int]) -> None:
                 f"{' '.join(map(str, remaining))}"
             )
             for pid in remaining:
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+                _force_kill_pid(pid)
 
 
 def build_services(
@@ -185,7 +208,24 @@ def stream_output(name: str, output: BinaryIO, lock: threading.Lock) -> None:
 
 
 def signal_process_group(process: subprocess.Popen[bytes], sig: signal.Signals) -> None:
+    """Best-effort process-*tree* termination, not just the tracked PID.
+
+    POSIX: the process was spawned in its own session (``start_new_session``
+    in :func:`spawn_service`), so ``os.killpg`` reaches it and anything it
+    spawned. Windows has no process-group signaling to match, and a bare
+    ``Popen.terminate()``/``kill()`` only ever reaches the tracked process
+    itself — any child *that* process spawned (e.g. ``uvicorn --reload``'s
+    worker) is left running, orphaned, still holding its port. ``taskkill
+    /T`` kills the whole tree, the Windows equivalent of a process-group
+    signal. There is no Windows equivalent of a *graceful* process-group
+    signal (``CTRL_BREAK_EVENT`` only reaches a process's own registered
+    ``SIGBREAK`` handler, never an arbitrary ``SIGTERM`` handler), so
+    Windows always force-kills regardless of *sig*.
+    """
     if process.poll() is not None:
+        return
+    if _IS_WINDOWS:
+        _force_kill_pid(process.pid)
         return
     try:
         os.killpg(process.pid, sig)
@@ -204,7 +244,13 @@ def stop_processes(
         try:
             process.wait(timeout=remaining)
         except subprocess.TimeoutExpired:
-            signal_process_group(process, signal.SIGKILL)
+            # POSIX escalates to SIGKILL; Windows already force-killed the
+            # whole tree above (there is no weaker "initial_signal" on
+            # Windows to begin with), so re-signal with whatever the
+            # platform actually defines instead of the POSIX-only SIGKILL.
+            signal_process_group(
+                process, signal.SIGKILL if not _IS_WINDOWS else initial_signal
+            )
     for process in processes:
         try:
             process.wait(timeout=1.0)

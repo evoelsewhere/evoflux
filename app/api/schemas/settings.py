@@ -37,6 +37,18 @@ class SandboxSettingsBody(BaseModel):
     max_output_bytes: int = Field(default=131072, ge=4096, le=1048576)
 
 
+class RemoteSettingsBody(BaseModel):
+    """``GET/PUT /api/settings/remote`` — the ``remote`` outbound channel's
+    redaction policy. Connection enablement, adapter, and pairing state are
+    not part of this section; they live on the connection record exposed by
+    ``/api/remote/connections`` (a later task)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    outbound_data_policy: Literal["block", "redact", "off"] = "redact"
+    outbound_pii_policy: Literal["off", "standard", "strict"] = "standard"
+
+
 class IgnoredSettingBody(BaseModel):
     """A hand-edited ``settings.yaml`` value that failed validation."""
 

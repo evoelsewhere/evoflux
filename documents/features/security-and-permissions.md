@@ -73,6 +73,25 @@ deliver policy-scoped telemetry. `report` mode surfaces drift without blocking;
 `enforce` applies governed resource policy. Credentials live outside normal
 settings payloads, and managed provenance is displayed in Settings.
 
+## Remote access
+
+Remote access adds an outbound-only Telegram bridge with these constraints:
+
+- Bot tokens are stored in the OS credential vault (keyring) only; the database
+  stores a vault key reference, never the raw token.
+- Remote permission replies are limited to `once` and `reject`. There is no
+  `always` option — every remote approval is single-use.
+- All outbound text passes through `protect_outbound_text(channel="remote")`
+  redaction before reaching Telegram.
+- Telegram messages are sent without parse mode so model output is never
+  interpreted as markup.
+- The adapter processes private chats only. `principal_id` authorizes who can
+  reply; `destination_id` addresses which pairing receives the message.
+- One remote connection per installation is allowed (v1).
+
+Primary code: `app/remote/`, `app/api/routes/remote.py`,
+`app/api/routes/settings_remote.py`.
+
 ## Source and tests
 
 Primary code: `app/agent/permission.py`, `sandbox.py`, `sandbox_config.py`,

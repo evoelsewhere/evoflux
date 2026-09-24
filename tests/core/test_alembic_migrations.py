@@ -16,6 +16,7 @@ Complements ``tests/core/test_db_extra.py``, which only covers
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -174,6 +175,56 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
             if index.get("unique")
         }
         assert "uq_webbridge_tab_bindings_pairing_session" in binding_unique_indexes
+        assert {"remote_connections", "remote_pairings"} <= set(
+            inspector.get_table_names()
+        )
+        remote_connection_columns = {
+            column["name"] for column in inspector.get_columns("remote_connections")
+        }
+        assert {
+            "id",
+            "adapter",
+            "label",
+            "enabled",
+            "adapter_principal_id",
+            "adapter_username",
+            "provider",
+            "endpoint_url",
+            "inbound_watermark_cursor",
+            "created_at",
+            "updated_at",
+        } <= remote_connection_columns
+        remote_pairing_columns = {
+            column["name"] for column in inspector.get_columns("remote_pairings")
+        }
+        assert {
+            "id",
+            "connection_id",
+            "principal_id",
+            "destination_id",
+            "label",
+            "display",
+            "active_session_id",
+            "created_at",
+            "last_seen_at",
+        } <= remote_pairing_columns
+        remote_pairing_fks = inspector.get_foreign_keys("remote_pairings")
+        connection_fk = next(
+            fk
+            for fk in remote_pairing_fks
+            if fk["referred_table"] == "remote_connections"
+        )
+        assert connection_fk["options"].get("ondelete", "").upper() == "CASCADE"
+        session_fk = next(
+            fk for fk in remote_pairing_fks if fk["referred_table"] == "chat_sessions"
+        )
+        assert session_fk["options"].get("ondelete", "").upper() == "SET NULL"
+        remote_pairing_unique = {
+            tuple(sorted(constraint["column_names"]))
+            for constraint in inspector.get_unique_constraints("remote_pairings")
+        }
+        assert ("connection_id", "principal_id") in remote_pairing_unique
+        assert ("connection_id", "destination_id") in remote_pairing_unique
         with engine.connect() as conn:
             version = conn.execute(
                 sa.text("SELECT version_num FROM alembic_version")
@@ -181,6 +232,202 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         assert version == SCHEMA_HEAD
     finally:
         engine.dispose()
+
+
+def test_legacy_remote_database_migrates_after_main_and_preserves_rows(
+    tmp_path, monkeypatch
+):
+    """An in-use remote DB stamped by the pre-merge chain must retain its data.
+
+    Legacy remote revisions are replayed after main's cleanup migrations. The
+    remote revisions are idempotent so existing tables and columns survive.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "legacy-remote.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    monkeypatch.setattr(schema_version, "current_sqlite_path", lambda: str(db_path))
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000066")
+
+    connection_id = uuid4()
+    pairing_id = uuid4()
+    metadata = sa.MetaData()
+    connections = sa.Table(
+        "remote_connections",
+        metadata,
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("adapter", sa.String(32), nullable=False),
+        sa.Column("label", sa.String(120), nullable=False),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("adapter_principal_id", sa.String(128), nullable=False),
+        sa.Column(
+            "adapter_username", sa.String(128), nullable=False, server_default=""
+        ),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    )
+    pairings = sa.Table(
+        "remote_pairings",
+        metadata,
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column(
+            "connection_id",
+            sa.Uuid(),
+            sa.ForeignKey("remote_connections.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column("principal_id", sa.String(128), nullable=False),
+        sa.Column("destination_id", sa.String(128), nullable=False),
+        sa.Column("label", sa.String(120), nullable=False),
+        sa.Column("display", sa.String(120), nullable=False, server_default=""),
+        sa.Column("active_session_id", sa.Uuid(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("notify_scope", sa.String(20), nullable=False, server_default="all"),
+        sa.Column(
+            "response_mode", sa.String(20), nullable=False, server_default="live"
+        ),
+        sa.Column("pair_code_hash", sa.String(128), nullable=True),
+        sa.Column("pair_code_expires_at", sa.DateTime(), nullable=True),
+        sa.UniqueConstraint(
+            "connection_id",
+            "principal_id",
+            name="uq_remote_pairings_connection_principal",
+        ),
+        sa.UniqueConstraint(
+            "connection_id",
+            "destination_id",
+            name="uq_remote_pairings_connection_destination",
+        ),
+    )
+    sa.Index("ix_remote_connections_enabled", connections.c.enabled)
+    sa.Index("ix_remote_pairings_connection", pairings.c.connection_id)
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        metadata.create_all(engine)
+        now = datetime.now(timezone.utc)
+        with engine.begin() as conn:
+            conn.execute(
+                connections.insert().values(
+                    id=connection_id,
+                    adapter="telegram",
+                    label="test connection",
+                    enabled=True,
+                    adapter_principal_id="account-1",
+                    adapter_username="example",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            conn.execute(
+                pairings.insert().values(
+                    id=pairing_id,
+                    connection_id=connection_id,
+                    principal_id="account-1",
+                    destination_id="chat-1",
+                    label="personal chat",
+                    display="Example",
+                    active_session_id=None,
+                    created_at=now,
+                    last_seen_at=now,
+                    notify_scope="all",
+                    response_mode="live",
+                    pair_code_hash="hash-to-preserve",
+                    pair_code_expires_at=None,
+                )
+            )
+            conn.execute(sa.text("UPDATE alembic_version SET version_num = '00000070'"))
+    finally:
+        engine.dispose()
+
+    assert schema_version.inspect_database_schema().compatible is True
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        inspector = sa.inspect(engine)
+        connection_columns = {
+            column["name"] for column in inspector.get_columns("remote_connections")
+        }
+        pairing_columns = {
+            column["name"] for column in inspector.get_columns("remote_pairings")
+        }
+        with engine.connect() as conn:
+            connection = conn.execute(
+                sa.text("SELECT id, adapter_principal_id FROM remote_connections")
+            ).one()
+            pairing = conn.execute(
+                sa.text(
+                    "SELECT id, destination_id, pair_code_hash, notify_scope, "
+                    "response_mode FROM remote_pairings"
+                )
+            ).one()
+            version = conn.execute(
+                sa.text("SELECT version_num FROM alembic_version")
+            ).scalar_one()
+        assert connection.id.replace("-", "") == connection_id.hex
+        assert connection.adapter_principal_id == "account-1"
+        assert pairing.id.replace("-", "") == pairing_id.hex
+        assert pairing.destination_id == "chat-1"
+        assert pairing.pair_code_hash == "hash-to-preserve"
+        assert pairing.notify_scope == "all"
+        assert pairing.response_mode == "live"
+        assert {
+            "endpoint_url",
+            "provider",
+            "inbound_watermark_cursor",
+        } <= connection_columns
+        assert "inbound_watermark_at" not in connection_columns
+        assert {
+            "notify_scope",
+            "response_mode",
+            "pair_code_hash",
+            "pair_code_expires_at",
+        } <= pairing_columns
+        assert version == SCHEMA_HEAD
+        assert "workflow_executions" not in inspector.get_table_names()
+        delegation_columns = {
+            column["name"] for column in inspector.get_columns("delegation_tasks")
+        }
+        assert "asdd_change_id" not in delegation_columns
+    finally:
+        engine.dispose()
+
+
+def test_drop_retired_asdd_metadata_is_safe_when_branch_never_had_it(
+    tmp_path, monkeypatch
+):
+    """The main cleanup migration must tolerate the remote branch schema."""
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "legacy-remote-without-asdd.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    monkeypatch.setattr(schema_version, "current_sqlite_path", lambda: str(db_path))
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000066")
+
+    with sqlite3.connect(db_path) as db:
+        db.execute("DROP INDEX IF EXISTS ix_delegation_tasks_asdd_change_id")
+        db.execute("ALTER TABLE delegation_tasks DROP COLUMN asdd_change_id")
+
+    command.upgrade(cfg, "00000067")
+
+    with sqlite3.connect(db_path) as db:
+        columns = {row[1] for row in db.execute("PRAGMA table_info(delegation_tasks)")}
+        assert "asdd_change_id" not in columns
+        assert (
+            db.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+            == "00000067"
+        )
 
 
 def test_work_mode_migration_rewrites_forge_rows_and_defaults(tmp_path, monkeypatch):

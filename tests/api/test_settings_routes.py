@@ -1539,6 +1539,59 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
     assert reread.json() == payload
 
 
+def test_get_remote_settings_defaults_to_redaction_on(tmp_path, monkeypatch):
+    """AC-23: redaction is the default for the ``remote`` outbound channel,
+    unlike the sandbox's own outbound policy (which defaults off)."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    client = TestClient(_make_app())
+
+    response = client.get("/api/settings/remote")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "outbound_data_policy": "redact",
+        "outbound_pii_policy": "standard",
+    }
+    # GET must not write the file.
+    assert not (tmp_path / "settings.yaml").exists()
+
+
+def test_remote_settings_round_trip(tmp_path, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    client = TestClient(_make_app())
+
+    payload = {"outbound_data_policy": "block", "outbound_pii_policy": "strict"}
+    updated = client.put("/api/settings/remote", json=payload)
+
+    assert updated.status_code == 200
+    assert updated.json() == payload
+    written = (tmp_path / "settings.yaml").read_text(encoding="utf-8")
+    assert "outbound_data_policy: block" in written
+    assert "outbound_pii_policy: strict" in written
+
+    reread = client.get("/api/settings/remote")
+    assert reread.status_code == 200
+    assert reread.json() == payload
+
+
+def test_put_remote_settings_rejects_unknown_field(tmp_path, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    client = TestClient(_make_app())
+
+    response = client.put(
+        "/api/settings/remote",
+        json={"outbound_data_policy": "redact", "connection_enabled": True},
+    )
+
+    assert response.status_code == 422
+
+
 def test_save_provider_visible_models_rejects_unknown_provider() -> None:
     app = _make_app()
     client = TestClient(app)
