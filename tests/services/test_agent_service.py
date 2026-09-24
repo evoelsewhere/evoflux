@@ -311,7 +311,7 @@ async def test_validate_document_is_extracted_independently_of_model_capability(
     with (
         patch("app.services.agent_service._uploads_dir", return_value=tmp_path),
         patch(
-            "app.services.agent_service._convert_with_markitdown",
+            "app.services.agent_service.convert_with_timeout",
             return_value="document body",
         ),
     ):
@@ -331,7 +331,7 @@ async def test_gemini_document_uses_native_delivery_when_extraction_fails(tmp_pa
     att = RawAttachment(filename="doc.pdf", content_type="application/pdf", data=data)
     with (
         patch("app.services.agent_service._uploads_dir", return_value=tmp_path),
-        patch("app.services.agent_service._convert_with_markitdown", return_value=None),
+        patch("app.services.agent_service.convert_with_timeout", return_value=None),
     ):
         _, metas = await validate_and_persist_attachments(team, [att])
 

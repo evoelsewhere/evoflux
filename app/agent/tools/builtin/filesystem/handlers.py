@@ -3,7 +3,7 @@
 Detects file type by extension and dispatches to the appropriate handler:
 
 - **Image** (.png, .jpg, .jpeg, .gif, .webp, .bmp, .svg): base64-encode → ImageDataBlock
-- **Document** (.pdf, .html): markitdown conversion → TextBlock
+- **Document** (.pdf, .html): text/Markdown conversion → TextBlock
 - **Office** (.docx, .xlsx, .pptx): view-only notice; no agent-side extraction
 - **Text** (everything else): read as UTF-8/Latin-1 text (existing behaviour)
 
@@ -15,18 +15,17 @@ from __future__ import annotations
 
 import base64
 import mimetypes
-import threading
 from pathlib import Path
 
 from loguru import logger
 
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
+from app.services.document_text import convert_with_timeout
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 _MAX_IMAGE_BYTES = 10_485_760  # 10 MB — reasonable limit for vision APIs
 _MAX_READ_BYTES = 5_242_880  # 5 MB — text read cap (matches existing read tool)
-_MARKITDOWN_TIMEOUT_SECS = 30
 
 # ── Extension → category mapping ─────────────────────────────────────────────
 
@@ -120,9 +119,9 @@ def handle_image(resolved: Path, rel: Path | str) -> ToolResult:
 def handle_document(
     resolved: Path, rel: Path | str, *, vision: bool = False
 ) -> ToolResult:
-    """Convert a PDF or HTML document to text via markitdown.
+    """Convert a PDF or HTML document to text.
 
-    When *vision* is ``True`` and markitdown fails for a PDF, falls back to
+    When *vision* is ``True`` and conversion fails for a PDF, falls back to
     sending the raw bytes as an ``ImageDataBlock``.
 
     Args:
@@ -134,7 +133,7 @@ def handle_document(
     ext = resolved.suffix.lower()
     media_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
 
-    converted = _convert_with_markitdown(raw, media_type, resolved.name)
+    converted = convert_with_timeout(raw, media_type, resolved.name)
 
     if converted is not None:
         return ToolResult(
@@ -144,7 +143,7 @@ def handle_document(
     # Conversion failed — for PDFs with a vision model, send raw bytes
     if ext == ".pdf" and vision and len(raw) <= _MAX_IMAGE_BYTES:
         logger.info(
-            "document_markitdown_failed_pdf_fallback path={} size={}", rel, len(raw)
+            "document_conversion_failed_pdf_fallback path={} size={}", rel, len(raw)
         )
         b64 = base64.b64encode(raw).decode("ascii")
         return ToolResult(
@@ -167,55 +166,3 @@ def handle_document(
             ),
         ],
     )
-
-
-# ── Internal helpers ──────────────────────────────────────────────────────────
-
-
-def _convert_with_markitdown(data: bytes, mime: str, filename: str) -> str | None:
-    """Run markitdown conversion synchronously with timeout.
-
-    Returns converted markdown text, or None on failure.
-    """
-    import io
-
-    result_holder: list[str | None] = [None]
-    error_holder: list[Exception | None] = [None]
-
-    def _run() -> None:
-        try:
-            from markitdown import MarkItDown, StreamInfo
-
-            md = MarkItDown()
-            result = md.convert_stream(
-                io.BytesIO(data),
-                stream_info=StreamInfo(mimetype=mime, filename=filename),
-            )
-            text = (result.text_content or "").strip()
-            result_holder[0] = text if text else None
-        except Exception as exc:
-            error_holder[0] = exc
-
-    thread = threading.Thread(target=_run, daemon=True)
-    thread.start()
-    thread.join(timeout=_MARKITDOWN_TIMEOUT_SECS)
-
-    if thread.is_alive():
-        logger.warning(
-            "markitdown_timeout filename={} mime={} timeout={}s",
-            filename,
-            mime,
-            _MARKITDOWN_TIMEOUT_SECS,
-        )
-        return None
-
-    if error_holder[0] is not None:
-        logger.debug(
-            "markitdown_conversion_failed filename={} mime={} error={}",
-            filename,
-            mime,
-            error_holder[0],
-        )
-        return None
-
-    return result_holder[0]

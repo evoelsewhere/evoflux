@@ -78,7 +78,10 @@ overwritten. Session workspaces are addressed by session id
 
 - Images, audio, Markdown and supported text are rendered directly.
 - HTML is sanitized/isolated before preview.
-- PDF and HTML intake for agent context uses `markitdown` where supported.
+- PDF and HTML intake for agent context is converted by
+  `app/services/document_text.py`: PDFium extracts a PDF's text layer and
+  HTML becomes Markdown. Scanned PDFs without a text layer fall back to raw
+  bytes for vision-capable models.
 - DOCX, XLSX and PPTX are read-only workspace previews backed by optional host
   engines; Office content is not silently injected into agent context.
 - DOCX renders in the WebView with `docx-preview`

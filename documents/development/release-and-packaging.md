@@ -43,7 +43,6 @@ web UI is not embedded in the wheel.
 
 ```bash
 make -C desktop sidecar
-make -C desktop sidecar-full  # adds Azure Document Intelligence
 ```
 
 `scripts/build_sidecar.py` downloads/assembles the target Python runtime,
@@ -110,8 +109,7 @@ Before tagging:
 
 Windows pure-Python packages may be stored in a zipimport archive to reduce
 Defender cold-start scanning. Linux direct browser input requires X11/XWayland
-and does not claim native Wayland injection. macOS Intel dependency resolution
-pins compatible ONNX runtime versions through project constraints.
+and does not claim native Wayland injection.
 
 The detailed historical investigation remains in
 [`../research/desktop-packaging-signing.md`](../research/desktop-packaging-signing.md),

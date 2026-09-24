@@ -34,7 +34,7 @@ def build_parts_from_metas(
     Strategy per attachment:
 
     - ``converted_text`` present → fast path: use cached string as TextBlock.
-      No disk I/O. Used for text files and successfully markitdown-converted docs.
+      No disk I/O. Used for text files and successfully converted docs.
     - ``delivery == "native"`` → read raw bytes from ``att["path"]`` and
       base64-encode them for the provider adapter.
     - ``delivery == "workspace"`` → give the model a read-only absolute path

@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import html
-import io
-import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +26,7 @@ from loguru import logger
 from app.core.paths import session_uploads_dir
 from app.agent.schemas.events import AgentStatusEvent, DoneEvent, ErrorEvent
 from app.services import memory_stream_store as stream_store
+from app.services.document_text import convert_with_timeout
 from app.services.shell_service import dispatch_shell_command
 from app.services.stream_envelope import StreamEnvelope
 
@@ -149,7 +148,6 @@ MAGIC_BYTES: dict[str, list[tuple[bytes, int]]] = {
     "application/epub+zip": [(b"PK", 0)],
 }
 MAX_FILENAME_LEN = 200
-MARKITDOWN_TIMEOUT_SECS = 30
 GENERIC_INLINE_MEDIA_PROVIDERS = frozenset({"googlegenai", "vertexai"})
 
 
@@ -293,41 +291,6 @@ def _supports_native_delivery(category: str, caps, model_id: str | None) -> bool
     return False
 
 
-def _convert_with_markitdown(data: bytes, mime: str, filename: str) -> str | None:
-    """Convert a document to markdown in a bounded-time thread."""
-    result_holder: list[str | None] = [None]
-    error_holder: list[Exception | None] = [None]
-
-    def _run() -> None:
-        try:
-            from markitdown import MarkItDown, StreamInfo
-
-            md = MarkItDown()
-            result = md.convert_stream(
-                io.BytesIO(data),
-                stream_info=StreamInfo(mimetype=mime, filename=filename),
-            )
-            text = (result.text_content or "").strip()
-            result_holder[0] = text if text else None
-        except Exception as exc:
-            error_holder[0] = exc
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(timeout=MARKITDOWN_TIMEOUT_SECS)
-    if t.is_alive():
-        logger.warning("markitdown_timeout filename={} mime={}", filename, mime)
-        return None
-    if error_holder[0] is not None:
-        logger.debug(
-            "markitdown_conversion_failed filename={} error={}",
-            filename,
-            error_holder[0],
-        )
-        return None
-    return result_holder[0]
-
-
 async def _persist_attachment(
     att: RawAttachment,
     category: str,
@@ -406,7 +369,7 @@ async def _persist_attachment(
         meta["converted_text"] = _maybe_truncate_inline(text, att.truncate_inline_to)
     elif category == "document":
         converted = await asyncio.to_thread(
-            _convert_with_markitdown, data, mime, original_name
+            convert_with_timeout, data, mime, original_name
         )
         if converted is not None:
             meta["converted_text"] = _maybe_truncate_inline(

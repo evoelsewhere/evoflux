@@ -1,10 +1,9 @@
 """Regression: importing the FastAPI app must not pull in optional native deps.
 
-On some Windows hosts ``onnxruntime`` (transitively imported by optional
-media-processing packages such as ``markitdown``) fails its DLL initialization routine.
-Any module that imports those packages at top level therefore kills the
-sidecar before it can serve the handshake, leaving the desktop tray stuck on
-``Status: Error``.
+Native media libraries (such as ``pypdfium2`` for PDF text) can fail to load
+their DLLs on some Windows hosts. Any module that imports those packages at
+top level therefore kills the sidecar before it can serve the handshake,
+leaving the desktop tray stuck on ``Status: Error``.
 
 These imports must stay strictly lazy.  The check runs in a fresh subprocess
 because the broader test suite legitimately imports optional media modules in
@@ -17,10 +16,9 @@ import subprocess
 import sys
 
 _FORBIDDEN_MODULES = [
-    "onnxruntime",
     "ctranslate2",
     "av",
-    "markitdown",
+    "pypdfium2",
 ]
 
 

@@ -1,8 +1,8 @@
 import asyncio
 import ipaddress
 import socket
-from io import BytesIO
 from typing import Annotated, Any, Literal
+from urllib.parse import urlparse
 
 import httpx
 from ddgs import DDGS
@@ -12,6 +12,7 @@ from pydantic import Field
 from app.agent.outbound_redaction import OutboundContext, protect_outbound_text
 from app.agent.tools.registry import tool
 from app.core.config import settings
+from app.services.document_text import convert_to_text
 
 _MAX_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MB
 _DEFAULT_TIMEOUT = 30.0
@@ -265,23 +266,6 @@ async def web_search(
         return "No result found"
 
 
-def _fallback_convert(content_bytes: bytes, mime: str | None) -> str:
-    """Minimal HTML/text conversion when markitdown is unavailable (onnxruntime DLL issue)."""
-    if mime and mime.startswith("text/") and mime != "text/html":
-        return content_bytes.decode("utf-8", errors="replace")
-
-    try:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(content_bytes, "html.parser")
-        for tag in soup(["script", "style", "noscript"]):
-            tag.decompose()
-        text = soup.get_text(separator="\n", strip=True)
-        return text
-    except Exception:
-        return content_bytes.decode("utf-8", errors="replace")
-
-
 @tool(
     name="web_fetch",
     concurrency_safe=True,
@@ -376,28 +360,16 @@ async def web_fetch(
         if mime in ("text/markdown", "text/x-markdown"):
             return content_bytes.decode("utf-8", errors="replace")
 
-        # For all other types (html, text, pdf, etc.) let MarkItDown convert.
-        # ``markitdown`` is imported lazily because it pulls native libraries
-        # (``onnxruntime`` via ``magika``) whose DLL load can fail on some
-        # Windows hosts. Keeping the import inside the tool body means the
-        # backend always starts; only ``web_fetch`` calls that actually need
-        # conversion are affected when the native runtime is missing.
-        def _convert() -> str:
-            try:
-                from markitdown import MarkItDown, StreamInfo
-
-                md = MarkItDown()
-                result = md.convert_stream(
-                    BytesIO(content_bytes),
-                    stream_info=StreamInfo(url=url, mimetype=mime),
-                )
-                return result.markdown
-            except (ImportError, OSError):
-                logger.debug("web_fetch_markitdown_fallback")
-                return _fallback_convert(content_bytes, mime)
-
+        # Everything else: HTML becomes Markdown, PDF its text layer, and
+        # plain text passes through. The URL path stands in for a filename so
+        # an untyped ``.pdf`` link is still read as a PDF.
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _convert)
+        converted = await loop.run_in_executor(
+            None, convert_to_text, content_bytes, mime, urlparse(url).path
+        )
+        if converted is None:
+            return f"Error: No readable text in response ({mime or 'unknown type'})"
+        return converted
 
     except UnsafeURL as e:
         return f"Error: {e}"

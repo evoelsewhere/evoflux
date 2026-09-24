@@ -3,7 +3,7 @@
 Tests the new multimodal read feature:
 - classify_file() categorizes files by extension
 - handle_image() returns ToolResult with ImageDataBlock
-- handle_document() converts documents via markitdown (vision-gated PDF fallback)
+- handle_document() converts documents to text (vision-gated PDF fallback)
 - read_file tool returns ToolResult for images/documents, str for text
 - Vision capability gating: non-vision models get text-only results
 """
@@ -174,7 +174,7 @@ class TestHandleDocument:
         pdf.write_bytes(b"%PDF-1.4" + b"\x00" * 100)
 
         with patch(
-            "app.agent.tools.builtin.filesystem.handlers._convert_with_markitdown"
+            "app.agent.tools.builtin.filesystem.handlers.convert_with_timeout"
         ) as m:
             m.return_value = "# Title\n\nBody."
             result = handle_document(pdf, Path("test.pdf"))
@@ -189,7 +189,7 @@ class TestHandleDocument:
         pdf.write_bytes(b"%PDF-1.4" + b"\x00" * 100)
 
         with patch(
-            "app.agent.tools.builtin.filesystem.handlers._convert_with_markitdown"
+            "app.agent.tools.builtin.filesystem.handlers.convert_with_timeout"
         ) as m:
             m.return_value = None
             result = handle_document(pdf, Path("test.pdf"), vision=True)
@@ -204,7 +204,7 @@ class TestHandleDocument:
         pdf.write_bytes(b"%PDF-1.4" + b"\x00" * 100)
 
         with patch(
-            "app.agent.tools.builtin.filesystem.handlers._convert_with_markitdown"
+            "app.agent.tools.builtin.filesystem.handlers.convert_with_timeout"
         ) as m:
             m.return_value = None
             result = handle_document(pdf, Path("test.pdf"), vision=False)
@@ -218,7 +218,7 @@ class TestHandleDocument:
         html.write_bytes(b"<html></html>")
 
         with patch(
-            "app.agent.tools.builtin.filesystem.handlers._convert_with_markitdown"
+            "app.agent.tools.builtin.filesystem.handlers.convert_with_timeout"
         ) as m:
             m.return_value = None
             result = handle_document(html, Path("test.html"))
@@ -232,7 +232,7 @@ class TestHandleDocument:
         big.write_bytes(b"%PDF-1.4" + b"\x00" * (10_485_760 + 1))
 
         with patch(
-            "app.agent.tools.builtin.filesystem.handlers._convert_with_markitdown"
+            "app.agent.tools.builtin.filesystem.handlers.convert_with_timeout"
         ) as m:
             m.return_value = None
             result = handle_document(big, Path("big.pdf"), vision=True)
@@ -275,7 +275,7 @@ class TestReadFileVision:
         (workspace / "doc.pdf").write_bytes(b"%PDF-1.4" + b"\x00" * 100)
 
         with patch(
-            "app.agent.tools.builtin.filesystem.handlers._convert_with_markitdown"
+            "app.agent.tools.builtin.filesystem.handlers.convert_with_timeout"
         ) as m:
             m.return_value = "# Content"
             result = await read_file.arun(
@@ -370,11 +370,11 @@ class TestReadFileNoVision:
 
     @pytest.mark.asyncio
     async def test_document_still_converts_text(self, workspace):
-        """Documents still get markitdown conversion regardless of vision."""
+        """Documents still get text conversion regardless of vision."""
         (workspace / "doc.pdf").write_bytes(b"%PDF-1.4" + b"\x00" * 100)
 
         with patch(
-            "app.agent.tools.builtin.filesystem.handlers._convert_with_markitdown"
+            "app.agent.tools.builtin.filesystem.handlers.convert_with_timeout"
         ) as m:
             m.return_value = "# Extracted"
             result = await read_file.arun(
@@ -391,7 +391,7 @@ class TestReadFileNoVision:
         (workspace / "doc.pdf").write_bytes(b"%PDF-1.4" + b"\x00" * 100)
 
         with patch(
-            "app.agent.tools.builtin.filesystem.handlers._convert_with_markitdown"
+            "app.agent.tools.builtin.filesystem.handlers.convert_with_timeout"
         ) as m:
             m.return_value = None
             result = await read_file.arun(
