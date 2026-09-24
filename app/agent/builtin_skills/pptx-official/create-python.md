@@ -41,9 +41,11 @@ Slides, and LibreOffice open cleanly:
 
 ## Running a generator
 
-Write the generator to a `.py` file in the workspace and run it with
-`uv run --with python-pptx python build_deck.py`. `python-pptx` pulls in
-`lxml` and `Pillow`, which the image recipes below also use.
+Code goes into `.py` files in the workspace and runs with
+`uv run --with python-pptx python <file>.py`. `python-pptx` pulls in
+`lxml` and `Pillow`, which the image recipes below also use. A new deck is
+built as one slide file per slide (see *Live build*); the skeleton below
+shows the object model those files use.
 
 ## Skeleton
 
@@ -70,33 +72,47 @@ prs.save("review.pptx")
 
 ## Live build
 
-Build the deck one slide at a time so the user sees it take shape. Create
-the file from the outline first — it opens in the preview straight away with
-a placeholder per planned slide:
+The user watches the deck take shape in the preview, one slide per step, so
+**write and add each slide in its own command**. Never generate every slide
+from one script: it runs in a second and the user only sees the end result.
+Do not draft later slides ahead either: work out slide 1, write its file,
+add it, and only then design slide 2. Keep `theme.py` small at first and
+extend it when a slide needs a new helper.
 
-```bash
-uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx \
-  --title "Q3 Product Review" --title "What shipped" --title "What's next"
-```
+1. Create the file from the outline. It opens in the preview straight away
+   with a placeholder per planned slide:
 
-Then write each slide as its own function and save after every one with
-`LiveDeck` (atomic saves; the preview redraws each time):
+   ```bash
+   uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx \
+     --title "Q3 Product Review" --title "What shipped" --title "What's next"
+   ```
 
-```python
-import sys
-sys.path.insert(0, "<skill>/scripts")      # this skill's scripts directory
-from deck_live import LiveDeck
+2. Put the palette, fonts and shared helpers in `slides/theme.py`.
+3. For each outline slide, in order: write one slide file that defines
+   `build(prs)` and adds exactly one slide, then add it. One file, one
+   command, then move on to the next slide:
 
-live = LiveDeck("review.pptx")
-prs = live.open()                           # 16:9, no slides yet
-for build in (cover, shipped, next_steps):  # one function per outline slide
-    build(prs)                              # add exactly one slide
-    live.save(prs)
-live.finish(prs)                            # marks the deck complete
-```
+   ```python
+   # slides/02_shipped.py
+   from pptx.util import Inches, Pt
+   from theme import INK, title_bar      # helpers beside the slide files
 
-Keep the order and count of `--title`s equal to the slides you add. Run the
-QA steps after `finish`.
+   def build(prs):
+       slide = prs.slides.add_slide(prs.slide_layouts[6])
+       title_bar(slide, "What shipped")
+       ...
+   ```
+
+   ```bash
+   uv run --with python-pptx python <skill>/scripts/deck_live.py add review.pptx slides/02_shipped.py
+   ```
+
+4. After the last slide: `deck_live.py finish review.pptx`, then run the QA
+   steps. To fix one slide, edit its file and re-add it in place with
+   `add review.pptx slides/02_shipped.py --replace 2`.
+
+Keep the order and count of `--title`s equal to the slides you add. A slide
+file that fails leaves the deck as it was; fix it and run `add` again.
 
 ## Text on a slide
 
