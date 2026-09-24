@@ -5508,10 +5508,23 @@ async def test_tool_console_marks_source_mapped_positions(
                         "url": "http://localhost:4173/src/App.tsx",
                         "line": 14,
                         "column": 22,
-                        "stack": ["a (http://localhost:4173/src/App.tsx:14:22)"],
+                        "stack": [
+                            "a (http://localhost:4173/src/App.tsx:14:22)",
+                            "… 8 library frames",
+                        ],
                         "source_mapped": True,
                         "ts": 0,
-                    }
+                    },
+                    {
+                        "source": "console",
+                        "level": "error",
+                        "text": 'Each child in a list should have a unique "key" prop.',
+                        "url": "http://localhost:4173/node_modules/react-dom/cjs/react-dom.js?v=1",
+                        "line": 26084,
+                        "library": True,
+                        "stack": ["… 20 library frames"],
+                        "ts": 0,
+                    },
                 ]
             },
             "error": None,
@@ -5523,6 +5536,9 @@ async def test_tool_console_marks_source_mapped_positions(
         "(source-mapped)"
     ) in result
     assert "at a (http://localhost:4173/src/App.tsx:14:22)" in result
+    # A fold is printed as itself, not as a frame.
+    assert "      … 8 library frames" in result and "at … 8" not in result
+    assert 'unique "key" prop. — raised inside library code (react-dom.js)' in result
 
 
 async def test_tool_network_lists_requests_with_ids_for_body(
@@ -5632,7 +5648,7 @@ async def test_tool_debug_summary_flags_a_fresh_recording(
 
     assert "Debug summary for http://localhost:5173/" in result
     assert "Console: 0 error(s), 0 warning(s)" in result
-    assert "Recording started just now" in result
+    assert "Recording began after this page loaded" in result
     assert "Reload the page" in result
 
 
@@ -5654,11 +5670,12 @@ async def test_tool_inspect_reports_component_chain_and_remarkable_styles(
                 "components": [
                     {
                         "name": "SaveButton",
-                        "file": "http://localhost:5173/src/SaveButton.tsx?t=1",
+                        "file": "http://localhost:5173/src/App.tsx?t=1",
                         "line": 12,
                         "column": 5,
+                        "site": "jsx",
                     },
-                    {"name": "App", "file": "/repo/src/App.tsx", "line": 8},
+                    {"name": "App", "file": "/repo/src/App.vue", "line": 8},
                 ],
                 "styles": {"display": "flex", "position": "static", "opacity": "0.5"},
                 "attributes": {"class": "btn", "type": "submit"},
@@ -5673,9 +5690,10 @@ async def test_tool_inspect_reports_component_chain_and_remarkable_styles(
     assert seen == [("inspect", {"ref": "e7"})]
     assert "e7 <button> 'Save' at (10, 20) 80x32" in result
     assert "Rendered by (react, innermost first):" in result
-    # A dev-server URL is shown as the project path it serves.
-    assert "SaveButton — /src/SaveButton.tsx:12:5" in result
-    assert "App — /repo/src/App.tsx:8" in result
+    # A dev-server URL is shown as the project path it serves, and React's
+    # JSX location is labelled as where the element was rendered.
+    assert "SaveButton — rendered at /src/App.tsx:12:5" in result
+    assert "App — /repo/src/App.vue:8" in result
     assert "display: flex" in result and "opacity: 0.5" in result
     assert "position" not in result  # static is the default, not a finding
     assert "Untrusted browser content" in result

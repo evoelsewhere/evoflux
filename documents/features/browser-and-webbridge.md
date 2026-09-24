@@ -122,7 +122,13 @@ Agent-facing behavior of the `webbridge` tool:
 - In Coding sessions console stacks, uncaught-exception locations and React 19
   owner-stack locations from `inspect` are mapped through the scripts' source
   maps (inline `data:` or fetched, cached per map) back to the original files,
-  and marked `(source-mapped)`. The extension enables CDP `Debugger` only to
+  and marked `(source-mapped)`. An entry's location is its first frame in the
+  app's own code; runs of library frames (`node_modules`, Vite deps and
+  client) fold into one line, and a message raised wholly inside a library
+  (React's warnings) is reported as such — its text names the component.
+  React locations from `inspect` are labelled "rendered at": React records
+  where the element was created, not where the component is defined. The
+  extension enables CDP `Debugger` only to
   learn which script carries which map, with every pause skipped so a
   `debugger;` statement cannot stall the page. Work sessions never enable it.
 - `upload_file` puts files into an `<input type=file>` through

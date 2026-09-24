@@ -1634,8 +1634,8 @@ def _devtools_notes(data: dict[str, Any], kind: str) -> list[str]:
     notes: list[str] = []
     if data.get("started_now"):
         notes.append(
-            f"Recording started just now — {kind} from before this moment was not "
-            "captured. Reload the page to see what its load produces."
+            f"Recording began after this page loaded, so {kind} from its load is "
+            "not in the log. Reload the page to capture it."
         )
     earlier = int(data.get("earlier_pages") or 0)
     if earlier:
@@ -1655,7 +1655,12 @@ def _console_line(entry: dict[str, Any]) -> list[str]:
     text = str(entry.get("text") or "").rstrip()
     first, *rest = text.split("\n") or [""]
     location = ""
-    if entry.get("url") and entry.get("line"):
+    if entry.get("library") and entry.get("url"):
+        # Every frame is library code; its path would only point away from
+        # the app, and the message itself names the component.
+        name = str(entry["url"]).rsplit("/", 1)[-1].split("?", 1)[0]
+        location = f" — raised inside library code ({name})"
+    elif entry.get("url") and entry.get("line"):
         location = f" — {entry['url']}:{entry['line']}"
         if entry.get("column"):
             location += f":{entry['column']}"
@@ -1663,10 +1668,14 @@ def _console_line(entry: dict[str, Any]) -> list[str]:
             # Positions were moved from the bundle to the original source.
             location += " (source-mapped)"
     lines = [f"  [{level}{tag}] {_clock(entry.get('ts'))} {first}{location}"]
-    lines.extend(f"      {line.strip()}" for line in rest[:12])
+    lines.extend(f"      {line.strip()}" for line in rest[:12] if line.strip())
     # An Error's description already carries its stack; don't print it twice.
     if not any(line.strip().startswith("at ") for line in rest):
-        lines.extend(f"      at {frame}" for frame in entry.get("stack") or [])
+        lines.extend(
+            # "… 5 library frames" is a fold, not a frame.
+            f"      {frame}" if frame.startswith("…") else f"      at {frame}"
+            for frame in entry.get("stack") or []
+        )
     return lines
 
 
@@ -1972,6 +1981,10 @@ async def _handle_inspect(session_id: str, act: InspectAction) -> str:
         lines.append(f"Rendered by ({framework}, innermost first):")
         for item in components:
             where = _source_location(item)
+            if where and item.get("site") == "jsx":
+                # React's location is the JSX that created the element — in
+                # the parent — not the file defining the component.
+                where = f"rendered at {where}"
             lines.append(f"  {item.get('name', '?')}{' — ' + where if where else ''}")
         if not any(item.get("file") for item in components):
             lines.append(
