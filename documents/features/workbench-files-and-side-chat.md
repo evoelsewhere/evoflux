@@ -232,7 +232,7 @@ nothing downloads until they ask.
   frame (`web/src/lib/document-thumbnail.ts`, shared with the viewer's slide
   thumbnails). A card opens the file in Files (`requestWorkspaceFile`); its
   hover button opens it in the default app (`web/src/components/TurnFilesCard.tsx`).
-- **Annotation edits (PPTX).** In a Work session the viewer's *Select an area
+- **Annotation edits (PPTX, XLSX).** In a Work session the viewer's *Select an area
   to edit* toggle (`web/src/components/document-annotator.tsx`) outlines the
   slide shape under the pointer (native render: `data-shape-id`, slide layer
   only), selects it on click, and selects a free area on drag — the only mode
@@ -247,6 +247,13 @@ nothing downloads until they ask.
   targets with `scripts/targets.py`, edits only them (through the deck's
   generator when one exists), saves once per batch and verifies the
   annotated slides. Unavailable while a deck is still being built live.
+  Workbooks get *Select cells to edit* (with the version controls) in the
+  formula bar: on a sheet's cell grid a click selects a cell and a drag the
+  block of cells it spans, sent as `sheet` + A1 `range` in the same block;
+  the Skill describes them with `scripts/cells.py`, edits only those cells
+  (through the sheet file and `workbook_live.py add … --replace N` when the
+  workbook was built live) and recalculates with `bake.py` when a formula or
+  input changed.
 - **Document versions.** `app/services/document_versions.py` keeps a linear
   history per session and Office file under
   `EVOFLUX_STATE_DIR/document-versions/<session>/`: a manifest and

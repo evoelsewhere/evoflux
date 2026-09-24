@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { BlockRenderer } from '@/components/BlockRenderer'
 import { InputBar } from '@/components/InputBar'
-import { composeAnnotatedMessage, parseAnnotatedMessage, type DocumentAnnotation } from '@/lib/document-annotations'
+import {
+  composeAnnotatedMessage,
+  describeAnnotation,
+  parseAnnotatedMessage,
+  type DocumentAnnotation,
+} from '@/lib/document-annotations'
 import { useDocumentAnnotationsStore } from '@/stores/useDocumentAnnotationsStore'
 
 const chart: DocumentAnnotation = {
@@ -48,6 +53,23 @@ describe('document annotation messages', () => {
     expect(parseAnnotatedMessage('plain text')).toBeNull()
     // The server stores what multipart delivered: CRLF line breaks.
     expect(parseAnnotatedMessage(message.replace(/\n/g, '\r\n'))?.annotations).toHaveLength(1)
+  })
+
+  it('carries a workbook annotation\'s sheet and range', () => {
+    const cells: DocumentAnnotation = {
+      ...chart,
+      file: 'model.xlsx',
+      slide: 2,
+      sheet: 'Model',
+      range: 'B3:D8',
+      shapes: [],
+      label: 'Model · B3:D8',
+    }
+
+    const parsed = parseAnnotatedMessage(composeAnnotatedMessage('', [cells]))
+
+    expect(parsed?.annotations[0]).toMatchObject({ file: 'model.xlsx', slide: 2, sheet: 'Model', range: 'B3:D8' })
+    expect(describeAnnotation(parsed!.annotations[0])).toBe('Model · B3:D8')
   })
 
   it('folds pending annotations into the next message and clears them', async () => {

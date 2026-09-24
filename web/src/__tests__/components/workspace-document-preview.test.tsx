@@ -856,6 +856,53 @@ describe('WorkspaceDocumentPreview annotations', () => {
     expect(screen.queryByTestId('annotation-popover')).not.toBeInTheDocument()
   })
 
+  it('selects a cell or a dragged range of cells on a workbook sheet', async () => {
+    const { useDocumentAnnotationsStore } = await import('@/stores/useDocumentAnnotationsStore')
+    const workbookHtml = `<!doctype html><html><head></head><body>
+      <section class="sheet" data-preview-item data-preview-label="Inputs"><div class="grid-wrap"><div class="grid-stage"><table></table></div></div></section>
+      <section class="sheet" data-preview-item data-preview-label="Model"><div class="grid-wrap"><div class="grid-stage"><table>
+        <tr><td data-cell="B3">Revenue</td><td data-cell="C3">220</td></tr>
+        <tr><td data-cell="B4">Cost</td><td data-cell="C4">140</td></tr>
+      </table></div></div></section>
+    </body></html>`
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve(workbookHtml) }))
+    const book = { path: 'model.xlsx', name: 'model.xlsx', mime: '', size: 10, mtime: 2 }
+    render(<WorkspaceDocumentPreview sessionId="session-a" file={book} />)
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    const frame = hydrateFrame(workbookHtml)
+    const doc = frame.contentDocument as Document
+    const stage = doc.querySelectorAll<HTMLElement>('.grid-stage')[1]
+    stage.getBoundingClientRect = () => new DOMRect(0, 0, 400, 100)
+    const cell = (name: string) => doc.querySelector(`[data-cell="${name}"]`) as HTMLElement
+    cell('B3').getBoundingClientRect = () => new DOMRect(0, 0, 100, 25)
+    cell('C4').getBoundingClientRect = () => new DOMRect(100, 25, 100, 25)
+    doc.elementFromPoint = () => cell('C4')
+    fireEvent.click(await screen.findByRole('button', { name: 'Select cells to edit' }))
+
+    // A click picks one cell…
+    pointer(frame, 'pointerdown', cell('B3'), 10, 10)
+    pointer(frame, 'pointerup', cell('B3'), 10, 10)
+    expect(await screen.findByTestId('annotation-popover')).toHaveTextContent('Model · B3')
+
+    // …and a drag the block of cells it spans.
+    pointer(frame, 'pointerdown', cell('B3'), 10, 10)
+    pointer(frame, 'pointermove', cell('B3'), 150, 40)
+    pointer(frame, 'pointerup', cell('B3'), 150, 40)
+    const popover = await screen.findByTestId('annotation-popover')
+    expect(popover).toHaveTextContent('Model · B3:C4')
+    fireEvent.click(within(popover).getByRole('button', { name: 'Add annotation to batch' }))
+
+    expect(useDocumentAnnotationsStore.getState().pending['session-a'][0]).toMatchObject({
+      file: 'model.xlsx',
+      slide: 2,
+      sheet: 'Model',
+      range: 'B3:C4',
+      shapes: [],
+      area: { x: 0, y: 0, w: 50, h: 50 },
+      text: 'Revenue · 220 · Cost · 140',
+    })
+  })
+
   it('offers no annotation or history controls outside a session workspace', async () => {
     render(<WorkspaceDocumentPreview workspace="C:/repo" file={deck} />)
     await waitFor(() => expect(fetch).toHaveBeenCalled())
