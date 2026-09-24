@@ -17,8 +17,10 @@ from loguru import logger
 
 CONVERSION_TIMEOUT_SECS = 30
 
-# PDFium is not thread-safe, and conversions run on worker threads.
-_PDFIUM_LOCK = threading.Lock()
+# PDFium is not thread-safe, and both this module and the document viewer
+# (app/services/document_preview/pdf.py) call it from worker threads. Every
+# pypdfium2 call in the app holds this one lock.
+PDFIUM_LOCK = threading.Lock()
 
 
 def is_pdf(mime: str | None, filename: str = "") -> bool:
@@ -36,7 +38,7 @@ def pdf_to_text(data: bytes) -> str | None:
     import pypdfium2 as pdfium
 
     pages: list[str] = []
-    with _PDFIUM_LOCK:
+    with PDFIUM_LOCK:
         pdf = pdfium.PdfDocument(data)
         try:
             for page in pdf:

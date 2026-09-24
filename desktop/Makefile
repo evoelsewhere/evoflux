@@ -25,7 +25,7 @@
 ROOT       := $(abspath ..)
 BUNDLE     := sidecar-bundle
 PYVER      := 3.12
-EXTRAS     ?= office-preview        # e.g. "office-preview" or "full"
+EXTRAS     ?= office-preview
 DEV_BACKEND_URL ?= http://127.0.0.1:8000
 sidecar:
 	@python3 ../scripts/build_sidecar.py \

@@ -8,15 +8,18 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 
+from app.services.document_text import PDFIUM_LOCK
+
 
 def count_pdf_pages(source: Path) -> int:
     """Return a PDF page count without rasterizing any page."""
 
-    document = pdfium.PdfDocument(str(source))
-    try:
-        return len(document)
-    finally:
-        document.close()
+    with PDFIUM_LOCK:
+        document = pdfium.PdfDocument(str(source))
+        try:
+            return len(document)
+        finally:
+            document.close()
 
 
 def render_pdf_pages(
@@ -31,6 +34,26 @@ def render_pdf_pages(
     """Rasterize PDF pages within the viewer's resource bounds."""
 
     render_dir.mkdir(parents=True, exist_ok=True)
+    with PDFIUM_LOCK:
+        return _render_pdf_pages(
+            source,
+            render_dir,
+            dpi=dpi,
+            max_pages=max_pages,
+            max_total_bytes=max_total_bytes,
+            max_pixels_per_page=max_pixels_per_page,
+        )
+
+
+def _render_pdf_pages(
+    source: Path,
+    render_dir: Path,
+    *,
+    dpi: int,
+    max_pages: int | None,
+    max_total_bytes: int | None,
+    max_pixels_per_page: int | None,
+) -> list[Path]:
     document = pdfium.PdfDocument(str(source))
     outputs: list[Path] = []
     scale = dpi / 72
@@ -107,6 +130,15 @@ def pdf_text_layers(
     A page whose text cannot be extracted yields ``None``; the raster still
     renders, it just is not searchable.
     """
+    with PDFIUM_LOCK:
+        return _pdf_text_layers(
+            source, max_pages=max_pages, max_chars_per_page=max_chars_per_page
+        )
+
+
+def _pdf_text_layers(
+    source: Path, *, max_pages: int, max_chars_per_page: int
+) -> list[TextLayer | None]:
     document = pdfium.PdfDocument(str(source))
     layers: list[TextLayer | None] = []
     try:

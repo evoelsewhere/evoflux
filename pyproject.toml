@@ -122,10 +122,6 @@ office-preview = [
     "python-pptx>=1.0.2",
 ]
 
-# Convenience: every optional extra. Used by ``uv tool install evoflux[full]``
-# for users who don't care about size.
-full = ["evoflux[office-preview]"]
-
 [tool.uv]
 package = true
 
