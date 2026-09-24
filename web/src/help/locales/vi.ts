@@ -1050,7 +1050,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Muốn sửa một phần của deck, bấm Select an area to edit trong viewer rồi bấm vào một shape hoặc kéo chọn một vùng trên slide. Gõ điều cần sửa và nhấn Enter để gửi, hoặc dùng Add to batch để gom nhiều vùng và gửi cùng lúc từ ô chat (hiện là Annotations: N; để trống lời dặn nếu chỉ muốn chỉ vào vùng đó). Agent chỉ sửa đúng các phần đó, vùng đã chọn sẽ nhấp nháy trong lúc agent làm. Undo, Redo và Version history trên header viewer cho phép đi qua từng phiên bản đã lưu của file Word, Excel, PowerPoint trong session hoặc khôi phục bản cũ, không ảnh hưởng tới chat hay file khác.',
+        text: 'Muốn sửa một phần của deck, bấm Select an area to edit trong viewer rồi bấm vào một shape hoặc kéo chọn một vùng trên slide. Gõ điều cần sửa và nhấn Enter để gửi, hoặc dùng Add to batch để gom nhiều vùng và gửi cùng lúc từ ô chat (hiện là Annotations: N; để trống lời dặn nếu chỉ muốn chỉ vào vùng đó). Agent chỉ sửa đúng các phần đó, vùng đã chọn sẽ nhấp nháy trong lúc agent làm. Với workbook, dùng Select cells to edit trên thanh công thức: bấm một ô hoặc kéo chọn một khối ô. Undo, Redo và Version history trên header viewer cho phép đi qua từng phiên bản đã lưu của file Word, Excel, PowerPoint trong session hoặc khôi phục bản cũ, không ảnh hưởng tới chat hay file khác.',
       },
       {
         type: 'p',

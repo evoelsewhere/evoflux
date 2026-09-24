@@ -1,6 +1,6 @@
 ---
 name: office-annotation-edit
-description: "Applies targeted edits to the parts of a PowerPoint deck a user selected in the EvoFlux document viewer: a message carrying an evoflux-annotations block names the file, slide, selected shapes or area, and an instruction per annotation. Use whenever a message contains an evoflux-annotations block. Edits only the annotated shapes, keeps everything else byte-for-byte, and rebuilds through the deck's generator when one produced it. Not for building a deck from scratch or restyling a whole deck without annotations."
+description: "Applies targeted edits to the parts of a PowerPoint deck or Excel workbook a user selected in the EvoFlux document viewer: a message carrying an evoflux-annotations block names the file, the slide and its selected shapes or area, or the sheet and its selected cell range, and an instruction per annotation. Use whenever a message contains an evoflux-annotations block. Edits only the annotated shapes or cells, keeps everything else byte-for-byte, and rebuilds through the file's generator when one produced it. Not for building a deck or workbook from scratch or restyling one without annotations."
 license: Apache-2.0. LICENSE has complete terms
 ---
 
@@ -23,7 +23,18 @@ The message ends with a block the viewer wrote:
 </evoflux-annotations>
 ```
 
-- `file` is relative to the session workspace; `slide` is 1-based.
+A workbook annotation names cells instead of shapes:
+
+```
+[{"n": 1, "file": "model.xlsx", "slide": 2, "sheet": "Model", "range": "B3:D8",
+  "shapes": [], "area": {...}, "text": "Revenue · 220 · 265",
+  "instruction": "Show these as millions with one decimal."}]
+```
+
+- `file` is relative to the session workspace; `slide` is 1-based (for a
+  workbook, the sheet's position).
+- `sheet` and `range` (A1, one cell or a block) say which cells a workbook
+  annotation selected; the edit targets exactly those cells.
 - `shapes` are the shapes the user clicked (`id` is the shape's `cNvPr` id on
   that slide). It is empty when the user dragged a box instead.
 - `area` is the selected box in percent of the slide (origin top-left). It is
@@ -78,6 +89,32 @@ The message ends with a block the viewer wrote:
    anything you could not do. The viewer keeps every version of the file, so
    do not create backup copies; the user can undo from the viewer.
 
+## Workbook annotations
+
+The same steps, with cells for shapes:
+
+1. **Resolve the cells** with
+   `uv run --with openpyxl python scripts/cells.py <file> --sheet <sheet> --range <range>`:
+   each cell's formula or literal, its last computed value, number format,
+   font, fill and merged block.
+2. **Source of record.** A workbook built sheet by sheet has numbered sheet
+   files (`sheets/02_model.py`, each defining `build(wb)`): edit only the
+   annotated sheet's file and re-add it in place with
+   `uv run --with openpyxl python <xlsx-official>/scripts/workbook_live.py add <file> sheets/02_model.py --replace 2`.
+   Otherwise change the generator that writes the workbook, or edit in place.
+3. **Edit in place** with openpyxl, only the annotated cells:
+   `wb = load_workbook(path)`, `ws = wb[sheet]`, then set `ws["B3"].value`,
+   `.number_format`, `.font` or `.fill` as asked. Keep formulas formulas: when
+   a value should change, change its input or its formula, never overwrite a
+   formula with a number. Save to a temporary file and `os.replace` it. Add
+   `--with pillow` when the workbook holds images, or they are dropped.
+4. **Batch** every annotation into one save (one `--replace` per sheet).
+5. **Verify only what changed, once:** when a formula or an input changed,
+   run `<xlsx-official>/scripts/bake.py` so values recalculate, then
+   `document_preview` and read only the annotated sheets. Nothing more unless
+   the user asks.
+6. **Report** per annotation: `#n Model · B3:D8 — what changed`.
+
 ## Rules
 
 - Scope is the annotations. A request like "make it consistent" means
@@ -85,6 +122,7 @@ The message ends with a block the viewer wrote:
   fonts, not a redesign of neighbouring shapes.
 - Keep the deck's theme: reuse its colours and fonts (read them from the
   target and its neighbours) rather than introducing new ones.
-- Never delete a shape or slide unless the instruction says so.
+- Never delete a shape, slide, cell, row or sheet unless the instruction says
+  so.
 - If an instruction is ambiguous for one annotation, make the most
   conservative reading, apply the others, and ask about that one.

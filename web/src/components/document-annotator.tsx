@@ -1,11 +1,12 @@
 /**
- * DeckAnnotator — select part of a slide in the document viewer and tell the
- * agent what to change there.
+ * DeckAnnotator — select part of a slide or sheet in the document viewer and
+ * tell the agent what to change there.
  *
  * While annotating, hovering a slide outlines the shape under the pointer
  * (native renderer: every shape carries `data-shape-id`), a click selects it
  * and a drag selects a free area — the only option on exact (LibreOffice)
- * pages, which are images. A popover takes the instruction: send it now, or
+ * pages, which are images. On a workbook's cell grid a click selects a cell
+ * and a drag a range of cells (`B3:D8`), sent with the sheet's name. A popover takes the instruction: send it now, or
  * add it to the composer's batch and keep selecting. Batched selections stay
  * pinned with their number; sent ones shimmer until the agent's turn ends.
  *
@@ -28,12 +29,15 @@ import {
   usePendingAnnotations,
 } from '@/stores/useDocumentAnnotationsStore'
 
-const SURFACE = '.slide:not(.slide-skeleton), .pdf-page-surface'
+// A slide, an exact-render page, or a sheet's cell grid.
+const SURFACE = '.slide:not(.slide-skeleton), .pdf-page-surface, .sheet:not(.sheet-skeleton) .grid-stage'
+const MAX_RANGE_TEXT_CELLS = 40
 const DRAG_THRESHOLD_PX = 4
 const MAX_AREA_SHAPES = 12
 
 const ANNOTATOR_CSS = `
 html[data-evoflux-annotating] .slide,html[data-evoflux-annotating] .pdf-page-surface{cursor:crosshair;user-select:none;-webkit-user-select:none}
+html[data-evoflux-annotating] .grid-stage{cursor:cell;user-select:none;-webkit-user-select:none}
 [data-evoflux-anno]{position:absolute;pointer-events:none;box-sizing:border-box;z-index:2147483000;border-radius:3px}
 [data-evoflux-anno="hover"]{outline:2px solid #1a73e8;background:#1a73e812}
 [data-evoflux-anno="selection"]{outline:2px solid #1a73e8;box-shadow:0 0 0 4px #1a73e82e;background:#1a73e80d}
@@ -50,6 +54,9 @@ interface Selection {
   shapes: Array<{ id: number; name: string }>
   area: AnnotationArea
   text: string
+  /** Workbooks: the sheet's name and the selected cells ("B3" or "B3:D8"). */
+  sheet?: string
+  range?: string
 }
 
 interface Box {
@@ -121,6 +128,84 @@ function surfaceFor(doc: Document, slide: number): HTMLElement | null {
   return item?.querySelector<HTMLElement>(SURFACE) ?? null
 }
 
+// ── Workbook cells ─────────────────────────────────────────────────────────
+
+function isGrid(surface: HTMLElement): boolean {
+  return surface.classList.contains('grid-stage')
+}
+
+/** The rendered cell (`td[data-cell="B3"]`) at an element, inside ``surface``. */
+function gridCell(element: Element | null, surface: HTMLElement): HTMLElement | null {
+  const cell = element?.closest<HTMLElement>('td[data-cell]') ?? null
+  return cell && surface.contains(cell) ? cell : null
+}
+
+function cellAt(doc: Document, x: number, y: number, surface: HTMLElement): HTMLElement | null {
+  return gridCell(asElement(doc.elementFromPoint(x, y)), surface)
+}
+
+function parseCell(name: string): { column: number; row: number } | null {
+  const match = /^([A-Z]+)(\d+)$/.exec(name)
+  if (!match) return null
+  const column = [...match[1]].reduce((total, letter) => total * 26 + letter.charCodeAt(0) - 64, 0)
+  return { column, row: Number(match[2]) }
+}
+
+function columnName(column: number): string {
+  let name = ''
+  for (let value = column; value > 0; value = Math.floor((value - 1) / 26)) {
+    name = String.fromCharCode(65 + ((value - 1) % 26)) + name
+  }
+  return name
+}
+
+/** The cells ``a`` and ``b`` span, as an A1 range, with its bounds. */
+function cellRange(a: HTMLElement, b: HTMLElement) {
+  const start = parseCell(a.dataset.cell ?? '')
+  const end = parseCell(b.dataset.cell ?? '')
+  if (!start || !end) return null
+  const left = Math.min(start.column, end.column)
+  const right = Math.max(start.column, end.column)
+  const top = Math.min(start.row, end.row)
+  const bottom = Math.max(start.row, end.row)
+  const first = `${columnName(left)}${top}`
+  const last = `${columnName(right)}${bottom}`
+  return { name: first === last ? first : `${first}:${last}`, left, right, top, bottom }
+}
+
+function unionRect(a: DOMRect, b: DOMRect): DOMRect {
+  const left = Math.min(a.left, b.left)
+  const top = Math.min(a.top, b.top)
+  return new DOMRect(left, top, Math.max(a.right, b.right) - left, Math.max(a.bottom, b.bottom) - top)
+}
+
+function sheetName(surface: HTMLElement): string {
+  const label = surface.closest<HTMLElement>('[data-preview-item]')?.dataset.previewLabel ?? ''
+  return label.replace(/ \(hidden\)$/, '')
+}
+
+function cellSelection(doc: Document, surface: HTMLElement, from: HTMLElement, to: HTMLElement): Selection | null {
+  const range = cellRange(from, to)
+  if (!range) return null
+  const text = Array.from(surface.querySelectorAll<HTMLElement>('td[data-cell]'))
+    .filter((cell) => {
+      const at = parseCell(cell.dataset.cell ?? '')
+      return at && at.column >= range.left && at.column <= range.right && at.row >= range.top && at.row <= range.bottom
+    })
+    .slice(0, MAX_RANGE_TEXT_CELLS)
+    .map((cell) => cleanText(cell.textContent))
+    .filter(Boolean)
+    .join(' · ')
+  return {
+    slide: slideNumber(doc, surface),
+    shapes: [],
+    area: areaOf(unionRect(from.getBoundingClientRect(), to.getBoundingClientRect()), surface.getBoundingClientRect()),
+    text: cleanText(text),
+    sheet: sheetName(surface),
+    range: range.name,
+  }
+}
+
 function nextId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
@@ -149,6 +234,8 @@ export function DeckAnnotator({ iframeRef, frameKey, sessionId, filePath, active
   const [position, setPosition] = useState<{ left: number; top: number; above: boolean } | null>(null)
   // Exact (LibreOffice) pages are images with a text layer: no shapes to click.
   const [exactPages, setExactPages] = useState(false)
+  // A workbook's sheets are cell grids: a click picks a cell, a drag a range.
+  const [workbook, setWorkbook] = useState(false)
   const selectionRef = useRef<Selection | null>(null)
 
   // Place the popover next to the selection's box: its bottom edge just above
@@ -259,6 +346,7 @@ export function DeckAnnotator({ iframeRef, frameKey, sessionId, filePath, active
       if (!doc || !win) return
       setFrameTick((tick) => tick + 1)
       setExactPages(Boolean(doc.querySelector('[data-preview-renderer^="libreoffice-"]')))
+      setWorkbook(Boolean(doc.querySelector('.sheet .grid-stage')))
       // A reloaded frame has new slide elements; re-anchor the popover.
       placePopover(selectionRef.current)
       let start: { surface: HTMLElement; x: number; y: number; target: Element | null } | null = null
@@ -271,6 +359,19 @@ export function DeckAnnotator({ iframeRef, frameKey, sessionId, filePath, active
           if (!dragging && Math.hypot(event.clientX - start.x, event.clientY - start.y) < DRAG_THRESHOLD_PX) return
           dragging = true
           const rect = start.surface.getBoundingClientRect()
+          if (isGrid(start.surface)) {
+            // A drag across cells selects whole cells, from the first to the one under the pointer.
+            const from = gridCell(start.target, start.surface)
+            const to = cellAt(doc, event.clientX, event.clientY, start.surface) ?? from
+            if (from && to) {
+              setDrag({
+                kind: 'drag',
+                slide: slideNumber(doc, start.surface),
+                area: areaOf(unionRect(from.getBoundingClientRect(), to.getBoundingClientRect()), rect),
+              })
+            }
+            return
+          }
           const left = Math.min(start.x, event.clientX)
           const top = Math.min(start.y, event.clientY)
           setDrag({
@@ -281,7 +382,11 @@ export function DeckAnnotator({ iframeRef, frameKey, sessionId, filePath, active
           return
         }
         const surface = target?.closest<HTMLElement>(SURFACE) ?? null
-        const hit = surface ? slideShape(target, surface) ?? textLine(target, surface) : null
+        const hit = !surface
+          ? null
+          : isGrid(surface)
+            ? gridCell(target, surface)
+            : slideShape(target, surface) ?? textLine(target, surface)
         setHover(surface && hit
           ? { kind: 'hover', slide: slideNumber(doc, surface), area: areaOf(hit.getBoundingClientRect(), surface.getBoundingClientRect()) }
           : null)
@@ -310,7 +415,11 @@ export function DeckAnnotator({ iframeRef, frameKey, sessionId, filePath, active
         const { surface, target } = start
         const surfaceRect = surface.getBoundingClientRect()
         const slide = slideNumber(doc, surface)
-        if (dragging) {
+        if (isGrid(surface)) {
+          const from = gridCell(target, surface)
+          const to = dragging ? cellAt(doc, event.clientX, event.clientY, surface) ?? from : from
+          select(from && to ? cellSelection(doc, surface, from, to) : null)
+        } else if (dragging) {
           const bounds = {
             left: Math.min(start.x, event.clientX),
             top: Math.min(start.y, event.clientY),
@@ -400,6 +509,7 @@ export function DeckAnnotator({ iframeRef, frameKey, sessionId, filePath, active
       id: nextId(),
       file: filePath,
       slide: selection.slide,
+      ...(selection.range ? { sheet: selection.sheet, range: selection.range } : {}),
       shapes: selection.shapes,
       area: selection.area,
       text: selection.text,
@@ -434,7 +544,9 @@ export function DeckAnnotator({ iframeRef, frameKey, sessionId, filePath, active
       >
         {exactPages
           ? 'Click a line of text or drag across an area to select it'
-          : 'Click a shape or drag across an area to select it'}
+          : workbook
+            ? 'Click a cell or drag across cells to select them'
+            : 'Click a shape or drag across an area to select it'}
       </div>
     )
   }

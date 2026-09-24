@@ -1033,8 +1033,7 @@ export function WorkspaceDocumentPreview({
   const sessionDocument = Boolean(sessionId) && !workspace && !providedSourceUrl && officeKind
   const deckBeingBuilt = Boolean(currentResult?.html?.includes('data-deck-live="true"'))
   const canAnnotate = sessionDocument
-    && isPresentation
-    && presentationView === 'normal'
+    && ((isPresentation && presentationView === 'normal') || kind === 'xlsx')
     && !deckBeingBuilt
     && Boolean(currentResult?.html)
   const annotateActive = annotating && canAnnotate
@@ -1245,6 +1244,29 @@ export function WorkspaceDocumentPreview({
             <span className="shrink-0 font-serif italic text-(--color-text-subtle)" aria-hidden="true">fx</span>
             <span className="truncate font-mono text-(--color-text-2)">{selectedCell?.value || ''}</span>
           </div>
+          {sessionDocument && sessionId && (
+            <div className="flex shrink-0 items-center gap-0.5 border-l border-(--color-border) px-0.5">
+              <button
+                type="button"
+                onClick={() => setAnnotating((value) => !value)}
+                disabled={!canAnnotate}
+                aria-label={annotateActive ? 'Stop selecting cells to edit' : 'Select cells to edit'}
+                aria-pressed={annotateActive}
+                title={deckBeingBuilt
+                  ? 'Available when the workbook is finished'
+                  : 'Select a cell or range and tell the agent what to change'}
+                className={cn(toolbarButtonClass, annotateActive && 'bg-(--color-accent)/15 text-(--color-accent)')}
+              >
+                <SquareDashedMousePointer size={14} aria-hidden="true" />
+              </button>
+              <DocumentVersionControls
+                sessionId={sessionId}
+                path={file.path}
+                revision={file.mtime}
+                buttonClassName={toolbarButtonClass}
+              />
+            </div>
+          )}
           <div className="flex shrink-0 items-center gap-0.5 border-l border-(--color-border) px-0.5">
             <button
               type="button"

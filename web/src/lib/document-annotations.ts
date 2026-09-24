@@ -21,8 +21,11 @@ export interface DocumentAnnotation {
   id: string
   /** Workspace-relative file path. */
   file: string
-  /** 1-based slide number. */
+  /** 1-based slide (or, in a workbook, sheet) number. */
   slide: number
+  /** Workbooks: the sheet's name and the selected cells, e.g. "B3:D8". */
+  sheet?: string
+  range?: string
   /** Shapes the user clicked; empty for a dragged box. */
   shapes: Array<{ id: number; name: string }>
   area: AnnotationArea
@@ -47,6 +50,7 @@ export function composeAnnotatedMessage(text: string, annotations: DocumentAnnot
     n: index + 1,
     file: annotation.file,
     slide: annotation.slide,
+    ...(annotation.range ? { sheet: annotation.sheet ?? '', range: annotation.range } : {}),
     shapes: annotation.shapes,
     area: {
       x: round(annotation.area.x),
@@ -65,6 +69,8 @@ export interface ParsedAnnotation {
   n: number
   file: string
   slide: number
+  sheet?: string
+  range?: string
   shapes: Array<{ id: number; name: string }>
   text: string
   instruction: string
@@ -86,6 +92,9 @@ export function parseAnnotatedMessage(raw: string): { text: string; annotations:
             n: typeof item.n === 'number' ? item.n : index + 1,
             file: String(item.file ?? ''),
             slide: Number(item.slide ?? 0),
+            ...(typeof item.range === 'string' && item.range
+              ? { sheet: String(item.sheet ?? ''), range: item.range }
+              : {}),
             shapes: Array.isArray(item.shapes) ? item.shapes : [],
             text: String(item.text ?? ''),
             instruction: String(item.instruction ?? ''),
@@ -99,8 +108,9 @@ export function parseAnnotatedMessage(raw: string): { text: string; annotations:
 }
 
 export function describeAnnotation(
-  annotation: Pick<ParsedAnnotation, 'slide' | 'shapes'> & { text?: string },
+  annotation: Pick<ParsedAnnotation, 'slide' | 'shapes' | 'sheet' | 'range'> & { text?: string },
 ): string {
+  if (annotation.range) return `${annotation.sheet || `Sheet ${annotation.slide}`} · ${annotation.range}`
   const quoted = annotation.text?.trim()
   const target = annotation.shapes.length > 0
     ? annotation.shapes.map((shape) => shape.name).join(', ')
