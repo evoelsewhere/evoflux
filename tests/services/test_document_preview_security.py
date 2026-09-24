@@ -226,7 +226,7 @@ def test_document_preview_cache_evicts_oldest_entry(
     monkeypatch.setattr(
         preview,
         "_render_source",
-        lambda source: f"<!doctype html><title>{source.name}</title>",
+        lambda source, *_options: f"<!doctype html><title>{source.name}</title>",
     )
     sources = [tmp_path / f"source-{index}.pdf" for index in range(3)]
     for index, source in enumerate(sources):
@@ -250,7 +250,7 @@ def test_document_preview_cache_enforces_total_byte_limit(
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setattr(preview_security, "MAX_DOCUMENT_PREVIEW_CACHE_ENTRIES", 10)
     monkeypatch.setattr(preview_security, "MAX_DOCUMENT_PREVIEW_CACHE_BYTES", 12)
-    monkeypatch.setattr(preview, "_render_source", lambda _source: "x" * 8)
+    monkeypatch.setattr(preview, "_render_source", lambda _source, *_options: "x" * 8)
     first_source = tmp_path / "first.pdf"
     second_source = tmp_path / "second.pdf"
     first_source.write_bytes(b"first")
@@ -273,7 +273,9 @@ def test_document_preview_removes_legacy_generated_cache(
     legacy.mkdir(parents=True)
     (legacy / "old.html").write_text("generated", encoding="utf-8")
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(cache_root))
-    monkeypatch.setattr(preview, "_render_source", lambda _source: "<!doctype html>")
+    monkeypatch.setattr(
+        preview, "_render_source", lambda _source, *_options: "<!doctype html>"
+    )
     source = tmp_path / "source.pdf"
     source.write_bytes(b"pdf")
 
@@ -295,7 +297,9 @@ def test_document_preview_cleanup_does_not_follow_legacy_cache_symlink(
     legacy = cache_root / "office-previews"
     legacy.symlink_to(victim, target_is_directory=True)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(cache_root))
-    monkeypatch.setattr(preview, "_render_source", lambda _source: "<!doctype html>")
+    monkeypatch.setattr(
+        preview, "_render_source", lambda _source, *_options: "<!doctype html>"
+    )
     source = tmp_path / "source.pdf"
     source.write_bytes(b"pdf")
 
@@ -319,7 +323,9 @@ def test_document_preview_cleanup_removes_only_stale_owned_transients(
     old = time.time() - preview_security.STALE_DOCUMENT_PREVIEW_TEMP_SECONDS - 1
     os.utime(stale_pages, (old, old))
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
-    monkeypatch.setattr(preview, "_render_source", lambda _source: "<!doctype html>")
+    monkeypatch.setattr(
+        preview, "_render_source", lambda _source, *_options: "<!doctype html>"
+    )
     source = tmp_path / "source.pdf"
     source.write_bytes(b"pdf")
 
@@ -335,7 +341,9 @@ def test_document_preview_cache_replaces_symlink_without_touching_target(
 ) -> None:
     cache_root = tmp_path / "cache"
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(cache_root))
-    monkeypatch.setattr(preview, "_render_source", lambda _source: "safe preview")
+    monkeypatch.setattr(
+        preview, "_render_source", lambda _source, *_options: "safe preview"
+    )
     source = tmp_path / "source.pdf"
     source.write_bytes(b"pdf")
     output = preview._cache_path(source)

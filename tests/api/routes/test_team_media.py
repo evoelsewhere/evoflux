@@ -521,9 +521,13 @@ class TestWorkspaceDocumentPreviewEndpoint:
         from app.api.routes.team import files as team_routes
 
         monkeypatch.setattr(team_routes, "workspace_dir", lambda sid: fake_root)
-        monkeypatch.setattr(
-            team_routes, "render_document_preview", lambda path: rendered
-        )
+        calls: list[dict] = []
+
+        def fake_render(path, **options):
+            calls.append(options)
+            return rendered
+
+        monkeypatch.setattr(team_routes, "render_document_preview", fake_render)
 
         resp = client.get(f"/api/team/{session_id}/document-preview/report.docx")
         assert resp.status_code == 200
@@ -534,6 +538,19 @@ class TestWorkspaceDocumentPreviewEndpoint:
         legacy = client.get(f"/api/team/{session_id}/office-preview/report.docx")
         assert legacy.status_code == 200
         assert legacy.text == resp.text
+
+        # Selecting workbook cells asks for the built-in engine explicitly.
+        native = client.get(
+            f"/api/team/{session_id}/document-preview/report.docx?renderer=native"
+        )
+        assert native.status_code == 200
+        assert [call["native"] for call in calls] == [False, False, True]
+        assert (
+            client.get(
+                f"/api/team/{session_id}/document-preview/report.docx?renderer=exact"
+            ).status_code
+            == 422
+        )
 
     def test_missing_source_returns_404(
         self, client, session_id, tmp_path, monkeypatch

@@ -18,6 +18,7 @@ agent workspace — powers the "Artifacts" panel in the web UI.
 from __future__ import annotations
 
 import asyncio
+from typing import Literal
 import difflib
 import mimetypes
 import os
@@ -259,8 +260,13 @@ def _document_preview_response(path: Path) -> FileResponse:
 async def get_workspace_document_preview(
     session_id: str,
     file_path: str,
+    renderer: Literal["native"] | None = None,
 ) -> FileResponse:
-    """Render a workspace document with the bundled read-only engine."""
+    """Render a workspace document with the bundled read-only engine.
+
+    ``renderer=native`` skips the exact (LibreOffice) renderer, e.g. while the
+    user selects workbook cells, which exact pages (images) do not have.
+    """
     try:
         uuid.UUID(session_id)
     except ValueError:
@@ -273,7 +279,10 @@ async def get_workspace_document_preview(
     )
     try:
         preview = await asyncio.to_thread(
-            render_document_preview, resolved, live_session=live_session
+            render_document_preview,
+            resolved,
+            live_session=live_session,
+            native=renderer == "native",
         )
     except DocumentPreviewUnsupportedError as exc:
         raise HTTPException(status_code=415, detail=str(exc))

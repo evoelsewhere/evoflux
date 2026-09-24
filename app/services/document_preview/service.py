@@ -68,9 +68,14 @@ def _render_lock_for(output: Path) -> threading.Lock:
 _OFFICE_RUNTIME_SUFFIXES = frozenset({".docx", ".xlsx", ".pptx"})
 
 
-def _renderer_identity(source: Path, live: bool = False) -> str:
-    """Name the engine that renders ``source`` so switching engines re-renders."""
-    if source.suffix.lower() not in _OFFICE_RUNTIME_SUFFIXES:
+def _renderer_identity(source: Path, live: bool = False, native: bool = False) -> str:
+    """Name the engine that renders ``source`` so switching engines re-renders.
+
+    ``native`` asks for the built-in renderer even when the exact one is
+    installed: its output carries cells and shapes (with geometry), which
+    cell selection and the agent's layout checks need.
+    """
+    if source.suffix.lower() not in _OFFICE_RUNTIME_SUFFIXES or native:
         return "native"
     if live:
         # A deck under construction is re-rendered on every save; the exact
@@ -81,11 +86,11 @@ def _renderer_identity(source: Path, live: bool = False) -> str:
     return f"libreoffice-{runtime.version}" if runtime is not None else "native"
 
 
-def _cache_path(source: Path, live: bool = False) -> Path:
+def _cache_path(source: Path, live: bool = False, native: bool = False) -> Path:
     fingerprint = hashlib.sha256()
     fingerprint.update(_CACHE_SCHEMA_VERSION.encode())
     fingerprint.update(b"\0")
-    fingerprint.update(_renderer_identity(source, live).encode())
+    fingerprint.update(_renderer_identity(source, live, native).encode())
     fingerprint.update(b"\0")
     fingerprint.update(source.suffix.casefold().encode())
     fingerprint.update(b"\0")
@@ -5188,7 +5193,7 @@ def installed_runtime_for_preview() -> Any | None:
     return installed_runtime()
 
 
-def _render_source(source: Path, live: bool = False) -> str:
+def _render_source(source: Path, live: bool = False, native: bool = False) -> str:
     renderers = {
         ".docx": _render_docx,
         ".xlsx": lambda path: _render_xlsx(path, live=live),
@@ -5196,7 +5201,11 @@ def _render_source(source: Path, live: bool = False) -> str:
         ".pdf": _render_pdf,
     }
     try:
-        if source.suffix.lower() in _OFFICE_RUNTIME_SUFFIXES and not live:
+        if (
+            source.suffix.lower() in _OFFICE_RUNTIME_SUFFIXES
+            and not live
+            and not native
+        ):
             exact = _render_with_office_runtime(source)
             if exact is not None:
                 return exact
@@ -5212,12 +5221,16 @@ def _render_source(source: Path, live: bool = False) -> str:
         raise DocumentPreviewError(f"Could not render this document: {exc}") from exc
 
 
-def _render_document_preview(source: Path, *, live_session: str | None = None) -> Path:
+def _render_document_preview(
+    source: Path, *, live_session: str | None = None, native: bool = False
+) -> Path:
     """Render ``source`` to a cached, self-contained HTML document.
 
     ``live_session`` is the viewer's session when its agent turn is running:
     a deck that session is building renders live (finished slides plus
-    placeholders); everyone else gets the slides as they are.
+    placeholders); everyone else gets the slides as they are. ``native``
+    skips the exact (LibreOffice) renderer, whose pages are images, for
+    callers that need the cells and shapes themselves.
     """
     suffix = source.suffix.lower()
     if suffix not in SUPPORTED_DOCUMENT_PREVIEW_EXTENSIONS:
@@ -5232,7 +5245,7 @@ def _render_document_preview(source: Path, *, live_session: str | None = None) -
     preflight_ooxml_package(source, suffix)
 
     live = deck_is_live(source, live_session)
-    output = _cache_path(source, live)
+    output = _cache_path(source, live, native)
     with _render_lock_for(output):
         prepare_preview_cache_directory(output.parent)
         if cached_preview_is_valid(
@@ -5263,7 +5276,7 @@ def _render_document_preview(source: Path, *, live_session: str | None = None) -
         )
         temporary = Path(temporary_name)
         try:
-            rendered = _render_source(source, live).encode("utf-8")
+            rendered = _render_source(source, live, native).encode("utf-8")
             if len(rendered) > MAX_DOCUMENT_PREVIEW_HTML_BYTES:
                 raise DocumentPreviewUnsupportedError(
                     "The generated preview is too large for the in-app viewer. "
