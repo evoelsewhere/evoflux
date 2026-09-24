@@ -22,7 +22,7 @@ Phase 2   Outline with action titles    <- ghost deck test; approval when it mat
 Phase 2.5 Visual preview (optional)     <- theme picker + slide grid via show_widget
 Phase 3   Prepare assets
 Phase 4   Build
-Phase 5   Verify and repair             <- loop until acceptance passes
+Phase 5   Verify and repair             <- one cheap pass; fix only what it flags
 Phase 6   Hand off
 ```
 
@@ -74,8 +74,9 @@ watches the preview fill in while you write; a single script that builds
 every slide at once, or drafting every slide before adding the first,
 defeats this. See *Live build* in the create guides.
 
-**Phase 5 — Verify and repair.** Run the QA checklist and `document_preview`,
-fix what they report, run them again. Repair the built deck in place: edit
+**Phase 5 — Verify and repair.** Run the QA checks below once, fix what they
+report, and re-check only the slides you fixed; stop after two repair rounds
+and report what is still open. Repair the built deck in place: edit
 a slide file and `deck_live.py add DECK FILE --replace N`, or `deck_live.py
 rebuild DECK slides/` after changing shared helpers or several slides. Never
 run `init` again on a deck that has slides; it empties the deck and the user
@@ -174,52 +175,37 @@ uv run --with python-pptx python scripts/diagnose.py output.pptx
 7. **Bullets are not the default.** Comparisons, tables, icons-with-labels,
    and stat callouts almost always land better.
 
-## QA checklist — always run before declaring done
+## QA checks — one pass before declaring done
 
-**Assume something is wrong.** PowerPoint opens broken files quietly: a
-misaligned text box, a chart pointing at deleted data, a stray placeholder
-that survived template fill. Verify explicitly, fix, and re-run until every
-step passes.
+Two commands cover what breaks in practice. Run each once:
 
-1. **Opens cleanly** — no repair dialog, no missing-part warning:
-   `uv run --with python-pptx python scripts/diagnose.py output.pptx`
-2. **Text integrity** — the grep must return nothing (a grep with no match
-   exits non-zero; that is the check passing):
+1. **File and text** — the file opens cleanly and no default copy survived
+   (the grep printing nothing is the check passing):
    ```bash
+   uv run --with python-pptx python scripts/diagnose.py output.pptx && \
    uv run --with python-pptx python scripts/dump_text.py output.pptx --notes \
        | grep -Ei "\{\{|TODO|TBD|lorem|ipsum|xxxx|click to add"
    ```
-3. **Rendered layout** — run the `document_preview` tool on the deck (below).
-4. **Layout hygiene** — every slide references a fitting layout, not
-   `slideLayout1` for a section divider. Save as `layouts.py` and run with
-   `uv run --with python-pptx python layouts.py`:
-   ```python
-   from pptx import Presentation
-   for i, s in enumerate(Presentation("output.pptx").slides, 1):
-       print(f"slide {i}: layout={s.slide_layout.name!r}")
-   ```
+2. **Rendered layout** — the `document_preview` tool on the deck. It renders
+   with the host viewer engine, needs no office application, costs no images,
+   and reports per slide every element with its text and its box as a
+   percentage of the slide, flagging anything outside it: off-slide shapes,
+   empty slides, missing text, a wrong slide count.
 
-## Visual QA execution model
+Fix what they flag, then re-check only the slides you changed (one
+`document_preview` run). Do not re-run checks that passed, and do not add
+checks of your own: no scripted pixel statistics, no bespoke overlap or
+contrast audits, no re-renders "for a decisive look".
 
-Start with `document_preview`. It renders the deck with the host viewer
-engine, needs no office application, costs no images, and reports per slide
-every laid-out element with its text and its box as a percentage of the
-slide, flagging anything outside it. That catches off-slide shapes, empty
-slides, missing text, and wrong slide counts. Fix what it flags first.
+**No pixel pass unless the user asks.** Rendering slides to images
+(`scripts/render_slides.py`) and inspecting them is slow and costs thousands
+of tokens per slide, so it is not part of QA by default. Do it only when the
+user asks for visual QA or for fine work on named slides: render just those
+slides and look at them yourself when your model reads images; otherwise say
+that no visual inspection was done. Do not delegate a pixel pass.
 
-Slide images are expensive: one page at 150 DPI costs thousands of context
-tokens. For a pixel pass, render with `scripts/render_slides.py`, then use
-`team_delegate` to hand a member the image paths and these criteria — text
-overflowing or auto-shrunk past readability, overlapping shapes, clipped chart
-labels, icons at the wrong scale, off-brand colours — and ask for findings as
-`slide N: problem`. Do not name a model in the delegation unless the user
-asked; if the member's model cannot read images, say so. Inspect images in
-the main conversation only when the user asks for fine work on one named
-slide and the active model reads images.
-
-Report the two separately: a rendered-layout check from `document_preview` is
-not the same claim as having looked at rendered pages. Structural QA passing
-is not visual QA; say which you performed.
+Say what you checked: a `document_preview` layout check is not the same
+claim as having looked at rendered pages.
 
 ## Acceptance
 
@@ -227,7 +213,8 @@ The deck is judged against the request, the confirmed options, the stated
 assumptions, and the rendered result. Report exactly one state: **Pass**
 (every check below holds), **Needs fixing** (named slides fail; fix only those
 and re-verify them), or **Blocked** (cannot be resolved without the user; say
-what). Never report Pass on a deck you did not verify, and never turn a
+what). Judge these by reading your outline and the QA output; they need no
+extra tooling. Never report Pass on a deck you did not verify, and never turn a
 Blocked item into a silent omission.
 
 - **Ghost deck test.** The action titles alone, in order, tell the argument.

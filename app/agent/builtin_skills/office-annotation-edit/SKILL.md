@@ -44,11 +44,15 @@ The message ends with a block the viewer wrote:
    charts, the chart type and series. With only an area it lists the shapes
    the box covers, most-covered first; take the ones the instruction is about.
    If a target cannot be found, say so instead of guessing.
-2. **Find the source of record.** Look for a generator in the workspace that
-   writes this file (`build_*.py`, `*.ts` with PptxGenJS, a notebook): search
-   for the file name. When one exists, change the generator — only the code
-   for the targeted shapes — and rerun it, so the next rebuild keeps the
-   edit. Otherwise edit the deck in place.
+2. **Find the source of record.** A deck built slide by slide has numbered
+   slide files beside it (`slides/07_pnl.py`, each defining `build(prs)`):
+   edit only the file of each annotated slide and re-add it in place with
+   `uv run --with python-pptx python <pptx-official>/scripts/deck_live.py add <file> slides/07_pnl.py --replace 7`.
+   Never rebuild the other slides or run `deck_live.py init`. Otherwise look
+   for a generator that writes this file (`build_*.py`, `*.ts` with
+   PptxGenJS, a notebook): change only the code for the targeted shapes and
+   rerun it, so the next rebuild keeps the edit. With neither, edit the deck
+   in place.
 3. **Edit in place** with python-pptx, addressing shapes by slide and id:
    ```python
    from pptx import Presentation
@@ -62,12 +66,14 @@ The message ends with a block the viewer wrote:
    with it (`os.replace`), so the viewer never reads a half-written file.
    Raw XML edits follow `pptx-official/edit-xml.md`.
 4. **Batch.** Apply every annotation of the message, then save once when
-   editing in place (one rerun when using a generator), so the user gets one
-   new version to review.
-5. **Verify only what changed.** Run `document_preview` on the deck and check
-   the annotated slides: the targets reflect the instruction and nothing
-   around them moved or overflowed. Run `scripts/diagnose.py` from
-   `pptx-official` when you touched XML.
+   editing in place (one rerun when using a generator; one `--replace` per
+   annotated slide), so the user gets one new version to review.
+5. **Verify only what changed, once.** Run `document_preview` on the deck and
+   read only the annotated slides: the targets reflect the instruction and
+   nothing around them moved or overflowed. Run `scripts/diagnose.py` from
+   `pptx-official` only when you touched XML. That is the whole check: no
+   full-deck QA, no slide renders or pixel inspection, no delegation, unless
+   the user asks for them.
 6. **Report** per annotation: `#n slide 7 · Chart 3 — what changed`, plus
    anything you could not do. The viewer keeps every version of the file, so
    do not create backup copies; the user can undo from the viewer.

@@ -242,12 +242,12 @@ Under the hood: `soffice --convert-to pdf` → `pdftoppm` → Pillow tiles
 the PNGs into a single JPEG with slide-number labels.
 
 Use thumbnails to **pick a template slide layout** ("which of these
-looks like a section divider?"). For a pixel pass over a generated deck,
-render at full resolution and follow the *Visual QA execution model* in
-`SKILL.md` (slide images are expensive in context):
+looks like a section divider?"). A pixel pass over a generated deck is only
+for when the user asks for one (*QA checks* in `SKILL.md`); render just the
+slides in question, since slide images are expensive in context:
 
 ```bash
-uv run --with python-pptx python scripts/render_slides.py output.pptx --out qa/ --dpi 150
+uv run --with python-pptx python scripts/render_slides.py output.pptx --out qa/ --dpi 150 --first 4 --last 4
 ```
 
 `pdftoppm` zero-pads file numbers on decks with 10 or more slides.
