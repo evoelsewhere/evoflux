@@ -34,6 +34,18 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- WebBridge debugging output, from an end-to-end run against a Vite + React
+  19 dev server (evo-webbridge 2.9.1): console messages apply `%s`-style
+  formatting; the location is the first frame in the app's own code, library
+  frames fold into one line, and warnings raised entirely inside a library
+  say so; `inspect` labels React locations as where the element was rendered;
+  requests the previous document left unfinished no longer count as the new
+  page's pending ones; the "load not recorded" note appears only when no
+  document has loaded since recording began; `performance` counters are
+  collected from the start of recording.
+
+### Fixed
+
 - The `webbridge` tool now ships its full usage guide to the model; it was
   defined but never attached, so the model saw a one-line description.
 - WebBridge `navigate` no longer stalls until timeout when the page lands on
