@@ -100,7 +100,8 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     )
     # Changed deliberately: the tool guide (`_DESCRIPTION`) was defined but
     # never passed to `@tool`, so the model saw only the one-line docstring;
-    # then console/network/network_body/debug_summary were added.
+    # then console/network/network_body/debug_summary, and then storage,
+    # cookies, inspect, upload_file, emulate, mock and performance were added.
     assert _definition_digest(webbridge) == (
-        "5e043485ed0c325f4b1ea25d429e727589846688727804a6d1bb904074cf4104"
+        "b9b663555cf5e068137d98600b907521a715b72af19c6359da7c6eae4046b040"
     )

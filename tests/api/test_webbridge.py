@@ -2532,7 +2532,9 @@ async def test_prepared_interactive_message_queues_attachment_when_session_is_bu
         lead=SimpleNamespace(agent=SimpleNamespace(model_id="test-model")),
         _activate_queued_user_messages=AsyncMock(return_value=False),
     )
-    metas = [{"original_name": "capture.png", "category": "image", "path": "/tmp/c.png"}]
+    metas = [
+        {"original_name": "capture.png", "category": "image", "path": "/tmp/c.png"}
+    ]
     persist = AsyncMock(return_value=("session-id", metas))
     monkeypatch.setattr(
         interactive_message_service.agent_service,
@@ -5600,6 +5602,232 @@ async def test_tool_debug_summary_flags_a_fresh_recording(
     assert "Reload the page" in result
 
 
+async def test_tool_inspect_reports_component_chain_and_remarkable_styles(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        return {
+            "success": True,
+            "data": {
+                "tag": "button",
+                "ref": "e7",
+                "text": "Save",
+                "box": {"x": 10, "y": 20, "width": 80, "height": 32},
+                "framework": "react",
+                "components": [
+                    {
+                        "name": "SaveButton",
+                        "file": "http://localhost:5173/src/SaveButton.tsx?t=1",
+                        "line": 12,
+                        "column": 5,
+                    },
+                    {"name": "App", "file": "/repo/src/App.tsx", "line": 8},
+                ],
+                "styles": {"display": "flex", "position": "static", "opacity": "0.5"},
+                "attributes": {"class": "btn", "type": "submit"},
+                "source_hints": {},
+            },
+            "error": None,
+        }
+
+    _stub_send(monkeypatch, manager, handler)
+    result = await webbridge(actions=[_action({"action": "inspect", "ref": "e7"})])
+
+    assert seen == [("inspect", {"ref": "e7"})]
+    assert "e7 <button> 'Save' at (10, 20) 80x32" in result
+    assert "Rendered by (react, innermost first):" in result
+    # A dev-server URL is shown as the project path it serves.
+    assert "SaveButton — /src/SaveButton.tsx:12:5" in result
+    assert "App — /repo/src/App.tsx:8" in result
+    assert "display: flex" in result and "opacity: 0.5" in result
+    assert "position" not in result  # static is the default, not a finding
+    assert "Untrusted browser content" in result
+
+
+async def test_tool_inspect_requires_a_target():
+    with pytest.raises(ValueError, match="ref or a selector"):
+        _action({"action": "inspect"})
+
+
+async def test_tool_upload_file_only_sends_workspace_files(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    inside = workspace / "fixture.csv"
+    inside.write_text("a,b\n")
+    outside = tmp_path / "secrets.txt"
+    outside.write_text("nope")
+    seen: list[tuple[str, dict]] = []
+    _stub_send(
+        monkeypatch,
+        manager,
+        lambda action, params: (
+            seen.append((action, params))
+            or {"success": True, "data": {}, "error": None}
+        ),
+    )
+    token = set_sandbox(
+        SandboxConfig(workspace=str(workspace), denied_roots=[], denied_patterns=[])
+    )
+    try:
+        refused = await webbridge(
+            actions=[
+                _action({"action": "upload_file", "ref": "e3", "paths": [str(outside)]})
+            ]
+        )
+        assert "upload_file refused" in refused and "outside" in refused
+        assert seen == []
+
+        ok = await webbridge(
+            actions=[
+                _action(
+                    {"action": "upload_file", "ref": "e3", "paths": ["fixture.csv"]}
+                )
+            ]
+        )
+    finally:
+        _sandbox_ctx.reset(token)
+
+    assert "Set 1 file(s) on the input: fixture.csv." in ok
+    assert seen == [("upload_file", {"ref": "e3", "files": [str(inside.resolve())]})]
+
+
+async def test_tool_storage_and_cookies_list_names_without_values(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    def handler(action: str, params: dict):
+        if action == "storage":
+            return {
+                "success": True,
+                "data": {
+                    "area": "local",
+                    "total": 2,
+                    "entries": [
+                        {"key": "sb-auth-token", "size": 812},
+                        {"key": "theme", "size": 4},
+                    ],
+                },
+                "error": None,
+            }
+        return {
+            "success": True,
+            "data": {
+                "entries": [
+                    {
+                        "name": "sid",
+                        "domain": "localhost",
+                        "path": "/",
+                        "size": 40,
+                        "http_only": True,
+                        "secure": False,
+                        "same_site": "Lax",
+                        "expires": "session",
+                    }
+                ]
+            },
+            "error": None,
+        }
+
+    _stub_send(monkeypatch, manager, handler)
+    storage = await webbridge(actions=[_action({"action": "storage"})])
+    cookies = await webbridge(actions=[_action({"action": "cookies"})])
+
+    assert "localStorage (2 keys):" in storage
+    assert "'sb-auth-token' (812 chars)" in storage
+    assert " = " not in storage
+    assert "sid — localhost/ (40 B; HttpOnly, SameSite=Lax, session)" in cookies
+
+
+async def test_tool_mock_emulate_and_performance_summaries(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[tuple[str, dict]] = []
+
+    def handler(action: str, params: dict):
+        seen.append((action, params))
+        if action == "mock":
+            return {
+                "success": True,
+                "data": {
+                    "rule": {"id": "m1"},
+                    "rules": [
+                        {
+                            "id": "m1",
+                            "method": "GET",
+                            "url_pattern": "http://localhost:8000/api/todos*",
+                            "status": 500,
+                            "content_type": "application/json",
+                            "body_chars": 17,
+                            "hits": 0,
+                        }
+                    ],
+                },
+                "error": None,
+            }
+        if action == "emulate":
+            return {
+                "success": True,
+                "data": {"emulation": {"network": "slow_3g", "cpu_throttling": 4}},
+                "error": None,
+            }
+        return {
+            "success": True,
+            "data": {
+                "page_url": "http://localhost:5173/",
+                "navigation": {
+                    "ttfb": 12,
+                    "dom_content_loaded": 180,
+                    "load": 240,
+                    "type": "reload",
+                },
+                "first_contentful_paint": 150,
+                "largest_contentful_paint": {"time": 420, "element": "img#hero"},
+                "cumulative_layout_shift": 0.12,
+                "slowest_interaction_ms": None,
+                "resources": {"count": 3, "transfer_size": 4096, "slowest": []},
+                "metrics": {"JSHeapUsedSize": 10485760, "Nodes": 900},
+            },
+            "error": None,
+        }
+
+    _stub_send(monkeypatch, manager, handler)
+    mock = await webbridge(
+        actions=[
+            _action(
+                {
+                    "action": "mock",
+                    "operation": "add",
+                    "url_pattern": "http://localhost:8000/api/todos",
+                    "method": "GET",
+                    "status": 500,
+                    "body": '{"detail":"boom"}',
+                }
+            )
+        ]
+    )
+    emulate = await webbridge(
+        actions=[
+            _action({"action": "emulate", "network": "slow_3g", "cpu_throttling": 4})
+        ]
+    )
+    perf = await webbridge(actions=[_action({"action": "performance"})])
+
+    assert seen[0][1]["operation"] == "add" and seen[0][1]["status"] == 500
+    assert "Added mock m1." in mock
+    assert "[m1] GET http://localhost:8000/api/todos* → 500 application/json" in mock
+    assert "network=slow_3g, cpu=4.0x slower" in emulate or "cpu=4x slower" in emulate
+    assert "TTFB 12 ms, DOMContentLoaded 180 ms, load 240 ms" in perf
+    assert "LCP 420 ms (img#hero)" in perf
+    assert "CLS 0.12" in perf
+    assert "JS heap 10.0 MiB, 900 DOM nodes" in perf
+
+
 async def test_tool_routes_commands_to_session_selected_extension(
     manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
 ):
@@ -6009,6 +6237,39 @@ async def test_policy_disables_evaluate(
     _recorder_ext(manager, "e1")
     result = await manager.send_command("sess", "evaluate", {"script": "1+1"})
     assert result["success"] is False and "evaluate" in result["error"].lower()
+
+
+@pytest.mark.parametrize(
+    ("action", "params", "refused"),
+    [
+        ("storage", {"operation": "get"}, False),
+        ("storage", {"operation": "get", "include_values": True}, True),
+        ("storage", {"operation": "set", "key": "k", "value": "v"}, True),
+        ("cookies", {"operation": "get"}, False),
+        ("cookies", {"operation": "get", "include_values": True}, True),
+        ("cookies", {"operation": "delete", "name": "sid"}, True),
+        ("mock", {"operation": "list"}, False),
+        ("mock", {"operation": "add", "url_pattern": "http://x/api"}, True),
+        ("mock", {"operation": "clear"}, False),
+    ],
+)
+async def test_policy_gates_page_state_power_behind_allow_evaluate(
+    manager: WebBridgeManager, action: str, params: dict, refused: bool
+):
+    """Secrets and page rewrites need allow_evaluate; names and lists do not."""
+    _set_policy(manager, allow_evaluate=False)
+    sent = _recorder_ext(manager, "e1")
+    if refused:
+        result = await manager.send_command("sess", action, dict(params))
+        assert result["success"] is False
+        assert "allow_evaluate" in result["error"]
+        assert sent == []
+    else:
+        result = await _run(
+            manager, lambda: manager.send_command("sess", action, dict(params)), sent
+        )
+        assert json.loads(sent[-1])["action"] == action
+        assert result["success"] is True
 
 
 async def test_policy_disabled_refuses_all(

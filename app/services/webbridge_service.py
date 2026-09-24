@@ -83,8 +83,35 @@ _PAGE_READ_ACTIONS: frozenset[str] = frozenset(
         "screenshot",
         "evaluate",
         "dialogs",
+        "console",
+        "network",
+        "network_body",
+        "debug_summary",
+        "storage",
+        "cookies",
+        "inspect",
+        "performance",
     }
 )
+
+
+def _needs_page_power(action: str, params: dict[str, Any]) -> bool:
+    """Whether a command reads secrets or rewrites the page like ``evaluate``.
+
+    Storage and cookie *values*, any write to them, and answering the page's
+    requests with made-up responses are each as strong as running arbitrary
+    script in the page, so they sit behind the same ``allow_evaluate`` switch.
+    Listing keys, cookie names and active mocks does not.
+    """
+    if action in {"storage", "cookies"}:
+        return params.get("operation", "get") != "get" or bool(
+            params.get("include_values")
+        )
+    if action == "mock":
+        return params.get("operation") == "add"
+    return False
+
+
 # Actions resolved by the extension's ``resolveTab`` helper. A visible
 # session/tab binding pins these actions without stealing browser focus.
 _TAB_SCOPED_ACTIONS: frozenset[str] = frozenset(
@@ -103,6 +130,13 @@ _TAB_SCOPED_ACTIONS: frozenset[str] = frozenset(
         "network",
         "network_body",
         "debug_summary",
+        "storage",
+        "cookies",
+        "inspect",
+        "upload_file",
+        "emulate",
+        "mock",
+        "performance",
         "screenshot",
         "extract",
         "evaluate",
@@ -332,6 +366,13 @@ class WebBridgeManager:
                 "(webbridge.allow_evaluate=false). Use selector/snapshot "
                 "actions instead."
             )
+        if _needs_page_power(action, params) and not pol.allow_evaluate:
+            return (
+                f"This {action} operation reads or rewrites page state as fully "
+                "as script would and is disabled by policy "
+                "(webbridge.allow_evaluate=false). Reading key and cookie names "
+                "is still allowed."
+            )
         if action in _UNGATED_ACTIONS:
             return None
 
@@ -364,6 +405,13 @@ class WebBridgeManager:
                 "semantic_read",
                 "evaluate",
                 "dialogs",
+                "console",
+                "network",
+                "network_body",
+                "debug_summary",
+                "storage",
+                "cookies",
+                "inspect",
             }
             and not pol.sharing.allow_readable_page
         ):

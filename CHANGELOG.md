@@ -12,6 +12,14 @@ All notable changes to EvoFlux are documented in this file.
   browser. Coding sessions record from their first command, so the agent can
   run the edit → reload → check-errors loop against a local dev server.
   Requires evo-webbridge 2.7.0.
+- WebBridge `inspect` shows an element's computed styles and the component
+  chain and source files that rendered it (React, Vue, Svelte, locator
+  plugins); `mock` fakes or fails matching requests; `emulate` throttles
+  network/CPU or fakes offline, location, time zone and locale; `performance`
+  reports load timing and Web Vitals; `storage`/`cookies` inspect page state;
+  `upload_file` fills file inputs with workspace files. Storage/cookie values,
+  writes and mocks follow `webbridge.allow_evaluate`. Requires evo-webbridge
+  2.8.0.
 
 ### Fixed
 
