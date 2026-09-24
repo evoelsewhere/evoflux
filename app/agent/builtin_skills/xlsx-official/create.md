@@ -439,6 +439,7 @@ uv run --with openpyxl python scripts/bake.py model.xlsx
 uv run --with openpyxl python scripts/audit.py model.xlsx
 ```
 
-If `bake.py` reports any errors, fix them and repeat. A workbook shipped
-with `#REF!` in the middle of a formula is a bug, not a feature. Then finish
-the QA checklist in `SKILL.md` (reconcile, then `document_preview`).
+If `bake.py` reports errors, fix those cells and run it once more. A workbook
+shipped with `#REF!` in the middle of a formula is a bug, not a feature. Then
+finish the one-pass QA checks in `SKILL.md` (reconcile, then
+`document_preview`).
