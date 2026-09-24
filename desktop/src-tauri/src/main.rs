@@ -22,6 +22,7 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalSize, RunEvent, WebviewUrl, WebviewWindowBuilder,
     WindowEvent, Wry,
 };
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_updater::UpdaterExt;
@@ -4241,6 +4242,86 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Handles `evoflux://connect?token=...` — the deep link a Conductor
+/// "invite to project" email ultimately redirects to, after the invited
+/// person authenticates and self-issues their own connection secret on
+/// Conductor's own web app (Conductor never mints or sees another user's
+/// raw token; see documents/plans/task-detail-phase-0.md, T0.6).
+///
+/// Forwards the token to the already-existing
+/// `POST /api/settings/conductor/connect` endpoint on the local backend —
+/// the same one the in-app "Connect to Conductor" settings form already
+/// uses, so this is one more caller of an existing path, not a new one.
+async fn handle_conductor_deep_link(app: &AppHandle, url: &url::Url) {
+    if url.scheme() != "evoflux" || url.host_str() != Some("connect") {
+        log::debug!("deep-link: ignoring unrecognized url {url}");
+        return;
+    }
+    let Some(token) = url
+        .query_pairs()
+        .find(|(key, _)| key == "token")
+        .map(|(_, value)| value.into_owned())
+    else {
+        log::warn!("deep-link: evoflux://connect received with no token");
+        return;
+    };
+
+    let state: tauri::State<'_, AppState> = app.state();
+    let Some(base) = state.backend_base_url.lock().await.clone() else {
+        log::warn!("deep-link: connect ignored, backend is not ready yet");
+        return;
+    };
+    let desktop_token = state.desktop_token.lock().await.clone();
+
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            log::error!("deep-link: failed to build http client: {error:#}");
+            return;
+        }
+    };
+
+    let mut request = client
+        .post(format!("{base}/api/settings/conductor/connect"))
+        .json(&serde_json::json!({ "enrollment_token": token }));
+    if let Some(desktop_token) = desktop_token {
+        request = request.bearer_auth(desktop_token);
+    }
+
+    show_main_window(app);
+    match request.send().await {
+        Ok(response) if response.status().is_success() => {
+            log::info!("deep-link: connected to Conductor via invite link");
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                let _ = window.emit("conductor-deep-link-connected", ());
+            }
+        }
+        Ok(response) => {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            log::error!("deep-link: connect request rejected: {status} {body}");
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                let _ = window.emit(
+                    "conductor-deep-link-failed",
+                    format!("Connect failed ({status}): {body}"),
+                );
+            }
+        }
+        Err(error) => {
+            log::error!("deep-link: connect request failed: {error:#}");
+            if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+                let _ = window.emit(
+                    "conductor-deep-link-failed",
+                    format!("Connect request failed: {error:#}"),
+                );
+            }
+        }
+    }
+}
+
 fn target_webview_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     let state: tauri::State<'_, AppState> = app.state();
     let label =
@@ -6176,6 +6257,7 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
         }))
+        .plugin(tauri_plugin_deep_link::init())
         .manage(state)
         .on_menu_event(|app, event| handle_desktop_menu(app, event.id().as_ref()))
         .invoke_handler(tauri::generate_handler![
@@ -6215,6 +6297,18 @@ fn main() {
             install_desktop_menus(app)?;
             if let Err(error) = native_messaging::install(app.handle()) {
                 log::warn!("could not install WebBridge native messaging host: {error:#}");
+            }
+            {
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    let handle = handle.clone();
+                    let urls = event.urls();
+                    tauri::async_runtime::spawn(async move {
+                        for url in urls {
+                            handle_conductor_deep_link(&handle, &url).await;
+                        }
+                    });
+                });
             }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {

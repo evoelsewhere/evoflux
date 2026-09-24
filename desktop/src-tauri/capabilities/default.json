@@ -37,6 +37,7 @@
     "notification:default",
     "opener:default",
     "log:default",
+    "deep-link:default",
     "allow-request-voice-permissions",
     "allow-save-workspace-file",
     "allow-backend-health",

@@ -9,6 +9,7 @@ RESOURCE_USAGE_PATH = "/api/v1/usage/resources"
 REALTIME_EVENTS_PATH = "/api/v1/realtime/events"
 CHANGES_PATH = "/api/v1/resources/changes"
 INVENTORY_PATH = "/api/v1/client/inventory"
+AI_POLICY_PATH = "/api/v1/client/ai-policy"
 
 CHANGE_PAGE_LIMIT = 100
 

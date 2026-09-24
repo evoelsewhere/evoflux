@@ -11,6 +11,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.conductor.models import (
+    AiPolicyListResponse,
     EffectiveResourceVersion,
     HeartbeatResponse,
     RegistrationRequest,
@@ -21,6 +22,7 @@ from app.conductor.models import (
     canonical_hash,
 )
 from app.conductor.constants.api import (
+    AI_POLICY_PATH,
     API_BASE_RETRY_DELAY_SECONDS,
     API_DEFAULT_RETRY_ATTEMPTS,
     API_DEFAULT_TIMEOUT_SECONDS,
@@ -300,6 +302,14 @@ class ConductorClient:
             headers=self._auth_headers(),
         )
         return ResourceChangePage.model_validate(response.json())
+
+    async def get_ai_policy(self) -> AiPolicyListResponse:
+        response = await self._request(
+            "GET",
+            AI_POLICY_PATH,
+            headers=self._auth_headers(),
+        )
+        return AiPolicyListResponse.model_validate(response.json())
 
     async def fetch_resource_version(
         self, resource_id: str, version_id: str

@@ -75,6 +75,7 @@ from app.agent.agent_loop import Agent
 from app.agent.drift import ConfigStamp, detect_drift, stamp_agent_files
 from app.agent.providers.factory import ProviderFactory, build_provider
 from app.agent.tools.registry import Tool
+from app.core.ai_policy import resolve_ai_policy
 from app.core.db import DbFactory, resolve_db_factory
 from app.core.app_mode import parse_app_mode
 from app.conductor.agent_runtime import apply_managed_agent_runtime_model
@@ -533,6 +534,17 @@ def _build_agent(
                 seen.add(tool.name)
                 tools.append(tool)
 
+    # Conductor's project/role allow-list (Phase 1/2): a disallowed tool is
+    # dropped from the roster, never silently kept; a disallowed provider is
+    # rejected below, never silently swapped for an allowed one.
+    policy = resolve_ai_policy()
+    disallowed_tools = [tool.name for tool in tools if not policy.tool_allowed(tool.name)]
+    if disallowed_tools:
+        logger.warning(
+            "agent_tool_policy_denied agent={} tools={}", cfg.name, disallowed_tools
+        )
+        tools = [tool for tool in tools if policy.tool_allowed(tool.name)]
+
     model_kwargs: dict[str, Any] = {}
     if cfg.thinking_level is not None:
         model_kwargs["thinking_level"] = cfg.thinking_level
@@ -550,24 +562,43 @@ def _build_agent(
         UnconfiguredProviderError,
     )
 
-    try:
-        provider = provider_factory(cfg.model, model_kwargs=model_kwargs)
-    except Exception as exc:
-        if not isinstance(exc, UnconfiguredProviderError):
-            logger.warning(
-                "agent_provider_unavailable agent={} model={} error={}",
-                cfg.name,
-                cfg.model,
-                exc,
-            )
-        else:
-            logger.warning(
-                "agent_unconfigured_provider agent={} model={}", cfg.name, cfg.model
-            )
+    def _provider_name(model: str | None) -> str:
+        return model.split(":", 1)[0] if model else ""
+
+    if cfg.model and not policy.provider_allowed(_provider_name(cfg.model)):
+        logger.warning(
+            "agent_provider_policy_denied agent={} provider={} model={}",
+            cfg.name,
+            _provider_name(cfg.model),
+            cfg.model,
+        )
         provider = UnconfiguredProvider(agent_name=cfg.name)
+    else:
+        try:
+            provider = provider_factory(cfg.model, model_kwargs=model_kwargs)
+        except Exception as exc:
+            if not isinstance(exc, UnconfiguredProviderError):
+                logger.warning(
+                    "agent_provider_unavailable agent={} model={} error={}",
+                    cfg.name,
+                    cfg.model,
+                    exc,
+                )
+            else:
+                logger.warning(
+                    "agent_unconfigured_provider agent={} model={}", cfg.name, cfg.model
+                )
+            provider = UnconfiguredProvider(agent_name=cfg.name)
 
     fallback_provider = None
-    if cfg.fallback_model:
+    if cfg.fallback_model and not policy.provider_allowed(_provider_name(cfg.fallback_model)):
+        logger.warning(
+            "agent_fallback_provider_policy_denied agent={} provider={} model={}",
+            cfg.name,
+            _provider_name(cfg.fallback_model),
+            cfg.fallback_model,
+        )
+    elif cfg.fallback_model:
         try:
             fallback_provider = provider_factory(
                 cfg.fallback_model, model_kwargs=model_kwargs

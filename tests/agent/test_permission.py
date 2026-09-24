@@ -16,10 +16,12 @@ from app.agent.permission import (
     get_permission_service,
     get_service_for_session,
     get_services_for_stream,
+    project_ruleset_from_policy,
     reset_permission_service,
     ruleset_from_config,
     set_permission_service,
 )
+from app.core.ai_policy import ResolvedAiPolicy
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +123,47 @@ async def test_ask_deny_raises_denied_error():
     )
     with pytest.raises(PermissionDeniedError):
         await service.ask("shell", ["git status"])
+
+
+@pytest.mark.asyncio
+async def test_ask_denies_a_tool_the_project_ruleset_excludes():
+    policy = ResolvedAiPolicy(allowed_tools=["read"])
+    service = PermissionService(
+        session_id="s1",
+        project_ruleset=project_ruleset_from_policy(policy),
+    )
+    with pytest.raises(PermissionDeniedError):
+        await service.ask("browser", ["*"])
+    # The allowed tool still goes through.
+    await service.ask("read", ["*"])
+
+
+@pytest.mark.asyncio
+async def test_project_ruleset_never_overrides_a_live_session_allow():
+    """A user's in-the-moment 'always allow' reply must still win over a
+    standing policy row — an explicit human decision beats a config default."""
+    policy = ResolvedAiPolicy(allowed_tools=["read"])
+    service = PermissionService(
+        session_id="s1",
+        project_ruleset=project_ruleset_from_policy(policy),
+    )
+    service.session_ruleset.append(
+        Rule(permission="browser", pattern="*", action="allow")
+    )
+    await service.ask("browser", ["*"])
+
+
+def test_project_ruleset_from_policy_is_empty_when_unrestricted():
+    assert project_ruleset_from_policy(ResolvedAiPolicy()) == []
+
+
+def test_project_ruleset_from_policy_denies_by_default_then_allows_listed_tools():
+    ruleset = project_ruleset_from_policy(
+        ResolvedAiPolicy(allowed_tools=["read", "write"])
+    )
+    assert evaluate("browser", "*", ruleset).action == "deny"
+    assert evaluate("read", "*", ruleset).action == "allow"
+    assert evaluate("write", "*", ruleset).action == "allow"
 
 
 @pytest.mark.asyncio

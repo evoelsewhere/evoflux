@@ -216,6 +216,13 @@ async def test_heartbeat_uses_stored_token() -> None:
                 "server_time": "2026-08-10T10:30:00Z",
                 "heartbeat_interval_seconds": 60,
                 "connection_state": "active",
+                "member": {
+                    "id": "2c89a539-ef6f-4c08-8416-3f420f1eb630",
+                    "display_name": "Mai Nguyen",
+                    "primary_role": "user",
+                    "sub_roles": [],
+                    "tags": [],
+                },
             },
         )
 
@@ -505,6 +512,13 @@ async def test_heartbeat_persists_server_interval(
                 "server_time": "2026-08-10T10:30:00Z",
                 "heartbeat_interval_seconds": 120,
                 "connection_state": "active",
+                "member": {
+                    "id": "2c89a539-ef6f-4c08-8416-3f420f1eb630",
+                    "display_name": "Mai Nguyen",
+                    "primary_role": "admin",
+                    "sub_roles": [],
+                    "tags": [],
+                },
             },
         )
 
@@ -518,6 +532,10 @@ async def test_heartbeat_persists_server_interval(
 
     assert status.heartbeat_interval_seconds == 120
     assert load_runtime_settings().conductor.heartbeat_interval_seconds == 120
+    assert status.member_display_name == "Mai Nguyen"
+    assert status.member_primary_role == "admin"
+    assert load_runtime_settings().conductor.member_display_name == "Mai Nguyen"
+    assert load_runtime_settings().conductor.member_primary_role == "admin"
 
 
 @pytest.mark.asyncio
