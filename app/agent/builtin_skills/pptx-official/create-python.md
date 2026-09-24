@@ -79,21 +79,12 @@ Do not draft later slides ahead either: work out slide 1, write its file,
 add it, and only then design slide 2. Keep `theme.py` small at first and
 extend it when a slide needs a new helper.
 
-1. Create the file from the outline. It opens in the preview straight away
-   with a placeholder per planned slide:
+1. Create the file with the outline's slide count. It opens in the preview
+   straight away, with a loading skeleton for each slide still to come:
 
    ```bash
-   uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx \
-     --title "Q3 Product Review" --title "What shipped" --title "What's next"
+   uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx --slides 3
    ```
-
-   Optionally add one `--placeholder` per `--title`, in order, to make the
-   grey stand-in the user sees before a slide exists roughly resemble it.
-   This is cosmetic only: it does not change, limit or template the slide
-   you build, so design every slide from the outline as usual and skip
-   this when unsure. Shapes: `cover`, `bullets`, `split`, `cards`, `chart`,
-   `line`, `donut`, `stats`, `table`, `timeline`, `diagram`, `quote`,
-   `closing` (pick the nearest; none needs to match exactly).
 
 2. Put the palette, fonts and shared helpers in `slides/theme.py`.
 3. For each outline slide, in order: write one slide file that defines
@@ -119,8 +110,9 @@ extend it when a slide needs a new helper.
    steps. To fix one slide, edit its file and re-add it in place with
    `add review.pptx slides/02_shipped.py --replace 2`.
 
-Keep the order and count of `--title`s equal to the slides you add. A slide
-file that fails leaves the deck as it was; fix it and run `add` again.
+Keep `--slides` equal to the number of slides you add (run `init` again if
+the outline changes before the first `add`). A slide file that fails leaves
+the deck as it was; fix it and run `add` again.
 
 ## Text on a slide
 

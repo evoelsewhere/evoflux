@@ -167,8 +167,8 @@ nothing downloads until they ask.
   widened to 75% of the window (up to 1600 px) while the chat column keeps
   its minimum width.
 - **Live decks.** The `pptx-official` Skill builds a deck one slide at a
-  time with `scripts/deck_live.py`: `init` creates the file with its plan
-  (slide count and titles) in the `evoflux.deck` custom document property,
+  time with `scripts/deck_live.py`: `init --slides N` creates the file with
+  its plan (slide count only) in the `evoflux.deck` custom document property,
   each slide is appended and saved atomically, `mark` re-embeds the plan
   after PptxGenJS rewrites the file, and `finish` marks it done. The plan
   also names the building session: the agent's `shell` exports
@@ -183,18 +183,10 @@ nothing downloads until they ask.
   through LibreOffice),
   inside `<main data-deck-live="true">`: finished slides carry
   `data-slide-status="done"` (the newest also `data-slide-fresh`, which
-  animates it in), the next planned slide is `building` (planned title,
-  animated placeholder, deck progress bar) and the rest are `pending`.
-  Each placeholder takes a shape (`data-layout`): the agent may pass one
-  optional `--placeholder` per `--title` to `deck_live.py init` (`cover`,
-  `bullets`, `split`, `cards`, `chart`, `line`, `donut`, `stats`, `table`,
-  `timeline`, `diagram`, `quote`, `closing`; `PLACEHOLDER_KINDS` in
-  `live_deck.py`). It is cosmetic: the Skill tells the agent it never
-  constrains the slide's design. A plan without placeholders, or with a
-  shape the preview does not know, falls back to a cover first, a closing
-  slide last and a varying cycle in between (`_skeleton_layout` in
-  `service.py`), whatever the titles' language. On the slide being built
-  the blocks assemble in sequence, lines draw and charts fill. Motion is
+  animates it in), the next slide is `building` (animated loading skeleton,
+  deck progress bar) and the rest are `pending`. Every skeleton is the same
+  generic title-and-lines shape: the plan carries no titles or layouts, so
+  nothing in the loading state suggests how a slide will be designed. Motion is
   disabled under `prefers-reduced-motion`. The viewer keeps the
   last good render while a save re-renders, keeps zoom and scroll across
   saves of the same file, collapses the slide thumbnails and reports the

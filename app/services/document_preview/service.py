@@ -17,7 +17,7 @@ import os
 import shutil
 import tempfile
 import threading
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -4809,14 +4809,8 @@ background:#fff;font-family:Arial,sans-serif}
 .sk-chip{display:inline-flex;align-items:center;gap:.8cqw;padding:.55cqw 1.3cqw;
 border-radius:99px;font:600 1.25cqw/1 Arial,sans-serif;letter-spacing:.02em;
 color:#5f6368;background:#f1f3f4}
-.sk-title{margin:0;max-width:100%;font:700 3.6cqw/1.15 Arial,sans-serif;
-color:#3c4043;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sk-body{flex:1;min-height:0;display:flex;gap:5cqw;align-items:stretch}
-.sk-text{flex:1.3;display:flex;flex-direction:column;justify-content:center;gap:1.6cqw}
-.sk-visual{flex:1;display:flex;align-items:flex-end;justify-content:space-around;
-gap:1.4cqw;padding:2cqw 2cqw 0;border-bottom:.25cqw solid #dadce0}
-.sk-visual span{flex:1;height:var(--h);border-radius:.6cqw .6cqw 0 0;background:#e8eaed;
-transform-origin:bottom}
+.sk-body{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;
+gap:1.8cqw}
 .slide-skeleton .bar{border-radius:.6cqw;background:#ececec;transform-origin:left}
 .slide-skeleton .bar.title{height:3.8cqw;width:55%}
 .slide-skeleton .bar.subtitle{height:2cqw;width:32%}
@@ -4825,72 +4819,6 @@ transform-origin:bottom}
 display:flex}.sk-progress .done{background:#1a73e8}.sk-progress .now{
 background:linear-gradient(90deg,#8ab4f8,#d2e3fc,#8ab4f8);background-size:200% 100%;
 animation:sk-flow 1.2s linear infinite}
-.slide-skeleton .bar.line.thin{height:1cqw}
-.blk{border-radius:1cqw;background:#f1f3f4;transform-origin:center}
-.slide-skeleton .blk .bar{background:#dde0e4}
-.sk-head.center{align-items:center;text-align:center}
-.sk-text.narrow{flex:.8}
-.sk-list{flex:1;display:flex;flex-direction:column;justify-content:center;gap:2cqw}
-.sk-item{display:flex;align-items:center;gap:2cqw}
-.sk-num{flex:none;display:grid;place-items:center;width:3.4cqw;height:3.4cqw;
-border-radius:50%;font:700 1.5cqw/1 Arial,sans-serif;color:#9aa0a6}
-.sk-cards,.sk-stats{flex:1;display:grid;grid-template-columns:repeat(var(--n,3),1fr);
-gap:2.6cqw;align-items:stretch}
-.sk-card,.sk-stat{display:flex;flex-direction:column;gap:1.3cqw;padding:2.4cqw}
-.sk-card{justify-content:flex-start}.sk-stat{justify-content:center}
-.sk-icon{width:4.4cqw;height:4.4cqw;border-radius:1.2cqw;background:#e2e5e9;margin-bottom:.8cqw}
-.slide-skeleton .bar.big{height:6cqw;width:var(--w);border-radius:1cqw}
-.sk-media{flex:1;display:grid;place-items:center}
-.sk-glyph{width:22%;fill:#dadce0}
-.sk-plot{flex:1.7;min-width:0;display:flex}.sk-plot svg{width:100%;height:100%;overflow:visible}
-.sk-grid line{stroke:#e8eaed;stroke-width:.6}
-.sk-area{fill:#f1f3f4}
-.sk-draw{fill:none;stroke:#c4c7cc;stroke-width:2.4;stroke-linecap:round;
-stroke-linejoin:round;stroke-dasharray:1 1;stroke-dashoffset:0}
-.sk-draw.alt{stroke:#dadce0;stroke-width:1.8}
-.sk-dot{fill:#c4c7cc;transform-box:fill-box;transform-origin:center}
-.sk-ring{fill:none;stroke:#f1f3f4;stroke-width:6}
-.sk-seg{fill:none;stroke:#d5d8dc;stroke-width:6}
-.sk-legend{flex:1;display:flex;flex-direction:column;justify-content:center;gap:1.8cqw}
-.sk-key{display:flex;align-items:center;gap:1.4cqw}
-.sk-swatch{flex:none;width:1.8cqw;height:1.8cqw;border-radius:.5cqw;background:#dadce0}
-.sk-table{flex:1;display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;
-gap:1.9cqw 2.6cqw;align-content:center}
-.slide-skeleton .bar.cell{height:1.3cqw;width:var(--w)}
-.slide-skeleton .bar.cell.head{height:1.9cqw;background:#dadce0}
-.sk-timeline{flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:3cqw;align-content:center}
-.sk-step{position:relative;display:flex;flex-direction:column;gap:1.3cqw}
-.sk-step::before{content:"";position:absolute;left:2.4cqw;right:-3cqw;top:1.05cqw;
-height:.3cqw;background:#dadce0;transform-origin:left}
-.sk-step:last-child::before{display:none}
-.sk-node{position:relative;z-index:1;width:2.4cqw;height:2.4cqw;border-radius:50%;
-background:#dadce0;box-shadow:0 0 0 .6cqw #fff;margin-bottom:1cqw}
-.sk-flow{flex:1;display:flex;align-items:center;justify-content:center}
-.sk-box{flex:1;max-width:24%;aspect-ratio:4/3;display:flex;flex-direction:column;
-justify-content:center;gap:1.2cqw;padding:2cqw}
-.sk-box.accent{background:#e8eaed}
-.sk-arrow{flex:0 0 6cqw;height:.3cqw;margin:0 1.2cqw;background:#c4c7cc;position:relative;
-transform-origin:left}.sk-arrow::after{content:"";position:absolute;right:-.2cqw;top:50%;
-translate:0 -50%;border:1cqw solid transparent;border-left:1.3cqw solid #c4c7cc;
-border-right:0}
-.sk-quote{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
-gap:1.7cqw}.sk-quote .bar.line{align-self:center}
-.sk-mark{font:700 11cqw/.6 Georgia,serif;color:#e0e3e7;height:5cqw}
-.sk-author{display:flex;align-items:center;justify-content:center;gap:1.4cqw;width:40%;
-margin-top:1.4cqw}.sk-avatar{flex:none;width:3.6cqw;height:3.6cqw;border-radius:50%}
-.slide-skeleton[data-layout="cover"],.slide-skeleton[data-layout="closing"]{
-justify-content:center}
-.slide-skeleton[data-layout="cover"] .sk-head{position:relative;z-index:1;max-width:62%;gap:2cqw}
-.slide-skeleton[data-layout="cover"] .sk-title{font-size:5.2cqw;white-space:normal}
-.slide-skeleton[data-layout="cover"] .bar.subtitle{width:70%;height:2.2cqw}
-.sk-orb{position:absolute;border-radius:50%;background:#f1f3f4}
-.sk-orb.one{width:38cqw;height:38cqw;right:-9cqw;top:-8cqw}
-.sk-orb.two{width:18cqw;height:18cqw;right:20cqw;bottom:-6cqw;background:#f5f6f7}
-.sk-accent{width:10cqw;height:.7cqw;border-radius:99px;background:#dadce0}
-.slide-skeleton[data-layout="closing"] .sk-head{gap:2cqw}
-.slide-skeleton[data-layout="closing"] .sk-title{font-size:4.8cqw}
-.sk-pills{display:flex;gap:1.6cqw;justify-content:center}
-.sk-pill{width:12cqw;height:3cqw;border-radius:99px}
 
 [data-slide-status="building"] .slide{outline:2px solid #1a73e8;outline-offset:3px;
 animation:sk-glow 2.2s ease-in-out infinite}
@@ -4902,60 +4830,13 @@ inset:0;pointer-events:none;background:linear-gradient(100deg,transparent 35%,
 [data-slide-status="building"] .sk-chip{color:#1967d2;background:#e8f0fe}
 [data-slide-status="building"] .sk-spin{width:1.2cqw;height:1.2cqw;border-radius:50%;
 border:.25cqw solid #1a73e84d;border-top-color:#1a73e8;animation:sk-spin .8s linear infinite}
-[data-slide-status="building"] .sk-title{color:#202124;
-animation:sk-type 1.1s steps(24,end) .15s both}
-[data-slide-status="building"] .sk-title::after{content:"";display:inline-block;
-width:.3cqw;height:1em;margin-left:.5cqw;vertical-align:-.12em;background:#1a73e8;
-animation:sk-caret 1s steps(1) infinite}
 [data-slide-status="building"] .bar{background:linear-gradient(90deg,#e3e6ea 0,
 #f4f6f8 40%,#e3e6ea 80%) 0 0/300% 100%;animation:sk-grow .6s cubic-bezier(.2,.7,.2,1)
 calc(.35s + var(--d,0) * .14s) both,sk-shimmer 1.6s ease-in-out 1.2s infinite}
-[data-slide-status="building"] .sk-visual span{background:linear-gradient(#aecbfa,#d2e3fc);
-animation:sk-rise .7s cubic-bezier(.2,.7,.2,1) calc(.6s + var(--d,0) * .12s) both,
-sk-breathe 2.4s ease-in-out calc(1.5s + var(--d,0) * .2s) infinite alternate}
-[data-slide-status="building"] .blk{background:linear-gradient(90deg,#eef3fd 0,#f8faff 40%,
-#eef3fd 80%) 0 0/300% 100%;box-shadow:inset 0 0 0 1px #d2e3fc;
-animation:sk-pop .55s cubic-bezier(.2,.7,.2,1.2) calc(.4s + var(--d,0) * .13s) both,
-sk-shimmer 1.8s ease-in-out 1.5s infinite}
-[data-slide-status="building"] .blk .bar{background:linear-gradient(90deg,#cfdcf5 0,
-#e6eefc 40%,#cfdcf5 80%) 0 0/300% 100%}
-[data-slide-status="building"] .blk.sk-icon,[data-slide-status="building"] .blk.sk-num,
-[data-slide-status="building"] .blk.sk-avatar,[data-slide-status="building"] .sk-node{
-background:#aecbfa;box-shadow:none;color:#1967d2}
-[data-slide-status="building"] .sk-node{animation:sk-pop .45s cubic-bezier(.2,.7,.2,1.4)
-calc(.45s + var(--d,0) * .3s) both,sk-ping 1.8s ease-out calc(1.8s + var(--d,0) * .3s) infinite}
-[data-slide-status="building"] .sk-step::before{background:#aecbfa;
-animation:sk-grow .5s ease-out calc(.6s + var(--d,0) * .3s) both}
-[data-slide-status="building"] .blk.sk-box.accent{background:#d2e3fc}
-[data-slide-status="building"] .sk-arrow{background:#8ab4f8;
-animation:sk-grow .45s ease-out calc(.5s + var(--d,0) * .13s) both}
-[data-slide-status="building"] .sk-arrow::after{border-left-color:#8ab4f8}
-[data-slide-status="building"] .sk-glyph{fill:#8ab4f8}
-[data-slide-status="building"] .sk-grid line{stroke:#e8f0fe}
-[data-slide-status="building"] .sk-area{fill:#e8f0fe;animation:sk-fade .8s ease 1.5s both}
-[data-slide-status="building"] .sk-draw{stroke:#1a73e8;
-animation:sk-draw 1.4s cubic-bezier(.4,0,.2,1) calc(.5s + var(--d,0) * .25s) both}
-[data-slide-status="building"] .sk-draw.alt{stroke:#8ab4f8}
-[data-slide-status="building"] .sk-dot{fill:#1a73e8;
-animation:sk-pop .35s cubic-bezier(.2,.7,.2,1.5) calc(.7s + var(--d,0) * .22s) both}
-[data-slide-status="building"] .sk-ring{stroke:#e8f0fe}
-[data-slide-status="building"] .sk-seg{stroke:var(--c);
-animation:sk-seg .7s cubic-bezier(.4,0,.2,1) calc(.5s + var(--d,0) * .35s) both}
-[data-slide-status="building"] .sk-swatch{background:var(--c);
-animation:sk-pop .35s ease calc(.6s + var(--d,0) * .35s) both}
-[data-slide-status="building"] .sk-mark{color:#aecbfa;animation:sk-pop .5s ease .3s both}
-[data-slide-status="building"] .sk-orb{background:radial-gradient(circle at 30% 30%,#d2e3fc,
-#e8f0fe 70%);animation:sk-pop .9s cubic-bezier(.2,.7,.2,1) .2s both,
-sk-float 6s ease-in-out 1.2s infinite alternate}
-[data-slide-status="building"] .sk-orb.two{animation-delay:.45s,1.6s}
-[data-slide-status="building"] .sk-accent{background:#1a73e8;animation:sk-grow .6s ease .9s both}
-[data-slide-status="building"] .bar.cell.head{background:linear-gradient(90deg,#aecbfa,
-#d2e3fc) 0 0/100% 100%}
 
 [data-slide-status="pending"] .slide{opacity:.72}
 [data-slide-status="pending"] .slide-skeleton{box-shadow:none;
 outline:1.5px dashed #bdc1c6;outline-offset:-1px}
-[data-slide-status="pending"] .sk-title{color:#9aa0a6;font-weight:600}
 
 [data-slide-fresh] .slide{animation:sk-land .7s cubic-bezier(.2,.7,.2,1) both}
 [data-slide-fresh]::after{content:"\\2713  Added";position:absolute;top:10px;right:10px;
@@ -4966,18 +4847,7 @@ background:#188038;box-shadow:0 2px 8px #0003;animation:sk-badge 2.6s ease both}
 @keyframes sk-flow{0%{background-position:100% 0}100%{background-position:-100% 0}}
 @keyframes sk-scan{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 @keyframes sk-spin{to{transform:rotate(360deg)}}
-@keyframes sk-caret{50%{opacity:0}}
-@keyframes sk-type{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
 @keyframes sk-grow{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
-@keyframes sk-rise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
-@keyframes sk-pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
-@keyframes sk-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
-@keyframes sk-seg{from{stroke-dasharray:0 100}}
-@keyframes sk-fade{from{opacity:0}to{opacity:1}}
-@keyframes sk-ping{0%{box-shadow:0 0 0 .6cqw #fff,0 0 0 .6cqw #1a73e866}
-100%{box-shadow:0 0 0 .6cqw #fff,0 0 0 2.4cqw #1a73e800}}
-@keyframes sk-float{from{translate:0 0}to{translate:-2cqw 1.5cqw}}
-@keyframes sk-breathe{from{transform:scaleY(1)}to{transform:scaleY(.72)}}
 @keyframes sk-glow{0%,100%{box-shadow:0 3px 14px #0003,0 0 0 0 #1a73e840}
 50%{box-shadow:0 3px 14px #0003,0 0 0 10px #1a73e800}}
 @keyframes sk-land{from{opacity:0;transform:translateY(14px) scale(.985)}
@@ -4988,240 +4858,31 @@ transform:none}100%{opacity:0}}
 animation:none!important}[data-slide-fresh]::after{display:none}}
 """
 
-# Proportions of the placeholder text lines and chart bars; the chart rises
-# and breathes on the slide being built.
-_SKELETON_LINES = ("88%", "80%", "92%", "64%")
-_SKELETON_BARS = ("42%", "68%", "54%", "86%", "72%")
-_SKELETON_BLUES = ("#1a73e8", "#4285f4", "#8ab4f8", "#c6dafc")
-
-# Middle slides whose plan names no layout cycle through these, so a deck
-# under construction never reads as one repeated placeholder.
-_SKELETON_CYCLE = (
-    "split",
-    "cards",
-    "chart",
-    "timeline",
-    "table",
-    "stats",
-    "line",
-    "diagram",
-    "bullets",
-    "donut",
-    "quote",
-)
-
-
-def _skeleton_layout(plan: DeckPlan, index: int) -> str:
-    """The stand-in shape for planned slide ``index``.
-
-    The plan may pick one per slide (``deck_live.py init --placeholder``);
-    otherwise the first is a cover, the last a closing slide and the rest vary.
-    """
-    planned = plan.placeholder(index)
-    if planned:
-        return planned
-    if index == 0:
-        return "cover"
-    total = plan.total
-    if total > 2 and index == total - 1:
-        return "closing"
-    return _SKELETON_CYCLE[(index - 1) % len(_SKELETON_CYCLE)]
-
-
-def _skeleton_lines(
-    widths: Iterable[str], *, thin: bool = False, start: int = 0
-) -> str:
-    kind = "line thin" if thin else "line"
-    return "".join(
-        f'<div class="bar {kind}" style="--w:{width};--d:{start + order}"></div>'
-        for order, width in enumerate(widths)
-    )
-
-
-def _skeleton_legend(count: int) -> str:
-    return (
-        '<div class="sk-legend">'
-        + "".join(
-            f'<div class="sk-key"><span class="sk-swatch" style="--c:{_SKELETON_BLUES[order]};'
-            f'--d:{order}"></span>{_skeleton_lines(("70%",), start=order)}</div>'
-            for order in range(count)
-        )
-        + "</div>"
-    )
-
-
-def _skeleton_body(layout: str) -> str:
-    """The content blocks of a placeholder, below its heading."""
-    if layout == "bullets":
-        items = "".join(
-            f'<div class="sk-item"><span class="blk sk-num" style="--d:{order}">'
-            f"{order + 1}</span>{_skeleton_lines((width,), start=order)}</div>"
-            for order, width in enumerate(("62%", "74%", "56%", "68%", "48%"))
-        )
-        return f'<div class="sk-list">{items}</div>'
-    if layout == "cards":
-        cells = "".join(
-            f'<div class="blk sk-card" style="--d:{order}">'
-            f'<span class="blk sk-icon" style="--d:{order + 1}"></span>'
-            f"{_skeleton_lines(('62%',), start=order + 1)}"
-            f"{_skeleton_lines(('92%', '78%', '84%'), thin=True, start=order + 2)}</div>"
-            for order in range(4)
-        )
-        return f'<div class="sk-cards" style="--n:4">{cells}</div>'
-    if layout == "stats":
-        cells = "".join(
-            f'<div class="blk sk-stat" style="--d:{order}">'
-            f'<div class="bar big" style="--w:{width};--d:{order + 1}"></div>'
-            f"{_skeleton_lines(('86%',), start=order + 2)}"
-            f"{_skeleton_lines(('64%',), thin=True, start=order + 3)}</div>"
-            for order, width in enumerate(("58%", "46%", "64%"))
-        )
-        return f'<div class="sk-stats" style="--n:3">{cells}</div>'
-    if layout == "split":
-        glyph = (
-            '<svg class="sk-glyph" viewBox="0 0 24 24" aria-hidden="true">'
-            '<circle cx="8" cy="8" r="2.2"/><path d="M3 19l5.5-6.5 4 4.5 3-3.5L21 19z"/></svg>'
-        )
-        return (
-            f'<div class="sk-text">{_skeleton_lines(_SKELETON_LINES)}'
-            f"{_skeleton_lines(('72%', '58%'), thin=True, start=4)}</div>"
-            f'<div class="blk sk-media" style="--d:2">{glyph}</div>'
-        )
-    if layout == "line":
-        points = ((0, 78), (40, 64), (80, 70), (120, 42), (160, 48), (200, 16))
-        second = "0,90 40,84 80,76 120,72 160,62 200,54"
-        line = " ".join(f"{x},{y}" for x, y in points)
-        grid = "".join(
-            f'<line x1="0" y1="{y}" x2="200" y2="{y}"/>' for y in (20, 45, 70, 95)
-        )
-        dots = "".join(
-            f'<circle class="sk-dot" cx="{x}" cy="{y}" r="3.2" style="--d:{order}"/>'
-            for order, (x, y) in enumerate(points)
-        )
-        return (
-            '<div class="sk-plot"><svg viewBox="0 0 200 100" aria-hidden="true">'
-            f'<g class="sk-grid">{grid}</g>'
-            f'<polygon class="sk-area" points="0,100 {line} 200,100"/>'
-            f'<polyline class="sk-draw alt" pathLength="1" style="--d:2" points="{second}"/>'
-            f'<polyline class="sk-draw" pathLength="1" points="{line}"/>{dots}</svg></div>'
-            + _skeleton_legend(2)
-        )
-    if layout == "donut":
-        segments, offset = [], 25.0
-        for order, share in enumerate((38, 27, 20, 15)):
-            segments.append(
-                f'<circle class="sk-seg" cx="21" cy="21" r="15.915" pathLength="100" '
-                f'style="stroke-dasharray:{share - 1} {101 - share};'
-                f'stroke-dashoffset:{offset};--c:{_SKELETON_BLUES[order]};--d:{order}"/>'
-            )
-            offset -= share
-        return (
-            '<div class="sk-plot"><svg viewBox="0 0 42 42" aria-hidden="true">'
-            '<circle class="sk-ring" cx="21" cy="21" r="15.915"/>'
-            f"{''.join(segments)}</svg></div>{_skeleton_legend(4)}"
-        )
-    if layout == "table":
-        rows = (
-            ("54%", "60%", "60%", "60%"),
-            ("78%", "46%", "62%", "40%"),
-            ("64%", "58%", "38%", "66%"),
-            ("82%", "40%", "54%", "48%"),
-            ("58%", "62%", "44%", "56%"),
-        )
-        cells = "".join(
-            f'<div class="bar cell{" head" if row == 0 else ""}" style="--w:{width};--d:{row}">'
-            "</div>"
-            for row, widths in enumerate(rows)
-            for width in widths
-        )
-        return f'<div class="sk-table">{cells}</div>'
-    if layout == "timeline":
-        steps = "".join(
-            f'<div class="sk-step" style="--d:{order}"><span class="sk-node" style="--d:{order}">'
-            f"</span>{_skeleton_lines(('68%',), start=order)}"
-            f"{_skeleton_lines(('92%', '74%'), thin=True, start=order + 1)}</div>"
-            for order in range(4)
-        )
-        return f'<div class="sk-timeline">{steps}</div>'
-    if layout == "diagram":
-        parts: list[str] = []
-        for order in range(3):
-            if order:
-                parts.append(
-                    f'<span class="sk-arrow" style="--d:{2 * order - 1}"></span>'
-                )
-            accent = " accent" if order == 1 else ""
-            parts.append(
-                f'<div class="blk sk-box{accent}" style="--d:{2 * order}">'
-                f"{_skeleton_lines(('70%',), start=2 * order)}"
-                f"{_skeleton_lines(('90%', '56%'), thin=True, start=2 * order + 1)}</div>"
-            )
-        return f'<div class="sk-flow">{"".join(parts)}</div>'
-    if layout == "quote":
-        return (
-            '<div class="sk-quote"><span class="sk-mark" aria-hidden="true">“</span>'
-            f"{_skeleton_lines(('78%', '84%', '52%'))}"
-            '<div class="sk-author"><span class="blk sk-avatar" style="--d:3"></span>'
-            f"{_skeleton_lines(('60%',), start=4)}</div></div>"
-        )
-    # "chart": a short text column beside rising bars.
-    bars = "".join(
-        f'<span style="--h:{height};--d:{order}"></span>'
-        for order, height in enumerate(_SKELETON_BARS)
-    )
-    return (
-        f'<div class="sk-text narrow">{_skeleton_lines(_SKELETON_LINES[:3])}</div>'
-        f'<div class="sk-visual" aria-hidden="true">{bars}</div>'
-    )
+# Widths of the skeleton's text lines; every slide not added yet looks the
+# same, since the deck's design is unknown until the slide exists.
+_SKELETON_LINES = ("88%", "80%", "92%", "64%", "74%")
 
 
 def _pending_slide_skeletons(plan: DeckPlan, *, first: int, ratio: str) -> list[str]:
-    """Placeholders for the planned slides an agent has not saved yet.
+    """Loading skeletons for the slides an agent has not saved yet.
 
-    Each takes the stand-in shape the plan picks for it (a cover, a
-    timeline, a table, a chart…). The first missing slide is the one being built: its
-    title types in, its blocks assemble and a progress bar shows how far the
-    deck is. The rest stay still, titled from the plan so the user sees what
-    is next.
+    The first missing slide is the one being built: its bars assemble and a
+    progress bar shows how far the deck is. The rest stay still.
     """
     skeletons: list[str] = []
+    lines = "".join(
+        f'<div class="bar line" style="--w:{width};--d:{order + 2}"></div>'
+        for order, width in enumerate(_SKELETON_LINES)
+    )
     for index in range(first, plan.total):
-        title = plan.title(index)
         number = index + 1
         state = "building" if index == first else "pending"
-        layout = _skeleton_layout(plan, index)
         caption = (
             f"Building slide {number} of {plan.total}"
             if state == "building"
             else "Up next"
         )
-        label = f"Slide {number}" + (f" — {title}" if title else "")
-        heading = (
-            f'<h2 class="sk-title">{html.escape(title)}</h2>'
-            if title
-            else '<div class="bar title"></div>'
-        )
-        if layout == "cover":
-            decoration = (
-                '<span class="sk-orb one" aria-hidden="true"></span>'
-                '<span class="sk-orb two" aria-hidden="true"></span>'
-            )
-            extra = '<span class="sk-accent"></span>'
-            body = ""
-        elif layout == "closing":
-            decoration = ""
-            extra = ""
-            body = (
-                '<div class="sk-pills">'
-                + "".join(
-                    f'<span class="blk sk-pill" style="--d:{order + 2}"></span>'
-                    for order in range(3)
-                )
-                + "</div>"
-            )
-        else:
-            decoration = extra = ""
-            body = f'<div class="sk-body">{_skeleton_body(layout)}</div>'
+        label = f"Slide {number}"
         progress = ""
         if state == "building":
             progress = (
@@ -5232,17 +4893,13 @@ def _pending_slide_skeletons(plan: DeckPlan, *, first: int, ratio: str) -> list[
         spinner = '<span class="sk-spin"></span>' if state == "building" else ""
         skeletons.append(
             '<article class="slide-wrap" data-preview-item '
-            f'data-preview-label="{html.escape(label, quote=True)}" '
-            f'data-preview-title="{html.escape(title, quote=True)}" '
-            f'data-slide-status="{state}">'
+            f'data-preview-label="{label}" data-slide-status="{state}">'
             f'<div class="slide-number">{number}</div>'
-            f'<section class="slide slide-skeleton" data-layout="{layout}" '
-            f'style="aspect-ratio:{ratio}" '
-            f'aria-label="{html.escape(f"{label}, {caption.lower()}", quote=True)}">'
-            f'{decoration}<div class="sk-head{" center" if layout == "closing" else ""}">'
-            f'<span class="sk-chip">{spinner}{html.escape(caption)}</span>'
-            f'{heading}<div class="bar subtitle" style="--d:1"></div>{extra}</div>'
-            f"{body}{progress}</section></article>"
+            f'<section class="slide slide-skeleton" style="aspect-ratio:{ratio}" '
+            f'aria-label="{label}, {caption.lower()}">'
+            f'<div class="sk-head"><span class="sk-chip">{spinner}{caption}</span>'
+            '<div class="bar title"></div><div class="bar subtitle" style="--d:1"></div></div>'
+            f'<div class="sk-body">{lines}</div>{progress}</section></article>'
         )
     return skeletons
 

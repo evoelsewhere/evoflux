@@ -9,11 +9,7 @@ import pytest
 from pptx.util import Inches
 
 from app.services.document_preview import service as preview
-from app.services.document_preview.live_deck import (
-    PLACEHOLDER_KINDS,
-    deck_is_live,
-    read_deck_plan,
-)
+from app.services.document_preview.live_deck import deck_is_live, read_deck_plan
 
 SCRIPT = (
     Path(__file__).resolve().parents[2]
@@ -65,7 +61,7 @@ def test_live_deck_previews_finished_slides_and_placeholders(
     deck_live, monkeypatch, tmp_path
 ):
     deck = tmp_path / "deck.pptx"
-    deck_live.init(deck, ["Cover", "Why now", "Roadmap"])
+    deck_live.init(deck, 3)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
 
     plan = read_deck_plan(deck)
@@ -74,9 +70,8 @@ def test_live_deck_previews_finished_slides_and_placeholders(
     rendered = _render(deck)
     assert 'data-deck-live="true"' in rendered
     assert _slide_statuses(rendered) == ["building", "pending", "pending"]
-    assert 'data-preview-label="Slide 2 — Why now"' in rendered
+    assert 'data-preview-label="Slide 2"' in rendered
     assert "Building slide 1 of 3" in rendered
-    assert '<h2 class="sk-title">Cover</h2>' in rendered
     assert _fresh_slides(rendered) == 0
 
     live = deck_live.LiveDeck(deck)
@@ -132,7 +127,7 @@ def test_add_builds_one_slide_per_command(deck_live, monkeypatch, tmp_path):
     slides.mkdir()
     (slides / "theme.py").write_text("LABEL = '> '\n", encoding="utf-8")
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
-    deck_live.init(deck, ["Cover", "Why now", "Roadmap"])
+    deck_live.init(deck, 3)
 
     assert deck_live.add(deck, _slide_file(slides, "01_cover.py", "Cover")) == 1
     rendered = _render(deck)
@@ -151,7 +146,7 @@ def test_add_builds_one_slide_per_command(deck_live, monkeypatch, tmp_path):
 
 def test_add_leaves_the_deck_alone_when_a_slide_file_fails(deck_live, tmp_path):
     deck = tmp_path / "deck.pptx"
-    deck_live.init(deck, ["Cover"])
+    deck_live.init(deck, 1)
     before = deck.read_bytes()
     broken = tmp_path / "01_cover.py"
     broken.write_text("def build(prs):\n    pass\n", encoding="utf-8")
@@ -169,7 +164,7 @@ def test_mark_restores_the_plan_after_a_generator_rewrites_the_deck(
     from pptx import Presentation
 
     deck = tmp_path / "deck.pptx"
-    deck_live.init(deck, ["One", "Two"])
+    deck_live.init(deck, 2)
     rewritten = Presentation()
     _add_slide(rewritten, "One")
     rewritten.save(deck)  # e.g. PptxGenJS writing slides 1..k from scratch
@@ -178,7 +173,7 @@ def test_mark_restores_the_plan_after_a_generator_rewrites_the_deck(
     deck_live.mark(deck)
 
     plan = read_deck_plan(deck)
-    assert plan is not None and plan.titles == ("One", "Two") and not plan.done
+    assert plan is not None and plan.total == 2 and not plan.done
     assert plan.session == SESSION
     deck_live.mark(deck, done=True)
     assert not deck_is_live(deck, SESSION)
@@ -190,7 +185,7 @@ def test_live_deck_renders_natively_even_with_the_exact_renderer(
     from app.services.office_runtime import installer
 
     deck = tmp_path / "deck.pptx"
-    deck_live.init(deck, ["Cover"])
+    deck_live.init(deck, 1)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setattr(
         preview,
@@ -211,7 +206,7 @@ def test_only_the_building_session_sees_the_deck_live_while_it_runs(
     deck_live, monkeypatch, tmp_path
 ):
     deck = tmp_path / "deck.pptx"
-    deck_live.init(deck, ["Cover", "Why now"])
+    deck_live.init(deck, 2)
     monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
     live = deck_live.LiveDeck(deck)
     prs = live.open()
@@ -228,60 +223,28 @@ def test_only_the_building_session_sees_the_deck_live_while_it_runs(
     assert not deck_is_live(deck, "session-b")
 
 
-def _placeholder_shapes(rendered: str) -> list[str]:
-    return re.findall(r'class="slide slide-skeleton" data-layout="([a-z]+)"', rendered)
+def _skeletons(rendered: str) -> list[str]:
+    return re.findall(r'<section class="slide slide-skeleton".*?</section>', rendered)
 
 
-def test_placeholders_take_the_shapes_the_plan_picks(deck_live, tmp_path):
+def test_every_skeleton_looks_the_same_whatever_the_plan(deck_live, tmp_path):
     deck = tmp_path / "deck.pptx"
-    # Titles in any language; the plan picks each stand-in's shape.
-    deck_live.init(
-        deck,
-        ["EvoFlux", "Lộ trình", "Thị phần", "Bảng giá", "Cảm ơn"],
-        ["cover", "timeline", "donut", "table", "closing"],
+    deck_live.init(deck, 4)
+    # A plan written with titles (an older script) shows none of them.
+    older = dict(
+        deck_live._read_plan(deck), titles=["Cover", "Roadmap", "Pricing", "Thanks"]
     )
+    deck_live._write(deck, deck.read_bytes(), older)
 
-    assert _placeholder_shapes(_render(deck)) == [
-        "cover",
-        "timeline",
-        "donut",
-        "table",
-        "closing",
+    rendered = _render(deck)
+    pending = [
+        re.sub(r"Slide \d+", "Slide N", skeleton)
+        for skeleton in _skeletons(rendered)[1:]
     ]
+    assert len(pending) == 3 and len(set(pending)) == 1
+    assert "Roadmap" not in rendered and "Pricing" not in rendered
 
 
-def test_placeholders_without_picked_shapes_still_vary(deck_live, tmp_path):
-    deck = tmp_path / "deck.pptx"
-    deck_live.init(deck, ["A", "B", "C", "D", "E"])
-
-    shapes = _placeholder_shapes(_render(deck))
-
-    assert shapes[0] == "cover" and shapes[-1] == "closing"
-    assert len(set(shapes[1:-1])) == 3
-
-
-def test_init_rejects_mismatched_or_unknown_placeholders(deck_live, tmp_path):
-    deck = tmp_path / "deck.pptx"
-    with pytest.raises(deck_live.DeckLiveError, match="one --placeholder per --title"):
-        deck_live.init(deck, ["A", "B"], ["cover"])
-    with pytest.raises(deck_live.DeckLiveError, match="Unknown placeholder"):
-        deck_live.init(deck, ["A"], ["hexagon"])
-
-
-def test_plan_reader_ignores_placeholders_it_does_not_know(deck_live, tmp_path):
-    deck = tmp_path / "deck.pptx"
-    deck_live.init(deck, ["A", "B"], ["cover", "table"])
-    plan = read_deck_plan(deck)
-    assert plan is not None and plan.placeholders == ("cover", "table")
-
-    # A plan written by a newer script may pick a shape this preview lacks.
-    newer = dict(deck_live._read_plan(deck), placeholders=["cover", "hexagon"])
-    deck_live._write(deck, deck.read_bytes(), newer)
-
-    plan = read_deck_plan(deck)
-    assert plan is not None
-    assert plan.placeholder(0) == "cover" and plan.placeholder(1) == ""
-
-
-def test_skill_script_and_preview_agree_on_placeholder_names(deck_live):
-    assert deck_live.PLACEHOLDERS == PLACEHOLDER_KINDS
+def test_init_needs_a_slide_count(deck_live, tmp_path):
+    with pytest.raises(deck_live.DeckLiveError, match="--slides"):
+        deck_live.init(tmp_path / "deck.pptx", 0)
