@@ -66,17 +66,12 @@ from one run: it finishes in a second and the user only sees the end result.
 Do not draft later slides ahead either: work out slide 1, write its file,
 build, and only then design slide 2.
 
-1. Create the file from the outline. It opens in the preview straight away
-   with a placeholder per planned slide:
+1. Create the file with the outline's slide count. It opens in the preview
+   straight away, with a loading skeleton for each slide still to come:
 
    ```bash
-   uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx \
-     --title "Q3 Product Review" --title "What shipped" --title "What's next"
+   uv run --with python-pptx python <skill>/scripts/deck_live.py init review.pptx --slides 3
    ```
-
-   An optional `--placeholder` per title only changes the look of the grey
-   stand-in before that slide exists; it has no effect on the slide itself
-   (see *Live build* in [create-python.md](create-python.md)).
 
 2. Write `build_deck.ts`, which loads every `slides/NN_*.ts` present (each
    `export default (pres: pptxgen) => { ... }` adding one slide), writes the
