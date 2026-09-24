@@ -377,8 +377,8 @@ uv run --with openpyxl python scripts/bake.py output.xlsx
 uv run --with openpyxl python scripts/audit.py output.xlsx
 ```
 
-Then finish the QA checklist in `SKILL.md` (reconcile, then
-`document_preview`). If you touched a formula, spot-check its new value with:
+Then finish the one-pass QA checks in `SKILL.md` (reconcile, then
+`document_preview`), on the sheets you changed. If you touched a formula, spot-check its new value with:
 
 ```python
 from openpyxl import load_workbook

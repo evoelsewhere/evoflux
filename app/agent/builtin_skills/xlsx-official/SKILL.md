@@ -23,7 +23,7 @@ Phase 1  Settle the brief            <- ask once, bounded
 Phase 2  Sheet plan + grain          <- GATE: user approves before building
 Phase 3  Build
 Phase 4  Recalculate and reconcile
-Phase 5  Verify and repair           <- loop until it passes
+Phase 5  Verify and repair           <- one cheap pass; fix only what it flags
 Phase 6  Hand off
 ```
 
@@ -53,8 +53,9 @@ totals against the target agreed in Phase 2. With no calculation engine
 available, report the values as uncomputed rather than implying a verified
 total.
 
-**Phase 5 — Verify and repair.** QA checklist and `document_preview`; fix and
-re-run.
+**Phase 5 — Verify and repair.** Run the QA checks below once, fix what they
+report, and re-check only the sheets you changed; stop after two repair
+rounds and report what is still open.
 
 **Phase 6 — Hand off.** File path, whether formulas actually recalculated,
 what reconciled, and every assumption and unresolved figure.
@@ -174,11 +175,13 @@ or operational models. An existing template overrides it — match it exactly.
 | Assumption to review   | `#FFF2CC` fill    | Yellow highlight, still readable in b/w |
 | Error / warning        | `#FFC7CE` fill, `#9C0006` text | Excel's built-in "bad" style |
 
-## QA checklist — always run before declaring done
+## QA checks — one pass before declaring done
 
-**Assume something is wrong.** Excel opens broken files quietly: a stray
-`#REF!`, an off-by-one range, a formula that evaluates to `0`. Verify
-explicitly; fix and re-run until every step passes.
+Excel opens broken files quietly: a stray `#REF!`, an off-by-one range, a
+formula that evaluates to `0`. These four checks catch that; run each once,
+fix what they flag, and re-run only the checks the fix affects. Do not add
+checks of your own (no scripted cell-by-cell audits beyond the reconcile, no
+re-renders).
 
 1. **Recalculate formulas:**
    `uv run --with openpyxl python scripts/bake.py output.xlsx`.
@@ -204,8 +207,9 @@ explicitly; fix and re-run until every step passes.
    formulas showing as text (missing `=` or a leading apostrophe), and missing
    print titles or print areas on large sheets. It reports the host engine's
    layout, not Excel's, so describe it as a rendered-layout check and never
-   claim you looked at pixels. `scripts/pdf_out.py` adds a LibreOffice
-   fidelity export when that matters.
+   claim you looked at pixels. A LibreOffice export (`scripts/pdf_out.py`) or
+   any image render is not part of QA: produce one only when the user asks
+   for it.
 
 ## Common formula pitfalls
 
