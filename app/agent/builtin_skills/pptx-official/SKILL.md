@@ -66,10 +66,13 @@ Anything unresolved here becomes a placeholder in the deck.
 
 **Phase 4 — Build.** Build from the outline: one layout per recurring slide
 shape, palette as named constants, real content in every visible slot.
-Build live, one slide at a time: first run `scripts/deck_live.py init` with
-one `--title` per outlined slide so the deck file exists immediately, then
-add a slide and save after each, and finish with `deck_live.py finish`. The
-user watches the preview fill in; see *Live build* in the create guides.
+Build live, one slide per command: first run `scripts/deck_live.py init`
+with one `--title` per outlined slide so the deck file exists immediately,
+then for each slide write one slide file and run `deck_live.py add` on it
+before writing the next, and finish with `deck_live.py finish`. The user
+watches the preview fill in while you write; a single script that builds
+every slide at once, or drafting every slide before adding the first,
+defeats this. See *Live build* in the create guides.
 
 **Phase 5 — Verify and repair.** Run the QA checklist and `document_preview`,
 fix what they report, run them again. Machine checks passing is a technical
@@ -104,11 +107,10 @@ An extraction-only request needs neither gate: read the file and answer.
   output files in the user's workspace.
 - Every Python command uses one form, with the dependency on the command line:
   `uv run --with python-pptx python scripts/<name>.py <args>`. `python-pptx`
-  pulls in `lxml` and `Pillow`. Your own generator or snippet goes into a
-  `.py` file in the workspace and runs the same way:
-  `uv run --with python-pptx python build_deck.py`. PptxGenJS generators run
-  with `bun run build_deck.ts` from a workspace project (see
-  [setup.md](setup.md)).
+  pulls in `lxml` and `Pillow`. Your own code goes into `.py` files in the
+  workspace and runs the same way; a new deck is one slide file per slide,
+  added with `scripts/deck_live.py add`. PptxGenJS code runs with
+  `bun run <file>.ts` from a workspace project (see [setup.md](setup.md)).
 - The `python` tool runs a fresh interpreter that cannot import these
   libraries, so do not use it for this skill. `uv run --with` fetches packages
   into uv's cache on first use; if `uv` is missing or offline, tell the user

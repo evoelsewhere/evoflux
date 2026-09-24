@@ -82,6 +82,66 @@ def test_live_deck_previews_finished_slides_and_placeholders(
     assert not deck_live._plan_path(deck).exists()
 
 
+def _slide_file(folder: Path, name: str, text: str) -> Path:
+    path = folder / name
+    path.write_text(
+        "from pptx.util import Inches\n"
+        "from theme import LABEL\n\n"
+        "def build(prs):\n"
+        "    slide = prs.slides.add_slide(prs.slide_layouts[6])\n"
+        "    slide.shapes.add_textbox(Inches(1), Inches(1), Inches(6), Inches(1))"
+        f".text = LABEL + {text!r}\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _texts(deck: Path) -> list[str]:
+    from pptx import Presentation
+
+    return [
+        "".join(shape.text_frame.text for shape in slide.shapes if shape.has_text_frame)
+        for slide in Presentation(str(deck)).slides
+    ]
+
+
+def test_add_builds_one_slide_per_command(deck_live, monkeypatch, tmp_path):
+    deck = tmp_path / "deck.pptx"
+    slides = tmp_path / "slides"
+    slides.mkdir()
+    (slides / "theme.py").write_text("LABEL = '> '\n", encoding="utf-8")
+    monkeypatch.setattr(preview.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    deck_live.init(deck, ["Cover", "Why now", "Roadmap"])
+
+    assert deck_live.add(deck, _slide_file(slides, "01_cover.py", "Cover")) == 1
+    rendered = preview._render_source(deck)
+    assert _slide_statuses(rendered) == ["done", "building", "pending"]
+
+    deck_live.add(deck, _slide_file(slides, "02_why.py", "Why now"))
+    deck_live.add(deck, _slide_file(slides, "03_roadmap.py", "Roadmap"))
+    # Rebuild slide 2 in place: order and count stay, the old slide is gone.
+    deck_live.add(deck, _slide_file(slides, "02_why.py", "Why now v2"), replace=2)
+    assert _texts(deck) == ["> Cover", "> Why now v2", "> Roadmap"]
+    assert deck_is_live(deck)
+
+    deck_live.mark(deck, done=True)
+    assert not deck_is_live(deck)
+
+
+def test_add_leaves_the_deck_alone_when_a_slide_file_fails(deck_live, tmp_path):
+    deck = tmp_path / "deck.pptx"
+    deck_live.init(deck, ["Cover"])
+    before = deck.read_bytes()
+    broken = tmp_path / "01_cover.py"
+    broken.write_text("def build(prs):\n    pass\n", encoding="utf-8")
+
+    with pytest.raises(deck_live.DeckLiveError, match="exactly one slide"):
+        deck_live.add(deck, broken)
+    with pytest.raises(deck_live.DeckLiveError, match="--replace 3"):
+        deck_live.add(deck, broken, replace=3)
+    assert deck.read_bytes() == before
+
+
 def test_mark_restores_the_plan_after_a_generator_rewrites_the_deck(
     deck_live, tmp_path
 ):

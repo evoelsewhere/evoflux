@@ -4,26 +4,27 @@
 EvoFlux opens a live preview as soon as the deck file appears and redraws it
 every time the file is saved: finished slides show, and the rest appear as
 placeholders titled from the plan. So create the file first, then add one
-slide at a time and save after each.
+slide per command, writing the next slide while the user looks at the last.
+A single script that builds every slide finishes in about a second, and the
+user only ever sees the finished deck.
 
 Commands:
 
-    init  DECK --title "Cover" --title "Agenda" ...   create an empty deck
+    init   DECK --title "Cover" --title "Agenda" ...  create an empty deck
                                                       carrying the plan
-    mark  DECK                                        re-embed the plan after
+    add    DECK slides/02_agenda.py [--replace N]     run the file's
+                                                      ``build(prs)`` to add
+                                                      exactly one slide, then
+                                                      save (``--replace N``
+                                                      rebuilds slide N)
+    mark   DECK                                       re-embed the plan after
                                                       a generator rewrote the
                                                       file (PptxGenJS)
     finish DECK                                       mark the deck complete
 
-From a python-pptx generator, use the module instead of shelling out:
-
-    from deck_live import LiveDeck
-    live = LiveDeck("deck.pptx")      # after `init`
-    prs = live.open()
-    for build in (cover, agenda, ...):
-        build(prs)                     # add exactly one slide
-        live.save(prs)                 # atomic save; the preview updates
-    live.finish(prs)
+A slide file defines ``build(prs)`` and adds one slide to ``prs``. Its folder
+is importable, so shared palette and helpers can live beside it (for example
+``slides/theme.py``, imported with ``from theme import ...``).
 
 Saves are atomic (temporary file + rename), so the preview never reads a
 half-written deck. The plan is stored in the ``evoflux.deck`` custom document
@@ -163,8 +164,72 @@ def mark(deck: Path, *, done: bool = False) -> dict:
     return plan
 
 
+def _load_builder(script: Path):
+    """Return the ``build`` function a slide file defines."""
+    import importlib.util
+
+    if not script.is_file():
+        raise DeckLiveError(f"No slide file at {script}")
+    folder = str(script.resolve().parent)
+    if folder not in sys.path:
+        sys.path.insert(0, folder)  # shared helpers beside the slide files
+    spec = importlib.util.spec_from_file_location(f"_evoflux_slide_{script.stem}", script)
+    if spec is None or spec.loader is None:
+        raise DeckLiveError(f"Cannot load {script}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    build = getattr(module, "build", None)
+    if not callable(build):
+        raise DeckLiveError(f"{script.name} must define build(prs)")
+    return build
+
+
+def _move_slide(presentation, old: int, new: int) -> None:
+    slides = presentation.slides._sldIdLst
+    entry = list(slides)[old]
+    slides.remove(entry)
+    slides.insert(new, entry)
+
+
+def _drop_slide(presentation, index: int) -> None:
+    slides = presentation.slides._sldIdLst
+    entry = list(slides)[index]
+    presentation.part.drop_rel(entry.rId)
+    slides.remove(entry)
+
+
+def add(deck: Path, script: Path, *, replace: int | None = None) -> int:
+    """Add the one slide ``script`` builds (or rebuild slide ``replace``).
+
+    The deck is saved only when the build succeeds, so a failing slide file
+    leaves the previous state on screen. Returns the new slide count.
+    """
+    from pptx import Presentation
+
+    plan = _read_plan(deck)
+    presentation = Presentation(str(deck))
+    before = len(presentation.slides)
+    if replace is not None and not 1 <= replace <= before:
+        raise DeckLiveError(f"--replace {replace}: the deck has {before} slides")
+    _load_builder(script)(presentation)
+    added = len(presentation.slides) - before
+    if added != 1:
+        raise DeckLiveError(f"{script.name} must add exactly one slide (it added {added})")
+    if replace is not None:
+        _move_slide(presentation, before, replace - 1)
+        _drop_slide(presentation, replace)  # the old slide, now one further on
+    buffer = io.BytesIO()
+    presentation.save(buffer)
+    _write(deck, buffer.getvalue(), plan)
+    return len(presentation.slides)
+
+
 class LiveDeck:
-    """python-pptx helper: save after every slide, finish at the end."""
+    """python-pptx helper: save after every slide, finish at the end.
+
+    Prefer ``add``: a script that builds every slide in one run finishes in
+    about a second, so the user never sees the deck take shape.
+    """
 
     def __init__(self, deck: str | os.PathLike[str]) -> None:
         self.path = Path(deck)
@@ -192,6 +257,10 @@ def main() -> int:
     start = commands.add_parser("init", help="create an empty deck carrying the plan")
     start.add_argument("deck", type=Path)
     start.add_argument("--title", action="append", default=[], help="one per planned slide")
+    one = commands.add_parser("add", help="add the one slide a slide file's build(prs) makes")
+    one.add_argument("deck", type=Path)
+    one.add_argument("script", type=Path)
+    one.add_argument("--replace", type=int, metavar="N", help="rebuild slide N instead")
     again = commands.add_parser("mark", help="re-embed the plan after a generator rewrote the deck")
     again.add_argument("deck", type=Path)
     end = commands.add_parser("finish", help="mark the deck complete")
@@ -201,6 +270,15 @@ def main() -> int:
         if args.command == "init":
             plan = init(args.deck, args.title)
             print(f"created {args.deck} with {plan['total']} planned slides")
+        elif args.command == "add":
+            count = add(args.deck, args.script, replace=args.replace)
+            total = _read_plan(args.deck)["total"]
+            if args.replace is not None:
+                print(f"rebuilt slide {args.replace} of {args.deck}")
+            elif count < total:
+                print(f"slide {count} of {total} saved; write the next slide file")
+            else:
+                print(f"slide {count} of {total} saved; run `finish` when the deck is done")
         elif args.command == "mark":
             mark(args.deck)
             print(f"re-embedded the plan in {args.deck}")
