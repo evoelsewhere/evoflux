@@ -1552,7 +1552,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Built-in Browser cho browse agent trong sandbox; WebBridge khi cần cookie SSO thật hoặc extension doanh nghiệp.',
       'Revoke pairing khi cho mượn máy hoặc rotate access — ticket còn lại chết cùng revoke.',
       'Xác nhận teach replay trước khi chia sẻ kết quả monitored vào vòng agent.',
-      'Trong chat Coding có WebBridge, agent ghi lại console, lỗi và request của các tab nó điều khiển để debug dev server ngay trên browser thật; trong chat Work nó chỉ ghi khi cần đọc.'
+      'Trong chat Coding có WebBridge, agent ghi lại console, lỗi và request của các tab nó điều khiển để debug dev server ngay trên browser thật; trong chat Work nó chỉ ghi khi cần đọc. Lỗi của trang cũng hiện trong Problems ở nguồn Browser.'
 ],
     blocks: [
       {

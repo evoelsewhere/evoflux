@@ -1604,7 +1604,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Use built-in Browser for sandboxed agent browsing; use WebBridge when you need real SSO cookies or corporate extensions.',
       'Revoke pairing when lending a machine or rotating access — outstanding tickets die with the revoke.',
       'Confirm teach replays before sharing monitored results into the agent loop.',
-      'In Coding chats with WebBridge, the agent records console messages, errors and requests of the tabs it drives, so it can debug your dev server in your real browser; in Work chats it records them only when it asks for them.'
+      'In Coding chats with WebBridge, the agent records console messages, errors and requests of the tabs it drives, so it can debug your dev server in your real browser; in Work chats it records them only when it asks for them. Their errors also appear in Problems under Browser.'
 ],
     blocks: [
       {

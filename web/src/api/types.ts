@@ -359,7 +359,15 @@ export interface ChangeSetFileContent {
   status: ChangeSetFileStatus
 }
 
-export type ProblemSource = 'lsp' | 'static' | 'build' | 'test' | 'ai_review' | 'security' | 'plugin'
+export type ProblemSource =
+  | 'lsp'
+  | 'static'
+  | 'build'
+  | 'test'
+  | 'ai_review'
+  | 'security'
+  | 'plugin'
+  | 'browser'
 export type ProblemSeverity = 'error' | 'warning' | 'info' | 'hint'
 export type ProblemStatus = 'open' | 'dismissed' | 'suppressed'
 

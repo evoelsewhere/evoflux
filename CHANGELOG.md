@@ -31,6 +31,15 @@ All notable changes to EvoFlux are documented in this file.
   2.8.0.
 - WebBridge console stacks and component source locations are source-mapped
   to the original files in Coding sessions (evo-webbridge 2.9.0).
+- WebBridge `wait_for_hmr` tells the agent whether a dev server's hot update
+  applied, reloaded the page or failed; `debug_summary` adds the build-error
+  overlay, hot updates, cross-origin iframe console/network, and the new error
+  output of the `preview` server behind the page (evo-webbridge 2.10.0).
+- Browser runtime errors, build overlays and failed requests appear in the
+  Problems panel under a new `Browser` source, mapped to workspace files and
+  cleared when the page is clean again.
+- `webbridge` accepts `browser_use`'s spellings of the shared verification
+  actions, and `preview` points both browser tools at `debug_summary`.
 
 ### Fixed
 

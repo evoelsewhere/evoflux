@@ -5652,6 +5652,170 @@ async def test_tool_debug_summary_flags_a_fresh_recording(
     assert "Reload the page" in result
 
 
+async def test_tool_debug_summary_joins_overlay_hmr_dev_server_and_problems(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A Coding summary brings the build overlay, hot updates, the dev server's
+    new error output, and mirrors the page's errors into Problems — mapped to
+    workspace files, and cleared once the page is clean."""
+    from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
+    from app.agent.tools.builtin import preview
+    from app.services import problems_service
+
+    workspace = tmp_path / "repo"
+    (workspace / "web" / "src").mkdir(parents=True)
+    (workspace / "web" / "src" / "App.tsx").write_text("export {}\n")
+    log_output = ["VITE ready", "10:00 [vite] Internal server error: Transform failed"]
+    fake_process = SimpleNamespace(
+        read_output=lambda last_n=None: "\n".join(log_output), running=True
+    )
+    server = preview.PreviewServer(
+        name="web",
+        port=5173,
+        command="vite",
+        workdir=str(workspace / "web"),
+        config_fingerprint="x",
+        _process=fake_process,  # type: ignore[arg-type]
+    )
+    monkeypatch.setitem(preview._servers, (str(workspace.resolve()), "web"), server)
+    monkeypatch.setattr(preview, "_workspace_root", lambda: workspace.resolve())
+
+    dirty = {
+        "page_url": "http://localhost:5173/",
+        "console_counts": {"error": 2, "warning": 0, "total": 3},
+        "network_counts": {"total": 5, "failed": 1, "pending": 0},
+        "overlay": {
+            "tool": "vite",
+            "message": "Transform failed with 1 error: Unexpected token",
+            "file": f"{(workspace / 'web' / 'src' / 'App.tsx').as_posix()}:12:5",
+            "frame": "12 |  return <div>",
+        },
+        "hmr": [{"kind": "error", "detail": "[hmr] Failed to reload /src/App.tsx."}],
+        "frames": ["https://js.stripe.com/v3/"],
+        "errors": [
+            {
+                "source": "exception",
+                "level": "error",
+                "text": "TypeError: x.map is not a function",
+                "url": "http://localhost:5173/src/App.tsx?t=1",
+                "line": 31,
+                "column": 19,
+                "stack": ["crash (http://localhost:5173/src/App.tsx:31:19)"],
+                "ts": 0,
+            },
+            {
+                "source": "console",
+                "level": "error",
+                "text": "Each child in a list should have a unique key.",
+                "url": "http://localhost:5173/node_modules/react-dom/x.js",
+                "line": 9,
+                "library": True,
+                "ts": 0,
+            },
+        ],
+        "failed_requests": [
+            {
+                "request_id": "1",
+                "method": "GET",
+                "url": "http://localhost:8000/api",
+                "status": 500,
+            }
+        ],
+    }
+    clean = {
+        "page_url": "http://localhost:5173/",
+        "console_counts": {"error": 0, "warning": 0, "total": 0},
+        "network_counts": {"total": 5, "failed": 0, "pending": 0},
+        "errors": [],
+        "failed_requests": [],
+    }
+    replies = iter([dirty, clean])
+    _stub_send(
+        monkeypatch,
+        manager,
+        lambda action, params: {"success": True, "data": next(replies), "error": None},
+    )
+    coding = SimpleNamespace(metadata={"session_id": "s1", "team_mode": "coding"})
+    token = set_sandbox(
+        SandboxConfig(workspace=str(workspace), denied_roots=[], denied_patterns=[])
+    )
+    try:
+        first = await webbridge(
+            actions=[_action({"action": "debug_summary"})], _state=coding
+        )
+        rows = problems_service.list_problems(workspace, sources={"browser"})
+        log_output.append("10:01 page reload")
+        second = await webbridge(
+            actions=[_action({"action": "debug_summary"})], _state=coding
+        )
+        after = problems_service.list_problems(workspace, sources={"browser"})
+    finally:
+        _sandbox_ctx.reset(token)
+        problems_service.clear_problems()
+
+    assert "BUILD ERROR overlay (vite):" in first
+    assert "Transform failed with 1 error: Unexpected token" in first
+    assert "Hot updates since the last check: error ([hmr] Failed to reload" in first
+    assert "Cross-origin frames recorded: https://js.stripe.com/v3/" in first
+    assert "Dev server 'web' (:5173) — new error output:" in first
+    assert "[vite] Internal server error: Transform failed" in first
+    assert "Dev server 'web' (:5173): no new errors in its output." in second
+
+    by_code = {row.code: row for row in rows}
+    assert by_code["build-overlay"].path == "web/src/App.tsx"
+    assert by_code["build-overlay"].line == 12
+    assert by_code["exception"].path == "web/src/App.tsx"
+    assert by_code["exception"].line == 31
+    assert by_code["console"].path is None  # raised inside react-dom
+    assert by_code["network"].severity == "warning"
+    assert {row.source for row in rows} == {"browser"}
+    # The clean summary replaced the page's scope: fixed errors are gone.
+    assert after == []
+
+
+async def test_tool_wait_for_hmr_reports_outcome(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    seen: list[dict] = []
+    replies = iter(
+        [
+            {
+                "outcome": "updated",
+                "waited_ms": 180,
+                "events": [
+                    {"kind": "updated", "detail": "[vite] hot updated: /src/App.tsx"}
+                ],
+            },
+            {
+                "outcome": "error",
+                "waited_ms": 300,
+                "events": [],
+                "overlay": {"tool": "vite", "message": "Unexpected token (12:5)"},
+            },
+            {"outcome": "timeout", "waited_ms": 2000, "events": []},
+        ]
+    )
+
+    def handler(action: str, params: dict):
+        seen.append(params)
+        return {"success": True, "data": next(replies), "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    updated = await webbridge(actions=[_action({"action": "wait_for_hmr"})])
+    failed = await webbridge(actions=[_action({"action": "wait_for_hmr"})])
+    silent = await webbridge(
+        actions=[_action({"action": "wait_for_hmr", "timeout_ms": 2000})]
+    )
+
+    assert seen[0] == {"wait_ms": 10_000, "timeout_ms": 15_000}
+    assert "Hot update applied (180 ms)." in updated
+    assert "[vite] hot updated: /src/App.tsx" in updated
+    assert "Next: debug_summary" in updated
+    assert "The update failed to apply." in failed
+    assert "Unexpected token (12:5)" in failed
+    assert "No hot update reached this page within 2000 ms" in silent
+
+
 async def test_tool_inspect_reports_component_chain_and_remarkable_styles(
     manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
 ):

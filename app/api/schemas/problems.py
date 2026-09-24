@@ -8,7 +8,9 @@ from pydantic import BaseModel, Field
 class ProblemResponse(BaseModel):
     id: str
     workspace: str
-    source: Literal["lsp", "static", "build", "test", "ai_review", "security", "plugin"]
+    source: Literal[
+        "lsp", "static", "build", "test", "ai_review", "security", "plugin", "browser"
+    ]
     scope: str
     message: str
     severity: Literal["error", "warning", "info", "hint"]
