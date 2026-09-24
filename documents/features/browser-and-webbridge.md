@@ -87,6 +87,23 @@ Agent-facing behavior of the `webbridge` tool:
   its origin pin, like each of those actions sent alone.
 - In a WebBridge session, `preview start` points the agent at
   `webbridge open_tab` instead of the excluded `browser_use`.
+- Debugging actions read a per-tab devtools log the extension keeps from CDP
+  events: `console` (every level, uncaught exceptions and browser log entries,
+  with source location and stack), `network` (method, status, resource type,
+  timing, failures, redirect hops), `network_body` (a recorded response body,
+  up to 100k chars) and `debug_summary` (the current page's errors, warnings
+  and failed requests in one call). Reads default to the current page; `scope:
+  "all"` includes earlier pages of the tab. The log keeps the newest 300
+  console entries and 300 requests per tab and survives navigation.
+- Coding sessions start that log with their first command. Work sessions start
+  it only on the first console/network read, because `Runtime.enable` is
+  visible to page scripts on the everyday sites a Work session drives. A read
+  that started recording, or a navigation away from a page the debugger cannot
+  record, says so and suggests a reload.
+- Console text and URLs keep paths, query parameter names and identifiers;
+  credential-shaped values (Bearer tokens, JWTs, cookies, secret-named query
+  parameters and JSON keys) are redacted before they leave the extension.
+  Results are marked untrusted browser content.
 
 ## Policy and trust
 

@@ -460,7 +460,7 @@ def _open_hint(port: int, browser_tool: BrowserTool) -> str:
     if browser_tool == "webbridge":
         return (
             f"Next: webbridge open_tab {url} (pass the returned tab_id on later "
-            "actions), then snapshot."
+            "actions), then debug_summary for console errors and failed requests."
         )
     return f"Next: browser_use navigate to {url}, then check console + snapshot."
 

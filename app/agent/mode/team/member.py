@@ -204,7 +204,7 @@ LEAD_PROTOCOL = """\
 
 WEBBRIDGE_SESSION_PROMPT = """\
 ## WebBridge session
-This is a normal workspace-capable chat with the `webbridge` tool added for the user's real browser. You may read and edit files, run shell commands, use skills, delegate workspace work to team members, and otherwise operate normally. The ONLY way anyone on the team may interact with web pages is `webbridge`; browser_use, web_search, web_fetch, image_search, and browser-automation MCP tools are unavailable. If the extension is not connected, ask the user to connect it via the WebBridge icon in the sidebar."""
+This is a normal workspace-capable chat with the `webbridge` tool added for the user's real browser. You may read and edit files, run shell commands, use skills, delegate workspace work to team members, and otherwise operate normally. The ONLY way anyone on the team may interact with web pages is `webbridge`; browser_use, web_search, web_fetch, image_search, and browser-automation MCP tools are unavailable. If the extension is not connected, ask the user to connect it via the WebBridge icon in the sidebar. To verify a web change, check the page's console errors and failed requests with `webbridge` (debug_summary, console, network) — not only its appearance."""
 
 SIDE_CHAT_SESSION_PROMPT = """\
 ## Side Chat session

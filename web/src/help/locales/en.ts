@@ -1603,7 +1603,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'WebBridge is not a web version of EvoFlux — it is a CDP companion to the desktop app.',
       'Use built-in Browser for sandboxed agent browsing; use WebBridge when you need real SSO cookies or corporate extensions.',
       'Revoke pairing when lending a machine or rotating access — outstanding tickets die with the revoke.',
-      'Confirm teach replays before sharing monitored results into the agent loop.'
+      'Confirm teach replays before sharing monitored results into the agent loop.',
+      'In Coding chats with WebBridge, the agent records console messages, errors and requests of the tabs it drives, so it can debug your dev server in your real browser; in Work chats it records them only when it asks for them.'
 ],
     blocks: [
       {
