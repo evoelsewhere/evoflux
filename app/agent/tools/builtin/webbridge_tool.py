@@ -22,6 +22,7 @@ import asyncio
 from contextvars import ContextVar
 from datetime import datetime
 import json
+from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlsplit
 
@@ -106,6 +107,12 @@ async def _send_command(
 _TAB_ID_DESC = (
     "Target tab ID from get_tabs. Drives that tab in the background without "
     "focusing/switching to it. Omit to use the active tab."
+)
+
+_REF_DESC = (
+    "Element handle from a snapshot (e.g. 'e12'). Preferred over selector: it "
+    "is exact, costs nothing to quote, and is the only way to reach an element "
+    "inside a shadow root or a frame. Valid until the page navigates."
 )
 
 
@@ -246,6 +253,169 @@ class NetworkBodyAction(BaseModel):
     action: Literal["network_body"]
     request_id: str = Field(description="The request id shown by the network action.")
     max_chars: int = Field(default=20_000, ge=100, le=100_000)
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+_PAGE_POWER_DESC = (
+    "Needs webbridge.allow_evaluate: it reads secrets or changes the page as "
+    "fully as running script would."
+)
+
+
+class StorageAction(BaseModel):
+    action: Literal["storage"]
+    area: Literal["local", "session"] = "local"
+    operation: Literal["get", "set", "remove", "clear"] = "get"
+    key: str | None = Field(
+        default=None, description="One key (get) or the key to set/remove."
+    )
+    value: str | None = Field(default=None, max_length=100_000)
+    include_values: bool = Field(
+        default=False,
+        description=f"Return values, not just keys and sizes. {_PAGE_POWER_DESC}",
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class CookiesAction(BaseModel):
+    action: Literal["cookies"]
+    operation: Literal["get", "set", "delete"] = "get"
+    include_values: bool = Field(
+        default=False,
+        description=(
+            "Return cookie values; HttpOnly values stay redacted except on a "
+            f"localhost page. {_PAGE_POWER_DESC}"
+        ),
+    )
+    name: str | None = None
+    value: str | None = Field(default=None, max_length=4096)
+    path: str | None = Field(
+        default=None,
+        description="Defaults to / when setting, every path when deleting.",
+    )
+    domain: str | None = Field(default=None, description="Defaults to the page's host.")
+    max_age: int | None = Field(
+        default=None, description="Seconds; omit for a session cookie."
+    )
+    same_site: Literal["Strict", "Lax", "None"] | None = None
+    secure: bool = False
+    http_only: bool = False
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class InspectAction(BaseModel):
+    action: Literal["inspect"]
+    ref: str | None = Field(default=None, description=_REF_DESC)
+    selector: str | None = Field(default=None, description="CSS selector, if no ref.")
+    index: int = Field(default=0, ge=0)
+    properties: list[str] | None = Field(
+        default=None,
+        max_length=60,
+        description="Computed CSS properties to read; default is a layout/visibility set.",
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+    @model_validator(mode="after")
+    def _needs_target(self) -> InspectAction:
+        if not self.ref and not self.selector:
+            raise ValueError("inspect needs a ref or a selector")
+        return self
+
+
+class UploadFileAction(BaseModel):
+    action: Literal["upload_file"]
+    ref: str | None = Field(default=None, description=_REF_DESC)
+    selector: str | None = Field(default=None, description="CSS selector, if no ref.")
+    index: int = Field(default=0, ge=0)
+    paths: list[str] = Field(
+        min_length=1,
+        max_length=10,
+        description="Files in the workspace (or this session's uploads) to put in the <input type=file>.",
+    )
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+    @model_validator(mode="after")
+    def _needs_target(self) -> UploadFileAction:
+        if not self.ref and not self.selector:
+            raise ValueError("upload_file needs a ref or a selector")
+        return self
+
+
+class GeoPoint(BaseModel):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    accuracy: float = Field(default=50, gt=0)
+
+
+class EmulateAction(BaseModel):
+    action: Literal["emulate"]
+    network: Literal["none", "offline", "slow_3g", "fast_3g", "fast_4g"] | None = Field(
+        default=None,
+        description="Throttle or cut the tab's network; 'none' restores it.",
+    )
+    cpu_throttling: float | None = Field(
+        default=None, ge=1, le=20, description="CPU slowdown factor; 1 restores it."
+    )
+    geolocation: GeoPoint | None = None
+    timezone: str | None = Field(
+        default=None,
+        description="IANA zone such as 'Asia/Ho_Chi_Minh'; '' restores it.",
+    )
+    locale: str | None = Field(
+        default=None, description="Such as 'vi-VN'; '' restores it."
+    )
+    clear: bool = Field(default=False, description="Remove every override first.")
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+
+class MockAction(BaseModel):
+    action: Literal["mock"]
+    operation: Literal["add", "remove", "list", "clear"] = "list"
+    url_pattern: str | None = Field(
+        default=None,
+        description="URL glob with * wildcards; without one it matches as a prefix.",
+    )
+    method: (
+        Literal["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] | None
+    ) = None
+    status: int = Field(default=200, ge=100, le=599)
+    body: str = Field(default="", max_length=200_000)
+    content_type: str = "application/json"
+    headers: dict[str, str] = Field(default_factory=dict)
+    fail: (
+        Literal[
+            "Failed",
+            "Aborted",
+            "TimedOut",
+            "AccessDenied",
+            "ConnectionRefused",
+            "ConnectionReset",
+            "NameNotResolved",
+            "InternetDisconnected",
+            "BlockedByClient",
+        ]
+        | None
+    ) = Field(
+        default=None, description="Fail the request this way instead of answering it."
+    )
+    delay_ms: int = Field(default=0, ge=0, le=30_000)
+    times: int = Field(
+        default=0, ge=0, description="Stop after this many hits; 0 = until removed."
+    )
+    id: str | None = Field(default=None, description="Rule id to remove.")
+    tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
+
+    @model_validator(mode="after")
+    def _check(self) -> MockAction:
+        if self.operation == "add" and not self.url_pattern:
+            raise ValueError("mock add needs a url_pattern")
+        if self.operation == "remove" and not self.id:
+            raise ValueError("mock remove needs the rule id")
+        return self
+
+
+class PerformanceAction(BaseModel):
+    action: Literal["performance"]
     tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
@@ -477,13 +647,6 @@ class WaitForUrlAction(BaseModel):
     tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
 
-_REF_DESC = (
-    "Element handle from a snapshot (e.g. 'e12'). Preferred over selector: it "
-    "is exact, costs nothing to quote, and is the only way to reach an element "
-    "inside a shadow root or a frame. Valid until the page navigates."
-)
-
-
 class TargetMixin(BaseModel):
     """One element, named either by handle or by CSS.
 
@@ -498,7 +661,9 @@ class TargetMixin(BaseModel):
         default=None, description="CSS selector of the element, if no ref."
     )
     index: int = Field(
-        default=0, ge=0, description="Which match to use when a selector matches several."
+        default=0,
+        ge=0,
+        description="Which match to use when a selector matches several.",
     )
     tab_id: int | None = Field(default=None, description=_TAB_ID_DESC)
 
@@ -829,6 +994,13 @@ AnyAction = Annotated[
     | NetworkAction
     | NetworkBodyAction
     | DebugSummaryAction
+    | StorageAction
+    | CookiesAction
+    | InspectAction
+    | UploadFileAction
+    | EmulateAction
+    | MockAction
+    | PerformanceAction
     | ScreenshotAction
     | ExtractAction
     | GetTabsAction
@@ -919,6 +1091,16 @@ it starts with the first console/network read, and a read that started it
 says so — reload the page to capture its load. Typical loop: preview start →
 open_tab the dev URL → debug_summary → fix the code → reload → debug_summary.
 
+To find the code behind something on screen, inspect it by ref: its box and
+computed styles, and — in a development build — the component chain that
+rendered it with source files (React, Vue, Svelte, or a locator plugin's
+data attributes). mock answers or fails matching requests to test error and
+loading states without touching the backend; emulate throttles the network or
+CPU, goes offline, or fakes location, time zone and locale; performance
+reports load timing, Web Vitals and runtime counters. storage and cookies list
+keys and names; their values and any writes, like mock add, need
+webbridge.allow_evaluate. upload_file fills a file input with workspace files.
+
 A snapshot lists a link's address only when the link has no label to be
 recognised by. To collect URLs, use extract_elements with an attribute field
 (e.g. {'url': 'a@href'}) rather than reading them out of a snapshot.
@@ -952,6 +1134,13 @@ Actions:
   console         — Recorded console messages and uncaught exceptions (level/contains/scope filters).
   network         — Recorded requests: method, status, type, URL, timing (failed/resource/method/url filters).
   network_body    — Response body of one recorded request, by its id.
+  inspect         — Box, computed styles, attributes and rendering component/source of one element.
+  mock            — Add/list/remove/clear fake responses or failures for matching requests.
+  emulate         — Network throttling/offline, CPU slowdown, geolocation, time zone, locale.
+  performance     — Load timing, FCP/LCP/CLS, slowest resources, heap and DOM counters.
+  storage         — localStorage/sessionStorage keys (values and writes need allow_evaluate).
+  cookies         — Cookies of the page (values and writes need allow_evaluate).
+  upload_file     — Put workspace files into an <input type=file>.
   wait            — Pause for N milliseconds.
   wait_for_selector — Wait until a selector is visible/attached/hidden.
     wait_for_text   — Wait until text becomes visible or hidden, optionally within a selector.
@@ -1004,6 +1193,10 @@ _UNTRUSTED_BROWSER_ACTIONS = frozenset(
         "network",
         "network_body",
         "debug_summary",
+        "storage",
+        "cookies",
+        "inspect",
+        "performance",
         "crawl",
         "evaluate",
         "extract",
@@ -1242,6 +1435,20 @@ async def _dispatch_webbridge(act: Any, session_id: str) -> str | ToolResult:
         return await _handle_network_body(session_id, act)
     if action == "debug_summary":
         return await _handle_debug_summary(session_id, act)
+    if action == "storage":
+        return await _handle_storage(session_id, act)
+    if action == "cookies":
+        return await _handle_cookies(session_id, act)
+    if action == "inspect":
+        return await _handle_inspect(session_id, act)
+    if action == "upload_file":
+        return await _handle_upload_file(session_id, act)
+    if action == "emulate":
+        return await _handle_emulate(session_id, act)
+    if action == "mock":
+        return await _handle_mock(session_id, act)
+    if action == "performance":
+        return await _handle_performance(session_id, act)
     if action == "handle_dialog":
         return await _handle_dialog(session_id, act)
     if action == "screenshot":
@@ -1430,9 +1637,7 @@ async def _handle_key(session_id: str, act: KeyAction) -> str:
 
 
 async def _handle_scroll(session_id: str, act: ScrollAction) -> str:
-    resp = await _send_command(
-        session_id, "scroll", _params_scroll(act)
-    )
+    resp = await _send_command(session_id, "scroll", _params_scroll(act))
     if resp.get("success"):
         return f"Scrolled ({act.dx}, {act.dy})"
     return f"Scroll failed: {resp.get('error', 'unknown')}"
@@ -1719,6 +1924,376 @@ async def _handle_debug_summary(session_id: str, act: DebugSummaryAction) -> str
     if not errors and not failed:
         lines.append("No console errors or failed requests on this page.")
     lines.extend(_devtools_notes(data, "console and network activity"))
+    return "\n".join(lines)
+
+
+# ── Page state, inspection, upload, emulation, mocks, performance ────────────
+
+
+async def _handle_storage(session_id: str, act: StorageAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "storage",
+        _tab_params(
+            act,
+            area=act.area,
+            operation=act.operation,
+            key=act.key,
+            value=act.value,
+            include_values=act.include_values or None,
+        ),
+    )
+    if not resp.get("success"):
+        return f"storage failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    area = f"{data.get('area', act.area)}Storage"
+    if act.operation != "get":
+        return f"{area} {act.operation}: {data.get('changed', 0)} key(s) changed."
+    entries = data.get("entries") or []
+    if not entries:
+        return f"{area}: no keys{' named ' + repr(act.key) if act.key else ''}."
+    lines = [f"{area} ({data.get('total', len(entries))} keys):"]
+    for entry in entries:
+        line = f"  {entry.get('key')!r} ({entry.get('size', 0)} chars)"
+        if "value" in entry:
+            line += f" = {entry['value']!r}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+async def _handle_cookies(session_id: str, act: CookiesAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "cookies",
+        _tab_params(
+            act,
+            operation=act.operation,
+            include_values=act.include_values or None,
+            name=act.name,
+            value=act.value,
+            path=act.path,
+            domain=act.domain,
+            max_age=act.max_age,
+            same_site=act.same_site,
+            secure=act.secure or None,
+            http_only=act.http_only or None,
+        ),
+    )
+    if not resp.get("success"):
+        return f"cookies failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    if act.operation != "get":
+        return f"Cookie {act.name!r} {'set' if act.operation == 'set' else 'deleted'}."
+    entries = data.get("entries") or []
+    if not entries:
+        return "No cookies for this page."
+    lines = [f"Cookies for this page ({len(entries)}):"]
+    for entry in entries:
+        flags = [
+            flag
+            for flag, on in (
+                ("HttpOnly", entry.get("http_only")),
+                ("Secure", entry.get("secure")),
+            )
+            if on
+        ]
+        if entry.get("same_site"):
+            flags.append(f"SameSite={entry['same_site']}")
+        expires = entry.get("expires")
+        if isinstance(expires, (int, float)):
+            flags.append(f"expires {datetime.fromtimestamp(expires):%Y-%m-%d %H:%M}")
+        elif expires:
+            flags.append(str(expires))
+        line = (
+            f"  {entry.get('name')} — {entry.get('domain')}{entry.get('path')} "
+            f"({entry.get('size', 0)} B; {', '.join(flags)})"
+        )
+        if "value" in entry:
+            line += f" = {entry['value']!r}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+#: Computed values that say "nothing special here" for the default property
+#: set — listing them on every inspect buries the few that matter.
+_UNREMARKABLE_STYLES = frozenset(
+    {"", "none", "normal", "auto", "0px", "visible", "static", "rgba(0, 0, 0, 0)"}
+)
+
+
+def _source_location(item: dict[str, Any]) -> str:
+    file = str(item.get("file") or "")
+    if not file:
+        return ""
+    parts = urlsplit(file)
+    if parts.scheme in {"http", "https"}:
+        # A dev server serves the module at its project path (Vite: /src/…).
+        file = parts.path
+    location = file
+    if item.get("line"):
+        location += f":{item['line']}"
+        if item.get("column"):
+            location += f":{item['column']}"
+    return location
+
+
+async def _handle_inspect(session_id: str, act: InspectAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "inspect",
+        _tab_params(
+            act,
+            ref=act.ref,
+            selector=None if act.ref else act.selector,
+            index=act.index if act.selector and not act.ref else None,
+            properties=act.properties,
+        ),
+    )
+    if not resp.get("success"):
+        return f"inspect failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    box = data.get("box") or {}
+    head = f"<{data.get('tag', '?')}>"
+    if data.get("ref"):
+        head = f"{data['ref']} {head}"
+    if data.get("text"):
+        head += f" {str(data['text'])[:80]!r}"
+    lines = [
+        f"{head} at ({box.get('x')}, {box.get('y')}) {box.get('width')}x{box.get('height')}"
+    ]
+    components = data.get("components") or []
+    if components:
+        framework = data.get("framework") or "framework"
+        lines.append(f"Rendered by ({framework}, innermost first):")
+        for item in components:
+            where = _source_location(item)
+            lines.append(f"  {item.get('name', '?')}{' — ' + where if where else ''}")
+        if not any(item.get("file") for item in components):
+            lines.append(
+                "  (No source locations: the build does not expose them — "
+                "production bundle, or React 19 without a locator plugin.)"
+            )
+    hints = data.get("source_hints") or {}
+    if hints:
+        lines.append(
+            "Source hints: " + ", ".join(f"{k}={v!r}" for k, v in hints.items())
+        )
+    styles = data.get("styles") or {}
+    shown = {
+        key: value
+        for key, value in styles.items()
+        if act.properties or str(value) not in _UNREMARKABLE_STYLES
+    }
+    if shown:
+        lines.append(
+            "Computed: " + "; ".join(f"{key}: {value}" for key, value in shown.items())
+        )
+    attributes = data.get("attributes") or {}
+    if attributes:
+        lines.append(
+            "Attributes: "
+            + " ".join(
+                f"{key}={str(value)[:80]!r}" for key, value in attributes.items()
+            )
+        )
+    return "\n".join(lines)
+
+
+def _upload_paths(paths: list[str]) -> list[str]:
+    """Resolve upload paths to files the session may hand to a web page.
+
+    A file input is an exit: whatever it is given leaves the machine with the
+    form. So only files inside the session's workspace roots (or its own
+    uploads) qualify — not merely any path the sandbox would let ``read`` open.
+    """
+    from app.agent.sandbox import get_sandbox
+
+    sandbox = get_sandbox()
+    roots = [*sandbox.allowed_workspace_roots, *sandbox.read_only_paths]
+    resolved_paths: list[str] = []
+    for raw in paths:
+        resolved = sandbox.validate_path(raw)
+        if not any(resolved == root or resolved.is_relative_to(root) for root in roots):
+            raise PermissionError(
+                f"{raw} is outside the workspace; only workspace files can be uploaded."
+            )
+        if not resolved.is_file():
+            raise FileNotFoundError(f"{raw} is not a file.")
+        resolved_paths.append(str(resolved))
+    return resolved_paths
+
+
+async def _handle_upload_file(session_id: str, act: UploadFileAction) -> str:
+    try:
+        files = _upload_paths(act.paths)
+    except (PermissionError, FileNotFoundError) as e:
+        _webbridge_command_failed.set(True)
+        return f"upload_file refused: {e}"
+    resp = await _send_command(
+        session_id,
+        "upload_file",
+        _tab_params(
+            act,
+            ref=act.ref,
+            selector=None if act.ref else act.selector,
+            index=act.index if act.selector and not act.ref else None,
+            files=files,
+        ),
+    )
+    if not resp.get("success"):
+        return f"upload_file failed: {resp.get('error', 'unknown')}"
+    names = ", ".join(Path(path).name for path in files)
+    return f"Set {len(files)} file(s) on the input: {names}.{_outcome(resp)}"
+
+
+async def _handle_emulate(session_id: str, act: EmulateAction) -> str:
+    resp = await _send_command(
+        session_id,
+        "emulate",
+        _tab_params(
+            act,
+            network=act.network,
+            cpu_throttling=act.cpu_throttling,
+            geolocation=act.geolocation.model_dump() if act.geolocation else None,
+            timezone=act.timezone,
+            locale=act.locale,
+            clear=act.clear or None,
+        ),
+    )
+    if not resp.get("success"):
+        return f"emulate failed: {resp.get('error', 'unknown')}"
+    state = (resp.get("data") or {}).get("emulation") or {}
+    if not state:
+        return "No emulation overrides are active on this tab."
+    parts = []
+    if state.get("network"):
+        parts.append(f"network={state['network']}")
+    if state.get("cpu_throttling"):
+        parts.append(f"cpu={state['cpu_throttling']}x slower")
+    if state.get("geolocation"):
+        geo = state["geolocation"]
+        parts.append(f"geolocation={geo.get('latitude')},{geo.get('longitude')}")
+    if state.get("timezone"):
+        parts.append(f"timezone={state['timezone']}")
+    if state.get("locale"):
+        parts.append(f"locale={state['locale']}")
+    return (
+        "Active emulation: "
+        + ", ".join(parts)
+        + ". Overrides last until cleared or the tab is released; reload to "
+        "see them applied to the page load."
+    )
+
+
+def _mock_line(rule: dict[str, Any]) -> str:
+    target = f"{rule.get('method') or 'ANY'} {rule.get('url_pattern')}"
+    if rule.get("fail"):
+        answer = f"fail ({rule['fail']})"
+    else:
+        answer = f"{rule.get('status')} {rule.get('content_type')} ({rule.get('body_chars', 0)} chars)"
+    extra = []
+    if rule.get("delay_ms"):
+        extra.append(f"after {rule['delay_ms']} ms")
+    if rule.get("times"):
+        extra.append(f"{rule.get('hits', 0)}/{rule['times']} uses")
+    else:
+        extra.append(f"{rule.get('hits', 0)} hit(s)")
+    return f"  [{rule.get('id')}] {target} → {answer}; {', '.join(extra)}"
+
+
+async def _handle_mock(session_id: str, act: MockAction) -> str:
+    params: dict[str, Any] = {"operation": act.operation}
+    if act.operation == "add":
+        params.update(
+            url_pattern=act.url_pattern,
+            method=act.method,
+            status=act.status,
+            body=act.body,
+            content_type=act.content_type,
+            headers=act.headers or None,
+            fail=act.fail,
+            delay_ms=act.delay_ms or None,
+            times=act.times or None,
+        )
+    elif act.operation == "remove":
+        params["id"] = act.id
+    resp = await _send_command(session_id, "mock", _tab_params(act, **params))
+    if not resp.get("success"):
+        return f"mock failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    rules = data.get("rules") or []
+    head = {
+        "add": f"Added mock {(data.get('rule') or {}).get('id', '')}.",
+        "remove": f"Removed mock {act.id}.",
+        "clear": "Cleared all mocks on this tab.",
+        "list": "",
+    }[act.operation]
+    lines = [head] if head else []
+    if rules:
+        lines.append(f"Active mocks ({len(rules)}):")
+        lines.extend(_mock_line(rule) for rule in rules)
+    else:
+        lines.append("No mocks active on this tab.")
+    return "\n".join(lines)
+
+
+def _ms(value: Any) -> str:
+    return "—" if value is None else f"{value} ms"
+
+
+async def _handle_performance(session_id: str, act: PerformanceAction) -> str:
+    resp = await _send_command(session_id, "performance", _tab_params(act))
+    if not resp.get("success"):
+        return f"performance failed: {resp.get('error', 'unknown')}"
+    data = resp.get("data") or {}
+    lines = [f"Performance for {data.get('page_url') or 'this tab'}"]
+    nav = data.get("navigation") or {}
+    if nav:
+        lines.append(
+            f"Load ({nav.get('type', 'navigate')}): TTFB {_ms(nav.get('ttfb'))}, "
+            f"DOMContentLoaded {_ms(nav.get('dom_content_loaded'))}, "
+            f"load {_ms(nav.get('load'))}"
+        )
+    lcp = data.get("largest_contentful_paint") or {}
+    lines.append(
+        f"Paint: FCP {_ms(data.get('first_contentful_paint'))}, LCP "
+        f"{_ms(lcp.get('time'))}"
+        + (f" ({lcp['element']})" if lcp.get("element") else "")
+    )
+    lines.append(
+        f"CLS {data.get('cumulative_layout_shift', 0)}; slowest interaction "
+        f"{_ms(data.get('slowest_interaction_ms'))}"
+    )
+    resources = data.get("resources") or {}
+    if resources:
+        lines.append(
+            f"Resources: {resources.get('count', 0)}, "
+            f"{round((resources.get('transfer_size') or 0) / 1024)} KiB transferred"
+        )
+        for item in resources.get("slowest") or []:
+            lines.append(
+                f"  {item.get('duration')} ms {item.get('type')} {item.get('url')}"
+            )
+    metrics = data.get("metrics") or {}
+    if metrics:
+        heap = metrics.get("JSHeapUsedSize")
+        lines.append(
+            "Runtime: "
+            + ", ".join(
+                part
+                for part in (
+                    f"JS heap {round(heap / 1048576, 1)} MiB" if heap else "",
+                    f"{int(metrics['Nodes'])} DOM nodes" if "Nodes" in metrics else "",
+                    f"{int(metrics['LayoutCount'])} layouts"
+                    if "LayoutCount" in metrics
+                    else "",
+                    f"script {round(metrics['ScriptDuration'] * 1000)} ms"
+                    if "ScriptDuration" in metrics
+                    else "",
+                )
+                if part
+            )
+        )
     return "\n".join(lines)
 
 
@@ -2174,9 +2749,7 @@ async def _handle_select_option(session_id: str, act: SelectOptionAction) -> str
 
 
 async def _handle_set_checked(session_id: str, act: SetCheckedAction) -> str:
-    resp = await _send_command(
-        session_id, "set_checked", _params_set_checked(act)
-    )
+    resp = await _send_command(session_id, "set_checked", _params_set_checked(act))
     if resp.get("success"):
         already = (resp.get("data") or {}).get("changed") is False
         note = " (already was)" if already else ""
@@ -2355,9 +2928,7 @@ def _snapshot_state(state: dict[str, Any]) -> str:
     return " [" + ", ".join(f"{k}={str(v).lower()}" for k, v in shown.items()) + "]"
 
 
-def _snapshot_attributes(
-    attributes: dict[str, Any], label: str, page_url: str
-) -> str:
+def _snapshot_attributes(attributes: dict[str, Any], label: str, page_url: str) -> str:
     """Attributes worth showing beside a labelled element.
 
     ``href`` was half of every snapshot this tool produced — measured at 50%

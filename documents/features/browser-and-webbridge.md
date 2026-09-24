@@ -104,6 +104,24 @@ Agent-facing behavior of the `webbridge` tool:
   credential-shaped values (Bearer tokens, JWTs, cookies, secret-named query
   parameters and JSON keys) are redacted before they leave the extension.
   Results are marked untrusted browser content.
+- `inspect` reports one element's box, computed styles (a layout/visibility
+  set, or the properties asked for), attributes and — in development builds —
+  the component chain that rendered it with source locations: React
+  `_debugSource` (≤18) or owner stacks (19), Vue `__file`, Svelte
+  `__svelte_meta`, and source-locator plugin data attributes.
+- `mock` answers or fails requests matching a URL glob (optionally one
+  method), with a status, body, headers, delay and hit limit, through CDP
+  `Fetch` interception scoped to the tab; `emulate` applies network presets
+  (offline, slow/fast 3G, fast 4G), CPU slowdown, geolocation, time zone and
+  locale; `performance` reports navigation timing, FCP/LCP/CLS, the slowest
+  interaction and resources, and heap/DOM/layout counters.
+- `storage` and `cookies` list keys and cookie names/flags. Values, writes and
+  `mock add` are gated by `webbridge.allow_evaluate`, since each is as strong
+  as running script in the page; HttpOnly cookie values are returned only on
+  loopback pages.
+- `upload_file` puts files into an `<input type=file>` through
+  `DOM.setFileInputFiles`; paths must resolve inside the session's workspace
+  roots or its uploads.
 
 ## Policy and trust
 
