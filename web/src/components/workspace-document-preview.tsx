@@ -1098,8 +1098,10 @@ export function WorkspaceDocumentPreview({
       style={{ borderTop: presentationView === 'reading' ? 'none' : `1px solid ${meta.accent}` }}
     >
       {runtimeBanner}
-      {presentationView !== 'reading' && kind !== 'xlsx' && <header className="flex h-9 shrink-0 items-center justify-between gap-1 border-b border-(--color-border) bg-(--bg-card) px-1.5">
-        <div className="flex min-w-0 items-center gap-1">
+      {/* Controls show by the toolbar's own width, not the window's: the
+          viewer usually sits in a narrow side panel of a wide window. */}
+      {presentationView !== 'reading' && kind !== 'xlsx' && <header className="@container/preview-toolbar flex h-9 shrink-0 items-center justify-between gap-1 border-b border-(--color-border) bg-(--bg-card) px-1.5">
+        <div className="flex min-w-0 items-center gap-1 overflow-hidden">
           {hasNavigator && (
             <button
               type="button"
@@ -1145,7 +1147,7 @@ export function WorkspaceDocumentPreview({
                 }}
                 placeholder="Find"
                 aria-label="Find in document"
-                className="h-7 w-24 min-w-0 bg-transparent px-2 text-xs text-(--color-text) outline-none sm:w-36"
+                className="h-7 w-24 min-w-0 bg-transparent px-2 text-xs text-(--color-text) outline-none @[38rem]/preview-toolbar:w-36"
               />
               <span className="whitespace-nowrap px-1 text-[10px] tabular-nums text-(--color-text-subtle)">
                 {searchCount ? `${searchIndex + 1}/${searchCount}` : '0/0'}
@@ -1155,14 +1157,14 @@ export function WorkspaceDocumentPreview({
             </div>
           )}
           {!searchOpen && (
-            <span className="hidden min-w-0 items-center gap-1.5 pl-1 md:flex">
+            <span className="hidden min-w-0 items-center gap-1.5 pl-1 @[48rem]/preview-toolbar:flex">
               <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ backgroundColor: meta.accent }} aria-hidden="true" />
               <span className="max-w-36 truncate text-[11px] font-medium text-(--color-text-2)" title={file.name}>{file.name}</span>
             </span>
           )}
         </div>
 
-        <div className="hidden items-center gap-0.5 sm:flex">
+        <div className="hidden shrink-0 items-center gap-0.5 @[32rem]/preview-toolbar:flex">
           <button type="button" onClick={() => goToItem(activeIndex - 1)} disabled={activeIndex <= 0} aria-label={`Previous ${itemName.toLowerCase()}`} className={toolbarButtonClass}><ChevronLeft size={15} /></button>
           <span className="min-w-20 text-center text-[10px] tabular-nums text-(--color-text-muted)" role="status">{status}</span>
           <button type="button" onClick={() => goToItem(activeIndex + 1)} disabled={activeIndex >= itemCount - 1} aria-label={`Next ${itemName.toLowerCase()}`} className={toolbarButtonClass}><ChevronRight size={15} /></button>
@@ -1194,7 +1196,7 @@ export function WorkspaceDocumentPreview({
               />
             </div>
           )}
-          {isPresentation && <div className="flex items-center gap-0.5 sm:pr-1.5" role="toolbar" aria-label="PowerPoint View controls">
+          {isPresentation && <div className="hidden items-center gap-0.5 @[20rem]/preview-toolbar:flex @[38rem]/preview-toolbar:pr-1.5" role="toolbar" aria-label="PowerPoint View controls">
           <button
             type="button"
             onClick={() => setPresentationView('normal')}
@@ -1241,7 +1243,7 @@ export function WorkspaceDocumentPreview({
             </button>
           )}
           </div>}
-          <div className="hidden items-center gap-0.5 border-l border-(--color-border) pl-1.5 sm:flex">
+          <div className="hidden items-center gap-0.5 border-l border-(--color-border) pl-1.5 @[38rem]/preview-toolbar:flex">
             <button type="button" onClick={() => applyZoom(zoom - 10)} aria-label="Zoom out" title="Zoom out" className={toolbarButtonClass}><ZoomOut size={14} /></button>
             <span className="w-9 text-center text-[10px] tabular-nums text-(--color-text-muted)" aria-label={`Zoom ${zoom} percent`}>{zoom}%</span>
             <button type="button" onClick={() => applyZoom(zoom + 10)} aria-label="Zoom in" title="Zoom in" className={toolbarButtonClass}><ZoomIn size={14} /></button>
