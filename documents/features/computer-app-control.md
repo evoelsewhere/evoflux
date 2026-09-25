@@ -214,8 +214,11 @@ frontmost app never changed.
   `MSTeams` — on macOS).
 - Stop is enforced natively: the desktop refuses `attach` for that session until
   the user presses Allow again in the card. The agent cannot lift it.
-- Window titles, accessibility labels and screenshots are marked as untrusted
-  app content in tool results.
+- Every `computer_app` result that reached the app is marked as untrusted app
+  content, once for the whole result: not only listings, snapshots and
+  screenshots but also action summaries (window and dialog titles, the
+  control named in `delivered_to`, notes) and error messages, which can quote
+  a window title. Only a batch of nothing but `wait` is left unmarked.
 
 ## Architecture
 
