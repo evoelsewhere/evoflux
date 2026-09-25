@@ -793,7 +793,7 @@ fn status(session_id: &str) -> Value {
 
 fn attach(session_id: &str, params: &Value) -> Result<Value, String> {
     if registry().stopped.contains(session_id) {
-        return Err("The user stopped Computer App Control in this chat. Ask them before trying again; they can allow it again from the preview card.".into());
+        return Err("The user stopped Computer App Control in this chat. Ask them before trying again: the preview card is showing again, and they can press Allow again there.".into());
     }
     let window_id = params.get("window_id").and_then(Value::as_u64);
     let rows: Vec<WindowRow> = top_level_windows()

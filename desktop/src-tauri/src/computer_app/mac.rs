@@ -1225,7 +1225,7 @@ fn find_role(element: &Ax, role: &str, depth: u32, budget: &mut u32) -> Option<A
 
 fn attach(session_id: &str, params: &Value) -> Result<Value, String> {
     if registry().stopped.contains(session_id) {
-        return Err("The user stopped Computer App Control in this chat. Ask them before trying again; they can allow it again from the preview card.".into());
+        return Err("The user stopped Computer App Control in this chat. Ask them before trying again: the preview card is showing again, and they can press Allow again there.".into());
     }
     if !accessibility_trusted(true) {
         return Err(ACCESSIBILITY_REFUSAL.into());

@@ -155,7 +155,27 @@ export async function runComputerAppCommand(
     if (action === 'detach') useUIStore.getState().closeComputerPip(sessionId)
     return { ok: true, result }
   } catch (error) {
+    if (action === 'attach') await reopenIfStopped(sessionId)
     return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/**
+ * An attach refused because the user pressed Stop earlier tells the agent to
+ * ask for "Allow again" in the preview card — but that card may have been
+ * closed since, and it only opens on a successful attach. Show it (in its
+ * stopped state) so the user has the button the agent is asking about.
+ */
+async function reopenIfStopped(sessionId: string): Promise<void> {
+  try {
+    const status = await invoke<{ stopped?: boolean }>('app_computer_action', {
+      sessionId,
+      action: 'status',
+      params: {},
+    })
+    if (status?.stopped) useUIStore.getState().openComputerPip(sessionId)
+  } catch {
+    // Nothing to show: the desktop could not say.
   }
 }
 
