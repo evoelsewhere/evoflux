@@ -289,6 +289,8 @@ def _format_windows(windows: list[dict[str, Any]]) -> str:
             flags.append(f"dialog of {window['dialog_of']}")
         if window.get("foreground"):
             flags.append("user is using it")
+        if window.get("controlled_elsewhere"):
+            flags.append("controlled from another chat — cannot attach")
         suffix = f" [{', '.join(flags)}]" if flags else ""
         lines.append(
             f"window_id={window.get('id')} | {window.get('app')} | "

@@ -386,7 +386,7 @@ pub(crate) fn run_action(
 ) -> Result<Value, String> {
     match action {
         "status" => Ok(status(session_id)),
-        "list_windows" => Ok(list_windows(params)),
+        "list_windows" => Ok(list_windows(session_id, params)),
         "attach" => attach(session_id, params),
         "detach" => Ok(detach(session_id)),
         _ => {
@@ -595,7 +595,7 @@ fn attach_refusal(row: &WindowRow) -> Option<String> {
     None
 }
 
-fn list_windows(params: &Value) -> Value {
+fn list_windows(session_id: &str, params: &Value) -> Value {
     let filter = params
         .get("app")
         .or_else(|| params.get("query"))
@@ -603,6 +603,13 @@ fn list_windows(params: &Value) -> Value {
         .map(|value| value.trim().to_lowercase())
         .filter(|value| !value.is_empty());
     let foreground = unsafe { GetForegroundWindow() };
+    // Windows another chat controls: attaching them is refused.
+    let held: HashSet<isize> = registry()
+        .attached
+        .iter()
+        .filter(|(other, _)| other.as_str() != session_id)
+        .map(|(_, attached)| attached.hwnd)
+        .collect();
     let windows: Vec<Value> = top_level_windows()
         .into_iter()
         .filter_map(describe_window)
@@ -613,7 +620,11 @@ fn list_windows(params: &Value) -> Value {
             }
             None => true,
         })
-        .map(|row| row.to_json(foreground))
+        .map(|row| {
+            let mut json = row.to_json(foreground);
+            json["controlled_elsewhere"] = json!(held.contains(&(row.hwnd.0 as isize)));
+            json
+        })
         .collect();
     json!({ "count": windows.len(), "windows": windows })
 }
@@ -861,6 +872,18 @@ fn attach(session_id: &str, params: &Value) -> Result<Value, String> {
         Some(owner) if window_pid(owner) == chosen.pid => describe_window(owner).unwrap_or(chosen),
         _ => chosen,
     };
+    // One chat per window: two would interleave their input, and the second
+    // would save the first one's off-screen spot as the window's own place.
+    let held_elsewhere = registry()
+        .attached
+        .iter()
+        .any(|(other, attached)| other != session_id && attached.hwnd == chosen.hwnd.0 as isize);
+    if held_elsewhere {
+        return Err(format!(
+            "\"{}\" is already controlled from another chat. Finish or detach there first, or pick another window.",
+            chosen.title
+        ));
+    }
     // Attaching to another window hands the previous one back first.
     release(session_id);
     let hide = params.get("hide").and_then(Value::as_bool).unwrap_or(false);
@@ -2885,7 +2908,7 @@ mod live_tests {
     use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
     fn notepad_windows() -> Vec<(u64, u32)> {
-        list_windows(&json!({ "query": "notepad" }))["windows"]
+        list_windows("live-test", &json!({ "query": "notepad" }))["windows"]
             .as_array()
             .cloned()
             .unwrap_or_default()
@@ -3032,7 +3055,7 @@ mod live_tests {
         let mut window = None;
         for _ in 0..60 {
             pause(250);
-            window = list_windows(&json!({ "query": "probe" }))["windows"]
+            window = list_windows(session, &json!({ "query": "probe" }))["windows"]
                 .as_array()
                 .and_then(|windows| windows.first().cloned());
             if window.is_some() {
@@ -3301,6 +3324,13 @@ mod live_tests {
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let attached = run_action(&emit, session, "attach", &json!({ "window_id": window_id })).unwrap();
             eprintln!("attached: {attached}");
+            // A second chat can neither take the window nor pick it blindly.
+            let other = "live-test-other";
+            let taken = run_action(&emit, other, "attach", &json!({ "window_id": window_id }));
+            assert!(taken.is_err_and(|error| error.contains("another chat")), "a second chat attached the same window");
+            let listed = run_action(&emit, other, "list_windows", &json!({})).unwrap();
+            let row = listed["windows"].as_array().unwrap().iter().find(|row| row["id"] == json!(window_id)).cloned();
+            assert_eq!(row.map(|row| row["controlled_elsewhere"].clone()), Some(json!(true)));
             pause(500);
             // Windows Notepad restores unsaved tabs from earlier sessions;
             // work in a fresh tab so none of them is touched.
