@@ -220,7 +220,9 @@ frontmost app never changed.
   ignores case and `.exe`, and uses the executable name — `TextEdit`,
   `MSTeams` — on macOS).
 - Stop is enforced natively: the desktop refuses `attach` for that session until
-  the user presses Allow again in the card. The agent cannot lift it.
+  the user presses Allow again in the card. The agent cannot lift it. If the
+  card was closed after Stop, a refused attach opens it again in its stopped
+  state, so the user always has the Allow again the agent asks about.
 - Every `computer_app` result that reached the app is marked as untrusted app
   content, once for the whole result: not only listings, snapshots and
   screenshots but also action summaries (window and dialog titles, the
