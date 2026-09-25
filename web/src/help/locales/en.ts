@@ -1665,12 +1665,15 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'browser',
     title: 'Computer App Control',
     summary:
-      'Let an agent drive one desktop app on Windows in the background — Notepad, Excel, an internal tool — while you watch it in a preview card with a virtual cursor. Your own mouse, keyboard and active window stay yours.',
+      'Let an agent drive one desktop app on Windows or macOS in the background — Notepad, TextEdit, Excel, an internal tool — while you watch it in a preview card with a virtual cursor. Your own mouse, keyboard and active window stay yours.',
     keywords: [
       'computer use',
       'computer app',
       'desktop app',
       'windows app',
+      'mac app',
+      'macos',
+      'accessibility',
       'app control',
       'virtual cursor',
       'preview',
@@ -1681,7 +1684,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       '仮想カーソル',
     ],
     setup:
-      'EvoFlux Desktop on Windows only. Turn it on in Settings → Computer App Control (off by default), optionally list allowed or blocked apps, then ask the agent to work in an app that is open on your computer.',
+      'EvoFlux Desktop on Windows or macOS. Turn it on in Settings → Computer App Control (off by default), optionally list allowed or blocked apps, then ask the agent to work in an app that is open on your computer. On macOS, also allow EvoFlux in System Settings → Privacy & Security → Accessibility and Screen & System Audio Recording.',
     tricks: [
       'The agent attaches to exactly one window. Clicks and keys are delivered to that app only, so you can keep working in other windows while it runs.',
       'The app may stay behind other windows: the preview captures it directly. A minimized app is restored without taking focus when the agent acts.',
@@ -1691,11 +1694,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Every computer_app call asks for permission, like the browser tool — unless you choose "Allow without asking" in Settings → Computer App Control.',
       'Pick allowed and blocked apps from the list of apps on your computer, shown with their icons.',
       'Modal dialogs the app opens (Save As, confirmations) are followed automatically.',
+      'On macOS, shortcuts such as ⌘S run through the app’s own menu bar, so they work while the app stays in the background.',
+      'On macOS, the macOS permissions card in Settings → Computer App Control shows whether Accessibility and Screen Recording are allowed; Allow opens the exact System Settings pane, and Restart EvoFlux applies Screen Recording.',
     ],
     blocks: [
       {
         type: 'p',
-        text: 'Computer App Control is the desktop counterpart of the built-in browser. Instead of a web page, the agent works in a native Windows application: it lists open windows, attaches to one, reads its controls through UI Automation, and clicks, types and presses shortcuts inside it.',
+        text: 'Computer App Control is the desktop counterpart of the built-in browser. Instead of a web page, the agent works in a native application: it lists open windows, attaches to one, reads its controls through UI Automation on Windows or the Accessibility API on macOS, and clicks, types and presses shortcuts inside it.',
       },
       {
         type: 'p',
@@ -1705,7 +1710,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'callout',
         tone: 'info',
         title: 'Limits',
-        text: 'Windows shell and security processes, EvoFlux itself and apps running as administrator can never be attached. Some apps (UWP, games, apps that read raw input) ignore background clicks; the agent then uses UI Automation actions (invoke, set_value) instead.',
+        text: 'System shell and security processes (on macOS also Finder and System Settings), EvoFlux itself and apps running as administrator can never be attached. Some apps (UWP, games, apps that read raw input) ignore background clicks; the agent then uses accessibility actions (invoke, set_value) instead. On macOS a hidden app is parked in a corner of the screen with only a point showing, and a window on another Space must be brought to the current desktop first.',
       },
       {
         type: 'tips',

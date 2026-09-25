@@ -4,6 +4,8 @@ import { AppWindow, Save } from 'lucide-react'
 import type { ComputerAppSettings } from '@/api/client'
 import { AppPicker } from '@/components/ComputerAppViewer/AppPicker'
 import { computerAppSupported } from '@/components/ComputerAppViewer/computerAppBridge'
+import { MacPermissions } from '@/components/ComputerAppViewer/MacPermissions'
+import { computerAppNeedsPermissions } from '@/components/ComputerAppViewer/useComputerAppPermissions'
 import { useInstalledApps } from '@/components/ComputerAppViewer/useInstalledApps'
 import {
   SettingsCallout,
@@ -133,7 +135,7 @@ export function ComputerAppsSettingsPage() {
             stacked
             control={
               <SettingsCallout tone="warning">
-                {t('Computer App Control works in EvoFlux Desktop on Windows. This policy is saved but has no effect here.')}
+                {t('Computer App Control works in EvoFlux Desktop on Windows and macOS. This policy is saved but has no effect here.')}
               </SettingsCallout>
             }
           />
@@ -162,7 +164,7 @@ export function ComputerAppsSettingsPage() {
               />
               <SettingsRow
                 label={t('Keep the app off-screen')}
-                description={t('While an agent controls an app, move it just outside your screen so it keeps running from the taskbar without covering your work. It returns to where it was when control ends.')}
+                description={t('While an agent controls an app, move it out of sight so it keeps running from the taskbar or the Dock without covering your work. It returns to where it was when control ends.')}
                 control={
                   <Switch
                     checked={draft.keep_hidden}
@@ -234,7 +236,7 @@ export function ComputerAppsSettingsPage() {
                 stacked
                 control={
                   <SettingsCallout tone="info">
-                    {t('Windows shell and security processes, EvoFlux itself, and apps running as administrator can never be controlled. Stop in the preview card revokes control and interrupts the agent.')}
+                    {t('System shell and security processes (including macOS System Settings), EvoFlux itself, and apps running as administrator can never be controlled. Stop in the preview card revokes control and interrupts the agent.')}
                   </SettingsCallout>
                 }
               />
@@ -242,6 +244,7 @@ export function ComputerAppsSettingsPage() {
           )}
         </SettingsAsyncBoundary>
       </SettingsGroup>
+      {computerAppNeedsPermissions() && <MacPermissions />}
     </SettingsPage>
   )
 }

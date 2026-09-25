@@ -1333,6 +1333,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "block2 0.6.2",
+ "core-foundation",
  "core-graphics",
  "file_icon_provider",
  "image 0.25.10",

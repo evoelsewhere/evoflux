@@ -1628,12 +1628,15 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'browser',
     title: 'Computer App Control',
     summary:
-      'Windows のデスクトップアプリ(メモ帳、Excel、社内ツールなど)を 1 つ、エージェントがバックグラウンドで操作します。あなたは仮想カーソル付きのプレビューで見守れ、マウス・キーボード・アクティブウィンドウはあなたのままです。',
+      'Windows または macOS のデスクトップアプリ(メモ帳、テキストエディット、Excel、社内ツールなど)を 1 つ、エージェントがバックグラウンドで操作します。あなたは仮想カーソル付きのプレビューで見守れ、マウス・キーボード・アクティブウィンドウはあなたのままです。',
     keywords: [
       'computer use',
       'computer app',
       'desktop app',
       'windows app',
+      'mac app',
+      'macos',
+      'accessibility',
       'app control',
       'virtual cursor',
       'アプリ操作',
@@ -1642,7 +1645,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'プレビュー',
     ],
     setup:
-      'Windows 版 EvoFlux Desktop のみ。設定 → Computer App Control で有効にし(既定はオフ)、必要なら許可・ブロックするアプリを指定してから、開いているアプリでの作業をエージェントに依頼します。',
+      'Windows 版と macOS 版の EvoFlux Desktop で使えます。設定 → Computer App Control で有効にし(既定はオフ)、必要なら許可・ブロックするアプリを指定してから、開いているアプリでの作業をエージェントに依頼します。macOS では、システム設定 → プライバシーとセキュリティ → アクセシビリティ と 画面収録とシステムオーディオ録音 で EvoFlux を許可してください。',
     tricks: [
       'エージェントは 1 つのウィンドウにだけ接続します。クリックやキー入力はそのアプリにのみ届くので、実行中も他のウィンドウで作業を続けられます。',
       'アプリは他のウィンドウの後ろにあっても構いません。最小化されたアプリは、エージェントが操作するときフォーカスを奪わずに元に戻ります。',
@@ -1652,11 +1655,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ブラウザーツールと同様に computer_app の呼び出しごとに確認します。設定 → Computer App Control で「確認せずに許可」を選ぶと確認しません。',
       '許可・ブロックするアプリは、PC 上のアプリ一覧からアイコン付きで選べます。',
       'アプリが開くモーダルダイアログ(名前を付けて保存、確認など)は自動的に追従します。',
+      'macOS では ⌘S などのショートカットをアプリ自身のメニューバー経由で実行するため、アプリがバックグラウンドのままでも動作します。',
+      'macOS では、設定 → Computer App Control の「macOS の権限」カードでアクセシビリティと画面収録の許可状況を確認できます。「許可」でシステム設定の該当ページが開き、「EvoFlux を再起動」で画面収録が有効になります。',
     ],
     blocks: [
       {
         type: 'p',
-        text: 'Computer App Control は、組み込みブラウザーのデスクトップ版です。Web ページの代わりに Windows アプリで作業し、開いているウィンドウを一覧して 1 つに接続し、UI Automation でコントロールを読み取り、アプリ内でクリック・入力・ショートカットを実行します。',
+        text: 'Computer App Control は、組み込みブラウザーのデスクトップ版です。Web ページの代わりにネイティブアプリで作業し、開いているウィンドウを一覧して 1 つに接続し、Windows では UI Automation、macOS ではアクセシビリティ API でコントロールを読み取り、アプリ内でクリック・入力・ショートカットを実行します。',
       },
       {
         type: 'p',
@@ -1666,7 +1671,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'callout',
         tone: 'info',
         title: '制限',
-        text: 'Windows のシェルやセキュリティプロセス、EvoFlux 自身、管理者として実行中のアプリには接続できません。一部のアプリ(UWP、ゲーム、raw input を読むアプリ)はバックグラウンドのクリックを無視するため、その場合エージェントは UI Automation の操作(invoke、set_value)を使います。',
+        text: 'システムのシェルやセキュリティプロセス(macOS では Finder とシステム設定も)、EvoFlux 自身、管理者として実行中のアプリには接続できません。一部のアプリ(UWP、ゲーム、raw input を読むアプリ)はバックグラウンドのクリックを無視するため、その場合エージェントはアクセシビリティの操作(invoke、set_value)を使います。macOS では、隠したアプリは画面の隅に 1 点だけ見える状態で置かれます。別の操作スペースにあるウィンドウは、先に現在のデスクトップへ移動してください。',
       },
       {
         type: 'tips',

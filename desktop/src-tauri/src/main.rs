@@ -4595,6 +4595,21 @@ async fn shutdown_sidecar_now(app: &AppHandle) {
     }
 }
 
+/// Restart EvoFlux from Settings → Computer App Control. macOS only applies a
+/// newly granted Screen Recording permission to a process started after it.
+#[tauri::command]
+async fn app_computer_restart(app: AppHandle) {
+    log::info!("desktop: restarting to apply macOS permissions");
+    computer_app::release_all();
+    persist_active_window_state(&app);
+    {
+        let state: tauri::State<'_, AppState> = app.state();
+        state.quitting.store(true, Ordering::SeqCst);
+    }
+    shutdown_sidecar_now(&app).await;
+    app.restart();
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 enum AppUpdateCheckResult {
@@ -6206,6 +6221,9 @@ fn main() {
             computer_app::app_computer_resume,
             computer_app::app_computer_reveal,
             computer_app::app_computer_list_apps,
+            computer_app::app_computer_permissions,
+            computer_app::app_computer_request_permission,
+            app_computer_restart,
             set_tray_session,
             workspace::list_workspace_files,
             workspace::read_workspace_file,

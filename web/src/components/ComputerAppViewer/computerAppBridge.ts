@@ -2,7 +2,7 @@
  * Relays `computer_app` commands from the backend to EvoFlux Desktop.
  *
  * One WebSocket per chat session, opened while the chat (or its preview
- * card) is on screen in the Windows desktop app. Each command becomes a
+ * card) is on screen in the Windows or macOS desktop app. Each command becomes a
  * Tauri `invoke`; the native side does the capture and input. A successful
  * `attach` opens the session's preview card so the user sees the app the
  * agent is about to drive before anything else happens to it.
@@ -27,10 +27,11 @@ export const COMPUTER_APP_COMMANDS = [
   'click', 'hover', 'scroll', 'drag', 'type', 'key', 'invoke', 'set_value', 'restore',
 ] as const
 
-/** Computer App Control is native Win32 work; nothing else can serve it. */
+/** Computer App Control is native desktop work (Win32 or macOS
+ * Accessibility); nothing else can serve it. */
 export function computerAppSupported(): boolean {
   const platform = getPlatform()
-  return platform.isTauri && platform.os === 'windows'
+  return platform.isTauri && (platform.os === 'windows' || platform.os === 'macos')
 }
 
 export function useComputerAppBridge(

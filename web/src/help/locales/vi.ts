@@ -1613,12 +1613,15 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'browser',
     title: 'Computer App Control',
     summary:
-      'Cho agent điều khiển một app desktop trên Windows ở chế độ nền — Notepad, Excel, một công cụ nội bộ — trong khi bạn theo dõi qua thẻ xem trước có con trỏ ảo. Chuột, bàn phím và cửa sổ đang dùng vẫn là của bạn.',
+      'Cho agent điều khiển một app desktop trên Windows hoặc macOS ở chế độ nền — Notepad, TextEdit, Excel, một công cụ nội bộ — trong khi bạn theo dõi qua thẻ xem trước có con trỏ ảo. Chuột, bàn phím và cửa sổ đang dùng vẫn là của bạn.',
     keywords: [
       'computer use',
       'computer app',
       'desktop app',
       'windows app',
+      'mac app',
+      'macos',
+      'accessibility',
       'app control',
       'virtual cursor',
       'điều khiển app',
@@ -1628,7 +1631,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'pip',
     ],
     setup:
-      'Chỉ có trên EvoFlux Desktop cho Windows. Bật trong Cài đặt → Computer App Control (mặc định tắt), có thể khai báo danh sách app được phép hoặc bị chặn, rồi nhờ agent làm việc trong một app đang mở trên máy.',
+      'Có trên EvoFlux Desktop cho Windows và macOS. Bật trong Cài đặt → Computer App Control (mặc định tắt), có thể khai báo danh sách app được phép hoặc bị chặn, rồi nhờ agent làm việc trong một app đang mở trên máy. Trên macOS, cũng cần cho phép EvoFlux trong System Settings → Privacy & Security → Accessibility và Screen & System Audio Recording.',
     tricks: [
       'Agent chỉ gắn vào đúng một cửa sổ. Click và phím chỉ gửi tới app đó, nên bạn vẫn làm việc ở cửa sổ khác trong lúc agent chạy.',
       'App có thể nằm sau cửa sổ khác: thẻ xem trước chụp trực tiếp app đó. App đang thu nhỏ sẽ được khôi phục mà không chiếm focus khi agent thao tác.',
@@ -1638,11 +1641,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Mỗi lần gọi computer_app đều hỏi quyền, giống tool trình duyệt — trừ khi bạn chọn "Cho phép luôn, không hỏi" trong Cài đặt → Computer App Control.',
       'Chọn app được phép và bị chặn từ danh sách app trên máy, có kèm logo.',
       'Hộp thoại mà app mở ra (Save As, xác nhận) được tự động theo dõi.',
+      'Trên macOS, phím tắt như ⌘S được chạy qua thanh menu của chính app, nên vẫn dùng được khi app ở chế độ nền.',
+      'Trên macOS, thẻ Quyền trên macOS trong Cài đặt → Computer App Control cho biết Accessibility và Screen Recording đã được cho phép chưa; nút Cho phép mở đúng mục trong System Settings, và Khởi động lại EvoFlux để áp dụng Screen Recording.',
     ],
     blocks: [
       {
         type: 'p',
-        text: 'Điều khiển app là phiên bản desktop của trình duyệt tích hợp. Thay vì trang web, agent làm việc trong một ứng dụng Windows: liệt kê cửa sổ đang mở, gắn vào một cửa sổ, đọc các control qua UI Automation, rồi click, gõ và bấm phím tắt bên trong app đó.',
+        text: 'Điều khiển app là phiên bản desktop của trình duyệt tích hợp. Thay vì trang web, agent làm việc trong một ứng dụng native: liệt kê cửa sổ đang mở, gắn vào một cửa sổ, đọc các control qua UI Automation trên Windows hoặc Accessibility API trên macOS, rồi click, gõ và bấm phím tắt bên trong app đó.',
       },
       {
         type: 'p',
@@ -1652,7 +1657,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'callout',
         tone: 'info',
         title: 'Giới hạn',
-        text: 'Không bao giờ gắn được vào shell và tiến trình bảo mật của Windows, chính EvoFlux, hoặc app chạy quyền quản trị. Một số app (UWP, game, app đọc raw input) bỏ qua click chạy nền; khi đó agent dùng thao tác UI Automation (invoke, set_value).',
+        text: 'Không bao giờ gắn được vào shell và tiến trình bảo mật của hệ thống (trên macOS gồm cả Finder và System Settings), chính EvoFlux, hoặc app chạy quyền quản trị. Một số app (UWP, game, app đọc raw input) bỏ qua click chạy nền; khi đó agent dùng thao tác accessibility (invoke, set_value). Trên macOS, app được ẩn sẽ nằm ở một góc màn hình và chỉ lộ một điểm; cửa sổ ở Space khác phải được đưa về màn hình hiện tại trước.',
       },
       {
         type: 'tips',

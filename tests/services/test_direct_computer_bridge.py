@@ -118,6 +118,8 @@ async def test_newer_attach_displaces_older_socket() -> None:
 async def test_request_requires_connected_desktop() -> None:
     bridge = DirectComputerBridge()
 
-    with pytest.raises(DirectComputerUnavailable, match="EvoFlux Desktop on Windows"):
+    with pytest.raises(
+        DirectComputerUnavailable, match="EvoFlux Desktop on Windows or macOS"
+    ):
         await bridge.request("missing", "status", {})
     assert await bridge.wait_connected("missing", timeout=0.05) is False

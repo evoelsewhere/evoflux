@@ -79,7 +79,7 @@ async def test_requires_desktop_connection(monkeypatch) -> None:
     result = await _run({"action": "list_windows"})
 
     assert isinstance(result, str)
-    assert "EvoFlux Desktop on Windows" in result
+    assert "EvoFlux Desktop on Windows or macOS" in result
 
 
 @pytest.mark.asyncio
@@ -287,3 +287,81 @@ def test_app_policy_matching_ignores_case_and_exe_suffix() -> None:
     assert computer_tool.app_policy_refusal("NOTEPAD.EXE", policy) is None
     assert "blocked" in (computer_tool.app_policy_refusal("Notepad2.exe", policy) or "")
     assert "allowlist" in (computer_tool.app_policy_refusal("calc.exe", policy) or "")
+
+
+def test_app_policy_matches_mac_executables() -> None:
+    # The picker stores "textedit.exe" for older settings; macOS reports the
+    # bare executable name or its path inside the bundle.
+    policy = ComputerAppSettings(
+        enabled=True, allowed_apps=["textedit.exe"], blocked_apps=["MSTeams"]
+    )
+    assert computer_tool.app_policy_refusal("TextEdit", policy) is None
+    assert (
+        computer_tool.app_policy_refusal(
+            "/System/Applications/TextEdit.app/Contents/MacOS/TextEdit", policy
+        )
+        is None
+    )
+    assert "blocked" in (computer_tool.app_policy_refusal("MSTeams", policy) or "")
+
+
+@pytest.mark.asyncio
+async def test_list_windows_explains_missing_mac_permissions(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True)
+    _fake_bridge(
+        monkeypatch,
+        {
+            "list_windows": {
+                "count": 1,
+                "windows": [{"id": 7, "app": "TextEdit", "title": "notes.txt"}],
+                "platform": "macos",
+                "missing_permissions": ["accessibility", "screen_recording"],
+            }
+        },
+    )
+
+    result = await _run({"action": "list_windows"})
+
+    assert isinstance(result, str)
+    assert "Accessibility and Screen Recording access" in result
+    assert "Screen & System Audio Recording" in result
+    assert "window_id=7 | TextEdit" in result
+
+
+@pytest.mark.asyncio
+async def test_mac_attach_and_menu_shortcut_are_explained(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True)
+    _fake_bridge(
+        monkeypatch,
+        {
+            "list_windows": {
+                "windows": [{"id": 7, "app": "TextEdit", "title": "notes.txt"}]
+            },
+            "attach": {
+                "attached": True,
+                "window": {
+                    "id": 7,
+                    "app": "TextEdit",
+                    "title": "notes.txt",
+                    "screenshot_size": [800, 600],
+                    "platform": "macos",
+                },
+            },
+            "key": {
+                "key": "cmd+s",
+                "repeat": 1,
+                "delivered_to": "Save…",
+                "delivered_via": "menu",
+                "window": "notes.txt",
+            },
+        },
+    )
+
+    result = await _run(
+        {"action": "attach", "window_id": 7},
+        {"action": "key", "key": "cmd+s"},
+    )
+
+    assert isinstance(result, str)
+    assert "shortcuts use cmd" in result
+    assert 'Pressed cmd+s ×1 → Save… in "notes.txt" (via the app\'s menu bar)' in result

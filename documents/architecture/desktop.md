@@ -31,8 +31,9 @@ owns operations that cannot be safely or portably implemented in browser JS:
 - native open/save/folder dialogs and OS openers;
 - workspace discovery and selected filesystem integration;
 - direct control of the persistent browser profile;
-- Computer App Control on Windows (`app_computer_*`): window capture, UI
-  Automation and input posted to one attached app window;
+- Computer App Control on Windows and macOS (`app_computer_*`): window capture,
+  the accessibility tree (UI Automation / the macOS Accessibility API) and
+  input posted to one attached app window;
 - native messaging used by WebBridge discovery/pairing;
 - application updates and package installation handoff.
 

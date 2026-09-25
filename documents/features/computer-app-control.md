@@ -1,27 +1,31 @@
 # Computer App Control
 
 Computer App Control lets an agent drive **one desktop application window** on
-Windows through the `computer_app` tool, while the user watches it in a
-floating preview card with a virtual cursor. It is the desktop counterpart of
+Windows or macOS through the `computer_app` tool, while the user watches it in
+a floating preview card with a virtual cursor. It is the desktop counterpart of
 the persistent in-app browser: the agent works inside one app, never across the
 whole desktop, and the user's own mouse, keyboard focus and foreground window
 are never taken.
 
-Available in EvoFlux Desktop on Windows only. Off by default.
+Available in EvoFlux Desktop on Windows and macOS. Off by default. The macOS
+backend is described in [macOS](#macos); everything else on this page applies
+to both unless it names Windows mechanisms.
 
 ## User flow
 
 1. The user enables it in **Settings → Computer App Control**, chooses whether
    each action asks first (**Ask every time**, the default) or runs straight
    away (**Allow without asking**), and may pick allowed and blocked apps. The
-   picker lists the apps open now and the Start menu's programs with their
-   icons (`app_computer_list_apps`); a name typed there that matches nothing
-   can be added as an executable name.
+   picker lists the apps open now and the installed ones — the Start menu's
+   programs on Windows, the Applications folders on macOS — with their icons
+   (`app_computer_list_apps`); a name typed there that matches nothing can be
+   added as an executable name.
 2. In a chat, the agent calls `computer_app` `list_windows`, then `attach` with
    a `window_id`. The backend checks the app against the policy before anything
    attaches; a successful attach opens the session's preview card.
 3. The agent observes with `screenshot` (PNG of the window) or `snapshot`/`find`
-   (the UI Automation tree, with refs such as `e12`), and acts with `click`,
+   (the accessibility tree — UI Automation on Windows, the Accessibility API on
+   macOS — with refs such as `e12`), and acts with `click`,
    `hover`, `scroll`, `drag`, `type`, `key`, `invoke` and `set_value`.
 4. The card shows the app live (about 6 fps while the agent acts, slower when
    idle), a glowing frame, and a small cursor that travels to each point
@@ -38,7 +42,7 @@ merging a pull request always asks. **Allow without asking** skips the prompt.
 Both are checked after the rules, so an explicit deny rule, or an "Always"
 the user gave in this session, still wins. It is denied to `trivial` and `simple` tier members.
 
-## How input stays inside the app
+## How input stays inside the app (Windows)
 
 | Action | Mechanism |
 |---|---|
@@ -110,17 +114,86 @@ UWP/CoreWindow surfaces or apps running as administrator (UIPI). Points on the
 window frame or title bar are refused. For those, UI Automation actions are the
 fallback.
 
+## macOS
+
+The macOS backend (`desktop/src-tauri/src/computer_app/mac.rs`) keeps the same
+commands and result shapes. AppKit only hands keyboard events to the key window
+of the active app, so a background app is driven mainly through accessibility,
+and posted events are the fallback.
+
+EvoFlux needs two permissions, granted by the user in **System Settings →
+Privacy & Security**: **Accessibility**, for the element tree and every action
+(macOS shows its prompt on the first `attach`), and **Screen & System Audio
+Recording**, for screenshots and the preview card. `list_windows` reports any
+that are missing, and the tool tells the agent to ask the user.
+
+**Settings → Computer App Control** shows a **macOS permissions** card with
+the state of both (`app_computer_permissions`, re-checked every two seconds
+while one is missing and whenever EvoFlux regains focus). **Allow** calls the
+system request, which adds EvoFlux to the pane's list, and opens that exact
+pane (`x-apple.systempreferences:…?Privacy_Accessibility` /
+`?Privacy_ScreenCapture`) through `app_computer_request_permission`. macOS
+applies Screen Recording only to a process started after it was granted, so
+once it has been requested the card offers **Restart EvoFlux**
+(`app_computer_restart`, which releases controlled apps and stops the sidecar
+first). These commands are only invoked by the user's clicks, never by the
+agent.
+
+| Action | Mechanism |
+|---|---|
+| List windows | `CGWindowListCopyWindowInfo`, matched to the app's accessibility windows through `_AXUIElementGetWindow`; only normal-level windows the app also reports through accessibility are listed |
+| Capture | `CGWindowListCreateImageFromArray` of the window and the app's sheets, alerts and menus above it, at nominal resolution (one screenshot pixel is one point); works while the app is behind other windows |
+| Read (`snapshot`, `find`) | the window's `AXUIElement` tree, one `AXUIElementCopyMultipleAttributeValues` round trip per element. `find` also searches the app's menu bar, so menu commands can be invoked by ref |
+| `click` | accessibility first: the innermost element under the point (or the ref) with `AXPress`, `AXConfirm`, `AXPick` or `AXOpen`, a disclosable row, or a selectable item; a text field gets `AXFocused`. Otherwise mouse events posted with `CGEventPostToPid`, stamped with the window number so AppKit routes them to that window |
+| right-click | `AXShowMenu` on the element, else posted events |
+| `type`, `set_value` | `AXSelectedText` replaced in the field (after selecting all for `set_value`), then read back through `AXValue`; if the field did not change, Unicode key events are posted to the app instead. A line break in web content is Shift+Return. `direct: true` writes `AXValue` |
+| `key` | a shortcut the app's menu bar carries (`AXMenuItemCmdChar` / `AXMenuItemCmdModifiers`) presses that menu item. Return and Escape use the focused control's `AXConfirm`/`AXCancel` or the window's default and cancel buttons. Anything else is a key event posted to the app |
+| `scroll` | wheel events posted to the app; when the scroll area's scroll bar did not move, its `AXValue` is stepped instead |
+| `hover`, `drag` | mouse events posted to the app |
+| `set_value` on a slider or stepper | `AXValue` as a number, clamped to `AXMinValue`/`AXMaxValue` |
+
+Shortcuts use Command: `cmd+s` is ⌘S on macOS, while elsewhere `cmd` means
+Ctrl. Chromium and Electron apps (detected by their framework in the app
+bundle) keep their page out of the accessibility tree until asked, so attaching
+sets `AXManualAccessibility` and `AXEnhancedUserInterface` and waits for the
+web area to fill in. The second is turned off again on release.
+
+**Keep the app off-screen** on macOS moves the window to the bottom-right
+corner of the display furthest down and to the right, where only a point of it
+shows: macOS does not let a window leave the displays completely. A minimized
+window is brought back from the Dock first, since it cannot be captured, and
+goes back there on release. An app hidden with ⌘H is shown again without being
+activated.
+
+Known limits: a window on another Space is not in the app's accessibility
+window list and cannot be attached until the user brings it to the current
+desktop. Posted mouse and key events may be ignored by an app in the
+background or may bring it forward, which is why they are only the fallback.
+Chromium may stop repainting a window it considers covered, so a parked
+browser's picture can lag behind; snapshot reads the live state. Run
+`cargo test computer_app -- --ignored --nocapture` on a Mac (with the terminal
+allowed Accessibility and Screen Recording) for the live TextEdit test, which
+types into a document, saves it with ⌘S through the menu bar, and checks the
+frontmost app never changed.
+
 ## Safety boundaries
 
 - One attached window per chat session; only that window and its same-process
   modal dialogs receive input.
 - Never attachable: EvoFlux's own windows, Windows shell and security processes
   (`explorer.exe`, `lsass.exe`, `winlogon.exe`, `consent.exe`, …) and processes
-  EvoFlux cannot inspect (typically elevated).
-- Windows-key shortcuts and Ctrl+Alt+Delete are refused.
+  EvoFlux cannot inspect (typically elevated). On macOS: Finder, Dock,
+  WindowServer, loginwindow, SecurityAgent and the other system UI processes,
+  plus System Settings, Keychain Access and Passwords — System Settings is where
+  apps are granted Accessibility access, so an agent could otherwise grant
+  itself more.
+- Windows-key shortcuts and Ctrl+Alt+Delete are refused; on macOS so are
+  Control+Command+Q (lock), Shift+Command+Q (log out) and Option+Command+Esc
+  (Force Quit). The Apple menu is never searched or pressed.
 - `settings.yaml` `computer_app`: `enabled`, `permission` (`ask` | `allow`),
   `keep_hidden`, `allowed_apps`, `blocked_apps` (blocklist wins; matching
-  ignores case and `.exe`).
+  ignores case and `.exe`, and uses the executable name — `TextEdit`,
+  `MSTeams` — on macOS).
 - Stop is enforced natively: the desktop refuses `attach` for that session until
   the user presses Allow again in the card. The agent cannot lift it.
 - Window titles, accessibility labels and screenshots are marked as untrusted
@@ -136,10 +209,13 @@ computer_app tool ──► direct_computer_bridge ──WS /api/team/{sid}/comp
                      ◄── "computer-app:pointer" events ─────────────┘
 ```
 
-The chat keeps one bridge WebSocket per open session in the Windows desktop app
-and relays each command to a native worker thread that owns the UI Automation
-COM objects and element refs. Preview frames are captured on a separate
-blocking task so they never queue behind a long action.
+The chat keeps one bridge WebSocket per open session in the desktop app and
+relays each command to a native worker thread that owns the element refs (UI
+Automation COM objects on Windows, `AXUIElement`s on macOS). Preview frames are
+captured on a separate blocking task so they never queue behind a long action.
+`computer_app/mod.rs` holds the Tauri commands and the platform-neutral parts
+(key parsing, blocked shortcuts, protected processes, screenshot scaling) and
+dispatches to `win.rs` or `mac.rs`.
 
 Primary code: `app/agent/tools/builtin/computer_app_tool.py`,
 `app/services/direct_computer_bridge.py`, `app/api/routes/team/computer.py`,

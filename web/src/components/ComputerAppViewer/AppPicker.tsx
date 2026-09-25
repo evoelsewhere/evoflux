@@ -37,7 +37,7 @@ export function AppPicker({
   const searchRef = useRef<HTMLInputElement>(null)
 
   const byExe = useMemo(() => new Map(apps.map((app) => [app.exe, app])), [apps])
-  const selected = useMemo(() => new Set(value.map(normalizeExe)), [value])
+  const selected = useMemo(() => new Set(value.map((item) => normalizeExe(item))), [value])
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase()
     if (!needle) return apps

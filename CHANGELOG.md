@@ -2,6 +2,24 @@
 
 All notable changes to EvoFlux are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Computer App Control on macOS: the `computer_app` tool now drives one app
+  window in EvoFlux Desktop on macOS too, with the same actions, preview card
+  and policy as on Windows. It reads and operates the app through the
+  Accessibility API, captures the window from the window server, and runs
+  shortcuts such as ⌘S through the app's own menu bar, so the app can stay in
+  the background. `find` searches the menu bar as well (the Apple menu is
+  never offered). The user grants Accessibility and Screen & System Audio
+  Recording in System Settings; a macOS permissions card in Settings →
+  Computer App Control shows both, opens the exact pane for each with one
+  click, and offers a restart to apply Screen Recording. `list_windows` also
+  says when either is missing.
+  Finder, System Settings, Keychain Access and the system UI processes cannot
+  be attached. Shortcuts written `cmd+…` mean ⌘ on macOS and Ctrl elsewhere.
+
 ## [2.0.8] - 2026-09-25
 
 ### Changed

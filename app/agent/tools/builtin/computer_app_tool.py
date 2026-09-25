@@ -1,13 +1,16 @@
 """Computer App Control: drive one desktop application window.
 
 The agent attaches to a single top-level window and every action is
-addressed to that window only — captured with ``PrintWindow`` and driven by
-input posted to its own message queue or by UI Automation patterns. The
-user's real mouse, keyboard focus and foreground window are never taken, and
-the user watches (and can stop) the work in a preview card in the chat.
+addressed to that window only. On Windows it is captured with
+``PrintWindow`` and driven by input posted to its own message queue or by UI
+Automation patterns; on macOS it is captured from the window server and
+driven through the Accessibility API, the app's menu bar, and events posted
+to the app's process. The user's real mouse, keyboard focus and foreground
+window are never taken, and the user watches (and can stop) the work in a
+preview card in the chat.
 
-Native work happens in EvoFlux Desktop (Tauri, Windows only); commands reach
-it through :mod:`app.services.direct_computer_bridge`.
+Native work happens in EvoFlux Desktop (Tauri, Windows and macOS); commands
+reach it through :mod:`app.services.direct_computer_bridge`.
 """
 
 from __future__ import annotations
@@ -37,12 +40,22 @@ _DISABLED_MESSAGE = (
     "Settings → Computer App Control, then retry."
 )
 _WEB_CONTENT_HINT = (
-    "It draws web content (Chromium/WebView2): work by ref — snapshot or find, "
-    "click the field by ref, then type — rather than by screenshot coordinates."
+    "It draws web content (Chromium/Electron/WebView2): work by ref — snapshot "
+    "or find, click the field by ref, then type — rather than by screenshot "
+    "coordinates."
+)
+_MAC_HINT = (
+    "This is macOS: shortcuts use cmd (cmd+s, not ctrl+s), and menu commands "
+    'can be found by name (find "Save") and invoked by ref.'
+)
+_MAC_PERMISSIONS_HINT = (
+    "macOS has not granted EvoFlux {missing}. Ask the user to allow EvoFlux in "
+    "System Settings → Privacy & Security ({panes}) before attaching; "
+    "Settings → Computer App Control in EvoFlux has an Allow button for each."
 )
 _UNAVAILABLE_MESSAGE = (
-    "Computer App Control needs this chat open in EvoFlux Desktop on Windows. "
-    "Ask the user to open it there and retry."
+    "Computer App Control needs this chat open in EvoFlux Desktop on Windows or "
+    "macOS. Ask the user to open it there and retry."
 )
 
 
@@ -137,14 +150,19 @@ class TypeAction(BaseModel):
 
 class KeyAction(BaseModel):
     action: Literal["key"]
-    key: str = Field(description="Key or shortcut, e.g. Enter, Tab, ctrl+s, alt+f.")
+    key: str = Field(
+        description="Key or shortcut, e.g. Enter, Tab, ctrl+s, alt+f (cmd+s on macOS)."
+    )
     repeat: int = Field(default=1, ge=1, le=50)
 
 
 class InvokeAction(BaseModel):
     action: Literal["invoke"]
     ref: str = Field(
-        description="Press/toggle/select/expand this element through UI Automation."
+        description=(
+            "Press/toggle/select/expand this element through accessibility "
+            "(UI Automation on Windows)."
+        )
     )
 
 
@@ -155,7 +173,7 @@ class SetValueAction(BaseModel):
     direct: bool = Field(
         default=False,
         description=(
-            "Write the value through UI Automation without keyboard events. "
+            "Write the value through accessibility without keyboard events. "
             "Only when typing did not reach the field; rich editors may ignore it."
         ),
     )
@@ -187,12 +205,13 @@ AnyAction = Annotated[
 ]
 
 _DESCRIPTION = """\
-Control ONE desktop application window on the user's Windows computer, in the
-background. The user keeps their own mouse and keyboard and watches you in a
-preview card with a virtual cursor; they can stop you at any time.
+Control ONE desktop application window on the user's Windows or macOS
+computer, in the background. The user keeps their own mouse and keyboard and
+watches you in a preview card with a virtual cursor; they can stop you at any
+time.
 
 Windows: list_windows → attach (window_id) → … → detach when done.
-Observe: screenshot, snapshot (UI Automation tree with refs like e12), find.
+Observe: screenshot, snapshot (accessibility tree with refs like e12), find.
 Act: click, hover, scroll, drag (by ref or screenshot x/y), type, key,
 invoke (press/toggle/select/expand by ref), set_value (fill a field by ref).
 Other: status, wait.
@@ -207,7 +226,8 @@ web content (Teams, Electron, WebView2) click by ref, then type: typing reaches
 the clicked field with real keyboard events, a line break is Shift+Enter (so a
 chat message is not sent), and set_value replaces a field's text. Send with
 the app's Send button or the Enter key. The app may be kept off-screen while
-you work.
+you work. On macOS use cmd for shortcuts (cmd+s); find also searches the
+app's menu bar, so menu commands can be invoked by ref.
 
 Workflow: attach → snapshot or screenshot → act by ref → screenshot to verify.\
 """
@@ -221,8 +241,25 @@ def _get_sid(state: Any) -> str:
 
 
 def _normalize_app(name: str) -> str:
-    value = name.strip().lower().rsplit("\\", 1)[-1]
+    """``C:\\…\\Notepad.EXE`` → ``notepad``; ``/…/MacOS/TextEdit`` → ``textedit``."""
+    value = name.strip().lower().replace("\\", "/").rsplit("/", 1)[-1]
     return value[:-4] if value.endswith(".exe") else value
+
+
+def _permissions_hint(listing: dict[str, Any]) -> str | None:
+    """What macOS still has to allow, when ``list_windows`` reported it."""
+    missing = [str(item) for item in listing.get("missing_permissions") or []]
+    if not missing:
+        return None
+    names = {"accessibility": "Accessibility", "screen_recording": "Screen Recording"}
+    panes = {
+        "accessibility": "Accessibility",
+        "screen_recording": "Screen & System Audio Recording",
+    }
+    return _MAC_PERMISSIONS_HINT.format(
+        missing=" and ".join(names.get(item, item) for item in missing) + " access",
+        panes=", ".join(panes.get(item, item) for item in missing),
+    )
 
 
 def app_policy_refusal(app: str, policy: Any) -> str | None:
@@ -320,6 +357,8 @@ def _action_summary(name: str, result: Any) -> str:
             summary += " The app is kept off-screen while you work; that is expected."
         if window.get("web_content"):
             summary += " " + _WEB_CONTENT_HINT
+        if window.get("platform") == "macos":
+            summary += " " + _MAC_HINT
         return summary + " Next: snapshot or screenshot."
     if name == "detach":
         return "Detached." if result.get("detached") else "No app was attached."
@@ -332,6 +371,10 @@ def _action_summary(name: str, result: Any) -> str:
     via = result.get("delivered_via")
     if via == "ui_automation":
         window += f" (via UI Automation: {result.get('pattern', 'value')})"
+    elif via == "accessibility":
+        window += f" (via accessibility: {result.get('pattern', 'value')})"
+    elif via == "menu":
+        window += " (via the app's menu bar)"
     elif via == "keyboard":
         confirmed = result.get("confirmed")
         window += (
@@ -416,12 +459,13 @@ async def _attach(session_id: str, params: dict[str, Any], policy: Any) -> Any:
     description=_DESCRIPTION,
     deferred=True,
     deferred_summary=(
-        "Control one desktop application window in the background (Windows)."
+        "Control one desktop application window in the background (Windows, macOS)."
     ),
     search_aliases=(
         "computer use",
         "desktop app",
         "windows app",
+        "mac app",
         "app control",
         "notepad",
         "excel",
@@ -467,7 +511,11 @@ async def computer_app(
                     for window in value.get("windows", [])
                     if app_policy_refusal(str(window.get("app", "")), policy) is None
                 ]
-                results.append(_text_result(name, _format_windows(allowed)))
+                listing = _format_windows(allowed)
+                hint = _permissions_hint(value)
+                if hint:
+                    listing = f"{hint}\n{listing}"
+                results.append(_text_result(name, listing))
             elif isinstance(value, dict) and value.get("kind") == "image":
                 results.append(_image_result(value))
             else:
