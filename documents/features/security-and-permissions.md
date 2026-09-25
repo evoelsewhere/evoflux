@@ -63,6 +63,9 @@ CORS origins.
 - Code-review connections default to TLS verification and bounded provider
   hosts/media.
 - Browser and WebBridge have independent domain/action/sharing policies.
+- Computer App Control is off by default, attaches to one window at a time,
+  refuses shell/security/elevated processes, and can be revoked from its
+  preview card; see [Computer App Control](computer-app-control.md).
 - Memory and Dream treat source text as data, reject secrets and preserve scope.
 
 ## Conductor

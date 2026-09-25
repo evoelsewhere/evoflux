@@ -78,6 +78,10 @@ import { splitQuotedContext } from '../InputBar.skills'
 import { FloatingInputBar } from '../FloatingInputBar'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBrowserPresence'
+import {
+  useComputerAppBridge,
+  useReleaseComputerAppWhenIdle,
+} from '@/components/ComputerAppViewer/computerAppBridge'
 import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
@@ -149,6 +153,11 @@ const BrowserViewer = lazy(() =>
 const BrowserPipHost = lazy(() =>
   import('@/components/BrowserViewer/BrowserPipHost').then((module) => ({
     default: module.BrowserPipHost,
+  })),
+)
+const ComputerAppPipHost = lazy(() =>
+  import('@/components/ComputerAppViewer/ComputerAppPipHost').then((module) => ({
+    default: module.ComputerAppPipHost,
   })),
 )
 const TerminalPanel = lazy(() =>
@@ -433,6 +442,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const sessionIdState = useTeamStore((s) => s.sessionId)
   const browserPipSessionIds = useUIStore((state) => state.browserPipSessionIds)
   useDirectBrowserPresence([sessionIdState, ...browserPipSessionIds])
+  const computerPipSessionIds = useUIStore((state) => state.computerPipSessionIds)
+  useComputerAppBridge([sessionIdState, ...computerPipSessionIds])
+  useReleaseComputerAppWhenIdle(sessionIdState, isTeamWorking)
   const projectIdState = useTeamStore((s) => s.projectId)
   // A project session isn't "in" any one repo — chat-level UI (empty state,
   // composer placeholder) must reflect the project, not the primary repo
@@ -1528,6 +1540,24 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       )
     : null
 
+  // The desktop app an agent is driving, one card per session. Stays up
+  // across chat switches for the same reason as the browser card, and
+  // because an agent may only act on an app while its card is open.
+  const computerPipHost = computerPipSessionIds.length > 0
+    ? (
+        <Suspense fallback={null}>
+          {computerPipSessionIds.map((sessionId, index) => (
+            <ComputerAppPipHost
+              key={sessionId}
+              sessionId={sessionId}
+              stackDepth={computerPipSessionIds.length - index - 1}
+              stackOrder={index}
+            />
+          ))}
+        </Suspense>
+      )
+    : null
+
   const handleComposerSubmit = useCallback(async (
     content: string,
     files?: File[],
@@ -1829,6 +1859,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const fullHeightTrailing = (
     <>
       {browserPipHost}
+      {computerPipHost}
       {workbenchPanel}
       {mode === 'coding'
         && workspace

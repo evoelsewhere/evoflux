@@ -1624,6 +1624,63 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     openAction: { type: 'settings', path: 'browser' },
   },
   {
+    id: 'computer-app-control',
+    category: 'browser',
+    title: 'Computer App Control',
+    summary:
+      'Windows のデスクトップアプリ(メモ帳、Excel、社内ツールなど)を 1 つ、エージェントがバックグラウンドで操作します。あなたは仮想カーソル付きのプレビューで見守れ、マウス・キーボード・アクティブウィンドウはあなたのままです。',
+    keywords: [
+      'computer use',
+      'computer app',
+      'desktop app',
+      'windows app',
+      'app control',
+      'virtual cursor',
+      'アプリ操作',
+      'デスクトップアプリ',
+      '仮想カーソル',
+      'プレビュー',
+    ],
+    setup:
+      'Windows 版 EvoFlux Desktop のみ。設定 → Computer App Control で有効にし(既定はオフ)、必要なら許可・ブロックするアプリを指定してから、開いているアプリでの作業をエージェントに依頼します。',
+    tricks: [
+      'エージェントは 1 つのウィンドウにだけ接続します。クリックやキー入力はそのアプリにのみ届くので、実行中も他のウィンドウで作業を続けられます。',
+      'アプリは他のウィンドウの後ろにあっても構いません。最小化されたアプリは、エージェントが操作するときフォーカスを奪わずに元に戻ります。',
+      'プレビューの停止ボタンで操作権を取り消し、ターンを中断します。「再度許可」を押すまで、そのチャットでは再接続できません。',
+      'プレビューを閉じても操作は終了します。見ていないアプリをエージェントが操作することはありません。',
+      '「アプリを表示」で実際のウィンドウを前面に出し、手動で引き継げます。',
+      'ブラウザーツールと同様に computer_app の呼び出しごとに確認します。設定 → Computer App Control で「確認せずに許可」を選ぶと確認しません。',
+      '許可・ブロックするアプリは、PC 上のアプリ一覧からアイコン付きで選べます。',
+      'アプリが開くモーダルダイアログ(名前を付けて保存、確認など)は自動的に追従します。',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Computer App Control は、組み込みブラウザーのデスクトップ版です。Web ページの代わりに Windows アプリで作業し、開いているウィンドウを一覧して 1 つに接続し、UI Automation でコントロールを読み取り、アプリ内でクリック・入力・ショートカットを実行します。',
+      },
+      {
+        type: 'p',
+        text: 'コンピューター全体を乗っ取ることはありません。入力はシステムのカーソルやキーボードを経由せず、接続したアプリに直接送られ、アプリを前面に出す必要もありません。光る枠と、操作の直前にその位置へ移動する仮想カーソル付きのフローティングプレビューで様子を確認できます。',
+      },
+      {
+        type: 'callout',
+        tone: 'info',
+        title: '制限',
+        text: 'Windows のシェルやセキュリティプロセス、EvoFlux 自身、管理者として実行中のアプリには接続できません。一部のアプリ(UWP、ゲーム、raw input を読むアプリ)はバックグラウンドのクリックを無視するため、その場合エージェントは UI Automation の操作(invoke、set_value)を使います。',
+      },
+      {
+        type: 'tips',
+        items: [
+          '設定 → Computer App Control — マスタースイッチ、画面外に置く設定、許可リスト、ブロックリスト',
+          'プレビュー — ライブ表示、仮想カーソル、停止 / 再度許可 / アプリを表示 / 閉じる',
+          'アプリの内容は信頼できないデータとして扱い、指示としては扱いません',
+        ],
+      },
+    ],
+    related: ['browser-webbridge', 'settings-safety'],
+    openAction: { type: 'settings', path: 'computer-apps' },
+  },
+  {
     id: 'providers-settings',
     category: 'settings',
     title: 'Providers とモデル（BYOM）',

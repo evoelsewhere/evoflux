@@ -1661,6 +1661,65 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     openAction: { type: 'settings', path: 'browser' },
   },
   {
+    id: 'computer-app-control',
+    category: 'browser',
+    title: 'Computer App Control',
+    summary:
+      'Let an agent drive one desktop app on Windows in the background — Notepad, Excel, an internal tool — while you watch it in a preview card with a virtual cursor. Your own mouse, keyboard and active window stay yours.',
+    keywords: [
+      'computer use',
+      'computer app',
+      'desktop app',
+      'windows app',
+      'app control',
+      'virtual cursor',
+      'preview',
+      'pip',
+      'điều khiển app',
+      'con trỏ ảo',
+      'アプリ操作',
+      '仮想カーソル',
+    ],
+    setup:
+      'EvoFlux Desktop on Windows only. Turn it on in Settings → Computer App Control (off by default), optionally list allowed or blocked apps, then ask the agent to work in an app that is open on your computer.',
+    tricks: [
+      'The agent attaches to exactly one window. Clicks and keys are delivered to that app only, so you can keep working in other windows while it runs.',
+      'The app may stay behind other windows: the preview captures it directly. A minimized app is restored without taking focus when the agent acts.',
+      'Stop in the preview card revokes control and interrupts the turn. The agent cannot attach again in that chat until you press Allow again.',
+      'Closing the preview ends control too: an agent never drives an app you are not watching.',
+      'Show the app brings the real window to the front so you can take over by hand.',
+      'Every computer_app call asks for permission, like the browser tool — unless you choose "Allow without asking" in Settings → Computer App Control.',
+      'Pick allowed and blocked apps from the list of apps on your computer, shown with their icons.',
+      'Modal dialogs the app opens (Save As, confirmations) are followed automatically.',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Computer App Control is the desktop counterpart of the built-in browser. Instead of a web page, the agent works in a native Windows application: it lists open windows, attaches to one, reads its controls through UI Automation, and clicks, types and presses shortcuts inside it.',
+      },
+      {
+        type: 'p',
+        text: 'Nothing takes over your computer. Input is posted straight to the attached app, never through the system cursor or keyboard, and the app does not need to be in front. You watch through a floating preview with a glowing frame and a virtual cursor that moves to each point just before the agent acts there — the same cue as someone driving a shared screen.',
+      },
+      {
+        type: 'callout',
+        tone: 'info',
+        title: 'Limits',
+        text: 'Windows shell and security processes, EvoFlux itself and apps running as administrator can never be attached. Some apps (UWP, games, apps that read raw input) ignore background clicks; the agent then uses UI Automation actions (invoke, set_value) instead.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'Settings → Computer App Control — master switch, keep-off-screen, allowlist and blocklist',
+          'Preview card — live view, virtual cursor, Stop / Allow again / Show the app / Close',
+          'App content is untrusted: window text never becomes instructions',
+        ],
+      },
+    ],
+    related: ['browser-webbridge', 'settings-safety'],
+    openAction: { type: 'settings', path: 'computer-apps' },
+  },
+  {
     id: 'providers-settings',
     category: 'settings',
     title: 'Providers and models (BYOM)',

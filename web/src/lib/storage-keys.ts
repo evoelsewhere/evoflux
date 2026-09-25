@@ -90,4 +90,8 @@ export const STORAGE_KEYS = {
     previewPlacement: 'oa.browser.preview-placement',
     webBridgeDefaultEnabled: 'oa.browser.webbridge-default-enabled',
   },
+
+  computerApp: {
+    previewPlacement: 'oa.computer-app.preview-placement',
+  },
 } as const

@@ -7,6 +7,7 @@ from .registry import Tool, tool
 
 _BUILTIN_EXPORTS = {
     "browser_use",
+    "computer_app",
     "webbridge",
     "shell_tool",
     "process_tool",
@@ -38,6 +39,7 @@ __all__ = [
     "tool",
     # builtin
     "browser_use",
+    "computer_app",
     "webbridge",
     "shell_tool",
     "process_tool",

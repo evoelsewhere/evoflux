@@ -206,6 +206,30 @@ class BuiltInBrowserSettings(BaseModel):
     allow_agent_permission_accept: bool = False
 
 
+class ComputerAppSettings(BaseModel):
+    """Guardrails for Computer App Control (the ``computer_app`` tool).
+
+    Off by default: the tool drives real desktop applications, so a person
+    opts in once in Settings before any agent can attach to a window.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    # When non-empty, ONLY these apps may be attached (case-insensitive match
+    # on the executable name, with or without ".exe"). Empty = any app.
+    allowed_apps: list[str] = Field(default_factory=list)
+    # Always refused. Takes precedence over the allowlist.
+    blocked_apps: list[str] = Field(default_factory=list)
+    # Move the attached app just off-screen while it is controlled, so it
+    # keeps running (and its taskbar button) without covering the user's
+    # work. Its exact placement is restored on detach, Stop, or exit.
+    keep_hidden: bool = True
+    # "ask": every computer_app call goes through the normal permission
+    # prompt. "allow": calls run without one (explicit deny rules still win).
+    permission: Literal["ask", "allow"] = "ask"
+
+
 class ConductorSettings(BaseModel):
     """Connection and enforcement policy for the organization control plane."""
 
@@ -291,6 +315,7 @@ class RuntimeSettings(BaseModel):
     code_reviews: CodeReviewSettings = Field(default_factory=CodeReviewSettings)
     browser: BuiltInBrowserSettings = Field(default_factory=BuiltInBrowserSettings)
     webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)
+    computer_app: ComputerAppSettings = Field(default_factory=ComputerAppSettings)
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
     team_spawn: TeamSpawnModeSettings = Field(default_factory=TeamSpawnModeSettings)
     follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)

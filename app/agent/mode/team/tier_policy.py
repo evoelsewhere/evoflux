@@ -38,6 +38,7 @@ _TRIVIAL_DENIED: frozenset[str] = frozenset(
         "process",
         "python",
         "browser_use",
+        "computer_app",
         "webbridge",
         "schedule_task",
     }
@@ -46,6 +47,7 @@ _TRIVIAL_DENIED: frozenset[str] = frozenset(
 _SIMPLE_DENIED: frozenset[str] = frozenset(
     {
         "browser_use",
+        "computer_app",
         "webbridge",
         "schedule_task",
     }

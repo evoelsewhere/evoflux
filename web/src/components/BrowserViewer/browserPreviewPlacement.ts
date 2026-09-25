@@ -38,12 +38,17 @@ export interface PreviewPlacement {
   height: number
 }
 
-export function defaultPreviewPlacement(): PreviewPlacement {
+/**
+ * The bottom-right corner, or `slot` card-widths to the left of it — so two
+ * kinds of preview (a browser page, a desktop app) start side by side
+ * instead of one hiding the other.
+ */
+export function defaultPreviewPlacement(slot = 0): PreviewPlacement {
   const { width, height } = PREVIEW_SIZES.small
   return clampPreviewPlacement({
     width,
     height,
-    x: window.innerWidth - width - EDGE_MARGIN,
+    x: window.innerWidth - (width + EDGE_MARGIN) * (slot + 1),
     y: window.innerHeight - height - CHROME_HEIGHT - EDGE_MARGIN,
   })
 }
@@ -110,13 +115,16 @@ export function clampPreviewPlacement(
   }
 }
 
-export function loadPreviewPlacement(): PreviewPlacement {
+export function loadPreviewPlacement(
+  storageKey: string = STORAGE_KEYS.browser.previewPlacement,
+  defaultSlot = 0,
+): PreviewPlacement {
   try {
     const raw = JSON.parse(
-      localStorage.getItem(STORAGE_KEYS.browser.previewPlacement) ?? 'null',
+      localStorage.getItem(storageKey) ?? 'null',
     ) as Partial<PreviewPlacement> & { size?: string } | null
     if (!raw || typeof raw.x !== 'number' || typeof raw.y !== 'number') {
-      return defaultPreviewPlacement()
+      return defaultPreviewPlacement(defaultSlot)
     }
     // Cards saved before the preview could be resized freely stored the name
     // of a preset instead of a size.
@@ -128,13 +136,16 @@ export function loadPreviewPlacement(): PreviewPlacement {
       height: typeof raw.height === 'number' ? raw.height : preset.height,
     })
   } catch {
-    return defaultPreviewPlacement()
+    return defaultPreviewPlacement(defaultSlot)
   }
 }
 
-export function savePreviewPlacement(placement: PreviewPlacement): void {
+export function savePreviewPlacement(
+  placement: PreviewPlacement,
+  storageKey: string = STORAGE_KEYS.browser.previewPlacement,
+): void {
   try {
-    localStorage.setItem(STORAGE_KEYS.browser.previewPlacement, JSON.stringify(placement))
+    localStorage.setItem(storageKey, JSON.stringify(placement))
   } catch {
     // Storage can be unavailable in hardened WebViews.
   }

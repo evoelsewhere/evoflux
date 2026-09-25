@@ -13,7 +13,7 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  Terminal, FileText, Search, Globe, Code2,
+  AppWindow, Terminal, FileText, Search, Globe, Code2,
   FolderOpen, GitBranch, ChevronDown, ChevronUp, Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -63,6 +63,7 @@ const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   grep: { icon: Search, verb: 'Searched', singular: 'search', plural: 'searches' },
   browser_use: { icon: Globe, verb: 'Browsed', singular: 'browser call', plural: 'browser calls' },
   webbridge: { icon: Globe, verb: 'Browsed', singular: 'browser call', plural: 'browser calls' },
+  computer_app: { icon: AppWindow, verb: 'Controlled', singular: 'app action', plural: 'app actions' },
   git: { icon: GitBranch, verb: 'Ran', singular: 'Git call', plural: 'Git calls' },
 }
 

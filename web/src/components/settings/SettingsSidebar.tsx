@@ -9,6 +9,7 @@ import { useLocation } from '@tanstack/react-router'
 import { motion } from 'framer-motion'
 import {
   Activity,
+  AppWindow,
   ArrowLeft,
   Bell,
   Blocks,
@@ -66,6 +67,7 @@ type SidebarPath =
   | '/settings/context'
   | '/settings/sandbox'
   | '/settings/browser'
+  | '/settings/computer-apps'
   | '/settings/notifications'
   | '/settings/appearance'
   | '/settings/diagnostics'
@@ -316,6 +318,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             label: t('Browser'),
             icon: Globe2,
             matchPrefix: '/settings/browser',
+          },
+          {
+            to: '/settings/computer-apps',
+            label: t('Computer App Control'),
+            icon: AppWindow,
+            matchPrefix: '/settings/computer-apps',
           },
           {
             to: '/settings/notifications',

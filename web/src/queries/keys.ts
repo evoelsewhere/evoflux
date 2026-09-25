@@ -159,6 +159,7 @@ export const queryKeys = {
     context: () => ['settings', 'context'] as const,
     versionControl: () => ['settings', 'version-control'] as const,
     webbridge: () => ['settings', 'webbridge'] as const,
+    computerApp: () => ['settings', 'computer-app'] as const,
     multimodal: () => ['settings', 'multimodal'] as const,
     providers: () => ['settings', 'providers'] as const,
     officeRuntime: () => ['settings', 'office-runtime'] as const,

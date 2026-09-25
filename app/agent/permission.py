@@ -252,6 +252,28 @@ class PermissionRequest:
 # ── Permission service ────────────────────────────────────────────────────────
 
 
+def settings_tool_permission(tool: str) -> Literal["ask", "allow"] | None:
+    """The choice the user made for *tool* on its own Settings page, if any.
+
+    ``"allow"`` runs it without a prompt; ``"ask"`` prompts for every call
+    even in ``auto`` mode — a feature page that says "ask before each
+    action" must not be overridden by the session defaulting to ``auto``.
+    Read on every call so a change in Settings applies to the next action.
+    Any failure to read settings means "ask".
+    """
+    if tool != "computer_app":
+        return None
+    try:
+        from app.core.runtime_settings import load_runtime_settings
+
+        computer_app = load_runtime_settings().computer_app
+    except Exception:  # noqa: BLE001 - a broken settings file must not grant anything
+        return "ask"
+    if computer_app.enabled and computer_app.permission == "allow":
+        return "allow"
+    return "ask"
+
+
 class PermissionService:
     """Per-session, mode-aware permission service.
 
@@ -334,6 +356,15 @@ class PermissionService:
 
         if not needs_ask:
             return
+
+        # The tool's own Settings page decides, after the rules — so an
+        # explicit deny rule, or an "always" given in this session, still
+        # wins: "allow" skips the prompt, "ask" prompts even in auto mode.
+        tool_permission = settings_tool_permission(tool)
+        if tool_permission == "allow":
+            return
+        if tool_permission == "ask":
+            important = True
 
         # Already refused this run: fail it outright rather than asking again.
         if self._already_rejected(tool, patterns):

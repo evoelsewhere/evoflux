@@ -62,6 +62,7 @@ of committed repository files.
 | `code_reviews` | timeouts/retries/page/concurrency caps and mutation/TLS/check policy |
 | `browser` | built-in browser domain and action permissions |
 | `webbridge` | enable/domain/evaluate, sharing, retention and interaction policy |
+| `computer_app` | Computer App Control `enabled` (default off), `permission` (`ask` default, or `allow`), `keep_hidden` (default on), `allowed_apps`, `blocked_apps` |
 | `conductor` | connection, intervals, enforcement and managed identity metadata |
 
 Unknown keys are ignored for forward compatibility; known values are validated

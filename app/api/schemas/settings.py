@@ -124,6 +124,18 @@ class WebBridgeSettingsBody(BaseModel):
     built_in_allow_agent_permission_accept: bool = False
 
 
+class ComputerAppSettingsBody(BaseModel):
+    """Computer App Control policy exposed in Settings → Computer App Control."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    allowed_apps: list[str] = Field(default_factory=list)
+    blocked_apps: list[str] = Field(default_factory=list)
+    keep_hidden: bool = True
+    permission: Literal["ask", "allow"] = "ask"
+
+
 class ConductorSettingsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

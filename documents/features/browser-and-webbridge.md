@@ -23,6 +23,9 @@ invisible desktop browser session.
 Primary code: `app/services/direct_browser_bridge.py`, team browser routes,
 `BrowserViewer/` and Tauri desktop browser commands.
 
+For native desktop applications rather than web pages, see
+[Computer App Control](computer-app-control.md).
+
 ### Dev-server launcher
 
 In Coding mode the browser's new-tab page lists the workspace's `launch.json`

@@ -369,7 +369,8 @@ export function ToolResult({ toolName, result }: { toolName: string; result: str
   if (toolName === 'team_manage') {
     return <TeamManageResult result={result} />
   }
-  if (toolName === 'browser_use') {
+  if (toolName === 'browser_use' || toolName === 'computer_app') {
+    // Both tools join per-action results with "\n---\n".
     return <BrowserUseResult result={result} />
   }
   // web_fetch, date, math, etc. (a Skill activation is a ``read`` and uses

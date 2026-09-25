@@ -22,6 +22,7 @@ from app.core.config import settings
 from app.core.runtime_settings import (
     BuiltInBrowserSettings,
     CodeReviewSettings,
+    ComputerAppSettings,
     ConductorSettings,
     ContextSettings,
     GitSettings,
@@ -36,6 +37,7 @@ from app.core.runtime_settings import (
 if TYPE_CHECKING:
     from app.agent.providers.catalog import ProviderEntry
 from app.api.schemas.settings import (
+    ComputerAppSettingsBody,
     ConductorDisconnectRequest,
     ConductorEnrollmentRequest,
     ConductorSettingsBody,
@@ -591,6 +593,51 @@ async def update_webbridge_settings(
 
     webbridge_manager.reload_policy()
     return _webbridge_settings_body()
+
+
+# Computer App Control (Settings -> Computer App Control)
+
+
+def _clean_app_names(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(value.strip() for value in values if value.strip()))
+
+
+def _computer_app_settings_body() -> ComputerAppSettingsBody:
+    cfg = load_runtime_settings().computer_app
+    return ComputerAppSettingsBody(
+        enabled=cfg.enabled,
+        allowed_apps=cfg.allowed_apps,
+        blocked_apps=cfg.blocked_apps,
+        keep_hidden=cfg.keep_hidden,
+        permission=cfg.permission,
+    )
+
+
+@router.get("/computer-app")
+async def get_computer_app_settings() -> ComputerAppSettingsBody:
+    try:
+        return _computer_app_settings_body()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/computer-app")
+async def update_computer_app_settings(
+    body: ComputerAppSettingsBody,
+) -> ComputerAppSettingsBody:
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.computer_app = ComputerAppSettings(
+        enabled=body.enabled,
+        allowed_apps=_clean_app_names(body.allowed_apps),
+        blocked_apps=_clean_app_names(body.blocked_apps),
+        keep_hidden=body.keep_hidden,
+        permission=body.permission,
+    )
+    save_runtime_settings(cfg)
+    return _computer_app_settings_body()
 
 
 # Team spawn mode (Settings -> Agent Teams tab)

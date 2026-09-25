@@ -34,6 +34,7 @@ import { SkillsListPage } from '@/routes/settings.skills'
 import { TelemetrySettingsPage } from '@/routes/settings.telemetry'
 import { VersionControlSettingsPage } from '@/routes/settings.version-control'
 import { BrowserSettingsPage } from '@/routes/settings.browser'
+import { ComputerAppsSettingsPage } from '@/routes/settings.computer-apps'
 import { EnterpriseSettingsPage } from '@/components/settings/EnterpriseSettings'
 import { LanguageServersSettingsPage } from '@/routes/settings.language-servers'
 
@@ -51,6 +52,7 @@ const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   memory: 'Memory',
   sandbox: 'Sandbox',
   browser: 'Browser',
+  'computer-apps': 'Computer App Control',
   notifications: 'Notifications',
   appearance: 'Appearance',
   telemetry: 'Telemetry',
@@ -111,6 +113,7 @@ function SettingsContent({ path }: { path: string }) {
   // Keep old command/deep-link targets working after Dream was folded into Memory.
   if (section === 'dream') return <MemorySettingsPage />
   if (section === 'browser') return <BrowserSettingsPage />
+  if (section === 'computer-apps') return <ComputerAppsSettingsPage />
   if (section === 'notifications') return <NotificationSettingsPage />
   if (section === 'appearance') return <AppearanceSettingsPage />
   if (section === 'diagnostics') return <DiagnosticsPage />

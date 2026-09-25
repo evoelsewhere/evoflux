@@ -134,6 +134,35 @@ export async function updateWebBridgeSettings(
   return res.json()
 }
 
+// Computer App Control settings
+
+export type ComputerAppSettings = {
+  enabled: boolean
+  allowed_apps: string[]
+  blocked_apps: string[]
+  keep_hidden: boolean
+  /** Whether each computer_app call asks first or runs straight away. */
+  permission: 'ask' | 'allow'
+}
+
+export async function getComputerAppSettings(): Promise<ComputerAppSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/computer-app`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/computer-app')
+  return res.json()
+}
+
+export async function updateComputerAppSettings(
+  body: ComputerAppSettings,
+): Promise<ComputerAppSettings> {
+  const res = await fetch(`${apiBaseUrl()}/settings/computer-app`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/computer-app')
+  return res.json()
+}
+
 // Team spawn mode settings
 
 export type TeamSpawnSettings = {

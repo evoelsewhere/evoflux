@@ -33,7 +33,7 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/skills` | Skill discovery, bundle CRUD and on/off switch | `skills.py` |
 | `/api/mcp` | global/plugin server status and global MCP lifecycle | `mcp.py` |
 | `/api/plugins` | package inspection/install/editor/credentials/lifecycle | `plugins.py` |
-| `/api/settings` | providers, sandbox, Git, browser and Conductor | `settings.py` |
+| `/api/settings` | providers, sandbox, Git, browser, Computer App Control and Conductor | `settings.py` |
 | `/api/scheduler` | task CRUD, pause/resume and trigger | `scheduler.py` |
 | `/api/wiki` | validated Markdown tree/file operations | `wiki.py` |
 | `/api/dream` | config, manual run/status and lint | `dream.py` |
@@ -86,6 +86,7 @@ rather than assuming one uninterrupted socket.
 | `/api/team/{session_id}/terminal` | bidirectional PTY input/output/resize |
 | `/api/team/{session_id}/browser/agent` | direct browser agent commands |
 | `/api/team/{session_id}/browser/presence` | visible browser mount/presence |
+| `/api/team/{session_id}/computer/agent` | Computer App Control commands relayed to the Windows desktop shell |
 | `/api/team/webbridge/relay` | extension relay |
 | `/api/team/webbridge/agent/{session_id}` | external browser-agent relay |
 

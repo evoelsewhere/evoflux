@@ -1,0 +1,92 @@
+<!doctype html>
+<!--
+  Fixture for the Computer App Control live tests (computer_app::win::live_tests).
+  Every control reports what reached it in document.title, which the tests read
+  from the window caption as key=value pairs:
+
+    name, notes, editor   field text
+    ev                    `input` events per field (name,notes,editor)
+    sent                  Send clicks
+    hover, dbl, ctx       pointerenter / dblclick / contextmenu on their targets
+    scroll                scrollTop of the scroll box
+    drag                  pixels the drag handle was pulled with the mouse
+    range                 value of the range slider
+
+  Frameworks such as React only see text that arrives with an input event.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>probe</title>
+  <style>
+    body { font: 16px sans-serif; padding: 24px; margin: 0 }
+    input:not([type=range]), textarea, div[contenteditable] { display: block; width: 420px; margin: 10px 0; padding: 6px; border: 1px solid #888; min-height: 24px }
+    .target { display: inline-block; width: 130px; height: 40px; margin: 6px 6px 6px 0; border: 1px solid #888; text-align: center; line-height: 40px }
+    #scrollbox { width: 420px; height: 90px; overflow-y: auto; border: 1px solid #888; margin: 10px 0 }
+    #track { position: relative; width: 420px; height: 40px; border: 1px solid #888; margin: 10px 0 }
+    #handle { position: absolute; left: 0; top: 0; width: 40px; height: 40px; background: #69c }
+  </style>
+</head>
+<body>
+  <input id="name" aria-label="Name field">
+  <textarea id="notes" aria-label="Notes field"></textarea>
+  <div id="editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message editor"></div>
+  <button id="send">Send</button>
+  <div>
+    <div class="target" id="hover" role="img" aria-label="Hover target">hover</div>
+    <div class="target" id="dbl" role="img" aria-label="Double target">double</div>
+    <div class="target" id="ctx" role="img" aria-label="Context target">context</div>
+  </div>
+  <div id="scrollbox" role="region" aria-label="Scroll box">
+    <div style="height: 900px">long content</div>
+  </div>
+  <div id="track" role="group" aria-label="Drag track"><div id="handle" role="button" aria-label="Drag handle"></div></div>
+  <input type="range" id="range" min="0" max="100" value="10" aria-label="Volume slider">
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const events = { name: 0, notes: 0, editor: 0 };
+    const counts = { sent: 0, hover: 0, dbl: 0, ctx: 0, drag: 0 };
+    function report() {
+      document.title = ['probe',
+        'name=' + $('name').value,
+        'notes=' + $('notes').value,
+        'editor=' + $('editor').innerText.trim().replace(/\n+/g, '/'),
+        'ev=' + [events.name, events.notes, events.editor].join(','),
+        'sent=' + counts.sent, 'hover=' + counts.hover, 'dbl=' + counts.dbl, 'ctx=' + counts.ctx,
+        'scroll=' + Math.round($('scrollbox').scrollTop), 'drag=' + counts.drag,
+        'range=' + $('range').value,
+        // Where keys would go now: the focused element, and whether the
+        // page itself has focus (+) or not (-).
+        'focus=' + (document.activeElement && document.activeElement.id || 'body') + (document.hasFocus() ? '+' : '-'),
+      ].join('|');
+    }
+    for (const id of Object.keys(events)) $(id).addEventListener('input', () => { events[id] += 1; report(); });
+    $('send').addEventListener('click', () => { counts.sent += 1; report(); });
+    $('hover').addEventListener('pointerenter', () => { counts.hover += 1; report(); });
+    $('dbl').addEventListener('dblclick', () => { counts.dbl += 1; report(); });
+    $('ctx').addEventListener('contextmenu', (event) => { event.preventDefault(); counts.ctx += 1; report(); });
+    $('scrollbox').addEventListener('scroll', report);
+    $('range').addEventListener('input', report);
+    // A pointer-driven drag, the way most web apps implement one.
+    let dragStart = null;
+    $('handle').addEventListener('pointerdown', (event) => { dragStart = event.clientX; $('handle').setPointerCapture(event.pointerId); });
+    $('handle').addEventListener('pointermove', (event) => {
+      if (dragStart === null) return;
+      const moved = Math.max(0, Math.min(380, event.clientX - dragStart));
+      $('handle').style.left = moved + 'px';
+      counts.drag = Math.round(moved);
+      report();
+    });
+    // Snap back on release so every drag starts from the same place; the
+    // report keeps the distance of the last one.
+    $('handle').addEventListener('pointerup', () => { dragStart = null; $('handle').style.left = '0px'; });
+    document.addEventListener('focusin', report);
+    window.addEventListener('focus', report);
+    window.addEventListener('blur', report);
+    report();
+    // Scroll events fire with rendering, which a hidden page pauses; a timer
+    // still runs (throttled), so state that changes without an event shows.
+    setInterval(report, 250);
+  </script>
+</body>
+</html>
