@@ -521,7 +521,9 @@ async def computer_app(
             if name == "attach":
                 value = await _attach(session_id, params, policy)
             else:
-                value = await direct_computer_bridge.request(session_id, name, params)
+                value = await direct_computer_bridge.request(
+                    session_id, name, params, timeout=_timeout_for(name, params)
+                )
             if name == "list_windows" and isinstance(value, dict):
                 allowed = [
                     window
@@ -544,6 +546,20 @@ async def computer_app(
     if failed is not None and skipped:
         results.append(_skipped_note(failed, skipped))
     return combine_browser_results(results)
+
+
+_BASE_TIMEOUT = 60.0
+# Typing posts one key per character with a short pause after each, so a
+# long text legitimately takes longer than any other action.
+_SECONDS_PER_TYPED_CHAR = 0.02
+
+
+def _timeout_for(name: str, params: dict[str, Any]) -> float:
+    """How long to wait for the desktop before giving up on an action."""
+    if name in {"type", "set_value"}:
+        text = str(params.get("text") or params.get("value") or "")
+        return _BASE_TIMEOUT + len(text) * _SECONDS_PER_TYPED_CHAR
+    return _BASE_TIMEOUT
 
 
 def _skipped_note(failed: str, skipped: list[str]) -> str:

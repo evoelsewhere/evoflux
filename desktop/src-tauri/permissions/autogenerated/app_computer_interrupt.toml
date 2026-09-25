@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-computer-interrupt"
+description = "Enables the app_computer_interrupt command without any pre-configured scope."
+commands.allow = ["app_computer_interrupt"]
+
+[[permission]]
+identifier = "deny-app-computer-interrupt"
+description = "Denies the app_computer_interrupt command without any pre-configured scope."
+commands.deny = ["app_computer_interrupt"]

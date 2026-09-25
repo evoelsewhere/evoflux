@@ -60,6 +60,7 @@
     "allow-app-computer-action",
     "allow-app-computer-frame",
     "allow-app-computer-stop",
+    "allow-app-computer-interrupt",
     "allow-app-computer-resume",
     "allow-app-computer-reveal",
     "allow-app-computer-list-apps",

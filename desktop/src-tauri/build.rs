@@ -27,6 +27,7 @@ fn main() {
             "app_computer_action",
             "app_computer_frame",
             "app_computer_stop",
+            "app_computer_interrupt",
             "app_computer_resume",
             "app_computer_reveal",
             "app_computer_list_apps",

@@ -148,7 +148,16 @@ class DirectComputerBridge:
                     )
                 return await asyncio.wait_for(future, timeout=timeout)
             except TimeoutError as exc:
-                raise TimeoutError(f"App control command timed out: {action}") from exc
+                # The desktop would otherwise finish the action unobserved,
+                # and a retry would do it twice. Ask it to stop there.
+                with suppress(Exception):
+                    async with connection.send_lock:
+                        await connection.websocket.send_json({"type": "cancel"})
+                raise TimeoutError(
+                    f"App control command timed out after {timeout:g}s: {action}. "
+                    "The desktop was told to stop it, so the rest of it did not "
+                    "happen; take a screenshot to see what did before retrying."
+                ) from exc
             finally:
                 connection.pending.pop(request_id, None)
 

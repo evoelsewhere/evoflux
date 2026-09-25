@@ -228,9 +228,19 @@ computer_app tool ──► direct_computer_bridge ──WS /api/team/{sid}/comp
 ```
 
 The chat keeps one bridge WebSocket per open session in the desktop app and
-relays each command to a native worker thread that owns the element refs (UI
-Automation COM objects on Windows, `AXUIElement`s on macOS). Preview frames are
-captured on a separate blocking task so they never queue behind a long action.
+relays each command to the session's own native worker thread, which owns its
+element refs (UI Automation COM objects on Windows, `AXUIElement`s on macOS)
+and runs its actions one at a time. A hung app or a slow snapshot therefore
+only holds up the chat driving it; the Settings app picker has a worker of its
+own, and a worker retires after ten idle minutes once its session has nothing
+attached. Preview frames are captured on a separate blocking task so they
+never queue behind a long action.
+
+The backend waits 60 s for an action (plus 20 ms per character for `type` and
+`set_value`). When it gives up it sends `cancel` over the bridge, and the
+desktop interrupts the action (`app_computer_interrupt`, the same interruption
+as Stop, without revoking control), so a retry cannot repeat input that was
+still being delivered.
 `computer_app/mod.rs` holds the Tauri commands and the platform-neutral parts
 (key parsing, blocked shortcuts, protected processes, screenshot scaling) and
 dispatches to `win.rs` or `mac.rs`.

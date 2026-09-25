@@ -66,6 +66,25 @@ async def test_bridge_round_trip_and_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_timed_out_command_is_cancelled_on_the_desktop() -> None:
+    bridge = DirectComputerBridge()
+    websocket = _FakeWebSocket()
+    attach_task = asyncio.create_task(bridge.attach("session-1", websocket))
+    await websocket.received.put({"type": "ready"})
+    await asyncio.sleep(0)
+
+    with pytest.raises(TimeoutError, match="told to stop it"):
+        await bridge.request("session-1", "type", {"text": "x"}, timeout=0.05)
+
+    command = await websocket.sent.get()
+    assert command["action"] == "type"
+    assert await websocket.sent.get() == {"type": "cancel"}
+
+    await websocket.received.put(None)
+    await attach_task
+
+
+@pytest.mark.asyncio
 async def test_bridge_rejects_commands_the_shell_does_not_advertise() -> None:
     bridge = DirectComputerBridge()
     websocket = _FakeWebSocket()
