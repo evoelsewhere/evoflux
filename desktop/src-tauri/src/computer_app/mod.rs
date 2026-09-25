@@ -198,6 +198,60 @@ fn unsupported() -> String {
     "Computer App Control is only available in EvoFlux Desktop on Windows and macOS.".to_string()
 }
 
+// ── Interrupting an action ──────────────────────────────────────────────
+//
+// Stop has to end what the agent is doing now, not only refuse what comes
+// next: a `type` of a long text or a drag runs for seconds on the worker.
+// Each action takes a ticket (its session's generation) when it arrives,
+// before it waits in the worker's queue; interrupting a session bumps the
+// generation, and the action's loops check their ticket between steps.
+
+static GENERATIONS: once_cell::sync::Lazy<std::sync::Mutex<std::collections::HashMap<String, u64>>> =
+    once_cell::sync::Lazy::new(Default::default);
+
+thread_local! {
+    /// The ticket of the action running on this thread, if any.
+    static TICKET: std::cell::RefCell<Option<(String, u64)>> = const { std::cell::RefCell::new(None) };
+}
+
+fn generation(session_id: &str) -> u64 {
+    GENERATIONS
+        .lock()
+        .map(|generations| generations.get(session_id).copied().unwrap_or(0))
+        .unwrap_or(0)
+}
+
+/// End whatever the session's actions are doing, including ones still
+/// waiting their turn.
+pub(crate) fn interrupt(session_id: &str) {
+    if let Ok(mut generations) = GENERATIONS.lock() {
+        *generations.entry(session_id.to_string()).or_insert(0) += 1;
+    }
+}
+
+/// Run `action` holding `ticket`, so [`interrupted`] can tell whether its
+/// session was interrupted since the ticket was taken.
+#[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
+fn with_ticket<T>(session_id: &str, ticket: u64, action: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    TICKET.with(|slot| *slot.borrow_mut() = Some((session_id.to_string(), ticket)));
+    let outcome = interrupted().and_then(|()| action());
+    TICKET.with(|slot| *slot.borrow_mut() = None);
+    outcome
+}
+
+/// `Err` once the running action's session was interrupted. Long actions
+/// call this between steps; outside an action it never fails.
+#[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
+pub(crate) fn interrupted() -> Result<(), String> {
+    let ticket = TICKET.with(|slot| slot.borrow().clone());
+    match ticket {
+        Some((session_id, ticket)) if generation(&session_id) != ticket => Err(
+            "Interrupted: the user stopped Computer App Control (or the action was cancelled). Nothing after this point was done.".into(),
+        ),
+        _ => Ok(()),
+    }
+}
+
 /// Run one agent action against the session's attached window.
 #[tauri::command]
 pub async fn app_computer_action(
@@ -207,6 +261,12 @@ pub async fn app_computer_action(
     params: Option<Value>,
 ) -> Result<Value, String> {
     let params = params.unwrap_or(Value::Null);
+    if action == "detach" {
+        // Closing the card (or the agent letting go) ends anything still
+        // running for the session rather than queueing behind it.
+        interrupt(&session_id);
+    }
+    let ticket = generation(&session_id);
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         use tauri::Emitter;
@@ -214,13 +274,13 @@ pub async fn app_computer_action(
             let emit = |payload: Value| {
                 let _ = app.emit(POINTER_EVENT, payload);
             };
-            native::run_action(&emit, &session_id, &action, &params)
+            with_ticket(&session_id, ticket, || native::run_action(&emit, &session_id, &action, &params))
         })
         .await
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        let _ = (app, session_id, action, params);
+        let _ = (app, session_id, action, params, ticket);
         Err(unsupported())
     }
 }
@@ -262,6 +322,7 @@ pub async fn app_computer_frame(session_id: String, max_width: Option<u32>) -> R
 /// The user revoked control: detach and refuse re-attaching until resumed.
 #[tauri::command]
 pub fn app_computer_stop(session_id: String) -> Result<Value, String> {
+    interrupt(&session_id);
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
         native::stop(&session_id);
@@ -367,6 +428,30 @@ mod tests {
         assert!(parse_key_combo("option+left").unwrap().alt);
         assert!(parse_key_combo("hyper+x").is_err());
         assert!(parse_key_combo("ctrl+").is_err());
+    }
+
+    #[test]
+    fn interrupting_a_session_ends_only_its_actions() {
+        // The running action notices at its next check.
+        let running = with_ticket("stop-running", generation("stop-running"), || {
+            interrupt("stop-running");
+            interrupted()
+        });
+        assert!(running.is_err());
+        // An action still queued when Stop came never starts.
+        let queued = generation("stop-queued");
+        interrupt("stop-queued");
+        let mut started = false;
+        assert!(with_ticket("stop-queued", queued, || {
+            started = true;
+            Ok(())
+        })
+        .is_err());
+        assert!(!started);
+        // Other sessions, and code outside an action, are unaffected.
+        interrupt("stop-other");
+        assert!(with_ticket("stop-mine", generation("stop-mine"), interrupted).is_ok());
+        assert!(interrupted().is_ok());
     }
 
     #[test]
