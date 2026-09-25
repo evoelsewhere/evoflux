@@ -32,10 +32,10 @@
   position: absolute;
   left: 0;
   top: 0;
-  width: 10px;
-  height: 11px;
+  width: 7px;
+  height: 8px;
   transform: translate3d(var(--cursor-x, 50%), var(--cursor-y, 50%), 0);
-  transform-origin: 1.7px 1.1px;
+  transform-origin: 1.2px 0.8px;
   transition: transform 200ms cubic-bezier(0.22, 0.8, 0.3, 1);
   will-change: transform;
 }
@@ -56,15 +56,15 @@
   overflow: visible;
   filter:
     drop-shadow(0 0.5px 0.5px rgba(0, 0, 0, 0.5))
-    drop-shadow(0 0 2px rgba(126, 93, 255, 0.58));
+    drop-shadow(0 0 1.5px rgba(126, 93, 255, 0.58));
 }
 
 .agent-control-cursor-aura {
   position: absolute;
-  left: -3px;
-  top: -3px;
-  width: 10px;
-  height: 10px;
+  left: -2px;
+  top: -2px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   opacity: 0.46;
   background: radial-gradient(
@@ -74,18 +74,18 @@
     rgba(67, 210, 255, 0.11) 54%,
     transparent 74%
   );
-  filter: blur(1.5px);
+  filter: blur(1px);
 }
 
 .agent-control-cursor-pulse {
   position: absolute;
-  left: -3px;
-  top: -3px;
-  width: 8px;
-  height: 8px;
+  left: -2px;
+  top: -2px;
+  width: 6px;
+  height: 6px;
   border: 1px solid rgba(126, 102, 255, 0.86);
   border-radius: 50%;
-  box-shadow: 0 0 6px rgba(70, 211, 255, 0.72);
+  box-shadow: 0 0 4px rgba(70, 211, 255, 0.72);
   opacity: 0;
   transform: scale(0.25);
 }
