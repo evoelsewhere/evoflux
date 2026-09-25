@@ -39,79 +39,138 @@ export function useComputerAppBridge(
 ): void {
   const unique = [...new Set(sessionIds.filter((id): id is string => Boolean(id)))]
   const sessionKey = unique.join('\u0000')
+  const bridge = useRef<ComputerAppBridge | null>(null)
+
+  // One bridge for the component's lifetime, so switching chats (or a card
+  // opening or closing) only opens and closes the sockets that changed.
+  useEffect(() => {
+    if (!computerAppSupported()) return
+    const created = createComputerAppBridge()
+    bridge.current = created
+    return () => {
+      created.dispose()
+      if (bridge.current === created) bridge.current = null
+    }
+  }, [])
 
   useEffect(() => {
-    if (!sessionKey || !computerAppSupported()) return
-    let alive = true
-    const sockets = new Map<string, {
-      socket: WebSocket | null
-      timer: ReturnType<typeof setTimeout> | null
-      delay: number
-      queue: Promise<void>
-    }>()
-
-    const connect = (sessionId: string) => {
-      if (!alive) return
-      const entry = sockets.get(sessionId)
-        ?? { socket: null, timer: null, delay: RECONNECT_BASE_MS, queue: Promise.resolve() }
-      sockets.set(sessionId, entry)
-      const socket = new WebSocket(bridgeUrl(sessionId))
-      entry.socket = socket
-      socket.onopen = () => {
-        entry.delay = RECONNECT_BASE_MS
-        socket.send(JSON.stringify({
-          type: 'ready',
-          protocol_version: 1,
-          capabilities: { commands: COMPUTER_APP_COMMANDS, features: ['background_input', 'cancel'] },
-        }))
-      }
-      socket.onmessage = (event) => {
-        if (typeof event.data !== 'string') return
-        let message: { id?: unknown; type?: unknown; action?: unknown; params?: unknown }
-        try {
-          message = JSON.parse(event.data) as typeof message
-        } catch {
-          return
-        }
-        if (message.type === 'cancel') {
-          // The backend stopped waiting for the action in progress: end it
-          // now (not behind it in the queue) so a retry cannot repeat it.
-          void invoke('app_computer_interrupt', { sessionId }).catch(() => undefined)
-          return
-        }
-        const { id, action } = message
-        if (typeof id !== 'string' || typeof action !== 'string') return
-        const params = message.params && typeof message.params === 'object'
-          ? message.params as Record<string, unknown>
-          : {}
-        // One command at a time, in order: the native side is sequential
-        // anyway, and a click must not overtake the attach before it.
-        entry.queue = entry.queue.then(async () => {
-          const reply = await runComputerAppCommand(sessionId, action, params)
-          if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id, ...reply }))
-        })
-      }
-      socket.onclose = (event) => {
-        if (entry.socket === socket) entry.socket = null
-        if (!alive) return
-        // Another window took this session, or the token was refused:
-        // reconnecting would only fight it or hammer the auth gate.
-        if (event.code === WS_DISPLACED || event.code === WS_UNAUTHORIZED) return
-        entry.delay = Math.min(entry.delay * 2, RECONNECT_MAX_MS)
-        entry.timer = setTimeout(() => connect(sessionId), entry.delay)
-      }
-      socket.onerror = () => socket.close()
-    }
-
-    for (const sessionId of sessionKey.split('\u0000')) connect(sessionId)
-    return () => {
-      alive = false
-      for (const entry of sockets.values()) {
-        if (entry.timer) clearTimeout(entry.timer)
-        entry.socket?.close()
-      }
-    }
+    bridge.current?.sync(sessionKey ? sessionKey.split('\u0000') : [])
   }, [sessionKey])
+}
+
+export interface ComputerAppBridge {
+  /** Keep a socket open for exactly these sessions. */
+  sync(sessionIds: readonly string[]): void
+  dispose(): void
+}
+
+interface BridgeEntry {
+  socket: WebSocket | null
+  timer: ReturnType<typeof setTimeout> | null
+  delay: number
+  queue: Promise<void>
+  /** Commands received and not yet answered. */
+  pending: number
+}
+
+/**
+ * The set of bridge sockets, one per session.
+ *
+ * A session that is no longer wanted (its chat is off screen and it has no
+ * card) keeps its socket until the commands it already received have been
+ * answered: closing mid-command would lose the reply while the desktop
+ * still carried the input out, and the agent's retry would do it twice.
+ */
+export function createComputerAppBridge(): ComputerAppBridge {
+  const entries = new Map<string, BridgeEntry>()
+  let wanted = new Set<string>()
+  let disposed = false
+
+  const retire = (sessionId: string, entry: BridgeEntry) => {
+    if (entry.timer) clearTimeout(entry.timer)
+    entry.timer = null
+    entries.delete(sessionId)
+    entry.socket?.close()
+  }
+
+  const connect = (sessionId: string) => {
+    if (disposed || !wanted.has(sessionId)) return
+    const entry = entries.get(sessionId)
+      ?? { socket: null, timer: null, delay: RECONNECT_BASE_MS, queue: Promise.resolve(), pending: 0 }
+    entries.set(sessionId, entry)
+    entry.timer = null
+    const socket = new WebSocket(bridgeUrl(sessionId))
+    entry.socket = socket
+    socket.onopen = () => {
+      entry.delay = RECONNECT_BASE_MS
+      socket.send(JSON.stringify({
+        type: 'ready',
+        protocol_version: 1,
+        capabilities: { commands: COMPUTER_APP_COMMANDS, features: ['background_input', 'cancel'] },
+      }))
+    }
+    socket.onmessage = (event) => {
+      if (typeof event.data !== 'string') return
+      let message: { id?: unknown; type?: unknown; action?: unknown; params?: unknown }
+      try {
+        message = JSON.parse(event.data) as typeof message
+      } catch {
+        return
+      }
+      if (message.type === 'cancel') {
+        // The backend stopped waiting for the action in progress: end it
+        // now (not behind it in the queue) so a retry cannot repeat it.
+        void invoke('app_computer_interrupt', { sessionId }).catch(() => undefined)
+        return
+      }
+      const { id, action } = message
+      if (typeof id !== 'string' || typeof action !== 'string') return
+      const params = message.params && typeof message.params === 'object'
+        ? message.params as Record<string, unknown>
+        : {}
+      entry.pending += 1
+      // One command at a time, in order: the native side is sequential
+      // anyway, and a click must not overtake the attach before it.
+      entry.queue = entry.queue.then(async () => {
+        const reply = await runComputerAppCommand(sessionId, action, params)
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ id, ...reply }))
+        entry.pending -= 1
+        if (entry.pending === 0 && !wanted.has(sessionId) && entries.get(sessionId) === entry) {
+          retire(sessionId, entry)
+        }
+      })
+    }
+    socket.onclose = (event) => {
+      if (entry.socket === socket) entry.socket = null
+      if (disposed || !wanted.has(sessionId) || entries.get(sessionId) !== entry) return
+      // Another window took this session, or the token was refused:
+      // reconnecting would only fight it or hammer the auth gate.
+      if (event.code === WS_DISPLACED || event.code === WS_UNAUTHORIZED) return
+      entry.delay = Math.min(entry.delay * 2, RECONNECT_MAX_MS)
+      entry.timer = setTimeout(() => connect(sessionId), entry.delay)
+    }
+    socket.onerror = () => socket.close()
+  }
+
+  return {
+    sync(sessionIds) {
+      if (disposed) return
+      wanted = new Set(sessionIds)
+      for (const sessionId of wanted) {
+        const entry = entries.get(sessionId)
+        if (!entry) connect(sessionId)
+        else if (!entry.socket && !entry.timer) connect(sessionId)
+      }
+      for (const [sessionId, entry] of [...entries]) {
+        if (!wanted.has(sessionId) && entry.pending === 0) retire(sessionId, entry)
+      }
+    },
+    dispose() {
+      disposed = true
+      wanted = new Set()
+      for (const [sessionId, entry] of [...entries]) retire(sessionId, entry)
+    },
+  }
 }
 
 /**

@@ -239,8 +239,14 @@ computer_app tool ──► direct_computer_bridge ──WS /api/team/{sid}/comp
                      ◄── "computer-app:pointer" events ─────────────┘
 ```
 
-The chat keeps one bridge WebSocket per open session in the desktop app and
-relays each command to the session's own native worker thread, which owns its
+The chat keeps one bridge WebSocket per session that is on screen or has a
+preview card, and the set is kept up to date rather than rebuilt: switching
+chats only opens and closes the sockets that changed, and a session that
+leaves the set keeps its socket until the commands it already received have
+been answered, so a reply is never lost while the desktop still carries the
+input out. A command sent while its session's socket is reconnecting waits up
+to three seconds for it. Each command goes to the session's own native worker
+thread, which owns its
 element refs (UI Automation COM objects on Windows, `AXUIElement`s on macOS)
 and runs its actions one at a time. A hung app or a slow snapshot therefore
 only holds up the chat driving it; the Settings app picker has a worker of its
