@@ -347,6 +347,62 @@ class TestWrapToolCall:
         assert "tool_start" in event_types
         assert "tool_end" in event_types
 
+    @staticmethod
+    async def _computer_app_permission(arguments: str) -> list[dict]:
+        hook = _make_hook()
+        hook._resolver.register("computer_app", "tc-1")
+        asks: list[dict] = []
+
+        class _Service:
+            async def ask(self, **kwargs):
+                asks.append(kwargs)
+
+        tool_call = MagicMock()
+        tool_call.id = "internal-id"
+        tool_call.function = MagicMock()
+        tool_call.function.name = "computer_app"
+        tool_call.function.arguments = arguments
+
+        async def handler(ctx, state, tc):
+            return "done"
+
+        async def fake_push(sid, event):
+            return None
+
+        with (
+            patch("app.services.memory_stream_store.push_event", new=fake_push),
+            patch(
+                "app.agent.permission.get_permission_service", return_value=_Service()
+            ),
+        ):
+            await hook.wrap_tool_call(MagicMock(), MagicMock(), tool_call, handler)
+        return asks
+
+    @pytest.mark.asyncio
+    async def test_computer_app_permission_lists_each_action(self):
+        asks = await self._computer_app_permission(
+            '{"actions": [{"action": "click", "ref": "e12"},'
+            ' {"action": "type", "text": "hello"},'
+            ' {"action": "wait", "seconds": 1},'
+            ' {"action": "key", "key": "ctrl+s"}]}'
+        )
+
+        assert len(asks) == 1
+        assert asks[0]["patterns"] == [
+            "click e12",
+            'type "hello" (5 chars)',
+            "key ctrl+s",
+        ]
+        assert asks[0]["always_patterns"] == ["computer_app"]
+
+    @pytest.mark.asyncio
+    async def test_computer_app_release_needs_no_permission(self):
+        asks = await self._computer_app_permission(
+            '{"actions": [{"action": "status"}, {"action": "detach"}]}'
+        )
+
+        assert asks == []
+
     @pytest.mark.asyncio
     async def test_tool_output_callback_pushes_delta(self):
         hook = _make_hook()

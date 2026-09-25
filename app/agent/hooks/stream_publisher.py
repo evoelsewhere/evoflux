@@ -358,7 +358,20 @@ class StreamPublisherHook(BaseAgentHook):
         # user replies "always allow" (e.g. "git status -sb" → "git status *").
         patterns: list[str] = []
         always_patterns: list[str] = []
-        if "command" in args_dict:
+        needs_permission = True
+        if fn_name == "computer_app":
+            # One entry per action ("type "hi" (2 chars)", "key ctrl+s"), so
+            # the user sees what is about to be done to the app, and a
+            # refusal only blocks those same actions later in the run.
+            from app.agent.tools.builtin.computer_app_tool import (
+                permission_patterns,
+            )
+
+            described = permission_patterns(args_dict)
+            needs_permission = described is not None
+            patterns = described or []
+            always_patterns = [fn_name]
+        elif "command" in args_dict:
             cmd_str = str(args_dict["command"]).strip()
             patterns.append(cmd_str[:200] if cmd_str else fn_name)
             always_patterns.append(
@@ -375,17 +388,18 @@ class StreamPublisherHook(BaseAgentHook):
         # The service owns the whole flow: rule evaluation, mode handling,
         # SSE publishing, and blocking on the user's reply.  A deny/reject
         # raises here and surfaces to the LLM as a tool error result.
-        await get_permission_service().ask(
-            tool=fn_name,
-            patterns=patterns,
-            always_patterns=always_patterns,
-            metadata={
-                "tool_call_id": tc_id,
-                "agent": self._agent_name,
-                "important": fn_name in _IMPORTANT_ACTION_TOOLS,
-            },
-            important=fn_name in _IMPORTANT_ACTION_TOOLS,
-        )
+        if needs_permission:
+            await get_permission_service().ask(
+                tool=fn_name,
+                patterns=patterns,
+                always_patterns=always_patterns,
+                metadata={
+                    "tool_call_id": tc_id,
+                    "agent": self._agent_name,
+                    "important": fn_name in _IMPORTANT_ACTION_TOOLS,
+                },
+                important=fn_name in _IMPORTANT_ACTION_TOOLS,
+            )
 
         # ── Execute tool ──────────────────────────────────────────────
         started = time.monotonic()
