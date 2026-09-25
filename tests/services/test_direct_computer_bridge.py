@@ -66,6 +66,24 @@ async def test_bridge_round_trip_and_error() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_command_waits_for_the_desktop_to_reconnect() -> None:
+    bridge = DirectComputerBridge()
+    websocket = _FakeWebSocket()
+    request_task = asyncio.create_task(bridge.request("session-1", "status", {}))
+    await asyncio.sleep(0.15)
+    assert not request_task.done()
+
+    attach_task = asyncio.create_task(bridge.attach("session-1", websocket))
+    await websocket.received.put({"type": "ready"})
+    command = await websocket.sent.get()
+    await websocket.received.put({"id": command["id"], "ok": True, "result": "ok"})
+    assert await request_task == "ok"
+
+    await websocket.received.put(None)
+    await attach_task
+
+
+@pytest.mark.asyncio
 async def test_a_timed_out_command_is_cancelled_on_the_desktop() -> None:
     bridge = DirectComputerBridge()
     websocket = _FakeWebSocket()
@@ -136,6 +154,7 @@ async def test_newer_attach_displaces_older_socket() -> None:
 @pytest.mark.asyncio
 async def test_request_requires_connected_desktop() -> None:
     bridge = DirectComputerBridge()
+    bridge.reconnect_grace = 0.05
 
     with pytest.raises(
         DirectComputerUnavailable, match="EvoFlux Desktop on Windows or macOS"

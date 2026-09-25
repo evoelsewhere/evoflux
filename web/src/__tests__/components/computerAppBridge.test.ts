@@ -1,11 +1,91 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { runComputerAppCommand } from '@/components/ComputerAppViewer/computerAppBridge'
+import {
+  createComputerAppBridge,
+  runComputerAppCommand,
+} from '@/components/ComputerAppViewer/computerAppBridge'
 import { useUIStore } from '@/stores/useUIStore'
 
 const desktop = vi.hoisted(() => ({ stopped: false, invoke: vi.fn() }))
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: desktop.invoke }))
+
+class FakeSocket {
+  static OPEN = 1
+  static instances: FakeSocket[] = []
+  readyState = 1
+  sent: string[] = []
+  closed = false
+  onopen: (() => void) | null = null
+  onmessage: ((event: { data: string }) => void) | null = null
+  onclose: ((event: { code: number }) => void) | null = null
+  onerror: (() => void) | null = null
+
+  url: string
+
+  constructor(url: string) {
+    this.url = url
+    FakeSocket.instances.push(this)
+  }
+
+  send(data: string) {
+    this.sent.push(data)
+  }
+
+  close() {
+    this.closed = true
+    this.readyState = 3
+    this.onclose?.({ code: 1000 })
+  }
+}
+
+describe('createComputerAppBridge', () => {
+  const realSocket = globalThis.WebSocket
+
+  beforeEach(() => {
+    FakeSocket.instances = []
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+    desktop.invoke.mockReset()
+  })
+
+  afterEach(() => {
+    globalThis.WebSocket = realSocket
+  })
+
+  const socketFor = (session: string) =>
+    FakeSocket.instances.find((socket) => socket.url.includes(`/team/${session}/`))!
+
+  it('only opens and closes the sockets that changed', () => {
+    const bridge = createComputerAppBridge()
+    bridge.sync(['a', 'b'])
+    const a = socketFor('a')
+    bridge.sync(['a', 'c'])
+
+    expect(FakeSocket.instances).toHaveLength(3)
+    expect(a.closed).toBe(false)
+    expect(socketFor('b').closed).toBe(true)
+    bridge.dispose()
+    expect(a.closed).toBe(true)
+  })
+
+  it('keeps a leaving session open until its command is answered', async () => {
+    let finish: (value: unknown) => void = () => undefined
+    desktop.invoke.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    const bridge = createComputerAppBridge()
+    bridge.sync(['a'])
+    const a = socketFor('a')
+    a.onmessage?.({ data: JSON.stringify({ id: 'r1', action: 'type', params: { text: 'hi' } }) })
+    await Promise.resolve()
+
+    bridge.sync([])
+    expect(a.closed).toBe(false)
+
+    finish({ typed_chars: 2 })
+    await vi.waitFor(() => expect(a.closed).toBe(true))
+    expect(a.sent.some((message) => message.includes('"r1"'))).toBe(true)
+    bridge.dispose()
+  })
+})
 
 describe('runComputerAppCommand', () => {
   beforeEach(() => {

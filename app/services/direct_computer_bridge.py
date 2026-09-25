@@ -47,6 +47,9 @@ class _Connection:
 class DirectComputerBridge:
     """Routes one command at a time to the session's desktop shell."""
 
+    #: How long a command waits for a session's desktop to reconnect.
+    reconnect_grace: float = 3.0
+
     def __init__(self) -> None:
         self._connections: dict[str, _Connection] = {}
 
@@ -127,6 +130,11 @@ class DirectComputerBridge:
         timeout: float = 60.0,
     ) -> Any:
         connection = self._connections.get(session_id)
+        if connection is None or not connection.ready:
+            # The chat may be reconnecting its socket (a UI reload, a card
+            # closing): give it a moment rather than failing the action.
+            if await self.wait_connected(session_id, timeout=self.reconnect_grace):
+                connection = self._connections.get(session_id)
         if connection is None or not connection.ready:
             raise DirectComputerUnavailable(
                 "Open this chat in EvoFlux Desktop on Windows or macOS to control apps"
