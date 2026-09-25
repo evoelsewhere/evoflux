@@ -247,6 +247,34 @@ def save_credentials(
     return credential_state(installation_id, inspection)
 
 
+def carry_over_credentials(
+    previous_installation_id: str,
+    installation_id: str,
+    inspection: PluginInspection,
+) -> PluginCredentialState:
+    """Copy a governed plugin's saved credentials onto the fresh installation
+    a version update just staged.
+
+    Conductor stages every updated version as a brand-new installation id (a
+    new, disabled copy pending trust review) rather than upgrading one in
+    place -- reviewing the new package's own commands/hosts/capabilities is
+    the whole point, and reusing the installation id would blur which trust
+    review covers which code. But that installation id is also what scopes
+    where credentials live, so without this, updating a governed plugin
+    silently wipes every credential the member configured -- forcing the same
+    Jira token, API keys, etc. back in on every update. `save_credentials`
+    already validates against the *new* version's own credential definition
+    and drops anything it no longer declares, so a field renamed or removed
+    between versions is handled the same way an unknown key from a hand-edited
+    file would be -- silently dropped, not an error.
+    """
+    previous_values = _read_values(previous_installation_id)
+    if not previous_values:
+        return credential_state(installation_id, inspection)
+    updates: dict[str, str | bool | None] = dict(previous_values)
+    return save_credentials(installation_id, inspection, updates)
+
+
 def clear_credentials(
     installation_id: str,
     inspection: PluginInspection,

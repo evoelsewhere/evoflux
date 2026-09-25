@@ -48,6 +48,7 @@ from app.plugin_platform.registry import (
     replace_installation,
     set_enabled,
 )
+from app.plugin_platform.credentials import carry_over_credentials
 from app.plugin_platform.registry import plugin_data_root
 from app.plugin_platform.validator import inspect_plugin
 from app.services import agent_fs, team_manager
@@ -133,9 +134,9 @@ class GovernedResourceReconciler:
             # state branches keeps a record that already drifted into
             # ``update_pending`` from staying mislabelled — an update is not
             # what is pending, and pulling one is not what fixes it.
-            if _applied_version_id(previous) == change.version_id and _local_copy_diverged(
+            if _applied_version_id(
                 previous
-            ):
+            ) == change.version_id and _local_copy_diverged(previous):
                 if enforcement_mode == "enforce":
                     # ``_apply_*`` re-checks ownership and reports the conflict
                     # itself rather than overwriting the edit.
@@ -413,10 +414,30 @@ class GovernedResourceReconciler:
                 }
             )
             replace_installation(installation)
-            trust_review = inspect_plugin(
+            inspection = inspect_plugin(
                 Path(installation.root),
                 data_root=plugin_data_root(installation.id),
-            ).trust.model_dump(mode="json")
+            )
+            trust_review = inspection.trust.model_dump(mode="json")
+            previous_installation_id = (
+                previous.plugin_installation_id if previous else None
+            )
+            if previous_installation_id and previous_installation_id != installation.id:
+                try:
+                    carry_over_credentials(
+                        previous_installation_id, installation.id, inspection
+                    )
+                except Exception as exc:
+                    # Never let a credential-carry failure block the version
+                    # update itself -- the member still ends up with a
+                    # freshly staged plugin, just one they have to
+                    # re-configure by hand, same as before this existed.
+                    logger.warning(
+                        "conductor_plugin_credential_carry_over_failed "
+                        f"installation={installation.id} "
+                        f"previous={previous_installation_id} "
+                        f"error={type(exc).__name__}: {exc}"
+                    )
         finally:
             Path(temporary).unlink(missing_ok=True)
         return self._record(
@@ -623,38 +644,36 @@ class GovernedResourceReconciler:
         return updated
 
     def inventory(self) -> list[dict[str, Any]]:
-        return [
-            self._inventory_item(item) for item in self.store.load().resources
-        ]
+        return [self._inventory_item(item) for item in self.store.load().resources]
 
     def _inventory_item(self, item: ManagedResourceRecord) -> dict[str, Any]:
         state = observed_state_now(item)
         return {
-                "resource_id": item.resource_id,
-                "desired_version_id": item.version_id,
-                "applied_version_id": (
-                    item.applied_version_id
-                    or (
-                        item.version_id
-                        if item.observed_state in {"applied", "in_sync"}
-                        else None
-                    )
-                ),
-                "release_channel": item.release_channel,
-                "content_sha256": item.applied_content_sha256,
-                "plugin_installation_id": item.plugin_installation_id,
-                "observed_state": state,
-                # Conductor shows this under the state badge, and a bare
-                # "dependency missing" or "ownership conflict" is not something
-                # an operator can act on.
-                "error_category": (
-                    describe_unresolved(unresolved_capabilities(item))
-                    if state == "dependency_missing"
-                    else describe_local_divergence(item) or item.error_category
-                    if state == "ownership_conflict"
-                    else item.error_category
-                ),
-                "observed_at": item.observed_at.isoformat(),
+            "resource_id": item.resource_id,
+            "desired_version_id": item.version_id,
+            "applied_version_id": (
+                item.applied_version_id
+                or (
+                    item.version_id
+                    if item.observed_state in {"applied", "in_sync"}
+                    else None
+                )
+            ),
+            "release_channel": item.release_channel,
+            "content_sha256": item.applied_content_sha256,
+            "plugin_installation_id": item.plugin_installation_id,
+            "observed_state": state,
+            # Conductor shows this under the state badge, and a bare
+            # "dependency missing" or "ownership conflict" is not something
+            # an operator can act on.
+            "error_category": (
+                describe_unresolved(unresolved_capabilities(item))
+                if state == "dependency_missing"
+                else describe_local_divergence(item) or item.error_category
+                if state == "ownership_conflict"
+                else item.error_category
+            ),
+            "observed_at": item.observed_at.isoformat(),
         }
 
     def deactivate_project(self, project_id: str) -> None:
@@ -1059,9 +1078,7 @@ def _team_lead_name(definitions: dict[str, str]) -> str:
     lead_name = leads[0]
     for name, declared in members.items():
         if not declared:
-            raise ValueError(
-                f"Managed Team member '{name}' does not declare its lead."
-            )
+            raise ValueError(f"Managed Team member '{name}' does not declare its lead.")
         if declared != lead_name:
             raise ValueError(
                 f"Managed Team member '{name}' declares lead '{declared}', "
@@ -1139,7 +1156,11 @@ def observed_state_now(record: ManagedResourceRecord) -> ObservedResourceState:
         return record.observed_state
     if _local_copy_diverged(record):
         return "ownership_conflict"
-    return "dependency_missing" if unresolved_capabilities(record) else record.observed_state
+    return (
+        "dependency_missing"
+        if unresolved_capabilities(record)
+        else record.observed_state
+    )
 
 
 def _local_copy_diverged(record: ManagedResourceRecord) -> bool:
