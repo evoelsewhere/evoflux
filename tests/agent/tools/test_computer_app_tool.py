@@ -33,12 +33,16 @@ def _use_policy(monkeypatch, **policy: Any) -> None:
     )
 
 
-def _fake_bridge(monkeypatch, responses: dict[str, Any]) -> list[tuple[str, str, dict]]:
+def _fake_bridge(
+    monkeypatch, responses: dict[str, Any], timeouts: dict[str, float] | None = None
+) -> list[tuple[str, str, dict]]:
     requests: list[tuple[str, str, dict]] = []
     monkeypatch.setattr(direct_computer_bridge, "is_connected", lambda _sid: True)
 
-    async def request(sid: str, action: str, params: dict):
+    async def request(sid: str, action: str, params: dict, timeout: float = 60.0):
         requests.append((sid, action, params))
+        if timeouts is not None:
+            timeouts[action] = timeout
         response = responses.get(action)
         if isinstance(response, Exception):
             raise response
@@ -310,6 +314,24 @@ async def test_a_failed_action_skips_the_rest_but_still_detaches(monkeypatch) ->
         "Skipped 2 action(s) (type, key) because click failed. Check the app's "
         "state, then send them again.\n---\nDetached."
     )
+
+
+@pytest.mark.asyncio
+async def test_long_typing_gets_a_longer_timeout(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True)
+    timeouts: dict[str, float] = {}
+    _fake_bridge(
+        monkeypatch,
+        {"type": {"typed_chars": 5000}, "click": {"clicks": 1}},
+        timeouts,
+    )
+
+    await _run(
+        {"action": "click", "x": 1, "y": 1}, {"action": "type", "text": "a" * 5000}
+    )
+
+    assert timeouts["click"] == 60.0
+    assert timeouts["type"] == pytest.approx(160.0)
 
 
 @pytest.mark.asyncio

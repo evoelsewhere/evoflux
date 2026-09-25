@@ -62,15 +62,21 @@ export function useComputerAppBridge(
         socket.send(JSON.stringify({
           type: 'ready',
           protocol_version: 1,
-          capabilities: { commands: COMPUTER_APP_COMMANDS, features: ['background_input'] },
+          capabilities: { commands: COMPUTER_APP_COMMANDS, features: ['background_input', 'cancel'] },
         }))
       }
       socket.onmessage = (event) => {
         if (typeof event.data !== 'string') return
-        let message: { id?: unknown; action?: unknown; params?: unknown }
+        let message: { id?: unknown; type?: unknown; action?: unknown; params?: unknown }
         try {
           message = JSON.parse(event.data) as typeof message
         } catch {
+          return
+        }
+        if (message.type === 'cancel') {
+          // The backend stopped waiting for the action in progress: end it
+          // now (not behind it in the queue) so a retry cannot repeat it.
+          void invoke('app_computer_interrupt', { sessionId }).catch(() => undefined)
           return
         }
         const { id, action } = message

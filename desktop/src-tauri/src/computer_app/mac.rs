@@ -23,7 +23,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::c_void;
-use std::sync::{mpsc, Mutex};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -53,8 +53,8 @@ use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 
 use super::{
-    blocked_combo_reason, interrupted, is_protected_process_name, parse_key_combo,
-    screenshot_scale, KeyCombo,
+    blocked_combo_reason, interrupted, is_protected_process_name, on_worker, parse_key_combo,
+    post_to_worker, screenshot_scale, KeyCombo,
 };
 
 const POINTER_TRAVEL: Duration = Duration::from_millis(220);
@@ -659,53 +659,17 @@ fn unpark(window: &Ax, parked: Parked, activate: bool) {
     }
 }
 
-// ── Worker thread ───────────────────────────────────────────────────────
+// ── Worker threads ──────────────────────────────────────────────────────
 //
 // Element refs are Core Foundation objects that have to outlive a single
-// command and are not `Send`. One dedicated thread owns all of them, and
-// actions run on it one at a time.
+// command and are not `Send`. Each session's worker thread (see `mod.rs`)
+// owns its own and runs its actions one at a time; nothing needs setting up.
 
-type Job = Box<dyn FnOnce() + Send + 'static>;
+pub(crate) fn init_worker_thread() {}
 
-static WORKER: Lazy<Mutex<Option<mpsc::Sender<Job>>>> = Lazy::new(|| Mutex::new(None));
-
-fn worker_sender() -> Result<mpsc::Sender<Job>, String> {
-    let mut slot = WORKER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(sender) = slot.as_ref() {
-        return Ok(sender.clone());
-    }
-    let (sender, receiver) = mpsc::channel::<Job>();
-    std::thread::Builder::new()
-        .name("computer-app".into())
-        .spawn(move || {
-            ON_WORKER.with(|flag| flag.set(true));
-            for job in receiver {
-                job();
-            }
-        })
-        .map_err(|error| format!("could not start the Computer App Control worker: {error}"))?;
-    *slot = Some(sender.clone());
-    Ok(sender)
-}
-
-pub(crate) async fn run_on_worker<T: Send + 'static>(
-    job: impl FnOnce() -> Result<T, String> + Send + 'static,
-) -> Result<T, String> {
-    let (reply, result) = tokio::sync::oneshot::channel();
-    let job: Job = Box::new(move || {
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job))
-            .unwrap_or_else(|_| Err("Computer App Control action panicked".to_string()));
-        let _ = reply.send(outcome);
-    });
-    let sender = worker_sender()?;
-    if sender.send(job).is_err() {
-        // The worker died; forget it so the next call starts a fresh one.
-        *WORKER.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
-        return Err("Computer App Control worker is not running".into());
-    }
-    result
-        .await
-        .map_err(|_| "Computer App Control worker dropped the action".to_string())?
+/// Whether `session_id` has a window attached (its worker is still needed).
+pub(crate) fn is_attached(session_id: &str) -> bool {
+    registry().attached.contains_key(session_id)
 }
 
 thread_local! {
@@ -721,21 +685,14 @@ struct SessionRefs {
     elements: HashMap<String, Ax>,
 }
 
-thread_local! {
-    static ON_WORKER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 /// Drop the session's element refs. They live on the thread that ran the
-/// action — the worker, in the app — so a release from elsewhere (Stop,
-/// exit) also hands the clean-up to the worker, behind whatever it is
-/// running.
+/// action — the session's worker, in the app — so a release from elsewhere
+/// (Stop, exit) also hands the clean-up to that worker, behind whatever it
+/// is running.
 fn clear_refs(session_id: &str) {
-    if !ON_WORKER.with(|flag| flag.get()) {
-        let sender = WORKER.lock().ok().and_then(|slot| slot.clone());
-        if let Some(sender) = sender {
-            let session_id = session_id.to_string();
-            let _ = sender.send(Box::new(move || clear_refs(&session_id)));
-        }
+    if !on_worker(session_id) {
+        let session = session_id.to_string();
+        post_to_worker(session_id, move || clear_refs(&session));
     }
     REFS.with(|refs| {
         refs.borrow_mut().remove(session_id);

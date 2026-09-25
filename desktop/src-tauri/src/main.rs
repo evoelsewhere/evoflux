@@ -6218,6 +6218,7 @@ fn main() {
             computer_app::app_computer_action,
             computer_app::app_computer_frame,
             computer_app::app_computer_stop,
+            computer_app::app_computer_interrupt,
             computer_app::app_computer_resume,
             computer_app::app_computer_reveal,
             computer_app::app_computer_list_apps,
