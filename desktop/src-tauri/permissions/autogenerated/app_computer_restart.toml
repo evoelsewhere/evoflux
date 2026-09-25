@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-computer-restart"
+description = "Enables the app_computer_restart command without any pre-configured scope."
+commands.allow = ["app_computer_restart"]
+
+[[permission]]
+identifier = "deny-app-computer-restart"
+description = "Denies the app_computer_restart command without any pre-configured scope."
+commands.deny = ["app_computer_restart"]

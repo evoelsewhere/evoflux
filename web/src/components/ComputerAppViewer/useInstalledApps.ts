@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { invoke } from '@tauri-apps/api/core'
 
+import { getPlatform } from '@/hooks/use-platform'
+
 import { computerAppSupported } from './computerAppBridge'
 
 /** One program the user can allow or block, as the desktop reports it. */
@@ -31,8 +33,12 @@ export function useInstalledApps() {
   })
 }
 
-/** "Notepad", "notepad.EXE" and "C:\\…\\notepad.exe" all name notepad.exe. */
-export function normalizeExe(value: string): string {
+/**
+ * "Notepad", "notepad.EXE" and "C:\\…\\notepad.exe" all name notepad.exe on
+ * Windows. macOS executables have no suffix, so there a name is only
+ * lower-cased: "TextEdit" and "/…/MacOS/TextEdit" name textedit.
+ */
+export function normalizeExe(value: string, windows = getPlatform().os === 'windows'): string {
   const name = value.trim().toLowerCase().split(/[\\/]/).pop() ?? ''
-  return name && !name.endsWith('.exe') ? `${name}.exe` : name
+  return windows && name && !name.endsWith('.exe') ? `${name}.exe` : name
 }

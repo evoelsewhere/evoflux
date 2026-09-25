@@ -38,6 +38,8 @@ notify = "7"
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 file_icon_provider = "0.4"
 png = "0.17"
+# Computer App Control: window capture and preview frames.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 xcap = { version = "0.9.8", default-features = false }
@@ -56,7 +58,10 @@ objc2-av-foundation = { version = "0.3.2", default-features = false, features = 
 objc2-speech = { version = "0.3.2", default-features = false, features = ["SFSpeechRecognizer", "block2"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-core-graphics = "0.25"
+# Computer App Control: "elcapitan" adds posting events to one process,
+# "highsierra" scroll-wheel events.
+core-graphics = { version = "0.25", features = ["elcapitan", "highsierra"] }
+core-foundation = "0.10"
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData", "NSError"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["block2", "WKPDFConfiguration", "WKSnapshotConfiguration", "WKWebView"] }
 
@@ -67,9 +72,7 @@ nix = { version = "0.29", features = ["signal"] }
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
 windows-version = "0.1"
-# Computer App Control: window capture and preview frames.
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-windows = { version = "0.61", features = [
+windows ={ version = "0.61", features = [
     "Win32_Foundation",
     # Computer App Control: PrintWindow capture, frame bounds, UI Automation.
     "Win32_Graphics_Dwm",

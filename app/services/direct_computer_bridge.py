@@ -129,7 +129,7 @@ class DirectComputerBridge:
         connection = self._connections.get(session_id)
         if connection is None or not connection.ready:
             raise DirectComputerUnavailable(
-                "Open this chat in EvoFlux Desktop on Windows to control apps"
+                "Open this chat in EvoFlux Desktop on Windows or macOS to control apps"
             )
         commands = connection.capabilities.get("commands")
         if isinstance(commands, list) and commands and action not in commands:
