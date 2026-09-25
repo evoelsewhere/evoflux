@@ -44,6 +44,13 @@ to both unless it names Windows mechanisms.
    attach that was parking the window hands it back, and a window that was
    only made visible for a drag is not hidden again once it was handed back.
 
+A `computer_app` call carries an ordered batch of actions. When one fails,
+the rest of the batch is skipped and reported as skipped, because it was
+planned on that action working: typing after a refused `attach` would land in
+the previously attached app, typing after a failed click wherever focus
+happens to be. A `detach` later in the batch still runs, since it only hands
+the app back.
+
 Every call goes through the normal permission service. With **Ask every
 time** it prompts in every session permission mode except Bypass — including
 Auto, the default, which would otherwise wave it through — the same way

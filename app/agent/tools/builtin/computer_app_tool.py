@@ -229,6 +229,9 @@ the app's Send button or the Enter key. The app may be kept off-screen while
 you work. On macOS use cmd for shortcuts (cmd+s); find also searches the
 app's menu bar, so menu commands can be invoked by ref.
 
+When an action fails, the rest of the batch is skipped (a detach still
+runs): look at the app again before retrying.
+
 Workflow: attach → snapshot or screenshot → act by ref → screenshot to verify.\
 """
 
@@ -493,9 +496,21 @@ async def computer_app(
     from app.services.direct_computer_bridge import direct_computer_bridge
 
     results: list[str | ToolResult] = []
+    # Once an action fails, the rest of the batch was planned on it working:
+    # typing after a refused attach would land in the previously attached
+    # app, typing after a failed click wherever focus happens to be. Only a
+    # detach, which just hands the app back, still runs.
+    failed: str | None = None
+    skipped: list[str] = []
     for action in actions:
         params = action.model_dump(exclude_none=True)
         name = str(params.pop("action"))
+        if failed is not None and name != "detach":
+            skipped.append(name)
+            continue
+        if failed is not None and skipped:
+            results.append(_skipped_note(failed, skipped))
+            skipped = []
         try:
             if name == "wait":
                 await asyncio.sleep(float(params.get("seconds", 1.0)))
@@ -523,4 +538,14 @@ async def computer_app(
         except Exception as exc:
             logger.debug("computer_app_error action={} error={}", name, exc)
             results.append(f"Error ({name}): {exc}")
+            failed = failed or name
+    if failed is not None and skipped:
+        results.append(_skipped_note(failed, skipped))
     return combine_browser_results(results)
+
+
+def _skipped_note(failed: str, skipped: list[str]) -> str:
+    return (
+        f"Skipped {len(skipped)} action(s) ({', '.join(skipped)}) because "
+        f"{failed} failed. Check the app's state, then send them again."
+    )
