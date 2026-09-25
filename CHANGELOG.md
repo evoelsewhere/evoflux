@@ -2,7 +2,7 @@
 
 All notable changes to EvoFlux are documented in this file.
 
-## [Unreleased]
+## [2.0.8] - 2026-09-25
 
 ### Changed
 
@@ -647,6 +647,7 @@ EvoFlux 1.0.0 is the first stable release.
 For the curated release overview, see
 [`documents/releases/v1.0.0.md`](documents/releases/v1.0.0.md).
 
+[2.0.8]: https://github.com/evoelsewhere/evoflux/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/evoelsewhere/evoflux/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/evoelsewhere/evoflux/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/evoelsewhere/evoflux/compare/v2.0.4...v2.0.5
