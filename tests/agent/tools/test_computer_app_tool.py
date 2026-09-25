@@ -398,6 +398,53 @@ def test_app_policy_matching_ignores_case_and_exe_suffix() -> None:
     assert "allowlist" in (computer_tool.app_policy_refusal("calc.exe", policy) or "")
 
 
+def test_permission_patterns_describe_each_action() -> None:
+    patterns = computer_tool.permission_patterns(
+        {
+            "actions": [
+                {"action": "attach", "window_id": 44},
+                {"action": "click", "x": 10, "y": 20.5, "button": "right"},
+                {"action": "click", "ref": "e3", "clicks": 2},
+                {"action": "drag", "ref": "e4", "to_x": 5, "to_y": 6},
+                {"action": "type", "text": "x" * 50, "ref": "e5"},
+                {"action": "key", "key": "tab", "repeat": 3},
+                {"action": "set_value", "ref": "e6", "value": "42"},
+                {"action": "invoke", "ref": "e7"},
+                {"action": "find", "query": "Save"},
+                {"action": "snapshot"},
+                {"action": "wait"},
+            ]
+        }
+    )
+
+    assert patterns == [
+        "attach 44",
+        "right click (10, 20.5)",
+        "double-click e3",
+        "drag e4 → (5, 6)",
+        f'type "{"x" * 39}…" (50 chars) into e5',
+        "key tab ×3",
+        'set e6 to "42"',
+        "invoke e7",
+        'find "Save"',
+        "read the UI tree",
+    ]
+
+
+def test_permission_patterns_skip_release_only_batches() -> None:
+    assert (
+        computer_tool.permission_patterns({"actions": [{"action": "detach"}]}) is None
+    )
+    assert (
+        computer_tool.permission_patterns(
+            {"actions": [{"action": "status"}, {"action": "wait"}]}
+        )
+        is None
+    )
+    # Malformed arguments still ask, under the tool's name.
+    assert computer_tool.permission_patterns({"actions": "nope"}) == ["computer_app"]
+
+
 def test_app_policy_matches_mac_executables() -> None:
     # The picker stores "textedit.exe" for older settings; macOS reports the
     # bare executable name or its path inside the bundle.

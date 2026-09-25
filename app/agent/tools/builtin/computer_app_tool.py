@@ -235,6 +235,95 @@ Workflow: attach → snapshot or screenshot → act by ref → screenshot to ver
 """
 
 
+# Actions that only look, wait or let go of the app. A batch of nothing else
+# never needs the user's permission: refusing it would only keep the app
+# parked off-screen.
+_RELEASE_ONLY = frozenset({"detach", "status", "wait"})
+
+
+def _preview(text: Any, limit: int = 40) -> str:
+    value = " ".join(str(text).split())
+    return value if len(value) <= limit else value[: limit - 1] + "…"
+
+
+def _number(value: Any) -> str:
+    # Raw tool arguments: not validated yet, so not necessarily numbers.
+    try:
+        return f"{float(value):g}"
+    except (TypeError, ValueError):
+        return _preview(value, 12)
+
+
+def _point(action: dict[str, Any]) -> str:
+    if action.get("ref"):
+        return _preview(action["ref"], 20)
+    if action.get("x") is not None and action.get("y") is not None:
+        return f"({_number(action['x'])}, {_number(action['y'])})"
+    return "the window"
+
+
+def _describe_action(action: dict[str, Any]) -> str | None:
+    """One action as the permission prompt shows it, e.g. ``type "hi" (2 chars)``."""
+    name = str(action.get("action", ""))
+    if name == "wait":
+        return None
+    if name == "attach":
+        target = action.get("window_id") or action.get("app") or action.get("title")
+        return f"attach {_preview(target or 'a window')}"
+    if name == "find":
+        return f'find "{_preview(action.get("query", ""))}"'
+    if name == "click":
+        clicks = action.get("clicks")
+        kind = {2: "double-click", 3: "triple-click"}.get(
+            clicks if isinstance(clicks, int) else 1, "click"
+        )
+        button = action.get("button") or "left"
+        if button != "left":
+            kind = f"{button} {kind}"
+        return f"{kind} {_point(action)}"
+    if name == "hover":
+        return f"hover {_point(action)}"
+    if name == "scroll":
+        return f"scroll {action.get('direction', 'down')} at {_point(action)}"
+    if name == "drag":
+        to = f"({_number(action.get('to_x'))}, {_number(action.get('to_y'))})"
+        return f"drag {_point(action)} → {to}"
+    if name == "type":
+        text = str(action.get("text", ""))
+        into = f" into {action['ref']}" if action.get("ref") else ""
+        return f'type "{_preview(text)}" ({len(text)} chars){into}'
+    if name == "key":
+        repeat = action.get("repeat")
+        times = f" ×{repeat}" if isinstance(repeat, int) and repeat > 1 else ""
+        return f"key {action.get('key', '')}{times}"
+    if name == "invoke":
+        return f"invoke {action.get('ref', '')}"
+    if name == "set_value":
+        return f'set {action.get("ref", "")} to "{_preview(action.get("value", ""))}"'
+    if name == "list_windows":
+        return "list windows"
+    if name == "snapshot":
+        return "read the UI tree"
+    return name
+
+
+def permission_patterns(arguments: dict[str, Any]) -> list[str] | None:
+    """What the user is asked to allow for one ``computer_app`` call: one
+    entry per action, so the prompt shows what will be clicked or typed and
+    a refusal only blocks those same actions later in the run. ``None`` when
+    the batch only looks, waits or detaches."""
+    raw = arguments.get("actions")
+    actions = (
+        [item for item in raw if isinstance(item, dict)]
+        if isinstance(raw, list)
+        else []
+    )
+    if actions and all(str(item.get("action")) in _RELEASE_ONLY for item in actions):
+        return None
+    described = [text for item in actions if (text := _describe_action(item))]
+    return described[:12] or ["computer_app"]
+
+
 def _get_sid(state: Any) -> str:
     metadata = getattr(state, "metadata", {}) if state is not None else {}
     return str(

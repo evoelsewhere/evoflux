@@ -51,6 +51,13 @@ the previously attached app, typing after a failed click wherever focus
 happens to be. A `detach` later in the batch still runs, since it only hands
 the app back.
 
+The permission prompt lists every action of the call as it will run —
+`click e12`, `type "Dear team…" (240 chars) into e5`, `key ctrl+s`, `attach 44`
+— so the user approves what is about to be done to the app, not just the
+tool's name. A refusal blocks those same actions for the rest of the run; a
+different action asks again. A call made only of `status`, `wait` and
+`detach` is never prompted, since refusing it would only keep the app parked.
+
 Every call goes through the normal permission service. With **Ask every
 time** it prompts in every session permission mode except Bypass — including
 Auto, the default, which would otherwise wave it through — the same way
