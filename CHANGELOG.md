@@ -15,6 +15,24 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Added
 
+- Computer App Control (Windows desktop): the `computer_app` tool lets an agent
+  drive one desktop application window in the background — list windows,
+  attach, screenshot, read the UI Automation tree, click, type, press
+  shortcuts, invoke controls and fill fields — without taking the user's
+  mouse, keyboard focus or foreground window. A floating preview card shows
+  the app live with a virtual cursor and offers Stop (revoke and interrupt),
+  Allow again, Show the app and Close; it closes, and the app is released,
+  when the agent's turn ends. Controlled apps are kept just off-screen by
+  default so they run from the taskbar without covering the user's work, and
+  get their exact placement back afterwards. Web-content apps (Teams,
+  Electron, WebView2) are clicked through UI Automation and typed into with
+  real keyboard events, so rich editors register the text; hover, double- and
+  right-click, scroll (through UI Automation) and drag reach them too, hidden
+  or not. Off by default; enable it in Settings → Computer App Control, where
+  allowed and blocked apps are picked from the apps on the computer with their
+  icons and each action can either ask first or run without asking. Capture and UI Automation are
+  ported from evo-computer-use; input is posted to the app's own message
+  queue.
 - WebBridge debugging actions: `debug_summary`, `console`, `network` and
   `network_body` read the console messages, uncaught exceptions and requests
   (status, type, timing, failures, response bodies) of a tab in the user's real

@@ -1609,6 +1609,64 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     openAction: { type: 'settings', path: 'browser' },
   },
   {
+    id: 'computer-app-control',
+    category: 'browser',
+    title: 'Computer App Control',
+    summary:
+      'Cho agent điều khiển một app desktop trên Windows ở chế độ nền — Notepad, Excel, một công cụ nội bộ — trong khi bạn theo dõi qua thẻ xem trước có con trỏ ảo. Chuột, bàn phím và cửa sổ đang dùng vẫn là của bạn.',
+    keywords: [
+      'computer use',
+      'computer app',
+      'desktop app',
+      'windows app',
+      'app control',
+      'virtual cursor',
+      'điều khiển app',
+      'app desktop',
+      'con trỏ ảo',
+      'xem trước',
+      'pip',
+    ],
+    setup:
+      'Chỉ có trên EvoFlux Desktop cho Windows. Bật trong Cài đặt → Computer App Control (mặc định tắt), có thể khai báo danh sách app được phép hoặc bị chặn, rồi nhờ agent làm việc trong một app đang mở trên máy.',
+    tricks: [
+      'Agent chỉ gắn vào đúng một cửa sổ. Click và phím chỉ gửi tới app đó, nên bạn vẫn làm việc ở cửa sổ khác trong lúc agent chạy.',
+      'App có thể nằm sau cửa sổ khác: thẻ xem trước chụp trực tiếp app đó. App đang thu nhỏ sẽ được khôi phục mà không chiếm focus khi agent thao tác.',
+      'Nút Dừng trên thẻ xem trước thu hồi quyền điều khiển và ngắt lượt chạy. Agent không gắn lại được trong cuộc trò chuyện đó cho tới khi bạn bấm Cho phép lại.',
+      'Đóng thẻ xem trước cũng kết thúc điều khiển: agent không bao giờ điều khiển một app mà bạn không theo dõi.',
+      'Hiện app đưa cửa sổ thật lên trước để bạn tự tiếp quản.',
+      'Mỗi lần gọi computer_app đều hỏi quyền, giống tool trình duyệt — trừ khi bạn chọn "Cho phép luôn, không hỏi" trong Cài đặt → Computer App Control.',
+      'Chọn app được phép và bị chặn từ danh sách app trên máy, có kèm logo.',
+      'Hộp thoại mà app mở ra (Save As, xác nhận) được tự động theo dõi.',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Điều khiển app là phiên bản desktop của trình duyệt tích hợp. Thay vì trang web, agent làm việc trong một ứng dụng Windows: liệt kê cửa sổ đang mở, gắn vào một cửa sổ, đọc các control qua UI Automation, rồi click, gõ và bấm phím tắt bên trong app đó.',
+      },
+      {
+        type: 'p',
+        text: 'Không có gì chiếm máy của bạn. Input được gửi thẳng vào app đã gắn, không qua con trỏ hay bàn phím hệ thống, và app không cần nằm trên cùng. Bạn theo dõi qua thẻ xem trước nổi có khung phát sáng và con trỏ ảo di chuyển tới từng điểm ngay trước khi agent thao tác — giống như khi người khác điều khiển màn hình đang chia sẻ.',
+      },
+      {
+        type: 'callout',
+        tone: 'info',
+        title: 'Giới hạn',
+        text: 'Không bao giờ gắn được vào shell và tiến trình bảo mật của Windows, chính EvoFlux, hoặc app chạy quyền quản trị. Một số app (UWP, game, app đọc raw input) bỏ qua click chạy nền; khi đó agent dùng thao tác UI Automation (invoke, set_value).',
+      },
+      {
+        type: 'tips',
+        items: [
+          'Cài đặt → Computer App Control — công tắc chính, giữ app ngoài màn hình, danh sách cho phép và danh sách chặn',
+          'Thẻ xem trước — hình trực tiếp, con trỏ ảo, Dừng / Cho phép lại / Hiện app / Đóng',
+          'Nội dung app là dữ liệu không tin cậy: chữ trong cửa sổ không bao giờ thành chỉ thị',
+        ],
+      },
+    ],
+    related: ['browser-webbridge', 'settings-safety'],
+    openAction: { type: 'settings', path: 'computer-apps' },
+  },
+  {
     id: 'providers-settings',
     category: 'settings',
     title: 'Providers và models (BYOM)',

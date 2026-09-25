@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod computer_app;
 mod native_messaging;
 mod openers;
 mod sidecar;
@@ -6199,6 +6200,12 @@ fn main() {
             app_browser_webview_agent_action,
             app_browser_webview_bind_shortcuts,
             app_browser_webview_is_loading,
+            computer_app::app_computer_action,
+            computer_app::app_computer_frame,
+            computer_app::app_computer_stop,
+            computer_app::app_computer_resume,
+            computer_app::app_computer_reveal,
+            computer_app::app_computer_list_apps,
             set_tray_session,
             workspace::list_workspace_files,
             workspace::read_workspace_file,
@@ -6298,6 +6305,9 @@ fn main() {
             RunEvent::ExitRequested { .. } => {
                 persist_active_window_state(app);
                 native_messaging::clear_connection(app);
+                // Apps kept off-screen for Computer App Control go back to
+                // where the user left them.
+                computer_app::release_all();
                 let state: tauri::State<'_, AppState> = app.state();
                 let sidecar = state.sidecar.clone();
                 // Block so the child receives SIGTERM before the parent exits.

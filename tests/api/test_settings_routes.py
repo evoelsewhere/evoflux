@@ -168,7 +168,9 @@ def test_disconnect_conductor_forwards_the_resource_choice(
     from app.conductor import conductor_service
 
     disconnect = AsyncMock(
-        return_value=SimpleNamespace(model_dump=lambda **_kwargs: {"state": "disconnected"})
+        return_value=SimpleNamespace(
+            model_dump=lambda **_kwargs: {"state": "disconnected"}
+        )
     )
     monkeypatch.setattr(conductor_service, "disconnect", disconnect)
 
@@ -1537,6 +1539,46 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
     reread = client.get("/api/settings/webbridge")
     assert reread.status_code == 200
     assert reread.json() == payload
+
+
+def test_computer_app_settings_default_off_and_round_trip(tmp_path, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    client = TestClient(_make_app())
+    defaults = client.get("/api/settings/computer-app")
+
+    assert defaults.status_code == 200
+    assert defaults.json() == {
+        "enabled": False,
+        "allowed_apps": [],
+        "blocked_apps": [],
+        "keep_hidden": True,
+        "permission": "ask",
+    }
+
+    updated = client.put(
+        "/api/settings/computer-app",
+        json={
+            "enabled": True,
+            "allowed_apps": [" notepad.exe ", "", "EXCEL", "notepad.exe"],
+            "blocked_apps": ["mstsc"],
+            "keep_hidden": False,
+            "permission": "allow",
+        },
+    )
+
+    assert updated.status_code == 200
+    assert updated.json() == {
+        "enabled": True,
+        "allowed_apps": ["notepad.exe", "EXCEL"],
+        "blocked_apps": ["mstsc"],
+        "keep_hidden": False,
+        "permission": "allow",
+    }
+    written = (tmp_path / "settings.yaml").read_text(encoding="utf-8")
+    assert "computer_app:" in written
+    assert client.get("/api/settings/computer-app").json() == updated.json()
 
 
 def test_save_provider_visible_models_rejects_unknown_provider() -> None:

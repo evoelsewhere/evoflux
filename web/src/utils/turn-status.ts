@@ -59,6 +59,7 @@ const ACTIVE_VERBS: Record<string, string> = {
   web_fetch: 'Fetching',
   browser_use: 'Browsing',
   webbridge: 'Browsing',
+  computer_app: 'Controlling app',
   git: 'Running git',
   recall: 'Checking memory',
   team_delegate: 'Delegating',

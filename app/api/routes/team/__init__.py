@@ -4,6 +4,7 @@ Router groups (split across modules to keep each file focused on one
 resource):
 
 - :mod:`app.api.routes.team.app_search` — POST /search-app
+- :mod:`app.api.routes.team.computer` — WS/GET /{sid}/computer/agent
 - :mod:`app.api.routes.team.chat` — POST /chat, GET /{sid}/stream,
   GET /agents, GET /sessions, DELETE /sessions/{sid}, GET /{sid}/history
 - :mod:`app.api.routes.team.files` — GET /{sid}/uploads/{filename},
@@ -30,6 +31,7 @@ from app.api.routes.team import (
     app_search,
     browser,
     change_sets,
+    computer,
     editor,
     chat,
     document_versions,
@@ -60,6 +62,7 @@ from app.api.routes.team.chat import _serialize_agent
 
 router = APIRouter()
 router.include_router(browser.router)
+router.include_router(computer.router)
 # Before chat so the literal /session-folders paths are matched ahead of
 # chat.py's parameterised /sessions/{session_id} routes.
 router.include_router(folders.router)

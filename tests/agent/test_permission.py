@@ -291,6 +291,99 @@ async def test_plan_mode_asks_about_tools_the_plan_does_not_record():
     await service.ask("browser_use", ["click #buy"])
 
 
+def _computer_app_policy(monkeypatch, **policy) -> None:
+    from app.core.runtime_settings import ComputerAppSettings, RuntimeSettings
+
+    settings = RuntimeSettings(computer_app=ComputerAppSettings(**policy))
+    monkeypatch.setattr(
+        "app.core.runtime_settings.load_runtime_settings", lambda: settings
+    )
+
+
+@pytest.mark.asyncio
+async def test_computer_app_allow_setting_skips_the_prompt(monkeypatch):
+    _computer_app_policy(monkeypatch, enabled=True, permission="allow")
+    service = PermissionService(session_id="s1", mode="ask")
+
+    await service.ask("computer_app", ["computer_app"])
+
+    assert service.list_pending() == []
+
+
+@pytest.mark.asyncio
+async def test_computer_app_allow_setting_does_not_beat_a_deny_rule(monkeypatch):
+    _computer_app_policy(monkeypatch, enabled=True, permission="allow")
+    service = PermissionService(
+        session_id="s1",
+        base_ruleset=[Rule(permission="computer_app", pattern="*", action="deny")],
+    )
+
+    with pytest.raises(PermissionDeniedError):
+        await service.ask("computer_app", ["computer_app"])
+
+
+@pytest.mark.asyncio
+async def test_computer_app_allow_setting_runs_in_auto_mode_too(monkeypatch):
+    _computer_app_policy(monkeypatch, enabled=True, permission="allow")
+    service = PermissionService(session_id="s1", mode="auto")
+
+    await service.ask("computer_app", ["computer_app"])
+
+    assert service.list_pending() == []
+
+
+@pytest.mark.asyncio
+async def test_computer_app_ask_setting_still_asks_in_auto_and_plan_modes(monkeypatch):
+    """Sessions default to auto, which waves every "ask" through. The feature's
+    own "Ask every time" must not be silently overridden by that default."""
+    _computer_app_policy(monkeypatch, enabled=True, permission="ask")
+    for mode in ("auto", "plan", "accept-edits"):
+        service = PermissionService(session_id="s1", mode=mode)
+
+        async def _reply_later(service=service):
+            while not service.list_pending():
+                await asyncio.sleep(0)
+            service.reply(service.list_pending()[0].id, "once")
+
+        task = asyncio.create_task(_reply_later())
+        await service.ask("computer_app", ["computer_app"])
+        await task
+
+
+@pytest.mark.asyncio
+async def test_computer_app_ask_setting_respects_bypass_and_always(monkeypatch):
+    _computer_app_policy(monkeypatch, enabled=True, permission="ask")
+
+    bypass = PermissionService(session_id="s1", mode="bypass")
+    await bypass.ask("computer_app", ["computer_app"])
+    assert bypass.list_pending() == []
+
+    # "Always" in this session is the user deciding again; honour it.
+    always = PermissionService(
+        session_id="s2",
+        mode="auto",
+        base_ruleset=[Rule(permission="computer_app", pattern="*", action="allow")],
+    )
+    await always.ask("computer_app", ["computer_app"])
+    assert always.list_pending() == []
+
+
+@pytest.mark.asyncio
+async def test_computer_app_asks_by_default_and_when_disabled(monkeypatch):
+    for policy in ({"enabled": True}, {"enabled": False, "permission": "allow"}):
+        _computer_app_policy(monkeypatch, **policy)
+        service = PermissionService(session_id="s1", mode="auto")
+
+        async def _reply_later(service=service):
+            while not service.list_pending():
+                await asyncio.sleep(0)
+            service.reply(service.list_pending()[0].id, "once")
+
+        task = asyncio.create_task(_reply_later())
+        await service.ask("computer_app", ["computer_app"])
+        await task
+
+
 @pytest.mark.asyncio
 async def test_a_rejected_call_is_refused_rather_than_asked_again():
     """Rejecting used to record nothing, so the model could simply re-ask.

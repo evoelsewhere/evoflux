@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-computer-action"
+description = "Enables the app_computer_action command without any pre-configured scope."
+commands.allow = ["app_computer_action"]
+
+[[permission]]
+identifier = "deny-app-computer-action"
+description = "Denies the app_computer_action command without any pre-configured scope."
+commands.deny = ["app_computer_action"]

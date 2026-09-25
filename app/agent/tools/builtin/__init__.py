@@ -5,6 +5,7 @@ from typing import Any
 
 _EXPORT_MODULES = {
     "browser_use": "browser_use_tool",
+    "computer_app": "computer_app_tool",
     "webbridge": "webbridge_tool",
     "create_pull_request": "pr",
     "add_code_review_comment": "code_reviews",
@@ -70,6 +71,7 @@ def __getattr__(name: str) -> Any:  # noqa: ANN401 - public lazy re-export
 
 __all__ = [
     "browser_use",
+    "computer_app",
     "create_pull_request",
     "add_code_review_comment",
     "add_code_review_inline_comment",

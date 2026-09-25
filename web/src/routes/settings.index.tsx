@@ -7,6 +7,7 @@
  */
 import {
   Activity,
+  AppWindow,
   Bell,
   Blocks,
   BookOpen,
@@ -243,6 +244,12 @@ export function SettingsHubPage() {
           icon: Globe2,
           title: 'Browser',
           description: 'Built-in WebView and WebBridge for the real browser',
+        },
+        {
+          to: '/settings/computer-apps',
+          icon: AppWindow,
+          title: 'Computer App Control',
+          description: 'Let agents control one desktop app in the background',
         },
         {
           to: '/settings/notifications',

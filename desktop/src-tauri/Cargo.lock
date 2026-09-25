@@ -1335,6 +1335,7 @@ dependencies = [
  "block2 0.6.2",
  "core-graphics",
  "file_icon_provider",
+ "image 0.25.10",
  "log",
  "mime_guess",
  "nix 0.29.0",
@@ -1350,6 +1351,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "tao",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -1366,6 +1368,7 @@ dependencies = [
  "webview2-com",
  "windows 0.61.3",
  "windows-version",
+ "wry",
  "xcap 0.4.1",
  "xcap 0.9.8",
 ]
@@ -2393,6 +2396,8 @@ dependencies = [
  "num-traits",
  "png 0.18.1",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

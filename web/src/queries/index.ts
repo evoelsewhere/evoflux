@@ -107,6 +107,10 @@ export {
   useUpdateWebBridgeSettingsMutation,
 } from './useWebBridgeSettingsQuery'
 export {
+  useComputerAppSettingsQuery,
+  useUpdateComputerAppSettingsMutation,
+} from './useComputerAppSettingsQuery'
+export {
   useProvidersQuery,
   useProviderModelsMutation,
   useProviderUsageQuery,

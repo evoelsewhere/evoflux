@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-computer-reveal"
+description = "Enables the app_computer_reveal command without any pre-configured scope."
+commands.allow = ["app_computer_reveal"]
+
+[[permission]]
+identifier = "deny-app-computer-reveal"
+description = "Denies the app_computer_reveal command without any pre-configured scope."
+commands.deny = ["app_computer_reveal"]

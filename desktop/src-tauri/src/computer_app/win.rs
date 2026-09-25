@@ -1,0 +1,3364 @@
+//! Windows implementation of Computer App Control.
+//!
+//! Every function here addresses the attached window's own message queue or
+//! its UI Automation tree. Nothing calls `SendInput`, `SetCursorPos` or
+//! `SetForegroundWindow` on the agent's behalf: the user keeps their mouse,
+//! keyboard and foreground window while the agent works.
+
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::sync::{mpsc, Mutex};
+use std::time::Duration;
+
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use image::{imageops, DynamicImage, RgbaImage};
+use once_cell::sync::Lazy;
+use serde_json::{json, Value};
+use windows::core::{Interface, BOOL, BSTR, PWSTR};
+use windows::Win32::Foundation::{CloseHandle, COLORREF, HWND, LPARAM, POINT, RECT, WPARAM};
+use windows::Win32::Graphics::Dwm::{
+    DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
+};
+use windows::Win32::Graphics::Gdi::{
+    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
+    GetWindowDC, ReleaseDC, ScreenToClient, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
+    HBITMAP, HDC, SRCCOPY,
+};
+use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+};
+use windows::Win32::System::Threading::{
+    AttachThreadInput, GetCurrentProcessId, GetCurrentThreadId, OpenProcess,
+    QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+};
+use windows::Win32::UI::Accessibility::{
+    AccessibleObjectFromWindow, CUIAutomation, ExpandCollapseState_Collapsed,
+    ExpandCollapseState_PartiallyExpanded, IAccessible, IUIAutomation, IUIAutomationElement,
+    IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
+    IUIAutomationLegacyIAccessiblePattern, IUIAutomationSelectionItemPattern,
+    IUIAutomationRangeValuePattern, IUIAutomationScrollPattern, IUIAutomationTogglePattern,
+    IUIAutomationTreeWalker, IUIAutomationValuePattern, ScrollAmount_NoAmount,
+    ScrollAmount_SmallDecrement, ScrollAmount_SmallIncrement, ToggleState_On,
+    UIA_ExpandCollapsePatternId, UIA_InvokePatternId, UIA_RangeValuePatternId,
+    UIA_ScrollPatternId,
+    UIA_LegacyIAccessiblePatternId, UIA_SelectionItemPatternId, UIA_TogglePatternId,
+    UIA_ValuePatternId,
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetKeyboardState, IsWindowEnabled, MapVirtualKeyW, SetKeyboardState, VkKeyScanW,
+    MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9,
+    VK_A, VK_ADD, VK_APPS, VK_B, VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_D, VK_DECIMAL,
+    VK_DELETE, VK_DIVIDE, VK_DOWN, VK_E, VK_END, VK_ESCAPE, VK_F, VK_F1, VK_F10, VK_F11, VK_F12,
+    VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_G, VK_H, VK_HOME, VK_I, VK_INSERT,
+    VK_J, VK_K, VK_L, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_M, VK_MENU, VK_MULTIPLY, VK_N,
+    VK_NEXT, VK_NUMLOCK, VK_O, VK_OEM_1, VK_OEM_2, VK_OEM_3, VK_OEM_4, VK_OEM_5, VK_OEM_6,
+    VK_OEM_7, VK_OEM_COMMA, VK_OEM_MINUS, VK_OEM_PERIOD, VK_OEM_PLUS, VK_P, VK_PAUSE, VK_PRIOR,
+    VK_Q, VK_R, VK_RCONTROL, VK_RETURN, VK_RIGHT, VK_RMENU, VK_S, VK_SCROLL, VK_SHIFT, VK_SNAPSHOT,
+    VK_SPACE, VK_SUBTRACT, VK_T, VK_TAB, VK_U, VK_UP, VK_V, VK_W, VK_X, VK_Y, VK_Z,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    ChildWindowFromPointEx, EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow,
+    GetGUIThreadInfo, GetSystemMetrics, GetWindow, GetWindowLongPtrW, GetWindowPlacement,
+    GetWindowRect, GetWindowTextW, IsZoomed, SetWindowPlacement, SetWindowPos,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    SET_WINDOW_POS_FLAGS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    SWP_NOZORDER, SW_SHOWMAXIMIZED, SetLayeredWindowAttributes, SetWindowLongPtrW,
+    GW_HWNDPREV, LWA_ALPHA, WS_EX_LAYERED, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
+    SW_SHOWMINIMIZED, SW_SHOWMINNOACTIVE, WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS,
+    WPF_RESTORETOMAXIMIZED,
+    GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, PostMessageW,
+    SendMessageTimeoutW, SetForegroundWindow, ShowWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
+    CWP_SKIPTRANSPARENT, GA_ROOT, GUITHREADINFO, GWL_EXSTYLE, GW_ENABLEDPOPUP, GW_OWNER,
+    SMTO_ABORTIFHUNG, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CHAR, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN,
+    WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_RBUTTONDBLCLK,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WS_EX_TOOLWINDOW,
+};
+
+use super::{
+    blocked_combo_reason, is_protected_process_name, pack_point, parse_key_combo,
+    screenshot_scale, KeyCombo,
+};
+
+const PW_RENDERFULLCONTENT: PRINT_WINDOW_FLAGS = PRINT_WINDOW_FLAGS(2);
+const HTCLIENT: isize = 1;
+const HTTRANSPARENT: isize = -1;
+const MK_LBUTTON: usize = 0x0001;
+const MK_RBUTTON: usize = 0x0002;
+const MK_MBUTTON: usize = 0x0010;
+const WHEEL_DELTA: i32 = 120;
+/// How long the preview's cursor gets to travel before the input lands.
+const POINTER_TRAVEL: Duration = Duration::from_millis(220);
+const DEFAULT_TYPE_DELAY_MS: u64 = 8;
+const MAX_TYPE_CHARS: usize = 20_000;
+
+// ── Session registry ────────────────────────────────────────────────────
+
+#[derive(Clone)]
+struct Attached {
+    hwnd: isize,
+    pid: u32,
+    app: String,
+    title: String,
+    /// Where the window was before it was parked off-screen, while it is.
+    parked: Option<WINDOWPLACEMENT>,
+}
+
+#[derive(Default)]
+struct Registry {
+    attached: HashMap<String, Attached>,
+    /// Sessions whose user pressed Stop. Attaching is refused until the user
+    /// resumes from the preview card; the agent cannot lift this itself.
+    stopped: HashSet<String>,
+}
+
+static REGISTRY: Lazy<Mutex<Registry>> = Lazy::new(|| Mutex::new(Registry::default()));
+
+fn registry() -> std::sync::MutexGuard<'static, Registry> {
+    REGISTRY.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Forget the session's window and put it back where the user left it.
+fn release(session_id: &str) -> Option<Attached> {
+    let released = registry().attached.remove(session_id);
+    clear_refs(session_id);
+    if let Some(attached) = &released {
+        if let Some(placement) = attached.parked {
+            unpark(to_hwnd(attached.hwnd), placement, false);
+        }
+    }
+    released
+}
+
+pub(crate) fn stop(session_id: &str) {
+    registry().stopped.insert(session_id.to_string());
+    release(session_id);
+}
+
+pub(crate) fn resume(session_id: &str) {
+    registry().stopped.remove(session_id);
+}
+
+/// Put every parked window back. Called when EvoFlux exits so no app is
+/// left stranded off-screen.
+pub(crate) fn release_all() {
+    let sessions: Vec<String> = registry().attached.keys().cloned().collect();
+    for session in sessions {
+        release(&session);
+    }
+}
+
+pub(crate) fn reveal(session_id: &str) -> Result<Value, String> {
+    let attached = {
+        let mut registry = registry();
+        let entry = registry
+            .attached
+            .get_mut(session_id)
+            .ok_or("No app is attached in this chat.")?;
+        // The user is taking the app back; it stays attached but is no
+        // longer kept off-screen.
+        let snapshot = entry.clone();
+        entry.parked = None;
+        snapshot
+    };
+    let hwnd = to_hwnd(attached.hwnd);
+    unsafe {
+        if !IsWindow(Some(hwnd)).as_bool() {
+            return Err("The attached window was closed.".into());
+        }
+        match attached.parked {
+            Some(placement) => unpark(hwnd, placement, true),
+            None if IsIconic(hwnd).as_bool() => {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            None => {}
+        }
+        // The user clicked a button in EvoFlux, which is the foreground
+        // process, so Windows permits handing the foreground over.
+        let _ = SetForegroundWindow(hwnd);
+    }
+    Ok(json!({ "revealed": true }))
+}
+
+// ── Parking: keep the app running but off the user's screen ─────────────
+//
+// A minimized window cannot be captured or clicked (it has no size), so an
+// app the user wants kept out of sight is moved just outside the virtual
+// desktop instead. It keeps its taskbar button and keeps rendering; on
+// release it gets its exact previous placement back, and a window that was
+// minimized or maximized returns minimized (restoring to maximized) rather
+// than being activated behind the user's back.
+
+fn virtual_screen() -> RECT {
+    unsafe {
+        let left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        RECT {
+            left,
+            top,
+            right: left + GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            bottom: top + GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        }
+    }
+}
+
+fn is_off_screen(hwnd: HWND) -> bool {
+    let frame = frame_rect(hwnd);
+    let screen = virtual_screen();
+    frame.left >= screen.right
+        || frame.right <= screen.left
+        || frame.top >= screen.bottom
+        || frame.bottom <= screen.top
+}
+
+fn move_off_screen(hwnd: HWND) {
+    let screen = virtual_screen();
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            screen.right + 200,
+            screen.top + 40,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        );
+    }
+}
+
+fn park(hwnd: HWND) -> Option<WINDOWPLACEMENT> {
+    let mut placement = WINDOWPLACEMENT {
+        length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        ..Default::default()
+    };
+    unsafe {
+        GetWindowPlacement(hwnd, &mut placement).ok()?;
+        if IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() {
+            // Back to its normal size first: a maximized window is pinned to
+            // its monitor and a minimized one has no size to render.
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            std::thread::sleep(Duration::from_millis(150));
+        }
+    }
+    move_off_screen(hwnd);
+    Some(placement)
+}
+
+fn unpark(hwnd: HWND, placement: WINDOWPLACEMENT, activate: bool) {
+    if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
+        return;
+    }
+    let mut restore = placement;
+    let was_maximized = placement.showCmd == SW_SHOWMAXIMIZED.0 as u32;
+    let was_minimized = placement.showCmd == SW_SHOWMINIMIZED.0 as u32;
+    restore.showCmd = match (activate, was_minimized, was_maximized) {
+        (true, true, _) if placement.flags.0 & WPF_RESTORETOMAXIMIZED.0 != 0 => {
+            SW_SHOWMAXIMIZED.0 as u32
+        }
+        (true, true, _) => SW_RESTORE.0 as u32,
+        (true, false, _) => placement.showCmd,
+        (false, true, _) => SW_SHOWMINNOACTIVE.0 as u32,
+        (false, false, true) => {
+            restore.flags = WINDOWPLACEMENT_FLAGS(restore.flags.0 | WPF_RESTORETOMAXIMIZED.0);
+            SW_SHOWMINNOACTIVE.0 as u32
+        }
+        (false, false, false) => SW_SHOWNOACTIVATE.0 as u32,
+    };
+    unsafe {
+        let _ = SetWindowPlacement(hwnd, &restore);
+    }
+}
+
+// ── Worker thread ───────────────────────────────────────────────────────
+//
+// UI Automation objects are COM objects bound to the apartment that created
+// them, and element refs have to outlive a single command. One dedicated MTA
+// thread owns all of them, and actions run on it one at a time.
+
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
+static WORKER: Lazy<Mutex<Option<mpsc::Sender<Job>>>> = Lazy::new(|| Mutex::new(None));
+
+fn worker_sender() -> Result<mpsc::Sender<Job>, String> {
+    let mut slot = WORKER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(sender) = slot.as_ref() {
+        return Ok(sender.clone());
+    }
+    let (sender, receiver) = mpsc::channel::<Job>();
+    std::thread::Builder::new()
+        .name("computer-app".into())
+        .spawn(move || {
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            }
+            for job in receiver {
+                job();
+            }
+        })
+        .map_err(|error| format!("could not start the Computer App Control worker: {error}"))?;
+    *slot = Some(sender.clone());
+    Ok(sender)
+}
+
+pub(crate) async fn run_on_worker<T: Send + 'static>(
+    job: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let (reply, result) = tokio::sync::oneshot::channel();
+    let job: Job = Box::new(move || {
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job))
+            .unwrap_or_else(|_| Err("Computer App Control action panicked".to_string()));
+        let _ = reply.send(outcome);
+    });
+    let sender = worker_sender()?;
+    if sender.send(job).is_err() {
+        // The worker died; forget it so the next call starts a fresh one.
+        *WORKER.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        return Err("Computer App Control worker is not running".into());
+    }
+    result
+        .await
+        .map_err(|_| "Computer App Control worker dropped the action".to_string())?
+}
+
+thread_local! {
+    static AUTOMATION: RefCell<Option<IUIAutomation>> = const { RefCell::new(None) };
+    static REFS: RefCell<HashMap<String, SessionRefs>> = RefCell::new(HashMap::new());
+}
+
+#[derive(Default)]
+struct SessionRefs {
+    next: u32,
+    elements: HashMap<String, IUIAutomationElement>,
+}
+
+fn automation() -> Result<IUIAutomation, String> {
+    AUTOMATION.with(|slot| {
+        if let Some(existing) = slot.borrow().as_ref() {
+            return Ok(existing.clone());
+        }
+        let created: IUIAutomation =
+            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) }
+                .map_err(|error| format!("UI Automation is unavailable: {error}"))?;
+        *slot.borrow_mut() = Some(created.clone());
+        Ok(created)
+    })
+}
+
+/// Drop every element and window the session remembers. Held UI Automation
+/// elements are proxies into the app's process; keeping them after the app
+/// is released (or gone) only leaves calls that can stall on a dead server.
+fn clear_refs(session_id: &str) {
+    REFS.with(|refs| {
+        refs.borrow_mut().remove(session_id);
+    });
+    LAST_EDITABLE.with(|last| {
+        last.borrow_mut().remove(session_id);
+    });
+    LAST_INPUT.with(|last| {
+        last.borrow_mut().remove(session_id);
+    });
+}
+
+// ── Dispatch ────────────────────────────────────────────────────────────
+
+pub(crate) fn run_action(
+    emit: &dyn Fn(Value),
+    session_id: &str,
+    action: &str,
+    params: &Value,
+) -> Result<Value, String> {
+    match action {
+        "status" => Ok(status(session_id)),
+        "list_windows" => Ok(list_windows(params)),
+        "attach" => attach(session_id, params),
+        "detach" => Ok(detach(session_id)),
+        _ => {
+            let target = Target::resolve(session_id)?;
+            match action {
+                "screenshot" => screenshot(&target),
+                "snapshot" => snapshot(&target, params),
+                "find" => find(&target, params),
+                "click" => click(emit, &target, params),
+                "hover" => hover(emit, &target, params),
+                "scroll" => scroll(emit, &target, params),
+                "drag" => drag(emit, &target, params),
+                "type" => type_text(emit, &target, params),
+                "key" => press_key(&target, params),
+                "invoke" => invoke(emit, &target, params),
+                "set_value" => set_value(emit, &target, params),
+                "restore" => Ok(json!({ "restored": target.restored, "window": target.describe() })),
+                other => Err(format!("Unknown Computer App Control action: {other}")),
+            }
+        }
+    }
+}
+
+fn to_hwnd(raw: isize) -> HWND {
+    HWND(raw as *mut core::ffi::c_void)
+}
+
+fn hwnd_id(hwnd: HWND) -> u64 {
+    hwnd.0 as isize as u64
+}
+
+// ── Windows and apps ────────────────────────────────────────────────────
+
+struct WindowRow {
+    hwnd: HWND,
+    title: String,
+    pid: u32,
+    app: String,
+    minimized: bool,
+    frame: RECT,
+    owner: Option<HWND>,
+}
+
+impl WindowRow {
+    fn to_json(&self, foreground: HWND) -> Value {
+        json!({
+            "id": hwnd_id(self.hwnd),
+            "title": self.title,
+            "app": self.app,
+            "pid": self.pid,
+            "minimized": self.minimized,
+            "bounds": [
+                self.frame.left,
+                self.frame.top,
+                self.frame.right - self.frame.left,
+                self.frame.bottom - self.frame.top,
+            ],
+            "dialog_of": self.owner.map(hwnd_id),
+            "foreground": self.hwnd == foreground,
+        })
+    }
+}
+
+unsafe extern "system" fn collect_window(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let list = unsafe { &mut *(lparam.0 as *mut Vec<HWND>) };
+    list.push(hwnd);
+    BOOL(1)
+}
+
+fn top_level_windows() -> Vec<HWND> {
+    let mut handles: Vec<HWND> = Vec::new();
+    unsafe {
+        let _ = EnumWindows(
+            Some(collect_window),
+            LPARAM(&mut handles as *mut Vec<HWND> as isize),
+        );
+    }
+    handles
+}
+
+fn window_title(hwnd: HWND) -> String {
+    let mut buffer = [0u16; 512];
+    let len = unsafe { GetWindowTextW(hwnd, &mut buffer) }.max(0) as usize;
+    String::from_utf16_lossy(&buffer[..len])
+}
+
+fn class_name(hwnd: HWND) -> String {
+    let mut buffer = [0u16; 256];
+    let len = unsafe { GetClassNameW(hwnd, &mut buffer) }.max(0) as usize;
+    String::from_utf16_lossy(&buffer[..len])
+}
+
+fn window_pid(hwnd: HWND) -> u32 {
+    let mut pid = 0u32;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+    pid
+}
+
+fn process_image_path(pid: u32) -> Option<String> {
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buffer = [0u16; 1024];
+        let mut len = buffer.len() as u32;
+        let ok = QueryFullProcessImageNameW(
+            handle,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut len,
+        )
+        .is_ok();
+        let _ = CloseHandle(handle);
+        ok.then(|| String::from_utf16_lossy(&buffer[..len as usize]))
+    }
+}
+
+fn file_name(path: &str) -> &str {
+    path.rsplit(['\\', '/']).next().unwrap_or(path)
+}
+
+fn process_image_name(pid: u32) -> String {
+    process_image_path(pid)
+        .map(|path| file_name(&path).to_string())
+        .unwrap_or_default()
+}
+
+fn is_cloaked(hwnd: HWND) -> bool {
+    let mut cloaked = 0u32;
+    unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            &mut cloaked as *mut u32 as *mut core::ffi::c_void,
+            std::mem::size_of::<u32>() as u32,
+        )
+        .is_ok()
+            && cloaked != 0
+    }
+}
+
+/// The window's visible frame on screen. `GetWindowRect` includes the
+/// invisible resize borders DWM draws around modern windows; screenshots and
+/// coordinates are relative to what the user can actually see.
+fn frame_rect(hwnd: HWND) -> RECT {
+    let mut rect = RECT::default();
+    unsafe {
+        if DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            &mut rect as *mut RECT as *mut core::ffi::c_void,
+            std::mem::size_of::<RECT>() as u32,
+        )
+        .is_err()
+            || rect.right <= rect.left
+        {
+            let _ = GetWindowRect(hwnd, &mut rect);
+        }
+    }
+    rect
+}
+
+fn describe_window(hwnd: HWND) -> Option<WindowRow> {
+    unsafe {
+        if !IsWindowVisible(hwnd).as_bool() || is_cloaked(hwnd) {
+            return None;
+        }
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        if ex_style & WS_EX_TOOLWINDOW.0 != 0 {
+            return None;
+        }
+    }
+    let title = window_title(hwnd);
+    if title.trim().is_empty() {
+        return None;
+    }
+    let pid = window_pid(hwnd);
+    let owner = unsafe { GetWindow(hwnd, GW_OWNER) }
+        .ok()
+        .filter(|owner| !owner.0.is_null());
+    Some(WindowRow {
+        hwnd,
+        title,
+        pid,
+        app: process_image_name(pid),
+        minimized: unsafe { IsIconic(hwnd) }.as_bool(),
+        frame: frame_rect(hwnd),
+        owner,
+    })
+}
+
+fn attach_refusal(row: &WindowRow) -> Option<String> {
+    if row.pid == unsafe { GetCurrentProcessId() } {
+        return Some("EvoFlux cannot control its own window.".into());
+    }
+    if row.app.is_empty() {
+        return Some(format!(
+            "Windows did not let EvoFlux inspect the process behind \"{}\" (it may run as administrator), so it cannot be controlled.",
+            row.title
+        ));
+    }
+    if is_protected_process_name(&row.app) {
+        return Some(format!(
+            "{} is part of the Windows shell or security system and cannot be controlled.",
+            row.app
+        ));
+    }
+    None
+}
+
+fn list_windows(params: &Value) -> Value {
+    let filter = params
+        .get("app")
+        .or_else(|| params.get("query"))
+        .and_then(Value::as_str)
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty());
+    let foreground = unsafe { GetForegroundWindow() };
+    let windows: Vec<Value> = top_level_windows()
+        .into_iter()
+        .filter_map(describe_window)
+        .filter(|row| attach_refusal(row).is_none())
+        .filter(|row| match &filter {
+            Some(needle) => {
+                row.app.to_lowercase().contains(needle) || row.title.to_lowercase().contains(needle)
+            }
+            None => true,
+        })
+        .map(|row| row.to_json(foreground))
+        .collect();
+    json!({ "count": windows.len(), "windows": windows })
+}
+
+// ── The app picker (Settings → Computer App Control) ────────────────────
+
+struct AppEntry {
+    name: String,
+    path: String,
+    running: bool,
+}
+
+/// A short app name from a window caption: "notes.txt - Notepad" gives
+/// "Notepad", "Chat | Contoso | Microsoft Teams" gives "Microsoft Teams".
+fn caption_app_name(title: &str) -> Option<String> {
+    let last = [" - ", " | ", " — "]
+        .iter()
+        .fold(title, |text, separator| text.rsplit(separator).next().unwrap_or(text))
+        .trim();
+    (!last.is_empty() && last.chars().count() <= 32).then(|| last.to_string())
+}
+
+fn exe_stem(exe: &str) -> String {
+    let stem = exe.strip_suffix(".exe").unwrap_or(exe);
+    let mut chars = stem.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+/// Target of a `.lnk` shortcut, when it points at a program.
+fn shortcut_target(link: &std::path::Path) -> Option<String> {
+    use windows::core::HSTRING;
+    use windows::Win32::System::Com::{IPersistFile, STGM_READ};
+    use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+    unsafe {
+        let shell_link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).ok()?;
+        let file: IPersistFile = shell_link.cast().ok()?;
+        file.Load(&HSTRING::from(link.as_os_str()), STGM_READ).ok()?;
+        let mut buffer = [0u16; 1024];
+        shell_link.GetPath(&mut buffer, std::ptr::null_mut(), 0).ok()?;
+        let len = buffer.iter().position(|&unit| unit == 0).unwrap_or(buffer.len());
+        let target = String::from_utf16_lossy(&buffer[..len]);
+        target.to_lowercase().ends_with(".exe").then_some(target)
+    }
+}
+
+fn start_menu_dirs() -> Vec<std::path::PathBuf> {
+    ["ProgramData", "APPDATA"]
+        .iter()
+        .filter_map(|variable| std::env::var_os(variable))
+        .map(|root| {
+            std::path::PathBuf::from(root)
+                .join("Microsoft")
+                .join("Windows")
+                .join("Start Menu")
+                .join("Programs")
+        })
+        .filter(|dir| dir.is_dir())
+        .collect()
+}
+
+static ICONS: Lazy<Mutex<HashMap<String, Option<String>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+/// The program's own icon as a PNG data URL, cached per path.
+fn icon_data_url(path: &str) -> Option<String> {
+    if let Some(cached) = ICONS.lock().ok()?.get(path) {
+        return cached.clone();
+    }
+    // Icon extraction is a shell integration; a broken icon must not take
+    // the whole list down with it.
+    let icon = std::panic::catch_unwind(|| file_icon_provider::get_file_icon(path, 32))
+        .ok()
+        .and_then(Result::ok);
+    let encoded = icon.and_then(|icon| {
+        let image = RgbaImage::from_raw(icon.width, icon.height, icon.pixels)?;
+        encode_png(&image).ok().map(|data| format!("data:image/png;base64,{data}"))
+    });
+    if let Ok(mut cache) = ICONS.lock() {
+        cache.insert(path.to_string(), encoded.clone());
+    }
+    encoded
+}
+
+/// Apps a user might allow or block: everything with a window right now,
+/// plus the programs in the Start menu. Keyed by executable name, which is
+/// what the policy matches on.
+pub(crate) fn list_apps() -> Value {
+    let own = unsafe { GetCurrentProcessId() };
+    let mut apps: HashMap<String, AppEntry> = HashMap::new();
+    for row in top_level_windows().into_iter().filter_map(describe_window) {
+        if row.pid == own || is_protected_process_name(&row.app) {
+            continue;
+        }
+        let Some(path) = process_image_path(row.pid) else {
+            continue;
+        };
+        let exe = file_name(&path).to_lowercase();
+        let name = caption_app_name(&row.title).unwrap_or_else(|| exe_stem(&exe));
+        apps.entry(exe)
+            .and_modify(|entry| entry.running = true)
+            .or_insert(AppEntry { name, path, running: true });
+    }
+    let links: Vec<(String, std::path::PathBuf)> = start_menu_dirs()
+        .into_iter()
+        .flat_map(|dir| walkdir::WalkDir::new(dir).max_depth(4).into_iter().filter_map(Result::ok))
+        .filter(|entry| {
+            entry.path().extension().and_then(|ext| ext.to_str()).map(str::to_lowercase)
+                == Some("lnk".to_string())
+        })
+        .filter_map(|entry| {
+            let name = entry.path().file_stem()?.to_str()?.to_string();
+            let lower = name.to_lowercase();
+            let noise = ["uninstall", "readme", "help", "website", "documentation"];
+            (!name.is_empty() && !noise.iter().any(|word| lower.contains(word)))
+                .then(|| (name, entry.path().to_path_buf()))
+        })
+        .collect();
+    let resolved = in_parallel(links, |(name, link)| {
+        shortcut_target(&link).map(|path| (name, path))
+    });
+    for (name, path) in resolved.into_iter().flatten() {
+        let exe = file_name(&path).to_lowercase();
+        if is_protected_process_name(&exe) {
+            continue;
+        }
+        // The Start menu's name for a program beats one read off a caption.
+        apps.entry(exe)
+            .and_modify(|entry| entry.name = name.clone())
+            .or_insert(AppEntry { name, path, running: false });
+    }
+    let mut list: Vec<(String, AppEntry)> = apps.into_iter().collect();
+    list.sort_by(|(_, a), (_, b)| {
+        b.running.cmp(&a.running).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    // Icons one at a time: the shell's icon extraction is not reliable when
+    // several threads ask at once (measured: some icons came back empty).
+    let apps: Vec<Value> = list
+        .into_iter()
+        .map(|(exe, entry)| {
+            json!({
+                "exe": exe,
+                "name": entry.name,
+                "running": entry.running,
+                "icon": icon_data_url(&entry.path),
+            })
+        })
+        .collect();
+    json!({ "apps": apps })
+}
+
+/// Map `items` with `work` on a few COM-initialised threads, keeping order.
+/// Resolving a shortcut takes tens of milliseconds, which adds up to seconds
+/// for a full Start menu.
+fn in_parallel<T: Send, R: Send>(items: Vec<T>, work: impl Fn(T) -> R + Sync) -> Vec<R> {
+    const THREADS: usize = 8;
+    let chunk = items.len().div_ceil(THREADS).max(1);
+    let mut chunks: Vec<Vec<T>> = Vec::new();
+    let mut items = items.into_iter().peekable();
+    while items.peek().is_some() {
+        chunks.push(items.by_ref().take(chunk).collect());
+    }
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = chunks
+            .into_iter()
+            .map(|chunk| {
+                let work = &work;
+                scope.spawn(move || {
+                    unsafe {
+                        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+                    }
+                    chunk.into_iter().map(work).collect::<Vec<R>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().unwrap_or_default())
+            .collect()
+    })
+}
+
+fn status(session_id: &str) -> Value {
+    let registry = registry();
+    let stopped = registry.stopped.contains(session_id);
+    match registry.attached.get(session_id) {
+        Some(attached) => {
+            let hwnd = to_hwnd(attached.hwnd);
+            let open = unsafe { IsWindow(Some(hwnd)) }.as_bool();
+            json!({
+                "attached": true,
+                "open": open,
+                "window": {
+                    "id": attached.hwnd as u64,
+                    "app": attached.app,
+                    "title": if open { window_title(hwnd) } else { attached.title.clone() },
+                    "pid": attached.pid,
+                    "minimized": open && unsafe { IsIconic(hwnd) }.as_bool(),
+                    "hidden": attached.parked.is_some(),
+                },
+                "stopped": stopped,
+            })
+        }
+        None => json!({ "attached": false, "stopped": stopped }),
+    }
+}
+
+fn attach(session_id: &str, params: &Value) -> Result<Value, String> {
+    if registry().stopped.contains(session_id) {
+        return Err("The user stopped Computer App Control in this chat. Ask them before trying again; they can allow it again from the preview card.".into());
+    }
+    let window_id = params.get("window_id").and_then(Value::as_u64);
+    let rows: Vec<WindowRow> = top_level_windows()
+        .into_iter()
+        .filter_map(describe_window)
+        .collect();
+    let chosen = if let Some(id) = window_id {
+        rows.into_iter()
+            .find(|row| hwnd_id(row.hwnd) == id)
+            .ok_or_else(|| format!("No visible window with id {id}. Call list_windows again."))?
+    } else {
+        let app = params.get("app").and_then(Value::as_str).map(str::to_lowercase);
+        let title = params.get("title").and_then(Value::as_str).map(str::to_lowercase);
+        if app.is_none() && title.is_none() {
+            return Err("attach needs window_id (from list_windows), app, or title.".into());
+        }
+        rows.into_iter()
+            .filter(|row| attach_refusal(row).is_none())
+            .find(|row| {
+                app.as_ref()
+                    .map_or(true, |app| row.app.to_lowercase().contains(app))
+                    && title
+                        .as_ref()
+                        .map_or(true, |title| row.title.to_lowercase().contains(title))
+            })
+            .ok_or("No controllable window matches. Call list_windows to see what is open.")?
+    };
+    if let Some(reason) = attach_refusal(&chosen) {
+        return Err(reason);
+    }
+    // A dialog is driven through the window that owns it, so the card keeps
+    // following the app when the dialog closes.
+    let chosen = match chosen.owner {
+        Some(owner) if window_pid(owner) == chosen.pid => describe_window(owner).unwrap_or(chosen),
+        _ => chosen,
+    };
+    // Attaching to another window hands the previous one back first.
+    release(session_id);
+    let hide = params.get("hide").and_then(Value::as_bool).unwrap_or(false);
+    let web = is_web_host(chosen.hwnd);
+    if web {
+        // Chromium only exposes a page's tree once an assistive client asks
+        // for it, builds it asynchronously, and stops building it for a
+        // window that is off-screen. Ask while the window is still where the
+        // user left it, and wait until the page is there before parking.
+        wait_for_page_tree(chosen.hwnd);
+    }
+    let parked = if hide {
+        let parked = park(chosen.hwnd);
+        if web {
+            // Let Chromium finish reacting to being hidden before the first
+            // action arrives: keys typed sooner were lost now and then
+            // (measured: with this wait, none in repeated runs).
+            pause(800);
+        }
+        parked
+    } else {
+        unsafe {
+            if IsIconic(chosen.hwnd).as_bool() {
+                let _ = ShowWindow(chosen.hwnd, SW_SHOWNOACTIVATE);
+            }
+        }
+        None
+    };
+    let attached = Attached {
+        hwnd: chosen.hwnd.0 as isize,
+        pid: chosen.pid,
+        app: chosen.app.clone(),
+        title: chosen.title.clone(),
+        parked,
+    };
+    registry()
+        .attached
+        .insert(session_id.to_string(), attached);
+    let target = Target::resolve(session_id)?;
+    Ok(json!({
+        "attached": true,
+        "window": target.describe(),
+    }))
+}
+
+fn detach(session_id: &str) -> Value {
+    let removed = release(session_id);
+    json!({ "detached": removed.is_some() })
+}
+
+// ── The window being driven ─────────────────────────────────────────────
+
+struct Target {
+    session_id: String,
+    top: HWND,
+    /// `top`, or the modal dialog it is currently blocked on.
+    window: HWND,
+    pid: u32,
+    app: String,
+    frame: RECT,
+    scale: f64,
+    restored: bool,
+    /// Parked off-screen at the user's request.
+    hidden: bool,
+    /// Chromium/WebView2/Electron content (see [`is_web_host`]).
+    web: bool,
+}
+
+impl Target {
+    fn resolve(session_id: &str) -> Result<Self, String> {
+        let attached = registry()
+            .attached
+            .get(session_id)
+            .cloned()
+            .ok_or("No app is attached. Call list_windows, then attach to one window.")?;
+        let top = to_hwnd(attached.hwnd);
+        if !unsafe { IsWindow(Some(top)) }.as_bool() {
+            registry().attached.remove(session_id);
+            clear_refs(session_id);
+            return Err(format!(
+                "The attached window ({} — {}) was closed. Call list_windows and attach again.",
+                attached.app, attached.title
+            ));
+        }
+        let mut restored = false;
+        unsafe {
+            if IsIconic(top).as_bool() {
+                // Restore without activating: the window comes back so it can
+                // render, but focus stays wherever the user left it.
+                let _ = ShowWindow(top, SW_SHOWNOACTIVATE);
+                std::thread::sleep(Duration::from_millis(200));
+                restored = true;
+            }
+        }
+        if attached.parked.is_some() && !is_off_screen(top) {
+            // The user clicked it on the taskbar, or the app moved itself
+            // back onto a monitor: keep it out of sight while controlled.
+            move_off_screen(top);
+            restored = false;
+        }
+        let window = effective_window(top, attached.pid);
+        let frame = frame_rect(window);
+        let width = (frame.right - frame.left).max(1) as u32;
+        let height = (frame.bottom - frame.top).max(1) as u32;
+        Ok(Self {
+            session_id: session_id.to_string(),
+            top,
+            window,
+            pid: attached.pid,
+            app: attached.app,
+            frame,
+            scale: screenshot_scale(width, height),
+            restored,
+            hidden: attached.parked.is_some(),
+            web: is_web_host(window),
+        })
+    }
+
+    fn width(&self) -> i32 {
+        (self.frame.right - self.frame.left).max(1)
+    }
+
+    fn height(&self) -> i32 {
+        (self.frame.bottom - self.frame.top).max(1)
+    }
+
+    fn screenshot_size(&self) -> (u32, u32) {
+        (
+            ((self.width() as f64) * self.scale).round().max(1.0) as u32,
+            ((self.height() as f64) * self.scale).round().max(1.0) as u32,
+        )
+    }
+
+    fn describe(&self) -> Value {
+        let (width, height) = self.screenshot_size();
+        json!({
+            "id": hwnd_id(self.top),
+            "app": self.app,
+            "title": window_title(self.top),
+            "pid": self.pid,
+            "dialog": if self.window != self.top { Some(window_title(self.window)) } else { None },
+            "screenshot_size": [width, height],
+            "hidden": self.hidden,
+            "web_content": self.web,
+        })
+    }
+
+    /// Screenshot coordinates → a point on screen inside the window.
+    fn screen_point(&self, x: f64, y: f64) -> Result<POINT, String> {
+        let (width, height) = self.screenshot_size();
+        if !(x.is_finite() && y.is_finite())
+            || x < 0.0
+            || y < 0.0
+            || x >= f64::from(width)
+            || y >= f64::from(height)
+        {
+            return Err(format!(
+                "({x}, {y}) is outside the {width}x{height} screenshot of the attached window."
+            ));
+        }
+        Ok(POINT {
+            x: self.frame.left + (x / self.scale).round() as i32,
+            y: self.frame.top + (y / self.scale).round() as i32,
+        })
+    }
+
+    /// A point on screen → screenshot coordinates, for reporting back.
+    fn screenshot_point(&self, point: POINT) -> (i64, i64) {
+        (
+            (f64::from(point.x - self.frame.left) * self.scale).round() as i64,
+            (f64::from(point.y - self.frame.top) * self.scale).round() as i64,
+        )
+    }
+
+    fn emit_pointer(&self, emit: &dyn Fn(Value), point: POINT, phase: &str) {
+        let x = f64::from(point.x - self.frame.left) / f64::from(self.width());
+        let y = f64::from(point.y - self.frame.top) / f64::from(self.height());
+        emit(json!({ "sessionId": self.session_id, "x": x, "y": y, "phase": phase }));
+    }
+
+    /// Move the preview's cursor to `point` and give it time to get there,
+    /// so the user sees where the agent is about to act before it does.
+    fn travel(&self, emit: &dyn Fn(Value), point: POINT) {
+        self.emit_pointer(emit, point, "move");
+        std::thread::sleep(POINTER_TRAVEL);
+    }
+}
+
+/// Whether the window draws web content (Chromium, Electron, WebView2).
+///
+/// These apps do not take posted mouse or keyboard messages reliably: a
+/// WebView2 app in composition mode (new Teams, for one) is a single window
+/// with no child for the page at all, and forwards only real input to it.
+/// For them, pointer actions go through UI Automation first, which Chromium
+/// supports fully and which works while the window is hidden.
+fn is_web_host(window: HWND) -> bool {
+    unsafe extern "system" fn find_chromium_child(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if class_name(hwnd).starts_with("Chrome_") {
+            unsafe { *(lparam.0 as *mut bool) = true };
+            return BOOL(0);
+        }
+        BOOL(1)
+    }
+    let class = class_name(window).to_lowercase();
+    if class.starts_with("chrome_") || class.contains("webview") {
+        return true;
+    }
+    let mut found = false;
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::EnumChildWindows(
+            Some(window),
+            Some(find_chromium_child),
+            LPARAM(&mut found as *mut bool as isize),
+        );
+    }
+    found
+}
+
+/// The Chromium window that actually handles input for web content.
+///
+/// An Electron app or Edge *is* one (`Chrome_WidgetWin_1` at the top). A
+/// WebView2 host is not: Teams' `TeamsWebView` window holds a
+/// `Chrome_WidgetWin_0` from its own process, which holds the WebView2
+/// browser's `Chrome_WidgetWin_1` — and only that last one turns posted
+/// messages into page input. Its render-host and D3D children serve
+/// accessibility and drawing, not input.
+fn chromium_input_window(target: &Target, point: Option<POINT>) -> HWND {
+    if class_name(target.window).starts_with("Chrome_WidgetWin") {
+        return target.window;
+    }
+    if let Some(point) = point {
+        if let Some(widget) = chromium_widget_ancestor(target, child_at(target.window, point)) {
+            return widget;
+        }
+    }
+    largest_chromium_widget(target.window).unwrap_or(target.window)
+}
+
+/// `hwnd` or its nearest ancestor below the attached window that is a
+/// Chromium browser widget.
+fn chromium_widget_ancestor(target: &Target, hwnd: HWND) -> Option<HWND> {
+    let mut current = hwnd;
+    for _ in 0..16 {
+        if current.0.is_null() || current == target.window {
+            return None;
+        }
+        if class_name(current) == "Chrome_WidgetWin_1" {
+            return Some(current);
+        }
+        current = unsafe { windows::Win32::UI::WindowsAndMessaging::GetParent(current) }.ok()?;
+    }
+    None
+}
+
+fn largest_chromium_widget(window: HWND) -> Option<HWND> {
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if class_name(hwnd) == "Chrome_WidgetWin_1" && unsafe { IsWindowVisible(hwnd) }.as_bool() {
+            unsafe { &mut *(lparam.0 as *mut Vec<HWND>) }.push(hwnd);
+        }
+        BOOL(1)
+    }
+    let mut widgets: Vec<HWND> = Vec::new();
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::EnumChildWindows(
+            Some(window),
+            Some(collect),
+            LPARAM(&mut widgets as *mut Vec<HWND> as isize),
+        );
+    }
+    widgets.into_iter().max_by_key(|widget| {
+        let mut rect = RECT::default();
+        unsafe {
+            let _ = GetWindowRect(*widget, &mut rect);
+        }
+        i64::from(rect.right - rect.left) * i64::from(rect.bottom - rect.top)
+    })
+}
+
+/// Where a posted pointer message for `point` goes: the deepest window
+/// there, lifted to its Chromium widget for web content.
+fn pointer_window(target: &Target, point: POINT) -> HWND {
+    let hwnd = child_at(target.window, point);
+    if target.web {
+        chromium_widget_ancestor(target, hwnd).unwrap_or(hwnd)
+    } else {
+        hwnd
+    }
+}
+
+/// A window disabled by a modal dialog cannot take input; the dialog can.
+fn effective_window(top: HWND, pid: u32) -> HWND {
+    unsafe {
+        if IsWindowEnabled(top).as_bool() {
+            return top;
+        }
+        match GetWindow(top, GW_ENABLEDPOPUP) {
+            Ok(popup)
+                if !popup.0.is_null()
+                    && popup != top
+                    && IsWindowVisible(popup).as_bool()
+                    && window_pid(popup) == pid =>
+            {
+                popup
+            }
+            _ => top,
+        }
+    }
+}
+
+// ── Capture ─────────────────────────────────────────────────────────────
+
+/// Render `hwnd` with `PrintWindow`, cropped to its visible frame. Works for
+/// windows behind other windows; the window renders itself into our bitmap.
+fn capture(hwnd: HWND) -> Result<RgbaImage, String> {
+    // PrintWindow asks the app to paint synchronously; a hung app would
+    // block this thread (and every action queued behind it) indefinitely.
+    if unsafe { IsHungAppWindow(hwnd) }.as_bool() {
+        return Err("The app is not responding. Wait for it, then try again.".into());
+    }
+    let mut window_rect = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut window_rect) }
+        .map_err(|error| format!("GetWindowRect failed: {error}"))?;
+    let width = window_rect.right - window_rect.left;
+    let height = window_rect.bottom - window_rect.top;
+    if width <= 0 || height <= 0 {
+        return Err("The window has no size to capture.".into());
+    }
+
+    let pixels = unsafe {
+        let screen_dc = GetDC(None);
+        if screen_dc.is_invalid() {
+            return Err("GetDC failed".into());
+        }
+        let memory_dc = CreateCompatibleDC(Some(screen_dc));
+        let bitmap = CreateCompatibleBitmap(screen_dc, width, height);
+        let _ = ReleaseDC(None, screen_dc);
+        if memory_dc.is_invalid() || bitmap.is_invalid() {
+            if !bitmap.is_invalid() {
+                let _ = DeleteObject(bitmap.into());
+            }
+            if !memory_dc.is_invalid() {
+                let _ = DeleteDC(memory_dc);
+            }
+            return Err("Could not allocate a capture bitmap.".into());
+        }
+        let previous = SelectObject(memory_dc, bitmap.into());
+        let mut rendered = PrintWindow(hwnd, memory_dc, PW_RENDERFULLCONTENT).as_bool();
+        if !rendered {
+            let window_dc = GetWindowDC(Some(hwnd));
+            if !window_dc.is_invalid() {
+                rendered =
+                    BitBlt(memory_dc, 0, 0, width, height, Some(window_dc), 0, 0, SRCCOPY).is_ok();
+                let _ = ReleaseDC(Some(hwnd), window_dc);
+            }
+        }
+        let pixels = if rendered {
+            read_pixels(memory_dc, bitmap, width as u32, height as u32)
+        } else {
+            Err("The window refused to render (PrintWindow and BitBlt both failed).".into())
+        };
+        let _ = SelectObject(memory_dc, previous);
+        let _ = DeleteObject(bitmap.into());
+        let _ = DeleteDC(memory_dc);
+        pixels?
+    };
+
+    let full = RgbaImage::from_raw(width as u32, height as u32, pixels)
+        .ok_or("Captured pixels did not match the window size.")?;
+    let frame = frame_rect(hwnd);
+    let left = (frame.left - window_rect.left).clamp(0, width - 1) as u32;
+    let top = (frame.top - window_rect.top).clamp(0, height - 1) as u32;
+    let crop_width = ((frame.right - frame.left).max(1) as u32).min(width as u32 - left);
+    let crop_height = ((frame.bottom - frame.top).max(1) as u32).min(height as u32 - top);
+    Ok(imageops::crop_imm(&full, left, top, crop_width, crop_height).to_image())
+}
+
+unsafe fn read_pixels(
+    memory_dc: HDC,
+    bitmap: HBITMAP,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
+    let mut info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: width as i32,
+            biHeight: -(height as i32),
+            biPlanes: 1,
+            biBitCount: 32,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    let lines = unsafe {
+        GetDIBits(
+            memory_dc,
+            bitmap,
+            0,
+            height,
+            Some(pixels.as_mut_ptr() as *mut core::ffi::c_void),
+            &mut info,
+            DIB_RGB_COLORS,
+        )
+    };
+    if lines == 0 {
+        return Err("GetDIBits failed".into());
+    }
+    for pixel in pixels.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+        // GetDIBits leaves alpha at 0, which would read as fully transparent.
+        pixel[3] = 255;
+    }
+    Ok(pixels)
+}
+
+fn encode_png(image: &RgbaImage) -> Result<String, String> {
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image
+        .write_to(&mut bytes, image::ImageFormat::Png)
+        .map_err(|error| format!("PNG encoding failed: {error}"))?;
+    Ok(BASE64.encode(bytes.into_inner()))
+}
+
+fn encode_jpeg(image: &RgbaImage, quality: u8) -> Result<String, String> {
+    let rgb = DynamicImage::ImageRgba8(image.clone()).to_rgb8();
+    let mut bytes = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, quality)
+        .encode_image(&rgb)
+        .map_err(|error| format!("JPEG encoding failed: {error}"))?;
+    Ok(BASE64.encode(bytes))
+}
+
+fn screenshot(target: &Target) -> Result<Value, String> {
+    let captured = capture(target.window)?;
+    let (width, height) = target.screenshot_size();
+    let image = if target.scale < 1.0 {
+        imageops::resize(&captured, width, height, imageops::FilterType::Triangle)
+    } else {
+        captured
+    };
+    Ok(json!({
+        "kind": "image",
+        "data": encode_png(&image)?,
+        "media_type": "image/png",
+        "width": image.width(),
+        "height": image.height(),
+        "window": target.describe(),
+        "restored": target.restored,
+    }))
+}
+
+/// A small JPEG of the attached window for the preview card. Never restores
+/// a minimized window: watching must not change what is on screen.
+pub(crate) fn preview_frame(session_id: &str, max_width: u32) -> Result<Value, String> {
+    let (attached, stopped) = {
+        let registry = registry();
+        (
+            registry.attached.get(session_id).cloned(),
+            registry.stopped.contains(session_id),
+        )
+    };
+    let Some(attached) = attached else {
+        return Ok(json!({ "attached": false, "stopped": stopped }));
+    };
+    let top = to_hwnd(attached.hwnd);
+    let base = json!({
+        "attached": true,
+        "stopped": stopped,
+        "app": attached.app,
+        "title": attached.title,
+    });
+    if !unsafe { IsWindow(Some(top)) }.as_bool() {
+        return Ok(merge(base, json!({ "closed": true })));
+    }
+    let title = window_title(top);
+    if unsafe { IsIconic(top) }.as_bool() {
+        return Ok(merge(base, json!({ "minimized": true, "title": title })));
+    }
+    let window = effective_window(top, attached.pid);
+    let captured = capture(window)?;
+    let (width, height) = (captured.width(), captured.height());
+    let preview = if width > max_width {
+        let scaled_height = ((height as f64) * (max_width as f64) / (width as f64)).round() as u32;
+        imageops::thumbnail(&captured, max_width, scaled_height.max(1))
+    } else {
+        captured
+    };
+    Ok(merge(
+        base,
+        json!({
+            "title": title,
+            "dialog": window != top,
+            "width": width,
+            "height": height,
+            "media_type": "image/jpeg",
+            "data": encode_jpeg(&preview, 72)?,
+        }),
+    ))
+}
+
+fn merge(mut base: Value, extra: Value) -> Value {
+    if let (Some(base), Value::Object(extra)) = (base.as_object_mut(), extra) {
+        base.extend(extra);
+    }
+    base
+}
+
+// ── Pointer input (posted, background) ──────────────────────────────────
+
+/// The deepest visible, enabled child window of `top` under `point`.
+fn child_at(top: HWND, point: POINT) -> HWND {
+    let mut current = top;
+    for _ in 0..32 {
+        let mut local = point;
+        unsafe {
+            let _ = ScreenToClient(current, &mut local);
+            let child = ChildWindowFromPointEx(
+                current,
+                local,
+                CWP_SKIPINVISIBLE | CWP_SKIPDISABLED | CWP_SKIPTRANSPARENT,
+            );
+            if child.0.is_null() || child == current {
+                break;
+            }
+            current = child;
+        }
+    }
+    current
+}
+
+fn client_lparam(hwnd: HWND, point: POINT) -> LPARAM {
+    let mut local = point;
+    unsafe {
+        let _ = ScreenToClient(hwnd, &mut local);
+    }
+    LPARAM(pack_point(local.x, local.y))
+}
+
+fn post(hwnd: HWND, message: u32, wparam: usize, lparam: LPARAM) -> Result<(), String> {
+    unsafe { PostMessageW(Some(hwnd), message, WPARAM(wparam), lparam) }.map_err(|error| {
+        if error.code().0 as u32 == 0x8007_0005 {
+            "Windows blocked input to this app. It probably runs as administrator, which a normal EvoFlux cannot drive.".to_string()
+        } else {
+            format!("Could not post input to the window: {error}")
+        }
+    })
+}
+
+fn pause(ms: u64) {
+    std::thread::sleep(Duration::from_millis(ms));
+}
+
+/// Where a pointer action lands: a ref's centre or screenshot coordinates.
+fn pointer_target(target: &Target, params: &Value) -> Result<POINT, String> {
+    if let Some(reference) = params.get("ref").and_then(Value::as_str) {
+        let element = element_for(&target.session_id, reference)?;
+        let rect = unsafe { element.CurrentBoundingRectangle() }
+            .map_err(|error| format!("{reference} has no position: {error}"))?;
+        if rect.right <= rect.left || rect.bottom <= rect.top {
+            return Err(format!("{reference} is not visible on screen; try invoke instead."));
+        }
+        return Ok(POINT {
+            x: (rect.left + rect.right) / 2,
+            y: (rect.top + rect.bottom) / 2,
+        });
+    }
+    let x = params.get("x").and_then(Value::as_f64);
+    let y = params.get("y").and_then(Value::as_f64);
+    match (x, y) {
+        (Some(x), Some(y)) => target.screen_point(x, y),
+        _ => Err("Give either a ref or both x and y (screenshot pixels).".into()),
+    }
+}
+
+/// Refuse points on the window frame: posted clicks there would start a
+/// system move/size loop or hit a caption button the app does not own.
+fn ensure_client_area(target: &Target, hwnd: HWND, point: POINT) -> Result<(), String> {
+    if hwnd != target.window {
+        return Ok(());
+    }
+    let mut hit: usize = 0;
+    let answered = unsafe {
+        SendMessageTimeoutW(
+            hwnd,
+            WM_NCHITTEST,
+            WPARAM(0),
+            LPARAM(pack_point(point.x, point.y)),
+            SMTO_ABORTIFHUNG,
+            200,
+            Some(&mut hit),
+        )
+    };
+    let hit = hit as isize;
+    if answered.0 == 0 || hit == HTCLIENT || hit == HTTRANSPARENT {
+        return Ok(());
+    }
+    Err(format!(
+        "That point is on the window's frame or title bar (hit-test {hit}). Background control only reaches the app's content; use key shortcuts or invoke for window-level commands."
+    ))
+}
+
+fn button_messages(button: &str) -> Result<(u32, u32, u32, usize), String> {
+    match button {
+        "left" => Ok((WM_LBUTTONDOWN, WM_LBUTTONUP, WM_LBUTTONDBLCLK, MK_LBUTTON)),
+        "right" => Ok((WM_RBUTTONDOWN, WM_RBUTTONUP, WM_RBUTTONDBLCLK, MK_RBUTTON)),
+        "middle" => Ok((WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MBUTTONDBLCLK, MK_MBUTTON)),
+        other => Err(format!("Unknown mouse button {other:?}")),
+    }
+}
+
+fn pointer_result(target: &Target, hwnd: HWND, point: POINT, extra: Value) -> Value {
+    let (x, y) = target.screenshot_point(point);
+    merge(
+        json!({
+            "pointer": { "x": x, "y": y },
+            "delivered_to": class_name(hwnd),
+            "window": window_title(target.window),
+        }),
+        extra,
+    )
+}
+
+fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
+    let point = pointer_target(target, params)?;
+    let button = params.get("button").and_then(Value::as_str).unwrap_or("left");
+    let clicks = params.get("clicks").and_then(Value::as_u64).unwrap_or(1).clamp(1, 3);
+    let (down, up, double, mask) = button_messages(button)?;
+
+    // A plain left click goes through UI Automation when it can: always for
+    // a ref (the element's own action is exact), and for coordinates in web
+    // content, where posted mouse messages do not reach the page.
+    if button == "left" && clicks == 1 {
+        let reference = params.get("ref").and_then(Value::as_str);
+        let mut chain = match reference {
+            Some(reference) => vec![element_for(&target.session_id, reference)?],
+            None => Vec::new(),
+        };
+        if let Some(done) = click_via_automation(emit, target, &chain, point)? {
+            return Ok(done);
+        }
+        if target.web {
+            chain = elements_at(target, point)?;
+            if let Some(done) = click_via_automation(emit, target, &chain, point)? {
+                return Ok(done);
+            }
+        }
+    }
+
+    let hwnd = pointer_window(target, point);
+    ensure_client_area(target, hwnd, point)?;
+    let lparam = client_lparam(hwnd, point);
+
+    target.travel(emit, point);
+    target.emit_pointer(emit, point, "press");
+    post(hwnd, WM_MOUSEMOVE, 0, lparam)?;
+    for index in 0..clicks {
+        // The second press of a double click is WM_*BUTTONDBLCLK, as Windows
+        // itself would deliver it to a CS_DBLCLKS window.
+        let press = if index == 1 { double } else { down };
+        post(hwnd, press, mask, lparam)?;
+        pause(25);
+        post(hwnd, up, 0, lparam)?;
+        pause(40);
+    }
+    target.emit_pointer(emit, point, "click");
+    remember_input_window(&target.session_id, hwnd);
+    let mut extra = json!({ "button": button, "clicks": clicks });
+    if target.web {
+        extra["note"] = json!(WEB_INPUT_NOTE);
+    }
+    Ok(pointer_result(target, hwnd, point, extra))
+}
+
+/// Said whenever posted input had to be used on web content.
+const WEB_INPUT_NOTE: &str = "This app draws web content, which may ignore background mouse clicks. If nothing changed, use snapshot or find, then click or invoke by ref.";
+
+fn hover(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
+    let point = pointer_target(target, params)?;
+    let hwnd = pointer_window(target, point);
+    target.travel(emit, point);
+    post(hwnd, WM_MOUSEMOVE, 0, client_lparam(hwnd, point))?;
+    Ok(pointer_result(target, hwnd, point, json!({})))
+}
+
+fn scroll(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
+    let point = if params.get("ref").is_some() || params.get("x").is_some() {
+        pointer_target(target, params)?
+    } else {
+        POINT {
+            x: (target.frame.left + target.frame.right) / 2,
+            y: (target.frame.top + target.frame.bottom) / 2,
+        }
+    };
+    let direction = params.get("direction").and_then(Value::as_str).unwrap_or("down");
+    let amount = params.get("amount").and_then(Value::as_u64).unwrap_or(3).clamp(1, 50) as i32;
+    let (message, delta) = match direction {
+        "down" => (WM_MOUSEWHEEL, -WHEEL_DELTA),
+        "up" => (WM_MOUSEWHEEL, WHEEL_DELTA),
+        "right" => (WM_MOUSEHWHEEL, WHEEL_DELTA),
+        "left" => (WM_MOUSEHWHEEL, -WHEEL_DELTA),
+        other => return Err(format!("Unknown scroll direction {other:?}")),
+    };
+    if target.web {
+        // Chromium reroutes wheel messages to whatever window is under the
+        // user's real cursor, so a posted wheel never reaches a background
+        // page. Scroll the scrollable element under the point instead.
+        let chain = match params.get("ref").and_then(Value::as_str) {
+            Some(reference) => with_ancestors(element_for(&target.session_id, reference)?),
+            None => elements_at(target, point)?,
+        };
+        target.travel(emit, point);
+        if let Some(scrolled) = scroll_via_automation(&chain, direction, amount)? {
+            let (x, y) = target.screenshot_point(point);
+            return Ok(json!({
+                "pointer": { "x": x, "y": y },
+                "delivered_to": scrolled,
+                "delivered_via": "ui_automation",
+                "pattern": "scroll",
+                "window": window_title(target.window),
+                "direction": direction,
+                "amount": amount,
+            }));
+        }
+    }
+    let hwnd = pointer_window(target, point);
+    target.travel(emit, point);
+    // Wheel messages carry screen coordinates, unlike the button messages.
+    let wparam = ((delta as i16 as u16 as usize) << 16) as usize;
+    for _ in 0..amount {
+        post(hwnd, message, wparam, LPARAM(pack_point(point.x, point.y)))?;
+        pause(30);
+    }
+    Ok(pointer_result(
+        target,
+        hwnd,
+        point,
+        json!({ "direction": direction, "amount": amount }),
+    ))
+}
+
+fn drag(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
+    let from = pointer_target(target, params)?;
+    let to_x = params.get("to_x").and_then(Value::as_f64);
+    let to_y = params.get("to_y").and_then(Value::as_f64);
+    let to = match (to_x, to_y) {
+        (Some(x), Some(y)) => target.screen_point(x, y)?,
+        _ => return Err("drag needs to_x and to_y (screenshot pixels).".into()),
+    };
+    target.travel(emit, from);
+    target.emit_pointer(emit, from, "press");
+
+    // A hidden or fully covered page paints no frames, and Chromium drops
+    // every pointer move of a drag then (see Peek). Only a Chromium
+    // top-level window (Edge, Electron) tracks its own occlusion like that.
+    // A WebView2 control inside another app's window (Teams) is shown and
+    // hidden by its host and keeps painting when parked — and making its
+    // host layered would stop it painting instead (both measured).
+    let occlusion_tracked = class_name(target.window).starts_with("Chrome_WidgetWin");
+    let peek = if target.web && occlusion_tracked { Peek::begin(target) } else { None };
+    let (from, to) = match &peek {
+        Some(peek) => (peek.offset(target, from), peek.offset(target, to)),
+        None => (from, to),
+    };
+
+    // Every message of a drag goes to the window pressed on: that is the
+    // window that would hold mouse capture for a real drag.
+    let hwnd = pointer_window(target, from);
+    let outcome = ensure_client_area(target, hwnd, from).and_then(|()| {
+        post(hwnd, WM_MOUSEMOVE, 0, client_lparam(hwnd, from))?;
+        post(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, client_lparam(hwnd, from))?;
+        const STEPS: i32 = 14;
+        for step in 1..=STEPS {
+            let point = POINT {
+                x: from.x + (to.x - from.x) * step / STEPS,
+                y: from.y + (to.y - from.y) * step / STEPS,
+            };
+            pause(24);
+            post(hwnd, WM_MOUSEMOVE, MK_LBUTTON, client_lparam(hwnd, point))?;
+            target.emit_pointer(emit, point, "drag");
+        }
+        pause(60);
+        post(hwnd, WM_LBUTTONUP, 0, client_lparam(hwnd, to))
+    });
+    drop(peek);
+    outcome?;
+    target.emit_pointer(emit, to, "click");
+    let (x, y) = target.screenshot_point(to);
+    Ok(pointer_result(target, hwnd, from, json!({ "to": { "x": x, "y": y } })))
+}
+
+/// Whether any part of `window` can be seen: sampled with `WindowFromPoint`
+/// across its frame, since a window counts as occluded by Chromium only when
+/// nothing of it shows.
+fn partly_visible(window: HWND) -> bool {
+    if is_off_screen(window) || unsafe { IsIconic(window) }.as_bool() {
+        return false;
+    }
+    let frame = frame_rect(window);
+    let (width, height) = (frame.right - frame.left, frame.bottom - frame.top);
+    (1..=4).any(|row| {
+        (1..=4).any(|column| {
+            let point = POINT {
+                x: frame.left + width * column / 5,
+                y: frame.top + height * row / 5,
+            };
+            let hit = unsafe { windows::Win32::UI::WindowsAndMessaging::WindowFromPoint(point) };
+            !hit.0.is_null() && unsafe { GetAncestor(hit, GA_ROOT) } == window
+        })
+    })
+}
+
+/// Makes a web page that cannot be seen — parked off-screen, or completely
+/// covered — paint again for one gesture, without the user seeing it.
+///
+/// Chromium delivers pointer moves in step with painted frames and stops
+/// painting a window it considers hidden, so a drag there moves nothing
+/// (measured: 0 px). While this guard lives, the window is on screen, at the
+/// very top of the z-order so nothing covers it, fully transparent and
+/// click-through (`WS_EX_LAYERED | WS_EX_TRANSPARENT`, alpha 1/255): Chromium
+/// sees a visible window, the user sees and clicks straight through it.
+/// Dropping the guard restores the style, z-order and position — also when
+/// the gesture fails half-way.
+struct Peek {
+    window: HWND,
+    ex_style: isize,
+    was_topmost: bool,
+    /// The window just above it, to slot it back under afterwards.
+    above: Option<HWND>,
+    repark: bool,
+}
+
+impl Peek {
+    fn begin(target: &Target) -> Option<Self> {
+        let window = target.window;
+        let parked = registry()
+            .attached
+            .get(&target.session_id)
+            .and_then(|attached| attached.parked);
+        let repark = parked.is_some() && is_off_screen(window);
+        if !repark && partly_visible(window) {
+            return None;
+        }
+        unsafe {
+            let ex_style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+            let was_topmost = ex_style as u32 & WS_EX_TOPMOST.0 != 0;
+            let above = GetWindow(window, GW_HWNDPREV).ok().filter(|above| {
+                !above.0.is_null()
+                    && GetWindowLongPtrW(*above, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 == 0
+            });
+            let see_through = ex_style | (WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0) as isize;
+            SetWindowLongPtrW(window, GWL_EXSTYLE, see_through);
+            let _ = SetLayeredWindowAttributes(window, COLORREF(0), 1, LWA_ALPHA);
+            let (x, y, keep_place) = match parked.filter(|_| repark) {
+                Some(placement) => (placement.rcNormalPosition.left, placement.rcNormalPosition.top, SET_WINDOW_POS_FLAGS(0)),
+                None => (0, 0, SWP_NOMOVE),
+            };
+            let _ = SetWindowPos(
+                window,
+                Some(HWND(-1isize as _)), // HWND_TOPMOST
+                x,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | keep_place,
+            );
+            // Let the page notice it is visible and resume painting.
+            pause(500);
+            Some(Self { window, ex_style, was_topmost, above, repark })
+        }
+    }
+
+    fn offset(&self, target: &Target, point: POINT) -> POINT {
+        let frame = frame_rect(self.window);
+        POINT {
+            x: frame.left + (point.x - target.frame.left),
+            y: frame.top + (point.y - target.frame.top),
+        }
+    }
+}
+
+impl Drop for Peek {
+    fn drop(&mut self) {
+        pause(150);
+        let order = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+        unsafe {
+            if !self.was_topmost {
+                // Leaving the topmost band puts it above every normal window;
+                // slot it back under the one that covered it before.
+                let _ = SetWindowPos(self.window, Some(HWND(-2isize as _)), 0, 0, 0, 0, order);
+                if let Some(above) = self.above.filter(|above| IsWindow(Some(*above)).as_bool()) {
+                    let _ = SetWindowPos(self.window, Some(above), 0, 0, 0, 0, order);
+                }
+            }
+            SetWindowLongPtrW(self.window, GWL_EXSTYLE, self.ex_style);
+        }
+        if self.repark {
+            move_off_screen(self.window);
+        }
+    }
+}
+
+// ── Keyboard input (posted, background) ─────────────────────────────────
+
+thread_local! {
+    /// The child window each session last clicked, used when the app's
+    /// thread reports no keyboard focus of its own.
+    static LAST_INPUT: RefCell<HashMap<String, isize>> = RefCell::new(HashMap::new());
+}
+
+fn remember_input_window(session_id: &str, hwnd: HWND) {
+    LAST_INPUT.with(|last| {
+        last.borrow_mut()
+            .insert(session_id.to_string(), hwnd.0 as isize);
+    });
+}
+
+fn belongs_to(target: &Target, hwnd: HWND) -> bool {
+    if hwnd.0.is_null() || !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
+        return false;
+    }
+    let root = unsafe { GetAncestor(hwnd, GA_ROOT) };
+    root == target.window || root == target.top
+}
+
+/// The window keystrokes should go to: the app thread's own focus (tracked
+/// per thread even while the app is in the background), else the last
+/// window the agent clicked, else the window itself.
+fn keyboard_target(target: &Target) -> HWND {
+    let thread = unsafe { GetWindowThreadProcessId(target.window, None) };
+    let mut info = GUITHREADINFO {
+        cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+        ..Default::default()
+    };
+    if unsafe { GetGUIThreadInfo(thread, &mut info) }.is_ok() && belongs_to(target, info.hwndFocus) {
+        return info.hwndFocus;
+    }
+    let last = LAST_INPUT.with(|last| last.borrow().get(&target.session_id).copied());
+    if let Some(raw) = last {
+        let hwnd = to_hwnd(raw);
+        if belongs_to(target, hwnd) {
+            return hwnd;
+        }
+    }
+    target.window
+}
+
+fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
+    let text = params
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or("type needs text.")?;
+    if text.chars().count() > MAX_TYPE_CHARS {
+        return Err(format!("type accepts at most {MAX_TYPE_CHARS} characters per call."));
+    }
+    if params.get("ref").is_some() {
+        // Put the caret in the field first, the way a person would.
+        click(emit, target, &json!({ "ref": params["ref"] }))?;
+        pause(60);
+    }
+    if target.web {
+        // The field named by ref, else the one the agent last clicked.
+        let field = match params.get("ref").and_then(Value::as_str) {
+            Some(reference) => Some(element_for(&target.session_id, reference)?),
+            None => LAST_EDITABLE.with(|last| last.borrow().get(&target.session_id).cloned()),
+        };
+        return web_fill(target, field.as_ref(), text, false);
+    }
+    let delay = params
+        .get("delay_ms")
+        .and_then(Value::as_u64)
+        .unwrap_or(DEFAULT_TYPE_DELAY_MS)
+        .min(200);
+    let hwnd = keyboard_target(target);
+    let mut previous = 0u16;
+    for unit in text.encode_utf16() {
+        let unit = match unit {
+            // "\r\n" is one Enter; a lone "\n" is Enter too.
+            0x0A if previous == 0x0D => {
+                previous = unit;
+                continue;
+            }
+            0x0A => 0x0D,
+            other => other,
+        };
+        previous = unit;
+        post(hwnd, WM_CHAR, unit as usize, LPARAM(1))?;
+        if delay > 0 {
+            pause(delay);
+        }
+    }
+    let mut result = json!({
+        "typed_chars": text.chars().count(),
+        "delivered_to": class_name(hwnd),
+        "window": window_title(target.window),
+    });
+    if target.web {
+        result["note"] = json!(WEB_INPUT_NOTE);
+    }
+    Ok(result)
+}
+
+fn resolve_key(name: &str) -> Option<(VIRTUAL_KEY, bool)> {
+    let vk = match name.to_lowercase().as_str() {
+        "a" => VK_A, "b" => VK_B, "c" => VK_C, "d" => VK_D, "e" => VK_E, "f" => VK_F,
+        "g" => VK_G, "h" => VK_H, "i" => VK_I, "j" => VK_J, "k" => VK_K, "l" => VK_L,
+        "m" => VK_M, "n" => VK_N, "o" => VK_O, "p" => VK_P, "q" => VK_Q, "r" => VK_R,
+        "s" => VK_S, "t" => VK_T, "u" => VK_U, "v" => VK_V, "w" => VK_W, "x" => VK_X,
+        "y" => VK_Y, "z" => VK_Z,
+        "0" => VK_0, "1" => VK_1, "2" => VK_2, "3" => VK_3, "4" => VK_4,
+        "5" => VK_5, "6" => VK_6, "7" => VK_7, "8" => VK_8, "9" => VK_9,
+        "f1" => VK_F1, "f2" => VK_F2, "f3" => VK_F3, "f4" => VK_F4, "f5" => VK_F5,
+        "f6" => VK_F6, "f7" => VK_F7, "f8" => VK_F8, "f9" => VK_F9, "f10" => VK_F10,
+        "f11" => VK_F11, "f12" => VK_F12,
+        "return" | "enter" => VK_RETURN,
+        "escape" | "esc" => VK_ESCAPE,
+        "tab" => VK_TAB,
+        "backspace" | "back" => VK_BACK,
+        "space" | " " => VK_SPACE,
+        "delete" | "del" => VK_DELETE,
+        "insert" | "ins" => VK_INSERT,
+        "home" => VK_HOME,
+        "end" => VK_END,
+        "pageup" | "pgup" => VK_PRIOR,
+        "pagedown" | "pgdn" => VK_NEXT,
+        "up" | "arrowup" => VK_UP,
+        "down" | "arrowdown" => VK_DOWN,
+        "left" | "arrowleft" => VK_LEFT,
+        "right" | "arrowright" => VK_RIGHT,
+        "menu" | "apps" | "contextmenu" => VK_APPS,
+        ";" => VK_OEM_1, "=" | "plus" => VK_OEM_PLUS, "," => VK_OEM_COMMA,
+        "-" | "minus" => VK_OEM_MINUS, "." => VK_OEM_PERIOD, "/" => VK_OEM_2,
+        "`" => VK_OEM_3, "[" => VK_OEM_4, "\\" => VK_OEM_5, "]" => VK_OEM_6, "'" => VK_OEM_7,
+        "numpadadd" => VK_ADD, "numpadsubtract" => VK_SUBTRACT,
+        "numpadmultiply" => VK_MULTIPLY, "numpaddivide" => VK_DIVIDE,
+        "numpaddecimal" => VK_DECIMAL,
+        "printscreen" | "prtsc" => VK_SNAPSHOT,
+        "scrolllock" => VK_SCROLL,
+        "pause" => VK_PAUSE,
+        "capslock" | "caps" => VK_CAPITAL,
+        "numlock" => VK_NUMLOCK,
+        other => {
+            // Any other single character: ask the keyboard layout.
+            let mut chars = other.chars();
+            let (Some(ch), None) = (chars.next(), chars.next()) else {
+                return None;
+            };
+            let mut units = [0u16; 2];
+            if ch.encode_utf16(&mut units).len() != 1 {
+                return None;
+            }
+            let scan = unsafe { VkKeyScanW(units[0]) };
+            if scan == -1 {
+                return None;
+            }
+            let needs_shift = (scan as u16 >> 8) & 1 == 1;
+            return Some((VIRTUAL_KEY(scan as u16 & 0xff), needs_shift));
+        }
+    };
+    Some((vk, false))
+}
+
+fn is_extended(vk: VIRTUAL_KEY) -> bool {
+    matches!(
+        vk,
+        VK_UP | VK_DOWN | VK_LEFT | VK_RIGHT | VK_HOME | VK_END | VK_PRIOR | VK_NEXT
+            | VK_INSERT | VK_DELETE | VK_DIVIDE | VK_NUMLOCK | VK_RCONTROL | VK_RMENU | VK_APPS
+    )
+}
+
+fn key_lparam(vk: VIRTUAL_KEY, up: bool, alt_context: bool) -> LPARAM {
+    let scan = unsafe { MapVirtualKeyW(u32::from(vk.0), MAPVK_VK_TO_VSC) } & 0xff;
+    let mut value: u32 = 1 | (scan << 16);
+    if is_extended(vk) {
+        value |= 1 << 24;
+    }
+    if alt_context {
+        value |= 1 << 29;
+    }
+    if up {
+        value |= (1 << 30) | (1 << 31);
+    }
+    LPARAM(value as i32 as isize)
+}
+
+/// Hold modifiers in the app thread's key-state table while `post` runs.
+fn with_modifiers(thread: u32, combo: &KeyCombo, post: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    let mut keys = Vec::new();
+    if combo.ctrl {
+        keys.extend([VK_CONTROL, VK_LCONTROL]);
+    }
+    if combo.shift {
+        keys.extend([VK_SHIFT, VK_LSHIFT]);
+    }
+    if combo.alt {
+        keys.extend([VK_MENU, VK_LMENU]);
+    }
+    with_held_keys(thread, &keys, post)
+}
+
+/// Mark `keys` as held in the app thread's key-state table while `post` runs.
+///
+/// Apps read Ctrl/Shift — and whether a mouse button is still down — with
+/// `GetKeyState`, which posted messages do not update. Attaching to the app's
+/// input queue shares its key-state table, so setting it here is what the app
+/// sees, without pressing a real key or button and without moving focus. The
+/// table is restored before detaching.
+fn with_held_keys(thread: u32, keys: &[VIRTUAL_KEY], post: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    let me = unsafe { GetCurrentThreadId() };
+    let attached = thread != me && unsafe { AttachThreadInput(me, thread, true) }.as_bool();
+    let mut saved = [0u8; 256];
+    let have_state = unsafe { GetKeyboardState(&mut saved) }.is_ok();
+    if have_state {
+        let mut state = saved;
+        for key in keys {
+            state[key.0 as usize] |= 0x80;
+        }
+        let _ = unsafe { SetKeyboardState(&state) };
+    }
+    let outcome = post();
+    // Give the app's message loop time to read the messages while the keys
+    // are still held.
+    pause(90);
+    if have_state {
+        let _ = unsafe { SetKeyboardState(&saved) };
+    }
+    if attached {
+        let _ = unsafe { AttachThreadInput(me, thread, false) };
+    }
+    outcome
+}
+
+fn press_key(target: &Target, params: &Value) -> Result<Value, String> {
+    let spec = params
+        .get("key")
+        .and_then(Value::as_str)
+        .ok_or("key needs a key name such as Enter or ctrl+s.")?;
+    let combo = parse_key_combo(spec)?;
+    if let Some(reason) = blocked_combo_reason(&combo) {
+        return Err(format!("Refused {spec}: {reason}."));
+    }
+    let repeat = params.get("repeat").and_then(Value::as_u64).unwrap_or(1).clamp(1, 50);
+    // Chromium reads keys on its top-level window and routes them to the
+    // page's focused element itself.
+    let hwnd = if target.web {
+        chromium_input_window(target, None)
+    } else {
+        keyboard_target(target)
+    };
+    let thread = unsafe { GetWindowThreadProcessId(hwnd, None) };
+    post_key(hwnd, thread, &combo, repeat)?;
+    Ok(json!({
+        "key": spec,
+        "repeat": repeat,
+        "delivered_to": class_name(hwnd),
+        "window": window_title(target.window),
+    }))
+}
+
+/// Post one key chord `repeat` times to `hwnd`, holding its modifiers in the
+/// owning thread's key state (see [`with_modifiers`]).
+fn post_key(hwnd: HWND, thread: u32, combo: &KeyCombo, repeat: u64) -> Result<(), String> {
+    let mut combo = combo.clone();
+    let (vk, needs_shift) =
+        resolve_key(&combo.key).ok_or_else(|| format!("Unknown key name {:?}.", combo.key))?;
+    combo.shift |= needs_shift;
+    // Alt without Ctrl is a menu/system shortcut, which Windows delivers as
+    // WM_SYSKEY* with the context bit set.
+    let system = combo.alt && !combo.ctrl;
+    let (down, up) = if system {
+        (WM_SYSKEYDOWN, WM_SYSKEYUP)
+    } else {
+        (WM_KEYDOWN, WM_KEYUP)
+    };
+    let modifiers: Vec<VIRTUAL_KEY> = [
+        (combo.ctrl, VK_CONTROL),
+        (combo.shift, VK_SHIFT),
+        (combo.alt, VK_MENU),
+    ]
+    .into_iter()
+    .filter_map(|(held, key)| held.then_some(key))
+    .collect();
+
+    let send = || -> Result<(), String> {
+        for key in &modifiers {
+            let message = if system { WM_SYSKEYDOWN } else { WM_KEYDOWN };
+            post(hwnd, message, key.0 as usize, key_lparam(*key, false, combo.alt))?;
+        }
+        for _ in 0..repeat {
+            post(hwnd, down, vk.0 as usize, key_lparam(vk, false, combo.alt))?;
+            pause(20);
+            post(hwnd, up, vk.0 as usize, key_lparam(vk, true, combo.alt))?;
+            pause(20);
+        }
+        for key in modifiers.iter().rev() {
+            let message = if system && *key == VK_MENU { WM_SYSKEYUP } else { WM_KEYUP };
+            post(hwnd, message, key.0 as usize, key_lparam(*key, true, combo.alt && *key != VK_MENU))?;
+        }
+        Ok(())
+    };
+    if modifiers.is_empty() {
+        send()
+    } else {
+        with_modifiers(thread, &combo, send)
+    }
+}
+
+// ── UI Automation ───────────────────────────────────────────────────────
+
+/// Chromium/Electron/WebView2 keep their accessibility tree minimal until an
+/// assistive client asks for it through MSAA on the render widget window.
+///
+/// Returns the render hosts found. Their page tree does not appear as a
+/// descendant of the top-level window, so callers walk them as roots of
+/// their own. The first activation of a host waits briefly: Chromium builds
+/// the tree asynchronously, and the first query would otherwise see an empty
+/// page.
+fn activate_chromium_accessibility(top: HWND) -> Vec<HWND> {
+    thread_local! {
+        static ACTIVATED: RefCell<HashSet<isize>> = RefCell::new(HashSet::new());
+    }
+    unsafe extern "system" fn find_render_host(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        if class_name(hwnd) == "Chrome_RenderWidgetHostHWND" {
+            let found = unsafe { &mut *(lparam.0 as *mut Vec<HWND>) };
+            found.push(hwnd);
+        }
+        BOOL(1)
+    }
+    let mut hosts: Vec<HWND> = Vec::new();
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::EnumChildWindows(
+            Some(top),
+            Some(find_render_host),
+            LPARAM(&mut hosts as *mut Vec<HWND> as isize),
+        );
+    }
+    hosts.truncate(4);
+    let mut fresh = false;
+    for host in &hosts {
+        let mut object: *mut core::ffi::c_void = std::ptr::null_mut();
+        unsafe {
+            // OBJID_CLIENT; the interface is released straight away, only the
+            // activation side effect matters.
+            if AccessibleObjectFromWindow(*host, 0xFFFF_FFFC, &IAccessible::IID, &mut object).is_ok()
+                && !object.is_null()
+            {
+                drop(IAccessible::from_raw(object));
+            }
+        }
+        fresh |= ACTIVATED.with(|activated| activated.borrow_mut().insert(host.0 as isize));
+    }
+    if fresh {
+        pause(600);
+    }
+    hosts
+}
+
+/// Activate a Chromium window's accessibility and wait (up to ~4 s) until a
+/// render host's page tree has content.
+fn wait_for_page_tree(window: HWND) {
+    let Ok(automation) = automation() else {
+        return;
+    };
+    let Ok(walker) = (unsafe { automation.ControlViewWalker() }) else {
+        return;
+    };
+    for _ in 0..20 {
+        let hosts = activate_chromium_accessibility(window);
+        let ready = hosts.iter().any(|host| {
+            unsafe { automation.ElementFromHandle(*host) }
+                .and_then(|root| unsafe { walker.GetFirstChildElement(&root) })
+                .and_then(|document| unsafe { walker.GetFirstChildElement(&document) })
+                .is_ok()
+        });
+        // No render host at all (a composition-hosted WebView2 such as new
+        // Teams): its tree hangs off the window itself; nothing to wait for.
+        if ready || hosts.is_empty() {
+            return;
+        }
+        pause(200);
+    }
+}
+
+/// Where UI Automation walks start for this window: the window itself, then
+/// each Chromium render host inside it (see [`activate_chromium_accessibility`]).
+fn automation_roots(automation: &IUIAutomation, window: HWND) -> Result<Vec<IUIAutomationElement>, String> {
+    let hosts = activate_chromium_accessibility(window);
+    let root = unsafe { automation.ElementFromHandle(window) }
+        .map_err(|error| format!("UI Automation cannot read this window: {error}"))?;
+    let mut roots = vec![root];
+    for host in hosts {
+        if let Ok(element) = unsafe { automation.ElementFromHandle(host) } {
+            roots.push(element);
+        }
+    }
+    Ok(roots)
+}
+
+fn control_type_name(id: i32) -> &'static str {
+    match id {
+        50000 => "Button", 50001 => "Calendar", 50002 => "CheckBox", 50003 => "ComboBox",
+        50004 => "Edit", 50005 => "Hyperlink", 50006 => "Image", 50007 => "ListItem",
+        50008 => "List", 50009 => "Menu", 50010 => "MenuBar", 50011 => "MenuItem",
+        50012 => "ProgressBar", 50013 => "RadioButton", 50014 => "ScrollBar",
+        50015 => "Slider", 50016 => "Spinner", 50017 => "StatusBar", 50018 => "Tab",
+        50019 => "TabItem", 50020 => "Text", 50021 => "ToolBar", 50022 => "ToolTip",
+        50023 => "Tree", 50024 => "TreeItem", 50025 => "Custom", 50026 => "Group",
+        50027 => "Thumb", 50028 => "DataGrid", 50029 => "DataItem", 50030 => "Document",
+        50031 => "SplitButton", 50032 => "Window", 50033 => "Pane", 50034 => "Header",
+        50035 => "HeaderItem", 50036 => "Table", 50037 => "TitleBar", 50038 => "Separator",
+        50039 => "SemanticZoom", 50040 => "AppBar",
+        _ => "Element",
+    }
+}
+
+/// Containers that carry no meaning of their own when unnamed. They are
+/// walked through but not listed, which keeps a snapshot readable.
+fn is_structural(role: &str) -> bool {
+    matches!(role, "Pane" | "Group" | "Custom" | "Element" | "Window" | "TitleBar" | "ScrollBar" | "Thumb" | "Separator")
+}
+
+fn bstr(value: windows::core::Result<BSTR>) -> String {
+    value.map(|text| text.to_string()).unwrap_or_default()
+}
+
+fn element_value(element: &IUIAutomationElement, role: &str) -> Option<String> {
+    if !matches!(role, "Edit" | "ComboBox" | "Document" | "Spinner" | "Slider") {
+        return None;
+    }
+    let pattern = unsafe { element.GetCurrentPattern(UIA_ValuePatternId) }.ok()?;
+    let value: IUIAutomationValuePattern = pattern.cast().ok()?;
+    let text = bstr(unsafe { value.CurrentValue() });
+    (!text.is_empty()).then_some(text)
+}
+
+fn toggle_state(element: &IUIAutomationElement, role: &str) -> Option<bool> {
+    if !matches!(role, "CheckBox" | "Button" | "MenuItem" | "RadioButton") {
+        return None;
+    }
+    let pattern = unsafe { element.GetCurrentPattern(UIA_TogglePatternId) }.ok()?;
+    let toggle: IUIAutomationTogglePattern = pattern.cast().ok()?;
+    unsafe { toggle.CurrentToggleState() }.ok().map(|state| state == ToggleState_On)
+}
+
+fn truncate(text: &str, max: usize) -> String {
+    let clean: String = text.chars().map(|ch| if ch.is_control() { ' ' } else { ch }).collect();
+    if clean.chars().count() <= max {
+        clean
+    } else {
+        let mut cut: String = clean.chars().take(max).collect();
+        cut.push('…');
+        cut
+    }
+}
+
+struct Walk<'a> {
+    walker: IUIAutomationTreeWalker,
+    target: &'a Target,
+    refs: &'a mut SessionRefs,
+    max_depth: u32,
+    max_elements: usize,
+    /// Only list elements matching this (lower-cased) text; `None` lists all.
+    query: Option<String>,
+    lines: Vec<String>,
+    visited: usize,
+}
+
+impl Walk<'_> {
+    fn element_line(&mut self, element: &IUIAutomationElement, depth: u32) -> bool {
+        let role = unsafe { element.CurrentControlType() }
+            .map(|id| control_type_name(id.0))
+            .unwrap_or("Element");
+        let name = bstr(unsafe { element.CurrentName() });
+        let rect = unsafe { element.CurrentBoundingRectangle() }.unwrap_or_default();
+        // Judged against the window rather than IsOffscreen: a parked window
+        // is entirely off-screen, yet every control in it is usable. Elements
+        // scrolled out of the window are still skipped.
+        let frame = &self.target.frame;
+        if rect.right <= frame.left
+            || rect.left >= frame.right
+            || rect.bottom <= frame.top
+            || rect.top >= frame.bottom
+        {
+            return false;
+        }
+        let listed = match &self.query {
+            Some(query) => {
+                let automation_id = bstr(unsafe { element.CurrentAutomationId() });
+                name.to_lowercase().contains(query)
+                    || automation_id.to_lowercase().contains(query)
+                    || role.to_lowercase() == *query
+            }
+            None => !(is_structural(role) && name.trim().is_empty()),
+        };
+        if listed && rect.right > rect.left && rect.bottom > rect.top {
+            self.refs.next += 1;
+            let reference = format!("e{}", self.refs.next);
+            self.refs.elements.insert(reference.clone(), element.clone());
+            let (x, y) = self.target.screenshot_point(POINT { x: rect.left, y: rect.top });
+            let width = (f64::from(rect.right - rect.left) * self.target.scale).round() as i64;
+            let height = (f64::from(rect.bottom - rect.top) * self.target.scale).round() as i64;
+            let indent = if self.query.is_some() { 0 } else { depth as usize };
+            let mut line = format!("{}- {role}", "  ".repeat(indent.min(24)));
+            if !name.trim().is_empty() {
+                line.push_str(&format!(" \"{}\"", truncate(&name, 120)));
+            }
+            if let Some(value) = element_value(element, role) {
+                line.push_str(&format!(" value=\"{}\"", truncate(&value, 200)));
+            }
+            if let Some(on) = toggle_state(element, role) {
+                line.push_str(if on { " [checked]" } else { " [unchecked]" });
+            }
+            if !unsafe { element.CurrentIsEnabled() }.map(|on| on.as_bool()).unwrap_or(true) {
+                line.push_str(" [disabled]");
+            }
+            line.push_str(&format!(" [ref={reference}] @{x},{y} {width}x{height}"));
+            self.lines.push(line);
+        }
+        listed
+    }
+
+    fn walk(&mut self, element: &IUIAutomationElement, depth: u32) {
+        if depth > self.max_depth || self.lines.len() >= self.max_elements || self.visited > 20_000 {
+            return;
+        }
+        self.visited += 1;
+        let listed = self.element_line(element, depth);
+        let child_depth = if listed { depth + 1 } else { depth };
+        let Ok(mut child) = (unsafe { self.walker.GetFirstChildElement(element) }) else {
+            return;
+        };
+        loop {
+            self.walk(&child, child_depth);
+            if self.lines.len() >= self.max_elements {
+                return;
+            }
+            match unsafe { self.walker.GetNextSiblingElement(&child) } {
+                Ok(next) => child = next,
+                Err(_) => return,
+            }
+        }
+    }
+}
+
+fn walk_window(target: &Target, query: Option<String>, max_depth: u32, max_elements: usize, reset: bool) -> Result<(Vec<String>, bool), String> {
+    let automation = automation()?;
+    let roots = automation_roots(&automation, target.window)?;
+    let walker = unsafe { automation.ControlViewWalker() }
+        .map_err(|error| format!("UI Automation walker unavailable: {error}"))?;
+    REFS.with(|refs| {
+        let mut refs = refs.borrow_mut();
+        if reset {
+            refs.remove(&target.session_id);
+        }
+        let session_refs = refs.entry(target.session_id.clone()).or_default();
+        let mut walk = Walk {
+            walker,
+            target,
+            refs: session_refs,
+            max_depth,
+            max_elements,
+            query,
+            lines: Vec::new(),
+            visited: 0,
+        };
+        for root in &roots {
+            walk.walk(root, 0);
+        }
+        let truncated = walk.lines.len() >= max_elements;
+        Ok((walk.lines, truncated))
+    })
+}
+
+fn snapshot(target: &Target, params: &Value) -> Result<Value, String> {
+    let max_depth = params.get("max_depth").and_then(Value::as_u64).unwrap_or(30).clamp(1, 80) as u32;
+    let max_elements = params.get("max_elements").and_then(Value::as_u64).unwrap_or(400).clamp(10, 2000) as usize;
+    let (lines, truncated) = walk_window(target, None, max_depth, max_elements, true)?;
+    let (width, height) = target.screenshot_size();
+    let mut text = format!(
+        "UI of {} — \"{}\" (coordinates are screenshot pixels of a {width}x{height} screenshot)\n",
+        target.app,
+        window_title(target.window)
+    );
+    if lines.is_empty() {
+        text.push_str("(This app exposes no accessibility tree; use screenshot and coordinates.)");
+    } else {
+        text.push_str(&lines.join("\n"));
+    }
+    if truncated {
+        text.push_str("\n(Truncated: use find to search for a specific control.)");
+    }
+    Ok(Value::String(text))
+}
+
+fn find(target: &Target, params: &Value) -> Result<Value, String> {
+    let query = params
+        .get("query")
+        .and_then(Value::as_str)
+        .map(|query| query.trim().to_lowercase())
+        .filter(|query| !query.is_empty())
+        .ok_or("find needs a query.")?;
+    let limit = params.get("limit").and_then(Value::as_u64).unwrap_or(20).clamp(1, 100) as usize;
+    let (lines, _) = walk_window(target, Some(query.clone()), 60, limit, false)?;
+    Ok(Value::String(if lines.is_empty() {
+        format!("No control matching \"{query}\" in {}.", target.app)
+    } else {
+        lines.join("\n")
+    }))
+}
+
+fn element_for(session_id: &str, reference: &str) -> Result<IUIAutomationElement, String> {
+    let reference = reference.trim().trim_start_matches("ref=").trim_start_matches('@');
+    REFS.with(|refs| {
+        refs.borrow()
+            .get(session_id)
+            .and_then(|session| session.elements.get(reference).cloned())
+    })
+    .ok_or_else(|| format!("Unknown ref {reference:?}. Take a new snapshot or find, then use a ref from it."))
+}
+
+fn element_center(element: &IUIAutomationElement) -> Option<POINT> {
+    let rect = unsafe { element.CurrentBoundingRectangle() }.ok()?;
+    (rect.right > rect.left && rect.bottom > rect.top).then_some(POINT {
+        x: (rect.left + rect.right) / 2,
+        y: (rect.top + rect.bottom) / 2,
+    })
+}
+
+/// The UI Automation action that "clicking" an element means.
+enum UiAction {
+    Invoke(IUIAutomationInvokePattern),
+    Toggle(IUIAutomationTogglePattern),
+    Select(IUIAutomationSelectionItemPattern),
+    ExpandCollapse(IUIAutomationExpandCollapsePattern),
+    Default(IUIAutomationLegacyIAccessiblePattern),
+}
+
+fn pattern<T: Interface>(element: &IUIAutomationElement, id: windows::Win32::UI::Accessibility::UIA_PATTERN_ID) -> Option<T> {
+    unsafe { element.GetCurrentPattern(id) }.ok()?.cast().ok()
+}
+
+fn ui_action_for(element: &IUIAutomationElement) -> Option<UiAction> {
+    if let Some(p) = pattern(element, UIA_InvokePatternId) {
+        return Some(UiAction::Invoke(p));
+    }
+    if let Some(p) = pattern(element, UIA_TogglePatternId) {
+        return Some(UiAction::Toggle(p));
+    }
+    if let Some(p) = pattern(element, UIA_SelectionItemPatternId) {
+        return Some(UiAction::Select(p));
+    }
+    if let Some(p) = pattern(element, UIA_ExpandCollapsePatternId) {
+        return Some(UiAction::ExpandCollapse(p));
+    }
+    // Every element has the legacy pattern; only one that names a default
+    // action (Chromium reports "click" for clickable page elements) counts.
+    let legacy: IUIAutomationLegacyIAccessiblePattern = pattern(element, UIA_LegacyIAccessiblePatternId)?;
+    let default_action = bstr(unsafe { legacy.CurrentDefaultAction() });
+    (!default_action.trim().is_empty()).then_some(UiAction::Default(legacy))
+}
+
+fn perform(action: &UiAction) -> windows::core::Result<&'static str> {
+    unsafe {
+        match action {
+            UiAction::Invoke(p) => p.Invoke().map(|_| "invoke"),
+            UiAction::Toggle(p) => p.Toggle().map(|_| "toggle"),
+            UiAction::Select(p) => p.Select().map(|_| "select"),
+            UiAction::ExpandCollapse(p) => {
+                let state = p.CurrentExpandCollapseState().unwrap_or(ExpandCollapseState_Collapsed);
+                if state == ExpandCollapseState_Collapsed || state == ExpandCollapseState_PartiallyExpanded {
+                    p.Expand().map(|_| "expand")
+                } else {
+                    p.Collapse().map(|_| "collapse")
+                }
+            }
+            UiAction::Default(p) => p.DoDefaultAction().map(|_| "default_action"),
+        }
+    }
+}
+
+fn is_editable(element: &IUIAutomationElement) -> bool {
+    pattern::<IUIAutomationValuePattern>(element, UIA_ValuePatternId)
+        .map(|value| !unsafe { value.CurrentIsReadOnly() }.map(|ro| ro.as_bool()).unwrap_or(true))
+        .unwrap_or(false)
+}
+
+fn contains(rect: &RECT, point: POINT) -> bool {
+    rect.right > rect.left
+        && rect.bottom > rect.top
+        && point.x >= rect.left
+        && point.x < rect.right
+        && point.y >= rect.top
+        && point.y < rect.bottom
+}
+
+/// The chain of elements under `point` in the attached window, outermost
+/// first. Walks the window's own tree rather than asking UI Automation what
+/// is on screen there: the app may be behind other windows or parked
+/// off-screen, where a screen hit-test would find something else.
+fn elements_at(target: &Target, point: POINT) -> Result<Vec<IUIAutomationElement>, String> {
+    let automation = automation()?;
+    let roots = automation_roots(&automation, target.window)?;
+    let walker = unsafe { automation.ControlViewWalker() }
+        .map_err(|error| format!("UI Automation walker unavailable: {error}"))?;
+    // The deepest chain wins: a page's own tree (under its render host) goes
+    // further down than the window frame around it.
+    let chains = roots.into_iter().map(|root| chain_at(&walker, root, point));
+    Ok(chains.max_by_key(Vec::len).unwrap_or_default())
+}
+
+fn chain_at(
+    walker: &IUIAutomationTreeWalker,
+    root: IUIAutomationElement,
+    point: POINT,
+) -> Vec<IUIAutomationElement> {
+    let mut chain = vec![root.clone()];
+    let mut current = root;
+    let mut visited = 0usize;
+    'descend: loop {
+        let Ok(mut child) = (unsafe { walker.GetFirstChildElement(&current) }) else {
+            break;
+        };
+        loop {
+            visited += 1;
+            if visited > 20_000 {
+                break 'descend;
+            }
+            let rect = unsafe { child.CurrentBoundingRectangle() }.unwrap_or_default();
+            if contains(&rect, point) {
+                chain.push(child.clone());
+                current = child;
+                continue 'descend;
+            }
+            match unsafe { walker.GetNextSiblingElement(&child) } {
+                Ok(next) => child = next,
+                Err(_) => break 'descend,
+            }
+        }
+    }
+    chain
+}
+
+thread_local! {
+    /// The editable element each session last clicked, where `type` goes in
+    /// web content that has no keyboard focus we can address.
+    static LAST_EDITABLE: RefCell<HashMap<String, IUIAutomationElement>> = RefCell::new(HashMap::new());
+}
+
+fn remember_editable(session_id: &str, element: &IUIAutomationElement) {
+    LAST_EDITABLE.with(|last| {
+        last.borrow_mut().insert(session_id.to_string(), element.clone());
+    });
+}
+
+/// `element` and its ancestors, outermost first (the order [`elements_at`]
+/// returns), so callers can look for the nearest one with a capability.
+fn with_ancestors(element: IUIAutomationElement) -> Vec<IUIAutomationElement> {
+    let mut chain = vec![element];
+    if let Ok(walker) = automation().and_then(|automation| {
+        unsafe { automation.ControlViewWalker() }.map_err(|error| error.to_string())
+    }) {
+        while chain.len() < 64 {
+            match unsafe { walker.GetParentElement(chain.last().unwrap()) } {
+                Ok(parent) => chain.push(parent),
+                Err(_) => break,
+            }
+        }
+    }
+    chain.reverse();
+    chain
+}
+
+/// Scroll the innermost element in `chain` that can scroll that way.
+/// Returns its name, or `None` when nothing there scrolls.
+fn scroll_via_automation(
+    chain: &[IUIAutomationElement],
+    direction: &str,
+    amount: i32,
+) -> Result<Option<String>, String> {
+    let vertical = matches!(direction, "up" | "down");
+    let (horizontal_step, vertical_step) = match direction {
+        "down" => (ScrollAmount_NoAmount, ScrollAmount_SmallIncrement),
+        "up" => (ScrollAmount_NoAmount, ScrollAmount_SmallDecrement),
+        "right" => (ScrollAmount_SmallIncrement, ScrollAmount_NoAmount),
+        _ => (ScrollAmount_SmallDecrement, ScrollAmount_NoAmount),
+    };
+    for element in chain.iter().rev() {
+        let Some(scroller) = pattern::<IUIAutomationScrollPattern>(element, UIA_ScrollPatternId) else {
+            continue;
+        };
+        let scrollable = unsafe {
+            if vertical {
+                scroller.CurrentVerticallyScrollable()
+            } else {
+                scroller.CurrentHorizontallyScrollable()
+            }
+        }
+        .map(|flag| flag.as_bool())
+        .unwrap_or(false);
+        if !scrollable {
+            continue;
+        }
+        // Three small steps per wheel notch, like a default wheel setting.
+        for _ in 0..amount * 3 {
+            if unsafe { scroller.Scroll(horizontal_step, vertical_step) }.is_err() {
+                break;
+            }
+        }
+        return Ok(Some(bstr(unsafe { element.CurrentName() })));
+    }
+    Ok(None)
+}
+
+/// Click through UI Automation: the innermost element under the point that
+/// has an action gets it. Returns `None` when nothing there has one, and the
+/// caller falls back to posted mouse input.
+fn click_via_automation(
+    emit: &dyn Fn(Value),
+    target: &Target,
+    chain: &[IUIAutomationElement],
+    point: POINT,
+) -> Result<Option<Value>, String> {
+    if let Some(editable) = chain.iter().rev().find(|element| is_editable(element)) {
+        remember_editable(&target.session_id, editable);
+    }
+    for element in chain.iter().rev() {
+        let Some(action) = ui_action_for(element) else {
+            continue;
+        };
+        let name = bstr(unsafe { element.CurrentName() });
+        target.travel(emit, point);
+        target.emit_pointer(emit, point, "click");
+        let used = perform(&action).map_err(|error| format!("\"{name}\" refused the click: {error}"))?;
+        let (x, y) = target.screenshot_point(point);
+        return Ok(Some(json!({
+            "pointer": { "x": x, "y": y },
+            "delivered_to": name,
+            "delivered_via": "ui_automation",
+            "pattern": used,
+            "window": window_title(target.window),
+            "button": "left",
+            "clicks": 1,
+        })));
+    }
+    // In web content a text field has no action and posted clicks cannot
+    // reach it; remembering it is what makes the next `type` land there.
+    // Native apps get a real (posted) click instead, which places the caret.
+    if target.web && chain.iter().any(|element| is_editable(element)) {
+        target.travel(emit, point);
+        target.emit_pointer(emit, point, "click");
+        let (x, y) = target.screenshot_point(point);
+        return Ok(Some(json!({
+            "pointer": { "x": x, "y": y },
+            "delivered_to": "text field",
+            "delivered_via": "ui_automation",
+            "pattern": "focus_for_typing",
+            "window": window_title(target.window),
+            "button": "left",
+            "clicks": 1,
+        })));
+    }
+    Ok(None)
+}
+
+fn field_value(element: &IUIAutomationElement) -> Option<String> {
+    let value: IUIAutomationValuePattern = pattern(element, UIA_ValuePatternId)?;
+    Some(bstr(unsafe { value.CurrentValue() }))
+}
+
+/// Compare what a field holds with what was typed, ignoring the line-break
+/// and whitespace differences editors introduce.
+fn squash(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Type into a web page field the way a keyboard would.
+///
+/// Chromium takes characters posted to its window and delivers them to the
+/// page's focused element with real `beforeinput`/`input` events — which is
+/// what rich editors (the Teams compose box, anything built on React) need to
+/// notice the text at all. Setting the value through UI Automation changes the
+/// DOM without those events, so it is never done behind the agent's back;
+/// `set_value` with `direct` asks for it explicitly.
+///
+/// The field's value is read back to confirm, but a hidden page may report a
+/// stale value (Chromium pauses accessibility updates for it), so an
+/// unconfirmed result is reported as such rather than "repaired" — writing a
+/// value computed from a stale read would erase what was really typed.
+///
+/// Focusing through UI Automation does not activate the window; the user's
+/// foreground stays put.
+fn web_fill(
+    target: &Target,
+    field: Option<&IUIAutomationElement>,
+    text: &str,
+    replace: bool,
+) -> Result<Value, String> {
+    let before = field.and_then(field_value);
+    // Keys go to the Chromium widget showing the field — for a WebView2 host
+    // such as Teams that is a window of the WebView2 process, not the app's.
+    let input = chromium_input_window(target, field.and_then(element_center));
+    let thread = unsafe { GetWindowThreadProcessId(input, None) };
+    let chord = |spec: &str| -> Result<(), String> {
+        let combo = parse_key_combo(spec)?;
+        post_key(input, thread, &combo, 1)
+    };
+    let type_once = || -> Result<(), String> {
+        // A window that was never activated has never been told it has
+        // focus, and Chromium then has no focused view to hand keys to — the
+        // first field typed into after attaching got nothing. Tell the
+        // widget first (the system's focus does not move), then focus the
+        // field: the widget's own focus handling would otherwise put focus
+        // back on whatever it had before.
+        if unsafe { GetForegroundWindow() } != target.window {
+            post(input, windows::Win32::UI::WindowsAndMessaging::WM_SETFOCUS, 0, LPARAM(0))?;
+            pause(80);
+        }
+        // A hidden Chromium page dropped the very first keys it was sent now
+        // and then; a lone Shift press types nothing and gets its input
+        // pipeline going before the real keys arrive.
+        post(input, WM_KEYDOWN, VK_SHIFT.0 as usize, key_lparam(VK_SHIFT, false, false))?;
+        post(input, WM_KEYUP, VK_SHIFT.0 as usize, key_lparam(VK_SHIFT, true, false))?;
+        pause(150);
+        if let Some(field) = field {
+            let _ = unsafe { field.SetFocus() };
+            // Wait for the field to report focus; a hidden page may never
+            // say so, hence the cap.
+            for _ in 0..6 {
+                pause(100);
+                if unsafe { field.CurrentHasKeyboardFocus() }.map(|focused| focused.as_bool()).unwrap_or(false) {
+                    break;
+                }
+            }
+        }
+        // Where the text goes: over the whole field, or after what is there.
+        chord(if replace { "ctrl+a" } else { "ctrl+end" })?;
+        let mut previous = 0u16;
+        for unit in text.encode_utf16() {
+            match unit {
+                0x0A if previous == 0x0D => {}
+                // A line break in a chat box must not press Enter: that sends.
+                0x0A | 0x0D => chord("shift+enter")?,
+                other => post(input, WM_CHAR, other as usize, LPARAM(1))?,
+            }
+            previous = unit;
+            pause(4);
+        }
+        pause(300);
+        Ok(())
+    };
+    type_once()?;
+
+    let Some(field) = field else {
+        return Ok(json!({
+            "typed_chars": text.chars().count(),
+            "delivered_to": "focused element",
+            "delivered_via": "keyboard",
+            "window": window_title(target.window),
+        }));
+    };
+    let name = bstr(unsafe { field.CurrentName() });
+    let landed = |after: &Option<String>| match (&before, after) {
+        (_, None) => false,
+        (_, Some(after)) if replace => squash(after).contains(&squash(text)),
+        (Some(before), Some(after)) => {
+            squash(after).contains(&squash(text)) && squash(after).len() > squash(before).len()
+        }
+        (None, Some(after)) => squash(after).contains(&squash(text)),
+    };
+    let mut after = field_value(field);
+    // A parked Edge/Electron window reports stale values, so there a miss
+    // proves nothing and retyping could double the text. Elsewhere the read
+    // is live: a field that did not change at all never got the keys, and
+    // one more attempt is safe.
+    let readback_is_live = !(target.hidden && class_name(target.window).starts_with("Chrome_WidgetWin"));
+    if readback_is_live && !landed(&after) && after == before {
+        type_once()?;
+        after = field_value(field);
+    }
+    let confirmed = landed(&after);
+    let mut result = json!({
+        "typed_chars": text.chars().count(),
+        "delivered_to": name,
+        "delivered_via": "keyboard",
+        "confirmed": confirmed,
+        "window": window_title(target.window),
+    });
+    if !confirmed && target.hidden {
+        // Measured: a parked Chromium page keeps reporting the value it had
+        // when it was hidden, while the page itself has the new text. Saying
+        // "not confirmed" would only make the agent type it twice.
+        result["confirmed"] = Value::Null;
+        result["note"] = json!(
+            "The keys were delivered. While the app is hidden its accessibility values and picture lag behind, so snapshot or screenshot may still show the old text."
+        );
+    } else if !confirmed {
+        result["note"] = json!(
+            "The field did not report the new text yet. Check with a screenshot before typing again; if the keys really did not arrive, use set_value with direct: true."
+        );
+    }
+    Ok(result)
+}
+
+fn invoke(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
+    let reference = params.get("ref").and_then(Value::as_str).ok_or("invoke needs a ref.")?;
+    let element = element_for(&target.session_id, reference)?;
+    let name = bstr(unsafe { element.CurrentName() });
+    let action = ui_action_for(&element).ok_or_else(|| {
+        format!("{reference} (\"{name}\") has no invoke/toggle/select/expand action. Click it by ref or coordinates instead.")
+    })?;
+    if let Some(point) = element_center(&element) {
+        target.travel(emit, point);
+        target.emit_pointer(emit, point, "click");
+    }
+    if is_editable(&element) {
+        remember_editable(&target.session_id, &element);
+    }
+    let used = perform(&action)
+        .map_err(|error| format!("{reference} (\"{name}\") refused the action: {error}"))?;
+    Ok(json!({ "ref": reference, "name": name, "pattern": used, "window": window_title(target.window) }))
+}
+
+fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
+    let reference = params.get("ref").and_then(Value::as_str).ok_or("set_value needs a ref.")?;
+    let value = params.get("value").and_then(Value::as_str).ok_or("set_value needs a value.")?;
+    let element = element_for(&target.session_id, reference)?;
+    let direct = params.get("direct").and_then(Value::as_bool).unwrap_or(false);
+    // Sliders, spinners and progress-like controls take a number.
+    if let Some(range) = pattern::<IUIAutomationRangeValuePattern>(&element, UIA_RangeValuePatternId) {
+        if let Ok(number) = value.trim().parse::<f64>() {
+            if let Some(point) = element_center(&element) {
+                target.travel(emit, point);
+                target.emit_pointer(emit, point, "click");
+            }
+            let (minimum, maximum) = unsafe { (range.CurrentMinimum(), range.CurrentMaximum()) };
+            let clamped = match (minimum, maximum) {
+                (Ok(minimum), Ok(maximum)) if maximum > minimum => number.clamp(minimum, maximum),
+                _ => number,
+            };
+            unsafe { range.SetValue(clamped) }
+                .map_err(|error| format!("{reference} refused the value: {error}"))?;
+            return Ok(json!({
+                "ref": reference,
+                "value_chars": value.chars().count(),
+                "delivered_via": "ui_automation",
+                "pattern": "range_value",
+                "window": window_title(target.window),
+            }));
+        }
+    }
+    if target.web && !direct {
+        // Replace through the keyboard so the page sees input events (see
+        // web_fill); `direct` writes the value without them.
+        if let Some(point) = element_center(&element) {
+            target.travel(emit, point);
+            target.emit_pointer(emit, point, "click");
+        }
+        remember_editable(&target.session_id, &element);
+        let mut result = web_fill(target, Some(&element), value, true)?;
+        result["ref"] = json!(reference);
+        result["value_chars"] = json!(value.chars().count());
+        return Ok(result);
+    }
+    let pattern: IUIAutomationValuePattern = unsafe { element.GetCurrentPattern(UIA_ValuePatternId) }
+        .ok()
+        .and_then(|pattern| pattern.cast().ok())
+        .ok_or_else(|| format!("{reference} does not accept a value. Click it and use type instead."))?;
+    if unsafe { pattern.CurrentIsReadOnly() }.map(|ro| ro.as_bool()).unwrap_or(false) {
+        return Err(format!("{reference} is read-only."));
+    }
+    if let Some(point) = element_center(&element) {
+        target.travel(emit, point);
+        target.emit_pointer(emit, point, "click");
+    }
+    unsafe { pattern.SetValue(&BSTR::from(value)) }
+        .map_err(|error| format!("{reference} refused the value: {error}"))?;
+    Ok(json!({ "ref": reference, "value_chars": value.chars().count(), "window": window_title(target.window) }))
+}
+
+/// Drives a real Notepad window. Opt-in because it opens a window on the
+/// desktop it runs on:
+///
+/// `cargo test computer_app -- --ignored --nocapture`
+///
+/// It launches its own minimized Notepad and never touches one that was
+/// already open, and it checks the claim this module is built on: the
+/// user's cursor and foreground window do not change while the agent works.
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+    use std::cell::RefCell;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+
+    fn notepad_windows() -> Vec<(u64, u32)> {
+        list_windows(&json!({ "query": "notepad" }))["windows"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter(|window| window["app"].as_str().unwrap_or("").eq_ignore_ascii_case("notepad.exe"))
+            .map(|window| (window["id"].as_u64().unwrap_or(0), window["pid"].as_u64().unwrap_or(0) as u32))
+            .collect()
+    }
+
+    #[test]
+    fn names_apps_from_their_captions() {
+        assert_eq!(caption_app_name("notes.txt - Notepad").as_deref(), Some("Notepad"));
+        assert_eq!(
+            caption_app_name("Chat | Contoso | Microsoft Teams").as_deref(),
+            Some("Microsoft Teams")
+        );
+        assert_eq!(caption_app_name("Calculator").as_deref(), Some("Calculator"));
+        assert_eq!(caption_app_name("   ").as_deref(), None);
+        assert_eq!(exe_stem("notepad.exe"), "Notepad");
+    }
+
+    #[test]
+    #[ignore = "reads the local Start menu and running apps"]
+    fn lists_apps_with_icons() {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let started = std::time::Instant::now();
+        let listed = list_apps();
+        let apps = listed["apps"].as_array().unwrap();
+        let with_icons = apps.iter().filter(|app| app["icon"].is_string()).count();
+        eprintln!("{} apps ({with_icons} with icons) in {:?}", apps.len(), started.elapsed());
+        for app in apps.iter().take(12) {
+            eprintln!("  {} — {} running={}", app["exe"], app["name"], app["running"]);
+        }
+        assert!(!apps.is_empty());
+        assert!(with_icons * 2 >= apps.len(), "most apps should have an icon");
+        assert!(apps.iter().all(|app| !is_protected_process_name(app["exe"].as_str().unwrap())));
+    }
+
+    fn snapshot_text(emit: &dyn Fn(Value), session: &str) -> String {
+        run_action(emit, session, "snapshot", &json!({})).unwrap().as_str().unwrap().to_string()
+    }
+
+    fn ref_for(emit: &dyn Fn(Value), session: &str, query: &str) -> String {
+        let found = run_action(emit, session, "find", &json!({ "query": query })).unwrap();
+        let text = found.as_str().unwrap();
+        let start = text.find("[ref=").unwrap_or_else(|| panic!("{query} not found:\n{text}")) + 5;
+        let end = start + text[start..].find(']').unwrap();
+        text[start..end].to_string()
+    }
+
+    /// The probe page's report (see the fixture), parsed from the caption.
+    fn page_report(hwnd: HWND) -> HashMap<String, String> {
+        window_title(hwnd)
+            .split('|')
+            .filter_map(|pair| pair.split_once('='))
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect()
+    }
+
+    fn report_number(report: &HashMap<String, String>, key: &str) -> i64 {
+        report.get(key).and_then(|value| value.parse().ok()).unwrap_or(0)
+    }
+
+    /// Screenshot coordinates of an element's centre, from a `find` line.
+    fn centre_of(emit: &dyn Fn(Value), session: &str, query: &str) -> (i64, i64) {
+        let found = run_action(emit, session, "find", &json!({ "query": query })).unwrap();
+        let line = found
+            .as_str()
+            .unwrap()
+            .lines()
+            .find(|line| line.contains("[ref="))
+            .unwrap_or_else(|| panic!("{query} not found: {found}"))
+            .to_string();
+        let at = line.rfind('@').unwrap_or_else(|| panic!("{query} has no position: {line}"));
+        let (position, size) = line[at + 1..].split_once(' ').unwrap();
+        let (x, y) = position.split_once(',').unwrap();
+        let (width, height) = size.trim().split_once('x').unwrap();
+        let number = |text: &str| text.trim().parse::<i64>().unwrap();
+        (number(x) + number(width) / 2, number(y) + number(height) / 2)
+    }
+
+    const EDGE: &str = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe";
+
+    fn probe_url() -> String {
+        let page = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("computer_app_probe.html");
+        format!("file:///{}", page.display().to_string().replace('\\', "/"))
+    }
+
+    fn edge_profile() -> std::path::PathBuf {
+        std::env::temp_dir().join("evoflux-computer-app-probe")
+    }
+
+    /// Start a process that must not inherit the test's output pipes, or the
+    /// harness waits on them for as long as any of its children lives.
+    fn spawn_quiet(command: &mut std::process::Command) {
+        command
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("start the probe host");
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum ProbeHost {
+        /// Edge in app mode: Chromium's own top-level window.
+        Edge,
+        /// A WebView2 control inside a Win32 host window — the layout of
+        /// Teams and other WebView2 apps (see [`webview2_host`]).
+        WebView2,
+    }
+
+    /// Open the probe page in `host`, attach to it (parked off-screen when
+    /// `hide`), run `body`, and clean up whatever happens.
+    fn with_probe_page(
+        session: &str,
+        host: ProbeHost,
+        hide: bool,
+        body: impl FnOnce(&dyn Fn(Value), HWND),
+    ) {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        match host {
+            ProbeHost::Edge => spawn_quiet(
+                std::process::Command::new(EDGE)
+                    .arg(format!("--user-data-dir={}", edge_profile().display()))
+                    .args(["--no-first-run", "--no-default-browser-check", "--new-window"])
+                    .arg(format!("--app={}", probe_url())),
+            ),
+            // This same test binary, running only the host "test" below.
+            ProbeHost::WebView2 => spawn_quiet(
+                std::process::Command::new(std::env::current_exe().unwrap())
+                    .args(["computer_app::win::live_tests::webview2_host", "--exact", "--ignored"])
+                    .env("COMPUTER_APP_PROBE_URL", probe_url()),
+            ),
+        }
+
+        let mut window = None;
+        for _ in 0..60 {
+            pause(250);
+            window = list_windows(&json!({ "query": "probe" }))["windows"]
+                .as_array()
+                .and_then(|windows| windows.first().cloned());
+            if window.is_some() {
+                break;
+            }
+        }
+        let window = window.expect("the probe page never opened");
+        let window_id = window["id"].as_u64().unwrap();
+        let pid = window["pid"].as_u64().unwrap();
+        let hwnd = to_hwnd(window_id as isize);
+        pause(1500);
+
+        let emit = |_: Value| {};
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let foreground = unsafe { GetForegroundWindow() };
+            let attached = run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": hide })).unwrap();
+            eprintln!("{host:?} attached: {attached}");
+            assert_eq!(attached["window"]["web_content"], json!(true));
+            assert_eq!(is_off_screen(hwnd), hide, "parking did not follow hide={hide}");
+            body(&emit, hwnd);
+            // A just-launched probe window often *is* the foreground window,
+            // and parking it hands the foreground on; the claim under test is
+            // that the user's own window keeps it.
+            if foreground != hwnd {
+                assert_eq!(foreground, unsafe { GetForegroundWindow() }, "the foreground window changed");
+            }
+        }));
+
+        detach(session);
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status();
+        if let Err(panic) = outcome {
+            std::panic::resume_unwind(panic);
+        }
+    }
+
+    /// Fills every kind of field in a real Chromium page and reads back what
+    /// the page received, including whether `input` events fired — what
+    /// React-style apps such as Teams need to notice the text at all.
+    ///
+    /// `cargo test probes_chromium -- --ignored --nocapture`
+    #[test]
+    #[ignore = "opens an Edge window on the local desktop"]
+    fn probes_chromium_fields() {
+        probe_fields(ProbeHost::Edge);
+    }
+
+    #[test]
+    #[ignore = "opens a WebView2 window on the local desktop"]
+    fn probes_webview2_fields() {
+        probe_fields(ProbeHost::WebView2);
+    }
+
+    fn probe_fields(host: ProbeHost) {
+        let session = "probe-fields";
+        with_probe_page(session, host, true, |emit, hwnd| {
+            let caption = || window_title(hwnd);
+            let name = ref_for(emit, session, "Name field");
+            let clicked = run_action(emit, session, "click", &json!({ "ref": name })).unwrap();
+            eprintln!("click name: {clicked}");
+            let typed = run_action(emit, session, "type", &json!({ "text": "alpha" })).unwrap();
+            eprintln!("type name: {typed}\n  caption: {}", caption());
+            assert_eq!(typed["delivered_via"], json!("keyboard"));
+            assert_ne!(typed["confirmed"], json!(false), "a hidden page's stale value was reported as a failure");
+
+            let notes = ref_for(emit, session, "Notes field");
+            let set = run_action(emit, session, "set_value", &json!({ "ref": notes, "value": "beta" })).unwrap();
+            eprintln!("set_value notes: {set}\n  caption: {}", caption());
+
+            let editor = ref_for(emit, session, "Message editor");
+            let typed = run_action(emit, session, "type", &json!({ "ref": editor, "text": "gamma" })).unwrap();
+            eprintln!("type editor: {typed}\n  caption: {}", caption());
+
+            // A second line in a chat editor is Shift+Enter, never a send.
+            let typed = run_action(emit, session, "type", &json!({ "text": "\ndelta" })).unwrap();
+            eprintln!("type editor line 2: {typed}\n  caption: {}", caption());
+
+            let send = ref_for(emit, session, "Send");
+            let clicked = run_action(emit, session, "click", &json!({ "ref": send })).unwrap();
+            eprintln!("click send: {clicked}");
+            pause(300);
+
+            let report = page_report(hwnd);
+            eprintln!("final report: {report:?}");
+            assert_eq!(report.get("name").map(String::as_str), Some("alpha"), "input value");
+            assert_eq!(report.get("notes").map(String::as_str), Some("beta"), "textarea value");
+            assert_eq!(report.get("editor").map(String::as_str), Some("gamma/delta"), "contenteditable text");
+            let events: Vec<i64> = report["ev"].split(',').map(|n| n.parse().unwrap_or(0)).collect();
+            for (count, label) in events.iter().zip(["input", "textarea", "contenteditable"]) {
+                assert!(*count > 0, "no input event reached the {label}");
+            }
+            assert_eq!(report_number(&report, "sent"), 1, "Send click");
+        });
+    }
+
+    /// Hover, double-click, right-click, scroll, drag and a slider on a real
+    /// Chromium page, parked off-screen, each checked against what the page
+    /// itself saw.
+    #[test]
+    #[ignore = "opens an Edge window on the local desktop"]
+    fn probes_chromium_pointer() {
+        probe_pointer(ProbeHost::Edge);
+    }
+
+    #[test]
+    #[ignore = "opens a WebView2 window on the local desktop"]
+    fn probes_webview2_pointer() {
+        probe_pointer(ProbeHost::WebView2);
+    }
+
+    /// A drag in a page that is on screen but completely covered by another
+    /// window — Chromium treats it as hidden and would drop every move.
+    #[test]
+    #[ignore = "opens Edge windows on the local desktop"]
+    fn drags_in_a_covered_page() {
+        let session = "probe-covered";
+        with_probe_page(session, ProbeHost::Edge, false, |emit, hwnd| {
+            spawn_quiet(
+                std::process::Command::new(EDGE)
+                    .arg(format!("--user-data-dir={}", edge_profile().display()))
+                    .arg("--app=data:text/html,<title>cover</title><body style=background:%23333>"),
+            );
+            let mut cover = None;
+            for _ in 0..40 {
+                pause(250);
+                cover = top_level_windows().into_iter().find(|window| window_title(*window) == "cover");
+                if cover.is_some() {
+                    break;
+                }
+            }
+            let cover = cover.expect("the cover window never opened");
+            let frame = frame_rect(hwnd);
+            unsafe {
+                let _ = SetWindowPos(
+                    cover,
+                    Some(HWND(std::ptr::null_mut())), // HWND_TOP
+                    frame.left - 40,
+                    frame.top - 40,
+                    frame.right - frame.left + 80,
+                    frame.bottom - frame.top + 80,
+                    SWP_NOACTIVATE,
+                );
+            }
+            pause(1500);
+            assert!(!partly_visible(hwnd), "the cover does not hide the page");
+
+            let (x, y) = centre_of(emit, session, "Drag handle");
+            let dragged = run_action(emit, session, "drag", &json!({ "x": x, "y": y, "to_x": x + 150, "to_y": y })).unwrap();
+            pause(1300);
+            let report = page_report(hwnd);
+            eprintln!("covered drag: {dragged}\n  report: {report:?}");
+            assert!(report_number(&report, "drag") >= 120, "the covered drag moved {:?}", report.get("drag"));
+            // Put back exactly: still covered, still where it was.
+            assert!(!partly_visible(hwnd), "the drag left the page uncovered");
+            let after = frame_rect(hwnd);
+            assert_eq!((after.left, after.top), (frame.left, frame.top), "the drag moved the window");
+        });
+    }
+
+    /// Not a test on its own: the WebView2 host process that the WebView2
+    /// probes start, running this binary with only this "test" selected. A
+    /// tao window holding a wry (WebView2) view is laid out the way Teams is,
+    /// and the page title is copied to the window caption for the probes.
+    #[test]
+    #[ignore = "runs only as the WebView2 host child process of other live tests"]
+    fn webview2_host() {
+        let Ok(url) = std::env::var("COMPUTER_APP_PROBE_URL") else {
+            return;
+        };
+        use tao::event::Event;
+        use tao::event_loop::{ControlFlow, EventLoopBuilder};
+        use tao::platform::windows::EventLoopBuilderExtWindows;
+        let event_loop = EventLoopBuilder::<String>::with_user_event()
+            .with_any_thread(true)
+            .build();
+        let window = tao::window::WindowBuilder::new()
+            .with_title("probe host")
+            .with_inner_size(tao::dpi::LogicalSize::new(900.0, 1000.0))
+            .build(&event_loop)
+            .unwrap();
+        let proxy = event_loop.create_proxy();
+        let webview = wry::WebViewBuilder::new()
+            .with_url(&url)
+            .with_document_title_changed_handler(move |title| {
+                let _ = proxy.send_event(title);
+            })
+            .build(&window)
+            .unwrap();
+        event_loop.run(move |event, _, control_flow| {
+            *control_flow = ControlFlow::Wait;
+            let _ = &webview;
+            if let Event::UserEvent(title) = event {
+                window.set_title(&title);
+            }
+        });
+    }
+
+    fn probe_pointer(host: ProbeHost) {
+        let session = "probe-pointer";
+        let hide = std::env::var("PROBE_HIDE").map(|value| value != "0").unwrap_or(true);
+        with_probe_page(session, host, hide, |emit, hwnd| {
+            let step =|label: &str, action: &str, params: Value| {
+                let result = run_action(emit, session, action, &params);
+                // Hidden pages run timers about once a second.
+                pause(1300);
+                eprintln!("{label}: {result:?}\n  report: {:?}", page_report(hwnd));
+            };
+            let _ = run_action(emit, session, "snapshot", &json!({}));
+            step("hover", "hover", json!({ "ref": ref_for(emit, session, "Hover target") }));
+            step("double", "click", json!({ "ref": ref_for(emit, session, "Double target"), "clicks": 2 }));
+            step("context", "click", json!({ "ref": ref_for(emit, session, "Context target"), "button": "right" }));
+            step("scroll", "scroll", json!({ "ref": ref_for(emit, session, "Scroll box"), "direction": "down", "amount": 3 }));
+            let (x, y) = centre_of(emit, session, "Drag handle");
+            step("drag", "drag", json!({ "x": x, "y": y, "to_x": x + 150, "to_y": y }));
+            assert_eq!(is_off_screen(hwnd), hide, "the drag changed where the page is");
+            step("slider", "set_value", json!({ "ref": ref_for(emit, session, "Volume slider"), "value": "70" }));
+
+            let report = page_report(hwnd);
+            let mut failures = Vec::new();
+            for key in ["hover", "dbl", "ctx", "scroll"] {
+                if report_number(&report, key) <= 0 {
+                    failures.push(key);
+                }
+            }
+            // The whole gesture, not just its first steps.
+            if report_number(&report, "drag") < 120 {
+                failures.push("drag");
+            }
+            if report_number(&report, "range") != 70 {
+                failures.push("range");
+            }
+            assert!(failures.is_empty(), "not received by the page: {failures:?} — report {report:?}");
+        });
+    }
+
+    #[test]
+    #[ignore = "opens a Notepad window on the local desktop"]
+    fn drives_notepad_in_the_background() {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let before = notepad_windows();
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "/min", "notepad.exe"])
+            .status()
+            .expect("start notepad");
+        let mut launched = None;
+        for _ in 0..50 {
+            pause(200);
+            launched = notepad_windows().into_iter().find(|window| !before.contains(window));
+            if launched.is_some() {
+                break;
+            }
+        }
+        let Some((window_id, pid)) = launched else {
+            eprintln!("skipped: Notepad opened as a tab of an existing window, not a new one");
+            return;
+        };
+        let already_running = before.iter().any(|(_, existing)| *existing == pid);
+
+        let session = "live-test";
+        let events = RefCell::new(Vec::<Value>::new());
+        let emit = |payload: Value| events.borrow_mut().push(payload);
+
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let attached = run_action(&emit, session, "attach", &json!({ "window_id": window_id })).unwrap();
+            eprintln!("attached: {attached}");
+            pause(500);
+            // Windows Notepad restores unsaved tabs from earlier sessions;
+            // work in a fresh tab so none of them is touched.
+            run_action(&emit, session, "key", &json!({ "key": "ctrl+n" })).unwrap();
+            pause(700);
+
+            let notepad = to_hwnd(window_id as isize);
+            let notepad_was_foreground = unsafe { GetForegroundWindow() } == notepad;
+
+            let typed = run_action(&emit, session, "type", &json!({ "text": "hello from evoflux" })).unwrap();
+            eprintln!("typed: {typed}");
+            pause(400);
+            let first = snapshot_text(&emit, session);
+            assert!(first.contains("hello from evoflux"), "text not in the UI tree:\n{first}");
+
+            run_action(&emit, session, "key", &json!({ "key": "ctrl+a" })).unwrap();
+            run_action(&emit, session, "type", &json!({ "text": "replaced" })).unwrap();
+            pause(400);
+            let second = snapshot_text(&emit, session);
+            assert!(second.contains("replaced"), "ctrl+a then typing failed:\n{second}");
+            assert!(!second.contains("hello from evoflux"), "ctrl+a did not select all:\n{second}");
+
+            let shot = run_action(&emit, session, "screenshot", &json!({})).unwrap();
+            assert!(shot["data"].as_str().map(str::len).unwrap_or(0) > 1000);
+            let (width, height) = (shot["width"].as_u64().unwrap(), shot["height"].as_u64().unwrap());
+            let (x, y) = ((width / 2) as f64, (height / 2) as f64);
+            let clicked = Target::resolve(session).unwrap().screen_point(x, y).unwrap();
+            run_action(&emit, session, "click", &json!({ "x": x, "y": y })).unwrap();
+
+            // A person may be using the mouse while this runs, so "the cursor
+            // did not move" cannot be asserted — but a click that went through
+            // the real cursor would have left it exactly on the clicked point.
+            let mut cursor = POINT::default();
+            unsafe { GetCursorPos(&mut cursor) }.unwrap();
+            assert!(
+                (cursor.x - clicked.x).abs() > 2 || (cursor.y - clicked.y).abs() > 2,
+                "the real cursor sits on the clicked point {clicked:?}"
+            );
+            if !notepad_was_foreground {
+                assert_ne!(unsafe { GetForegroundWindow() }, notepad, "Notepad was brought to the front");
+            }
+            let phases: Vec<String> = events
+                .borrow()
+                .iter()
+                .filter_map(|event| event["phase"].as_str().map(str::to_string))
+                .collect();
+            assert!(phases.iter().any(|phase| phase == "click"), "no pointer events: {phases:?}");
+
+            // Hidden mode: parked off-screen, still controllable, and put
+            // back exactly where it was on detach.
+            let mut original = WINDOWPLACEMENT {
+                length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+                ..Default::default()
+            };
+            unsafe { GetWindowPlacement(notepad, &mut original) }.unwrap();
+            let hidden = run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": true })).unwrap();
+            assert_eq!(hidden["window"]["hidden"], json!(true));
+            assert!(is_off_screen(notepad), "Notepad is still on screen");
+            run_action(&emit, session, "type", &json!({ "text": " hidden ok" })).unwrap();
+            pause(400);
+            let hidden_tree = snapshot_text(&emit, session);
+            assert!(hidden_tree.contains("hidden ok"), "typing while parked failed:\n{hidden_tree}");
+            run_action(&emit, session, "detach", &json!({})).unwrap();
+            pause(300);
+            let mut restored = WINDOWPLACEMENT {
+                length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+                ..Default::default()
+            };
+            unsafe { GetWindowPlacement(notepad, &mut restored) }.unwrap();
+            assert_eq!(
+                (original.rcNormalPosition.left, original.rcNormalPosition.top),
+                (restored.rcNormalPosition.left, restored.rcNormalPosition.top),
+                "detach did not restore the window's position"
+            );
+            assert!(
+                !is_off_screen(notepad) || unsafe { IsIconic(notepad) }.as_bool(),
+                "Notepad was left off-screen"
+            );
+        }));
+
+        // Empty and close the test's own tab so Notepad has nothing of it to
+        // restore next time, whether or not the assertions above held.
+        let noop = |_: Value| {};
+        let _ = run_action(&noop, session, "attach", &json!({ "window_id": window_id }));
+        if Target::resolve(session).is_ok() {
+            let _ = run_action(&noop, session, "key", &json!({ "key": "ctrl+a" }));
+            let _ = run_action(&noop, session, "key", &json!({ "key": "delete" }));
+            pause(200);
+            let _ = run_action(&noop, session, "key", &json!({ "key": "ctrl+w" }));
+            pause(500);
+        }
+
+        detach(session);
+        if already_running {
+            // A new window of the user's own Notepad: close just that window
+            // (its last tab was emptied above, so nothing asks to save).
+            let _ = post(to_hwnd(window_id as isize), windows::Win32::UI::WindowsAndMessaging::WM_CLOSE, 0, LPARAM(0));
+        } else {
+            let _ = std::process::Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/F"])
+                .status();
+        }
+        if let Err(panic) = outcome {
+            std::panic::resume_unwind(panic);
+        }
+    }
+}

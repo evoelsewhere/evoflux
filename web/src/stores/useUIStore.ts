@@ -123,6 +123,8 @@ interface WorkbenchState {
   workbenchMaximized: boolean
   /** Sessions whose agent pages are open in stacked floating previews. */
   browserPipSessionIds: string[]
+  /** Sessions whose attached desktop app is shown in a floating preview. */
+  computerPipSessionIds: string[]
   pullRequestsScope: PullRequestsScope
   gitWorkspaceView: GitWorkspaceView
 }
@@ -396,6 +398,9 @@ interface UIStore extends WorkbenchState {
   openBrowserPip: (sessionId: string) => void
   focusBrowserPip: (sessionId: string) => void
   closeBrowserPip: (sessionId?: string) => void
+  openComputerPip: (sessionId: string) => void
+  focusComputerPip: (sessionId: string) => void
+  closeComputerPip: (sessionId?: string) => void
   toggleWiki: () => void
   toggleScheduler: () => void
   openGitChanges: () => void
@@ -440,6 +445,7 @@ export const useUIStore = create<UIStore>()(
     // re-applies the remembered posture as soon as there is a tab.
     workbenchMaximized: false,
     browserPipSessionIds: [],
+    computerPipSessionIds: [],
     pullRequestsScope: 'session',
     gitWorkspaceView: 'changes',
     createWorkbenchTab: (tool, options = {}) => set((state) => {
@@ -561,6 +567,23 @@ export const useUIStore = create<UIStore>()(
           (id) => id !== sessionId,
         )
       }
+    }),
+    openComputerPip: (sessionId) => set((state) => {
+      if (!state.computerPipSessionIds.includes(sessionId)) {
+        state.computerPipSessionIds.push(sessionId)
+      }
+    }),
+    focusComputerPip: (sessionId) => set((state) => {
+      if (!state.computerPipSessionIds.includes(sessionId)) return
+      state.computerPipSessionIds = [
+        ...state.computerPipSessionIds.filter((id) => id !== sessionId),
+        sessionId,
+      ]
+    }),
+    closeComputerPip: (sessionId) => set((state) => {
+      state.computerPipSessionIds = sessionId === undefined
+        ? []
+        : state.computerPipSessionIds.filter((id) => id !== sessionId)
     }),
     toggleWorkbenchMaximized: () => set((state) => {
       if (!state.activeWorkbenchTabId) return

@@ -681,6 +681,46 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
     }
   }
 
+  // ── computer_app: show the first app action ─────────────────────────
+  if (name === 'computer_app') {
+    const actions = parsed.actions as Array<Record<string, unknown>> | undefined
+    if (!Array.isArray(actions) || actions.length === 0) {
+      return { header: 'Controlling app…', headerTitle: null, formattedArgs: null }
+    }
+    const first = actions[0]
+    const action = first?.action as string | undefined
+    const target = typeof first?.ref === 'string'
+      ? first.ref
+      : typeof first?.x === 'number' && typeof first?.y === 'number'
+        ? `(${Math.round(first.x)}, ${Math.round(first.y)})`
+        : null
+    const summaryMap: Record<string, string> = {
+      list_windows: 'Listing open apps…',
+      attach: `Attaching to ${first?.app ?? first?.title ?? 'app window'}`,
+      detach: 'Releasing the app…',
+      status: 'Checking app control…',
+      screenshot: 'Capturing the app…',
+      snapshot: 'Reading the app’s controls…',
+      find: `Finding "${trunc(String(first?.query ?? ''), 40)}"`,
+      click: `Clicking ${target ?? 'in the app'}`,
+      hover: `Hovering ${target ?? 'in the app'}`,
+      scroll: `Scrolling ${(first?.direction as string) ?? 'down'}`,
+      drag: 'Dragging in the app…',
+      type: `Typing ${trunc(String(first?.text ?? ''), 40)}`,
+      key: `Pressing ${String(first?.key ?? 'a key')}`,
+      invoke: `Pressing ${target ?? 'control'}`,
+      set_value: `Filling ${target ?? 'field'}`,
+      wait: 'Waiting…',
+    }
+    const header = (action && summaryMap[action]) || `App: ${action ?? 'unknown'}`
+    const extra = actions.length > 1 ? ` (+${actions.length - 1} more)` : ''
+    return {
+      header: `${header}${extra}`,
+      headerTitle: `${header}${extra}`,
+      formattedArgs: null,
+    }
+  }
+
   // ── Default: tool name as header, pretty-printed JSON as args ──────
   // Hide args entirely if the object is empty.
   if (Object.keys(parsed).length === 0) {

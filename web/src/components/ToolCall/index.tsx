@@ -19,6 +19,7 @@
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
+  AppWindow,
   ChevronRight,
   Copy,
   Check,
@@ -267,6 +268,7 @@ function completedToolLabel(name: string): string {
     case 'run_command': return 'Ran'
     case 'browser_use':
     case 'webbridge': return 'Browsed'
+    case 'computer_app': return 'Controlled app'
     default: return formatToolLabel(name)
   }
 }
@@ -279,6 +281,7 @@ function ToolActivityIcon({ name, skill = false }: { name: string; skill?: boole
   if (name === 'grep') return <Search {...props} />
   if (name === 'glob' || name === 'ls') return <FolderOpen {...props} />
   if (name === 'browser_use' || name === 'webbridge' || name === 'web_search' || name === 'web_fetch') return <Globe2 {...props} />
+  if (name === 'computer_app') return <AppWindow {...props} />
   return <SquareTerminal {...props} />
 }
 
@@ -314,6 +317,7 @@ function toolActivityLabel(
     case 'python': return target || 'Running Python'
     case 'browser_use':
     case 'webbridge': return target || 'Using browser'
+    case 'computer_app': return target || 'Controlling app'
     case 'web_search': return target ? `Searching ${target}` : 'Searching web'
     case 'web_fetch': return target ? `Reading ${target}` : 'Reading page'
     case 'memory_search': return target ? `Searching memory for ${target}` : 'Searching memory'
