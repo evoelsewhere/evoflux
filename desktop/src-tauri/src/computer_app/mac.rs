@@ -53,7 +53,8 @@ use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 
 use super::{
-    blocked_combo_reason, is_protected_process_name, parse_key_combo, screenshot_scale, KeyCombo,
+    blocked_combo_reason, interrupted, is_protected_process_name, parse_key_combo,
+    screenshot_scale, KeyCombo,
 };
 
 const POINTER_TRAVEL: Duration = Duration::from_millis(220);
@@ -677,6 +678,7 @@ fn worker_sender() -> Result<mpsc::Sender<Job>, String> {
     std::thread::Builder::new()
         .name("computer-app".into())
         .spawn(move || {
+            ON_WORKER.with(|flag| flag.set(true));
             for job in receiver {
                 job();
             }
@@ -719,7 +721,22 @@ struct SessionRefs {
     elements: HashMap<String, Ax>,
 }
 
+thread_local! {
+    static ON_WORKER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Drop the session's element refs. They live on the thread that ran the
+/// action — the worker, in the app — so a release from elsewhere (Stop,
+/// exit) also hands the clean-up to the worker, behind whatever it is
+/// running.
 fn clear_refs(session_id: &str) {
+    if !ON_WORKER.with(|flag| flag.get()) {
+        let sender = WORKER.lock().ok().and_then(|slot| slot.clone());
+        if let Some(sender) = sender {
+            let session_id = session_id.to_string();
+            let _ = sender.send(Box::new(move || clear_refs(&session_id)));
+        }
+    }
     REFS.with(|refs| {
         refs.borrow_mut().remove(session_id);
     });
@@ -1297,6 +1314,17 @@ fn attach(session_id: &str, params: &Value) -> Result<Value, String> {
     if web {
         enable_web_accessibility(&app, &window);
     }
+    // Stop pressed while this attach was parking the window: hand it back
+    // instead of registering a window nobody may drive.
+    if let Err(stopped) = interrupted() {
+        if web {
+            let _ = app.set_flag("AXEnhancedUserInterface", false);
+        }
+        if let Some(parked) = parked {
+            unpark(&window, parked, false);
+        }
+        return Err(stopped);
+    }
     registry().attached.insert(
         session_id.to_string(),
         Attached { window_id: id, pid: chosen.pid, app: chosen.app.clone(), title, parked, web },
@@ -1464,9 +1492,10 @@ impl Target {
 
     /// Move the preview's cursor to `point` and give it time to get there,
     /// so the user sees where the agent is about to act before it does.
-    fn travel(&self, emit: &dyn Fn(Value), point: Point) {
+    fn travel(&self, emit: &dyn Fn(Value), point: Point) -> Result<(), String> {
         self.emit_pointer(emit, point, "move");
         std::thread::sleep(POINTER_TRAVEL);
+        interrupted()
     }
 
     /// Where accessibility walks start: the window, then any dialog window
@@ -2128,10 +2157,11 @@ fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value,
         }
     }
 
-    target.travel(emit, point);
+    target.travel(emit, point)?;
     target.emit_pointer(emit, point, "press");
     post_mouse(target, CGEventType::MouseMoved, point, CGMouseButton::Left, 0)?;
     for index in 1..=clicks {
+        interrupted()?;
         post_mouse(target, down, point, mouse_button, index)?;
         pause(25);
         post_mouse(target, up, point, mouse_button, index)?;
@@ -2169,7 +2199,7 @@ fn click_via_accessibility(
             continue;
         };
         let name = element.label();
-        target.travel(emit, point);
+        target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
         let used = perform(element, &action)
             .map_err(|error| format!("\"{name}\" refused the click: {}", ax_error(error)))?;
@@ -2185,7 +2215,7 @@ fn click_via_accessibility(
         })));
     }
     if let Some(field) = editable {
-        target.travel(emit, point);
+        target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
         let _ = field.set_flag("AXFocused", true);
         let (x, y) = target.screenshot_point(point);
@@ -2217,7 +2247,7 @@ fn menu_via_accessibility(
     else {
         return Ok(None);
     };
-    target.travel(emit, point);
+    target.travel(emit, point)?;
     target.emit_pointer(emit, point, "click");
     element
         .perform("AXShowMenu")
@@ -2236,7 +2266,7 @@ fn menu_via_accessibility(
 
 fn hover(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
     let point = pointer_target(target, params)?;
-    target.travel(emit, point);
+    target.travel(emit, point)?;
     post_mouse(target, CGEventType::MouseMoved, point, CGMouseButton::Left, 0)?;
     Ok(pointer_result(target, point, "window", json!({})))
 }
@@ -2276,8 +2306,9 @@ fn scroll(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
     };
     let bar = scroll_bar(&chain, vertical);
     let before = bar.as_ref().and_then(|(_, bar)| scroll_bar_value(bar));
-    target.travel(emit, point);
+    target.travel(emit, point)?;
     for _ in 0..amount {
+        interrupted()?;
         let step = lines.signum();
         let (wheel1, wheel2) = if vertical { (step, 0) } else { (0, step) };
         let event = CGEvent::new_scroll_event(event_source()?, ScrollEventUnit::LINE, 2, wheel1, wheel2, 0)
@@ -2314,7 +2345,7 @@ fn drag(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, 
         (Some(x), Some(y)) => target.screen_point(x, y)?,
         _ => return Err("drag needs to_x and to_y (screenshot pixels).".into()),
     };
-    target.travel(emit, from);
+    target.travel(emit, from)?;
     target.emit_pointer(emit, from, "press");
     post_mouse(target, CGEventType::MouseMoved, from, CGMouseButton::Left, 0)?;
     post_mouse(target, CGEventType::LeftMouseDown, from, CGMouseButton::Left, 1)?;
@@ -2323,6 +2354,11 @@ fn drag(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, 
         let t = f64::from(step) / f64::from(STEPS);
         let point = Point { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
         pause(24);
+        if let Err(stopped) = interrupted() {
+            // Let go of the button rather than leave the app mid-drag.
+            let _ = post_mouse(target, CGEventType::LeftMouseUp, point, CGMouseButton::Left, 1);
+            return Err(stopped);
+        }
         post_mouse(target, CGEventType::LeftMouseDragged, point, CGMouseButton::Left, 1)?;
         target.emit_pointer(emit, point, "drag");
     }
@@ -2427,6 +2463,7 @@ fn type_via_keyboard(target: &Target, text: &str, web: bool, delay: u64) -> Resu
         if chunk.is_empty() {
             return Ok(());
         }
+        interrupted()?;
         for down in [true, false] {
             let event = CGEvent::new_keyboard_event(event_source()?, 0, down)
                 .map_err(|()| "Could not create a key event.".to_string())?;
@@ -2616,6 +2653,9 @@ fn combo_flags(combo: &KeyCombo) -> CGEventFlags {
 
 fn post_keycode(pid: i32, code: u16, flags: CGEventFlags, repeat: u64) -> Result<(), String> {
     for _ in 0..repeat {
+        // Each press carries its own flags, so stopping between presses
+        // leaves no modifier held.
+        interrupted()?;
         for down in [true, false] {
             let event = CGEvent::new_keyboard_event(event_source()?, code, down)
                 .map_err(|()| "Could not create a key event.".to_string())?;
@@ -2703,6 +2743,7 @@ fn press_key(target: &Target, params: &Value) -> Result<Value, String> {
     let repeat = params.get("repeat").and_then(Value::as_u64).unwrap_or(1).clamp(1, 50);
     if let Some((item, title)) = menu_item_for(&target.app, &combo) {
         for _ in 0..repeat {
+            interrupted()?;
             item.perform("AXPress")
                 .map_err(|error| format!("The menu command \"{title}\" failed: {}", ax_error(error)))?;
             pause(60);
@@ -2782,7 +2823,7 @@ fn invoke(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
         format!("{reference} (\"{name}\") has no press/select/expand action. Click it by ref or coordinates instead.")
     })?;
     if let Some(point) = element_center(&element).filter(|point| target.frame.contains(*point)) {
-        target.travel(emit, point);
+        target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
     }
     if is_editable(&element) {
@@ -2799,7 +2840,7 @@ fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
     let element = element_for(&target.session_id, reference)?;
     let direct = params.get("direct").and_then(Value::as_bool).unwrap_or(false);
     if let Some(point) = element_center(&element) {
-        target.travel(emit, point);
+        target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
     }
     // Sliders, steppers and other number-valued controls take a number.

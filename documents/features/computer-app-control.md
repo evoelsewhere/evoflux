@@ -35,6 +35,15 @@ to both unless it names Windows mechanisms.
    manual takeover) or **Close** (detaches). The agent can only act while an app
    is attached, which is exactly while the card is open.
 
+   Stop and Close also end the action in progress, not only the ones after
+   it: every action takes a ticket for its session when it arrives, Stop and a
+   detach invalidate it, and long actions check it between steps — each
+   character typed, each drag step, wheel notch, repeated key or click, and
+   the cursor's approach before any input. A drag that is stopped half-way
+   releases the mouse button, a stopped key combo releases its modifiers, an
+   attach that was parking the window hands it back, and a window that was
+   only made visible for a drag is not hidden again once it was handed back.
+
 Every call goes through the normal permission service. With **Ask every
 time** it prompts in every session permission mode except Bypass — including
 Auto, the default, which would otherwise wave it through — the same way

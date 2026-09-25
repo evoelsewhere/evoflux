@@ -77,7 +77,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::{
-    blocked_combo_reason, is_protected_process_name, pack_point, parse_key_combo,
+    blocked_combo_reason, interrupted, is_protected_process_name, pack_point, parse_key_combo,
     screenshot_scale, KeyCombo,
 };
 
@@ -289,6 +289,7 @@ fn worker_sender() -> Result<mpsc::Sender<Job>, String> {
     std::thread::Builder::new()
         .name("computer-app".into())
         .spawn(move || {
+            ON_WORKER.with(|flag| flag.set(true));
             unsafe {
                 let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
             }
@@ -345,10 +346,25 @@ fn automation() -> Result<IUIAutomation, String> {
     })
 }
 
+thread_local! {
+    static ON_WORKER: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Drop every element and window the session remembers. Held UI Automation
 /// elements are proxies into the app's process; keeping them after the app
 /// is released (or gone) only leaves calls that can stall on a dead server.
+///
+/// They live on the thread that ran the action — the worker, in the app — so
+/// a release from elsewhere (Stop, exit) also hands the clean-up to the
+/// worker, behind whatever it is running.
 fn clear_refs(session_id: &str) {
+    if !ON_WORKER.with(|flag| flag.get()) {
+        let sender = WORKER.lock().ok().and_then(|slot| slot.clone());
+        if let Some(sender) = sender {
+            let session_id = session_id.to_string();
+            let _ = sender.send(Box::new(move || clear_refs(&session_id)));
+        }
+    }
     REFS.with(|refs| {
         refs.borrow_mut().remove(session_id);
     });
@@ -873,6 +889,14 @@ fn attach(session_id: &str, params: &Value) -> Result<Value, String> {
         }
         None
     };
+    // Stop pressed while this attach was parking the window: hand it back
+    // instead of registering a window nobody may drive.
+    if let Err(stopped) = interrupted() {
+        if let Some(placement) = parked {
+            unpark(chosen.hwnd, placement, false);
+        }
+        return Err(stopped);
+    }
     let attached = Attached {
         hwnd: chosen.hwnd.0 as isize,
         pid: chosen.pid,
@@ -1026,10 +1050,12 @@ impl Target {
     }
 
     /// Move the preview's cursor to `point` and give it time to get there,
-    /// so the user sees where the agent is about to act before it does.
-    fn travel(&self, emit: &dyn Fn(Value), point: POINT) {
+    /// so the user sees where the agent is about to act before it does —
+    /// and can still stop it.
+    fn travel(&self, emit: &dyn Fn(Value), point: POINT) -> Result<(), String> {
         self.emit_pointer(emit, point, "move");
         std::thread::sleep(POINTER_TRAVEL);
+        interrupted()
     }
 }
 
@@ -1498,10 +1524,11 @@ fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value,
     ensure_client_area(target, hwnd, point)?;
     let lparam = client_lparam(hwnd, point);
 
-    target.travel(emit, point);
+    target.travel(emit, point)?;
     target.emit_pointer(emit, point, "press");
     post(hwnd, WM_MOUSEMOVE, 0, lparam)?;
     for index in 0..clicks {
+        interrupted()?;
         // The second press of a double click is WM_*BUTTONDBLCLK, as Windows
         // itself would deliver it to a CS_DBLCLKS window.
         let press = if index == 1 { double } else { down };
@@ -1525,7 +1552,7 @@ const WEB_INPUT_NOTE: &str = "This app draws web content, which may ignore backg
 fn hover(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
     let point = pointer_target(target, params)?;
     let hwnd = pointer_window(target, point);
-    target.travel(emit, point);
+    target.travel(emit, point)?;
     post(hwnd, WM_MOUSEMOVE, 0, client_lparam(hwnd, point))?;
     Ok(pointer_result(target, hwnd, point, json!({})))
 }
@@ -1556,7 +1583,7 @@ fn scroll(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
             Some(reference) => with_ancestors(element_for(&target.session_id, reference)?),
             None => elements_at(target, point)?,
         };
-        target.travel(emit, point);
+        target.travel(emit, point)?;
         if let Some(scrolled) = scroll_via_automation(&chain, direction, amount)? {
             let (x, y) = target.screenshot_point(point);
             return Ok(json!({
@@ -1571,10 +1598,11 @@ fn scroll(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
         }
     }
     let hwnd = pointer_window(target, point);
-    target.travel(emit, point);
+    target.travel(emit, point)?;
     // Wheel messages carry screen coordinates, unlike the button messages.
     let wparam = ((delta as i16 as u16 as usize) << 16) as usize;
     for _ in 0..amount {
+        interrupted()?;
         post(hwnd, message, wparam, LPARAM(pack_point(point.x, point.y)))?;
         pause(30);
     }
@@ -1594,7 +1622,7 @@ fn drag(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, 
         (Some(x), Some(y)) => target.screen_point(x, y)?,
         _ => return Err("drag needs to_x and to_y (screenshot pixels).".into()),
     };
-    target.travel(emit, from);
+    target.travel(emit, from)?;
     target.emit_pointer(emit, from, "press");
 
     // A hidden or fully covered page paints no frames, and Chromium drops
@@ -1623,6 +1651,11 @@ fn drag(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, 
                 y: from.y + (to.y - from.y) * step / STEPS,
             };
             pause(24);
+            if let Err(stopped) = interrupted() {
+                // Let go of the button rather than leave the app mid-drag.
+                let _ = post(hwnd, WM_LBUTTONUP, 0, client_lparam(hwnd, point));
+                return Err(stopped);
+            }
             post(hwnd, WM_MOUSEMOVE, MK_LBUTTON, client_lparam(hwnd, point))?;
             target.emit_pointer(emit, point, "drag");
         }
@@ -1675,6 +1708,7 @@ struct Peek {
     /// The window just above it, to slot it back under afterwards.
     above: Option<HWND>,
     repark: bool,
+    session_id: String,
 }
 
 impl Peek {
@@ -1713,7 +1747,7 @@ impl Peek {
             );
             // Let the page notice it is visible and resume painting.
             pause(500);
-            Some(Self { window, ex_style, was_topmost, above, repark })
+            Some(Self { window, ex_style, was_topmost, above, repark, session_id: target.session_id.clone() })
         }
     }
 
@@ -1741,7 +1775,13 @@ impl Drop for Peek {
             }
             SetWindowLongPtrW(self.window, GWL_EXSTYLE, self.ex_style);
         }
-        if self.repark {
+        // Only while it is still parked: the user may have pressed Stop (or
+        // Show the app) during the gesture, and the window was handed back.
+        let still_parked = registry()
+            .attached
+            .get(&self.session_id)
+            .is_some_and(|attached| attached.parked.is_some());
+        if self.repark && still_parked {
             move_off_screen(self.window);
         }
     }
@@ -1831,6 +1871,7 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
             other => other,
         };
         previous = unit;
+        interrupted()?;
         post(hwnd, WM_CHAR, unit as usize, LPARAM(1))?;
         if delay > 0 {
             pause(delay);
@@ -2034,6 +2075,10 @@ fn post_key(hwnd: HWND, thread: u32, combo: &KeyCombo, repeat: u64) -> Result<()
             post(hwnd, message, key.0 as usize, key_lparam(*key, false, combo.alt))?;
         }
         for _ in 0..repeat {
+            // Stopping between presses still releases the modifiers below.
+            if interrupted().is_err() {
+                break;
+            }
             post(hwnd, down, vk.0 as usize, key_lparam(vk, false, combo.alt))?;
             pause(20);
             post(hwnd, up, vk.0 as usize, key_lparam(vk, true, combo.alt))?;
@@ -2043,7 +2088,7 @@ fn post_key(hwnd: HWND, thread: u32, combo: &KeyCombo, repeat: u64) -> Result<()
             let message = if system && *key == VK_MENU { WM_SYSKEYUP } else { WM_KEYUP };
             post(hwnd, message, key.0 as usize, key_lparam(*key, true, combo.alt && *key != VK_MENU))?;
         }
-        Ok(())
+        interrupted()
     };
     if modifiers.is_empty() {
         send()
@@ -2575,7 +2620,7 @@ fn click_via_automation(
             continue;
         };
         let name = bstr(unsafe { element.CurrentName() });
-        target.travel(emit, point);
+        target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
         let used = perform(&action).map_err(|error| format!("\"{name}\" refused the click: {error}"))?;
         let (x, y) = target.screenshot_point(point);
@@ -2593,7 +2638,7 @@ fn click_via_automation(
     // reach it; remembering it is what makes the next `type` land there.
     // Native apps get a real (posted) click instead, which places the caret.
     if target.web && chain.iter().any(|element| is_editable(element)) {
-        target.travel(emit, point);
+        target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
         let (x, y) = target.screenshot_point(point);
         return Ok(Some(json!({
@@ -2683,6 +2728,7 @@ fn web_fill(
         chord(if replace { "ctrl+a" } else { "ctrl+end" })?;
         let mut previous = 0u16;
         for unit in text.encode_utf16() {
+            interrupted()?;
             match unit {
                 0x0A if previous == 0x0D => {}
                 // A line break in a chat box must not press Enter: that sends.
@@ -2756,7 +2802,7 @@ fn invoke(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
         format!("{reference} (\"{name}\") has no invoke/toggle/select/expand action. Click it by ref or coordinates instead.")
     })?;
     if let Some(point) = element_center(&element) {
-        target.travel(emit, point);
+        target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
     }
     if is_editable(&element) {
@@ -2776,7 +2822,7 @@ fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
     if let Some(range) = pattern::<IUIAutomationRangeValuePattern>(&element, UIA_RangeValuePatternId) {
         if let Ok(number) = value.trim().parse::<f64>() {
             if let Some(point) = element_center(&element) {
-                target.travel(emit, point);
+                target.travel(emit, point)?;
                 target.emit_pointer(emit, point, "click");
             }
             let (minimum, maximum) = unsafe { (range.CurrentMinimum(), range.CurrentMaximum()) };
@@ -2799,7 +2845,7 @@ fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
         // Replace through the keyboard so the page sees input events (see
         // web_fill); `direct` writes the value without them.
         if let Some(point) = element_center(&element) {
-            target.travel(emit, point);
+            target.travel(emit, point)?;
             target.emit_pointer(emit, point, "click");
         }
         remember_editable(&target.session_id, &element);
@@ -2816,7 +2862,7 @@ fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
         return Err(format!("{reference} is read-only."));
     }
     if let Some(point) = element_center(&element) {
-        target.travel(emit, point);
+        target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
     }
     unsafe { pattern.SetValue(&BSTR::from(value)) }
