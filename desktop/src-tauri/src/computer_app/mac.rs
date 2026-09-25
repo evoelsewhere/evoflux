@@ -755,7 +755,7 @@ pub(crate) fn run_action(
 ) -> Result<Value, String> {
     match action {
         "status" => Ok(status(session_id)),
-        "list_windows" => Ok(list_windows(params)),
+        "list_windows" => Ok(list_windows(session_id, params)),
         "attach" => attach(session_id, params),
         "detach" => Ok(detach(session_id)),
         _ => {
@@ -1038,7 +1038,7 @@ fn missing_permissions() -> Vec<&'static str> {
     missing
 }
 
-fn list_windows(params: &Value) -> Value {
+fn list_windows(session_id: &str, params: &Value) -> Value {
     let filter = params
         .get("app")
         .or_else(|| params.get("query"))
@@ -1046,6 +1046,13 @@ fn list_windows(params: &Value) -> Value {
         .map(|value| value.trim().to_lowercase())
         .filter(|value| !value.is_empty());
     let front = frontmost_pid();
+    // Windows another chat controls: attaching them is refused.
+    let held: HashSet<u32> = registry()
+        .attached
+        .iter()
+        .filter(|(other, _)| other.as_str() != session_id)
+        .map(|(_, attached)| attached.window_id)
+        .collect();
     let windows: Vec<Value> = window_rows()
         .into_iter()
         .filter(|row| attach_refusal(row).is_none())
@@ -1055,7 +1062,11 @@ fn list_windows(params: &Value) -> Value {
             }
             None => true,
         })
-        .map(|row| row.to_json(front))
+        .map(|row| {
+            let mut json = row.to_json(front);
+            json["controlled_elsewhere"] = json!(held.contains(&row.id));
+            json
+        })
         .collect();
     let mut result = json!({ "count": windows.len(), "windows": windows, "platform": "macos" });
     let missing = missing_permissions();
@@ -1295,6 +1306,17 @@ fn attach(session_id: &str, params: &Value) -> Result<Value, String> {
     let window = ax_window(&app, id).ok_or(
         "That window is not reachable through accessibility (it may be on another Space). Ask the user to bring it to this desktop.",
     )?;
+    // One chat per window: two would interleave their input, and the second
+    // would save the first one's parking spot as the window's own place.
+    let held_elsewhere = registry()
+        .attached
+        .iter()
+        .any(|(other, attached)| other != session_id && attached.window_id == id);
+    if held_elsewhere {
+        return Err(format!(
+            "\"{title}\" is already controlled from another chat. Finish or detach there first, or pick another window."
+        ));
+    }
     // Attaching to another window hands the previous one back first.
     release(session_id);
     let _ = app.set_flag("AXHidden", false);

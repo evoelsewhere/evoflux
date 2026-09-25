@@ -97,6 +97,33 @@ async def test_list_windows_hides_blocked_apps_and_marks_untrusted(monkeypatch) 
 
 
 @pytest.mark.asyncio
+async def test_list_windows_flags_windows_another_chat_controls(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True)
+    _fake_bridge(
+        monkeypatch,
+        {
+            "list_windows": {
+                "windows": [
+                    {"id": 11, "app": "Notepad.exe", "title": "a.txt - Notepad"},
+                    {
+                        "id": 12,
+                        "app": "Notepad.exe",
+                        "title": "b.txt - Notepad",
+                        "controlled_elsewhere": True,
+                    },
+                ]
+            }
+        },
+    )
+
+    result = await _run({"action": "list_windows"})
+
+    assert isinstance(result, str)
+    assert '"a.txt - Notepad"\n' in result
+    assert '"b.txt - Notepad" [controlled from another chat — cannot attach]' in result
+
+
+@pytest.mark.asyncio
 async def test_attach_checks_allowlist_before_attaching(monkeypatch) -> None:
     _use_policy(monkeypatch, enabled=True, allowed_apps=["notepad"])
     requests = _fake_bridge(monkeypatch, {"list_windows": _WINDOWS})

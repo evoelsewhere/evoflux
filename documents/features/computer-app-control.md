@@ -195,7 +195,9 @@ frontmost app never changed.
 ## Safety boundaries
 
 - One attached window per chat session; only that window and its same-process
-  modal dialogs receive input.
+  modal dialogs receive input. A window is controlled from one chat at a time:
+  attaching a window another chat holds is refused, and `list_windows` marks
+  it `controlled_elsewhere`.
 - Never attachable: EvoFlux's own windows, Windows shell and security processes
   (`explorer.exe`, `lsass.exe`, `winlogon.exe`, `consent.exe`, …) and processes
   EvoFlux cannot inspect (typically elevated). On macOS: Finder, Dock,
