@@ -260,9 +260,9 @@ async def test_screenshot_becomes_multimodal_result(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_errors_are_scoped_to_their_action(monkeypatch) -> None:
+async def test_a_failed_action_skips_the_rest_but_still_detaches(monkeypatch) -> None:
     _use_policy(monkeypatch, enabled=True)
-    _fake_bridge(
+    requests = _fake_bridge(
         monkeypatch,
         {
             "click": RuntimeError("That point is on the window's frame"),
@@ -272,12 +272,36 @@ async def test_errors_are_scoped_to_their_action(monkeypatch) -> None:
 
     result = await _run(
         {"action": "click", "x": 1, "y": 1},
+        {"action": "type", "text": "hello"},
+        {"action": "key", "key": "enter"},
         {"action": "detach"},
     )
 
+    assert [action for _, action, _ in requests] == ["click", "detach"]
     assert result == (
-        "Error (click): That point is on the window's frame\n---\nDetached."
+        "Error (click): That point is on the window's frame\n---\n"
+        "Skipped 2 action(s) (type, key) because click failed. Check the app's "
+        "state, then send them again.\n---\nDetached."
     )
+
+
+@pytest.mark.asyncio
+async def test_a_refused_attach_does_not_type_into_the_previous_app(
+    monkeypatch,
+) -> None:
+    _use_policy(monkeypatch, enabled=True, blocked_apps=["excel"])
+    requests = _fake_bridge(monkeypatch, {"list_windows": _WINDOWS})
+
+    result = await _run(
+        {"action": "attach", "app": "excel"},
+        {"action": "type", "text": "=SUM(A1:A9)"},
+        {"action": "key", "key": "ctrl+s"},
+    )
+
+    assert isinstance(result, str)
+    assert "blocked" in result
+    assert "Skipped 2 action(s) (type, key) because attach failed" in result
+    assert [action for _, action, _ in requests] == ["list_windows"]
 
 
 def test_app_policy_matching_ignores_case_and_exe_suffix() -> None:
