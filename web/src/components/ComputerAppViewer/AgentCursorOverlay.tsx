@@ -13,8 +13,8 @@ export interface AgentPointer {
   seq: number
 }
 
-/** Where the SVG's arrow tip (4, 2.7 of 24×27) sits inside its 10×11 box. */
-const TIP = { x: 1.7, y: 1.1 }
+/** Where the SVG's arrow tip (4, 2.7 of 24×27) sits inside its 7×8 box. */
+const TIP = { x: 1.2, y: 0.8 }
 
 /**
  * The agent's presence over the app picture: a frame that glows while the
