@@ -247,6 +247,10 @@ another Space) keeps its session: the action fails with "try again", instead
 of the session being dropped with the window still parked. Only a window that
 is gone ends the session. Release asks three times; a window still out of
 reach is put back by a background retry every two seconds for two minutes.
+While a Chromium app's `AXEnhancedUserInterface` is on, macOS animates
+accessibility moves and may drop them, so putting a window back (release,
+**Show the app**) turns it off first, checks the window arrived (asking once
+more if not), and turns it on again only while the app is still driven.
 
 Known limits: a window on another Space is not in the app's accessibility
 window list and cannot be attached until the user brings it to the current
