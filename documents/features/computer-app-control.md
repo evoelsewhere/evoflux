@@ -232,8 +232,11 @@ frontmost app never changed.
   attaching a window another chat holds is refused, and `list_windows` marks
   it `controlled_elsewhere`.
 - Never attachable: EvoFlux's own windows, Windows shell and security processes
-  (`explorer.exe`, `lsass.exe`, `winlogon.exe`, `consent.exe`, …) and processes
-  EvoFlux cannot inspect (typically elevated). On macOS: Finder, Dock,
+  (`explorer.exe`, `lsass.exe`, `winlogon.exe`, `consent.exe`, …), processes
+  EvoFlux cannot inspect, and processes running at a higher integrity level
+  than EvoFlux (elevated or system; also when their token cannot be read):
+  Windows' UIPI drops input posted to them, so they are refused at attach and
+  left out of `list_windows` instead of silently ignoring every action. On macOS: Finder, Dock,
   WindowServer, loginwindow, SecurityAgent and the other system UI processes,
   plus System Settings, Keychain Access and Passwords — System Settings is where
   apps are granted Accessibility access, so an agent could otherwise grant

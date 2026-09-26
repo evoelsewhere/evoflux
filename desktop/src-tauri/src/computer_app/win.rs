@@ -554,7 +554,67 @@ fn attach_refusal(row: &WindowRow) -> Option<String> {
             row.app
         ));
     }
+    if runs_above_us(row.pid) {
+        return Some(format!(
+            "{} runs as administrator (or as the system), and Windows blocks input from a normal EvoFlux to it. Ask the user to run it normally, or to do this part themselves.",
+            row.app
+        ));
+    }
     None
+}
+
+/// The integrity level (the last sub-authority of the token's mandatory
+/// label: 0x2000 medium, 0x3000 high, 0x4000 system) of a process.
+fn integrity_level(process: windows::Win32::Foundation::HANDLE) -> Option<u32> {
+    use windows::Win32::Security::{
+        GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TokenIntegrityLevel,
+        TOKEN_MANDATORY_LABEL, TOKEN_QUERY,
+    };
+    use windows::Win32::System::Threading::OpenProcessToken;
+    unsafe {
+        let mut token = windows::Win32::Foundation::HANDLE::default();
+        OpenProcessToken(process, TOKEN_QUERY, &mut token).ok()?;
+        let mut size = 0u32;
+        let _ = GetTokenInformation(token, TokenIntegrityLevel, None, 0, &mut size);
+        let mut buffer = vec![0u8; size.max(1) as usize];
+        let read = GetTokenInformation(
+            token,
+            TokenIntegrityLevel,
+            Some(buffer.as_mut_ptr() as *mut core::ffi::c_void),
+            size,
+            &mut size,
+        );
+        let _ = CloseHandle(token);
+        read.ok()?;
+        let label = &*(buffer.as_ptr() as *const TOKEN_MANDATORY_LABEL);
+        let count = *GetSidSubAuthorityCount(label.Label.Sid);
+        (count > 0).then(|| *GetSidSubAuthority(label.Label.Sid, u32::from(count) - 1))
+    }
+}
+
+/// Whether `pid` runs at a higher integrity level than EvoFlux — elevated,
+/// or a system process. Windows' UIPI drops input posted to such an app
+/// and UI Automation cannot operate it, so attaching would only leave an
+/// app that silently ignores every action. A token EvoFlux may not even
+/// read belongs to one too.
+fn runs_above_us(pid: u32) -> bool {
+    use windows::Win32::System::Threading::GetCurrentProcess;
+    let Some(ours) = integrity_level(unsafe { GetCurrentProcess() }) else {
+        return false;
+    };
+    let Ok(process) = (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }) else {
+        return false;
+    };
+    let theirs = integrity_level(process);
+    unsafe {
+        let _ = CloseHandle(process);
+    }
+    is_above(ours, theirs)
+}
+
+/// `theirs` is `None` when the process's token could not be read at all.
+fn is_above(ours: u32, theirs: Option<u32>) -> bool {
+    theirs.map_or(true, |level| level > ours)
 }
 
 fn list_windows(session_id: &str, params: &Value) -> Value {
@@ -3187,6 +3247,20 @@ mod tests {
         assert_eq!(to_logical(300, 150, 96.0 / 144.0), (200, 100));
         // A system-aware window (system 120 dpi) on a 144 dpi display.
         assert_eq!(to_logical(144, 72, 120.0 / 144.0), (120, 60));
+    }
+
+    #[test]
+    fn tells_apps_running_above_evoflux() {
+        use windows::Win32::System::Threading::GetCurrentProcess;
+        let ours = integrity_level(unsafe { GetCurrentProcess() }).expect("own integrity level");
+        assert!(ours >= 0x2000, "unexpected integrity level {ours:#x}");
+        assert!(!runs_above_us(unsafe { GetCurrentProcessId() }));
+        const MEDIUM: u32 = 0x2000;
+        const HIGH: u32 = 0x3000;
+        assert!(is_above(MEDIUM, Some(HIGH)), "an elevated app");
+        assert!(is_above(MEDIUM, None), "a token EvoFlux may not read");
+        assert!(!is_above(MEDIUM, Some(MEDIUM)));
+        assert!(!is_above(HIGH, Some(HIGH)), "an elevated EvoFlux drives elevated apps");
     }
 
     #[test]
