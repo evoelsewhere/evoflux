@@ -1047,28 +1047,33 @@ impl Target {
 /// with no child for the page at all, and forwards only real input to it.
 /// For them, pointer actions go through UI Automation first, which Chromium
 /// supports fully and which works while the window is hidden.
+///
+/// A native app that merely hosts a small web pane — an Office add-in or
+/// Copilot pane, a help panel — is not one: its keys belong to its own
+/// focused control, not to the pane. Only a Chromium widget covering most
+/// of the window makes it web content.
 fn is_web_host(window: HWND) -> bool {
-    unsafe extern "system" fn find_chromium_child(hwnd: HWND, lparam: LPARAM) -> BOOL {
-        if class_name(hwnd).starts_with("Chrome_") {
-            unsafe { *(lparam.0 as *mut bool) = true };
-            return BOOL(0);
-        }
-        BOOL(1)
-    }
     let class = class_name(window).to_lowercase();
     if class.starts_with("chrome_") || class.contains("webview") {
         return true;
     }
-    let mut found = false;
-    unsafe {
-        let _ = windows::Win32::UI::WindowsAndMessaging::EnumChildWindows(
-            Some(window),
-            Some(find_chromium_child),
-            LPARAM(&mut found as *mut bool as isize),
-        );
-    }
-    found
+    let Some(widget) = largest_chromium_widget(window) else {
+        return false;
+    };
+    let area = |hwnd: HWND| {
+        let mut rect = RECT::default();
+        unsafe {
+            let _ = GetWindowRect(hwnd, &mut rect);
+        }
+        f64::from((rect.right - rect.left).max(0)) * f64::from((rect.bottom - rect.top).max(0))
+    };
+    let window_area = area(window);
+    window_area > 0.0 && area(widget) / window_area >= WEB_COVERAGE
 }
+
+/// The share of the window a Chromium widget must cover for the app to
+/// count as web content.
+const WEB_COVERAGE: f64 = 0.5;
 
 /// The Chromium window that actually handles input for web content.
 ///
@@ -3102,6 +3107,8 @@ mod live_tests {
         /// A WebView2 control inside a Win32 host window — the layout of
         /// Teams and other WebView2 apps (see [`webview2_host`]).
         WebView2,
+        /// A native window with only a small WebView2 pane in a corner.
+        WebView2Pane,
     }
 
     /// Open the probe page in `host`, attach to it (parked off-screen when
@@ -3123,11 +3130,16 @@ mod live_tests {
                     .arg(format!("--app={}", probe_url())),
             ),
             // This same test binary, running only the host "test" below.
-            ProbeHost::WebView2 => spawn_quiet(
-                std::process::Command::new(std::env::current_exe().unwrap())
+            ProbeHost::WebView2 | ProbeHost::WebView2Pane => {
+                let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+                command
                     .args(["computer_app::win::live_tests::webview2_host", "--exact", "--ignored"])
-                    .env("COMPUTER_APP_PROBE_URL", probe_url()),
-            ),
+                    .env("COMPUTER_APP_PROBE_URL", probe_url());
+                if matches!(host, ProbeHost::WebView2Pane) {
+                    command.env("COMPUTER_APP_PROBE_PANE", "1");
+                }
+                spawn_quiet(&mut command)
+            }
         }
 
         let mut window = None;
@@ -3151,7 +3163,8 @@ mod live_tests {
             let foreground = unsafe { GetForegroundWindow() };
             let attached = run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": hide })).unwrap();
             eprintln!("{host:?} attached: {attached}");
-            assert_eq!(attached["window"]["web_content"], json!(true));
+            let web = !matches!(host, ProbeHost::WebView2Pane);
+            assert_eq!(attached["window"]["web_content"], json!(web), "web content detection");
             assert_eq!(is_off_screen(hwnd), hide, "parking did not follow hide={hide}");
             body(&emit, hwnd);
             // A just-launched probe window often *is* the foreground window,
@@ -3186,6 +3199,14 @@ mod live_tests {
     #[ignore = "opens a WebView2 window on the local desktop"]
     fn probes_webview2_fields() {
         probe_fields(ProbeHost::WebView2);
+    }
+
+    /// A native window with a small web pane stays a native app: attaching
+    /// reports no web content, so keys go to the app's own focus.
+    #[test]
+    #[ignore = "opens a WebView2 window on the local desktop"]
+    fn treats_a_small_web_pane_as_native() {
+        with_probe_page("probe-pane", ProbeHost::WebView2Pane, false, |_, _| {});
     }
 
     fn probe_fields(host: ProbeHost) {
@@ -3326,13 +3347,24 @@ mod live_tests {
             .build(&event_loop)
             .unwrap();
         let proxy = event_loop.create_proxy();
-        let webview = wry::WebViewBuilder::new()
+        let builder = wry::WebViewBuilder::new()
             .with_url(&url)
             .with_document_title_changed_handler(move |title| {
                 let _ = proxy.send_event(title);
-            })
-            .build(&window)
-            .unwrap();
+            });
+        // A native window with only a small web pane in a corner, like an
+        // Office add-in pane.
+        let webview = if std::env::var("COMPUTER_APP_PROBE_PANE").is_ok() {
+            builder
+                .with_bounds(wry::Rect {
+                    position: wry::dpi::LogicalPosition::new(600.0, 0.0).into(),
+                    size: wry::dpi::LogicalSize::new(300.0, 300.0).into(),
+                })
+                .build_as_child(&window)
+                .unwrap()
+        } else {
+            builder.build(&window).unwrap()
+        };
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
             let _ = &webview;

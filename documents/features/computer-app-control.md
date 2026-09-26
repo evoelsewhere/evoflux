@@ -76,7 +76,10 @@ the user gave in this session, still wins. It is denied to `trivial` and `simple
 | `invoke`, `set_value` | UI Automation patterns (Invoke, Toggle, SelectionItem, ExpandCollapse, LegacyIAccessible, Value) |
 
 Web content (Chromium, Electron, WebView2 — Teams, VS Code, Slack…) needs its
-own path, chosen automatically when the window hosts Chromium. Input always
+own path, chosen automatically when the window is Chromium (or a WebView2
+host class) or a Chromium widget covers at least half of it. A native app that
+only hosts a small web pane — an Office add-in or Copilot pane — stays on the
+native path, so its keys go to its own focused control. Input always
 goes to the Chromium widget (`Chrome_WidgetWin_1`) that handles it: for Edge
 or an Electron app that is the top-level window; for a WebView2 app it is a
 window of the WebView2 process inside the app's own — new Teams is
