@@ -2227,6 +2227,22 @@ fn resolve_key(name: &str) -> Option<(VIRTUAL_KEY, bool)> {
         "pause" => VK_PAUSE,
         "capslock" | "caps" => VK_CAPITAL,
         "numlock" => VK_NUMLOCK,
+        // A modifier on its own: Alt alone opens a Win32 menu bar.
+        "alt" => VK_MENU,
+        "ctrl" | "control" => VK_CONTROL,
+        "shift" => VK_SHIFT,
+        name if name.len() == 7 && name.starts_with("numpad") => {
+            let digit = name.as_bytes()[6];
+            if !digit.is_ascii_digit() {
+                return None;
+            }
+            // VK_NUMPAD0 … VK_NUMPAD9.
+            VIRTUAL_KEY(0x60 + u16::from(digit - b'0'))
+        }
+        name if name.starts_with('f') && matches!(name[1..].parse::<u16>(), Ok(13..=24)) => {
+            // VK_F13 … VK_F24.
+            VIRTUAL_KEY(0x7C + name[1..].parse::<u16>().unwrap_or(13) - 13)
+        }
         other => {
             // Any other single character: ask the keyboard layout.
             let mut chars = other.chars();
@@ -2296,6 +2312,11 @@ fn with_modifiers(thread: u32, combo: &KeyCombo, post: impl FnOnce() -> Result<(
 fn with_held_keys(thread: u32, keys: &[VIRTUAL_KEY], post: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
     let me = unsafe { GetCurrentThreadId() };
     let attached = thread != me && unsafe { AttachThreadInput(me, thread, true) }.as_bool();
+    if thread != me && !attached {
+        // Without the shared key state the app would read the keys without
+        // their modifiers: ctrl+s would type an "s". Say so instead.
+        return Err("Windows would not let EvoFlux hold Ctrl/Shift/Alt for this app, so the shortcut was not sent. Look for the command as a button or menu item (snapshot or find) and invoke it instead.".into());
+    }
     let mut saved = [0u8; 256];
     let have_state = unsafe { GetKeyboardState(&mut saved) }.is_ok();
     if have_state {
@@ -2356,8 +2377,11 @@ fn post_key(hwnd: HWND, thread: u32, combo: &KeyCombo, repeat: u64) -> Result<()
         resolve_key(&combo.key).ok_or_else(|| format!("Unknown key name {:?}.", combo.key))?;
     combo.shift |= needs_shift;
     // Alt without Ctrl is a menu/system shortcut, which Windows delivers as
-    // WM_SYSKEY* with the context bit set.
-    let system = combo.alt && !combo.ctrl;
+    // WM_SYSKEY* with the context bit set — and so are F10 and Alt pressed
+    // on its own, the keys that open a menu bar.
+    let system = (combo.alt && !combo.ctrl) || vk == VK_F10 || vk == VK_MENU;
+    // The context bit says Alt is down; for Alt itself too.
+    let alt_context = combo.alt || vk == VK_MENU;
     let (down, up) = if system {
         (WM_SYSKEYDOWN, WM_SYSKEYUP)
     } else {
@@ -2382,9 +2406,10 @@ fn post_key(hwnd: HWND, thread: u32, combo: &KeyCombo, repeat: u64) -> Result<()
             if interrupted().is_err() {
                 break;
             }
-            post(hwnd, down, vk.0 as usize, key_lparam(vk, false, combo.alt))?;
+            post(hwnd, down, vk.0 as usize, key_lparam(vk, false, alt_context))?;
             pause(20);
-            post(hwnd, up, vk.0 as usize, key_lparam(vk, true, combo.alt))?;
+            // Releasing Alt itself clears the context bit, as a real key-up does.
+            post(hwnd, up, vk.0 as usize, key_lparam(vk, true, alt_context && vk != VK_MENU))?;
             pause(20);
         }
         for key in modifiers.iter().rev() {
@@ -3261,6 +3286,20 @@ mod tests {
         assert!(is_above(MEDIUM, None), "a token EvoFlux may not read");
         assert!(!is_above(MEDIUM, Some(MEDIUM)));
         assert!(!is_above(HIGH, Some(HIGH)), "an elevated EvoFlux drives elevated apps");
+    }
+
+    #[test]
+    fn resolves_lone_modifiers_numpad_and_high_function_keys() {
+        assert_eq!(resolve_key("alt"), Some((VK_MENU, false)));
+        assert_eq!(resolve_key("Ctrl"), Some((VK_CONTROL, false)));
+        assert_eq!(resolve_key("shift"), Some((VK_SHIFT, false)));
+        assert_eq!(resolve_key("numpad0"), Some((VIRTUAL_KEY(0x60), false)));
+        assert_eq!(resolve_key("Numpad9"), Some((VIRTUAL_KEY(0x69), false)));
+        assert_eq!(resolve_key("f13"), Some((VIRTUAL_KEY(0x7C), false)));
+        assert_eq!(resolve_key("F24"), Some((VIRTUAL_KEY(0x87), false)));
+        assert_eq!(resolve_key("f12"), Some((VK_F12, false)));
+        assert_eq!(resolve_key("f25"), None);
+        assert_eq!(resolve_key("numpadx"), None);
     }
 
     #[test]

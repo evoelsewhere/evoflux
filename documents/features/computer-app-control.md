@@ -72,7 +72,7 @@ the user gave in this session, still wins. It is denied to `trivial` and `simple
 | Capture | `PrintWindow(PW_RENDERFULLCONTENT)`, cropped to the DWM visible frame; works while the app is behind other windows |
 | Pointer (`click`, `hover`, `scroll`, `drag`) | `PostMessage` of mouse messages to the deepest child window under the point, in that window's client coordinates |
 | Text (`type`) | `WM_CHAR` posted to the app thread's own focus (`GetGUIThreadInfo`), which Windows tracks per thread even in the background |
-| Shortcuts (`key`) | posted `WM_KEYDOWN`/`WM_KEYUP` (`WM_SYSKEY*` for Alt); Ctrl/Shift/Alt are held in the app thread's key-state table via `AttachThreadInput` + `SetKeyboardState`, then restored |
+| Shortcuts (`key`) | posted `WM_KEYDOWN`/`WM_KEYUP` (`WM_SYSKEY*` for Alt combos, F10 and Alt on its own, the keys that open a menu bar); Ctrl/Shift/Alt are held in the app thread's key-state table via `AttachThreadInput` + `SetKeyboardState`, then restored. When Windows refuses to share the key state, the shortcut is not sent and the agent is told to invoke the command instead. Key names include the letters, digits, F1–F24, `numpad0`–`numpad9`, and `alt`, `ctrl` or `shift` alone |
 | `invoke`, `set_value` | UI Automation patterns (Invoke, Toggle, SelectionItem, ExpandCollapse, LegacyIAccessible, Value) |
 
 Web content (Chromium, Electron, WebView2 — Teams, VS Code, Slack…) needs its
