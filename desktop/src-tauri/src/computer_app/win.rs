@@ -2196,6 +2196,10 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
         .min(200);
     let hwnd = keyboard_target(target);
     let thread = unsafe { GetWindowThreadProcessId(hwnd, None) };
+    // A Tab moves on to another control, so only text without one can be
+    // looked for in the field it started in.
+    let field = if text.contains('\t') { None } else { readable_field(hwnd) };
+    let before = field.as_ref().and_then(field_value);
     let press = |name: &str| {
         let combo = KeyCombo { ctrl: false, alt: false, shift: false, win: false, cmd: false, key: name.into() };
         post_key(hwnd, thread, &combo, 1)
@@ -2229,12 +2233,48 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
     let mut result = json!({
         "typed_chars": text.chars().count(),
         "delivered_to": class_name(hwnd),
+        "delivered_via": "keyboard",
         "window": window_title(target.window),
     });
-    if target.web {
-        result["note"] = json!(WEB_INPUT_NOTE);
+    if let (Some(field), Some(before)) = (&field, &before) {
+        // The keys are posted, so give the app a moment to take them in.
+        pause(150);
+        match field_value(field) {
+            Some(after) if typed_landed(before, &after, text) => result["confirmed"] = json!(true),
+            // An Enter may have submitted and cleared the field (a chat box)
+            // or closed its dialog, so only text without one proves a miss.
+            Some(_) if !text.contains(['\r', '\n']) => {
+                result["confirmed"] = json!(false);
+                // Never retyped: the letters may be there out of order, and
+                // typing again would add them twice.
+                result["note"] = json!(
+                    "The field does not show the text as typed: letters may be missing or out of order. Check with snapshot before typing again, then correct it (select the text and retype, or set_value)."
+                );
+            }
+            _ => {}
+        }
     }
     Ok(result)
+}
+
+/// The control keys go to, when it reports its text through UI Automation
+/// and is not a password field. A field holding a whole large document is
+/// left unread: reading it twice per `type` would cost more than it tells.
+fn readable_field(hwnd: HWND) -> Option<IUIAutomationElement> {
+    let element = unsafe { automation().ok()?.ElementFromHandle(hwnd) }.ok()?;
+    if unsafe { element.CurrentIsPassword() }.map(|password| password.as_bool()).unwrap_or(true) {
+        return None;
+    }
+    let length = field_value(&element)?.len();
+    (length <= 200_000).then_some(element)
+}
+
+/// Whether text typed into a field shows up in it: the field changed and
+/// holds the text, line breaks and runs of spaces aside (an edit control
+/// keeps "\r\n", a rich edit "\r", a single-line field none).
+fn typed_landed(before: &str, after: &str, text: &str) -> bool {
+    let wanted = squash(text);
+    after != before && (wanted.is_empty() || squash(after).contains(&wanted))
 }
 
 fn resolve_key(name: &str) -> Option<(VIRTUAL_KEY, bool)> {
@@ -3352,6 +3392,17 @@ mod tests {
     }
 
     #[test]
+    fn confirms_native_typing_only_when_the_text_arrived_in_order() {
+        assert!(typed_landed("abc", "abc hidden ok", " hidden ok"));
+        // A rich edit stores line breaks as "\r".
+        assert!(typed_landed("", "one\rtwo", "one\ntwo"));
+        assert!(typed_landed("ac", "abc", "b"));
+        assert!(!typed_landed("abc", "abc hidden ko", " hidden ok"));
+        assert!(!typed_landed("abc", "abc ihdden ok", " hidden ok"));
+        assert!(!typed_landed("hidden ok", "hidden ok", "hidden ok"), "nothing changed");
+    }
+
+    #[test]
     fn retypes_only_a_readable_field_that_did_not_change() {
         let empty = Some(String::new());
         let typed = Some("hi".to_string());
@@ -3913,6 +3964,7 @@ mod live_tests {
 
             let typed = run_action(&emit, session, "type", &json!({ "text": "hello from evoflux\nsecond line" })).unwrap();
             eprintln!("typed: {typed}");
+            assert_eq!(typed["confirmed"], json!(true), "typing was not confirmed: {typed}");
             pause(400);
             let first = snapshot_text(&emit, session);
             assert!(first.contains("hello from evoflux"), "text not in the UI tree:\n{first}");
@@ -3961,7 +4013,8 @@ mod live_tests {
             let hidden = run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": true })).unwrap();
             assert_eq!(hidden["window"]["hidden"], json!(true));
             assert!(is_off_screen(notepad), "Notepad is still on screen");
-            run_action(&emit, session, "type", &json!({ "text": " hidden ok" })).unwrap();
+            let typed_hidden = run_action(&emit, session, "type", &json!({ "text": " hidden ok" })).unwrap();
+            assert_eq!(typed_hidden["confirmed"], json!(true), "typing while parked was not confirmed: {typed_hidden}");
             pause(400);
             let hidden_tree = snapshot_text(&emit, session);
             assert!(hidden_tree.contains("hidden ok"), "typing while parked failed:\n{hidden_tree}");
