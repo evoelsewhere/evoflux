@@ -14,8 +14,10 @@
   [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white)](pyproject.toml)
   [![Tauri v2](https://img.shields.io/badge/Tauri-v2-FFC131?logo=tauri&logoColor=white)](desktop/)
 
-  **[Download](#download)** · **[Run from source](#run-from-source)** ·
-  **[Documentation](#documentation)**
+  **[Website](https://evoelsewhere.asia/)** · **[Download](#download)** ·
+  **[Run from source](#run-from-source)** · **[Documentation](#documentation)**
+
+  <img src="documents/images/intro/evoflux-intro-preview.gif" width="800" alt="EvoFlux intro: agent teams, Computer App Control, and WebBridge" />
 </div>
 
 ## Highlights
@@ -23,13 +25,19 @@
 - **Work and Coding modes** for cowork tasks and persistent repositories.
 - **Lead-and-specialist teams** with per-agent models, skills, tools, and
   permissions.
-- **Bring your own model** through hosted, cloud, routed, or local providers.
+- **Bring your own model** from around 200 hosted, cloud, routed, or local
+  providers, chosen per agent.
 - **Repository-aware Coding** with code search, symbol relationships, LSP
   feedback, git workflows, and reviewable diffs.
+- **Computer App Control** lets an agent operate one desktop app window on
+  Windows or macOS through its accessibility tree, in the background, while
+  you watch a live preview and approve each action.
+- **WebBridge** lets agents work in your real Chrome or Edge, with your
+  existing sign-ins, through a paired, policy-checked relay.
 - **Local control** with inspectable history, permissions, sandboxing, and
-  outbound data protection.
-- **Memory, plugins, MCP, scheduling, and browser tooling** are available as
-  integrated workspace capabilities.
+  outbound secret and PII redaction.
+- **Memory, plugins, MCP, scheduling, and a built-in browser** are available
+  as integrated workspace capabilities.
 
 ## Download
 
