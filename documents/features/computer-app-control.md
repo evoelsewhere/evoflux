@@ -186,7 +186,12 @@ updating its accessibility values while its own window is hidden. Input still
 arrives, but the card's picture, screenshots and snapshot values can lag
 behind the real page until the window is visible again. WebView2 apps (Teams)
 keep both live. Accessibility is activated before parking, because Chromium
-will not start exposing a page that is already off-screen.
+will not start exposing a page that is already off-screen. A Chromium window
+that opened completely covered has no render host at all (Chromium keeps its
+page hidden, and only rechecks whether a window shows when it moves), so its
+page had no tree whatever was asked of it: attaching then puts the window above
+everything for a moment, fully transparent and click-through, nudges it by a
+pixel, waits for the render host, and puts place, z-order and style back.
 
 Limits: posted input does not reach apps that read raw input (many games),
 UWP/CoreWindow surfaces or apps running as administrator (UIPI). Points on the
