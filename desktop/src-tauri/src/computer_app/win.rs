@@ -2960,7 +2960,12 @@ fn wait_for_page_tree(window: HWND) {
         });
         // No render host at all (a composition-hosted WebView2 such as new
         // Teams): its tree hangs off the window itself; nothing to wait for.
-        if ready || hosts.is_empty() {
+        // Chromium's own window (Edge, Chrome, Electron) always gets one, but
+        // only once its page starts rendering: returning early there parked
+        // a window that was still starting before its page had a tree, and
+        // the tree then stayed empty.
+        let chromium_window = class_name(window).starts_with("Chrome_WidgetWin");
+        if ready || (hosts.is_empty() && !chromium_window) {
             return;
         }
         pause(200);
