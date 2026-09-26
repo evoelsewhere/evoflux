@@ -2735,6 +2735,38 @@ fn with_modifiers(thread: u32, combo: &KeyCombo, post: impl FnOnce() -> Result<(
     with_held_keys(thread, &keys, post)
 }
 
+/// How long the user must have left the keyboard and mouse alone.
+const USER_PAUSE_MS: u32 = 400;
+
+/// Wait for a pause in the user's own typing and clicking when `thread` is
+/// the foreground thread — the one their input goes to.
+///
+/// That thread's key-state table is the one the real keyboard updates, and
+/// held keys go into it (see [`with_held_keys`]): a key the user typed into
+/// the app meanwhile read Ctrl as down — an "s" became Ctrl+S — and a click
+/// became a Ctrl+click. A user who keeps typing gets a refusal after a few
+/// seconds rather than a surprise.
+fn wait_for_user_pause(thread: u32) -> Result<(), String> {
+    use windows::Win32::System::SystemInformation::GetTickCount;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+    let foreground = unsafe { GetForegroundWindow() };
+    if foreground.0.is_null() || unsafe { GetWindowThreadProcessId(foreground, None) } != thread {
+        return Ok(());
+    }
+    for _ in 0..30 {
+        let mut last = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+        if !unsafe { GetLastInputInfo(&mut last) }.as_bool() {
+            return Ok(());
+        }
+        if unsafe { GetTickCount() }.wrapping_sub(last.dwTime) >= USER_PAUSE_MS {
+            return Ok(());
+        }
+        interrupted()?;
+        pause(100);
+    }
+    Err("The user is typing or clicking in this app right now, and holding Ctrl/Shift/Alt or a mouse button for this action would change their input. Wait until they pause, or invoke the command by ref (snapshot or find) instead.".into())
+}
+
 /// Mark `keys` as held in the app thread's key-state table while `post` runs.
 ///
 /// Apps read Ctrl/Shift — and whether a mouse button is still down — with
@@ -2743,6 +2775,7 @@ fn with_modifiers(thread: u32, combo: &KeyCombo, post: impl FnOnce() -> Result<(
 /// sees, without pressing a real key or button and without moving focus. The
 /// table is restored before detaching.
 fn with_held_keys(thread: u32, keys: &[VIRTUAL_KEY], post: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+    wait_for_user_pause(thread)?;
     let me = unsafe { GetCurrentThreadId() };
     let attached = thread != me && unsafe { AttachThreadInput(me, thread, true) }.as_bool();
     if thread != me && !attached {
