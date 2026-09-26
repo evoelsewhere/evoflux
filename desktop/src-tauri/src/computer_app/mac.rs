@@ -2040,13 +2040,20 @@ fn element_center(element: &Ax) -> Option<Point> {
 /// first. Walks the window's own tree rather than hit-testing the screen:
 /// the app may be behind other windows or parked, where a screen hit-test
 /// would find something else.
+/// The elements under `point`, outermost first.
+///
+/// The roots come topmost first — an open menu, a dialog, then the window
+/// beneath it — so the first whose frame holds the point is what is drawn
+/// there. Taking the deepest chain of any root instead reached through a
+/// dialog to the control under it.
 fn elements_at(target: &Target, point: Point) -> Vec<Ax> {
-    target
-        .roots()
-        .into_iter()
-        .map(|root| chain_at(root, point))
-        .max_by_key(Vec::len)
-        .unwrap_or_default()
+    let roots = target.roots();
+    let root = roots
+        .iter()
+        .find(|root| root.frame().is_some_and(|frame| frame.contains(point)))
+        .cloned()
+        .unwrap_or_else(|| target.window.clone());
+    chain_at(root, point)
 }
 
 fn chain_at(root: Ax, point: Point) -> Vec<Ax> {
