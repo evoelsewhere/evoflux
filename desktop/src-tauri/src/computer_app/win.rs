@@ -638,6 +638,9 @@ pub(crate) fn run_action(
         "detach" => Ok(detach(session_id)),
         _ => {
             let target = Target::resolve(session_id)?;
+            if matches!(action, "click" | "hover" | "scroll" | "drag" | "type" | "key" | "invoke" | "set_value") {
+                claim_page_focus(&target);
+            }
             match action {
                 "screenshot" => screenshot(&target),
                 "snapshot" => snapshot(&target, params),
@@ -654,6 +657,33 @@ pub(crate) fn run_action(
                 other => Err(format!("Unknown Computer App Control action: {other}")),
             }
         }
+    }
+}
+
+/// Tell a Chromium page in a background window that it has focus, before
+/// acting on it. The system's focus and the foreground do not move.
+///
+/// Chromium focuses its own widget when it gets input while it believes it
+/// has none — a posted mouse press — and focusing the widget activates the
+/// window: the user's foreground was taken whenever Windows allowed it
+/// (after a few minutes without user input). Told it has focus, it has
+/// none to take. An open popup (a <select>'s list) is a Chromium widget of
+/// its own, focused when one of its items is picked, and is told too.
+fn claim_page_focus(target: &Target) {
+    if !target.web || unsafe { GetForegroundWindow() } == target.window {
+        return;
+    }
+    let popups = target
+        .popups
+        .iter()
+        .copied()
+        .filter(|popup| class_name(*popup).starts_with("Chrome_WidgetWin"));
+    let mut told = false;
+    for widget in std::iter::once(chromium_input_window(target, None)).chain(popups) {
+        told |= post(widget, windows::Win32::UI::WindowsAndMessaging::WM_SETFOCUS, 0, LPARAM(0)).is_ok();
+    }
+    if told {
+        pause(80);
     }
 }
 
@@ -2218,6 +2248,18 @@ fn scroll(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
             None => elements_at(target, point)?,
         };
         target.travel(emit, point)?;
+        if let Some(scrolled) = scroll_in_page(&chain, direction, amount) {
+            let (x, y) = target.screenshot_point(point);
+            return Ok(json!({
+                "pointer": { "x": x, "y": y },
+                "delivered_to": scrolled,
+                "delivered_via": "accessibility",
+                "pattern": "ia2_scroll_to_point",
+                "window": window_title(target.window),
+                "direction": direction,
+                "amount": amount,
+            }));
+        }
         if let Some(scrolled) = scroll_via_automation(&chain, direction, amount)? {
             let (x, y) = target.screenshot_point(point);
             return Ok(json!({
@@ -3318,14 +3360,36 @@ enum UiAction {
     Select(IUIAutomationSelectionItemPattern),
     ExpandCollapse(IUIAutomationExpandCollapsePattern),
     Default(IUIAutomationLegacyIAccessiblePattern),
+    /// A button, link or drop-down in web content: its MSAA default action,
+    /// then the pattern's own action if the page refuses that (see
+    /// [`ui_action_for`]).
+    PageClick(IUIAutomationLegacyIAccessiblePattern, Box<UiAction>),
 }
 
 fn pattern<T: Interface>(element: &IUIAutomationElement, id: windows::Win32::UI::Accessibility::UIA_PATTERN_ID) -> Option<T> {
     unsafe { element.GetCurrentPattern(id) }.ok()?.cast().ok()
 }
 
-fn ui_action_for(element: &IUIAutomationElement) -> Option<UiAction> {
-    if let Some(p) = pattern(element, UIA_InvokePatternId) {
+/// What clicking `element` means.
+///
+/// In web content (`web`) a button, link or drop-down is clicked through its
+/// MSAA default action: Chromium carries out UI Automation's Invoke and
+/// Expand by focusing its widget, which activates the window and took the
+/// foreground from the user's window whenever Windows let it, while the
+/// default action clicks inside the page only. Other elements keep their
+/// pattern: an option in a <select> popup reports a default action that
+/// succeeds without picking it.
+fn ui_action_for(element: &IUIAutomationElement, web: bool) -> Option<UiAction> {
+    let kind = unsafe { element.CurrentControlType() }.map(|kind| kind.0).unwrap_or(0);
+    let page_default = || {
+        pattern::<IUIAutomationLegacyIAccessiblePattern>(element, UIA_LegacyIAccessiblePatternId)
+            .filter(|legacy| !bstr(unsafe { legacy.CurrentDefaultAction() }).trim().is_empty())
+    };
+    if let Some(p) = pattern::<IUIAutomationInvokePattern>(element, UIA_InvokePatternId) {
+        let button_or_link = matches!(kind, 50000 | 50005 | 50031); // Button, Hyperlink, SplitButton
+        if let Some(legacy) = page_default().filter(|_| web && button_or_link) {
+            return Some(UiAction::PageClick(legacy, Box::new(UiAction::Invoke(p))));
+        }
         return Some(UiAction::Invoke(p));
     }
     if let Some(p) = pattern(element, UIA_TogglePatternId) {
@@ -3335,6 +3399,9 @@ fn ui_action_for(element: &IUIAutomationElement) -> Option<UiAction> {
         return Some(UiAction::Select(p));
     }
     if let Some(p) = pattern(element, UIA_ExpandCollapsePatternId) {
+        if let Some(legacy) = page_default().filter(|_| web && kind == 50003) { // ComboBox
+            return Some(UiAction::PageClick(legacy, Box::new(UiAction::ExpandCollapse(p))));
+        }
         return Some(UiAction::ExpandCollapse(p));
     }
     // Every element has the legacy pattern; only one that names a default
@@ -3395,7 +3462,7 @@ fn perform(element: &IUIAutomationElement, action: UiAction) -> windows::core::R
         UiAction::Toggle(_) => "toggle",
         UiAction::Select(_) => "select",
         UiAction::ExpandCollapse(_) => "expand",
-        UiAction::Default(_) => "default_action",
+        UiAction::Default(_) | UiAction::PageClick(..) => "default_action",
     };
     let (done, outcome) = mpsc::channel();
     let action = Movable(action);
@@ -3435,6 +3502,10 @@ fn perform_now(action: &UiAction) -> windows::core::Result<&'static str> {
                 }
             }
             UiAction::Default(p) => p.DoDefaultAction().map(|_| "default_action"),
+            UiAction::PageClick(legacy, fallback) => match legacy.DoDefaultAction() {
+                Ok(()) => Ok("default_action"),
+                Err(_) => perform_now(fallback),
+            },
         }
     }
 }
@@ -3566,6 +3637,96 @@ fn with_ancestors(element: IUIAutomationElement) -> Vec<IUIAutomationElement> {
     chain
 }
 
+/// Scroll the innermost element in `chain` that can scroll that way, inside
+/// the page, through IAccessible2. Returns its name, or `None` when nothing
+/// there scrolls that way or IAccessible2 cannot be reached.
+///
+/// UI Automation's Scroll has Chromium focus its widget, which activates the
+/// window: scrolling took the foreground from the user's window whenever
+/// Windows let it. Posted wheels do not help: Chromium reroutes them to the
+/// window under the point, and a hidden Edge page does not scroll to them.
+/// IAccessible2's scrollToPoint — what screen readers call — goes to the
+/// page's own accessibility code: the scroller's first child is asked to move
+/// its top-left corner by the distance to scroll, so the scroller scrolls by
+/// that much. It cannot be read back: a hidden Edge page stops updating its
+/// accessibility values.
+fn scroll_in_page(chain: &[IUIAutomationElement], direction: &str, amount: i32) -> Option<String> {
+    use windows::Win32::System::Com::{IDispatch, IServiceProvider};
+    const IID_IACCESSIBLE2: windows::core::GUID = windows::core::GUID::from_u128(0xE89F726E_C4F4_4c19_BB19_B647D7FA8478);
+    // IAccessible2's vtable (IA2 IDL): IUnknown 0–2, IDispatch 3–6,
+    // IAccessible 7–27, then get_nRelations, get_relation, get_relations,
+    // role, scrollTo, scrollToPoint. The windows crate has no IAccessible2.
+    const SCROLL_TO_POINT: usize = 33;
+    const RELEASE: usize = 2;
+    const IA2_COORDTYPE_SCREEN_RELATIVE: i32 = 0;
+    /// Roughly one wheel notch in Chromium.
+    const PIXELS_PER_NOTCH: i32 = 100;
+
+    let vertical = matches!(direction, "up" | "down");
+    let scroller = chain.iter().rev().find(|element| {
+        pattern::<IUIAutomationScrollPattern>(element, UIA_ScrollPatternId).is_some_and(|scroller| {
+            unsafe {
+                if vertical {
+                    scroller.CurrentVerticallyScrollable()
+                } else {
+                    scroller.CurrentHorizontallyScrollable()
+                }
+            }
+            .is_ok_and(|flag| flag.as_bool())
+        })
+    })?;
+    let walker = unsafe { automation().ok()?.ControlViewWalker() }.ok()?;
+    let child = unsafe { walker.GetFirstChildElement(scroller) }.ok()?;
+    let at = unsafe { child.CurrentBoundingRectangle() }.ok()?;
+    // The page's MSAA root, from the nearest window: the render host, or the
+    // top-level window for a WebView2 without one. Its hit test gives the
+    // child's own IAccessible (Chromium's UI Automation elements have none).
+    let mut current = Some(scroller.clone());
+    let mut host = None;
+    while let Some(element) = current {
+        if let Ok(hwnd) = unsafe { element.CurrentNativeWindowHandle() } {
+            if !hwnd.0.is_null() {
+                host = Some(hwnd);
+                break;
+            }
+        }
+        current = unsafe { walker.GetParentElement(&element) }.ok();
+    }
+    let mut object: *mut core::ffi::c_void = std::ptr::null_mut();
+    unsafe { AccessibleObjectFromWindow(host?, 0xFFFF_FFFC, &IAccessible::IID, &mut object) }.ok()?; // OBJID_CLIENT
+    if object.is_null() {
+        return None;
+    }
+    let root = unsafe { IAccessible::from_raw(object) };
+    let hit = unsafe { root.accHitTest((at.left + at.right) / 2, (at.top + at.bottom) / 2) }.ok()?;
+    let accessible: IAccessible = IDispatch::try_from(&hit).ok()?.cast().ok()?;
+    let provider: IServiceProvider = accessible.cast().ok()?;
+    let mut ia2: *mut core::ffi::c_void = std::ptr::null_mut();
+    unsafe { (Interface::vtable(&provider).QueryService)(provider.as_raw(), &IAccessible::IID, &IID_IACCESSIBLE2, &mut ia2) }
+        .ok()
+        .ok()?;
+    if ia2.is_null() {
+        return None;
+    }
+    let step = PIXELS_PER_NOTCH * amount;
+    let (x, y) = match direction {
+        "down" => (at.left, at.top - step),
+        "up" => (at.left, at.top + step),
+        "right" => (at.left - step, at.top),
+        _ => (at.left + step, at.top),
+    };
+    let scrolled = unsafe {
+        let vtable = *(ia2 as *const *const usize);
+        let scroll_to_point: unsafe extern "system" fn(*mut core::ffi::c_void, i32, i32, i32) -> windows::core::HRESULT =
+            std::mem::transmute(*vtable.add(SCROLL_TO_POINT));
+        let release: unsafe extern "system" fn(*mut core::ffi::c_void) -> u32 = std::mem::transmute(*vtable.add(RELEASE));
+        let result = scroll_to_point(ia2, IA2_COORDTYPE_SCREEN_RELATIVE, x, y);
+        release(ia2);
+        result.is_ok()
+    };
+    scrolled.then(|| bstr(unsafe { scroller.CurrentName() }))
+}
+
 /// Scroll the innermost element in `chain` that can scroll that way.
 /// Returns its name, or `None` when nothing there scrolls.
 fn scroll_via_automation(
@@ -3624,7 +3785,7 @@ fn click_via_automation(
         None => {}
     }
     for element in chain.iter().rev() {
-        let Some(action) = ui_action_for(element) else {
+        let Some(action) = ui_action_for(element, target.web) else {
             continue;
         };
         let name = bstr(unsafe { element.CurrentName() });
@@ -3685,6 +3846,23 @@ fn should_retype(readback_is_live: bool, before: &Option<String>, after: &Option
     readback_is_live && before.is_some() && after.is_some() && !landed && after == before
 }
 
+/// Move the page's keyboard focus to `field` without activating its window.
+///
+/// UI Automation's SetFocus has Chromium focus its widget, which activates
+/// the window: typing into a WebView2 app (Teams) or a parked Edge took the
+/// foreground from whatever the user was working in. The MSAA "take focus"
+/// selection, reached through the LegacyIAccessible pattern, focuses the
+/// element inside the page only. SetFocus stays for a window in front
+/// already, where it takes nothing from anyone.
+fn focus_in_page(target: &Target, field: &IUIAutomationElement) {
+    const SELFLAG_TAKEFOCUS: i32 = 0x1;
+    let taken = pattern::<IUIAutomationLegacyIAccessiblePattern>(field, UIA_LegacyIAccessiblePatternId)
+        .is_some_and(|legacy| unsafe { legacy.Select(SELFLAG_TAKEFOCUS) }.is_ok());
+    if !taken && unsafe { GetForegroundWindow() } == target.window {
+        let _ = unsafe { field.SetFocus() };
+    }
+}
+
 /// Type into a web page field the way a keyboard would.
 ///
 /// Chromium takes characters posted to its window and delivers them to the
@@ -3699,8 +3877,8 @@ fn should_retype(readback_is_live: bool, before: &Option<String>, after: &Option
 /// unconfirmed result is reported as such rather than "repaired" — writing a
 /// value computed from a stale read would erase what was really typed.
 ///
-/// Focusing through UI Automation does not activate the window; the user's
-/// foreground stays put.
+/// The field is focused inside the page (see [`focus_in_page`]), which does
+/// not activate the window; the user's foreground stays put.
 fn web_fill(
     target: &Target,
     field: Option<&IUIAutomationElement>,
@@ -3734,7 +3912,7 @@ fn web_fill(
         post(input, WM_KEYUP, VK_SHIFT.0 as usize, key_lparam(VK_SHIFT, true, false))?;
         pause(150);
         if let Some(field) = field {
-            let _ = unsafe { field.SetFocus() };
+            focus_in_page(target, field);
             // Wait for the field to report focus; a hidden page may never
             // say so, hence the cap.
             for _ in 0..6 {
@@ -3823,7 +4001,7 @@ fn invoke(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
     let reference = params.get("ref").and_then(Value::as_str).ok_or("invoke needs a ref.")?;
     let element = element_for(target, reference)?;
     let name = bstr(unsafe { element.CurrentName() });
-    let action = ui_action_for(&element).ok_or_else(|| {
+    let action = ui_action_for(&element, target.web).ok_or_else(|| {
         format!("{reference} (\"{name}\") has no invoke/toggle/select/expand action. Click it by ref or coordinates instead.")
     })?;
     if let Some(point) = element_center(&element) {
@@ -3861,8 +4039,16 @@ fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
                 (Ok(minimum), Ok(maximum)) if maximum > minimum => number.clamp(minimum, maximum),
                 _ => number,
             };
-            unsafe { range.SetValue(clamped) }
-                .map_err(|error| format!("{reference} refused the value: {error}"))?;
+            // In web content through MSAA: Chromium carries out the range
+            // pattern's SetValue by focusing its widget, which activates the
+            // window (see `focus_in_page`).
+            let set_in_page = target.web
+                && pattern::<IUIAutomationLegacyIAccessiblePattern>(&element, UIA_LegacyIAccessiblePatternId)
+                    .is_some_and(|legacy| unsafe { legacy.SetValue(&windows::core::HSTRING::from(clamped.to_string())) }.is_ok());
+            if !set_in_page {
+                unsafe { range.SetValue(clamped) }
+                    .map_err(|error| format!("{reference} refused the value: {error}"))?;
+            }
             return Ok(json!({
                 "ref": reference,
                 "value_chars": value.chars().count(),
