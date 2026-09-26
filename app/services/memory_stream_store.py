@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, AsyncGenerator, Literal, cast
+from typing import Any, AsyncGenerator, Awaitable, Callable, Literal, cast
 
 from loguru import logger
 
@@ -597,6 +597,30 @@ async def commit_agent_content(session_id: str, agent: str) -> None:
             return
 
 
+_turn_done_listeners: list[Callable[[str], Awaitable[None]]] = []
+_listener_tasks: set[asyncio.Task[None]] = set()
+
+
+def add_turn_done_listener(listener: Callable[[str], Awaitable[None]]) -> None:
+    """Call ``listener(session_id)`` whenever a session's turn ends, in a task
+    of its own so a slow listener never holds up the end of the stream."""
+    if listener not in _turn_done_listeners:
+        _turn_done_listeners.append(listener)
+
+
+async def _notify_turn_done(
+    listener: Callable[[str], Awaitable[None]], session_id: str
+) -> None:
+    try:
+        await listener(session_id)
+    except Exception as exc:
+        logger.warning(
+            "memory_store_turn_done_listener_failed session_id={} error={}",
+            session_id,
+            exc,
+        )
+
+
 async def mark_done(session_id: str) -> None:
     """Flip is_streaming=False and unblock all subscribers."""
     try:
@@ -604,6 +628,10 @@ async def mark_done(session_id: str) -> None:
         if state is None:
             return
         state.is_streaming = False
+        for listener in list(_turn_done_listeners):
+            task = asyncio.create_task(_notify_turn_done(listener, session_id))
+            _listener_tasks.add(task)
+            task.add_done_callback(_listener_tasks.discard)
         _schedule_cleanup(session_id, state)
         # Me send sentinel to all subscribers so they exit
         for q in list(state.subscribers):

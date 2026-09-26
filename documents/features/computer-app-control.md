@@ -153,7 +153,10 @@ With **Keep the app off-screen** (on by default), attaching moves the window
 just outside the virtual desktop: it keeps running and keeps its taskbar
 button, but does not cover the user's work. Its exact placement is saved and
 restored on detach, Stop, closing the card, the end of the agent's turn, or
-EvoFlux exiting. A window that was minimized or maximized comes back minimized
+EvoFlux exiting. The end of a turn is seen by the backend for every session
+(a listener on the stream store's `mark_done`), which detaches through the
+session's bridge socket, open while its card is; the chat UI's own release
+covered only the chat on screen. A window that was minimized or maximized comes back minimized
 (restoring to maximized) rather than being activated behind the user's back.
 If the user brings it back from the taskbar while it is controlled, the next
 action parks it again; **Show the app** in the card hands it back for good.

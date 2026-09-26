@@ -161,3 +161,58 @@ async def test_request_requires_connected_desktop() -> None:
     ):
         await bridge.request("missing", "status", {})
     assert await bridge.wait_connected("missing", timeout=0.05) is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        ({"attached": True}, ["status", "detach"]),
+        # A stopped card must stay open, and nothing else is there to release.
+        ({"attached": False, "stopped": True}, ["status"]),
+    ],
+)
+async def test_a_finished_turn_hands_back_an_attached_app(
+    monkeypatch, status: dict[str, Any], expected: list[str]
+) -> None:
+    bridge = DirectComputerBridge()
+    sent: list[str] = []
+    monkeypatch.setattr(bridge, "is_connected", lambda _sid: True)
+
+    async def request(_sid: str, action: str, _params: dict, timeout: float = 60.0):
+        sent.append(action)
+        return status if action == "status" else {"detached": True}
+
+    monkeypatch.setattr(bridge, "request", request)
+
+    await bridge.release_after_turn("chat-in-background")
+
+    assert sent == expected
+
+
+@pytest.mark.asyncio
+async def test_a_finished_turn_without_a_desktop_does_nothing() -> None:
+    bridge = DirectComputerBridge()
+    bridge.reconnect_grace = 5.0
+
+    await asyncio.wait_for(bridge.release_after_turn("no-desktop"), timeout=0.5)
+
+
+@pytest.mark.asyncio
+async def test_turn_done_listeners_hear_every_finished_turn() -> None:
+    from app.services import memory_stream_store as stream_store
+
+    heard: list[str] = []
+
+    async def listener(session_id: str) -> None:
+        heard.append(session_id)
+
+    stream_store.add_turn_done_listener(listener)
+    try:
+        await stream_store.init_turn("turn-done-test")
+        await stream_store.mark_done("turn-done-test")
+        await asyncio.sleep(0)
+        assert heard == ["turn-done-test"]
+    finally:
+        stream_store._turn_done_listeners.remove(listener)
+        await stream_store.clear("turn-done-test")
