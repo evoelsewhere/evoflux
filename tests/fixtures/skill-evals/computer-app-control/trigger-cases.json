@@ -20,6 +20,18 @@
     "should_trigger": true
   },
   {
+    "query": "What total does the invoice screen in our accounting app show for March? Just read it, don't change anything.",
+    "should_trigger": true
+  },
+  {
+    "query": "In the Keynote presentation I have open on my Mac, move the logo on slide 2 to the top right corner.",
+    "should_trigger": true
+  },
+  {
+    "query": "Rename the three layers in the drawing app I have open to Background, Sketch and Ink.",
+    "should_trigger": true
+  },
+  {
     "query": "Create a new Excel file with last quarter's numbers and a chart.",
     "should_trigger": false,
     "near_miss": "No app is open with the file; the spreadsheet Skill builds the file itself."
@@ -33,5 +45,10 @@
     "query": "Write a Python script that fills in Excel sheets from a CSV.",
     "should_trigger": false,
     "near_miss": "Code to write, not an app to drive."
+  },
+  {
+    "query": "Convert the report.docx in my workspace to PDF.",
+    "should_trigger": false,
+    "near_miss": "A file in the workspace, not an open app; the document Skills handle it."
   }
 ]
