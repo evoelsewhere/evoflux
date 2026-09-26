@@ -6,7 +6,7 @@ import { AppPicker } from '@/components/ComputerAppViewer/AppPicker'
 import { computerAppSupported } from '@/components/ComputerAppViewer/computerAppBridge'
 import { MacPermissions } from '@/components/ComputerAppViewer/MacPermissions'
 import { computerAppNeedsPermissions } from '@/components/ComputerAppViewer/useComputerAppPermissions'
-import { useInstalledApps } from '@/components/ComputerAppViewer/useInstalledApps'
+import { appList, useInstalledApps } from '@/components/ComputerAppViewer/useInstalledApps'
 import {
   SettingsCallout,
   SettingsGroup,
@@ -26,8 +26,45 @@ import {
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
 
-function appList(value: string): string[] {
-  return [...new Set(value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean))]
+/**
+ * The typed list keeps the text as typed: rebuilding it from the parsed list
+ * on every key ate the separator just typed, so a second name could not be
+ * started. It follows the saved list only when that changes from elsewhere.
+ */
+function TypedAppList({
+  value,
+  onChange,
+  disabled,
+  placeholder,
+  ariaLabel,
+}: {
+  value: string[]
+  onChange: (next: string[]) => void
+  disabled: boolean
+  placeholder: string
+  ariaLabel: string
+}) {
+  const [text, setText] = useState(() => value.join(', '))
+  const joined = value.join('\u0000')
+  const [seen, setSeen] = useState(joined)
+  if (joined !== seen && joined !== appList(text).join('\u0000')) {
+    setSeen(joined)
+    setText(value.join(', '))
+  }
+  return (
+    <Input
+      value={text}
+      disabled={disabled}
+      onChange={(event) => {
+        setText(event.target.value)
+        const next = appList(event.target.value)
+        setSeen(next.join('\u0000'))
+        onChange(next)
+      }}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+    />
+  )
 }
 
 /**
@@ -52,12 +89,12 @@ function AppListControl({
   const apps = useInstalledApps()
   if (!computerAppSupported()) {
     return (
-      <Input
-        value={value.join(', ')}
+      <TypedAppList
+        value={value}
+        onChange={onChange}
         disabled={disabled}
-        onChange={(event) => onChange(appList(event.target.value))}
         placeholder={fallbackPlaceholder}
-        aria-label={ariaLabel}
+        ariaLabel={ariaLabel}
       />
     )
   }
