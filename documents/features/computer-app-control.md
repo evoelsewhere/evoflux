@@ -155,16 +155,16 @@ size.
 
 ### Menus and dropdowns
 
-Context menus (`#32768`), combo box lists (`ComboLBox`), WPF popups and
-Chromium `<select>` lists are top-level windows of their own. While one of the
-attached window's popups is open (same process, or owned by the window), it
-counts as part of the window: the screenshot and the preview cover the window
-and its popups together (the coordinate space grows to their union), a click
-inside a popup goes to the popup, and snapshot and find walk the popups first.
-A parked app's popup opens on the user's screen, because Windows keeps menus
-on a monitor; it is moved next to the window, where the agent last clicked,
-and a click that opens one says so in its result. Tooltips are left out.
-Checked live with a `<select>` in Edge (`works_in_a_select_popup`).
+Context menus (`#32768`), combo box lists (`ComboLBox`), WPF popups,
+Chromium `<select>` lists, floating panes and palettes are top-level windows
+of their own. While one of the attached window's popups is open (same
+process, or owned by the window), or a tool window of its process (a palette
+or pane, owned or not), it counts as part of the window: the screenshot and
+the preview cover the window and its popups together (the coordinate space
+grows to their union), a click inside a popup goes to the popup, and snapshot
+and find walk the popups first. A click that opens one says so in its result.
+Tooltips are left out. Checked live with a `<select>` in Edge
+(`works_in_a_select_popup`).
 
 ### Keeping the app off-screen
 
@@ -188,14 +188,23 @@ killed, or timed out on a hung app at exit, the next start puts back each
 recorded window that is still open, still the same process's and still
 off-screen (`puts_back_a_window_parked_by_a_run_that_crashed`).
 
-Dialogs are top-level windows of their own, and Windows (and WinForms)
-keeps them on a monitor, so a parked app's dialogs used to open on the
-user's screen. On Windows a `EVENT_OBJECT_SHOW` hook moves any captioned
-window a parked window owns (a dialog, one opened from a dialog, a tool
-window) over its parked owner as it is shown; the next action also parks
-one that got past it. When the window is handed back, its open dialogs are
-centred back over it, so the user never faces an app blocked by a dialog
-they cannot see (`keeps_a_parked_apps_dialogs_off_screen`).
+Dialogs, menus, floating panes and palettes are top-level windows of their
+own, and Windows (and WinForms) keeps them on a monitor or where the app last
+had them, so a parked app's dialogs, and the panes it opened from a shortcut
+(Word's Styles pane), used to open on the user's screen and stay there until
+the agent's next action, which with a long-thinking model could be minutes.
+On Windows an `EVENT_OBJECT_SHOW` hook takes every window a parked window
+opens off the user's screen as it is shown: a captioned window it owns (a
+dialog, one opened from a dialog) is moved over its parked owner, and a
+popup, menu, pane or tool window of its process is moved next to it, where
+the agent last pointed. Each preview frame does the same for any that got
+past the hook (an app that shows a pane and places it afterwards), and so
+does the next action. When the window is handed back, its open dialogs are
+centred back over it, so the user never faces an app blocked by a dialog they
+cannot see, and its panes and palettes go back where they opened
+(`keeps_a_parked_apps_dialogs_off_screen`,
+`keeps_a_parked_apps_panes_and_palettes_off_screen`). A second document
+window of the app is not a tool window and stays where the user put it.
 
 Edge and Electron apps have one catch: Chromium stops repainting and stops
 updating its accessibility values while its own window is hidden. Input still

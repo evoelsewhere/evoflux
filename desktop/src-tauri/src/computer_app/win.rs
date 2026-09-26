@@ -484,16 +484,20 @@ fn unpark(hwnd: HWND, placement: WINDOWPLACEMENT, activate: bool) {
     }
     forget_parked(hwnd);
     bring_dialogs_back(hwnd, placement.rcNormalPosition);
+    bring_moved_back(hwnd);
 }
 
 // ── Dialogs of a parked window ──────────────────────────────────────────
 //
 // A dialog is a top-level window of its own, and Windows (DS_CENTER) and
 // frameworks (WinForms' CenterParent) keep it on a monitor: a parked app's
-// dialogs opened on the user's screen. While a window is parked, a
-// captioned window it owns is moved over it the moment it is shown, and
-// centred back over it when the window is handed back. Captionless popups
-// (menus, dropdowns) are placed by `bring_popups_along` instead.
+// dialogs opened on the user's screen. So did its menus, floating panes and
+// palettes, opened by a key or a command as often as by a click. While a
+// window is parked, every window it opens (see `opened_by`) leaves the
+// user's screen the moment it is shown: a captioned window it owns is moved
+// over it, anything else next to it (`bring_popups_along`). When the window
+// is handed back, its dialogs are centred on it again and its panes and
+// palettes go back where they opened.
 
 fn is_dialog_of(hwnd: HWND, top: HWND) -> bool {
     let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
@@ -582,14 +586,14 @@ unsafe extern "system" fn on_window_shown(
     if object != OBJID_WINDOW.0 || child != CHILDID_SELF as i32 || hwnd.0.is_null() {
         return;
     }
-    let parked: Vec<HWND> = registry()
+    let parked: Vec<(String, HWND, u32)> = registry()
         .attached
-        .values()
-        .filter(|attached| attached.parked.is_some())
-        .map(|attached| to_hwnd(attached.hwnd))
+        .iter()
+        .filter(|(_, attached)| attached.parked.is_some())
+        .map(|(session, attached)| (session.clone(), to_hwnd(attached.hwnd), attached.pid))
         .collect();
-    if let Some(top) = parked.into_iter().find(|top| is_dialog_of(hwnd, *top)) {
-        park_dialog(hwnd, top);
+    if let Some((session, top, pid)) = parked.into_iter().find(|(_, top, pid)| opened_by(hwnd, *top, *pid)) {
+        keep_along(&session, top, pid, hwnd);
     }
 }
 
@@ -662,9 +666,7 @@ fn clear_refs(session_id: &str) {
     LAST_INPUT.with(|last| {
         last.borrow_mut().remove(session_id);
     });
-    LAST_POINT.with(|last| {
-        last.borrow_mut().remove(session_id);
-    });
+    last_points().remove(session_id);
 }
 
 // ── Dispatch ────────────────────────────────────────────────────────────
@@ -1431,7 +1433,7 @@ impl Target {
         let window_frame = frame_rect(window);
         let popups = open_popups(window, top, attached.pid);
         if attached.parked.is_some() && !popups.is_empty() {
-            bring_popups_along(session_id, window_frame, &popups);
+            bring_popups_along(session_id, top, window_frame, &popups);
         }
         let frame = popups
             .iter()
@@ -1723,11 +1725,15 @@ fn is_popup_of(hwnd: HWND, window: HWND, top: HWND, pid: u32) -> bool {
     popup && owned
 }
 
-/// The attached window's open popups, topmost first.
+/// The attached window's open popups, topmost first, with the palettes and
+/// floating panes of its process: the capture, clicks and snapshots cover
+/// them as part of the window.
 fn open_popups(window: HWND, top: HWND, pid: u32) -> Vec<HWND> {
     top_level_windows()
         .into_iter()
-        .filter(|hwnd| is_popup_of(*hwnd, window, top, pid))
+        .filter(|hwnd| {
+            *hwnd != window && (is_popup_of(*hwnd, window, top, pid) || is_tool_window_of(*hwnd, top, pid))
+        })
         .collect()
 }
 
@@ -1744,30 +1750,47 @@ fn intersects(a: &RECT, b: &RECT) -> bool {
     a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
 }
 
-thread_local! {
-    /// Where each session last clicked or hovered: a parked app's popup
-    /// is moved back there (see [`bring_popups_along`]).
-    static LAST_POINT: RefCell<HashMap<String, POINT>> = RefCell::new(HashMap::new());
+/// Where each session last clicked or hovered: a parked app's popup is
+/// moved back there (see [`bring_popups_along`]). Shared, because the
+/// window watcher places popups from a thread of its own.
+static LAST_POINT: Lazy<Mutex<HashMap<String, POINT>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn last_points() -> std::sync::MutexGuard<'static, HashMap<String, POINT>> {
+    LAST_POINT.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn remember_point(session_id: &str, point: POINT) {
-    LAST_POINT.with(|last| {
-        last.borrow_mut().insert(session_id.to_string(), point);
-    });
+    last_points().insert(session_id.to_string(), point);
+}
+
+/// Windows moved along with a parked window, each with the parked window
+/// and the spot it opened at: a pane or palette the app keeps open goes
+/// back there with its window (see [`bring_moved_back`]).
+static MOVED_ALONG: Lazy<Mutex<HashMap<isize, (isize, POINT)>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn moved_along() -> std::sync::MutexGuard<'static, HashMap<isize, (isize, POINT)>> {
+    MOVED_ALONG.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// A popup of a parked window opens on the user's screen: Windows keeps
 /// menus on a monitor, so a menu asked for at an off-screen point lands at
-/// the edge of one. Move such popups next to the window, where the agent
-/// clicked, so they leave the user's screen and stay in the capture.
-fn bring_popups_along(session_id: &str, window_frame: RECT, popups: &[HWND]) {
-    let anchor = LAST_POINT
-        .with(|last| last.borrow().get(session_id).copied())
+/// the edge of one, and panes and palettes open where the app last had
+/// them. Move such windows next to the parked `top`, where the agent last
+/// pointed, so they leave the user's screen and stay in the capture.
+fn bring_popups_along(session_id: &str, top: HWND, window_frame: RECT, popups: &[HWND]) {
+    let anchor = last_points()
+        .get(session_id)
+        .copied()
         .unwrap_or(POINT { x: window_frame.left + 40, y: window_frame.top + 40 });
     for popup in popups {
         let frame = frame_rect(*popup);
         if intersects(&frame, &window_frame) {
             continue;
+        }
+        if !is_off_screen(*popup) {
+            moved_along()
+                .entry(popup.0 as isize)
+                .or_insert((top.0 as isize, POINT { x: frame.left, y: frame.top }));
         }
         let width = frame.right - frame.left;
         let height = frame.bottom - frame.top;
@@ -1783,6 +1806,101 @@ fn bring_popups_along(session_id: &str, window_frame: RECT, popups: &[HWND]) {
                 0,
                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
             );
+        }
+    }
+}
+
+/// Whether `hwnd` is a window the app of `top` opened for itself — a
+/// dialog, menu, dropdown, floating pane or palette — rather than a window
+/// of its own the user works in.
+///
+/// Dialogs and popups count as [`is_dialog_of`] and [`is_popup_of`] say. A
+/// tool window of the same process counts too, owned or not: palettes and
+/// floating panes are often unowned, and a tool window has no taskbar
+/// button, so it is never one of the app's main windows (a second document
+/// window is, and stays where the user put it).
+fn opened_by(hwnd: HWND, top: HWND, pid: u32) -> bool {
+    if hwnd == top || !unsafe { IsWindowVisible(hwnd) }.as_bool() || is_cloaked(hwnd) {
+        return false;
+    }
+    is_dialog_of(hwnd, top) || is_popup_of(hwnd, top, top, pid) || is_tool_window_of(hwnd, top, pid)
+}
+
+/// A visible tool window of the app's process: a palette or floating pane,
+/// owned or not (see [`opened_by`]).
+fn is_tool_window_of(hwnd: HWND, top: HWND, pid: u32) -> bool {
+    if hwnd == top || window_pid(hwnd) != pid {
+        return false;
+    }
+    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+    let ex_style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
+    let frame = frame_rect(hwnd);
+    unsafe { IsWindowVisible(hwnd) }.as_bool()
+        && !is_cloaked(hwnd)
+        && style & WS_CHILD.0 == 0
+        && ex_style & WS_EX_TOOLWINDOW.0 != 0
+        && ex_style & WS_EX_TRANSPARENT.0 == 0
+        && !class_name(hwnd).to_lowercase().contains("tooltip")
+        && frame.right - frame.left >= 8
+        && frame.bottom - frame.top >= 8
+}
+
+/// Take a window the parked `top` opened off the user's screen: a dialog
+/// over its owner, anything else next to the window.
+fn keep_along(session_id: &str, top: HWND, pid: u32, hwnd: HWND) {
+    if is_off_screen(hwnd) {
+        return;
+    }
+    if is_dialog_of(hwnd, top) {
+        park_dialog(hwnd, top);
+    } else {
+        bring_popups_along(session_id, top, frame_rect(effective_window(top, pid)), &[hwnd]);
+    }
+}
+
+/// Take everything the parked `top` has opened off the user's screen.
+///
+/// The window watcher catches a window as it is shown, but some apps show
+/// a pane first and place it after, and one the user dragged back would
+/// stay; the preview card runs this with every frame it asks for.
+fn keep_opened_windows_along(session_id: &str, top: HWND, pid: u32) {
+    for hwnd in top_level_windows() {
+        if !is_off_screen(hwnd) && opened_by(hwnd, top, pid) {
+            keep_along(session_id, top, pid, hwnd);
+        }
+    }
+}
+
+/// `top` was handed back: put the panes and palettes that were moved along
+/// with it back where they opened. Menus have closed by now; dialogs are
+/// centred on the window by [`bring_dialogs_back`].
+fn bring_moved_back(top: HWND) {
+    let moved: Vec<(isize, POINT)> = {
+        let mut moved = moved_along();
+        let mine: Vec<isize> = moved
+            .iter()
+            .filter(|(_, (owner, _))| *owner == top.0 as isize)
+            .map(|(hwnd, _)| *hwnd)
+            .collect();
+        mine.into_iter()
+            .filter_map(|hwnd| moved.remove(&hwnd).map(|(_, spot)| (hwnd, spot)))
+            .collect()
+    };
+    for (hwnd, spot) in moved {
+        let hwnd = to_hwnd(hwnd);
+        let visible = unsafe { IsWindow(Some(hwnd)).as_bool() && IsWindowVisible(hwnd).as_bool() };
+        if visible && is_off_screen(hwnd) {
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    None,
+                    spot.x,
+                    spot.y,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+                );
+            }
         }
     }
 }
@@ -1992,6 +2110,9 @@ pub(crate) fn preview_frame(session_id: &str, max_width: u32) -> Result<Value, S
     let title = window_title(top);
     if unsafe { IsIconic(top) }.as_bool() {
         return Ok(merge(base, json!({ "minimized": true, "title": title })));
+    }
+    if attached.parked.is_some() {
+        keep_opened_windows_along(session_id, top, attached.pid);
     }
     let window = effective_window(top, attached.pid);
     let popups = open_popups(window, top, attached.pid);
@@ -2273,7 +2394,7 @@ fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value,
     let popups = open_popups(target.window, target.top, target.pid);
     if popups.iter().any(|popup| !target.popups.contains(popup)) {
         if target.hidden {
-            bring_popups_along(&target.session_id, frame_rect(target.window), &popups);
+            bring_popups_along(&target.session_id, target.top, frame_rect(target.window), &popups);
         }
         extra["note"] = json!("A menu or dropdown opened. Take a screenshot or snapshot to see its items (snapshot lists them first).");
     }
@@ -5064,6 +5185,36 @@ mod live_tests {
             pause(300);
             assert!(!is_off_screen(probe), "the probe was left off-screen");
             assert!(!is_off_screen(first), "dialog 1 was left off-screen at {:?}", frame_rect(first));
+        });
+    }
+
+    #[test]
+    #[ignore = "opens a WinForms window on the local desktop"]
+    fn keeps_a_parked_apps_panes_and_palettes_off_screen() {
+        with_dialog_probe(|emit, session, probe| {
+            // Opened by a key, not a click, at a fixed spot on the monitor:
+            // the window watcher takes each off the user's screen as it is
+            // shown, before the agent's next action.
+            run_action(emit, session, "key", &json!({ "key": "f7" })).unwrap();
+            let pane = opened_window("probe pane");
+            pause(300);
+            assert!(is_off_screen(pane), "the owned pane opened on the user's screen at {:?}", frame_rect(pane));
+
+            run_action(emit, session, "key", &json!({ "key": "f9" })).unwrap();
+            let palette = opened_window("probe palette");
+            pause(300);
+            assert!(is_off_screen(palette), "the palette opened on the user's screen at {:?}", frame_rect(palette));
+
+            // Both are part of what the agent sees.
+            let target = Target::resolve(session).unwrap();
+            assert!(target.popups.contains(&pane) && target.popups.contains(&palette), "the capture leaves them out");
+
+            // Handed back, they return to where they opened.
+            detach(session);
+            pause(300);
+            assert!(!is_off_screen(probe), "the probe was left off-screen");
+            assert!(!is_off_screen(pane), "the pane was left off-screen at {:?}", frame_rect(pane));
+            assert!(!is_off_screen(palette), "the palette was left off-screen at {:?}", frame_rect(palette));
         });
     }
 
