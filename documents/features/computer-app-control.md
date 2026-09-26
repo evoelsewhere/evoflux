@@ -153,7 +153,12 @@ If the user brings it back from the taskbar while it is controlled, the next
 action parks it again; **Show the app** in the card hands it back for good.
 Moving another app's window waits for that app, so on Windows Stop, **Show
 the app** and exit move it from a thread of their own: a hung app cannot
-freeze EvoFlux, and holds up exit for at most three seconds.
+freeze EvoFlux, and holds up exit for at most three seconds. On Windows every
+parked window is also recorded in `computer_app_parked.json` in EvoFlux's
+local data folder, and taken out once it is back: if EvoFlux crashed, was
+killed, or timed out on a hung app at exit, the next start puts back each
+recorded window that is still open, still the same process's and still
+off-screen (`puts_back_a_window_parked_by_a_run_that_crashed`).
 
 Dialogs are top-level windows of their own, and Windows (and WinForms)
 keeps them on a monitor, so a parked app's dialogs used to open on the

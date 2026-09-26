@@ -535,6 +535,15 @@ pub fn release_all() {
     native::release_all();
 }
 
+/// Record parked windows in `state_dir` from now on, and put back any a
+/// previous run left off-screen (EvoFlux crashed or was killed first).
+pub fn recover_stranded(state_dir: std::path::PathBuf) {
+    #[cfg(target_os = "windows")]
+    native::recover_stranded(state_dir);
+    #[cfg(not(target_os = "windows"))]
+    let _ = state_dir;
+}
+
 /// Bring the attached app to the front for the user. Only ever invoked by a
 /// click in the preview card, never by the agent.
 #[tauri::command]
