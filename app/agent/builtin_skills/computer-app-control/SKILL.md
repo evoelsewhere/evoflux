@@ -181,6 +181,16 @@ particular app does:
 | A document, text body, or console | [references/documents.md](references/documents.md) |
 | Objects on a surface (charts, shapes, images, slides, diagrams), or an app with little or no accessibility tree | [references/canvas-and-objects.md](references/canvas-and-objects.md) |
 
+App notes add what testing found about a particular app: which shortcuts
+work in the background, where its values can be read back, and the traps it
+sets. Read the note for the app you attached, if there is one, together
+with the guide for its kind of window. A note is a head start, not a
+recipe: check each step's effect as the loop says.
+
+| App | Note |
+|---|---|
+| Microsoft Excel (Windows) | [references/app-excel.md](references/app-excel.md) |
+
 ## Reporting
 
 Say what you changed and where, what you saved, and what you verified and

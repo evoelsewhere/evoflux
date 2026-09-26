@@ -390,7 +390,12 @@ events and every error with its next step (`events-and-errors.md`), and one
 guide per kind of window rather than per app: grids and spreadsheets, web
 content, native forms, dialogs and menus, documents and consoles, and
 canvases of objects together with apps that expose little or no
-accessibility tree. Trigger cases live in
+accessibility tree. App notes sit beside those guides for apps whose quirks
+testing has pinned down (`app-excel.md`: the Ready/Enter/Edit modes, Go To
+for moving and selecting, reading values from the Formula Bar and the
+status bar's Count and Sum, background-safe formatting shortcuts, charts);
+`SKILL.md` has the agent read the note for the app it attached, and treat
+it as a head start that the read-back still confirms. Trigger cases live in
 `tests/fixtures/skill-evals/computer-app-control/`.
 
 ## Architecture
