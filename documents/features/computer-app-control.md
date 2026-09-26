@@ -114,6 +114,16 @@ input. Coordinates are always pixels of the latest screenshot of the attached
 window; windows larger than 1568 px on their long edge are scaled down and
 mapped back.
 
+EvoFlux measures everything in physical pixels (it is per-monitor DPI aware),
+but Windows gives a DPI-unaware or system-aware app on a scaled display
+logical coordinates, and a posted message is not translated on the way. Mouse
+messages therefore carry client coordinates scaled by the window's DPI over
+its monitor's DPI, and the wheel and hit-test carry screen coordinates
+converted with `PhysicalToLogicalPointForPerMonitorDPI`. For per-monitor
+aware apps, and on an unscaled display, nothing changes. Not yet verified on a
+scaled display: whether `PrintWindow` captures such an app at its physical
+size.
+
 ### Keeping the app off-screen
 
 With **Keep the app off-screen** (on by default), attaching moves the window

@@ -1383,12 +1383,62 @@ fn child_at(top: HWND, point: POINT) -> HWND {
     current
 }
 
+// ── DPI ─────────────────────────────────────────────────────────────────
+//
+// EvoFlux is per-monitor DPI aware, so every coordinate it measures (window
+// frames, UI Automation rectangles, ScreenToClient) is in physical pixels.
+// Windows stretches a DPI-unaware or system-aware app on a scaled display
+// and hands it logical coordinates instead — but a posted message carries
+// whatever numbers were put in it, untranslated. Clicks at 150% landed
+// half as far again down and to the right. Coordinates are converted to
+// what the receiving window expects before they are packed.
+
+/// Window (logical) pixels per physical pixel for `hwnd`: 1 for a
+/// per-monitor aware window, 96/dpi for an unaware one, and system dpi /
+/// monitor dpi for a system-aware one.
+fn logical_scale(hwnd: HWND) -> f64 {
+    use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, GetDpiForWindow, MDT_EFFECTIVE_DPI};
+    unsafe {
+        let window_dpi = GetDpiForWindow(hwnd);
+        let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        let (mut monitor_dpi, mut unused) = (0u32, 0u32);
+        if window_dpi == 0
+            || GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut monitor_dpi, &mut unused).is_err()
+            || monitor_dpi == 0
+        {
+            return 1.0;
+        }
+        f64::from(window_dpi) / f64::from(monitor_dpi)
+    }
+}
+
+/// A physical point scaled into a window's logical space.
+fn to_logical(x: i32, y: i32, scale: f64) -> (i32, i32) {
+    if (scale - 1.0).abs() < 1e-6 {
+        return (x, y);
+    }
+    ((f64::from(x) * scale).round() as i32, (f64::from(y) * scale).round() as i32)
+}
+
+/// A screen point as `hwnd` sees screen coordinates, packed for the
+/// messages that carry screen coordinates (the wheel, hit-testing).
+fn screen_lparam(hwnd: HWND, point: POINT) -> LPARAM {
+    use windows::Win32::UI::HiDpi::PhysicalToLogicalPointForPerMonitorDPI;
+    let mut logical = point;
+    unsafe {
+        let _ = PhysicalToLogicalPointForPerMonitorDPI(Some(hwnd), &mut logical);
+    }
+    LPARAM(pack_point(logical.x, logical.y))
+}
+
 fn client_lparam(hwnd: HWND, point: POINT) -> LPARAM {
     let mut local = point;
     unsafe {
         let _ = ScreenToClient(hwnd, &mut local);
     }
-    LPARAM(pack_point(local.x, local.y))
+    let (x, y) = to_logical(local.x, local.y, logical_scale(hwnd));
+    LPARAM(pack_point(x, y))
 }
 
 fn post(hwnd: HWND, message: u32, wparam: usize, lparam: LPARAM) -> Result<(), String> {
@@ -1439,7 +1489,7 @@ fn ensure_client_area(target: &Target, hwnd: HWND, point: POINT) -> Result<(), S
             hwnd,
             WM_NCHITTEST,
             WPARAM(0),
-            LPARAM(pack_point(point.x, point.y)),
+            screen_lparam(hwnd, point),
             SMTO_ABORTIFHUNG,
             200,
             Some(&mut hit),
@@ -1584,7 +1634,7 @@ fn scroll(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
     let wparam = ((delta as i16 as u16 as usize) << 16) as usize;
     for _ in 0..amount {
         interrupted()?;
-        post(hwnd, message, wparam, LPARAM(pack_point(point.x, point.y)))?;
+        post(hwnd, message, wparam, screen_lparam(hwnd, point))?;
         pause(30);
     }
     Ok(pointer_result(
@@ -2849,6 +2899,21 @@ fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
     unsafe { pattern.SetValue(&BSTR::from(value)) }
         .map_err(|error| format!("{reference} refused the value: {error}"))?;
     Ok(json!({ "ref": reference, "value_chars": value.chars().count(), "window": window_title(target.window) }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scales_points_into_a_dpi_unaware_window() {
+        // A per-monitor aware window takes physical pixels as they are.
+        assert_eq!(to_logical(300, 150, 1.0), (300, 150));
+        // An unaware window on a 150% display (96 / 144).
+        assert_eq!(to_logical(300, 150, 96.0 / 144.0), (200, 100));
+        // A system-aware window (system 120 dpi) on a 144 dpi display.
+        assert_eq!(to_logical(144, 72, 120.0 / 144.0), (120, 60));
+    }
 }
 
 /// Drives a real Notepad window. Opt-in because it opens a window on the
