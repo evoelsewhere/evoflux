@@ -2159,6 +2159,11 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
         .unwrap_or(DEFAULT_TYPE_DELAY_MS)
         .min(200);
     let hwnd = keyboard_target(target);
+    let thread = unsafe { GetWindowThreadProcessId(hwnd, None) };
+    let press = |name: &str| {
+        let combo = KeyCombo { ctrl: false, alt: false, shift: false, win: false, cmd: false, key: name.into() };
+        post_key(hwnd, thread, &combo, 1)
+    };
     let mut previous = 0u16;
     for unit in text.encode_utf16() {
         let unit = match unit {
@@ -2172,7 +2177,15 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
         };
         previous = unit;
         interrupted()?;
-        post(hwnd, WM_CHAR, unit as usize, LPARAM(1))?;
+        match unit {
+            // Enter and Tab as real key presses: dialogs, WPF, Qt and Java
+            // act on the key-down (the default button, focus moving on), and
+            // an edit control still gets its character when the app
+            // translates the key as it does a typed one.
+            0x0D => press("enter")?,
+            0x09 => press("tab")?,
+            other => post(hwnd, WM_CHAR, other as usize, LPARAM(1))?,
+        }
         if delay > 0 {
             pause(delay);
         }
@@ -3862,11 +3875,12 @@ mod live_tests {
             let notepad = to_hwnd(window_id as isize);
             let notepad_was_foreground = unsafe { GetForegroundWindow() } == notepad;
 
-            let typed = run_action(&emit, session, "type", &json!({ "text": "hello from evoflux" })).unwrap();
+            let typed = run_action(&emit, session, "type", &json!({ "text": "hello from evoflux\nsecond line" })).unwrap();
             eprintln!("typed: {typed}");
             pause(400);
             let first = snapshot_text(&emit, session);
             assert!(first.contains("hello from evoflux"), "text not in the UI tree:\n{first}");
+            assert!(first.contains("second line"), "the line break did not type as Enter:\n{first}");
 
             run_action(&emit, session, "key", &json!({ "key": "ctrl+a" })).unwrap();
             run_action(&emit, session, "type", &json!({ "text": "replaced" })).unwrap();
