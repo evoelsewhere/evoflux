@@ -7,7 +7,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{mpsc, Mutex};
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -120,21 +120,50 @@ fn registry() -> std::sync::MutexGuard<'static, Registry> {
     REGISTRY.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// Forget the session's window, without touching the window yet.
+fn take(session_id: &str) -> Option<Attached> {
+    let taken = registry().attached.remove(session_id);
+    clear_refs(session_id);
+    taken
+}
+
+/// Put a released window back where the user left it.
+///
+/// Moving another process's window waits for that process's thread, and
+/// waits indefinitely on an app that hangs. Stop, Show the app and exit run
+/// on EvoFlux's UI thread, so they hand this to a thread of its own (see
+/// [`off_ui_thread`]) rather than freeze EvoFlux along with the app.
+fn hand_back(attached: &Attached) {
+    if let Some(placement) = attached.parked {
+        unpark(to_hwnd(attached.hwnd), placement, false);
+    }
+}
+
+fn off_ui_thread(work: impl FnOnce() + Send + 'static) -> mpsc::Receiver<()> {
+    let (done, finished) = mpsc::channel();
+    let _ = std::thread::Builder::new()
+        .name("computer-app-window".into())
+        .spawn(move || {
+            work();
+            let _ = done.send(());
+        });
+    finished
+}
+
 /// Forget the session's window and put it back where the user left it.
 fn release(session_id: &str) -> Option<Attached> {
-    let released = registry().attached.remove(session_id);
-    clear_refs(session_id);
+    let released = take(session_id);
     if let Some(attached) = &released {
-        if let Some(placement) = attached.parked {
-            unpark(to_hwnd(attached.hwnd), placement, false);
-        }
+        hand_back(attached);
     }
     released
 }
 
 pub(crate) fn stop(session_id: &str) {
     registry().stopped.insert(session_id.to_string());
-    release(session_id);
+    if let Some(attached) = take(session_id) {
+        off_ui_thread(move || hand_back(&attached));
+    }
 }
 
 pub(crate) fn resume(session_id: &str) {
@@ -142,12 +171,16 @@ pub(crate) fn resume(session_id: &str) {
 }
 
 /// Put every parked window back. Called when EvoFlux exits so no app is
-/// left stranded off-screen.
+/// left stranded off-screen — but a hung app cannot hold the exit up for
+/// more than a few seconds.
 pub(crate) fn release_all() {
     let sessions: Vec<String> = registry().attached.keys().cloned().collect();
-    for session in sessions {
-        release(&session);
+    let released: Vec<Attached> = sessions.iter().filter_map(|session| take(session)).collect();
+    if released.is_empty() {
+        return;
     }
+    let finished = off_ui_thread(move || released.iter().for_each(hand_back));
+    let _ = finished.recv_timeout(Duration::from_secs(3));
 }
 
 pub(crate) fn reveal(session_id: &str) -> Result<Value, String> {
@@ -163,22 +196,25 @@ pub(crate) fn reveal(session_id: &str) -> Result<Value, String> {
         entry.parked = None;
         snapshot
     };
-    let hwnd = to_hwnd(attached.hwnd);
-    unsafe {
-        if !IsWindow(Some(hwnd)).as_bool() {
-            return Err("The attached window was closed.".into());
-        }
-        match attached.parked {
-            Some(placement) => unpark(hwnd, placement, true),
-            None if IsIconic(hwnd).as_bool() => {
-                let _ = ShowWindow(hwnd, SW_RESTORE);
-            }
-            None => {}
-        }
-        // The user clicked a button in EvoFlux, which is the foreground
-        // process, so Windows permits handing the foreground over.
-        let _ = SetForegroundWindow(hwnd);
+    if !unsafe { IsWindow(Some(to_hwnd(attached.hwnd))) }.as_bool() {
+        return Err("The attached window was closed.".into());
     }
+    // Off the UI thread: restoring waits for the app (see [`hand_back`]).
+    off_ui_thread(move || {
+        let hwnd = to_hwnd(attached.hwnd);
+        unsafe {
+            match attached.parked {
+                Some(placement) => unpark(hwnd, placement, true),
+                None if IsIconic(hwnd).as_bool() => {
+                    let _ = ShowWindow(hwnd, SW_RESTORE);
+                }
+                None => {}
+            }
+            // The user clicked a button in EvoFlux, which is the foreground
+            // process, so Windows permits handing the foreground over.
+            let _ = SetForegroundWindow(hwnd);
+        }
+    });
     Ok(json!({ "revealed": true }))
 }
 

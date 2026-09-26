@@ -150,6 +150,9 @@ EvoFlux exiting. A window that was minimized or maximized comes back minimized
 (restoring to maximized) rather than being activated behind the user's back.
 If the user brings it back from the taskbar while it is controlled, the next
 action parks it again; **Show the app** in the card hands it back for good.
+Moving another app's window waits for that app, so on Windows Stop, **Show
+the app** and exit move it from a thread of their own: a hung app cannot
+freeze EvoFlux, and holds up exit for at most three seconds.
 
 Edge and Electron apps have one catch: Chromium stops repainting and stops
 updating its accessibility values while its own window is hidden. Input still
