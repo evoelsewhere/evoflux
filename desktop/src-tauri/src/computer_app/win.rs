@@ -3768,6 +3768,62 @@ fn scroll_via_automation(
     Ok(None)
 }
 
+/// Pick an option of an open `<select>` list with the keys a person would
+/// press — Down or Up from the option now chosen to this one, then Enter —
+/// and return its name; `None` when `element` is not such an option.
+///
+/// Invoking the option through UI Automation had Chromium focus the list's
+/// widget, which activated the window now and then and took the foreground
+/// from the user's window; the MSAA default action does not pick it. While
+/// the list is open, Chromium passes the page's keys on to it.
+fn pick_popup_option(target: &Target, element: &IUIAutomationElement) -> Result<Option<String>, String> {
+    const LIST_ITEM: i32 = 50007;
+    if unsafe { element.CurrentControlType() }.map(|kind| kind.0) != Ok(LIST_ITEM) {
+        return Ok(None);
+    }
+    let walker = automation().and_then(|automation| {
+        unsafe { automation.ControlViewWalker() }.map_err(|error| error.to_string())
+    })?;
+    // Only in an open popup of the window.
+    if !element_center(element).is_some_and(|centre| target.popup_at(centre).is_some()) {
+        return Ok(None);
+    }
+    let Ok(list) = (unsafe { walker.GetParentElement(element) }) else {
+        return Ok(None);
+    };
+    let mut options = Vec::new();
+    let mut next = unsafe { walker.GetFirstChildElement(&list) }.ok();
+    while let Some(option) = next {
+        next = unsafe { walker.GetNextSiblingElement(&option) }.ok();
+        options.push(option);
+    }
+    let same = |a: &IUIAutomationElement, b: &IUIAutomationElement| {
+        automation()
+            .ok()
+            .and_then(|automation| unsafe { automation.CompareElements(a, b) }.ok())
+            .is_some_and(|equal| equal.as_bool())
+    };
+    let Some(wanted) = options.iter().position(|option| same(option, element)) else {
+        return Ok(None);
+    };
+    let chosen = options
+        .iter()
+        .position(|option| {
+            pattern::<IUIAutomationSelectionItemPattern>(option, UIA_SelectionItemPatternId)
+                .is_some_and(|item| unsafe { item.CurrentIsSelected() }.is_ok_and(|selected| selected.as_bool()))
+        })
+        .unwrap_or(0);
+    let input = chromium_input_window(target, None);
+    let thread = unsafe { GetWindowThreadProcessId(input, None) };
+    let steps = wanted as i64 - chosen as i64;
+    if steps != 0 {
+        let key = parse_key_combo(if steps > 0 { "down" } else { "up" })?;
+        post_key(input, thread, &key, steps.unsigned_abs())?;
+    }
+    post_key(input, thread, &parse_key_combo("enter")?, 1)?;
+    Ok(Some(bstr(unsafe { element.CurrentName() })))
+}
+
 /// Click through UI Automation: the innermost element under the point that
 /// has an action gets it. Returns `None` when nothing there has one, and the
 /// caller falls back to posted mouse input.
@@ -3783,6 +3839,22 @@ fn click_via_automation(
         // from the field clicked before.
         None if !chain.is_empty() => forget_editable(&target.session_id),
         None => {}
+    }
+    if let Some(option) = chain.last().filter(|_| target.web) {
+        if let Some(name) = pick_popup_option(target, option)? {
+            target.travel(emit, point)?;
+            target.emit_pointer(emit, point, "click");
+            let (x, y) = target.screenshot_point(point);
+            return Ok(Some(json!({
+                "pointer": { "x": x, "y": y },
+                "delivered_to": name,
+                "delivered_via": "keyboard",
+                "pattern": "pick_option",
+                "window": window_title(target.window),
+                "button": "left",
+                "clicks": 1,
+            })));
+        }
     }
     for element in chain.iter().rev() {
         let Some(action) = ui_action_for(element, target.web) else {
