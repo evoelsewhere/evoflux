@@ -2381,7 +2381,7 @@ struct Peek {
     window: HWND,
     /// Dropped after `Peek::drop` has run: the window turns opaque again
     /// last, once it is back in place.
-    see_through: SeeThrough,
+    _see_through: SeeThrough,
     was_topmost: bool,
     /// The window just above it, to slot it back under afterwards.
     above: Option<HWND>,
@@ -2423,7 +2423,7 @@ impl Peek {
             );
             // Let the page notice it is visible and resume painting.
             pause(500);
-            Some(Self { window, see_through, was_topmost, above, repark, session_id: target.session_id.clone() })
+            Some(Self { window, _see_through: see_through, was_topmost, above, repark, session_id: target.session_id.clone() })
         }
     }
 
@@ -2459,7 +2459,7 @@ impl Drop for Peek {
         if self.repark && still_parked {
             move_off_screen(self.window);
         }
-        // `see_through` is dropped next, restoring the window's own style.
+        // `_see_through` is dropped next, restoring the window's own style.
     }
 }
 
