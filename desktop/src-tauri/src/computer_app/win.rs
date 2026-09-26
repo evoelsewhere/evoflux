@@ -2761,30 +2761,43 @@ fn chain_at(
     root: IUIAutomationElement,
     point: POINT,
 ) -> Vec<IUIAutomationElement> {
-    let mut chain = vec![root.clone()];
-    let mut current = root;
     let mut visited = 0usize;
-    'descend: loop {
-        let Ok(mut child) = (unsafe { walker.GetFirstChildElement(&current) }) else {
+    deepest_chain(walker, root, point, &mut visited)
+}
+
+/// The deepest chain of elements under `point` starting at `element`.
+///
+/// Every child containing the point is explored, not just the first: a
+/// container that covers the whole window (a frame view, an overlay host)
+/// can come before or after the one that holds the content. Among equally
+/// deep chains the later sibling wins, since later siblings are drawn over
+/// earlier ones — a modal or a menu covers what it was opened over.
+fn deepest_chain(
+    walker: &IUIAutomationTreeWalker,
+    element: IUIAutomationElement,
+    point: POINT,
+    visited: &mut usize,
+) -> Vec<IUIAutomationElement> {
+    let mut best: Vec<IUIAutomationElement> = Vec::new();
+    let mut child = unsafe { walker.GetFirstChildElement(&element) }.ok();
+    while let Some(current) = child {
+        *visited += 1;
+        if *visited > 20_000 {
             break;
-        };
-        loop {
-            visited += 1;
-            if visited > 20_000 {
-                break 'descend;
-            }
-            let rect = unsafe { child.CurrentBoundingRectangle() }.unwrap_or_default();
-            if contains(&rect, point) {
-                chain.push(child.clone());
-                current = child;
-                continue 'descend;
-            }
-            match unsafe { walker.GetNextSiblingElement(&child) } {
-                Ok(next) => child = next,
-                Err(_) => break 'descend,
+        }
+        let rect = unsafe { current.CurrentBoundingRectangle() }.unwrap_or_default();
+        let next = unsafe { walker.GetNextSiblingElement(&current) }.ok();
+        if contains(&rect, point) {
+            let chain = deepest_chain(walker, current, point, visited);
+            if chain.len() >= best.len() {
+                best = chain;
             }
         }
+        child = next;
     }
+    let mut chain = Vec::with_capacity(best.len() + 1);
+    chain.push(element);
+    chain.extend(best);
     chain
 }
 
@@ -3455,6 +3468,25 @@ mod live_tests {
             eprintln!("pick green: {picked}");
             pause(400);
             assert_eq!(page_report(hwnd).get("color").map(String::as_str), Some("Green"));
+        });
+    }
+
+    /// Two buttons at the same spot: a click by coordinates reaches the one
+    /// drawn on top (later in the page), not the one it covers.
+    #[test]
+    #[ignore = "opens an Edge window on the local desktop"]
+    fn clicks_the_element_drawn_on_top() {
+        let session = "probe-overlay";
+        with_probe_page(session, ProbeHost::Edge, true, |emit, hwnd| {
+            let (x, y) = centre_of(emit, session, "Covering button");
+            let clicked = run_action(emit, session, "click", &json!({ "x": x, "y": y })).unwrap();
+            eprintln!("click overlay: {clicked}");
+            assert_eq!(clicked["delivered_via"], json!("ui_automation"), "the click fell back to posted input");
+            assert_eq!(clicked["delivered_to"], json!("Covering button"));
+            pause(300);
+            let report = page_report(hwnd);
+            assert_eq!(report_number(&report, "over"), 1, "the covering button was not clicked");
+            assert_eq!(report_number(&report, "under"), 0, "the covered button was clicked");
         });
     }
 
