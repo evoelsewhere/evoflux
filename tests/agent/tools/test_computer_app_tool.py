@@ -389,6 +389,47 @@ async def test_a_refused_attach_does_not_type_into_the_previous_app(
     assert [action for _, action, _ in requests] == ["list_windows"]
 
 
+@pytest.mark.asyncio
+async def test_an_app_blocked_after_attaching_is_handed_back(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True, blocked_apps=["excel"])
+    requests = _fake_bridge(
+        monkeypatch,
+        {
+            "status": {
+                "attached": True,
+                "window": {"id": 22, "app": "EXCEL.EXE", "title": "Budget.xlsx"},
+            },
+            "detach": {"detached": True},
+        },
+    )
+
+    result = await _run(
+        {"action": "click", "x": 1, "y": 1}, {"action": "type", "text": "=1"}
+    )
+
+    assert isinstance(result, str)
+    assert "blocked" in result and "handed back" in result
+    assert "Skipped 1 action(s) (type) because click failed" in result
+    assert [action for _, action, _ in requests] == ["status", "detach"]
+
+
+@pytest.mark.asyncio
+async def test_an_allowed_app_is_checked_once_per_call(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True, blocked_apps=["excel"])
+    requests = _fake_bridge(
+        monkeypatch,
+        {
+            "status": {"attached": True, "window": {"app": "Notepad.exe"}},
+            "click": {"clicks": 1},
+            "snapshot": "UI",
+        },
+    )
+
+    await _run({"action": "click", "x": 1, "y": 1}, {"action": "snapshot"})
+
+    assert [action for _, action, _ in requests] == ["status", "click", "snapshot"]
+
+
 def test_app_policy_matching_ignores_case_and_exe_suffix() -> None:
     policy = ComputerAppSettings(
         enabled=True, allowed_apps=["Notepad"], blocked_apps=["notepad2.exe"]

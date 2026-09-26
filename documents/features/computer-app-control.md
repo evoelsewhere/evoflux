@@ -22,7 +22,10 @@ to both unless it names Windows mechanisms.
    added as an executable name.
 2. In a chat, the agent calls `computer_app` `list_windows`, then `attach` with
    a `window_id`. The backend checks the app against the policy before anything
-   attaches; a successful attach opens the session's preview card.
+   attaches; a successful attach opens the session's preview card. While an
+   allow or block list is set, every `computer_app` call that reads or drives
+   the app checks the attached app again (one `status` round trip), so an app
+   blocked in Settings mid-run is handed back rather than driven on.
 3. The agent observes with `screenshot` (PNG of the window) or `snapshot`/`find`
    (the accessibility tree — UI Automation on Windows, the Accessibility API on
    macOS — with refs such as `e12`), and acts with `click`,
