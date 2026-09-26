@@ -8,7 +8,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -127,6 +127,44 @@ static REGISTRY: Lazy<Mutex<Registry>> = Lazy::new(|| Mutex::new(Registry::defau
 
 fn registry() -> std::sync::MutexGuard<'static, Registry> {
     REGISTRY.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Per-session gate between typing and the preview card's captures.
+///
+/// A capture has the app paint itself into EvoFlux's bitmap (`PrintWindow`)
+/// from another thread, whenever the card asks. Arriving while Excel was
+/// opening the editor for a cell, it dropped the cell's first characters or
+/// the whole cell ("May" became "ay", "=SUM(B7:D7)" became "M(B7:D7)"), in
+/// three runs out of four; with no captures every run was exact. Typing
+/// holds the gate and opens it only where the app has taken everything in
+/// (see `type_text`); a capture waits for it.
+static INPUT_GATES: Lazy<Mutex<HashMap<String, Arc<Mutex<()>>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn input_gate(session_id: &str) -> Arc<Mutex<()>> {
+    let mut gates = INPUT_GATES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    gates.entry(session_id.to_string()).or_default().clone()
+}
+
+fn hold_gate(gate: &Mutex<()>) -> std::sync::MutexGuard<'_, ()> {
+    gate.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// How many characters of one run typing posts before letting a waiting
+/// preview capture in.
+const GATE_EVERY_CHARS: usize = 64;
+
+/// How often typing lets a capture in at most: about four preview frames a
+/// second while it types. Letting one in at every cell slowed a 120-cell
+/// table from 20 to 45 seconds.
+const GATE_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Let a preview capture that is waiting at `gate` run, then take it back.
+/// The short rest gives the waiting thread the lock; the lock itself is not
+/// fair, and would otherwise go straight back to typing.
+fn open_gate<'a>(gate: &'a Mutex<()>, held: std::sync::MutexGuard<'a, ()>) -> std::sync::MutexGuard<'a, ()> {
+    drop(held);
+    pause(2);
+    hold_gate(gate)
 }
 
 /// Forget the session's window, without touching the window yet.
@@ -1939,6 +1977,9 @@ pub(crate) fn preview_frame(session_id: &str, max_width: u32) -> Result<Value, S
         return Ok(json!({ "attached": false, "stopped": stopped }));
     };
     let top = to_hwnd(attached.hwnd);
+    // Never paint the app while typing is between two of its safe points.
+    let gate = input_gate(session_id);
+    let _typing_done = hold_gate(&gate);
     let base = json!({
         "attached": true,
         "stopped": stopped,
@@ -2630,6 +2671,13 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
     // window that had the focus before were dropped — "Aug" arrived as "g",
     // a cell went missing and the rows after it shifted.
     let mut fresh = true;
+    // Preview captures wait at the gate while characters are on their way,
+    // and get in at the points where the app has taken everything in: after
+    // each Enter or Tab, and every so many characters of a long run.
+    let gate = input_gate(&target.session_id);
+    let mut held = hold_gate(&gate);
+    let mut since_opened = 0usize;
+    let mut opened_at = std::time::Instant::now();
     for unit in typed_units(text) {
         interrupted()?;
         match unit {
@@ -2643,13 +2691,24 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
                 pause(CELL_CHANGE_PAUSE_MS);
                 hwnd = keyboard_target(target);
                 fresh = true;
+                if opened_at.elapsed() >= GATE_INTERVAL {
+                    held = open_gate(&gate, held);
+                    opened_at = std::time::Instant::now();
+                    since_opened = 0;
+                }
             }
             other => {
                 post(hwnd, WM_CHAR, other as usize, LPARAM(1))?;
+                since_opened += 1;
                 if fresh {
                     settle(hwnd);
                     hwnd = keyboard_target(target);
                     fresh = false;
+                } else if since_opened >= GATE_EVERY_CHARS && opened_at.elapsed() >= GATE_INTERVAL {
+                    settle(hwnd);
+                    held = open_gate(&gate, held);
+                    opened_at = std::time::Instant::now();
+                    since_opened = 0;
                 }
             }
         }
@@ -2657,6 +2716,7 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
             pause(delay);
         }
     }
+    drop(held);
     let mut result = json!({
         "typed_chars": text.chars().count(),
         "delivered_to": class_name(hwnd),
