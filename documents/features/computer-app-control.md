@@ -223,7 +223,7 @@ agent.
 | `click` | accessibility first: the innermost element under the point (or the ref) with `AXPress`, `AXConfirm`, `AXPick` or `AXOpen`, a disclosable row, or a selectable item; a text field gets `AXFocused`. Otherwise mouse events posted with `CGEventPostToPid`, stamped with the window number so AppKit routes them to that window |
 | right-click | `AXShowMenu` on the element, else posted events |
 | `type`, `set_value` | `AXSelectedText` replaced in the field (after selecting all for `set_value`), then read back through `AXValue`; if the field did not change, Unicode key events are posted to the app instead. A line break in web content is Shift+Return. `direct: true` writes `AXValue` |
-| `key` | a shortcut the app's menu bar carries (`AXMenuItemCmdChar` / `AXMenuItemCmdModifiers`) presses that menu item. Return and Escape use the focused control's `AXConfirm`/`AXCancel` or the window's default and cancel buttons. Anything else is a key event posted to the app |
+| `key` | a shortcut the app's menu bar carries (`AXMenuItemCmdChar` / `AXMenuItemCmdModifiers`) presses that menu item. A menu command acts on the app's main window, so the attached window is made main first (`AXMain`, which does not activate the app); an app that will not switch while it has another window is refused, rather than ⌘S saving another document. Return and Escape use the focused control's `AXConfirm`/`AXCancel` or the window's default and cancel buttons. Anything else is a key event posted to the app |
 | `scroll` | wheel events posted to the app; when the scroll area's scroll bar did not move, its `AXValue` is stepped instead |
 | `hover`, `drag` | mouse events posted to the app |
 | `set_value` on a slider or stepper | `AXValue` as a number, clamped to `AXMinValue`/`AXMaxValue` |
@@ -260,8 +260,9 @@ Chromium may stop repainting a window it considers covered, so a parked
 browser's picture can lag behind; snapshot reads the live state. Run
 `cargo test computer_app -- --ignored --nocapture` on a Mac (with the terminal
 allowed Accessibility and Screen Recording) for the live TextEdit test, which
-types into a document, saves it with ⌘S through the menu bar, and checks the
-frontmost app never changed.
+types into a document, saves it with ⌘S through the menu bar while a second
+document opened later is TextEdit's main window, and checks the frontmost app
+never changed.
 
 ## Safety boundaries
 

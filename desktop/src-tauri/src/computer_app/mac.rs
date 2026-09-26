@@ -2803,6 +2803,43 @@ thread_local! {
     static MENU_NAMES: CFArray<CFString> = CFArray::from_CFTypes(&MENU_ATTRIBUTES.map(cf_string));
 }
 
+/// Make the attached window its app's main window, where menu commands go.
+///
+/// A menu item acts on the app's main window, not on the window the agent
+/// drives: with two TextEdit documents open, ⌘S saved whichever was main.
+/// Setting `AXMain` orders it first among the app's own windows without
+/// activating the app. An app that will not switch, while it has another
+/// window the command could reach, gets the command refused.
+fn make_main(target: &Target) -> Result<(), String> {
+    // A dialog of the app takes its commands itself.
+    if target.window_id != target.top_id {
+        return Ok(());
+    }
+    let window = &target.window;
+    let is_main = || target.app.element("AXMainWindow").is_some_and(|main| main.same(window));
+    if is_main() {
+        return Ok(());
+    }
+    let _ = window.set_flag("AXMain", true);
+    pause(80);
+    if is_main() {
+        return Ok(());
+    }
+    let others = target
+        .app
+        .elements("AXWindows")
+        .into_iter()
+        .filter(|other| !other.same(window) && other.string("AXSubrole").as_deref() == Some("AXStandardWindow"))
+        .count();
+    if others == 0 {
+        return Ok(());
+    }
+    Err(format!(
+        "{} would not make the attached window its main window, so this shortcut could act on another of its windows. Look for the control with find and invoke it by ref instead.",
+        target.app_name
+    ))
+}
+
 fn press_key(target: &Target, params: &Value) -> Result<Value, String> {
     let spec = params
         .get("key")
@@ -2814,6 +2851,7 @@ fn press_key(target: &Target, params: &Value) -> Result<Value, String> {
     }
     let repeat = params.get("repeat").and_then(Value::as_u64).unwrap_or(1).clamp(1, 50);
     if let Some((item, title)) = menu_item_for(&target.app, &combo) {
+        make_main(target)?;
         for _ in 0..repeat {
             interrupted()?;
             item.perform("AXPress")
@@ -3003,6 +3041,13 @@ mod live_tests {
         }
         let attached = attached.expect("attach to the TextEdit document");
         println!("attached: {attached}");
+        // A second document, opened last, becomes TextEdit's main window:
+        // ⌘S below must still save the attached one.
+        let other = dir.join("computer-app-other.txt");
+        std::fs::write(&other, "other\n").unwrap();
+        let status = std::process::Command::new("open").args(["-g", "-a", "TextEdit"]).arg(&other).status().unwrap();
+        assert!(status.success());
+        pause(1500);
 
         let snapshot = run_action(&emit, session, "snapshot", &json!({})).unwrap();
         let snapshot = snapshot.as_str().unwrap().to_string();
@@ -3041,14 +3086,17 @@ mod live_tests {
             "cursor before ({}, {}), after ({}, {})",
             cursor_before.x, cursor_before.y, cursor_after.x, cursor_after.y
         );
-        // Close the document window the test opened.
+        // Close the document windows the test opened.
         let app = Ax::application(
             attached["window"]["pid"].as_i64().unwrap() as i32,
         )
         .unwrap();
-        if let Some(window) = ax_window(&app, attached["window"]["id"].as_u64().unwrap() as u32) {
-            if let Some(close) = window.element("AXCloseButton") {
-                let _ = close.perform("AXPress");
+        for window in app.elements("AXWindows") {
+            let title = window.string("AXTitle").unwrap_or_default();
+            if title.contains("computer-app-probe") || title.contains("computer-app-other") {
+                if let Some(close) = window.element("AXCloseButton") {
+                    let _ = close.perform("AXPress");
+                }
             }
         }
         let _ = std::fs::remove_dir_all(&dir);
