@@ -256,6 +256,11 @@ impl Ax {
         names.iter().filter_map(|name| cf_text(&name)).collect()
     }
 
+    /// How long calls through this element wait for the app.
+    fn set_timeout(&self, seconds: f32) {
+        unsafe { AXUIElementSetMessagingTimeout(self.raw(), seconds) };
+    }
+
     fn perform(&self, action: &str) -> Result<(), AXError> {
         let name = cf_string(action);
         let error = unsafe { AXUIElementPerformAction(self.raw(), name.as_concrete_TypeRef()) };
@@ -1570,10 +1575,17 @@ impl Target {
         interrupted()
     }
 
-    /// Where accessibility walks start: the window, then any dialog window
-    /// of the app sitting over it.
+    /// Where accessibility walks start: a context menu the app has open (it
+    /// belongs to the app, not to any window), the window, then any dialog
+    /// window of the app sitting over it.
     fn roots(&self) -> Vec<Ax> {
-        let mut roots = vec![self.window.clone()];
+        let mut roots: Vec<Ax> = self
+            .app
+            .elements("AXChildren")
+            .into_iter()
+            .filter(|child| child.role() == "AXMenu" && child.frame().is_some_and(|frame| !frame.is_empty()))
+            .collect();
+        roots.push(self.window.clone());
         if self.window_id != self.top_id {
             if let Some(top) = ax_window(&self.app, self.top_id) {
                 roots.push(top);
@@ -1906,16 +1918,22 @@ impl Walk<'_> {
         let info = info(element);
         let listed = self.element_line(element, &info, depth);
         // Closed menus hold hundreds of items; only a search goes into them.
-        if info.role == "AXMenu" && self.query.is_none() {
+        // An open one has a frame, and is what the agent most likely wants
+        // next — wherever it is drawn, often past the window's edge.
+        let open_menu = info.role == "AXMenu" && info.frame.is_some_and(|frame| !frame.is_empty());
+        if info.role == "AXMenu" && self.query.is_none() && !open_menu {
             return;
         }
+        let anywhere = self.anywhere;
+        self.anywhere |= open_menu;
         let child_depth = if listed { depth + 1 } else { depth };
         for child in element.elements("AXChildren") {
             self.walk(&child, child_depth);
             if self.lines.len() >= self.max_elements {
-                return;
+                break;
             }
         }
+        self.anywhere = anywhere;
     }
 }
 
@@ -2098,18 +2116,53 @@ fn ui_action_for(element: &Ax) -> Option<UiAction> {
     None
 }
 
-fn perform(element: &Ax, action: &UiAction) -> Result<&'static str, AXError> {
-    match action {
-        UiAction::Action(name) => element.perform(name).map(|()| match *name {
-            "AXPress" => "press",
-            "AXConfirm" => "confirm",
-            "AXPick" => "pick",
-            _ => "open",
-        }),
-        UiAction::Disclose(open) => element
-            .set_flag("AXDisclosing", *open)
-            .map(|()| if *open { "expand" } else { "collapse" }),
-        UiAction::Select => element.set_flag("AXSelected", true).map(|()| "select"),
+const AX_CANNOT_COMPLETE: AXError = -25204;
+
+const STILL_RUNNING_NOTE: &str = "The app is still handling this, most likely in a menu or dialog it opened. Take a snapshot to see it; do not repeat the action.";
+
+/// Perform `action` on `element`. Returns the pattern used, and whether the
+/// app is still busy with it.
+///
+/// A pop-up button or menu button answers AXPress (and anything answers
+/// AXShowMenu) only once the menu it opened closes, and a button that runs a
+/// modal dialog only once the dialog is dismissed: the call timed out after
+/// two seconds and was reported as refused while the menu sat open, inviting
+/// a second press. A timeout from an app that still answers a quick question
+/// right after is that case, and is reported as delivered. Menu openers get
+/// a short timeout so the worker is not held for two seconds.
+fn perform(element: &Ax, app: &Ax, action: &UiAction) -> Result<(&'static str, bool), AXError> {
+    let (label, opens_menu) = match action {
+        UiAction::Action(name) => {
+            let label = match *name {
+                "AXPress" => "press",
+                "AXConfirm" => "confirm",
+                "AXPick" => "pick",
+                "AXShowMenu" => "show_menu",
+                _ => "open",
+            };
+            let menu_role = matches!(element.role().as_str(), "AXPopUpButton" | "AXMenuButton" | "AXMenuBarItem");
+            (label, *name == "AXShowMenu" || (*name == "AXPress" && menu_role))
+        }
+        UiAction::Disclose(open) => (if *open { "expand" } else { "collapse" }, false),
+        UiAction::Select => ("select", false),
+    };
+    if opens_menu {
+        element.set_timeout(0.5);
+    }
+    let result = match action {
+        UiAction::Action(name) => element.perform(name),
+        UiAction::Disclose(open) => element.set_flag("AXDisclosing", *open),
+        UiAction::Select => element.set_flag("AXSelected", true),
+    };
+    if opens_menu {
+        element.set_timeout(AX_TIMEOUT_SECONDS);
+    }
+    match result {
+        Ok(()) => Ok((label, false)),
+        Err(AX_CANNOT_COMPLETE) if matches!(action, UiAction::Action(_)) && app.attribute("AXRole").is_some() => {
+            Ok((label, true))
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -2273,10 +2326,10 @@ fn click_via_accessibility(
         let name = element.label();
         target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
-        let used = perform(element, &action)
+        let (used, busy) = perform(element, &target.app, &action)
             .map_err(|error| format!("\"{name}\" refused the click: {}", ax_error(error)))?;
         let (x, y) = target.screenshot_point(point);
-        return Ok(Some(json!({
+        let mut result = json!({
             "pointer": { "x": x, "y": y },
             "delivered_to": name,
             "delivered_via": "accessibility",
@@ -2284,7 +2337,11 @@ fn click_via_accessibility(
             "window": target.title(),
             "button": "left",
             "clicks": 1,
-        })));
+        });
+        if busy {
+            result["note"] = json!(STILL_RUNNING_NOTE);
+        }
+        return Ok(Some(result));
     }
     if let Some(field) = editable {
         target.travel(emit, point)?;
@@ -2321,11 +2378,10 @@ fn menu_via_accessibility(
     };
     target.travel(emit, point)?;
     target.emit_pointer(emit, point, "click");
-    element
-        .perform("AXShowMenu")
+    let (_, busy) = perform(element, &target.app, &UiAction::Action("AXShowMenu"))
         .map_err(|error| format!("The context menu did not open: {}", ax_error(error)))?;
     let (x, y) = target.screenshot_point(point);
-    Ok(Some(json!({
+    let mut result = json!({
         "pointer": { "x": x, "y": y },
         "delivered_to": element.label(),
         "delivered_via": "accessibility",
@@ -2333,7 +2389,11 @@ fn menu_via_accessibility(
         "window": target.title(),
         "button": "right",
         "clicks": 1,
-    })))
+    });
+    if busy {
+        result["note"] = json!(STILL_RUNNING_NOTE);
+    }
+    Ok(Some(result))
 }
 
 fn hover(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
@@ -2987,9 +3047,13 @@ fn invoke(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
     if is_editable(&element) {
         remember_editable(&target.session_id, &element);
     }
-    let used = perform(&element, &action)
+    let (used, busy) = perform(&element, &target.app, &action)
         .map_err(|error| format!("{reference} (\"{name}\") refused the action: {}", ax_error(error)))?;
-    Ok(json!({ "ref": reference, "name": name, "pattern": used, "window": target.title() }))
+    let mut result = json!({ "ref": reference, "name": name, "pattern": used, "window": target.title() });
+    if busy {
+        result["note"] = json!(STILL_RUNNING_NOTE);
+    }
+    Ok(result)
 }
 
 fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
