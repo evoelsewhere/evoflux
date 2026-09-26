@@ -1570,6 +1570,8 @@ fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value,
     }
     target.emit_pointer(emit, point, "click");
     remember_input_window(&target.session_id, hwnd);
+    // A posted click put focus somewhere UI Automation did not report.
+    forget_editable(&target.session_id);
     let mut extra = json!({ "button": button, "clicks": clicks });
     if target.web {
         extra["note"] = json!(WEB_INPUT_NOTE);
@@ -2068,6 +2070,9 @@ fn press_key(target: &Target, params: &Value) -> Result<Value, String> {
     };
     let thread = unsafe { GetWindowThreadProcessId(hwnd, None) };
     post_key(hwnd, thread, &combo, repeat)?;
+    if moves_focus(&combo) {
+        forget_editable(&target.session_id);
+    }
     Ok(json!({
         "key": spec,
         "repeat": repeat,
@@ -2575,6 +2580,23 @@ fn remember_editable(session_id: &str, element: &IUIAutomationElement) {
     });
 }
 
+/// Focus went somewhere other than the remembered field — a click on a
+/// button, Tab, Enter — so a `type` without a ref must go where the page's
+/// focus now is, not back into that field.
+fn forget_editable(session_id: &str) {
+    LAST_EDITABLE.with(|last| {
+        last.borrow_mut().remove(session_id);
+    });
+}
+
+/// Keys that move focus to another control (or submit and close a form).
+fn moves_focus(combo: &KeyCombo) -> bool {
+    matches!(
+        combo.key.to_lowercase().as_str(),
+        "tab" | "enter" | "return" | "escape" | "esc" | "f6"
+    )
+}
+
 /// `element` and its ancestors, outermost first (the order [`elements_at`]
 /// returns), so callers can look for the nearest one with a capability.
 fn with_ancestors(element: IUIAutomationElement) -> Vec<IUIAutomationElement> {
@@ -2643,8 +2665,12 @@ fn click_via_automation(
     chain: &[IUIAutomationElement],
     point: POINT,
 ) -> Result<Option<Value>, String> {
-    if let Some(editable) = chain.iter().rev().find(|element| is_editable(element)) {
-        remember_editable(&target.session_id, editable);
+    match chain.iter().rev().find(|element| is_editable(element)) {
+        Some(editable) => remember_editable(&target.session_id, editable),
+        // Clicking anything else (a button, a list item) moves focus away
+        // from the field clicked before.
+        None if !chain.is_empty() => forget_editable(&target.session_id),
+        None => {}
     }
     for element in chain.iter().rev() {
         let Some(action) = ui_action_for(element) else {
@@ -2851,6 +2877,8 @@ fn invoke(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
     }
     if is_editable(&element) {
         remember_editable(&target.session_id, &element);
+    } else {
+        forget_editable(&target.session_id);
     }
     let used = perform(&action)
         .map_err(|error| format!("{reference} (\"{name}\") refused the action: {error}"))?;
@@ -3171,6 +3199,16 @@ mod live_tests {
             eprintln!("type name: {typed}\n  caption: {}", caption());
             assert_eq!(typed["delivered_via"], json!("keyboard"));
             assert_ne!(typed["confirmed"], json!(false), "a hidden page's stale value was reported as a failure");
+
+            // Tab moves the page's focus on; typing without a ref follows it
+            // instead of going back into the field clicked before.
+            run_action(emit, session, "key", &json!({ "key": "tab" })).unwrap();
+            let typed = run_action(emit, session, "type", &json!({ "text": "tabbed" })).unwrap();
+            eprintln!("type after tab: {typed}\n  caption: {}", caption());
+            pause(300);
+            let report = page_report(hwnd);
+            assert_eq!(report.get("name").map(String::as_str), Some("alpha"), "typing after Tab went back into the name field");
+            assert_eq!(report.get("notes").map(String::as_str), Some("tabbed"), "typing after Tab did not reach the next field");
 
             let notes = ref_for(emit, session, "Notes field");
             let set = run_action(emit, session, "set_value", &json!({ "ref": notes, "value": "beta" })).unwrap();
