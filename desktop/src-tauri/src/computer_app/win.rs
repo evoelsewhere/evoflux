@@ -4599,13 +4599,20 @@ mod live_tests {
         let event_loop = EventLoopBuilder::<String>::with_user_event()
             .with_any_thread(true)
             .build();
+        // Never focused, by the window or by its WebView once ready: the
+        // probes check that the user's foreground window keeps the
+        // foreground, which a host that took it itself would make pass
+        // without checking anything (and, when its WebView2 finished loading
+        // mid-test, fail for its own reasons).
         let window = tao::window::WindowBuilder::new()
             .with_title("probe host")
             .with_inner_size(tao::dpi::LogicalSize::new(900.0, 1000.0))
+            .with_focused(false)
             .build(&event_loop)
             .unwrap();
         let proxy = event_loop.create_proxy();
         let builder = wry::WebViewBuilder::new()
+            .with_focused(false)
             .with_url(&url)
             .with_document_title_changed_handler(move |title| {
                 let _ = proxy.send_event(title);
