@@ -549,16 +549,18 @@ fn release(session_id: &str) -> Option<Attached> {
     if let Some(attached) = &released {
         let still_used = registry().attached.values().any(|other| other.pid == attached.pid);
         if let Some(app) = Ax::application(attached.pid) {
-            if let Some(parked) = attached.parked {
-                match reach_window(&app, attached.window_id) {
-                    Some(window) => unpark(&window, parked, false),
-                    None => put_back_later(attached.pid, attached.window_id, parked),
+            // Chromium does extra accessibility work while its enhanced
+            // interface is on (and window managers stop animating it); it is
+            // handed back off unless another chat still drives the app.
+            match attached.parked {
+                Some(parked) => match reach_window(&app, attached.window_id) {
+                    Some(window) => hand_back(&app, &window, parked, false, attached.web, still_used),
+                    None => put_back_later(attached.pid, attached.window_id, parked, attached.web),
+                },
+                None if attached.web && !still_used => {
+                    let _ = app.set_flag("AXEnhancedUserInterface", false);
                 }
-            }
-            if attached.web && !still_used {
-                // Chromium does extra accessibility work while this is on
-                // (and window managers stop animating it); hand it back off.
-                let _ = app.set_flag("AXEnhancedUserInterface", false);
+                None => {}
             }
         }
     }
@@ -586,7 +588,7 @@ fn reach_window(app: &Ax, id: u32) -> Option<Ax> {
 /// accessibility cannot reach now (the user is on another Space, the app is
 /// busy). Its own thread looks the app up itself: accessibility elements do
 /// not cross threads.
-fn put_back_later(pid: i32, window_id: u32, parked: Parked) {
+fn put_back_later(pid: i32, window_id: u32, parked: Parked, web: bool) {
     let _ = std::thread::Builder::new()
         .name("computer-app-put-back".into())
         .spawn(move || {
@@ -598,8 +600,12 @@ fn put_back_later(pid: i32, window_id: u32, parked: Parked) {
                 {
                     return;
                 }
-                if let Some(window) = Ax::application(pid).and_then(|app| ax_window(&app, window_id)) {
-                    unpark(&window, parked, false);
+                let Some(app) = Ax::application(pid) else {
+                    continue;
+                };
+                if let Some(window) = ax_window(&app, window_id) {
+                    let still_used = registry().attached.values().any(|attached| attached.pid == pid);
+                    hand_back(&app, &window, parked, false, web, still_used);
                     return;
                 }
             }
@@ -641,7 +647,8 @@ pub(crate) fn reveal(session_id: &str) -> Result<Value, String> {
     let window = ax_window(&app, attached.window_id).ok_or("The attached window was closed.")?;
     let _ = app.set_flag("AXHidden", false);
     match attached.parked {
-        Some(parked) => unpark(&window, parked, true),
+        // Still attached, so the app keeps its enhanced interface.
+        Some(parked) => hand_back(&app, &window, parked, true, attached.web, true),
         None => {
             let _ = window.set_flag("AXMinimized", false);
         }
@@ -692,9 +699,38 @@ fn park(window: &Ax) -> Option<Parked> {
     Some(Parked { origin: (origin.x, origin.y), minimized })
 }
 
+/// Put a parked window back.
+///
+/// While a Chromium app's `AXEnhancedUserInterface` is on, macOS animates
+/// moves made through accessibility and may drop them — release moved the
+/// window first and turned the flag off after, and Chrome or Electron
+/// windows stayed in their corner. The flag is off during the move, and on
+/// again after only when `keep_enhanced` (the app is still being driven).
+fn hand_back(app: &Ax, window: &Ax, parked: Parked, activate: bool, web: bool, keep_enhanced: bool) {
+    if web {
+        let _ = app.set_flag("AXEnhancedUserInterface", false);
+        pause(100);
+    }
+    unpark(window, parked, activate);
+    if web && keep_enhanced {
+        let _ = app.set_flag("AXEnhancedUserInterface", true);
+    }
+}
+
 fn unpark(window: &Ax, parked: Parked, activate: bool) {
-    if let Some(value) = ax_point_value(parked.origin.0, parked.origin.1) {
-        let _ = window.set("AXPosition", &value);
+    let (x, y) = parked.origin;
+    // Asked again when the first move did not take.
+    for attempt in 0..2 {
+        if let Some(value) = ax_point_value(x, y) {
+            let _ = window.set("AXPosition", &value);
+        }
+        let arrived = window
+            .position()
+            .is_some_and(|now| (now.x - x).abs() < 2.0 && (now.y - y).abs() < 2.0);
+        if arrived || attempt == 1 {
+            break;
+        }
+        pause(200);
     }
     if parked.minimized && !activate {
         let _ = window.set_flag("AXMinimized", true);
