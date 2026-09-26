@@ -1,7 +1,5 @@
 <div align="center">
-  <img src="web/public/brand-assets/evoflux-app-icon.png" width="72" height="72" alt="EvoFlux logo" />
-
-  # EvoFlux
+  <img src="documents/images/intro/evoflux-intro-preview.gif" width="800" alt="EvoFlux intro: agent teams, Computer App Control, and WebBridge" />
 
   **A local-first desktop workspace for AI agent teams.**
 
@@ -16,8 +14,6 @@
 
   **[Website](https://evoelsewhere.asia/)** · **[Download](#download)** ·
   **[Run from source](#run-from-source)** · **[Documentation](#documentation)**
-
-  <img src="documents/images/intro/evoflux-intro-preview.gif" width="800" alt="EvoFlux intro: agent teams, Computer App Control, and WebBridge" />
 </div>
 
 ## Highlights
