@@ -85,6 +85,12 @@ extern "C" {
         attribute: CFStringRef,
         value: *mut CFTypeRef,
     ) -> AXError;
+    fn AXUIElementCopyParameterizedAttributeValue(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        parameter: CFTypeRef,
+        value: *mut CFTypeRef,
+    ) -> AXError;
     fn AXUIElementCopyMultipleAttributeValues(
         element: AXUIElementRef,
         attributes: CFArrayRef,
@@ -170,6 +176,21 @@ impl Ax {
         let mut value: CFTypeRef = std::ptr::null();
         let error =
             unsafe { AXUIElementCopyAttributeValue(self.raw(), key.as_concrete_TypeRef(), &mut value) };
+        (error == AX_SUCCESS && !value.is_null()).then(|| unsafe { CFType::wrap_under_create_rule(value) })
+    }
+
+    /// A parameterized attribute, such as `AXStringForRange`.
+    fn parameterized(&self, name: &str, parameter: &CFType) -> Option<CFType> {
+        let key = cf_string(name);
+        let mut value: CFTypeRef = std::ptr::null();
+        let error = unsafe {
+            AXUIElementCopyParameterizedAttributeValue(
+                self.raw(),
+                key.as_concrete_TypeRef(),
+                parameter.as_CFTypeRef(),
+                &mut value,
+            )
+        };
         (error == AX_SUCCESS && !value.is_null()).then(|| unsafe { CFType::wrap_under_create_rule(value) })
     }
 
@@ -1762,17 +1783,48 @@ pub(crate) fn preview_frame(session_id: &str, max_width: u32) -> Result<Value, S
 // ── The accessibility tree ──────────────────────────────────────────────
 
 /// Attributes read for every element in one round trip to the app.
+/// Read for every element in one round trip. `AXValue` is not among them:
+/// for a text area it is the whole text — a Terminal's scrollback, an open
+/// Xcode file — and fetching it for every element made snapshots crawl. It
+/// is read afterwards, only where it is shown (see [`element_value`]).
 const INFO_ATTRIBUTES: [&str; 9] = [
     "AXRole",
     "AXSubrole",
     "AXTitle",
     "AXDescription",
-    "AXValue",
+    "AXNumberOfCharacters",
     "AXPosition",
     "AXSize",
     "AXEnabled",
     "AXIdentifier",
 ];
+
+/// Text longer than this is read only as far as a snapshot line shows it.
+const LONG_TEXT_CHARS: f64 = 1_000.0;
+
+/// Roles whose value a snapshot line shows (or names the element by).
+fn shows_value(role: &str) -> bool {
+    is_text_role(role)
+        || matches!(
+            role,
+            "AXStaticText" | "AXCheckBox" | "AXRadioButton" | "AXSwitch" | "AXSlider" | "AXIncrementor"
+                | "AXPopUpButton" | "AXValueIndicator"
+        )
+}
+
+/// The element's value, where [`shows_value`]: a long text only as its
+/// first 200 characters (`AXStringForRange`), or not at all when the app
+/// cannot hand out part of it.
+fn element_value(element: &Ax, role: &str, characters: Option<f64>) -> Option<CFType> {
+    if !shows_value(role) {
+        return None;
+    }
+    if characters.is_some_and(|count| count > LONG_TEXT_CHARS) {
+        let range = ax_range_value(0, 200)?;
+        return element.parameterized("AXStringForRange", &range);
+    }
+    element.attribute("AXValue")
+}
 
 struct Info {
     role: String,
@@ -1814,11 +1866,13 @@ fn info(element: &Ax) -> Info {
     let text = |index: usize| values[index].as_ref().and_then(cf_text).unwrap_or_default();
     let origin = values[5].as_ref().and_then(ax_point);
     let size = values[6].as_ref().and_then(ax_size);
+    let role = text(0);
+    let characters = values[4].as_ref().and_then(cf_number);
     Info {
-        role: text(0),
+        value: element_value(element, &role, characters),
+        role,
         title: text(2),
         description: text(3),
-        value: values[4].clone(),
         frame: origin.zip(size).map(|(origin, size)| Rect {
             x: origin.x,
             y: origin.y,
