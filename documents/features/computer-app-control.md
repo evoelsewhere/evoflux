@@ -241,6 +241,13 @@ window is brought back from the Dock first, since it cannot be captured, and
 goes back there on release. An app hidden with ⌘H is shown again without being
 activated.
 
+A window the window server still lists but accessibility cannot reach for a
+moment (the app busy past the two-second messaging timeout, full screen,
+another Space) keeps its session: the action fails with "try again", instead
+of the session being dropped with the window still parked. Only a window that
+is gone ends the session. Release asks three times; a window still out of
+reach is put back by a background retry every two seconds for two minutes.
+
 Known limits: a window on another Space is not in the app's accessibility
 window list and cannot be attached until the user brings it to the current
 desktop. Posted mouse and key events may be ignored by an app in the
