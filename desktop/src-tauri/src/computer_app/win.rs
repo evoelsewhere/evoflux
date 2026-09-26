@@ -7,6 +7,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{mpsc, Mutex};
 use std::time::Duration;
 
@@ -329,11 +330,18 @@ thread_local! {
     static REFS: RefCell<HashMap<String, SessionRefs>> = RefCell::new(HashMap::new());
 }
 
+/// The elements a session's snapshots and finds handed out refs for, each
+/// with the window it was listed in (the window itself, a dialog, or a
+/// popup), so a ref into a window that is no longer in front is refused.
 #[derive(Default)]
 struct SessionRefs {
-    next: u32,
-    elements: HashMap<String, IUIAutomationElement>,
+    elements: HashMap<String, (IUIAutomationElement, isize)>,
 }
+
+/// Ref numbers are never reused, across snapshots, sessions and attaches: a
+/// ref from an earlier snapshot is unknown rather than silently naming
+/// whichever control got its number this time.
+static NEXT_REF: AtomicU32 = AtomicU32::new(0);
 
 fn automation() -> Result<IUIAutomation, String> {
     AUTOMATION.with(|slot| {
@@ -1749,7 +1757,7 @@ fn pause(ms: u64) {
 /// Where a pointer action lands: a ref's centre or screenshot coordinates.
 fn pointer_target(target: &Target, params: &Value) -> Result<POINT, String> {
     if let Some(reference) = params.get("ref").and_then(Value::as_str) {
-        let element = element_for(&target.session_id, reference)?;
+        let element = element_for(target, reference)?;
         let rect = unsafe { element.CurrentBoundingRectangle() }
             .map_err(|error| format!("{reference} has no position: {error}"))?;
         if rect.right <= rect.left || rect.bottom <= rect.top {
@@ -1829,7 +1837,7 @@ fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value,
     if button == "left" && clicks == 1 {
         let reference = params.get("ref").and_then(Value::as_str);
         let mut chain = match reference {
-            Some(reference) => vec![element_for(&target.session_id, reference)?],
+            Some(reference) => vec![element_for(target, reference)?],
             None => Vec::new(),
         };
         if let Some(done) = click_via_automation(emit, target, &chain, point)? {
@@ -1916,7 +1924,7 @@ fn scroll(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
         // user's real cursor, so a posted wheel never reaches a background
         // page. Scroll the scrollable element under the point instead.
         let chain = match params.get("ref").and_then(Value::as_str) {
-            Some(reference) => with_ancestors(element_for(&target.session_id, reference)?),
+            Some(reference) => with_ancestors(element_for(target, reference)?),
             None => elements_at(target, point)?,
         };
         target.travel(emit, point)?;
@@ -2184,7 +2192,7 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
     if target.web {
         // The field named by ref, else the one the agent last clicked.
         let field = match params.get("ref").and_then(Value::as_str) {
-            Some(reference) => Some(element_for(&target.session_id, reference)?),
+            Some(reference) => Some(element_for(target, reference)?),
             None => LAST_EDITABLE.with(|last| last.borrow().get(&target.session_id).cloned()),
         };
         return web_fill(target, field.as_ref(), text, false);
@@ -2666,6 +2674,8 @@ struct Walk<'a> {
     walker: IUIAutomationTreeWalker,
     target: &'a Target,
     refs: &'a mut SessionRefs,
+    /// The window the root being walked belongs to.
+    root_window: HWND,
     max_depth: u32,
     max_elements: usize,
     /// Only list elements matching this (lower-cased) text; `None` lists all.
@@ -2702,9 +2712,10 @@ impl Walk<'_> {
             None => !(is_structural(role) && name.trim().is_empty()),
         };
         if listed && rect.right > rect.left && rect.bottom > rect.top {
-            self.refs.next += 1;
-            let reference = format!("e{}", self.refs.next);
-            self.refs.elements.insert(reference.clone(), element.clone());
+            let reference = format!("e{}", NEXT_REF.fetch_add(1, Ordering::Relaxed) + 1);
+            self.refs
+                .elements
+                .insert(reference.clone(), (element.clone(), self.root_window.0 as isize));
             let (x, y) = self.target.screenshot_point(POINT { x: rect.left, y: rect.top });
             let width = (f64::from(rect.right - rect.left) * self.target.scale).round() as i64;
             let height = (f64::from(rect.bottom - rect.top) * self.target.scale).round() as i64;
@@ -2758,29 +2769,35 @@ fn walk_window(target: &Target, query: Option<String>, max_depth: u32, max_eleme
     let mut roots = Vec::new();
     for popup in &target.popups {
         if let Ok(element) = unsafe { automation.ElementFromHandle(*popup) } {
-            roots.push(element);
+            roots.push((element, *popup));
         }
     }
-    roots.extend(automation_roots(&automation, target.window)?);
+    roots.extend(
+        automation_roots(&automation, target.window)?
+            .into_iter()
+            .map(|root| (root, target.window)),
+    );
     let walker = unsafe { automation.ControlViewWalker() }
         .map_err(|error| format!("UI Automation walker unavailable: {error}"))?;
     REFS.with(|refs| {
         let mut refs = refs.borrow_mut();
-        if reset {
-            refs.remove(&target.session_id);
-        }
         let session_refs = refs.entry(target.session_id.clone()).or_default();
+        if reset {
+            session_refs.elements.clear();
+        }
         let mut walk = Walk {
             walker,
             target,
             refs: session_refs,
+            root_window: target.window,
             max_depth,
             max_elements,
             query,
             lines: Vec::new(),
             visited: 0,
         };
-        for root in &roots {
+        for (root, window) in &roots {
+            walk.root_window = *window;
             walk.walk(root, 0);
         }
         let truncated = walk.lines.len() >= max_elements;
@@ -2825,14 +2842,37 @@ fn find(target: &Target, params: &Value) -> Result<Value, String> {
     }))
 }
 
-fn element_for(session_id: &str, reference: &str) -> Result<IUIAutomationElement, String> {
+/// The element a ref names, if it can still be acted on: it lives in the
+/// window the agent is driving now (not the main window behind a modal
+/// dialog, nor a dialog or menu since closed), and the app has not
+/// destroyed it.
+fn element_for(target: &Target, reference: &str) -> Result<IUIAutomationElement, String> {
     let reference = reference.trim().trim_start_matches("ref=").trim_start_matches('@');
-    REFS.with(|refs| {
-        refs.borrow()
-            .get(session_id)
-            .and_then(|session| session.elements.get(reference).cloned())
-    })
-    .ok_or_else(|| format!("Unknown ref {reference:?}. Take a new snapshot or find, then use a ref from it."))
+    let (element, listed_in) = REFS
+        .with(|refs| {
+            refs.borrow()
+                .get(&target.session_id)
+                .and_then(|session| session.elements.get(reference).cloned())
+        })
+        .ok_or_else(|| format!("Unknown ref {reference:?}. Take a new snapshot or find, then use a ref from it."))?;
+    let listed_in = to_hwnd(listed_in);
+    if listed_in != target.window && !target.popups.contains(&listed_in) {
+        return Err(if unsafe { IsWindow(Some(listed_in)) }.as_bool() {
+            format!(
+                "{reference} is in \"{}\", which is waiting on the dialog \"{}\". Take a new snapshot and use the dialog's controls first.",
+                window_title(listed_in),
+                window_title(target.window)
+            )
+        } else {
+            format!("{reference} was in a dialog or menu that has closed. Take a new snapshot or find.")
+        });
+    }
+    if unsafe { element.CurrentProcessId() }.is_err() {
+        return Err(format!(
+            "{reference} no longer exists: the app removed or replaced that control. Take a new snapshot or find."
+        ));
+    }
+    Ok(element)
 }
 
 fn element_center(element: &IUIAutomationElement) -> Option<POINT> {
@@ -3353,7 +3393,7 @@ fn web_fill(
 
 fn invoke(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
     let reference = params.get("ref").and_then(Value::as_str).ok_or("invoke needs a ref.")?;
-    let element = element_for(&target.session_id, reference)?;
+    let element = element_for(target, reference)?;
     let name = bstr(unsafe { element.CurrentName() });
     let action = ui_action_for(&element).ok_or_else(|| {
         format!("{reference} (\"{name}\") has no invoke/toggle/select/expand action. Click it by ref or coordinates instead.")
@@ -3379,7 +3419,7 @@ fn invoke(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
 fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
     let reference = params.get("ref").and_then(Value::as_str).ok_or("set_value needs a ref.")?;
     let value = params.get("value").and_then(Value::as_str).ok_or("set_value needs a value.")?;
-    let element = element_for(&target.session_id, reference)?;
+    let element = element_for(target, reference)?;
     let direct = params.get("direct").and_then(Value::as_bool).unwrap_or(false);
     // Sliders, spinners and progress-like controls take a number.
     if let Some(range) = pattern::<IUIAutomationRangeValuePattern>(&element, UIA_RangeValuePatternId) {
@@ -3995,6 +4035,100 @@ mod live_tests {
                 failures.push("range");
             }
             assert!(failures.is_empty(), "not received by the page: {failures:?} — report {report:?}");
+        });
+    }
+
+    /// Run `body` against the WinForms dialog probe (see the fixture),
+    /// attached and parked.
+    fn with_dialog_probe(body: impl FnOnce(&dyn Fn(Value), &str, HWND)) {
+        use std::os::windows::process::CommandExt;
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("computer_app_dialogs.ps1");
+        let mut child = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
+            // CREATE_NO_WINDOW: no console, only the form.
+            .creation_flags(0x0800_0000)
+            .spawn()
+            .expect("start the dialog probe");
+        let session = "live-dialogs";
+        let mut window = None;
+        for _ in 0..50 {
+            pause(200);
+            window = list_windows(session, &json!({ "query": "dialog-probe" }))["windows"]
+                .as_array()
+                .and_then(|windows| windows.first().cloned());
+            if window.is_some() {
+                break;
+            }
+        }
+        let window_id = window.expect("the dialog probe never opened")["id"].as_u64().unwrap();
+        let emit = |_: Value| {};
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": true })).unwrap();
+            body(&emit, session, to_hwnd(window_id as isize));
+        }));
+        detach(session);
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .output();
+        let _ = child.wait();
+        if let Err(panic) = outcome {
+            std::panic::resume_unwind(panic);
+        }
+    }
+
+    /// The window the session is driving now: the probe, or its dialog.
+    fn driven_title(session: &str) -> String {
+        window_title(Target::resolve(session).unwrap().window)
+    }
+
+    fn wait_for_title(session: &str, title: &str) {
+        for _ in 0..30 {
+            if driven_title(session) == title {
+                return;
+            }
+            pause(100);
+        }
+        panic!("expected to be driving {title:?}, driving {:?}", driven_title(session));
+    }
+
+    #[test]
+    #[ignore = "opens a WinForms window on the local desktop"]
+    fn refuses_refs_behind_a_modal_dialog() {
+        with_dialog_probe(|emit, session, _| {
+            let open = ref_for(emit, session, "Open dialog 1");
+            // A posted click: Invoke would not return while the dialog is open.
+            let clicked = run_action(emit, session, "click", &json!({ "ref": open })).unwrap();
+            assert_eq!(clicked["pattern"], json!("click_message"), "{clicked}");
+            wait_for_title(session, "probe dialog 1");
+
+            let behind = run_action(emit, session, "click", &json!({ "ref": open }));
+            assert!(
+                behind.as_ref().is_err_and(|error| error.contains("waiting on the dialog")),
+                "a ref behind the modal dialog was accepted: {behind:?}"
+            );
+            let close = ref_for(emit, session, "Close dialog 1");
+            run_action(emit, session, "click", &json!({ "ref": close })).unwrap();
+            wait_for_title(session, "dialog-probe");
+            let gone = run_action(emit, session, "click", &json!({ "ref": close }));
+            assert!(
+                gone.as_ref().is_err_and(|error| error.contains("has closed")),
+                "a ref into the closed dialog was accepted: {gone:?}"
+            );
+
+            // A new snapshot retires the old refs instead of renumbering.
+            snapshot_text(emit, session);
+            let stale = run_action(emit, session, "click", &json!({ "ref": open }));
+            assert!(
+                stale.as_ref().is_err_and(|error| error.contains("Unknown ref")),
+                "a ref from an earlier snapshot was accepted: {stale:?}"
+            );
         });
     }
 
