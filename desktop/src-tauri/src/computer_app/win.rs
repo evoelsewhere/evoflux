@@ -2630,18 +2630,7 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
     // window that had the focus before were dropped — "Aug" arrived as "g",
     // a cell went missing and the rows after it shifted.
     let mut fresh = true;
-    let mut previous = 0u16;
-    for unit in text.encode_utf16() {
-        let unit = match unit {
-            // "\r\n" is one Enter; a lone "\n" is Enter too.
-            0x0A if previous == 0x0D => {
-                previous = unit;
-                continue;
-            }
-            0x0A => 0x0D,
-            other => other,
-        };
-        previous = unit;
+    for unit in typed_units(text) {
         interrupted()?;
         match unit {
             // Enter and Tab as real key presses: dialogs, WPF, Qt and Java
@@ -2693,6 +2682,25 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
         }
     }
     Ok(result)
+}
+
+/// The UTF-16 units `type` sends, with every line break as one Enter (`\r`).
+///
+/// "\r\n" is one Enter and a lone "\n" is one too. The pair is told by the
+/// characters as written: compared after "\n" had become "\r", the second
+/// "\n" of a blank line looked like the end of a "\r\n" and the blank line
+/// was dropped — a table typed with a blank row under its title moved up.
+fn typed_units(text: &str) -> Vec<u16> {
+    let mut units = Vec::with_capacity(text.len());
+    let mut previous = 0u16;
+    for raw in text.encode_utf16() {
+        let pair_end = raw == 0x0A && previous == 0x0D;
+        previous = raw;
+        if !pair_end {
+            units.push(if raw == 0x0A { 0x0D } else { raw });
+        }
+    }
+    units
 }
 
 /// The control keys go to, when it reports its text through UI Automation
@@ -4218,6 +4226,18 @@ fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn types_every_line_break_including_blank_lines() {
+        let units = |text: &str| String::from_utf16(&typed_units(text)).unwrap();
+        assert_eq!(units("a\nb"), "a\rb");
+        assert_eq!(units("a\r\nb"), "a\rb");
+        // A blank line is two Enters, whichever line breaks it is written with.
+        assert_eq!(units("title\n\nhead"), "title\r\rhead");
+        assert_eq!(units("title\r\n\r\nhead"), "title\r\rhead");
+        assert_eq!(units("a\r\rb"), "a\r\rb");
+        assert_eq!(units("x\ty\n"), "x\ty\r");
+    }
 
     #[test]
     fn scales_points_into_a_dpi_unaware_window() {
