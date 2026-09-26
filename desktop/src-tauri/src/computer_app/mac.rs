@@ -1600,7 +1600,22 @@ impl Target {
 /// Render the window (with the app's own sheets, alerts and menus stacked
 /// over it) from the window server's copy of it: works behind other windows
 /// and while parked.
-fn capture(window_id: u32, pid: i32, frame: Rect) -> Result<RgbaImage, String> {
+/// Where the window's sheets are: a sheet is a window of its own to the
+/// window server, at the same level as another document window.
+fn sheet_frames(window: &Ax) -> Vec<Rect> {
+    window
+        .elements("AXChildren")
+        .into_iter()
+        .filter(|child| child.role() == "AXSheet")
+        .filter_map(|sheet| sheet.frame())
+        .collect()
+}
+
+fn same_frame(a: &Rect, b: &Rect) -> bool {
+    (a.x - b.x).abs() < 2.0 && (a.y - b.y).abs() < 2.0 && (a.w - b.w).abs() < 2.0 && (a.h - b.h).abs() < 2.0
+}
+
+fn capture(window_id: u32, pid: i32, frame: Rect, sheets: &[Rect]) -> Result<RgbaImage, String> {
     if !screen_capture_allowed() {
         // Shows macOS's own prompt the first time; later it only answers.
         unsafe { CGRequestScreenCaptureAccess() };
@@ -1608,9 +1623,13 @@ fn capture(window_id: u32, pid: i32, frame: Rect) -> Result<RgbaImage, String> {
     }
     let options =
         kCGWindowImageBoundsIgnoreFraming | kCGWindowImageNominalResolution | kCGWindowImageShouldBeOpaque;
+    // Over the window: its menus, popovers and panels (above the normal
+    // level) and its sheets — not another document window of the app that
+    // happens to overlap it, which the capture used to paint over it.
     let mut ids: Vec<u32> = cg_windows(kCGWindowListOptionOnScreenAboveWindow, window_id)
         .into_iter()
         .filter(|window| window.pid == pid && window.bounds.intersects(&frame))
+        .filter(|window| window.layer != 0 || sheets.iter().any(|sheet| same_frame(sheet, &window.bounds)))
         .map(|window| window.id)
         .collect();
     ids.push(window_id);
@@ -1662,7 +1681,7 @@ fn encode_jpeg(image: &RgbaImage, quality: u8) -> Result<String, String> {
 }
 
 fn screenshot(target: &Target) -> Result<Value, String> {
-    let captured = capture(target.window_id, target.pid, target.frame)?;
+    let captured = capture(target.window_id, target.pid, target.frame, &sheet_frames(&target.window))?;
     let (width, height) = target.screenshot_size();
     let image = if target.scale < 1.0 {
         imageops::resize(&captured, width, height, imageops::FilterType::Triangle)
@@ -1717,7 +1736,9 @@ pub(crate) fn preview_frame(session_id: &str, max_width: u32) -> Result<Value, S
         Some(window) => (window.id, window.bounds),
         None => (top.id, top.bounds),
     };
-    let captured = capture(window_id, attached.pid, frame)?;
+    let shown = if window_id == top.id { ax.as_ref() } else { dialog.as_ref() };
+    let sheets = shown.map(sheet_frames).unwrap_or_default();
+    let captured = capture(window_id, attached.pid, frame, &sheets)?;
     let (width, height) = (captured.width(), captured.height());
     let preview = if width > max_width {
         let scaled_height = ((height as f64) * (max_width as f64) / (width as f64)).round() as u32;
