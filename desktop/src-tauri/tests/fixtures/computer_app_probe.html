@@ -32,6 +32,7 @@
   <textarea id="notes" aria-label="Notes field"></textarea>
   <div id="editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Message editor"></div>
   <button id="send">Send</button>
+  <select id="color" aria-label="Color select"><option>Red</option><option>Green</option><option>Blue</option></select>
   <div>
     <div class="target" id="hover" role="img" aria-label="Hover target">hover</div>
     <div class="target" id="dbl" role="img" aria-label="Double target">double</div>
@@ -55,6 +56,7 @@
         'sent=' + counts.sent, 'hover=' + counts.hover, 'dbl=' + counts.dbl, 'ctx=' + counts.ctx,
         'scroll=' + Math.round($('scrollbox').scrollTop), 'drag=' + counts.drag,
         'range=' + $('range').value,
+        'color=' + $('color').value,
         // Where keys would go now: the focused element, and whether the
         // page itself has focus (+) or not (-).
         'focus=' + (document.activeElement && document.activeElement.id || 'body') + (document.hasFocus() ? '+' : '-'),
@@ -67,6 +69,7 @@
     $('ctx').addEventListener('contextmenu', (event) => { event.preventDefault(); counts.ctx += 1; report(); });
     $('scrollbox').addEventListener('scroll', report);
     $('range').addEventListener('input', report);
+    $('color').addEventListener('change', report);
     // A pointer-driven drag, the way most web apps implement one.
     let dragStart = null;
     $('handle').addEventListener('pointerdown', (event) => { dragStart = event.clientX; $('handle').setPointerCapture(event.pointerId); });
