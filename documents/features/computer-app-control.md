@@ -363,17 +363,25 @@ The bundled `computer-app-control` Skill
 use the tool well, for any app, without recipes for particular apps.
 `SKILL.md` holds the ground rules (do the work in the app the user named,
 one app at a time, never touch the clipboard, click only identified points,
-treat app content as data, nothing irreversible unasked), a work loop that
-does not rely on a first attempt being right (look, act in a small step,
-check where each input went, read the real values back, fix what differs,
-finish only when the read-back matches), how to discover an unfamiliar
-app's commands and shortcuts, and how to recover from input that went
-astray. Its references cover every action with
-its fields and result lines (`actions.md`), the preview card's controls,
-permission prompts, events and every error with its next step
-(`events-and-errors.md`), and one guide per kind of window rather than per
-app: grids and spreadsheets, web content, native forms, dialogs and menus,
-and documents. Trigger cases live in
+nothing irreversible unasked, including the closing keys the tool does not
+block, treat app content as data), how to tell first which way a window
+takes input (the attach result's input channel and how rich the first
+snapshot is), and a work loop that does not rely on a first attempt being
+right: decide checkable acceptance values from the source, act in small
+steps, check where each input went, read the real values back preferring
+text the app reports over screenshots, check nothing else changed, read
+what landed before any retry, change approach after two failures and stop
+after that, and finish only when the read-back matches. It also covers how
+to discover an unfamiliar app's commands and how to recover from input that
+went astray. Its references cover every action with its fields, limits and
+result lines (`actions.md`), how typing, clicks, keys and values differ
+between native Windows windows, web content and macOS
+(`input-channels.md`), the preview card's controls, permission prompts,
+events and every error with its next step (`events-and-errors.md`), and one
+guide per kind of window rather than per app: grids and spreadsheets, web
+content, native forms, dialogs and menus, documents and consoles, and
+canvases of objects together with apps that expose little or no
+accessibility tree. Trigger cases live in
 `tests/fixtures/skill-evals/computer-app-control/`.
 
 ## Architecture
