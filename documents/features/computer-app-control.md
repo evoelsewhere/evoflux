@@ -403,7 +403,11 @@ and runs its actions one at a time. A hung app or a slow snapshot therefore
 only holds up the chat driving it; the Settings app picker has a worker of its
 own, and a worker retires after ten idle minutes once its session has nothing
 attached. Preview frames are captured on a separate blocking task so they
-never queue behind a long action.
+never queue behind a long action. They do wait for typing, though: a capture
+(`PrintWindow`) that arrived while Excel was opening a cell's editor dropped
+that cell's first characters, so `type` holds a per-session gate and lets a
+waiting capture in only where the app has taken everything in (after an Enter
+or Tab, or every 64 characters of a long run), at most four times a second.
 
 The backend waits 60 s for an action (plus 20 ms per character for `type` and
 `set_value`). When it gives up it sends `cancel` over the bridge, and the
