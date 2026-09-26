@@ -816,16 +816,57 @@ fn describe_window(hwnd: HWND) -> Option<WindowRow> {
         hwnd,
         title,
         pid,
-        app: process_image_name(pid),
+        app: app_name(hwnd, pid),
         minimized: unsafe { IsIconic(hwnd) }.as_bool(),
         frame: frame_rect(hwnd),
         owner,
     })
 }
 
+/// The host process of every Store (UWP) app's window.
+const FRAME_HOST: &str = "ApplicationFrameHost.exe";
+
+/// The executable a window belongs to, as the user knows the app.
+///
+/// A Store app's window belongs to ApplicationFrameHost, whichever app it
+/// frames — so allowing Calculator in Settings allowed Settings too. The app
+/// itself is the process behind the frame's CoreWindow child. A minimized
+/// (suspended) app takes that child out of the frame, and the frame then
+/// keeps the host's name: [`attach_refusal`] refuses it rather than let an
+/// unidentified app through the allow and block lists.
+fn app_name(hwnd: HWND, pid: u32) -> String {
+    process_image_name(app_process(hwnd, pid))
+}
+
+/// The process of the app a window shows: `pid`, or for a Store app's
+/// frame the process behind its CoreWindow (see [`app_name`]).
+fn app_process(hwnd: HWND, pid: u32) -> u32 {
+    if !process_image_name(pid).eq_ignore_ascii_case(FRAME_HOST) {
+        return pid;
+    }
+    let core = unsafe {
+        windows::Win32::UI::WindowsAndMessaging::FindWindowExW(
+            Some(hwnd),
+            None,
+            windows::core::w!("Windows.UI.Core.CoreWindow"),
+            None,
+        )
+    };
+    match core {
+        Ok(core) if !core.0.is_null() && !process_image_name(window_pid(core)).is_empty() => window_pid(core),
+        _ => pid,
+    }
+}
+
 fn attach_refusal(row: &WindowRow) -> Option<String> {
     if row.pid == unsafe { GetCurrentProcessId() } {
         return Some("EvoFlux cannot control its own window.".into());
+    }
+    if row.app.eq_ignore_ascii_case(FRAME_HOST) {
+        return Some(format!(
+            "Windows does not say which Store app \"{}\" is while it is minimized, so it cannot be checked against Settings. Ask the user to restore it, then list windows again.",
+            row.title
+        ));
     }
     if row.app.is_empty() {
         return Some(format!(
@@ -1024,10 +1065,12 @@ pub(crate) fn list_apps() -> Value {
     let own = unsafe { GetCurrentProcessId() };
     let mut apps: HashMap<String, AppEntry> = HashMap::new();
     for row in top_level_windows().into_iter().filter_map(describe_window) {
-        if row.pid == own || is_protected_process_name(&row.app) {
+        // A Store app whose frame does not say which app it is (see
+        // `app_name`) cannot be allowed or blocked by name.
+        if row.pid == own || is_protected_process_name(&row.app) || row.app.eq_ignore_ascii_case(FRAME_HOST) {
             continue;
         }
-        let Some(path) = process_image_path(row.pid) else {
+        let Some(path) = process_image_path(app_process(row.hwnd, row.pid)) else {
             continue;
         };
         let exe = file_name(&path).to_lowercase();
@@ -4485,6 +4528,44 @@ mod live_tests {
             assert!(!is_off_screen(probe), "the probe was left off-screen");
             assert!(!is_off_screen(first), "dialog 1 was left off-screen at {:?}", frame_rect(first));
         });
+    }
+
+    #[test]
+    #[ignore = "opens a Calculator window on the local desktop"]
+    fn names_store_apps_by_their_own_process() {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        }
+        let frames = || -> Vec<Value> {
+            list_windows("live-store", &json!({ "query": "calculator" }))["windows"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        };
+        let before: HashSet<u64> = frames().iter().filter_map(|window| window["id"].as_u64()).collect();
+        std::process::Command::new("cmd").args(["/C", "start", "calc.exe"]).status().expect("start calculator");
+        let mut opened = None;
+        for _ in 0..50 {
+            pause(200);
+            opened = frames().into_iter().find(|window| !before.contains(&window["id"].as_u64().unwrap_or(0)));
+            if opened.is_some() {
+                break;
+            }
+        }
+        let window = opened.expect("Calculator never opened");
+        let hwnd = to_hwnd(window["id"].as_u64().unwrap() as isize);
+        let outcome = std::panic::catch_unwind(|| {
+            // Not ApplicationFrameHost.exe, the host every Store app shares.
+            assert_eq!(window["app"], json!("CalculatorApp.exe"), "{window}");
+            let apps = list_apps();
+            let exes: Vec<&str> = apps["apps"].as_array().unwrap().iter().filter_map(|app| app["exe"].as_str()).collect();
+            assert!(exes.contains(&"calculatorapp.exe"), "{exes:?}");
+            assert!(!exes.contains(&"applicationframehost.exe"), "{exes:?}");
+        });
+        let _ = post(hwnd, windows::Win32::UI::WindowsAndMessaging::WM_CLOSE, 0, LPARAM(0));
+        if let Err(panic) = outcome {
+            std::panic::resume_unwind(panic);
+        }
     }
 
     #[test]

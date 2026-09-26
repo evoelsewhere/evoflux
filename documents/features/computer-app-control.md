@@ -181,6 +181,15 @@ UWP/CoreWindow surfaces or apps running as administrator (UIPI). Points on the
 window frame or title bar are refused. For those, UI Automation actions are the
 fallback.
 
+Store (UWP) apps: every one's window belongs to `ApplicationFrameHost.exe`, so
+by that name allowing Calculator in Settings would allow Settings too. A
+Store app's window is named after the process behind its CoreWindow instead
+(`CalculatorApp.exe`, `SystemSettings.exe`), in `list_windows`, the policy
+check and the app picker (`names_store_apps_by_their_own_process`). A
+minimized Store app takes its CoreWindow out of the frame, so it cannot be
+identified: it is left out of `list_windows` and the picker, and attaching it
+is refused until the user restores it.
+
 ## macOS
 
 The macOS backend (`desktop/src-tauri/src/computer_app/mac.rs`) keeps the same
