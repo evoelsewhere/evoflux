@@ -89,7 +89,9 @@ export function ComputerAppPipHost({
   const { t } = useI18n()
   const viewportRef = useRef<HTMLDivElement>(null)
   const [placement, setPlacement] = useState<PreviewPlacement>(
-    () => loadPreviewPlacement(PLACEMENT_KEY, 1),
+    // A desktop app is a whole window: at the small size its text is a blur,
+    // so the card opens large enough to read until the user sizes it.
+    () => loadPreviewPlacement(PLACEMENT_KEY, 1, PREVIEW_SIZES.large),
   )
   const [gesture, setGesture] = useState<'move' | 'resize' | null>(null)
   const [frame, setFrame] = useState<ComputerFrame | null>(null)

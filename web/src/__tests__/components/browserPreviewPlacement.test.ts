@@ -110,4 +110,16 @@ describe('loading a stored placement', () => {
     expect(placement.width).toBe(PREVIEW_SIZES.small.width)
     expect(placement.x).toBeGreaterThan(0)
   })
+
+  it('opens a card with nothing saved at its own default size, left of a small card', () => {
+    const placement = loadPreviewPlacement(
+      STORAGE_KEYS.computerApp.previewPlacement,
+      1,
+      PREVIEW_SIZES.large,
+    )
+    expect(placement.width).toBe(PREVIEW_SIZES.large.width)
+    expect(placement.height).toBe(PREVIEW_SIZES.large.height)
+    const right = placement.x + placement.width
+    expect(right).toBeLessThanOrEqual(window.innerWidth - PREVIEW_SIZES.small.width)
+  })
 })
