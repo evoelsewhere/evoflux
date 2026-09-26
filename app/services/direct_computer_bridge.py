@@ -54,6 +54,18 @@ class DirectComputerBridge:
 
     def __init__(self) -> None:
         self._connections: dict[str, _Connection] = {}
+        # Sessions whose user closed the preview card during the current turn.
+        self._closed: set[str] = set()
+
+    def mark_closed(self, session_id: str) -> None:
+        """The user closed the session's card: no attach until the turn ends.
+
+        Closing the card detached the app, and the agent attached it again
+        at once, reopening the card the user had just closed."""
+        self._closed.add(session_id)
+
+    def is_closed(self, session_id: str) -> bool:
+        return session_id in self._closed
 
     def is_connected(self, session_id: str) -> bool:
         connection = self._connections.get(session_id)
@@ -185,8 +197,10 @@ class DirectComputerBridge:
         a turn that ended while the user was in another chat left its app
         hidden for good. The card is open while an app is attached, so its
         socket is too; a session with nothing attached (or stopped, whose
-        card must stay) is left alone.
+        card must stay) is left alone. A card closed during the turn allows
+        attaching again from the next turn on.
         """
+        self._closed.discard(session_id)
         if not self.is_connected(session_id):
             return
         status = await self.request(session_id, "status", {}, timeout=10.0)

@@ -390,6 +390,19 @@ async def test_a_refused_attach_does_not_type_into_the_previous_app(
 
 
 @pytest.mark.asyncio
+async def test_no_attach_after_the_user_closed_the_card(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True)
+    requests = _fake_bridge(monkeypatch, {"list_windows": _WINDOWS})
+    monkeypatch.setattr(direct_computer_bridge, "_closed", {"desktop-session"})
+
+    result = await _run({"action": "attach", "window_id": 11})
+
+    assert isinstance(result, str)
+    assert "closed the app preview" in result
+    assert requests == []
+
+
+@pytest.mark.asyncio
 async def test_an_app_blocked_after_attaching_is_handed_back(monkeypatch) -> None:
     _use_policy(monkeypatch, enabled=True, blocked_apps=["excel"])
     requests = _fake_bridge(

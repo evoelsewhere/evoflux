@@ -508,6 +508,12 @@ async def _attach(session_id: str, params: dict[str, Any], policy: Any) -> Any:
     """Resolve the window here so policy is checked before anything attaches."""
     from app.services.direct_computer_bridge import direct_computer_bridge
 
+    if direct_computer_bridge.is_closed(session_id):
+        raise ValueError(
+            "The user closed the app preview during this turn, which ends app "
+            "control until the turn is over. Do not attach again: finish without "
+            "the app, or ask the user whether you may use it."
+        )
     listing = await direct_computer_bridge.request(session_id, "list_windows", {})
     windows = listing.get("windows", []) if isinstance(listing, dict) else []
     window_id = params.get("window_id")

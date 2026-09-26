@@ -4,7 +4,8 @@ Router groups (split across modules to keep each file focused on one
 resource):
 
 - :mod:`app.api.routes.team.app_search` — POST /search-app
-- :mod:`app.api.routes.team.computer` — WS/GET /{sid}/computer/agent
+- :mod:`app.api.routes.team.computer` — WS/GET /{sid}/computer/agent,
+  POST /{sid}/computer/closed
 - :mod:`app.api.routes.team.chat` — POST /chat, GET /{sid}/stream,
   GET /agents, GET /sessions, DELETE /sessions/{sid}, GET /{sid}/history
 - :mod:`app.api.routes.team.files` — GET /{sid}/uploads/{filename},

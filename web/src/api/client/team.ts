@@ -193,6 +193,18 @@ export function resolveApiUrl(url: string | undefined): string | undefined {
   return url
 }
 
+/**
+ * Tell the backend the user closed a chat's Computer App Control card: the
+ * agent may not attach an app again until its turn ends.
+ */
+export async function postComputerCardClosed(sessionId: string): Promise<void> {
+  const res = await fetch(
+    `${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/computer/closed`,
+    { method: 'POST' },
+  )
+  if (!res.ok) throw new Error(`POST computer card closed failed: ${res.status}`)
+}
+
 export async function cancelQueuedTeamMessage(sessionId: string, messageId: string): Promise<void> {
   const res = await fetch(
     `${apiBaseUrl()}/team/sessions/${encodeURIComponent(sessionId)}/queued-messages/${encodeURIComponent(messageId)}`,

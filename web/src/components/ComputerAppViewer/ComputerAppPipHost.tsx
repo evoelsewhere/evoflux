@@ -27,7 +27,7 @@ import {
   X,
 } from 'lucide-react'
 
-import { postTeamChat } from '@/api/client/team'
+import { postComputerCardClosed, postTeamChat } from '@/api/client/team'
 import { Button } from '@/components/ui/button'
 import {
   clampPreviewPlacement,
@@ -251,8 +251,12 @@ export function ComputerAppPipHost({
     }
   }, [reportFailure, sessionId, t])
 
-  /** Closing the card ends control: the agent never drives an app unwatched. */
+  /**
+   * Closing the card ends control: the agent never drives an app unwatched,
+   * and may not attach one again (reopening the card) until its turn ends.
+   */
   const closeCard = useCallback(() => {
+    void postComputerCardClosed(sessionId).catch(() => undefined)
     void runComputerAppCommand(sessionId, 'detach', {})
     closePip(sessionId)
   }, [closePip, sessionId])
