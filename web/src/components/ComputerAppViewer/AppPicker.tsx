@@ -125,9 +125,17 @@ export function AppPicker({
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault()
-                const first = filtered[0]
+                // Enter only adds: toggling the first match took an app back
+                // off the list when it was already on it (a second Enter, or
+                // Enter with an empty search). Removing is the ✕ or a click.
+                // A typed name is added only when no app matches it; the
+                // "Add" row stays there to click otherwise.
+                if (!query.trim()) return
+                const first = filtered.find((app) => !selected.has(app.exe))
                 if (first) toggle(first.exe)
-                else if (canAddCustom) toggle(custom)
+                else if (filtered.length === 0 && canAddCustom) toggle(custom)
+                else return
+                setQuery('')
               } else if (event.key === 'Escape') {
                 setOpen(false)
               }
