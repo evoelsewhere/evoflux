@@ -26,7 +26,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Threading::{
     AttachThreadInput, GetCurrentProcessId, GetCurrentThreadId, OpenProcess,
@@ -58,7 +58,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_SPACE, VK_SUBTRACT, VK_T, VK_TAB, VK_U, VK_UP, VK_V, VK_W, VK_X, VK_Y, VK_Z,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ChildWindowFromPointEx, EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow,
+    BM_CLICK, ChildWindowFromPointEx, EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow,
     GetGUIThreadInfo, GetSystemMetrics, GetWindow, GetWindowLongPtrW, GetWindowPlacement,
     GetWindowRect, GetWindowTextW, IsZoomed, SetWindowPlacement, SetWindowPos,
     SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
@@ -2876,7 +2876,83 @@ fn ui_action_for(element: &IUIAutomationElement) -> Option<UiAction> {
     (!default_action.trim().is_empty()).then_some(UiAction::Default(legacy))
 }
 
-fn perform(action: &UiAction) -> windows::core::Result<&'static str> {
+/// How long an action may take before the app is taken to be busy with it.
+const UI_ACTION_WAIT: Duration = Duration::from_millis(1500);
+
+const STILL_RUNNING_NOTE: &str = "The app is still handling this, most likely in a dialog it opened. Take a snapshot to see it; do not repeat the action.";
+
+/// A Win32 push button (a WinForms one included): the window itself, when
+/// `element` is one.
+fn win32_push_button(element: &IUIAutomationElement) -> Option<HWND> {
+    let hwnd = unsafe { element.CurrentNativeWindowHandle() }.ok()?;
+    if hwnd.0.is_null() {
+        return None;
+    }
+    let class = class_name(hwnd).to_lowercase();
+    // WinForms draws its buttons itself (BS_OWNERDRAW on top of the kind),
+    // so the style does not tell them apart; a check box among them offers
+    // Toggle rather than the Invoke this is used for.
+    if class.starts_with("windowsforms10.button") {
+        return Some(hwnd);
+    }
+    // Push, default, owner-drawn, split and command-link buttons; not check
+    // boxes, radio buttons or group boxes, which share the class.
+    let kind = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } & 0xF;
+    (class == "button" && matches!(kind, 0x0 | 0x1 | 0xB..=0xF)).then_some(hwnd)
+}
+
+/// Perform `action` on `element`. Returns the pattern used, and whether the
+/// app is still busy with it.
+///
+/// A button that opens a modal dialog does not return from Invoke until the
+/// dialog closes (WinForms clicks it synchronously), and meanwhile every
+/// other UI Automation call into the app waits too, until a timeout of about
+/// a minute — the click was then reported as refused, inviting a second one.
+/// A Win32 push button is therefore clicked with a posted `BM_CLICK`, which
+/// the app handles from its own message loop. Anything else runs on a thread
+/// of its own; one still running after [`UI_ACTION_WAIT`] is left to finish
+/// there and reported as delivered.
+fn perform(element: &IUIAutomationElement, action: UiAction) -> windows::core::Result<(&'static str, bool)> {
+    if matches!(action, UiAction::Invoke(_) | UiAction::Default(_)) {
+        if let Some(button) = win32_push_button(element) {
+            let posted = unsafe { PostMessageW(Some(button), BM_CLICK, WPARAM(0), LPARAM(0)) };
+            return posted.map(|_| ("click_message", false));
+        }
+    }
+    struct Movable(UiAction);
+    // UI Automation objects are free-threaded; both threads are in the MTA.
+    unsafe impl Send for Movable {}
+    let label = match &action {
+        UiAction::Invoke(_) => "invoke",
+        UiAction::Toggle(_) => "toggle",
+        UiAction::Select(_) => "select",
+        UiAction::ExpandCollapse(_) => "expand",
+        UiAction::Default(_) => "default_action",
+    };
+    let (done, outcome) = mpsc::channel();
+    let action = Movable(action);
+    let spawned = std::thread::Builder::new()
+        .name("computer-app-ui-action".into())
+        .spawn(move || {
+            let action = action;
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            }
+            let result = perform_now(&action.0);
+            drop(action);
+            let _ = done.send(result);
+            unsafe { CoUninitialize() };
+        });
+    if spawned.is_err() {
+        return Err(windows::core::Error::from_win32());
+    }
+    match outcome.recv_timeout(UI_ACTION_WAIT) {
+        Ok(result) => result.map(|used| (used, false)),
+        Err(_) => Ok((label, true)),
+    }
+}
+
+fn perform_now(action: &UiAction) -> windows::core::Result<&'static str> {
     unsafe {
         match action {
             UiAction::Invoke(p) => p.Invoke().map(|_| "invoke"),
@@ -3086,9 +3162,9 @@ fn click_via_automation(
         let name = bstr(unsafe { element.CurrentName() });
         target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
-        let used = perform(&action).map_err(|error| format!("\"{name}\" refused the click: {error}"))?;
+        let (used, busy) = perform(element, action).map_err(|error| format!("\"{name}\" refused the click: {error}"))?;
         let (x, y) = target.screenshot_point(point);
-        return Ok(Some(json!({
+        let mut result = json!({
             "pointer": { "x": x, "y": y },
             "delivered_to": name,
             "delivered_via": "ui_automation",
@@ -3096,7 +3172,11 @@ fn click_via_automation(
             "window": window_title(target.window),
             "button": "left",
             "clicks": 1,
-        })));
+        });
+        if busy {
+            result["note"] = json!(STILL_RUNNING_NOTE);
+        }
+        return Ok(Some(result));
     }
     // In web content a text field has no action and posted clicks cannot
     // reach it; remembering it is what makes the next `type` land there.
@@ -3287,9 +3367,13 @@ fn invoke(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value
     } else {
         forget_editable(&target.session_id);
     }
-    let used = perform(&action)
+    let (used, busy) = perform(&element, action)
         .map_err(|error| format!("{reference} (\"{name}\") refused the action: {error}"))?;
-    Ok(json!({ "ref": reference, "name": name, "pattern": used, "window": window_title(target.window) }))
+    let mut result = json!({ "ref": reference, "name": name, "pattern": used, "window": window_title(target.window) });
+    if busy {
+        result["note"] = json!(STILL_RUNNING_NOTE);
+    }
+    Ok(result)
 }
 
 fn set_value(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
