@@ -274,6 +274,9 @@ fn park(hwnd: HWND) -> Option<WINDOWPLACEMENT> {
     };
     unsafe {
         GetWindowPlacement(hwnd, &mut placement).ok()?;
+        // On disk first, so no moment passes with the window off-screen
+        // and its place known only in memory.
+        remember_parked(hwnd, placement);
         if IsIconic(hwnd).as_bool() || IsZoomed(hwnd).as_bool() {
             // Back to its normal size first: a maximized window is pinned to
             // its monitor and a minimized one has no size to render.
@@ -285,8 +288,135 @@ fn park(hwnd: HWND) -> Option<WINDOWPLACEMENT> {
     Some(placement)
 }
 
+// ── Parked windows on disk ──────────────────────────────────────────────
+//
+// Where a parked window belongs lived only in memory: if EvoFlux crashed or
+// was killed, the app stayed off-screen, reachable only by keyboard tricks.
+// Every parked window is also written to a file, and taken out of it once
+// it is back; the next start puts back whatever a previous run left behind.
+
+#[derive(Clone, Copy)]
+struct Stranded {
+    hwnd: isize,
+    pid: u32,
+    placement: WINDOWPLACEMENT,
+}
+
+static STRANDED: Lazy<Mutex<Vec<Stranded>>> = Lazy::new(|| Mutex::new(Vec::new()));
+static STRANDED_FILE: once_cell::sync::OnceCell<std::path::PathBuf> = once_cell::sync::OnceCell::new();
+
+fn stranded() -> std::sync::MutexGuard<'static, Vec<Stranded>> {
+    STRANDED.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn placement_json(placement: &WINDOWPLACEMENT) -> Value {
+    let normal = placement.rcNormalPosition;
+    json!({
+        "flags": placement.flags.0,
+        "show": placement.showCmd,
+        "min": [placement.ptMinPosition.x, placement.ptMinPosition.y],
+        "max": [placement.ptMaxPosition.x, placement.ptMaxPosition.y],
+        "normal": [normal.left, normal.top, normal.right, normal.bottom],
+    })
+}
+
+fn placement_from_json(value: &Value) -> Option<WINDOWPLACEMENT> {
+    let numbers = |key: &str| -> Option<Vec<i32>> {
+        value.get(key)?.as_array()?.iter().map(|n| n.as_i64().map(|n| n as i32)).collect()
+    };
+    let (min, max, normal) = (numbers("min")?, numbers("max")?, numbers("normal")?);
+    if min.len() != 2 || max.len() != 2 || normal.len() != 4 {
+        return None;
+    }
+    Some(WINDOWPLACEMENT {
+        length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+        flags: WINDOWPLACEMENT_FLAGS(value.get("flags")?.as_u64()? as u32),
+        showCmd: value.get("show")?.as_u64()? as u32,
+        ptMinPosition: POINT { x: min[0], y: min[1] },
+        ptMaxPosition: POINT { x: max[0], y: max[1] },
+        rcNormalPosition: RECT { left: normal[0], top: normal[1], right: normal[2], bottom: normal[3] },
+    })
+}
+
+fn save_stranded(list: &[Stranded]) {
+    let Some(path) = STRANDED_FILE.get() else {
+        return;
+    };
+    let entries: Vec<Value> = list
+        .iter()
+        .map(|entry| json!({ "hwnd": entry.hwnd, "pid": entry.pid, "placement": placement_json(&entry.placement) }))
+        .collect();
+    if let Err(error) = std::fs::write(path, Value::Array(entries).to_string()) {
+        log::warn!("computer app: could not record parked windows: {error}");
+    }
+}
+
+fn remember_parked(hwnd: HWND, placement: WINDOWPLACEMENT) {
+    let mut list = stranded();
+    list.retain(|entry| entry.hwnd != hwnd.0 as isize);
+    list.push(Stranded { hwnd: hwnd.0 as isize, pid: window_pid(hwnd), placement });
+    save_stranded(&list);
+}
+
+fn forget_parked(hwnd: HWND) {
+    let mut list = stranded();
+    let before = list.len();
+    list.retain(|entry| entry.hwnd != hwnd.0 as isize);
+    if list.len() != before {
+        save_stranded(&list);
+    }
+}
+
+/// Start recording parked windows in `dir`, and put back any window that a
+/// previous run left parked: still open, still the same process's, still
+/// off-screen. Runs on a thread of its own, since moving a window waits for
+/// its app.
+pub(crate) fn recover_stranded(dir: std::path::PathBuf) {
+    let path = dir.join("computer_app_parked.json");
+    let leftovers = load_stranded(&path);
+    let _ = std::fs::create_dir_all(&dir);
+    if STRANDED_FILE.set(path).is_err() {
+        return;
+    }
+    // Recorded until put back, in case this run does not get that far.
+    stranded().extend(leftovers.iter().copied());
+    off_ui_thread(move || put_back(leftovers));
+}
+
+fn load_stranded(path: &std::path::Path) -> Vec<Stranded> {
+    let recorded: Vec<Value> = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default();
+    recorded
+        .iter()
+        .filter_map(|entry| {
+            Some(Stranded {
+                hwnd: entry.get("hwnd")?.as_i64()? as isize,
+                pid: entry.get("pid")?.as_u64()? as u32,
+                placement: placement_from_json(entry.get("placement")?)?,
+            })
+        })
+        .collect()
+}
+
+fn put_back(leftovers: Vec<Stranded>) {
+    for entry in leftovers {
+        let hwnd = to_hwnd(entry.hwnd);
+        // A window handle can be reused once its window is gone.
+        let same = unsafe { IsWindow(Some(hwnd)) }.as_bool() && window_pid(hwnd) == entry.pid;
+        if same && is_off_screen(hwnd) {
+            log::info!("computer app: putting back a window left off-screen by a previous run");
+            unpark(hwnd, entry.placement, false);
+        } else {
+            forget_parked(hwnd);
+        }
+    }
+}
+
 fn unpark(hwnd: HWND, placement: WINDOWPLACEMENT, activate: bool) {
     if !unsafe { IsWindow(Some(hwnd)) }.as_bool() {
+        forget_parked(hwnd);
         return;
     }
     let mut restore = placement;
@@ -308,6 +438,7 @@ fn unpark(hwnd: HWND, placement: WINDOWPLACEMENT, activate: bool) {
     unsafe {
         let _ = SetWindowPlacement(hwnd, &restore);
     }
+    forget_parked(hwnd);
     bring_dialogs_back(hwnd, placement.rcNormalPosition);
 }
 
@@ -3678,6 +3809,24 @@ mod tests {
     }
 
     #[test]
+    fn records_a_window_placement_exactly() {
+        let placement = WINDOWPLACEMENT {
+            length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
+            flags: WPF_RESTORETOMAXIMIZED,
+            showCmd: SW_SHOWMINIMIZED.0 as u32,
+            ptMinPosition: POINT { x: -32000, y: -32000 },
+            ptMaxPosition: POINT { x: -1, y: -1 },
+            rcNormalPosition: RECT { left: -1800, top: 40, right: -600, bottom: 900 },
+        };
+        let back = placement_from_json(&placement_json(&placement)).unwrap();
+        assert_eq!(
+            (back.flags, back.showCmd, back.ptMinPosition, back.ptMaxPosition, back.rcNormalPosition),
+            (placement.flags, placement.showCmd, placement.ptMinPosition, placement.ptMaxPosition, placement.rcNormalPosition)
+        );
+        assert!(placement_from_json(&json!({ "flags": 0 })).is_none());
+    }
+
+    #[test]
     fn confirms_native_typing_only_when_the_text_arrived_in_order() {
         assert!(typed_landed("abc", "abc hidden ok", " hidden ok"));
         // A rich edit stores line breaks as "\r".
@@ -4336,6 +4485,31 @@ mod live_tests {
             assert!(!is_off_screen(probe), "the probe was left off-screen");
             assert!(!is_off_screen(first), "dialog 1 was left off-screen at {:?}", frame_rect(first));
         });
+    }
+
+    #[test]
+    #[ignore = "opens a WinForms window on the local desktop"]
+    fn puts_back_a_window_parked_by_a_run_that_crashed() {
+        let dir = std::env::temp_dir().join(format!("evoflux-parked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        recover_stranded(dir.clone());
+        let file = dir.join("computer_app_parked.json");
+        with_dialog_probe(|_, session, probe| {
+            assert!(is_off_screen(probe));
+            let recorded = load_stranded(&file);
+            assert!(recorded.iter().any(|entry| entry.hwnd == probe.0 as isize), "the parked window was not recorded");
+
+            // The crash: EvoFlux's memory is gone, the window is not back.
+            registry().attached.remove(session);
+            stranded().clear();
+
+            // The next start.
+            stranded().extend(recorded.iter().copied());
+            put_back(recorded);
+            assert!(!is_off_screen(probe), "the window was left off-screen");
+            assert!(load_stranded(&file).is_empty(), "a window put back is still recorded");
+        });
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

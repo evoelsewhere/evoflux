@@ -6239,6 +6239,10 @@ fn main() {
         ])
         .setup(|app| {
             install_desktop_menus(app)?;
+            match app.path().app_local_data_dir() {
+                Ok(dir) => computer_app::recover_stranded(dir),
+                Err(error) => log::warn!("computer app: no local data dir to record parked windows: {error}"),
+            }
             if let Err(error) = native_messaging::install(app.handle()) {
                 log::warn!("could not install WebBridge native messaging host: {error:#}");
             }
