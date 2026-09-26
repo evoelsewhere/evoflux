@@ -155,6 +155,15 @@ Moving another app's window waits for that app, so on Windows Stop, **Show
 the app** and exit move it from a thread of their own: a hung app cannot
 freeze EvoFlux, and holds up exit for at most three seconds.
 
+Dialogs are top-level windows of their own, and Windows (and WinForms)
+keeps them on a monitor, so a parked app's dialogs used to open on the
+user's screen. On Windows a `EVENT_OBJECT_SHOW` hook moves any captioned
+window a parked window owns (a dialog, one opened from a dialog, a tool
+window) over its parked owner as it is shown; the next action also parks
+one that got past it. When the window is handed back, its open dialogs are
+centred back over it, so the user never faces an app blocked by a dialog
+they cannot see (`keeps_a_parked_apps_dialogs_off_screen`).
+
 Edge and Electron apps have one catch: Chromium stops repainting and stops
 updating its accessibility values while its own window is hidden. Input still
 arrives, but the card's picture, screenshots and snapshot values can lag
