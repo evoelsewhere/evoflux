@@ -257,8 +257,25 @@ window list and cannot be attached until the user brings it to the current
 desktop. Posted mouse and key events may be ignored by an app in the
 background or may bring it forward, which is why they are only the fallback.
 Chromium may stop repainting a window it considers covered, so a parked
-browser's picture can lag behind; snapshot reads the live state. Run
-`cargo test computer_app -- --ignored --nocapture` on a Mac (with the terminal
+browser's picture can lag behind; snapshot reads the live state.
+
+Not yet handled, and to be checked on a Mac:
+
+- The Open and Save panels of a sandboxed app run in a process of their own
+  (`com.apple.appkit.xpc.openAndSavePanelService`), so they are neither
+  captured with the app nor reachable through its accessibility tree.
+- Posted key events are typed through the active input method and keyboard
+  layout: Telex or Pinyin may rewrite them, and key codes assume a US layout,
+  so a shortcut posted as keys (not through the menu bar) can press another
+  key on AZERTY or other layouts. Text inserted through accessibility is not
+  affected.
+- Enter posted to a background web app (Slack, Teams, VS Code) may not send,
+  since AppKit delivers keys only to the key window.
+- Capture uses `CGWindowListCreateImage`, deprecated since macOS 14; on
+  macOS 15 it can bring back the Screen Recording prompt periodically.
+  ScreenCaptureKit is the replacement.
+
+Run `cargo test computer_app -- --ignored --nocapture` on a Mac (with the terminal
 allowed Accessibility and Screen Recording) for the live TextEdit test, which
 types into a document, saves it with ⌘S through the menu bar while a second
 document opened later is TextEdit's main window, and checks the frontmost app
