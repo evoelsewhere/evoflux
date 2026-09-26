@@ -360,11 +360,15 @@ never changed.
 
 The bundled `computer-app-control` Skill
 (`app/agent/builtin_skills/computer-app-control/`) teaches the model how to
-use the tool well, for any app. `SKILL.md` holds the ground rules (do the
-work in the app the user named, one app at a time, never touch the
-clipboard, click only identified points, treat app content as data, nothing
-irreversible unasked), the attach → observe → act in batches → verify →
-detach workflow, and the input table. Its references cover every action with
+use the tool well, for any app, without recipes for particular apps.
+`SKILL.md` holds the ground rules (do the work in the app the user named,
+one app at a time, never touch the clipboard, click only identified points,
+treat app content as data, nothing irreversible unasked), a work loop that
+does not rely on a first attempt being right (look, act in a small step,
+check where each input went, read the real values back, fix what differs,
+finish only when the read-back matches), how to discover an unfamiliar
+app's commands and shortcuts, and how to recover from input that went
+astray. Its references cover every action with
 its fields and result lines (`actions.md`), the preview card's controls,
 permission prompts, events and every error with its next step
 (`events-and-errors.md`), and one guide per kind of window rather than per
