@@ -141,8 +141,12 @@ Nothing calls `SendInput`, `SetCursorPos` or `SetForegroundWindow` for the
 agent. A minimized app is restored with `SW_SHOWNOACTIVATE`; a window disabled
 by a modal dialog is transparently replaced by that dialog for capture and
 input. Coordinates are always pixels of the latest screenshot of the attached
-window; windows larger than 1568 px on their long edge are scaled down and
-mapped back.
+window; a window larger than 1568 px on its long edge or 1.15 megapixels in
+all is scaled down and mapped back (`geometry::screenshot_scale`, shared by
+both platforms). The pixel limit matters: the model API scales a larger image
+down again before the model sees it, and the model then answers in that
+smaller image's pixels — a 16:9 window at 1568×882 had its clicks land short,
+more so towards the right and bottom.
 
 EvoFlux measures everything in physical pixels (it is per-monitor DPI aware),
 but Windows gives a DPI-unaware or system-aware app on a scaled display
@@ -188,6 +192,22 @@ local data folder, and taken out once it is back: if EvoFlux crashed, was
 killed, or timed out on a hung app at exit, the next start puts back each
 recorded window that is still open, still the same process's and still
 off-screen (`puts_back_a_window_parked_by_a_run_that_crashed`).
+
+On Windows a parked window the user could resize is also given a fixed
+size — the **stage** — once it is off-screen: 1280×800 physical pixels, or
+1024×640 logical pixels on a display scaled past 125% (`stage_size`). The
+agent's screenshot is then the window pixel for pixel, with no scaling to
+round its coordinates, and an app lays itself out the same way in every
+session rather than by however the user last sized it. A fixed-size dialog or
+tool window keeps its own size. Detach restores the window's own size with its
+placement (`drives_notepad_in_the_background`, `drives_excel_on_the_stage`).
+
+Capture stays with `PrintWindow`. Windows.Graphics.Capture was measured as
+the alternative and rejected: for a window off every monitor it delivered
+stale frames — Windows 11 Notepad's editor (DirectComposition) still showed
+its size and text from before parking, while `PrintWindow` showed both as
+they were; in Excel it matched `PrintWindow` only when frames were drained
+continuously.
 
 Dialogs, menus, floating panes and palettes are top-level windows of their
 own, and Windows (and WinForms) keeps them on a monitor or where the app last

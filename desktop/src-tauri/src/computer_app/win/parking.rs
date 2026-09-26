@@ -49,6 +49,57 @@ pub(super) fn move_off_screen(hwnd: HWND) {
     }
 }
 
+// ── The stage: a fixed-size screen for a parked window ──────────────────
+//
+// Off every monitor, a parked window is sized like a screen of its own:
+// the same size every time, and small enough that its screenshot reaches
+// the agent pixel for pixel (see `screenshot_scale`). The agent's
+// coordinates are then the window's, with no scaling to round them, and the
+// app lays itself out the same way in every session instead of by however
+// the user last sized it. On release it gets its own placement back.
+
+/// The stage in physical pixels: 1280×800 — within the screenshot limits —
+/// unless that is less than 1024×640 logical pixels on a scaled display,
+/// where an app laid out in less (a ribbon, a dialog) starts to fold away.
+pub(super) fn stage_size(dpi: u32) -> (i32, i32) {
+    const STAGE: (i32, i32) = (1280, 800);
+    const MIN_LOGICAL: (i32, i32) = (1024, 640);
+    let scale = f64::from(dpi.max(96)) / 96.0;
+    let at_least = |logical: i32| (f64::from(logical) * scale).round() as i32;
+    (STAGE.0.max(at_least(MIN_LOGICAL.0)), STAGE.1.max(at_least(MIN_LOGICAL.1)))
+}
+
+/// Give a parked window the stage's size. Only a window the user could
+/// resize themselves is resized: a fixed-size dialog or tool window lays
+/// itself out for its own size and nothing else.
+fn fit_to_stage(hwnd: HWND) {
+    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+    if style & WS_THICKFRAME.0 == 0 {
+        return;
+    }
+    let (width, height) = stage_size(unsafe { GetDpiForWindow(hwnd) });
+    let mut window_rect = RECT::default();
+    unsafe {
+        let _ = GetWindowRect(hwnd, &mut window_rect);
+    }
+    // The stage is the visible frame; the window rectangle adds the
+    // invisible resize borders around it.
+    let frame = frame_rect(hwnd);
+    let borders_x = (window_rect.right - window_rect.left) - (frame.right - frame.left);
+    let borders_y = (window_rect.bottom - window_rect.top) - (frame.bottom - frame.top);
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            width + borders_x.max(0),
+            height + borders_y.max(0),
+            SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        );
+    }
+}
+
 pub(super) fn park(hwnd: HWND) -> Option<WINDOWPLACEMENT> {
     let mut placement = WINDOWPLACEMENT {
         length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,
@@ -67,6 +118,10 @@ pub(super) fn park(hwnd: HWND) -> Option<WINDOWPLACEMENT> {
         }
     }
     move_off_screen(hwnd);
+    // Sized once it is off-screen: moving there can change its DPI, and the
+    // app rescales itself to the new one first.
+    std::thread::sleep(Duration::from_millis(100));
+    fit_to_stage(hwnd);
     Some(placement)
 }
 

@@ -13,7 +13,7 @@
 //! | Module         | Concern                                                        |
 //! |----------------|----------------------------------------------------------------|
 //! | `registry`     | Which window each chat drives; Stop, Resume, Reveal; refs      |
-//! | `parking`      | Keeping an app off-screen, and putting it back (also on crash) |
+//! | `parking`      | Off-screen stage for an app; putting it back (also on crash)   |
 //! | `listing`      | Enumerating windows and processes; what may never be attached  |
 //! | `catalog`      | Installed and running apps (Settings picker, `search_apps`)    |
 //! | `attachment`   | `status`, `attach`, `detach`                                   |
@@ -77,6 +77,7 @@ use windows::Win32::UI::Accessibility::{
     UIA_LegacyIAccessiblePatternId, UIA_SelectionItemPatternId, UIA_TogglePatternId,
     UIA_ValuePatternId,
 };
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardState, IsWindowEnabled, MapVirtualKeyW, SetKeyboardState, VkKeyScanW,
     MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9,
@@ -103,7 +104,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, PostMessageW,
     SendMessageTimeoutW, SetForegroundWindow, ShowWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
     CWP_SKIPTRANSPARENT, GA_ROOT, GUITHREADINFO, GWL_EXSTYLE, GW_ENABLEDPOPUP, GW_OWNER,
-    GWL_STYLE, WS_CAPTION, WS_CHILD, WS_POPUP, CHILDID_SELF, EVENT_OBJECT_SHOW, OBJID_WINDOW,
+    GWL_STYLE, WS_CAPTION, WS_CHILD, WS_POPUP, WS_THICKFRAME, CHILDID_SELF, EVENT_OBJECT_SHOW, OBJID_WINDOW,
     WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, MSG, GetMessageW, DispatchMessageW,
     SMTO_ABORTIFHUNG, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CHAR, WM_KEYDOWN, WM_KEYUP,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN,

@@ -846,6 +846,93 @@ fn a_layered_window_keeps_its_opacity_after_a_peek() {
     });
 }
 
+/// Top-level Excel windows: (window id, pid).
+fn excel_windows() -> Vec<(u64, u32)> {
+    list_windows("live-test", &json!({ "query": "excel" }))["windows"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter(|window| window["app"].as_str().unwrap_or("").eq_ignore_ascii_case("excel.exe"))
+        .map(|window| (window["id"].as_u64().unwrap_or(0), window["pid"].as_u64().unwrap_or(0) as u32))
+        .collect()
+}
+
+/// Excel, parked on the stage: sized to it, screenshotted pixel for pixel,
+/// and each typed entry lands in the grid and shows in the next picture.
+/// Starts an Excel instance of its own (`/x`) and ends only that one, so a
+/// workbook the user has open is never touched. Leaves each step's
+/// screenshot in the temp folder.
+#[test]
+#[ignore = "opens an Excel window on the local desktop"]
+fn drives_excel_on_the_stage() {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
+    let before: Vec<u32> = excel_windows().into_iter().map(|(_, pid)| pid).collect();
+    if std::process::Command::new("cmd")
+        .args(["/C", "start", "", "/min", "excel.exe", "/x", "/e"])
+        .status()
+        .map_or(true, |status| !status.success())
+    {
+        eprintln!("skipped: Excel is not installed");
+        return;
+    }
+    let mut launched = None;
+    for _ in 0..100 {
+        pause(300);
+        launched = excel_windows().into_iter().find(|(_, pid)| !before.contains(pid));
+        if launched.is_some() {
+            break;
+        }
+    }
+    let Some((window_id, pid)) = launched else {
+        eprintln!("skipped: no new Excel window appeared");
+        return;
+    };
+    let session = "live-test-excel";
+    let emit = |_: Value| {};
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // Excel paints its first workbook a moment after the window shows.
+        pause(2500);
+        let attached = run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": true })).unwrap();
+        eprintln!("attached: {attached}");
+        let excel = to_hwnd(window_id as isize);
+        let frame = frame_rect(excel);
+        assert_eq!(
+            (frame.right - frame.left, frame.bottom - frame.top),
+            stage_size(unsafe { GetDpiForWindow(excel) }),
+            "Excel was not sized to the stage"
+        );
+        // `/e` starts without a workbook: open a blank one to type into.
+        run_action(&emit, session, "key", &json!({ "key": "ctrl+n" })).unwrap();
+        pause(3000);
+        let folder = std::env::temp_dir();
+        eprintln!("pictures in {}", folder.display());
+        let mut previous = capture(excel).unwrap();
+        for (step, text) in ["12345\n", "67890\n", "abc\t", "=A1+A2\n"].iter().enumerate() {
+            let typed = run_action(&emit, session, "type", &json!({ "text": text })).unwrap();
+            assert!(typed["delivered_to"].as_str().is_some_and(|class| class.starts_with("EXCEL")), "{typed}");
+            pause(400);
+            let shot = run_action(&emit, session, "screenshot", &json!({})).unwrap();
+            assert_eq!(
+                (shot["width"].as_i64().unwrap(), shot["height"].as_i64().unwrap()),
+                (i64::from(frame.right - frame.left), i64::from(frame.bottom - frame.top)),
+                "the screenshot of the stage was scaled"
+            );
+            let picture = capture(excel).unwrap();
+            picture.save(folder.join(format!("evoflux-excel-step{step}.png"))).unwrap();
+            assert!(picture.as_raw() != previous.as_raw(), "after {text:?} the picture did not change");
+            previous = picture;
+        }
+    }));
+    detach(session);
+    let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
 #[test]
 #[ignore = "opens a Notepad window on the local desktop"]
 fn drives_notepad_in_the_background() {
@@ -945,11 +1032,26 @@ fn drives_notepad_in_the_background() {
         let hidden = run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": true })).unwrap();
         assert_eq!(hidden["window"]["hidden"], json!(true));
         assert!(is_off_screen(notepad), "Notepad is still on screen");
+        // On the stage: a fixed size, streamed pixel for pixel.
+        let frame = frame_rect(notepad);
+        let stage = stage_size(unsafe { GetDpiForWindow(notepad) });
+        eprintln!("stage {stage:?}, frame {}x{}", frame.right - frame.left, frame.bottom - frame.top);
+        assert_eq!((frame.right - frame.left, frame.bottom - frame.top), stage, "not sized to the stage");
+        let before_typing = capture(notepad).unwrap();
+        assert_eq!((before_typing.width() as i32, before_typing.height() as i32), stage, "capture is not the frame");
+        let shot = run_action(&emit, session, "screenshot", &json!({})).unwrap();
+        assert_eq!(
+            (shot["width"].as_i64().unwrap(), shot["height"].as_i64().unwrap()),
+            (stage.0 as i64, stage.1 as i64),
+            "the screenshot of the stage was scaled"
+        );
+
         let typed_hidden = run_action(&emit, session, "type", &json!({ "text": " hidden ok" })).unwrap();
         assert_eq!(typed_hidden["confirmed"], json!(true), "typing while parked was not confirmed: {typed_hidden}");
         pause(400);
         let hidden_tree = snapshot_text(&emit, session);
         assert!(hidden_tree.contains("hidden ok"), "typing while parked failed:\n{hidden_tree}");
+        assert!(capture(notepad).unwrap().as_raw() != before_typing.as_raw(), "the typed text is not in the picture");
         run_action(&emit, session, "detach", &json!({})).unwrap();
         pause(300);
         let mut restored = WINDOWPLACEMENT {
@@ -961,6 +1063,11 @@ fn drives_notepad_in_the_background() {
             (original.rcNormalPosition.left, original.rcNormalPosition.top),
             (restored.rcNormalPosition.left, restored.rcNormalPosition.top),
             "detach did not restore the window's position"
+        );
+        assert_eq!(
+            (original.rcNormalPosition.right, original.rcNormalPosition.bottom),
+            (restored.rcNormalPosition.right, restored.rcNormalPosition.bottom),
+            "detach did not restore the window's size"
         );
         assert!(
             !is_off_screen(notepad) || unsafe { IsIconic(notepad) }.as_bool(),

@@ -23,6 +23,19 @@ fn scales_points_into_a_dpi_unaware_window() {
 }
 
 #[test]
+fn sizes_the_stage_for_the_display() {
+    // 100% and 125%: 1280×800, screenshotted without scaling.
+    assert_eq!(stage_size(96), (1280, 800));
+    assert_eq!(stage_size(120), (1280, 800));
+    assert_eq!(screenshot_scale(1280, 800), 1.0);
+    // Past 125%, never less than 1024×640 logical pixels.
+    assert_eq!(stage_size(144), (1536, 960));
+    assert_eq!(stage_size(192), (2048, 1280));
+    // A DPI that could not be read counts as 100%.
+    assert_eq!(stage_size(0), (1280, 800));
+}
+
+#[test]
 fn tells_apps_running_above_evoflux() {
     use windows::Win32::System::Threading::GetCurrentProcess;
     let ours = integrity_level(unsafe { GetCurrentProcess() }).expect("own integrity level");
