@@ -29,7 +29,8 @@ to both unless it names Windows mechanisms.
 3. The agent observes with `screenshot` (PNG of the window) or `snapshot`/`find`
    (the accessibility tree — UI Automation on Windows, the Accessibility API on
    macOS — with refs such as `e12`), and acts with `click`,
-   `hover`, `scroll`, `drag`, `type`, `key`, `invoke` and `set_value`.
+   `hover`, `scroll`, `drag`, `type`, `key`, `invoke` and `set_value`. It can
+   also find, start and end apps (see [App lifecycle](#app-lifecycle)).
 4. The card shows the app live (about 6 fps while the agent acts, slower when
    idle), a glowing frame, and a small cursor that travels to each point
    about 200 ms before the input lands there.
@@ -236,9 +237,44 @@ minimized Store app takes its CoreWindow out of the frame, so it cannot be
 identified: it is left out of `list_windows` and the picker, and attaching it
 is refused until the user restores it.
 
+## App lifecycle
+
+Four actions work on apps rather than on input to the attached window:
+
+- `search_apps` (`query`, `limit`) lists the app catalog — the apps with a
+  window now plus the installed ones (Start menu shortcuts on Windows, `.app`
+  bundles on macOS) — best match first. Apps the allow and block lists forbid
+  are left out.
+- `open_app` (`app`, `attach`) starts one of them. The backend first resolves
+  `app` to the catalog's executable name and checks the allow and block lists
+  on that, so a display name cannot slip past a block. Only what the catalog
+  knows can be started — a Start menu shortcut (with its own arguments and
+  working folder), a running program's executable, or an `.app` bundle — never
+  a path or command line from the agent. Windows starts it minimized without
+  activation (`ShellExecuteW`, `SW_SHOWMINNOACTIVE`), macOS in the background
+  (`open -g`). The desktop waits up to 20 s for a new window of that app and,
+  unless `attach` is false, the backend attaches it (parked when
+  `keep_hidden`). An app that reuses an existing window reports no new window.
+- `close_app` (`window_id`, or the attached window) asks the window to close as
+  its close button would (`WM_CLOSE`; `AXCloseButton` on macOS). When the app
+  asks first (save changes?), the result says so and the dialog is left for the
+  agent to answer.
+- `kill_app` (`window_id`, or the attached app) ends the window's process at
+  once (`TerminateProcess`; `SIGKILL` on macOS). Unsaved work is lost, so the
+  tool description reserves it for an app that did not close or has hung, and
+  the permission prompt says "force-quit (unsaved work is lost)".
+
+Closing and killing reach only a window `list_windows` would offer, under the
+same refusals as `attach` (protected, elevated, command-running apps, EvoFlux
+itself), are checked against the allow and block lists, and never touch a
+window — or, for `kill_app`, a process — another chat is driving. After a
+window goes away, every session that had it attached is released (and its
+parked place forgotten), and the preview card closes. A stopped session may
+not open, close or kill apps.
+
 ## macOS
 
-The macOS backend (`desktop/src-tauri/src/computer_app/mac.rs`) keeps the same
+The macOS backend (`desktop/src-tauri/src/computer_app/mac/`) keeps the same
 commands and result shapes. AppKit only hands keyboard events to the key window
 of the active app, so a background app is driven mainly through accessibility,
 and posted events are the fallback.
@@ -436,9 +472,26 @@ The backend waits 60 s for an action (plus 20 ms per character for `type` and
 desktop interrupts the action (`app_computer_interrupt`, the same interruption
 as Stop, without revoking control), so a retry cannot repeat input that was
 still being delivered.
-`computer_app/mod.rs` holds the Tauri commands and the platform-neutral parts
-(key parsing, blocked shortcuts, protected processes, screenshot scaling) and
-dispatches to `win.rs` or `mac.rs`.
+The native side is a factory. `computer_app/backend.rs` defines the
+`ComputerAppBackend` trait (run an action, preview frame, stop, resume,
+reveal, release, permissions) and `backend()`, which returns the platform's
+implementation: `WindowsBackend` (`win/`), `MacBackend` (`mac/`), or
+`UnsupportedBackend` elsewhere. The Tauri commands in `computer_app/mod.rs`
+only talk to that trait. The action name is parsed once into the closed
+`Action` enum (`action.rs`), so an unknown action is refused before it reaches
+a worker and each backend matches every action exhaustively. The
+platform-neutral parts live beside it: `workers.rs` (per-session threads),
+`interrupt.rs` (Stop tickets), `apps.rs` (the app catalog's search and
+lookup), `keys.rs` (key parsing, blocked shortcuts), `policy.rs` (protected
+processes) and `geometry.rs` (screenshot scaling).
+
+Each backend is a directory with one module per concern — session registry,
+parking, window listing, app catalog, attach, app lifecycle, target window,
+capture, pointer, typing, keyboard, and the accessibility tree and actions
+(plus, on Windows, popups, posted-message helpers, web-page accessibility and
+web field typing; on macOS, the Accessibility FFI wrapper, permissions and
+menu-bar shortcuts). Its `mod.rs` holds the backend's imports, the factory
+product and the dispatch; its module table lists what lives where.
 
 Primary code: `app/agent/tools/builtin/computer_app_tool.py`,
 `app/services/direct_computer_bridge.py`, `app/api/routes/team/computer.py`,

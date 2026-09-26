@@ -575,3 +575,189 @@ async def test_mac_attach_and_menu_shortcut_are_explained(monkeypatch) -> None:
     assert isinstance(result, str)
     assert "shortcuts use cmd" in result
     assert 'Pressed cmd+s ×1 → Save… in "notes.txt" (via the app\'s menu bar)' in result
+
+
+_APPS = {
+    "count": 3,
+    "total": 5,
+    "apps": [
+        {"exe": "excel.exe", "name": "Excel", "running": True},
+        {"exe": "notepad.exe", "name": "Notepad", "running": False},
+        {"exe": "ms-teams.exe", "name": "Microsoft Teams", "running": False},
+    ],
+}
+
+
+@pytest.mark.asyncio
+async def test_search_apps_hides_blocked_apps(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True, blocked_apps=["ms-teams"])
+    requests = _fake_bridge(monkeypatch, {"search_apps": _APPS})
+
+    result = await _run({"action": "search_apps", "query": "e"})
+
+    assert result == (
+        f"{_NOTICE}\n"
+        "exe=excel.exe | Excel [running]\n"
+        "exe=notepad.exe | Notepad\n"
+        "… and 2 more: narrow the query."
+    )
+    assert requests == [("desktop-session", "search_apps", {"query": "e", "limit": 20})]
+
+
+@pytest.mark.asyncio
+async def test_open_app_resolves_the_exe_opens_and_attaches(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True, allowed_apps=["notepad"])
+    requests = _fake_bridge(
+        monkeypatch,
+        {
+            "search_apps": _APPS,
+            "open_app": {
+                "opened": True,
+                "exe": "notepad.exe",
+                "name": "Notepad",
+                "window": {"id": 11, "app": "Notepad.exe", "title": "Untitled"},
+            },
+            "list_windows": _WINDOWS,
+            "attach": {
+                "attached": True,
+                "window": {"id": 11, "app": "Notepad.exe", "title": "Untitled"},
+            },
+        },
+    )
+
+    result = await _run({"action": "open_app", "app": "Notepad"})
+
+    assert isinstance(result, str)
+    assert result.startswith(
+        f'{_NOTICE}\nOpened Notepad (notepad.exe). Attached to Notepad.exe — "Untitled"'
+    )
+    assert [action for _sid, action, _params in requests] == [
+        "search_apps",
+        "open_app",
+        "list_windows",
+        "attach",
+    ]
+    assert requests[1][2] == {"exe": "notepad.exe"}
+    assert requests[-1][2] == {"window_id": 11, "hide": True}
+
+
+@pytest.mark.asyncio
+async def test_open_app_checks_policy_on_the_exe_before_starting(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True, blocked_apps=["ms-teams.exe"])
+    requests = _fake_bridge(monkeypatch, {"search_apps": _APPS})
+
+    result = await _run({"action": "open_app", "app": "ms-teams.exe"})
+
+    assert result == (
+        f"{_NOTICE}\n"
+        "Error (open_app): ms-teams.exe is blocked in Settings → Computer App Control."
+    )
+    assert [action for _sid, action, _params in requests] == ["search_apps"]
+
+
+@pytest.mark.asyncio
+async def test_open_app_needs_an_exe_search_apps_listed(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True)
+    requests = _fake_bridge(monkeypatch, {"search_apps": _APPS})
+
+    result = await _run({"action": "open_app", "app": "Teams"})
+
+    assert isinstance(result, str)
+    assert "No installed or running app has the exe Teams." in result
+    assert "Did you mean: excel.exe, notepad.exe, ms-teams.exe?" in result
+    assert [action for _sid, action, _params in requests] == ["search_apps"]
+
+
+@pytest.mark.asyncio
+async def test_open_app_without_a_new_window_passes_the_note_on(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True)
+    requests = _fake_bridge(
+        monkeypatch,
+        {
+            "search_apps": _APPS,
+            "open_app": {
+                "opened": True,
+                "exe": "excel.exe",
+                "name": "Excel",
+                "window": None,
+                "note": "No new window of the app showed up.",
+            },
+        },
+    )
+
+    result = await _run({"action": "open_app", "app": "excel.exe"})
+
+    assert result == (
+        f"{_NOTICE}\nStarted Excel (excel.exe). No new window of the app showed up."
+    )
+    assert [action for _sid, action, _params in requests] == ["search_apps", "open_app"]
+
+
+@pytest.mark.asyncio
+async def test_close_and_kill_report_what_happened(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True)
+    requests = _fake_bridge(
+        monkeypatch,
+        {
+            "close_app": {
+                "closed": False,
+                "app": "Notepad.exe",
+                "title": "notes.txt - Notepad",
+                "asking": "Notepad",
+                "note": "The app asks something before it closes.",
+            },
+            "kill_app": {
+                "killed": True,
+                "app": "Notepad.exe",
+                "pid": 42,
+                "released": True,
+            },
+        },
+    )
+
+    result = await _run({"action": "close_app"}, {"action": "kill_app"})
+
+    assert result == (
+        f"{_NOTICE}\n"
+        'Notepad.exe — "notes.txt - Notepad" has not closed. '
+        "The app asks something before it closes.\n---\n"
+        "Force-quit Notepad.exe (pid 42). It was the attached app, so nothing is "
+        "attached now."
+    )
+    assert [action for _sid, action, _params in requests] == ["close_app", "kill_app"]
+
+
+@pytest.mark.asyncio
+async def test_kill_app_refuses_a_window_of_a_blocked_app(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True, blocked_apps=["excel"])
+    requests = _fake_bridge(monkeypatch, {"list_windows": _WINDOWS})
+
+    result = await _run({"action": "kill_app", "window_id": 22})
+
+    assert result == (
+        f"{_NOTICE}\n"
+        "Error (kill_app): EXCEL.EXE is blocked in Settings → Computer App Control."
+    )
+    assert [action for _sid, action, _params in requests] == ["list_windows"]
+
+
+def test_permission_patterns_describe_app_lifecycle_actions() -> None:
+    patterns = computer_tool.permission_patterns(
+        {
+            "actions": [
+                {"action": "search_apps", "query": "excel"},
+                {"action": "search_apps"},
+                {"action": "open_app", "app": "excel.exe"},
+                {"action": "close_app"},
+                {"action": "kill_app", "window_id": 22},
+            ]
+        }
+    )
+
+    assert patterns == [
+        'search apps "excel"',
+        "list installed apps",
+        "open excel.exe",
+        "close the attached app",
+        "force-quit (unsaved work is lost) window 22",
+    ]

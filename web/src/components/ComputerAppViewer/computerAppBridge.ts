@@ -27,6 +27,7 @@ const OPEN_CARDS_KEY = STORAGE_KEYS.computerApp.openCards
 export const COMPUTER_APP_COMMANDS = [
   'status', 'list_windows', 'attach', 'detach', 'screenshot', 'snapshot', 'find',
   'click', 'hover', 'scroll', 'drag', 'type', 'key', 'invoke', 'set_value', 'restore',
+  'search_apps', 'open_app', 'close_app', 'kill_app',
 ] as const
 
 /** Computer App Control is native desktop work (Win32 or macOS
@@ -279,7 +280,10 @@ export async function runComputerAppCommand(
     // The card and the attachment live and die together: it opens when an
     // app is attached and closes when it is released.
     if (action === 'attach') useUIStore.getState().openComputerPip(sessionId)
-    if (action === 'detach') useUIStore.getState().closeComputerPip(sessionId)
+    // Closing or killing the attached app releases it along with its window.
+    const released = (action === 'close_app' || action === 'kill_app')
+      && (result as { released?: unknown } | null)?.released === true
+    if (action === 'detach' || released) useUIStore.getState().closeComputerPip(sessionId)
     return { ok: true, result }
   } catch (error) {
     if (action === 'attach') await reopenIfStopped(sessionId)

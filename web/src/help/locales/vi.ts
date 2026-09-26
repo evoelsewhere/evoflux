@@ -1639,6 +1639,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Đóng thẻ xem trước cũng kết thúc điều khiển: agent không bao giờ điều khiển một app mà bạn không theo dõi.',
       'Hiện app đưa cửa sổ thật lên trước để bạn tự tiếp quản.',
       'Mỗi lần gọi computer_app đều hỏi quyền, giống tool trình duyệt — trừ khi bạn chọn "Cho phép luôn, không hỏi" trong Cài đặt → Computer App Control.',
+      'Agent còn có thể tìm app đã cài, mở app ở chế độ nền rồi gắn vào, đóng một cửa sổ (app có thể hỏi lưu trước), hoặc buộc thoát app bị treo — chỉ với app mà danh sách cho phép/chặn của bạn cho phép, và không bao giờ đụng vào app một chat khác đang dùng.',
       'Chọn app được phép và bị chặn từ danh sách app trên máy, có kèm logo.',
       'Hộp thoại mà app mở ra (Save As, xác nhận) được tự động theo dõi.',
       'Skill có sẵn computer-app-control hướng dẫn agent trong mọi app: làm việc ngay trong app bạn chỉ định thay vì sửa file phía sau, không bao giờ đụng vào clipboard của bạn, đọc trước khi click, và kiểm tra từng bước bằng cách đọc lại kết quả từ app trước khi làm tiếp. Có thể tắt nó trong Settings → Skills.',

@@ -56,6 +56,11 @@ _UNAVAILABLE_MESSAGE = (
     "Computer App Control needs this chat open in EvoFlux Desktop on Windows or "
     "macOS. Ask the user to open it there and retry."
 )
+_CARD_CLOSED_MESSAGE = (
+    "The user closed the app preview during this turn, which ends app "
+    "control until the turn is over. Do not attach again: finish without "
+    "the app, or ask the user whether you may use it."
+)
 
 
 class PointAction(BaseModel):
@@ -183,6 +188,41 @@ class WaitAction(BaseModel):
     seconds: float = Field(default=1.0, ge=0, le=10)
 
 
+class SearchAppsAction(BaseModel):
+    action: Literal["search_apps"]
+    query: str | None = Field(
+        default=None,
+        description="App name or executable to look for, e.g. excel. Omit to list all.",
+    )
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class OpenAppAction(BaseModel):
+    action: Literal["open_app"]
+    app: str = Field(
+        description="The exe search_apps lists for the app, e.g. excel.exe or textedit."
+    )
+    attach: bool = Field(
+        default=True, description="Attach to the app's new window once it shows."
+    )
+
+
+class CloseAppAction(BaseModel):
+    action: Literal["close_app"]
+    window_id: int | None = Field(
+        default=None,
+        description="Window from list_windows. Omit for the attached window.",
+    )
+
+
+class KillAppAction(BaseModel):
+    action: Literal["kill_app"]
+    window_id: int | None = Field(
+        default=None,
+        description="A window of the app, from list_windows. Omit for the attached app.",
+    )
+
+
 AnyAction = Annotated[
     ListWindowsAction
     | AttachAction
@@ -199,7 +239,11 @@ AnyAction = Annotated[
     | KeyAction
     | InvokeAction
     | SetValueAction
-    | WaitAction,
+    | WaitAction
+    | SearchAppsAction
+    | OpenAppAction
+    | CloseAppAction
+    | KillAppAction,
     Field(discriminator="action"),
 ]
 
@@ -214,6 +258,12 @@ Observe: screenshot, snapshot (accessibility tree with refs like e12), find.
 Act: click, hover, scroll, drag (by ref or screenshot x/y), type, key,
 invoke (press/toggle/select/expand by ref), set_value (fill a field by ref).
 Other: status, wait.
+Apps: search_apps (installed and running apps), open_app (start one by the
+exe search_apps lists; it opens in the background and its new window is
+attached), close_app (close a window as its close button would; the app may
+ask to save — answer it), kill_app (force-quit the app; unsaved work is lost,
+so only when close_app did not work or the app hung). Without window_id,
+close_app and kill_app act on the attached app.
 
 Coordinates are pixels of the latest screenshot of the attached window.
 Prefer refs and invoke/set_value: they work even for apps that ignore
@@ -306,6 +356,18 @@ def _describe_action(action: dict[str, Any]) -> str | None:
         return "list windows"
     if name == "snapshot":
         return "read the UI tree"
+    if name == "search_apps":
+        query = action.get("query")
+        return f'search apps "{_preview(query)}"' if query else "list installed apps"
+    if name == "open_app":
+        return f"open {_preview(action.get('app', 'an app'))}"
+    if name in {"close_app", "kill_app"}:
+        target = action.get("window_id")
+        which = (
+            f"window {_preview(target)}" if target is not None else "the attached app"
+        )
+        verb = "close" if name == "close_app" else "force-quit (unsaved work is lost)"
+        return f"{verb} {which}"
     return name
 
 
@@ -511,11 +573,7 @@ async def _attach(session_id: str, params: dict[str, Any], policy: Any) -> Any:
     from app.services.direct_computer_bridge import direct_computer_bridge
 
     if direct_computer_bridge.is_closed(session_id):
-        raise ValueError(
-            "The user closed the app preview during this turn, which ends app "
-            "control until the turn is over. Do not attach again: finish without "
-            "the app, or ask the user whether you may use it."
-        )
+        raise ValueError(_CARD_CLOSED_MESSAGE)
     listing = await direct_computer_bridge.request(session_id, "list_windows", {})
     windows = listing.get("windows", []) if isinstance(listing, dict) else []
     window_id = params.get("window_id")
@@ -548,8 +606,149 @@ async def _attach(session_id: str, params: dict[str, Any], policy: Any) -> Any:
     )
 
 
-# Actions that neither read nor drive the attached app.
-_POLICY_FREE_ACTIONS = {"wait", "status", "list_windows", "attach", "detach"}
+def _allowed_apps(apps: list[Any], policy: Any) -> list[dict[str, Any]]:
+    return [
+        app
+        for app in apps
+        if isinstance(app, dict)
+        and app_policy_refusal(str(app.get("exe", "")), policy) is None
+    ]
+
+
+def _format_apps(listing: Any, policy: Any) -> str:
+    """``search_apps`` as the agent reads it, without apps policy forbids."""
+    raw = listing.get("apps", []) if isinstance(listing, dict) else []
+    apps = _allowed_apps(raw, policy)
+    if not apps:
+        return (
+            "No matching app is installed or running (or Settings does not allow it)."
+        )
+    lines = [
+        f"exe={app.get('exe')} | {app.get('name')}"
+        + (" [running]" if app.get("running") else "")
+        for app in apps
+    ]
+    more = int(listing.get("total", 0) or 0) - len(raw)
+    if more > 0:
+        lines.append(f"… and {more} more: narrow the query.")
+    return "\n".join(lines)
+
+
+async def _open_app(
+    session_id: str, params: dict[str, Any], policy: Any
+) -> dict[str, Any]:
+    """Resolve the app to its executable here, so policy is checked on the
+    program that will run rather than on a name the agent chose."""
+    from app.services.direct_computer_bridge import direct_computer_bridge
+
+    wanted = str(params.get("app") or "").strip()
+    if not wanted:
+        raise ValueError("open_app needs app: the exe search_apps lists.")
+    attach = bool(params.get("attach", True))
+    if attach and direct_computer_bridge.is_closed(session_id):
+        raise ValueError(_CARD_CLOSED_MESSAGE)
+    listing = await direct_computer_bridge.request(
+        session_id, "search_apps", {"query": wanted, "limit": 100}
+    )
+    apps = listing.get("apps", []) if isinstance(listing, dict) else []
+    chosen = next(
+        (
+            app
+            for app in apps
+            if isinstance(app, dict)
+            and _normalize_app(str(app.get("exe", ""))) == _normalize_app(wanted)
+        ),
+        None,
+    )
+    if chosen is None:
+        close = ", ".join(
+            str(app.get("exe")) for app in _allowed_apps(apps, policy)[:5]
+        )
+        hint = f" Did you mean: {close}?" if close else " Call search_apps first."
+        raise ValueError(f"No installed or running app has the exe {wanted}.{hint}")
+    exe = str(chosen.get("exe"))
+    refusal = app_policy_refusal(exe, policy)
+    if refusal is not None:
+        raise ValueError(refusal)
+    opened = await direct_computer_bridge.request(session_id, "open_app", {"exe": exe})
+    opened = opened if isinstance(opened, dict) else {}
+    window = opened.get("window")
+    attached = None
+    if attach and isinstance(window, dict) and window.get("id") is not None:
+        attached = await _attach(session_id, {"window_id": window["id"]}, policy)
+    return {"opened": opened, "attached": attached}
+
+
+def _open_summary(value: dict[str, Any]) -> str:
+    opened = value.get("opened") or {}
+    label = f"{opened.get('name') or opened.get('exe')} ({opened.get('exe')})"
+    attached = value.get("attached")
+    if attached is not None:
+        return f"Opened {label}. " + _action_summary("attach", attached)
+    window = opened.get("window")
+    if isinstance(window, dict):
+        return (
+            f'Opened {label}: window_id={window.get("id")} "{window.get("title")}". '
+            "Attach to it to work in it."
+        )
+    return f"Started {label}. {opened.get('note', '')}".strip()
+
+
+async def _lifecycle_refusal(
+    session_id: str, params: dict[str, Any], policy: Any
+) -> str | None:
+    """Why the window close_app / kill_app would reach belongs to an app
+    policy forbids, or ``None``. The desktop refuses protected apps itself."""
+    if not any(item.strip() for item in [*policy.blocked_apps, *policy.allowed_apps]):
+        return None
+    from app.services.direct_computer_bridge import direct_computer_bridge
+
+    window_id = params.get("window_id")
+    if window_id is None:
+        status = await direct_computer_bridge.request(session_id, "status", {})
+        attached = isinstance(status, dict) and status.get("attached")
+        window = status.get("window") if attached else None
+    else:
+        listing = await direct_computer_bridge.request(session_id, "list_windows", {})
+        windows = listing.get("windows", []) if isinstance(listing, dict) else []
+        window = next((item for item in windows if item.get("id") == window_id), None)
+    if not isinstance(window, dict):
+        # Nothing to reach; the desktop says so.
+        return None
+    return app_policy_refusal(str(window.get("app", "")), policy)
+
+
+def _lifecycle_summary(name: str, result: Any) -> str:
+    if not isinstance(result, dict):
+        return _text_result(name, result)
+    released = (
+        " It was the attached app, so nothing is attached now."
+        if result.get("released")
+        else ""
+    )
+    if name == "kill_app":
+        return f"Force-quit {result.get('app')} (pid {result.get('pid')}).{released}"
+    if result.get("closed"):
+        return f'Closed {result.get("app")} — "{result.get("title")}".{released}'
+    return (
+        f'{result.get("app")} — "{result.get("title")}" has not closed. '
+        f"{result.get('note', '')}"
+    ).strip()
+
+
+# Actions that neither read nor drive the attached app (the app lifecycle
+# ones check the app they act on themselves).
+_POLICY_FREE_ACTIONS = {
+    "wait",
+    "status",
+    "list_windows",
+    "attach",
+    "detach",
+    "search_apps",
+    "open_app",
+    "close_app",
+    "kill_app",
+}
 
 
 async def _attached_app_refusal(session_id: str, policy: Any) -> str | None:
@@ -641,6 +840,15 @@ async def computer_app(
                 refusal = await _attached_app_refusal(session_id, policy)
                 if refusal is not None:
                     raise ValueError(refusal)
+            if name == "open_app":
+                results.append(
+                    _open_summary(await _open_app(session_id, params, policy))
+                )
+                continue
+            if name in {"close_app", "kill_app"}:
+                refusal = await _lifecycle_refusal(session_id, params, policy)
+                if refusal is not None:
+                    raise ValueError(refusal)
             if name == "attach":
                 value = await _attach(session_id, params, policy)
             else:
@@ -658,6 +866,10 @@ async def computer_app(
                 if hint:
                     listing = f"{hint}\n{listing}"
                 results.append(_text_result(name, listing))
+            elif name == "search_apps":
+                results.append(_format_apps(value, policy))
+            elif name in {"close_app", "kill_app"}:
+                results.append(_lifecycle_summary(name, value))
             elif isinstance(value, dict) and value.get("kind") == "image":
                 results.append(_image_result(value))
             else:

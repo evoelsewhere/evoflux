@@ -710,6 +710,10 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
       key: `Pressing ${String(first?.key ?? 'a key')}`,
       invoke: `Pressing ${target ?? 'control'}`,
       set_value: `Filling ${target ?? 'field'}`,
+      search_apps: first?.query ? `Searching apps for "${trunc(String(first.query), 40)}"` : 'Listing installed apps…',
+      open_app: `Opening ${String(first?.app ?? 'an app')}`,
+      close_app: 'Closing the app…',
+      kill_app: 'Force-quitting the app…',
       wait: 'Waiting…',
     }
     const header = (action && summaryMap[action]) || `App: ${action ?? 'unknown'}`

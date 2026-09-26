@@ -1692,6 +1692,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Closing the preview ends control too: an agent never drives an app you are not watching.',
       'Show the app brings the real window to the front so you can take over by hand.',
       'Every computer_app call asks for permission, like the browser tool — unless you choose "Allow without asking" in Settings → Computer App Control.',
+      'The agent can also find an installed app, open it in the background and attach it, close a window (the app may ask to save first), or force-quit an app that hung — only apps your allow and block lists permit, and never one another chat is using.',
       'Pick allowed and blocked apps from the list of apps on your computer, shown with their icons.',
       'Modal dialogs the app opens (Save As, confirmations) are followed automatically.',
       'The built-in computer-app-control Skill guides the agent in any app: it works inside the app you named rather than editing the file behind it, never touches your clipboard, reads before it clicks, and checks each step by reading the result back from the app before going on. You can turn it off in Settings → Skills.',
