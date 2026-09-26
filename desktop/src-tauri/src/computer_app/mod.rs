@@ -90,13 +90,44 @@ const PROTECTED_PROCESS_NAMES: &[&str] = &[
     "passwords",
 ];
 
-pub(crate) fn is_protected_process_name(identifier: &str) -> bool {
-    let name = identifier
+/// Apps that run commands or scripts, by executable name. Typing into one
+/// runs anything at all, with that app's own permissions (a terminal often
+/// has Full Disk Access; Script Editor and Shortcuts can drive every other
+/// app) and outside every EvoFlux sandbox, so they are never attached.
+#[cfg(target_os = "macos")]
+const COMMAND_RUNNERS: &[&str] = &[
+    "terminal",
+    "iterm2",
+    "script editor",
+    "shortcuts",
+    "automator",
+    "alacritty",
+    "kitty",
+    "wezterm-gui",
+    "ghostty",
+    "hyper",
+];
+
+#[cfg(not(target_os = "macos"))]
+const COMMAND_RUNNERS: &[&str] = &[];
+
+fn process_key(identifier: &str) -> String {
+    identifier
         .rsplit(['\\', '/'])
         .next()
         .unwrap_or(identifier)
-        .to_lowercase();
-    PROTECTED_PROCESS_NAMES.contains(&name.as_str())
+        .to_lowercase()
+}
+
+pub(crate) fn is_protected_process_name(identifier: &str) -> bool {
+    let name = process_key(identifier);
+    PROTECTED_PROCESS_NAMES.contains(&name.as_str()) || COMMAND_RUNNERS.contains(&name.as_str())
+}
+
+/// Whether `identifier` is one of the [`COMMAND_RUNNERS`].
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn is_command_runner(identifier: &str) -> bool {
+    COMMAND_RUNNERS.contains(&process_key(identifier).as_str())
 }
 
 /// Screenshot pixels per window pixel for a window of this size.
@@ -562,6 +593,17 @@ pub fn app_computer_reveal(session_id: String) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn never_attaches_terminals_or_script_runners() {
+        for app in ["Terminal", "/Applications/iTerm.app/Contents/MacOS/iTerm2", "Script Editor", "Shortcuts"] {
+            assert!(is_command_runner(app), "{app}");
+            assert!(is_protected_process_name(app), "{app}");
+        }
+        assert!(!is_command_runner("TextEdit"));
+        assert!(!is_protected_process_name("TextEdit"));
+    }
 
     #[test]
     fn parses_plain_and_modified_keys() {

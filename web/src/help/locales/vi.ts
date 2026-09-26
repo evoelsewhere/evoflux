@@ -1657,7 +1657,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'callout',
         tone: 'info',
         title: 'Giới hạn',
-        text: 'Không bao giờ gắn được vào shell và tiến trình bảo mật của hệ thống (trên macOS gồm cả Finder và System Settings), chính EvoFlux, hoặc app chạy quyền quản trị. Một số app (UWP, game, app đọc raw input) bỏ qua click chạy nền; khi đó agent dùng thao tác accessibility (invoke, set_value). Trên macOS, app được ẩn sẽ nằm ở một góc màn hình và chỉ lộ một điểm; cửa sổ ở Space khác phải được đưa về màn hình hiện tại trước.',
+        text: 'Không bao giờ gắn được vào shell và tiến trình bảo mật của hệ thống (trên macOS gồm cả Finder và System Settings), chính EvoFlux, hoặc app chạy quyền quản trị; trên macOS cũng không gắn được vào app chạy lệnh hay script (Terminal, iTerm2, Script Editor, Shortcuts và các app tương tự). Một số app (UWP, game, app đọc raw input) bỏ qua click chạy nền; khi đó agent dùng thao tác accessibility (invoke, set_value). Trên macOS, app được ẩn sẽ nằm ở một góc màn hình và chỉ lộ một điểm; cửa sổ ở Space khác phải được đưa về màn hình hiện tại trước.',
       },
       {
         type: 'tips',
