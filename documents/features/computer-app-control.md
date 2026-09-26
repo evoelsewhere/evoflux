@@ -191,7 +191,11 @@ will not start exposing a page that is already off-screen.
 Limits: posted input does not reach apps that read raw input (many games),
 UWP/CoreWindow surfaces or apps running as administrator (UIPI). Points on the
 window frame or title bar are refused. For those, UI Automation actions are the
-fallback.
+fallback. OLE drag and drop (`DoDragDrop`: files onto a window, text between
+apps) follows the real cursor, not posted mouse messages, so such a drop can
+land where the user's pointer is. Progressive web apps installed from Edge all
+run as `msedge.exe`, so the allow and block lists cannot tell them apart from
+each other or from Edge.
 
 Store (UWP) apps: every one's window belongs to `ApplicationFrameHost.exe`, so
 by that name allowing Calculator in Settings would allow Settings too. A
