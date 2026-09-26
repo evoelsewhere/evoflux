@@ -25,12 +25,10 @@ export function MacPermissions() {
   const query = useComputerAppPermissions()
   const request = useRequestComputerAppPermission()
   const push = useToastStore((state) => state.push)
-  const [requested, setRequested] = useState<ReadonlySet<ComputerAppPermission>>(new Set())
   const [restarting, setRestarting] = useState(false)
   const permissions = query.data
 
   const ask = (kind: ComputerAppPermission) => {
-    setRequested((previous) => new Set(previous).add(kind))
     request.mutate(kind, {
       onError: (error) =>
         push({
@@ -70,9 +68,12 @@ export function MacPermissions() {
     },
   ]
   const missing = rows.filter((row) => permissions && !permissions[row.kind])
-  const screenPending = Boolean(
-    permissions && !permissions.screen_recording && requested.has('screen_recording'),
-  )
+  // macOS reports Screen Recording as allowed only to a process started
+  // after it was turned on, so this page cannot tell "not allowed" from
+  // "allowed, restart needed". The restart was offered only after Allow was
+  // pressed here — not to a user who allowed it from macOS's own prompt, in
+  // System Settings directly, or before coming back to this page.
+  const screenPending = Boolean(permissions && !permissions.screen_recording)
 
   return (
     <SettingsGroup

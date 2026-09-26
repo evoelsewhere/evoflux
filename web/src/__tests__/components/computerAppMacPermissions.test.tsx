@@ -53,14 +53,10 @@ describe('MacPermissions', () => {
     expect(await screen.findByText('Allowed')).toBeTruthy()
   })
 
-  it('offers a restart once Screen Recording was requested', async () => {
+  it('offers a restart while Screen Recording is not in effect, however it was allowed', async () => {
+    // Allowed from macOS's own prompt or System Settings: nothing pressed here.
     renderPermissions()
 
-    fireEvent.click(
-      await screen.findByRole('button', {
-        name: 'Allow Screen & System Audio Recording in System Settings',
-      }),
-    )
     const restart = await screen.findByRole('button', { name: 'Restart EvoFlux' })
     fireEvent.click(restart)
 
