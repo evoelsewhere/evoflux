@@ -345,7 +345,11 @@ chats only opens and closes the sockets that changed, and a session that
 leaves the set keeps its socket until the commands it already received have
 been answered, so a reply is never lost while the desktop still carries the
 input out. A command sent while its session's socket is reconnecting waits up
-to three seconds for it. Each command goes to the session's own native worker
+to three seconds for it. When a second EvoFlux window opens the same session,
+the newest socket wins and the older one is closed with code 4409; that window
+does not reconnect on its own (the two would take the session from each other
+in a loop) but takes it back when the user returns to it (window focus, or it
+becomes visible). Each command goes to the session's own native worker
 thread, which owns its
 element refs (UI Automation COM objects on Windows, `AXUIElement`s on macOS)
 and runs its actions one at a time. A hung app or a slow snapshot therefore
