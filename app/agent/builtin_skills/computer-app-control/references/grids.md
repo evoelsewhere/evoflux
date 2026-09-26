@@ -66,9 +66,12 @@ typed values against the source before moving on.
   insert-chart command.
 - A new object may land over the data. Many apps can instead place a chart
   on a sheet of its own; look for that option before moving things by hand.
-- To move an object, drag it by its outer frame, not by an inner part (a
-  plot area, a title), which moves that part instead. Read back its new
-  position, and undo if it went wrong.
+- To move an object, find its frame with `find` (its bounds are in the
+  result) and drag from an empty spot inside the frame, clear of the
+  corners and edges (resize handles) and of inner parts such as a plot area,
+  title or legend, which move on their own. Read back its new position, and
+  undo if it went wrong. If a drag moved nothing, pick another empty spot
+  rather than repeating the same one.
 
 ## Traps
 
