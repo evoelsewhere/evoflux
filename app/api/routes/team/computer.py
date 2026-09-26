@@ -28,6 +28,15 @@ async def direct_computer_agent_bridge(ws: WebSocket, session_id: str) -> None:
     await direct_computer_bridge.attach(session_id, ws)
 
 
+@router.post("/{session_id}/computer/closed", status_code=204)
+async def close_direct_computer_card(session_id: str) -> None:
+    """The user closed the session's preview card: the agent may not attach an
+    app again until its turn ends."""
+    from app.services.direct_computer_bridge import direct_computer_bridge
+
+    direct_computer_bridge.mark_closed(session_id)
+
+
 class DirectComputerAgentStatus(BaseModel):
     connected: bool
     protocol_version: int = 0

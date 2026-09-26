@@ -216,3 +216,15 @@ async def test_turn_done_listeners_hear_every_finished_turn() -> None:
     finally:
         stream_store._turn_done_listeners.remove(listener)
         await stream_store.clear("turn-done-test")
+
+
+@pytest.mark.asyncio
+async def test_a_closed_card_blocks_attaching_until_the_turn_ends() -> None:
+    bridge = DirectComputerBridge()
+    bridge.mark_closed("chat-1")
+    assert bridge.is_closed("chat-1")
+    assert not bridge.is_closed("chat-2")
+
+    await bridge.release_after_turn("chat-1")
+
+    assert not bridge.is_closed("chat-1")
