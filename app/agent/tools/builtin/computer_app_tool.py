@@ -540,6 +540,34 @@ async def _attach(session_id: str, params: dict[str, Any], policy: Any) -> Any:
     )
 
 
+# Actions that neither read nor drive the attached app.
+_POLICY_FREE_ACTIONS = {"wait", "status", "list_windows", "attach", "detach"}
+
+
+async def _attached_app_refusal(session_id: str, policy: Any) -> str | None:
+    """Why the app attached earlier may no longer be read or driven, once it
+    has been handed back; ``None`` when it may.
+
+    The allow and block lists were only checked at attach, so blocking an
+    app in Settings left an agent that had attached it before driving it
+    for the rest of the run."""
+    if not any(item.strip() for item in [*policy.blocked_apps, *policy.allowed_apps]):
+        return None
+    from app.services.direct_computer_bridge import direct_computer_bridge
+
+    status = await direct_computer_bridge.request(session_id, "status", {})
+    window = status.get("window") if isinstance(status, dict) else None
+    if not isinstance(window, dict) or not status.get("attached"):
+        return None
+    refusal = app_policy_refusal(str(window.get("app", "")), policy)
+    if refusal is None:
+        return None
+    await direct_computer_bridge.request(session_id, "detach", {})
+    return (
+        f"{refusal} The setting changed after it was attached, so it was handed back."
+    )
+
+
 @tool(
     name="computer_app",
     description=_DESCRIPTION,
@@ -585,6 +613,7 @@ async def computer_app(
     # detach, which just hands the app back, still runs.
     failed: str | None = None
     skipped: list[str] = []
+    policy_checked = False
     for action in actions:
         params = action.model_dump(exclude_none=True)
         name = str(params.pop("action"))
@@ -599,6 +628,11 @@ async def computer_app(
                 await asyncio.sleep(float(params.get("seconds", 1.0)))
                 results.append(f"Waited {params.get('seconds', 1.0)}s")
                 continue
+            if name not in _POLICY_FREE_ACTIONS and not policy_checked:
+                policy_checked = True
+                refusal = await _attached_app_refusal(session_id, policy)
+                if refusal is not None:
+                    raise ValueError(refusal)
             if name == "attach":
                 value = await _attach(session_id, params, policy)
             else:
