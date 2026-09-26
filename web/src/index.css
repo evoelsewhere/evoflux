@@ -761,6 +761,51 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
   border-color: color-mix(in srgb, var(--color-border-subtle) 32%, transparent);
 }
 
+/* Desktop controls should read as part of the native sidebar material rather
+ * than as opaque dark cards. Keep the controls legible over both macOS and
+ * Windows backdrops while using the same quiet surface language as nav rows. */
+[data-mode-switch] {
+  background: color-mix(in srgb, var(--color-text) 4%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border-subtle) 68%, transparent);
+}
+
+[data-mode-switch-indicator] {
+  background: color-mix(in srgb, var(--color-text) 7%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--color-border-subtle) 72%, transparent),
+    0 1px 4px rgb(0 0 0 / 8%);
+}
+
+[data-sidebar-search] {
+  background: color-mix(in srgb, var(--color-text) 4%, transparent);
+}
+
+[data-sidebar-search]:hover {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+/* macOS native material needs a neutral veil in both themes: its wallpaper
+ * tint is otherwise much more visible than Windows Mica. Windows keeps the
+ * native material path above unchanged. Light mode gets a denser veil so
+ * colored desktop wallpaper cannot wash out the neutral product palette. */
+html[data-native-sidebar-glass="macos"] [data-sidebar-card],
+html[data-native-sidebar-glass="macos"] [data-settings-sidebar],
+html[data-native-sidebar-glass="macos"] [data-app-header] {
+  background: color-mix(in srgb, var(--bg-sidebar) 58%, transparent);
+  -webkit-backdrop-filter: blur(30px) saturate(108%);
+  backdrop-filter: blur(30px) saturate(108%);
+  border-color: color-mix(in srgb, var(--color-border-subtle) 52%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-text) 5%, transparent);
+}
+
+html.light[data-native-sidebar-glass="macos"] [data-sidebar-card],
+html.light[data-native-sidebar-glass="macos"] [data-settings-sidebar],
+html.light[data-native-sidebar-glass="macos"] [data-app-header] {
+  background: color-mix(in srgb, var(--bg-sidebar) 58%, transparent);
+  -webkit-backdrop-filter: blur(30px) saturate(105%);
+  backdrop-filter: blur(30px) saturate(105%);
+}
+
 .mobile-safe-header {
   min-height: calc(var(--spacing-app-header) + env(safe-area-inset-top, 0px));
   padding-top: env(safe-area-inset-top, 0px);
