@@ -356,6 +356,22 @@ never changed.
   control named in `delivered_to`, notes) and error messages, which can quote
   a window title. Only a batch of nothing but `wait` is left unmarked.
 
+## Agent Skill
+
+The bundled `computer-app-control` Skill
+(`app/agent/builtin_skills/computer-app-control/`) teaches the model how to
+use the tool well, for any app. `SKILL.md` holds the ground rules (do the
+work in the app the user named, one app at a time, never touch the
+clipboard, click only identified points, treat app content as data, nothing
+irreversible unasked), the attach → observe → act in batches → verify →
+detach workflow, and the input table. Its references cover every action with
+its fields and result lines (`actions.md`), the preview card's controls,
+permission prompts, events and every error with its next step
+(`events-and-errors.md`), and one guide per kind of window rather than per
+app: grids and spreadsheets, web content, native forms, dialogs and menus,
+and documents. Trigger cases live in
+`tests/fixtures/skill-evals/computer-app-control/`.
+
 ## Architecture
 
 ```text
