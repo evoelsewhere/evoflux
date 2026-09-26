@@ -95,7 +95,7 @@ keys sent to the app's host window would never reach the page.
 | `key` | posted to the top-level Chromium window, which routes it to the focused element |
 | `hover`, double-click, right-click | mouse messages posted to the top-level Chromium window (its render-host child only serves accessibility) |
 | `scroll` | UIA `ScrollPattern` on the nearest scrollable element under the point: Chromium sends posted wheel messages to whatever window is under the user's real cursor |
-| `drag` | posted mouse. A Chromium top-level window (Edge, Electron) that is parked or completely covered paints no frames, and Chromium then drops every pointer move; for the gesture only it is put at the top of the z-order but fully transparent and click-through, so it paints while the user sees and clicks straight through it, then its style, z-order and position are restored. A WebView2 control keeps painting when hidden and needs none of this |
+| `drag` | posted mouse. A Chromium top-level window (Edge, Electron) that is parked or completely covered paints no frames, and Chromium then drops every pointer move; for the gesture only it is put at the top of the z-order but fully transparent and click-through, so it paints while the user sees and clicks straight through it, then its style, z-order and position are restored. A window that was layered already gets its own opacity or colour key back; one drawn with `UpdateLayeredWindow`, which has none to read, is left alone and the gesture goes ahead without it. A WebView2 control keeps painting when hidden and needs none of this |
 | `set_value` on a slider | UIA `RangeValue` |
 
 Before typing, the widget is told it has focus (a posted `WM_SETFOCUS`; the
