@@ -100,12 +100,25 @@ keys sent to the app's host window would never reach the page.
 |---|---|
 | Read (`snapshot`, `find`) | the page tree lives under the `Chrome_RenderWidgetHostHWND` render host, which is walked as a root of its own; accessibility is activated on attach |
 | `click` | UI Automation first — the element's Invoke/Toggle/Select/ExpandCollapse or Chromium's default action — for a ref, and for coordinates via the element under the point in the window's own tree; posted mouse only as a fallback. The element under a point is the end of the deepest chain of elements containing it, every containing child explored; among equally deep chains the later sibling wins, because it is drawn on top (`clicks_the_element_drawn_on_top`) |
-| `type`, `set_value` | UIA `SetFocus` on the field (does not activate the window), `ctrl+end` or `ctrl+a`, then characters posted to the Chromium window: the page gets real `beforeinput`/`input` events, which rich editors such as the Teams compose box need. A line break is sent as Shift+Enter so a chat message is not sent. `set_value` with `direct: true` writes through the Value pattern instead (no events). Without a ref, `type` goes to the field last clicked — until focus moves on (a click on anything else, an `invoke`, Tab, Enter, Escape, F6); then it goes wherever the page's focus is |
+| `type`, `set_value` | the field focused inside the page through MSAA (`accSelect` with `SELFLAG_TAKEFOCUS`; UIA `SetFocus` only when the window is in front already), `ctrl+end` or `ctrl+a`, then characters posted to the Chromium window: the page gets real `beforeinput`/`input` events, which rich editors such as the Teams compose box need. A line break is sent as Shift+Enter so a chat message is not sent. `set_value` with `direct: true` writes through the Value pattern instead (no events). Without a ref, `type` goes to the field last clicked — until focus moves on (a click on anything else, an `invoke`, Tab, Enter, Escape, F6); then it goes wherever the page's focus is |
 | `key` | posted to the top-level Chromium window, which routes it to the focused element |
 | `hover`, double-click, right-click | mouse messages posted to the top-level Chromium window (its render-host child only serves accessibility) |
-| `scroll` | UIA `ScrollPattern` on the nearest scrollable element under the point: Chromium sends posted wheel messages to whatever window is under the user's real cursor |
+| `scroll` | IAccessible2 `scrollToPoint` on the first child of the nearest scrollable element under the point, moved by the distance to scroll (about 100 px a notch): posted wheels are rerouted by Chromium to the window under the point, and a hidden Edge page ignores them. UIA `ScrollPattern` only where IAccessible2 cannot be reached |
 | `drag` | posted mouse. A Chromium top-level window (Edge, Electron) that is parked or completely covered paints no frames, and Chromium then drops every pointer move; for the gesture only it is put at the top of the z-order but fully transparent and click-through, so it paints while the user sees and clicks straight through it, then its style, z-order and position are restored. A window that was layered already gets its own opacity or colour key back; one drawn with `UpdateLayeredWindow`, which has none to read, is left alone and the gesture goes ahead without it. A WebView2 control keeps painting when hidden and needs none of this |
-| `set_value` on a slider | UIA `RangeValue` |
+| `set_value` on a slider | MSAA `put_accValue` (LegacyIAccessible), UIA `RangeValue` if refused |
+
+Chromium carries out UI Automation's SetFocus, Invoke, Expand, Scroll and
+RangeValue by focusing its own widget, and focusing it activates the window:
+whenever Windows allowed it (a few minutes without user input), acting on a
+page took the foreground from the user's window. So in web content a button,
+link or drop-down is clicked through its MSAA default action (the pattern's
+action if refused), fields, sliders and scrolling go through MSAA and
+IAccessible2 as above, and before any action the page's widgets, an open
+popup's included, are told they have focus (a posted `WM_SETFOCUS`), which
+keeps a posted mouse press from focusing them. Options in a `<select>` list
+keep Invoke: their default action does not pick them. The probes check the
+user's foreground window keeps the foreground; the WebView2 host they use
+never focuses itself, so that check always runs.
 
 Before typing, the widget is told it has focus (a posted `WM_SETFOCUS`; the
 system's focus does not move) and a lone Shift press wakes its input
