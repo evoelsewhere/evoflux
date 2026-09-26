@@ -284,7 +284,10 @@ export function ComputerAppPipHost({
           ? { title: t('The app window was closed'), body: t('The agent needs to attach to an app again.') }
           : frame?.minimized
             ? { title: t('The app is minimized'), body: t('It is restored without taking focus when the agent acts again.') }
-            : null
+            // The last good frame would otherwise stay up as if it were live.
+            : frameError
+              ? { title: t('Preview paused'), body: frameError }
+              : null
 
   return createPortal((
     <div
@@ -348,7 +351,7 @@ export function ComputerAppPipHost({
               className="absolute inset-0 h-full w-full object-contain"
             />
           )}
-          {picture && !stopped && (
+          {picture && !stopped && !frameError && (
             <AgentCursorOverlay
               box={box}
               content={content}
