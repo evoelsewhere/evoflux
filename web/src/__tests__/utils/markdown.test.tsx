@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { MarkdownBlock, splitStreamingMarkdown } from '@/utils/markdown'
+import { escapeCurrencyDollars, MarkdownBlock, splitStreamingMarkdown } from '@/utils/markdown'
 import { useUIStore } from '@/stores/useUIStore'
 
 beforeEach(() => {
@@ -37,6 +37,34 @@ describe('splitStreamingMarkdown', () => {
       '1. First\n\n2. Second\n\n',
       'After the list.',
     ])
+  })
+})
+
+describe('escapeCurrencyDollars', () => {
+  it('keeps two prices on a line as text', () => {
+    expect(escapeCurrencyDollars('Q2 $2,015K, Q3 $2,436K, +20.9%')).toBe(
+      'Q2 \\$2,015K, Q3 \\$2,436K, +20.9%',
+    )
+    expect(escapeCurrencyDollars('from $5-$10 each')).toBe('from \\$5-\\$10 each')
+  })
+
+  it('leaves inline and display math, escapes and code alone', () => {
+    const untouched = [
+      'Solve $x^2 + 1$ and $y$.',
+      '$$\na $5 b $6\n$$',
+      'Costs \\$5 and \\$6.',
+      'Run `echo $A $B` now.',
+      '```sh\necho $HOME $PATH\n```',
+    ]
+    for (const text of untouched) expect(escapeCurrencyDollars(text)).toBe(text)
+  })
+
+  it('renders prices as plain text rather than KaTeX', () => {
+    const { container } = render(
+      <MarkdownBlock content="Q2 $2,015K, Q3 $2,436K; area $\pi r^2$." />,
+    )
+    expect(container).toHaveTextContent('Q2 $2,015K, Q3 $2,436K; area')
+    expect(container.querySelectorAll('.katex')).toHaveLength(1)
   })
 })
 

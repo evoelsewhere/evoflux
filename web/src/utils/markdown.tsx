@@ -122,6 +122,81 @@ export function fixNestedFences(content: string): string {
   return result.join('\n')
 }
 
+// ── escapeCurrencyDollars ─────────────────────────────────────────────────────
+
+/**
+ * Keep prices from rendering as math.
+ *
+ * remark-math pairs any two single dollars on a line, so "Q2 $2,015K, Q3
+ * $2,436K" set "2,015K, Q3" as a formula. Following Pandoc's rule, a closing
+ * dollar must follow a non-space and must not be followed by a digit; an
+ * opening dollar without such a closer on its line is escaped and stays text.
+ * Fenced code, inline code and `$$` display math are left as they are.
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function escapeCurrencyDollars(content: string): string {
+  if (!content.includes('$')) return content
+  let fence: string | null = null
+  let inDisplayMath = false
+  return content
+    .split('\n')
+    .map((line) => {
+      const fenceMatch = line.match(/^\s{0,3}(`{3,}|~{3,})/)
+      if (fenceMatch) {
+        const marker = fenceMatch[1]
+        if (!fence) fence = marker
+        else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null
+        return line
+      }
+      if (fence) return line
+      if (line.trim() === '$$') {
+        inDisplayMath = !inDisplayMath
+        return line
+      }
+      if (inDisplayMath || !line.includes('$')) return line
+      // Inline code spans keep their dollars; only the text between is checked.
+      return line
+        .split(/(`+[^`]*`+)/)
+        .map((part, index) => (index % 2 ? part : escapeUnpairedDollars(part)))
+        .join('')
+    })
+    .join('\n')
+}
+
+function escapeUnpairedDollars(text: string): string {
+  // Single, unescaped dollars; `$$` is display math and is skipped.
+  const dollars: number[] = []
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '$' || text[i - 1] === '\\') continue
+    if (text[i + 1] === '$') {
+      i++
+      continue
+    }
+    dollars.push(i)
+  }
+  const unpaired = new Set<number>()
+  for (let k = 0; k < dollars.length; ) {
+    const open = dollars[k]
+    const close = dollars[k + 1]
+    const pairs =
+      close !== undefined &&
+      close > open + 1 &&
+      /\S/.test(text[open + 1]) &&
+      /\S/.test(text[close - 1]) &&
+      !/\d/.test(text[close + 1] ?? '')
+    if (pairs) {
+      k += 2
+    } else {
+      unpaired.add(open)
+      k += 1
+    }
+  }
+  if (unpaired.size === 0) return text
+  let out = ''
+  for (let i = 0; i < text.length; i++) out += unpaired.has(i) ? '\\$' : text[i]
+  return out
+}
+
 // ── extractText ───────────────────────────────────────────────────────────────
 
 // Me rehype-highlight wraps code in spans — recursively collect text nodes
@@ -475,7 +550,10 @@ const MarkdownSegment = memo(function MarkdownSegment({
   allowHtml?: boolean
   streamingTail: boolean
 }) {
-  const fixedContent = useMemo(() => fixNestedFences(content), [content])
+  const fixedContent = useMemo(
+    () => escapeCurrencyDollars(fixNestedFences(content)),
+    [content],
+  )
   const rehypePlugins = streamingTail
     ? allowHtml
       ? _REHYPE_STREAMING_PLUGINS_WITH_HTML
