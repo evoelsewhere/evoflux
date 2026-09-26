@@ -381,6 +381,14 @@ struct SizeValue {
     height: f64,
 }
 
+/// `CFRange`'s layout.
+#[derive(Default, Clone, Copy)]
+#[repr(C)]
+struct RangeValue {
+    location: CFIndex,
+    length: CFIndex,
+}
+
 fn ax_point(value: &CFType) -> Option<CGPoint> {
     ax_value::<PointValue>(value, AX_VALUE_CGPOINT).map(|p| CGPoint::new(p.x, p.y))
 }
@@ -2355,7 +2363,7 @@ fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value,
     // posted mouse events may be dropped or bring the app forward.
     if clicks == 1 {
         let done = match button {
-            "left" => click_via_accessibility(emit, target, &chain, point)?,
+            "left" => click_via_accessibility(emit, target, &chain, point, params.get("ref").is_none())?,
             "right" => menu_via_accessibility(emit, target, &chain, point)?,
             _ => None,
         };
@@ -2385,7 +2393,9 @@ fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value,
 }
 
 /// Click through accessibility: the innermost element under the point that
-/// has an action gets it, and a text field there gets focus for typing.
+/// has an action gets it, and a text field there gets focus for typing —
+/// with the caret where the click landed, when it is a click at a point
+/// (`at_point`) rather than on a ref's centre.
 /// Returns `None` when nothing there does, and the caller falls back to
 /// posted mouse events.
 fn click_via_accessibility(
@@ -2393,6 +2403,7 @@ fn click_via_accessibility(
     target: &Target,
     chain: &[Ax],
     point: Point,
+    at_point: bool,
 ) -> Result<Option<Value>, String> {
     let editable = chain.iter().rev().find(|element| is_editable(element));
     if let Some(editable) = editable {
@@ -2429,18 +2440,40 @@ fn click_via_accessibility(
         target.travel(emit, point)?;
         target.emit_pointer(emit, point, "click");
         let _ = field.set_flag("AXFocused", true);
+        // Focusing alone left the caret wherever it was, so text typed after
+        // "click here" went somewhere else in the field.
+        let caret_placed = at_point && place_caret(field, point);
         let (x, y) = target.screenshot_point(point);
         return Ok(Some(json!({
             "pointer": { "x": x, "y": y },
             "delivered_to": field.label(),
             "delivered_via": "accessibility",
-            "pattern": "focus_for_typing",
+            "pattern": if caret_placed { "place_caret" } else { "focus_for_typing" },
             "window": target.title(),
             "button": "left",
             "clicks": 1,
         })));
     }
     Ok(None)
+}
+
+/// Put the field's caret at the character under `point`
+/// (`AXRangeForPosition`, then an empty `AXSelectedTextRange` there).
+fn place_caret(field: &Ax, point: Point) -> bool {
+    let Some(position) = ax_point_value(point.x, point.y) else {
+        return false;
+    };
+    let Some(range) = field
+        .parameterized("AXRangeForPosition", &position)
+        .as_ref()
+        .and_then(|value| ax_value::<RangeValue>(value, AX_VALUE_CFRANGE))
+    else {
+        return false;
+    };
+    match ax_range_value(range.location.max(0) as usize, 0) {
+        Some(caret) => field.set("AXSelectedTextRange", &caret).is_ok(),
+        None => false,
+    }
 }
 
 /// A right click is a request for the context menu, which accessibility
