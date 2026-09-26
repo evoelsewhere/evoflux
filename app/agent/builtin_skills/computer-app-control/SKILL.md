@@ -40,7 +40,9 @@ mistakes while they are small, so the result is right at the end even when
 a step was not.
 
 1. **Look.** `list_windows`, `attach`, then `snapshot` (structure, refs, exact
-   text) and `screenshot` (layout). Note what is already there.
+   text) and `screenshot` (layout). Note what is already there, and confirm
+   any content you plan to reuse by reading it back (step 4) before building
+   on it.
 2. **Plan a small step** whose result you can check: one block of data, one
    formatting change, one command. Do not stack a second step on a first
    you have not checked.
@@ -52,7 +54,11 @@ a step was not.
    actual values: from a snapshot where the app exposes them, otherwise from
    what the app displays for the selected item (a value or formula bar, a
    status bar, the field itself) or a screenshot. Compare with what you meant
-   to produce, item by item for numbers and text.
+   to produce, item by item for numbers and text. Text the app reports beats
+   a picture: small screenshot text is easy to misread, and data seen in
+   another app can seem to be there. An empty read-back (a blank value bar,
+   no count or sum for a selection, an empty field) means there is nothing
+   there, not that it cannot be read.
 5. **Fix and repeat.** If anything differs, correct exactly that part and
    read it back again. If the same approach fails twice, change the
    approach (another way to reach the command, smaller steps, fewer

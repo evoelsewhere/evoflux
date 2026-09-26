@@ -52,9 +52,12 @@ Ways to read what is really there:
 - Select a cell and read the app's value or formula bar (its text is in the
   snapshot) to see the cell's exact content, formula included.
 - Select a range and read the status bar, where spreadsheets show sums and
-  counts: compare them with the source.
+  counts: compare them with the source. No count or sum at all for a range
+  means its cells are empty (or hold no numbers); a blank value bar means
+  the cell is empty.
 - A screenshot shows displayed values; never trust a number you cannot read
-  clearly in it.
+  clearly in it, and never decide from a screenshot alone that a range is
+  already filled when the value bar or status bar says otherwise.
 
 Check at least the cells you computed (totals, formulas) and one row of
 typed values against the source before moving on.
