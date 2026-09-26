@@ -127,6 +127,19 @@ aware apps, and on an unscaled display, nothing changes. Not yet verified on a
 scaled display: whether `PrintWindow` captures such an app at its physical
 size.
 
+### Menus and dropdowns
+
+Context menus (`#32768`), combo box lists (`ComboLBox`), WPF popups and
+Chromium `<select>` lists are top-level windows of their own. While one of the
+attached window's popups is open (same process, or owned by the window), it
+counts as part of the window: the screenshot and the preview cover the window
+and its popups together (the coordinate space grows to their union), a click
+inside a popup goes to the popup, and snapshot and find walk the popups first.
+A parked app's popup opens on the user's screen, because Windows keeps menus
+on a monitor; it is moved next to the window, where the agent last clicked,
+and a click that opens one says so in its result. Tooltips are left out.
+Checked live with a `<select>` in Edge (`works_in_a_select_popup`).
+
 ### Keeping the app off-screen
 
 With **Keep the app off-screen** (on by default), attaching moves the window

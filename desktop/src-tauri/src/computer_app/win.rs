@@ -70,6 +70,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, PostMessageW,
     SendMessageTimeoutW, SetForegroundWindow, ShowWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
     CWP_SKIPTRANSPARENT, GA_ROOT, GUITHREADINFO, GWL_EXSTYLE, GW_ENABLEDPOPUP, GW_OWNER,
+    GWL_STYLE, WS_CAPTION, WS_POPUP,
     SMTO_ABORTIFHUNG, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CHAR, WM_KEYDOWN, WM_KEYUP,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN,
     WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_RBUTTONDBLCLK,
@@ -330,6 +331,9 @@ fn clear_refs(session_id: &str) {
         last.borrow_mut().remove(session_id);
     });
     LAST_INPUT.with(|last| {
+        last.borrow_mut().remove(session_id);
+    });
+    LAST_POINT.with(|last| {
         last.borrow_mut().remove(session_id);
     });
 }
@@ -916,6 +920,11 @@ struct Target {
     hidden: bool,
     /// Chromium/WebView2/Electron content (see [`is_web_host`]).
     web: bool,
+    /// Menus and dropdowns the window has open, topmost first. `frame`
+    /// covers them too (see [`open_popups`]).
+    popups: Vec<HWND>,
+    /// The window's own frame, without its popups.
+    window_frame: RECT,
 }
 
 impl Target {
@@ -951,7 +960,14 @@ impl Target {
             restored = false;
         }
         let window = effective_window(top, attached.pid);
-        let frame = frame_rect(window);
+        let window_frame = frame_rect(window);
+        let popups = open_popups(window, top, attached.pid);
+        if attached.parked.is_some() && !popups.is_empty() {
+            bring_popups_along(session_id, window_frame, &popups);
+        }
+        let frame = popups
+            .iter()
+            .fold(window_frame, |frame, popup| union(frame, frame_rect(*popup)));
         let width = (frame.right - frame.left).max(1) as u32;
         let height = (frame.bottom - frame.top).max(1) as u32;
         Ok(Self {
@@ -965,6 +981,16 @@ impl Target {
             restored,
             hidden: attached.parked.is_some(),
             web: is_web_host(window),
+            popups,
+            window_frame,
+        })
+    }
+
+    /// The open popup under `point`, if any; the topmost one wins.
+    fn popup_at(&self, point: POINT) -> Option<HWND> {
+        self.popups.iter().copied().find(|popup| {
+            let frame = frame_rect(*popup);
+            point.x >= frame.left && point.x < frame.right && point.y >= frame.top && point.y < frame.bottom
         })
     }
 
@@ -1138,6 +1164,9 @@ fn largest_chromium_widget(window: HWND) -> Option<HWND> {
 /// Where a posted pointer message for `point` goes: the deepest window
 /// there, lifted to its Chromium widget for web content.
 fn pointer_window(target: &Target, point: POINT) -> HWND {
+    if let Some(popup) = target.popup_at(point) {
+        return child_at(popup, point);
+    }
     let hwnd = child_at(target.window, point);
     if target.web {
         chromium_widget_ancestor(target, hwnd).unwrap_or(hwnd)
@@ -1164,6 +1193,163 @@ fn effective_window(top: HWND, pid: u32) -> HWND {
             _ => top,
         }
     }
+}
+
+// ── Popups ──────────────────────────────────────────────────────────────
+//
+// Context menus, dropdown lists, WPF popups and Chromium `<select>` lists
+// are top-level windows of their own, not children of the app's window. A
+// capture of the window alone never showed them, clicks outside the frame
+// were refused, and the UI tree had none of their items. While one is open
+// it counts as part of the attached window: the screenshot covers both,
+// clicks inside it go to it, and snapshot and find walk it first.
+
+/// Classes that are always popups: menus and a combo box's dropdown list.
+const POPUP_CLASSES: &[&str] = &["#32768", "ComboLBox", "DropDown"];
+
+fn owned_by(hwnd: HWND, window: HWND, top: HWND) -> bool {
+    let mut owner = hwnd;
+    for _ in 0..8 {
+        owner = match unsafe { GetWindow(owner, GW_OWNER) } {
+            Ok(next) if !next.0.is_null() => next,
+            _ => return false,
+        };
+        if owner == window || owner == top {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether `hwnd` is one of the attached window's open popups.
+fn is_popup_of(hwnd: HWND, window: HWND, top: HWND, pid: u32) -> bool {
+    if hwnd == window || hwnd == top {
+        return false;
+    }
+    unsafe {
+        if !IsWindowVisible(hwnd).as_bool() || is_cloaked(hwnd) {
+            return false;
+        }
+        let ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        // Tooltips come and go with the pointer and are click-through.
+        if ex_style & WS_EX_TRANSPARENT.0 != 0 {
+            return false;
+        }
+    }
+    let class = class_name(hwnd);
+    if class.to_lowercase().contains("tooltip") {
+        return false;
+    }
+    let frame = frame_rect(hwnd);
+    if frame.right - frame.left < 8 || frame.bottom - frame.top < 8 {
+        return false;
+    }
+    let owned = owned_by(hwnd, window, top);
+    if POPUP_CLASSES.contains(&class.as_str()) {
+        return owned || window_pid(hwnd) == pid;
+    }
+    // Any other captionless popup counts when the window owns it (a
+    // WebView2 app's popups belong to the WebView2 process, not the app's).
+    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+    let popup = style & WS_POPUP.0 != 0 && style & WS_CAPTION.0 != WS_CAPTION.0;
+    popup && owned
+}
+
+/// The attached window's open popups, topmost first.
+fn open_popups(window: HWND, top: HWND, pid: u32) -> Vec<HWND> {
+    top_level_windows()
+        .into_iter()
+        .filter(|hwnd| is_popup_of(*hwnd, window, top, pid))
+        .collect()
+}
+
+fn union(a: RECT, b: RECT) -> RECT {
+    RECT {
+        left: a.left.min(b.left),
+        top: a.top.min(b.top),
+        right: a.right.max(b.right),
+        bottom: a.bottom.max(b.bottom),
+    }
+}
+
+fn intersects(a: &RECT, b: &RECT) -> bool {
+    a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+}
+
+thread_local! {
+    /// Where each session last clicked or hovered: a parked app's popup
+    /// is moved back there (see [`bring_popups_along`]).
+    static LAST_POINT: RefCell<HashMap<String, POINT>> = RefCell::new(HashMap::new());
+}
+
+fn remember_point(session_id: &str, point: POINT) {
+    LAST_POINT.with(|last| {
+        last.borrow_mut().insert(session_id.to_string(), point);
+    });
+}
+
+/// A popup of a parked window opens on the user's screen: Windows keeps
+/// menus on a monitor, so a menu asked for at an off-screen point lands at
+/// the edge of one. Move such popups next to the window, where the agent
+/// clicked, so they leave the user's screen and stay in the capture.
+fn bring_popups_along(session_id: &str, window_frame: RECT, popups: &[HWND]) {
+    let anchor = LAST_POINT
+        .with(|last| last.borrow().get(session_id).copied())
+        .unwrap_or(POINT { x: window_frame.left + 40, y: window_frame.top + 40 });
+    for popup in popups {
+        let frame = frame_rect(*popup);
+        if intersects(&frame, &window_frame) {
+            continue;
+        }
+        let width = frame.right - frame.left;
+        let height = frame.bottom - frame.top;
+        let x = anchor.x.min(window_frame.right - width).max(window_frame.left);
+        let y = anchor.y.min(window_frame.bottom - height).max(window_frame.top);
+        unsafe {
+            let _ = SetWindowPos(
+                *popup,
+                None,
+                x,
+                y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            );
+        }
+    }
+}
+
+/// The window with its popups drawn over it, on a canvas covering `frame`
+/// (their union). Popups are drawn bottom-most first.
+fn capture_with_popups(window: HWND, popups: &[HWND], frame: RECT) -> Result<RgbaImage, String> {
+    let base = capture(window)?;
+    if popups.is_empty() {
+        return Ok(base);
+    }
+    let width = (frame.right - frame.left).max(1) as u32;
+    let height = (frame.bottom - frame.top).max(1) as u32;
+    let mut canvas = RgbaImage::from_pixel(width, height, image::Rgba([24, 24, 24, 255]));
+    let window_frame = frame_rect(window);
+    imageops::overlay(
+        &mut canvas,
+        &base,
+        i64::from(window_frame.left - frame.left),
+        i64::from(window_frame.top - frame.top),
+    );
+    for popup in popups.iter().rev() {
+        // A popup that will not render is left out rather than failing the
+        // whole screenshot.
+        if let Ok(image) = capture(*popup) {
+            let popup_frame = frame_rect(*popup);
+            imageops::overlay(
+                &mut canvas,
+                &image,
+                i64::from(popup_frame.left - frame.left),
+                i64::from(popup_frame.top - frame.top),
+            );
+        }
+    }
+    Ok(canvas)
 }
 
 // ── Capture ─────────────────────────────────────────────────────────────
@@ -1291,7 +1477,7 @@ fn encode_jpeg(image: &RgbaImage, quality: u8) -> Result<String, String> {
 }
 
 fn screenshot(target: &Target) -> Result<Value, String> {
-    let captured = capture(target.window)?;
+    let captured = capture_with_popups(target.window, &target.popups, target.frame)?;
     let (width, height) = target.screenshot_size();
     let image = if target.scale < 1.0 {
         imageops::resize(&captured, width, height, imageops::FilterType::Triangle)
@@ -1337,7 +1523,11 @@ pub(crate) fn preview_frame(session_id: &str, max_width: u32) -> Result<Value, S
         return Ok(merge(base, json!({ "minimized": true, "title": title })));
     }
     let window = effective_window(top, attached.pid);
-    let captured = capture(window)?;
+    let popups = open_popups(window, top, attached.pid);
+    let frame = popups
+        .iter()
+        .fold(frame_rect(window), |frame, popup| union(frame, frame_rect(*popup)));
+    let captured = capture_with_popups(window, &popups, frame)?;
     let (width, height) = (captured.width(), captured.height());
     let preview = if width > max_width {
         let scaled_height = ((height as f64) * (max_width as f64) / (width as f64)).round() as u32;
@@ -1535,6 +1725,7 @@ fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value,
     let button = params.get("button").and_then(Value::as_str).unwrap_or("left");
     let clicks = params.get("clicks").and_then(Value::as_u64).unwrap_or(1).clamp(1, 3);
     let (down, up, double, mask) = button_messages(button)?;
+    remember_point(&target.session_id, point);
 
     // A plain left click goes through UI Automation when it can: always for
     // a ref (the element's own action is exact), and for coordinates in web
@@ -1581,6 +1772,16 @@ fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value,
     if target.web {
         extra["note"] = json!(WEB_INPUT_NOTE);
     }
+    // A click that opened a menu or dropdown: say so, and for a parked app
+    // take it off the user's screen straight away.
+    pause(150);
+    let popups = open_popups(target.window, target.top, target.pid);
+    if popups.iter().any(|popup| !target.popups.contains(popup)) {
+        if target.hidden {
+            bring_popups_along(&target.session_id, frame_rect(target.window), &popups);
+        }
+        extra["note"] = json!("A menu or dropdown opened. Take a screenshot or snapshot to see its items (snapshot lists them first).");
+    }
     Ok(pointer_result(target, hwnd, point, extra))
 }
 
@@ -1589,6 +1790,7 @@ const WEB_INPUT_NOTE: &str = "This app draws web content, which may ignore backg
 
 fn hover(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
     let point = pointer_target(target, params)?;
+    remember_point(&target.session_id, point);
     let hwnd = pointer_window(target, point);
     target.travel(emit, point)?;
     post(hwnd, WM_MOUSEMOVE, 0, client_lparam(hwnd, point))?;
@@ -1792,8 +1994,8 @@ impl Peek {
     fn offset(&self, target: &Target, point: POINT) -> POINT {
         let frame = frame_rect(self.window);
         POINT {
-            x: frame.left + (point.x - target.frame.left),
-            y: frame.top + (point.y - target.frame.top),
+            x: frame.left + (point.x - target.window_frame.left),
+            y: frame.top + (point.y - target.window_frame.top),
         }
     }
 }
@@ -2377,7 +2579,15 @@ impl Walk<'_> {
 
 fn walk_window(target: &Target, query: Option<String>, max_depth: u32, max_elements: usize, reset: bool) -> Result<(Vec<String>, bool), String> {
     let automation = automation()?;
-    let roots = automation_roots(&automation, target.window)?;
+    // Open menus and dropdowns first: they are on top, and what the agent
+    // most likely wants next.
+    let mut roots = Vec::new();
+    for popup in &target.popups {
+        if let Ok(element) = unsafe { automation.ElementFromHandle(*popup) } {
+            roots.push(element);
+        }
+    }
+    roots.extend(automation_roots(&automation, target.window)?);
     let walker = unsafe { automation.ControlViewWalker() }
         .map_err(|error| format!("UI Automation walker unavailable: {error}"))?;
     REFS.with(|refs| {
@@ -2532,7 +2742,12 @@ fn contains(rect: &RECT, point: POINT) -> bool {
 /// off-screen, where a screen hit-test would find something else.
 fn elements_at(target: &Target, point: POINT) -> Result<Vec<IUIAutomationElement>, String> {
     let automation = automation()?;
-    let roots = automation_roots(&automation, target.window)?;
+    // A popup covers whatever is under it in the window: only its own tree
+    // counts there.
+    let roots = match target.popup_at(point) {
+        Some(popup) => automation_roots(&automation, popup)?,
+        None => automation_roots(&automation, target.window)?,
+    };
     let walker = unsafe { automation.ControlViewWalker() }
         .map_err(|error| format!("UI Automation walker unavailable: {error}"))?;
     // The deepest chain wins: a page's own tree (under its render host) goes
@@ -3199,6 +3414,48 @@ mod live_tests {
     #[ignore = "opens a WebView2 window on the local desktop"]
     fn probes_webview2_fields() {
         probe_fields(ProbeHost::WebView2);
+    }
+
+    /// A `<select>` opens its list as a popup window of its own. It must
+    /// show up in the screenshot and the UI tree, and an item in it must be
+    /// pickable.
+    #[test]
+    #[ignore = "opens an Edge window on the local desktop"]
+    fn works_in_a_select_popup() {
+        let session = "probe-popup";
+        with_probe_page(session, ProbeHost::Edge, false, |emit, hwnd| {
+            let (x, y) = centre_of(emit, session, "Color select");
+            let opened = run_action(emit, session, "click", &json!({ "x": x, "y": y })).unwrap();
+            eprintln!("open select: {opened}");
+            let mut popups = Vec::new();
+            for _ in 0..20 {
+                pause(150);
+                popups = Target::resolve(session).unwrap().popups;
+                if !popups.is_empty() {
+                    break;
+                }
+            }
+            assert!(!popups.is_empty(), "the select's list never showed up as a popup");
+            eprintln!("popups: {:?}", popups.iter().map(|popup| class_name(*popup)).collect::<Vec<_>>());
+
+            let target = Target::resolve(session).unwrap();
+            let shot = run_action(emit, session, "screenshot", &json!({})).unwrap();
+            let (width, height) = target.screenshot_size();
+            assert_eq!((shot["width"].as_u64(), shot["height"].as_u64()), (Some(width as u64), Some(height as u64)));
+
+            let tree = snapshot_text(emit, session);
+            let green = tree
+                .lines()
+                .find(|line| line.contains("\"Green\""))
+                .and_then(|line| line.split("[ref=").nth(1))
+                .and_then(|rest| rest.split(']').next())
+                .unwrap_or_else(|| panic!("the popup's items are not in the tree:\n{tree}"))
+                .to_string();
+            let picked = run_action(emit, session, "click", &json!({ "ref": green })).unwrap();
+            eprintln!("pick green: {picked}");
+            pause(400);
+            assert_eq!(page_report(hwnd).get("color").map(String::as_str), Some("Green"));
+        });
     }
 
     /// A native window with a small web pane stays a native app: attaching
