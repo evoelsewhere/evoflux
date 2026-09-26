@@ -278,7 +278,10 @@ frontmost app never changed.
   WindowServer, loginwindow, SecurityAgent and the other system UI processes,
   plus System Settings, Keychain Access and Passwords — System Settings is where
   apps are granted Accessibility access, so an agent could otherwise grant
-  itself more.
+  itself more. Also on macOS, apps that run commands or scripts: Terminal,
+  iTerm2, Alacritty, kitty, WezTerm, Ghostty, Hyper, Script Editor, Shortcuts
+  and Automator. Typing into one runs anything, with that app's permissions
+  (a terminal often has Full Disk Access) and outside every EvoFlux sandbox.
 - Windows-key shortcuts and Ctrl+Alt+Delete are refused; on macOS so are
   Control+Command+Q (lock), Shift+Command+Q (log out) and Option+Command+Esc
   (Force Quit). The Apple menu is never searched or pressed.

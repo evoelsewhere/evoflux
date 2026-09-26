@@ -53,8 +53,8 @@ use once_cell::sync::Lazy;
 use serde_json::{json, Value};
 
 use super::{
-    blocked_combo_reason, interrupted, is_protected_process_name, on_worker, parse_key_combo,
-    post_to_worker, screenshot_scale, KeyCombo,
+    blocked_combo_reason, interrupted, is_command_runner, is_protected_process_name, on_worker,
+    parse_key_combo, post_to_worker, screenshot_scale, KeyCombo,
 };
 
 const POINTER_TRAVEL: Duration = Duration::from_millis(220);
@@ -1051,6 +1051,12 @@ fn attach_refusal(row: &WindowRow) -> Option<String> {
         return Some(format!(
             "macOS did not let EvoFlux inspect the process behind \"{}\", so it cannot be controlled.",
             row.title
+        ));
+    }
+    if is_command_runner(&row.app) {
+        return Some(format!(
+            "{} runs commands and scripts, which would let the agent do anything outside Computer App Control's limits, so it cannot be controlled. Use the agent's own tools for commands, or ask the user.",
+            row.app
         ));
     }
     if is_protected_process_name(&row.app) {

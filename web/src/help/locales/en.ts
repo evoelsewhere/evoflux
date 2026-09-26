@@ -1710,7 +1710,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'callout',
         tone: 'info',
         title: 'Limits',
-        text: 'System shell and security processes (on macOS also Finder and System Settings), EvoFlux itself and apps running as administrator can never be attached. Some apps (UWP, games, apps that read raw input) ignore background clicks; the agent then uses accessibility actions (invoke, set_value) instead. On macOS a hidden app is parked in a corner of the screen with only a point showing, and a window on another Space must be brought to the current desktop first.',
+        text: 'System shell and security processes (on macOS also Finder and System Settings), EvoFlux itself and apps running as administrator can never be attached, and on macOS neither can apps that run commands or scripts (Terminal, iTerm2, Script Editor, Shortcuts and similar). Some apps (UWP, games, apps that read raw input) ignore background clicks; the agent then uses accessibility actions (invoke, set_value) instead. On macOS a hidden app is parked in a corner of the screen with only a point showing, and a window on another Space must be brought to the current desktop first.',
       },
       {
         type: 'tips',
