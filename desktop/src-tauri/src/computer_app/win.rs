@@ -34,7 +34,7 @@ use windows::Win32::System::Threading::{
     QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
 use windows::Win32::UI::Accessibility::{
-    AccessibleObjectFromWindow, CUIAutomation, ExpandCollapseState_Collapsed,
+    AccessibleObjectFromWindow, CUIAutomation, SetWinEventHook, HWINEVENTHOOK, ExpandCollapseState_Collapsed,
     ExpandCollapseState_PartiallyExpanded, IAccessible, IUIAutomation, IUIAutomationElement,
     IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
     IUIAutomationLegacyIAccessiblePattern, IUIAutomationSelectionItemPattern,
@@ -71,7 +71,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, PostMessageW,
     SendMessageTimeoutW, SetForegroundWindow, ShowWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
     CWP_SKIPTRANSPARENT, GA_ROOT, GUITHREADINFO, GWL_EXSTYLE, GW_ENABLEDPOPUP, GW_OWNER,
-    GWL_STYLE, WS_CAPTION, WS_POPUP,
+    GWL_STYLE, WS_CAPTION, WS_CHILD, WS_POPUP, CHILDID_SELF, EVENT_OBJECT_SHOW, OBJID_WINDOW,
+    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, MSG, GetMessageW, DispatchMessageW,
     SMTO_ABORTIFHUNG, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CHAR, WM_KEYDOWN, WM_KEYUP,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN,
     WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_RBUTTONDBLCLK,
@@ -305,6 +306,114 @@ fn unpark(hwnd: HWND, placement: WINDOWPLACEMENT, activate: bool) {
     };
     unsafe {
         let _ = SetWindowPlacement(hwnd, &restore);
+    }
+    bring_dialogs_back(hwnd, placement.rcNormalPosition);
+}
+
+// ── Dialogs of a parked window ──────────────────────────────────────────
+//
+// A dialog is a top-level window of its own, and Windows (DS_CENTER) and
+// frameworks (WinForms' CenterParent) keep it on a monitor: a parked app's
+// dialogs opened on the user's screen. While a window is parked, a
+// captioned window it owns is moved over it the moment it is shown, and
+// centred back over it when the window is handed back. Captionless popups
+// (menus, dropdowns) are placed by `bring_popups_along` instead.
+
+fn is_dialog_of(hwnd: HWND, top: HWND) -> bool {
+    let style = unsafe { GetWindowLongPtrW(hwnd, GWL_STYLE) } as u32;
+    hwnd != top
+        && style & WS_CHILD.0 == 0
+        && style & WS_CAPTION.0 == WS_CAPTION.0
+        && owned_by(hwnd, top, top)
+}
+
+/// Centre `window` on `over`, resized neither.
+fn centre_on(window: HWND, over: RECT, min_x: i32) {
+    let frame = frame_rect(window);
+    let x = over.left + ((over.right - over.left) - (frame.right - frame.left)) / 2;
+    let y = over.top + ((over.bottom - over.top) - (frame.bottom - frame.top)) / 2;
+    unsafe {
+        let _ = SetWindowPos(
+            window,
+            None,
+            x.max(min_x),
+            y,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+        );
+    }
+}
+
+/// Move a dialog of the parked `top` over it, off the user's screen.
+fn park_dialog(dialog: HWND, top: HWND) {
+    if !is_off_screen(dialog) {
+        // Wholly past the screen's edge, even when wider than its owner.
+        centre_on(dialog, frame_rect(top), virtual_screen().right + 40);
+    }
+}
+
+/// `top` is back where the user left it (`normal`): bring its dialogs along.
+fn bring_dialogs_back(top: HWND, normal: RECT) {
+    let pid = window_pid(top);
+    for dialog in top_level_windows() {
+        if window_pid(dialog) == pid
+            && unsafe { IsWindowVisible(dialog) }.as_bool()
+            && is_off_screen(dialog)
+            && is_dialog_of(dialog, top)
+        {
+            centre_on(dialog, normal, i32::MIN);
+        }
+    }
+}
+
+/// Start, once, the thread that parks dialogs as they open (see above).
+fn watch_for_dialogs() {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let _ = std::thread::Builder::new()
+            .name("computer-app-dialogs".into())
+            .spawn(|| unsafe {
+                let hook = SetWinEventHook(
+                    EVENT_OBJECT_SHOW,
+                    EVENT_OBJECT_SHOW,
+                    None,
+                    Some(on_window_shown),
+                    0,
+                    0,
+                    WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+                );
+                if hook.is_invalid() {
+                    return;
+                }
+                let mut message = MSG::default();
+                while GetMessageW(&mut message, None, 0, 0).as_bool() {
+                    DispatchMessageW(&message);
+                }
+            });
+    });
+}
+
+unsafe extern "system" fn on_window_shown(
+    _hook: HWINEVENTHOOK,
+    _event: u32,
+    hwnd: HWND,
+    object: i32,
+    child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    if object != OBJID_WINDOW.0 || child != CHILDID_SELF as i32 || hwnd.0.is_null() {
+        return;
+    }
+    let parked: Vec<HWND> = registry()
+        .attached
+        .values()
+        .filter(|attached| attached.parked.is_some())
+        .map(|attached| to_hwnd(attached.hwnd))
+        .collect();
+    if let Some(top) = parked.into_iter().find(|top| is_dialog_of(hwnd, *top)) {
+        park_dialog(hwnd, top);
     }
 }
 
@@ -962,6 +1071,7 @@ fn attach(session_id: &str, params: &Value) -> Result<Value, String> {
         wait_for_page_tree(chosen.hwnd);
     }
     let parked = if hide {
+        watch_for_dialogs();
         let parked = park(chosen.hwnd);
         if web {
             // Let Chromium finish reacting to being hidden before the first
@@ -1064,6 +1174,11 @@ impl Target {
             restored = false;
         }
         let window = effective_window(top, attached.pid);
+        if attached.parked.is_some() && window != top {
+            // One that opened before it was parked, or that the app moved
+            // back onto a monitor.
+            park_dialog(window, top);
+        }
         let window_frame = frame_rect(window);
         let popups = open_popups(window, top, attached.pid);
         if attached.parked.is_some() && !popups.is_empty() {
@@ -4129,6 +4244,50 @@ mod live_tests {
                 stale.as_ref().is_err_and(|error| error.contains("Unknown ref")),
                 "a ref from an earlier snapshot was accepted: {stale:?}"
             );
+        });
+    }
+
+    /// A shown top-level window titled `title`, once it opens.
+    fn opened_window(title: &str) -> HWND {
+        for _ in 0..30 {
+            let found = top_level_windows()
+                .into_iter()
+                .find(|hwnd| unsafe { IsWindowVisible(*hwnd) }.as_bool() && window_title(*hwnd) == title);
+            if let Some(hwnd) = found {
+                return hwnd;
+            }
+            pause(100);
+        }
+        panic!("{title:?} never opened");
+    }
+
+    #[test]
+    #[ignore = "opens a WinForms window on the local desktop"]
+    fn keeps_a_parked_apps_dialogs_off_screen() {
+        with_dialog_probe(|emit, session, probe| {
+            // WinForms keeps a dialog on a monitor; the dialog watcher moves
+            // it over its parked owner as it opens, before any action runs.
+            run_action(emit, session, "click", &json!({ "ref": ref_for(emit, session, "Open dialog 1") })).unwrap();
+            let first = opened_window("probe dialog 1");
+            pause(300);
+            assert!(is_off_screen(first), "dialog 1 opened on the user's screen at {:?}", frame_rect(first));
+            wait_for_title(session, "probe dialog 1");
+
+            // A dialog opened from the dialog is followed, and parked too.
+            run_action(emit, session, "click", &json!({ "ref": ref_for(emit, session, "Open dialog 2") })).unwrap();
+            let second = opened_window("probe dialog 2");
+            pause(300);
+            assert!(is_off_screen(second), "dialog 2 opened on the user's screen at {:?}", frame_rect(second));
+            wait_for_title(session, "probe dialog 2");
+            run_action(emit, session, "click", &json!({ "ref": ref_for(emit, session, "Close dialog 2") })).unwrap();
+            wait_for_title(session, "probe dialog 1");
+
+            // Released while a dialog is open: it comes back with its window,
+            // or the user would face an app blocked by a dialog they cannot see.
+            detach(session);
+            pause(300);
+            assert!(!is_off_screen(probe), "the probe was left off-screen");
+            assert!(!is_off_screen(first), "dialog 1 was left off-screen at {:?}", frame_rect(first));
         });
     }
 
