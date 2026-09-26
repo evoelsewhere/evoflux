@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   createComputerAppBridge,
+  restoreOpenCards,
   runComputerAppCommand,
 } from '@/components/ComputerAppViewer/computerAppBridge'
 import { useUIStore } from '@/stores/useUIStore'
@@ -84,6 +85,39 @@ describe('createComputerAppBridge', () => {
     await vi.waitFor(() => expect(a.closed).toBe(true))
     expect(a.sent.some((message) => message.includes('"r1"'))).toBe(true)
     bridge.dispose()
+  })
+})
+
+describe('restoreOpenCards', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    desktop.invoke.mockReset()
+    useUIStore.setState({ computerPipSessionIds: [] })
+  })
+
+  it('reopens after a reload only the cards whose app is still attached', async () => {
+    sessionStorage.setItem('oa.computer-app.open-cards', JSON.stringify(['held', 'gone', 'paused']))
+    desktop.invoke.mockImplementation(async (_command: string, args: { sessionId: string }) => ({
+      attached: args.sessionId === 'held',
+      stopped: args.sessionId === 'paused',
+    }))
+
+    const stop = restoreOpenCards()
+
+    await vi.waitFor(() =>
+      expect([...useUIStore.getState().computerPipSessionIds].sort()).toEqual(['held', 'paused']),
+    )
+    stop()
+  })
+
+  it('saves the open cards as they change', () => {
+    const stop = restoreOpenCards()
+    useUIStore.getState().openComputerPip('chat-9')
+
+    expect(JSON.parse(sessionStorage.getItem('oa.computer-app.open-cards')!)).toEqual(['chat-9'])
+    stop()
+    useUIStore.getState().closeComputerPip('chat-9')
+    expect(JSON.parse(sessionStorage.getItem('oa.computer-app.open-cards')!)).toEqual(['chat-9'])
   })
 })
 

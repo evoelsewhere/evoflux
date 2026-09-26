@@ -36,7 +36,10 @@ to both unless it names Windows mechanisms.
 5. The user can press **Stop** (revokes control for the chat and interrupts the
    turn), **Allow again**, **Show the app** (brings the real window forward for
    manual takeover) or **Close** (detaches). The agent can only act while an app
-   is attached, which is exactly while the card is open.
+   is attached, which is exactly while the card is open. The desktop keeps an
+   app attached across a reload of the UI, so each window keeps its open cards
+   in sessionStorage (`oa.computer-app.open-cards`) and reopens, after a
+   reload, those whose session the desktop still has attached or stopped.
 
    Stop and Close also end the action in progress, not only the ones after
    it: every action takes a ticket for its session when it arrives, Stop and a

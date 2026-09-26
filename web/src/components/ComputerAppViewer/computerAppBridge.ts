@@ -14,6 +14,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { apiWsBaseUrl } from '@/api/base-url'
 import { withTokenParam } from '@/api/auth'
 import { getPlatform } from '@/hooks/use-platform'
+import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { useUIStore } from '@/stores/useUIStore'
 
 /** Close codes the bridge uses to say why it hung up. */
@@ -21,6 +22,7 @@ const WS_UNAUTHORIZED = 4401
 const WS_DISPLACED = 4409
 const RECONNECT_BASE_MS = 1_000
 const RECONNECT_MAX_MS = 15_000
+const OPEN_CARDS_KEY = STORAGE_KEYS.computerApp.openCards
 
 export const COMPUTER_APP_COMMANDS = [
   'status', 'list_windows', 'attach', 'detach', 'screenshot', 'snapshot', 'find',
@@ -47,7 +49,9 @@ export function useComputerAppBridge(
     if (!computerAppSupported()) return
     const created = createComputerAppBridge()
     bridge.current = created
+    const stopSaving = restoreOpenCards()
     return () => {
+      stopSaving()
       created.dispose()
       if (bridge.current === created) bridge.current = null
     }
@@ -56,6 +60,49 @@ export function useComputerAppBridge(
   useEffect(() => {
     bridge.current?.sync(sessionKey ? sessionKey.split('\u0000') : [])
   }, [sessionKey])
+}
+
+/**
+ * Reopen the cards this window had open before a reload, and keep the list
+ * saved from now on. Returns a function that stops saving.
+ *
+ * The desktop keeps an app attached across a reload of the UI, but the
+ * cards lived only in memory: they vanished, the agent kept driving an app
+ * nobody could see, and a hidden app stayed off-screen until EvoFlux quit.
+ * The list is kept in sessionStorage — per window, so a second EvoFlux
+ * window does not open (and take over the socket of) another's cards — and
+ * a card only comes back for a session the desktop still has attached or
+ * stopped.
+ */
+export function restoreOpenCards(): () => void {
+  let saved: unknown = []
+  try {
+    saved = JSON.parse(sessionStorage.getItem(OPEN_CARDS_KEY) ?? '[]')
+  } catch {
+    saved = []
+  }
+  const sessionIds = Array.isArray(saved)
+    ? saved.filter((id): id is string => typeof id === 'string')
+    : []
+  for (const sessionId of sessionIds) {
+    void invoke<{ attached?: boolean; stopped?: boolean }>('app_computer_action', {
+      sessionId,
+      action: 'status',
+      params: {},
+    })
+      .then((status) => {
+        if (status?.attached || status?.stopped) useUIStore.getState().openComputerPip(sessionId)
+      })
+      .catch(() => undefined)
+  }
+  return useUIStore.subscribe((state, previous) => {
+    if (state.computerPipSessionIds === previous.computerPipSessionIds) return
+    try {
+      sessionStorage.setItem(OPEN_CARDS_KEY, JSON.stringify(state.computerPipSessionIds))
+    } catch {
+      // Storage unavailable: a reload then loses the cards, as before.
+    }
+  })
 }
 
 export interface ComputerAppBridge {

@@ -93,5 +93,7 @@ export const STORAGE_KEYS = {
 
   computerApp: {
     previewPlacement: 'oa.computer-app.preview-placement',
+    /** sessionStorage: this window's open cards, kept across a reload. */
+    openCards: 'oa.computer-app.open-cards',
   },
 } as const
