@@ -69,6 +69,24 @@ describe('createComputerAppBridge', () => {
     expect(a.closed).toBe(true)
   })
 
+  it('takes a displaced session back when the user returns to the window', () => {
+    vi.useFakeTimers()
+    const bridge = createComputerAppBridge()
+    bridge.sync(['a'])
+    const first = socketFor('a')
+    // Another EvoFlux window took the session.
+    first.readyState = 3
+    first.onclose?.({ code: 4409 })
+    vi.advanceTimersByTime(60_000)
+    expect(FakeSocket.instances).toHaveLength(1)
+
+    window.dispatchEvent(new Event('focus'))
+
+    expect(FakeSocket.instances).toHaveLength(2)
+    bridge.dispose()
+    vi.useRealTimers()
+  })
+
   it('keeps a leaving session open until its command is answered', async () => {
     let finish: (value: unknown) => void = () => undefined
     desktop.invoke.mockImplementation(() => new Promise((resolve) => { finish = resolve }))

@@ -118,6 +118,8 @@ interface BridgeEntry {
   queue: Promise<void>
   /** Commands received and not yet answered. */
   pending: number
+  /** Another EvoFlux window took the session over. */
+  displaced: boolean
 }
 
 /**
@@ -143,9 +145,10 @@ export function createComputerAppBridge(): ComputerAppBridge {
   const connect = (sessionId: string) => {
     if (disposed || !wanted.has(sessionId)) return
     const entry = entries.get(sessionId)
-      ?? { socket: null, timer: null, delay: RECONNECT_BASE_MS, queue: Promise.resolve(), pending: 0 }
+      ?? { socket: null, timer: null, delay: RECONNECT_BASE_MS, queue: Promise.resolve(), pending: 0, displaced: false }
     entries.set(sessionId, entry)
     entry.timer = null
+    entry.displaced = false
     const socket = new WebSocket(bridgeUrl(sessionId))
     entry.socket = socket
     socket.onopen = () => {
@@ -190,14 +193,30 @@ export function createComputerAppBridge(): ComputerAppBridge {
     socket.onclose = (event) => {
       if (entry.socket === socket) entry.socket = null
       if (disposed || !wanted.has(sessionId) || entries.get(sessionId) !== entry) return
-      // Another window took this session, or the token was refused:
-      // reconnecting would only fight it or hammer the auth gate.
-      if (event.code === WS_DISPLACED || event.code === WS_UNAUTHORIZED) return
+      // Another window took this session: reconnecting now would only fight
+      // it. The session is taken back when the user returns to this window
+      // (see `reclaim`), rather than never, as before.
+      if (event.code === WS_DISPLACED) {
+        entry.displaced = true
+        return
+      }
+      // The token was refused: reconnecting would hammer the auth gate.
+      if (event.code === WS_UNAUTHORIZED) return
       entry.delay = Math.min(entry.delay * 2, RECONNECT_MAX_MS)
       entry.timer = setTimeout(() => connect(sessionId), entry.delay)
     }
     socket.onerror = () => socket.close()
   }
+
+  /** The user is back in this window: take back the sessions another window took. */
+  const reclaim = () => {
+    if (disposed || document.visibilityState === 'hidden') return
+    for (const [sessionId, entry] of entries) {
+      if (entry.displaced && !entry.socket && wanted.has(sessionId)) connect(sessionId)
+    }
+  }
+  window.addEventListener('focus', reclaim)
+  document.addEventListener('visibilitychange', reclaim)
 
   return {
     sync(sessionIds) {
@@ -214,6 +233,8 @@ export function createComputerAppBridge(): ComputerAppBridge {
     },
     dispose() {
       disposed = true
+      window.removeEventListener('focus', reclaim)
+      document.removeEventListener('visibilitychange', reclaim)
       wanted = new Set()
       for (const [sessionId, entry] of [...entries]) retire(sessionId, entry)
     },
