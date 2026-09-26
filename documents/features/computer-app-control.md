@@ -115,8 +115,11 @@ link or drop-down is clicked through its MSAA default action (the pattern's
 action if refused), fields, sliders and scrolling go through MSAA and
 IAccessible2 as above, and before any action the page's widgets, an open
 popup's included, are told they have focus (a posted `WM_SETFOCUS`), which
-keeps a posted mouse press from focusing them. Options in a `<select>` list
-keep Invoke: their default action does not pick them. The probes check the
+keeps a posted mouse press from focusing them. An option of an open `<select>`
+list is picked with the keys a person would press (Down or Up from the option
+now chosen, then Enter, which Chromium passes on to the open list): its
+default action does not pick it, and Invoke still activated the window now and
+then. The probes check the
 user's foreground window keeps the foreground; the WebView2 host they use
 never focuses itself, so that check always runs.
 
