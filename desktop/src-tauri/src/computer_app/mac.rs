@@ -550,8 +550,9 @@ fn release(session_id: &str) -> Option<Attached> {
         let still_used = registry().attached.values().any(|other| other.pid == attached.pid);
         if let Some(app) = Ax::application(attached.pid) {
             if let Some(parked) = attached.parked {
-                if let Some(window) = ax_window(&app, attached.window_id) {
-                    unpark(&window, parked, false);
+                match reach_window(&app, attached.window_id) {
+                    Some(window) => unpark(&window, parked, false),
+                    None => put_back_later(attached.pid, attached.window_id, parked),
                 }
             }
             if attached.web && !still_used {
@@ -562,6 +563,47 @@ fn release(session_id: &str) -> Option<Attached> {
         }
     }
     released
+}
+
+/// The window, asked for a few times: accessibility can fail for a moment
+/// (see [`Target::resolve`]). `None` at once for a window that is gone.
+fn reach_window(app: &Ax, id: u32) -> Option<Ax> {
+    for attempt in 0..3 {
+        if let Some(window) = ax_window(app, id) {
+            return Some(window);
+        }
+        if cg_window(id).is_none() {
+            return None;
+        }
+        if attempt < 2 {
+            pause(300);
+        }
+    }
+    None
+}
+
+/// Keep trying for two minutes to put back a parked window that
+/// accessibility cannot reach now (the user is on another Space, the app is
+/// busy). Its own thread looks the app up itself: accessibility elements do
+/// not cross threads.
+fn put_back_later(pid: i32, window_id: u32, parked: Parked) {
+    let _ = std::thread::Builder::new()
+        .name("computer-app-put-back".into())
+        .spawn(move || {
+            for _ in 0..60 {
+                pause(2000);
+                // Gone, or attached (and parked) again meanwhile.
+                if cg_window(window_id).is_none()
+                    || registry().attached.values().any(|attached| attached.window_id == window_id)
+                {
+                    return;
+                }
+                if let Some(window) = Ax::application(pid).and_then(|app| ax_window(&app, window_id)) {
+                    unpark(&window, parked, false);
+                    return;
+                }
+            }
+        });
 }
 
 pub(crate) fn stop(session_id: &str) {
@@ -1345,19 +1387,28 @@ impl Target {
             .get(session_id)
             .cloned()
             .ok_or("No app is attached. Call list_windows, then attach to one window.")?;
-        let closed = || {
+        // The window server knows a window by id wherever it is (another
+        // Space, full screen); only a window that is gone is missing there.
+        if cg_window(attached.window_id).is_none() {
             registry().attached.remove(session_id);
             clear_refs(session_id);
-            format!(
+            return Err(format!(
                 "The attached window ({} — {}) was closed. Call list_windows and attach again.",
                 attached.app, attached.title
+            ));
+        }
+        // Accessibility can fail for a moment — the app is busy past the
+        // messaging timeout, the window is on another Space or entering
+        // full screen. Dropping the session then left a parked window in
+        // its corner for good; it stays attached instead.
+        let unreachable = || {
+            format!(
+                "\"{}\" did not answer through accessibility just now (it may be busy, full screen, or on another Space). It is still attached: try again in a moment, or ask the user to bring it to this desktop.",
+                attached.title
             )
         };
-        if cg_window(attached.window_id).is_none() {
-            return Err(closed());
-        }
-        let app = Ax::application(attached.pid).ok_or_else(closed)?;
-        let top = ax_window(&app, attached.window_id).ok_or_else(closed)?;
+        let app = Ax::application(attached.pid).ok_or_else(unreachable)?;
+        let top = ax_window(&app, attached.window_id).ok_or_else(unreachable)?;
         let mut restored = false;
         if app.flag("AXHidden").unwrap_or(false) {
             // Hidden with ⌘H: show it again without activating it.
