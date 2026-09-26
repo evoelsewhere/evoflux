@@ -43,10 +43,15 @@
   </div>
   <div id="track" role="group" aria-label="Drag track"><div id="handle" role="button" aria-label="Drag handle"></div></div>
   <input type="range" id="range" min="0" max="100" value="10" aria-label="Volume slider">
+  <!-- An overlay: the later button covers the earlier one entirely. -->
+  <div style="position: relative; width: 420px; height: 40px; margin: 10px 0">
+    <button id="under" aria-label="Covered button" style="width: 420px; height: 40px">under</button>
+    <button id="over" aria-label="Covering button" style="position: absolute; left: 0; top: 0; width: 420px; height: 40px">over</button>
+  </div>
   <script>
     const $ = (id) => document.getElementById(id);
     const events = { name: 0, notes: 0, editor: 0 };
-    const counts = { sent: 0, hover: 0, dbl: 0, ctx: 0, drag: 0 };
+    const counts = { sent: 0, hover: 0, dbl: 0, ctx: 0, drag: 0, under: 0, over: 0 };
     function report() {
       document.title = ['probe',
         'name=' + $('name').value,
@@ -57,6 +62,7 @@
         'scroll=' + Math.round($('scrollbox').scrollTop), 'drag=' + counts.drag,
         'range=' + $('range').value,
         'color=' + $('color').value,
+        'under=' + counts.under, 'over=' + counts.over,
         // Where keys would go now: the focused element, and whether the
         // page itself has focus (+) or not (-).
         'focus=' + (document.activeElement && document.activeElement.id || 'body') + (document.hasFocus() ? '+' : '-'),
@@ -70,6 +76,8 @@
     $('scrollbox').addEventListener('scroll', report);
     $('range').addEventListener('input', report);
     $('color').addEventListener('change', report);
+    $('under').addEventListener('click', () => { counts.under += 1; report(); });
+    $('over').addEventListener('click', () => { counts.over += 1; report(); });
     // A pointer-driven drag, the way most web apps implement one.
     let dragStart = null;
     $('handle').addEventListener('pointerdown', (event) => { dragStart = event.clientX; $('handle').setPointerCapture(event.pointerId); });
