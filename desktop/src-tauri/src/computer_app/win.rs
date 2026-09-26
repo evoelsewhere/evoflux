@@ -76,7 +76,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, MSG, GetMessageW, DispatchMessageW,
     SMTO_ABORTIFHUNG, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CHAR, WM_KEYDOWN, WM_KEYUP,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_RBUTTONDBLCLK,
+    WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NULL, WM_RBUTTONDBLCLK,
     WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WS_EX_TOOLWINDOW,
 };
 
@@ -95,6 +95,12 @@ const WHEEL_DELTA: i32 = 120;
 /// How long the preview's cursor gets to travel before the input lands.
 const POINTER_TRAVEL: Duration = Duration::from_millis(220);
 const DEFAULT_TYPE_DELAY_MS: u64 = 8;
+/// How long typing rests after an Enter or Tab, on top of [`settle`]. Excel
+/// recalculates after a cell is committed and, while it does, drops
+/// characters posted to it even though it answers sent messages: the first
+/// letters of the cell after a formula went missing ("=D2/B2-1" arrived as
+/// "2/B2-1").
+const CELL_CHANGE_PAUSE_MS: u64 = 60;
 const MAX_TYPE_CHARS: usize = 20_000;
 
 // ── Session registry ────────────────────────────────────────────────────
@@ -2074,6 +2080,30 @@ fn pause(ms: u64) {
     std::thread::sleep(Duration::from_millis(ms));
 }
 
+/// Wait until `hwnd`'s thread has worked through the input posted to it.
+///
+/// A sent message is handled the next time the thread asks for a message,
+/// ahead of anything posted, so the first round trip only proves the thread
+/// is awake; each further one proves it came back for another message after
+/// handling the next posted one. A key's down, the character it is
+/// translated to and its up take three; Excel then finishes a cell change
+/// through messages it posts to itself, and with four round trips the first
+/// letter after a Tab still went to the editor it was closing. A nested
+/// modal loop (a dialog the key opened) answers too, once the dialog is up.
+/// An idle thread answers at once, so the spare trips cost next to nothing;
+/// a hung app, or one busy past the timeout, ends the wait, not the action.
+fn settle(hwnd: HWND) {
+    for _ in 0..8 {
+        let mut ignored = 0usize;
+        let answered = unsafe {
+            SendMessageTimeoutW(hwnd, WM_NULL, WPARAM(0), LPARAM(0), SMTO_ABORTIFHUNG, 500, Some(&mut ignored))
+        };
+        if answered.0 == 0 {
+            return;
+        }
+    }
+}
+
 /// Where a pointer action lands: a ref's centre or screenshot coordinates.
 fn pointer_target(target: &Target, params: &Value) -> Result<POINT, String> {
     if let Some(reference) = params.get("ref").and_then(Value::as_str) {
@@ -2580,16 +2610,26 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
         .and_then(Value::as_u64)
         .unwrap_or(DEFAULT_TYPE_DELAY_MS)
         .min(200);
-    let hwnd = keyboard_target(target);
-    let thread = unsafe { GetWindowThreadProcessId(hwnd, None) };
+    // A click or key just before may still be on its way, and may move the
+    // focus when it lands.
+    settle(keyboard_target(target));
+    let mut hwnd = keyboard_target(target);
     // A Tab moves on to another control, so only text without one can be
     // looked for in the field it started in.
     let field = if text.contains('\t') { None } else { readable_field(hwnd) };
     let before = field.as_ref().and_then(field_value);
-    let press = |name: &str| {
+    let press = |hwnd: HWND, name: &str| {
+        let thread = unsafe { GetWindowThreadProcessId(hwnd, None) };
         let combo = KeyCombo { ctrl: false, alt: false, shift: false, win: false, cmd: false, key: name.into() };
         post_key(hwnd, thread, &combo, 1)
     };
+    // The focus is looked up again after every Enter or Tab, and after the
+    // first character that follows one: a grid (Excel, a WinForms
+    // DataGridView) moves to the next cell on the key and opens an editor
+    // for that cell on its first character, and characters posted to the
+    // window that had the focus before were dropped — "Aug" arrived as "g",
+    // a cell went missing and the rows after it shifted.
+    let mut fresh = true;
     let mut previous = 0u16;
     for unit in text.encode_utf16() {
         let unit = match unit {
@@ -2608,9 +2648,21 @@ fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Va
             // act on the key-down (the default button, focus moving on), and
             // an edit control still gets its character when the app
             // translates the key as it does a typed one.
-            0x0D => press("enter")?,
-            0x09 => press("tab")?,
-            other => post(hwnd, WM_CHAR, other as usize, LPARAM(1))?,
+            0x0D | 0x09 => {
+                press(hwnd, if unit == 0x0D { "enter" } else { "tab" })?;
+                settle(hwnd);
+                pause(CELL_CHANGE_PAUSE_MS);
+                hwnd = keyboard_target(target);
+                fresh = true;
+            }
+            other => {
+                post(hwnd, WM_CHAR, other as usize, LPARAM(1))?;
+                if fresh {
+                    settle(hwnd);
+                    hwnd = keyboard_target(target);
+                    fresh = false;
+                }
+            }
         }
         if delay > 0 {
             pause(delay);
@@ -2866,6 +2918,10 @@ fn press_key(target: &Target, params: &Value) -> Result<Value, String> {
     };
     let thread = unsafe { GetWindowThreadProcessId(hwnd, None) };
     post_key(hwnd, thread, &combo, repeat)?;
+    // The next action looks up the focus afresh: let the app act on the key
+    // first, so text typed after a shortcut that opens a dialog (Ctrl+G in
+    // Excel) goes into the dialog instead of landing before it opens.
+    settle(hwnd);
     if moves_focus(&combo) {
         forget_editable(&target.session_id);
     }
@@ -4791,6 +4847,12 @@ mod live_tests {
     /// Run `body` against the WinForms dialog probe (see the fixture),
     /// attached and parked.
     fn with_dialog_probe(body: impl FnOnce(&dyn Fn(Value), &str, HWND)) {
+        with_winforms_probe("computer_app_dialogs.ps1", "dialog-probe", "live-dialogs", body);
+    }
+
+    /// Run `body` against a WinForms probe from `tests/fixtures`, found by
+    /// its title and attached parked.
+    fn with_winforms_probe(fixture: &str, title: &str, session: &str, body: impl FnOnce(&dyn Fn(Value), &str, HWND)) {
         use std::os::windows::process::CommandExt;
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -4798,26 +4860,25 @@ mod live_tests {
         let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests")
             .join("fixtures")
-            .join("computer_app_dialogs.ps1");
+            .join(fixture);
         let mut child = std::process::Command::new("powershell")
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
             .arg(&script)
             // CREATE_NO_WINDOW: no console, only the form.
             .creation_flags(0x0800_0000)
             .spawn()
-            .expect("start the dialog probe");
-        let session = "live-dialogs";
+            .expect("start the WinForms probe");
         let mut window = None;
         for _ in 0..50 {
             pause(200);
-            window = list_windows(session, &json!({ "query": "dialog-probe" }))["windows"]
+            window = list_windows(session, &json!({ "query": title }))["windows"]
                 .as_array()
                 .and_then(|windows| windows.first().cloned());
             if window.is_some() {
                 break;
             }
         }
-        let window_id = window.expect("the dialog probe never opened")["id"].as_u64().unwrap();
+        let window_id = window.unwrap_or_else(|| panic!("{title} never opened"))["id"].as_u64().unwrap();
         let emit = |_: Value| {};
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": true })).unwrap();
@@ -4923,6 +4984,45 @@ mod live_tests {
             pause(300);
             assert!(!is_off_screen(probe), "the probe was left off-screen");
             assert!(!is_off_screen(first), "dialog 1 was left off-screen at {:?}", frame_rect(first));
+        });
+    }
+
+    /// The grid probe's title once it reads `wanted`, or what it read last.
+    fn grid_title(hwnd: HWND, wanted: &str) -> String {
+        let mut title = String::new();
+        for _ in 0..30 {
+            title = window_title(hwnd);
+            if title == wanted {
+                break;
+            }
+            pause(100);
+        }
+        title
+    }
+
+    #[test]
+    #[ignore = "opens a WinForms window on the local desktop"]
+    fn types_across_cells_that_open_their_own_editor() {
+        with_winforms_probe("computer_app_grid.ps1", "grid-probe", "live-grid", |emit, session, probe| {
+            // One type across cells: every Tab lands in a new cell, whose
+            // first character opens its editor and takes the focus there.
+            // (No spaces: DataGridView takes Space for itself.)
+            let typed = run_action(
+                emit,
+                session,
+                "type",
+                &json!({ "text": "Americas\t188\tEurope\t154\tAsiaPacific\t129\n" }),
+            )
+            .unwrap();
+            let cells = "Americas|188/Europe|154/AsiaPacific|129";
+            assert_eq!(grid_title(probe, &format!("grid-probe {cells} goto:")), format!("grid-probe {cells} goto:"), "{typed}");
+
+            // A shortcut that opens a dialog, then typing into the dialog:
+            // the text must wait for the dialog rather than land behind it.
+            run_action(emit, session, "key", &json!({ "key": "ctrl+g" })).unwrap();
+            run_action(emit, session, "type", &json!({ "text": "B2" })).unwrap();
+            run_action(emit, session, "key", &json!({ "key": "enter" })).unwrap();
+            assert_eq!(grid_title(probe, &format!("grid-probe {cells} goto:B2")), format!("grid-probe {cells} goto:B2"));
         });
     }
 
