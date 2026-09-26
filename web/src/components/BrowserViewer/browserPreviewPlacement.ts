@@ -39,19 +39,16 @@ export interface PreviewPlacement {
 }
 
 /**
- * The bottom-right corner, or `slot` small-card widths to the left of it — so
- * two kinds of preview (a browser page, a desktop app) start side by side
+ * The bottom-right corner, or `slot` card-widths to the left of it — so two
+ * kinds of preview (a browser page, a desktop app) start side by side
  * instead of one hiding the other.
  */
-export function defaultPreviewPlacement(
-  slot = 0,
-  size: { width: number; height: number } = PREVIEW_SIZES.small,
-): PreviewPlacement {
-  const { width, height } = size
+export function defaultPreviewPlacement(slot = 0): PreviewPlacement {
+  const { width, height } = PREVIEW_SIZES.small
   return clampPreviewPlacement({
     width,
     height,
-    x: window.innerWidth - width - EDGE_MARGIN - (PREVIEW_SIZES.small.width + EDGE_MARGIN) * slot,
+    x: window.innerWidth - (width + EDGE_MARGIN) * (slot + 1),
     y: window.innerHeight - height - CHROME_HEIGHT - EDGE_MARGIN,
   })
 }
@@ -121,14 +118,13 @@ export function clampPreviewPlacement(
 export function loadPreviewPlacement(
   storageKey: string = STORAGE_KEYS.browser.previewPlacement,
   defaultSlot = 0,
-  defaultSize: { width: number; height: number } = PREVIEW_SIZES.small,
 ): PreviewPlacement {
   try {
     const raw = JSON.parse(
       localStorage.getItem(storageKey) ?? 'null',
     ) as Partial<PreviewPlacement> & { size?: string } | null
     if (!raw || typeof raw.x !== 'number' || typeof raw.y !== 'number') {
-      return defaultPreviewPlacement(defaultSlot, defaultSize)
+      return defaultPreviewPlacement(defaultSlot)
     }
     // Cards saved before the preview could be resized freely stored the name
     // of a preset instead of a size.
@@ -140,7 +136,7 @@ export function loadPreviewPlacement(
       height: typeof raw.height === 'number' ? raw.height : preset.height,
     })
   } catch {
-    return defaultPreviewPlacement(defaultSlot, defaultSize)
+    return defaultPreviewPlacement(defaultSlot)
   }
 }
 
