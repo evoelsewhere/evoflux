@@ -42,3 +42,12 @@ export function normalizeExe(value: string, windows = getPlatform().os === 'wind
   const name = value.trim().toLowerCase().split(/[\\/]/).pop() ?? ''
   return windows && name && !name.endsWith('.exe') ? `${name}.exe` : name
 }
+
+/**
+ * Typed app names, split on commas, semicolons and line breaks only: macOS
+ * executables have spaces in them ("Microsoft Word", "Script Editor"), and
+ * splitting on spaces made them two entries that match nothing.
+ */
+export function appList(value: string): string[] {
+  return [...new Set(value.split(/[,;\n]+/).map((item) => item.trim()).filter(Boolean))]
+}

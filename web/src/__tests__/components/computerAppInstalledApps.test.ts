@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { normalizeExe } from '@/components/ComputerAppViewer/useInstalledApps'
+import { appList, normalizeExe } from '@/components/ComputerAppViewer/useInstalledApps'
 
 describe('normalizeExe', () => {
   it('names the same Windows executable however it was written', () => {
@@ -19,5 +19,13 @@ describe('normalizeExe', () => {
   it('leaves an empty name empty', () => {
     expect(normalizeExe('   ', true)).toBe('')
     expect(normalizeExe('   ', false)).toBe('')
+  })
+})
+
+describe('appList', () => {
+  it('keeps names with spaces whole', () => {
+    expect(appList('Microsoft Word, Script Editor')).toEqual(['Microsoft Word', 'Script Editor'])
+    expect(appList('notepad.exe;excel.exe\nnotepad.exe, ')).toEqual(['notepad.exe', 'excel.exe'])
+    expect(appList('  ')).toEqual([])
   })
 })
