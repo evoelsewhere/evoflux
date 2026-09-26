@@ -120,6 +120,7 @@ export function ModeSwitchTabs({
     // clip the text), collapsing gracefully to icons + tooltips.
     <div className={cn('@container/modeswitch', className)}>
       <div
+        data-mode-switch
         className={cn(
           'relative grid grid-cols-2 items-center bg-(--bg-key)/55 shadow-[inset_0_0_0_1px_var(--color-border)]',
           compact ? 'h-9 rounded-lg p-0.5' : 'h-10 rounded-xl p-1',
@@ -130,6 +131,7 @@ export function ModeSwitchTabs({
       >
         <motion.div
           data-testid="mode-switch-indicator"
+          data-mode-switch-indicator
           data-active-mode={active}
           aria-hidden="true"
           className={cn(

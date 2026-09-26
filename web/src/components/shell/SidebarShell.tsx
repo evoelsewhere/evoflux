@@ -287,6 +287,7 @@ export function SidebarSearchTrigger({
     <button
       type="button"
       onClick={onClick}
+      data-sidebar-search
       className={cn(
         // No transparent border: it shifted this row's icon and label a
         // pixel off the nav rows below for nothing — focus is a box-shadow.

@@ -191,7 +191,7 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className={`fixed inset-0 z-(--z-modal) flex items-start justify-center bg-(--color-overlay) px-3 backdrop-blur-sm sm:px-0 sm:pt-[15vh] ${isTauriMobile ? 'pt-[max(5rem,calc(env(safe-area-inset-top)+3.5rem))]' : 'pt-4'}`}
+        className={`fixed inset-0 z-(--z-modal) flex items-start justify-center bg-(--color-overlay) px-3 backdrop-blur-xl sm:px-0 sm:pt-[15vh] ${isTauriMobile ? 'pt-[max(5rem,calc(env(safe-area-inset-top)+3.5rem))]' : 'pt-4'}`}
         onClick={onClose}
       >
         <motion.div
@@ -203,7 +203,7 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
           onClick={(e) => e.stopPropagation()}
           /* Wider than a command-only palette needed: rows now carry message
              excerpts and repository paths, which read badly at 28rem. */
-          className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-2xl sm:max-w-2xl"
+          className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-(--color-border)/80 bg-(--bg-card)/82 shadow-2xl backdrop-blur-2xl sm:max-w-2xl"
           role="dialog"
           aria-modal="true"
           aria-label="Command palette"
