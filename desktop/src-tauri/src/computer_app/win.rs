@@ -4358,15 +4358,51 @@ mod live_tests {
         std::env::temp_dir().join("evoflux-computer-app-probe")
     }
 
+    /// Wait until no Edge holds the probe profile. Each test starts Edge
+    /// right after the previous one killed its own, and Chromium runs one
+    /// browser per profile: an Edge started while the last one was still
+    /// dying handed its window to it and exited, leaving no probe window.
+    /// A running Chromium keeps `lockfile` in its profile open.
+    fn wait_for_free_profile() {
+        let lockfile = edge_profile().join("lockfile");
+        for _ in 0..50 {
+            match std::fs::remove_file(&lockfile) {
+                Ok(()) => return,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+                Err(_) => pause(200),
+            }
+        }
+        panic!("an earlier Edge still holds the probe profile");
+    }
+
     /// Start a process that must not inherit the test's output pipes, or the
     /// harness waits on them for as long as any of its children lives.
-    fn spawn_quiet(command: &mut std::process::Command) {
+    /// Returns its process id.
+    fn spawn_quiet(command: &mut std::process::Command) -> u32 {
         command
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .expect("start the probe host");
+            .expect("start the probe host")
+            .id()
+    }
+
+    /// Kill a probe host with its whole process tree, and wait for it to be
+    /// gone.
+    fn kill_tree(pid: u32) {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .output();
+        for _ in 0..50 {
+            let alive = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }
+                .map(|handle| unsafe { CloseHandle(handle) })
+                .is_ok();
+            if !alive {
+                return;
+            }
+            pause(100);
+        }
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -4391,7 +4427,10 @@ mod live_tests {
         unsafe {
             let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         }
-        match host {
+        if matches!(host, ProbeHost::Edge) {
+            wait_for_free_profile();
+        }
+        let launched = match host {
             ProbeHost::Edge => spawn_quiet(
                 std::process::Command::new(EDGE)
                     .arg(format!("--user-data-dir={}", edge_profile().display()))
@@ -4409,14 +4448,16 @@ mod live_tests {
                 }
                 spawn_quiet(&mut command)
             }
-        }
+        };
 
+        // The window of the process just started: "probe" alone also matched
+        // what an earlier test left closing.
         let mut window = None;
         for _ in 0..60 {
             pause(250);
             window = list_windows(session, &json!({ "query": "probe" }))["windows"]
                 .as_array()
-                .and_then(|windows| windows.first().cloned());
+                .and_then(|windows| windows.iter().find(|window| window["pid"] == json!(launched)).cloned());
             if window.is_some() {
                 break;
             }
@@ -4445,9 +4486,7 @@ mod live_tests {
         }));
 
         detach(session);
-        let _ = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .status();
+        kill_tree(pid as u32);
         if let Err(panic) = outcome {
             std::panic::resume_unwind(panic);
         }
