@@ -1641,6 +1641,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Mỗi lần gọi computer_app đều hỏi quyền, giống tool trình duyệt — trừ khi bạn chọn "Cho phép luôn, không hỏi" trong Cài đặt → Computer App Control.',
       'Chọn app được phép và bị chặn từ danh sách app trên máy, có kèm logo.',
       'Hộp thoại mà app mở ra (Save As, xác nhận) được tự động theo dõi.',
+      'Skill có sẵn computer-app-control hướng dẫn agent trong mọi app: làm việc ngay trong app bạn chỉ định thay vì sửa file phía sau, không bao giờ đụng vào clipboard của bạn, và đọc trước khi click. Có thể tắt nó trong Settings → Skills.',
       'Trên macOS, phím tắt như ⌘S được chạy qua thanh menu của chính app, nên vẫn dùng được khi app ở chế độ nền.',
       'Trên macOS, thẻ Quyền trên macOS trong Cài đặt → Computer App Control cho biết Accessibility và Screen Recording đã được cho phép chưa; nút Cho phép mở đúng mục trong System Settings, và Khởi động lại EvoFlux để áp dụng Screen Recording.',
     ],

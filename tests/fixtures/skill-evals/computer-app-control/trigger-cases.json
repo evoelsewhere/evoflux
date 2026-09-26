@@ -1,0 +1,37 @@
+[
+  {
+    "query": "Copy the revenue table from the dashboard I have open in Edge into my Q3 Sales workbook in Excel and add a chart.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fill in the vendor form that's open in our ERP app with the details from this email.",
+    "should_trigger": true
+  },
+  {
+    "query": "In the Word document I have open, add a summary paragraph at the end and save it.",
+    "should_trigger": true
+  },
+  {
+    "query": "Reply to the last message in my Teams chat saying I'll join at three.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use Computer App Control to change the default printer in the Settings window.",
+    "should_trigger": true
+  },
+  {
+    "query": "Create a new Excel file with last quarter's numbers and a chart.",
+    "should_trigger": false,
+    "near_miss": "No app is open with the file; the spreadsheet Skill builds the file itself."
+  },
+  {
+    "query": "Open example.com and summarize the pricing page.",
+    "should_trigger": false,
+    "near_miss": "The in-app browser can open a public site on its own."
+  },
+  {
+    "query": "Write a Python script that fills in Excel sheets from a CSV.",
+    "should_trigger": false,
+    "near_miss": "Code to write, not an app to drive."
+  }
+]
