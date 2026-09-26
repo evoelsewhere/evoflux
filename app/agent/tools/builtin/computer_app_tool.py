@@ -231,7 +231,9 @@ app's menu bar, so menu commands can be invoked by ref.
 When an action fails, the rest of the batch is skipped (a detach still
 runs): look at the app again before retrying.
 
-Workflow: attach → snapshot or screenshot → act by ref → screenshot to verify.\
+Workflow: attach → snapshot or screenshot → act by ref → read the result back
+(values in snapshot/find, what the app displays for the item; a screenshot
+last, for layout) and fix what differs before the next step.\
 """
 
 
