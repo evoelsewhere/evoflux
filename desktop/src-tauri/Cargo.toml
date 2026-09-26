@@ -94,6 +94,8 @@ windows ={ version = "0.61", features = [
     "Win32_UI_Shell",
     # Computer App Control: logical coordinates for DPI-unaware apps.
     "Win32_UI_HiDpi",
+    # Computer App Control: how long ago the user last typed (GetTickCount).
+    "Win32_System_SystemInformation",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Com",
 ] }
