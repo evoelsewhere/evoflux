@@ -19,6 +19,8 @@ from uuid import uuid4
 from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
 
+from app.services import memory_stream_store
+
 # Close code for a socket displaced by a newer attach on the same session.
 _WS_DISPLACED = 4409
 
@@ -175,5 +177,23 @@ class DirectComputerBridge:
             return 0, {}
         return connection.protocol_version, dict(connection.capabilities)
 
+    async def release_after_turn(self, session_id: str) -> None:
+        """Hand back the app a finished turn left attached.
+
+        A hidden app stays off-screen for as long as it is attached. The chat
+        UI released it when the turn ended, but only for the chat on screen:
+        a turn that ended while the user was in another chat left its app
+        hidden for good. The card is open while an app is attached, so its
+        socket is too; a session with nothing attached (or stopped, whose
+        card must stay) is left alone.
+        """
+        if not self.is_connected(session_id):
+            return
+        status = await self.request(session_id, "status", {}, timeout=10.0)
+        if isinstance(status, dict) and status.get("attached"):
+            await self.request(session_id, "detach", {}, timeout=10.0)
+            logger.info("direct_computer_released_after_turn session_id={}", session_id)
+
 
 direct_computer_bridge = DirectComputerBridge()
+memory_stream_store.add_turn_done_listener(direct_computer_bridge.release_after_turn)
