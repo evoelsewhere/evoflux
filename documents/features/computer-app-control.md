@@ -221,8 +221,10 @@ while one is missing and whenever EvoFlux regains focus). **Allow** calls the
 system request, which adds EvoFlux to the pane's list, and opens that exact
 pane (`x-apple.systempreferences:…?Privacy_Accessibility` /
 `?Privacy_ScreenCapture`) through `app_computer_request_permission`. macOS
-applies Screen Recording only to a process started after it was granted, so
-once it has been requested the card offers **Restart EvoFlux**
+applies Screen Recording only to a process started after it was granted, and
+reports it as missing until then, so while it is missing the card offers
+**Restart EvoFlux**, however it was allowed (macOS's own prompt, System
+Settings directly, or **Allow** here)
 (`app_computer_restart`, which releases controlled apps and stops the sidecar
 first). These commands are only invoked by the user's clicks, never by the
 agent.
