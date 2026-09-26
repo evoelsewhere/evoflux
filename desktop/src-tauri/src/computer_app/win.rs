@@ -64,7 +64,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, GetWindowTextW, IsZoomed, SetWindowPlacement, SetWindowPos,
     SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
     SET_WINDOW_POS_FLAGS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
-    SWP_NOZORDER, SW_SHOWMAXIMIZED, SetLayeredWindowAttributes, SetWindowLongPtrW,
+    SWP_NOZORDER, SW_SHOWMAXIMIZED, GetLayeredWindowAttributes, SetLayeredWindowAttributes, SetWindowLongPtrW,
+    LAYERED_WINDOW_ATTRIBUTES_FLAGS,
     GW_HWNDPREV, LWA_ALPHA, WS_EX_LAYERED, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
     SW_SHOWMINIMIZED, SW_SHOWMINNOACTIVE, WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS,
     WPF_RESTORETOMAXIMIZED,
@@ -2162,7 +2163,9 @@ fn partly_visible(window: HWND) -> bool {
 /// the gesture fails half-way.
 struct Peek {
     window: HWND,
-    ex_style: isize,
+    /// Dropped after `Peek::drop` has run: the window turns opaque again
+    /// last, once it is back in place.
+    see_through: SeeThrough,
     was_topmost: bool,
     /// The window just above it, to slot it back under afterwards.
     above: Option<HWND>,
@@ -2188,9 +2191,7 @@ impl Peek {
                 !above.0.is_null()
                     && GetWindowLongPtrW(*above, GWL_EXSTYLE) as u32 & WS_EX_TOPMOST.0 == 0
             });
-            let see_through = ex_style | (WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0) as isize;
-            SetWindowLongPtrW(window, GWL_EXSTYLE, see_through);
-            let _ = SetLayeredWindowAttributes(window, COLORREF(0), 1, LWA_ALPHA);
+            let see_through = SeeThrough::apply(window)?;
             let (x, y, keep_place) = match parked.filter(|_| repark) {
                 Some(placement) => (placement.rcNormalPosition.left, placement.rcNormalPosition.top, SET_WINDOW_POS_FLAGS(0)),
                 None => (0, 0, SWP_NOMOVE),
@@ -2206,7 +2207,7 @@ impl Peek {
             );
             // Let the page notice it is visible and resume painting.
             pause(500);
-            Some(Self { window, ex_style, was_topmost, above, repark, session_id: target.session_id.clone() })
+            Some(Self { window, see_through, was_topmost, above, repark, session_id: target.session_id.clone() })
         }
     }
 
@@ -2232,7 +2233,6 @@ impl Drop for Peek {
                     let _ = SetWindowPos(self.window, Some(above), 0, 0, 0, 0, order);
                 }
             }
-            SetWindowLongPtrW(self.window, GWL_EXSTYLE, self.ex_style);
         }
         // Only while it is still parked: the user may have pressed Stop (or
         // Show the app) during the gesture, and the window was handed back.
@@ -2242,6 +2242,53 @@ impl Drop for Peek {
             .is_some_and(|attached| attached.parked.is_some());
         if self.repark && still_parked {
             move_off_screen(self.window);
+        }
+        // `see_through` is dropped next, restoring the window's own style.
+    }
+}
+
+/// A window made fully transparent and click-through (alpha 1/255,
+/// `WS_EX_LAYERED | WS_EX_TRANSPARENT`) until this is dropped.
+///
+/// A window that was layered already keeps its own opacity or colour key:
+/// putting the style back alone left it at alpha 1 — all but invisible for
+/// good.
+struct SeeThrough {
+    window: HWND,
+    ex_style: isize,
+    /// The window's own layered attributes, when it had some.
+    layered: Option<(COLORREF, u8, LAYERED_WINDOW_ATTRIBUTES_FLAGS)>,
+}
+
+impl SeeThrough {
+    /// `None` for a layered window without attributes to read — one drawn
+    /// with `UpdateLayeredWindow`, whose drawing setting any would change.
+    fn apply(window: HWND) -> Option<Self> {
+        unsafe {
+            let ex_style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+            let layered = if ex_style as u32 & WS_EX_LAYERED.0 != 0 {
+                let (mut key, mut alpha, mut flags) = (COLORREF(0), 0u8, LAYERED_WINDOW_ATTRIBUTES_FLAGS(0));
+                GetLayeredWindowAttributes(window, Some(&mut key), Some(&mut alpha), Some(&mut flags)).ok()?;
+                Some((key, alpha, flags))
+            } else {
+                None
+            };
+            SetWindowLongPtrW(window, GWL_EXSTYLE, ex_style | (WS_EX_LAYERED.0 | WS_EX_TRANSPARENT.0) as isize);
+            let _ = SetLayeredWindowAttributes(window, COLORREF(0), 1, LWA_ALPHA);
+            Some(Self { window, ex_style, layered })
+        }
+    }
+}
+
+impl Drop for SeeThrough {
+    fn drop(&mut self) {
+        unsafe {
+            if let Some((key, alpha, flags)) = self.layered {
+                let _ = SetLayeredWindowAttributes(self.window, key, alpha, flags);
+            }
+            // Dropping WS_EX_LAYERED from a window that did not have it
+            // clears the attributes set above along with it.
+            SetWindowLongPtrW(self.window, GWL_EXSTYLE, self.ex_style);
         }
     }
 }
@@ -4288,6 +4335,32 @@ mod live_tests {
             pause(300);
             assert!(!is_off_screen(probe), "the probe was left off-screen");
             assert!(!is_off_screen(first), "dialog 1 was left off-screen at {:?}", frame_rect(first));
+        });
+    }
+
+    #[test]
+    #[ignore = "opens a WinForms window on the local desktop"]
+    fn a_layered_window_keeps_its_opacity_after_a_peek() {
+        with_dialog_probe(|_, _, probe| unsafe {
+            let alpha = || {
+                let mut alpha = 0u8;
+                GetLayeredWindowAttributes(probe, None, Some(&mut alpha), None).map(|_| alpha)
+            };
+            let ex_style = GetWindowLongPtrW(probe, GWL_EXSTYLE);
+            // A window with an opacity of its own, as WinForms' Opacity sets.
+            SetWindowLongPtrW(probe, GWL_EXSTYLE, ex_style | WS_EX_LAYERED.0 as isize);
+            SetLayeredWindowAttributes(probe, COLORREF(0), 200, LWA_ALPHA).unwrap();
+            {
+                let _guard = SeeThrough::apply(probe).expect("a layered window with attributes");
+                assert_eq!(alpha(), Ok(1));
+            }
+            assert_eq!(alpha(), Ok(200), "the window's own opacity was not restored");
+            assert_ne!(GetWindowLongPtrW(probe, GWL_EXSTYLE) as u32 & WS_EX_TRANSPARENT.0, WS_EX_TRANSPARENT.0);
+
+            // Not layered before: not layered after.
+            SetWindowLongPtrW(probe, GWL_EXSTYLE, ex_style);
+            drop(SeeThrough::apply(probe).unwrap());
+            assert_eq!(GetWindowLongPtrW(probe, GWL_EXSTYLE), ex_style);
         });
     }
 
