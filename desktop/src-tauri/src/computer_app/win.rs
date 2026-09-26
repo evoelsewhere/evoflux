@@ -2696,6 +2696,14 @@ fn squash(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Whether typing into a web field a second time is safe: the read-back is
+/// live, both reads worked, the text is not there and nothing changed at
+/// all. A field that reports no value (no Value pattern, a stale element)
+/// reads "unchanged" every time — retyping it only doubled the text.
+fn should_retype(readback_is_live: bool, before: &Option<String>, after: &Option<String>, landed: bool) -> bool {
+    readback_is_live && before.is_some() && after.is_some() && !landed && after == before
+}
+
 /// Type into a web page field the way a keyboard would.
 ///
 /// Chromium takes characters posted to its window and delivers them to the
@@ -2797,7 +2805,7 @@ fn web_fill(
     // is live: a field that did not change at all never got the keys, and
     // one more attempt is safe.
     let readback_is_live = !(target.hidden && class_name(target.window).starts_with("Chrome_WidgetWin"));
-    if readback_is_live && !landed(&after) && after == before {
+    if should_retype(readback_is_live, &before, &after, landed(&after)) {
         type_once()?;
         after = field_value(field);
     }
@@ -2809,7 +2817,12 @@ fn web_fill(
         "confirmed": confirmed,
         "window": window_title(target.window),
     });
-    if !confirmed && target.hidden {
+    if after.is_none() {
+        result["confirmed"] = Value::Null;
+        result["note"] = json!(
+            "The keys were delivered, but this field does not report its text, so it could not be checked. Take a screenshot before typing again."
+        );
+    } else if !confirmed && target.hidden {
         // Measured: a parked Chromium page keeps reporting the value it had
         // when it was hidden, while the page itself has the new text. Saying
         // "not confirmed" would only make the agent type it twice.
@@ -2913,6 +2926,20 @@ mod tests {
         assert_eq!(to_logical(300, 150, 96.0 / 144.0), (200, 100));
         // A system-aware window (system 120 dpi) on a 144 dpi display.
         assert_eq!(to_logical(144, 72, 120.0 / 144.0), (120, 60));
+    }
+
+    #[test]
+    fn retypes_only_a_readable_field_that_did_not_change() {
+        let empty = Some(String::new());
+        let typed = Some("hi".to_string());
+        assert!(should_retype(true, &empty, &empty, false));
+        // Unreadable field: both reads are None, which is not "unchanged".
+        assert!(!should_retype(true, &None, &None, false));
+        assert!(!should_retype(true, &empty, &None, false));
+        // It changed, or it landed, or the read-back is stale.
+        assert!(!should_retype(true, &empty, &typed, false));
+        assert!(!should_retype(true, &typed, &typed, true));
+        assert!(!should_retype(false, &empty, &empty, false));
     }
 }
 
