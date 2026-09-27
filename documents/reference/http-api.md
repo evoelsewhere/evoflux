@@ -27,6 +27,7 @@ external deployments should configure an access key and restrictive CORS.
 |---|---|---|
 | `/api/health` | liveness, readiness and bounded diagnostics | `health.py` |
 | `/api/diagnostics` | runtime/platform/path diagnostics | `diagnostics.py` |
+| `/api/remote-use` | Tailscale Serve remote access: status, serve control, session lock | `remote_use.py` |
 | `/api/team` | chat, sessions, files, terminal, projects and Coding workbench | `routes/team/` |
 | `/api/team/webbridge` | pairing, browser-panel chat, relay, bindings and Teach | `team/webbridge.py` |
 | `/api/agents` | agent registry and editable/runtime configuration | `agents.py` |
@@ -65,6 +66,52 @@ The `/api/team` router includes:
 
 Use the OpenAPI document rather than copying request/response field definitions
 from this overview.
+
+## Remote use
+
+Remote access over Tailscale Serve lives under `/api/remote-use`
+(`app/api/routes/remote_use.py`). All four routes return one payload:
+
+```json
+{
+  "tailscale": {"installed": true, "logged_in": true, "https_certs": true, "error": null},
+  "serve": {"enabled": true, "url": "https://machine.tailnet-example.ts.net"},
+  "lock": {"user_login": "[EMAIL_6]", "device_label": "phone", "claimed_at": "...", "last_seen_at": "..."}
+}
+```
+
+| Route | Purpose |
+| --- | --- |
+| `GET /status` | Tailscale + serve state and the current lock holder (`lock` is `null` when unlocked) |
+| `POST /enable` | Runs `tailscale serve --bg http://127.0.0.1:<sidecar-port>` — port comes from the ASGI server scope, falling back to `API_PORT` |
+| `POST /disable` | Runs `tailscale serve reset` |
+| `POST /release` | Desktop force-release: retires every live remote session |
+
+`tailscale.https_certs` is tri-state: `true`/`false` when the CLI gives
+evidence, `null` when unknown. `tailscale.error` carries the first
+user-facing CLI failure (missing binary, not logged in, HTTPS certs
+unenabled, unparseable JSON). `serve.url` is the tailnet HTTPS origin when
+serve is active.
+
+**Identity.** A request with a non-empty `Tailscale-User-Login` header
+(injected by `tailscale serve` on the tailnet HTTPS endpoint; desktop
+loopback requests never carry it) is attributed as a remote tailnet session
+and does not require the desktop bearer token. The first API request from a
+device claims the single-device session lock; while another session holds
+it, every API request from a second device fails with HTTP 409:
+
+```json
+{
+  "detail": "remote session lock is held by [EMAIL_6] (phone)",
+  "current": {"user_login": "[EMAIL_6]", "device_label": "phone", "claimed_at": "...", "last_seen_at": "..."},
+  "live_window_minutes": 30
+}
+```
+
+An optional `X-EvoFlux-Device-Label` header names the device (the
+`User-Agent` is the fallback). Sessions idle for 30 minutes are released
+automatically and never block the next claim. See
+[Remote use](../features/remote-use.md) for states and trust notes.
 
 ## Asynchronous chat contract
 

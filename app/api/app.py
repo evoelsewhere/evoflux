@@ -25,6 +25,7 @@ from app.api.routes.mcp import router as mcp_router
 from app.api.routes.observability import router as observability_router
 from app.api.routes.plugins import router as plugins_router
 from app.api.routes.quote import router as quote_router
+from app.api.routes.remote_use import router as remote_use_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.skills import router as skills_router
@@ -361,6 +362,7 @@ def create_app() -> FastAPI:
     app.include_router(
         diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"]
     )
+    app.include_router(remote_use_router, prefix="/api/remote-use", tags=["remote-use"])
 
     logger.debug("api_only_app_ready")
 
