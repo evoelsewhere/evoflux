@@ -27,6 +27,7 @@ import {
   Search,
   Server,
   Shield,
+  Smartphone,
   Sparkles,
   X,
   type LucideIcon,
@@ -58,6 +59,7 @@ import {
 type SidebarPath =
   | '/settings/providers'
   | '/settings/connection'
+  | '/settings/remote-use'
   | '/settings/version-control'
   | '/settings/agents'
   | '/settings/skills'
@@ -299,6 +301,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             label: t('Connection'),
             icon: Server,
             matchPrefix: '/settings/connection',
+          },
+          {
+            to: '/settings/remote-use',
+            label: t('Phone access'),
+            icon: Smartphone,
+            matchPrefix: '/settings/remote-use',
           },
           {
             to: '/settings/version-control',
