@@ -46,6 +46,7 @@ from app.core.schema_version import (
 )
 from app.core.wiki_seed import seed_wiki
 from app.core.workspace_init import ensure_workspace_initialized
+from app.api.static_web import mount_web_ui
 from app.scheduler.scheduler import task_scheduler
 from app.services import memory_stream_store as stream_store, team_manager
 from app.services.dream_scheduler import DreamScheduler
@@ -363,6 +364,9 @@ def create_app() -> FastAPI:
         diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"]
     )
     app.include_router(remote_use_router, prefix="/api/remote-use", tags=["remote-use"])
+
+    # ── Bundled web UI (catch-all of last resort) ──────────────────────────
+    mount_web_ui(app)
 
     logger.debug("api_only_app_ready")
 
