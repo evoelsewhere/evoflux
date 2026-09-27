@@ -25,6 +25,20 @@ Routes exempted from the check:
 The web UI receives the token via a script tag injected by the Tauri
 shell into ``index.html`` (``window.__OAD_TOKEN__``) — see
 ``desktop/src-tauri`` for the injection logic.
+
+Remote tailnet sessions
+-----------------------
+
+A request carrying a non-empty ``Tailscale-User-Login`` header — injected by
+``tailscale serve`` on the tailnet HTTPS endpoint, never present on desktop
+loopback requests — is attributed as a remote tailnet session: the login is
+stored on the request scope for routes (:func:`remote_session_login`) and the
+single-device lock in ``app.services.remote_use_service`` is claimed
+transparently for API paths. Another live session holding the lock
+short-circuits the request with HTTP 409 (holder in the body). The desktop
+bearer-token check is skipped for these requests — the tailnet identity *is*
+the credential on that path; every other request follows the tiers above
+unchanged.
 """
 
 from __future__ import annotations
@@ -171,6 +185,23 @@ def _strip_token_from_scope(request: Request) -> None:
     request.scope["query_string"] = urlencode(kept).encode("latin-1")
 
 
+# Headers injected by Tailscale Serve on tailnet HTTPS requests. A non-empty
+# Tailscale-User-Login marks a remote session; desktop loopback requests
+# never carry these (tailscaled sets them only on the Serve frontend).
+REMOTE_USER_LOGIN_HEADER = "Tailscale-User-Login"
+REMOTE_DEVICE_LABEL_HEADER = "X-EvoFlux-Device-Label"
+
+
+def remote_session_login(request: Request) -> str | None:
+    """Tailnet login attributed to this request by the identity hook.
+
+    Attribution happens once in :meth:`DesktopTokenMiddleware.dispatch` — the
+    only boundary that trusts the Serve identity header — so routes read the
+    result here instead of re-parsing headers.
+    """
+    return getattr(request.state, "remote_user_login", None)
+
+
 class DesktopTokenMiddleware(BaseHTTPMiddleware):
     """Reject unauthenticated API requests when a desktop token is configured.
 
@@ -189,6 +220,9 @@ class DesktopTokenMiddleware(BaseHTTPMiddleware):
             logger.info("desktop_token_auth_enabled token_len={}", len(self._token))
 
     async def dispatch(self, request: Request, call_next):
+        remote_login = request.headers.get(REMOTE_USER_LOGIN_HEADER, "").strip()
+        if remote_login:
+            return await self._dispatch_remote(request, call_next, remote_login)
         if not self._enabled:
             return await call_next(request)
 
@@ -214,6 +248,36 @@ class DesktopTokenMiddleware(BaseHTTPMiddleware):
         # Scrub the QS-param token so it never reaches access logs,
         # metrics, or downstream handlers (which can log full URLs).
         _strip_token_from_scope(request)
+        return await call_next(request)
+
+    async def _dispatch_remote(self, request: Request, call_next, remote_login: str):
+        """Attribute a tailnet-served request and gate it on the session lock.
+
+        Minimal clean mechanism for the transparent lock claim: the claim
+        lives here (middleware-lite inside the identity hook) so no API route
+        can forget it and routes stay thin. The claim is a short DB call made
+        outside any transaction; a conflicting live session short-circuits
+        with HTTP 409 before the handler runs.
+        """
+        from app.services.remote_use_service import RemoteUseConflict, claim
+
+        request.state.remote_user_login = remote_login
+        if _path_is_api(request.url.path):
+            device_label = request.headers.get(REMOTE_DEVICE_LABEL_HEADER)
+            if device_label is None:
+                device_label = request.headers.get("user-agent")
+            try:
+                await claim(remote_login, device_label)
+            except RemoteUseConflict as conflict:
+                logger.info(
+                    "remote_lock_conflict blocked_login={} held_by={}",
+                    remote_login,
+                    conflict.current.user_login,
+                )
+                return JSONResponse(status_code=409, content=conflict.body())
+        # The tailnet identity header is the authorization for Serve traffic;
+        # the desktop bearer-token tiers above stay untouched for every
+        # other request.
         return await call_next(request)
 
 
