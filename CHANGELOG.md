@@ -4,6 +4,41 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.0.0] - 2026-09-28
+
+### Added
+
+- Remote Control over an embedded Tailscale node: packaged desktop builds no
+  longer require Homebrew, the Tailscale CLI, or a system daemon. Connect once
+  in the browser, then use the private tailnet URL or QR code from a phone.
+- WhoIs-backed remote identity for HTTP and WebSocket control, with a signed
+  local proxy boundary and one-device session locking.
+- Computer App Control across macOS and Windows with permission guidance,
+  background app attachment, live preview, UI inspection, and explicit app
+  policy controls.
+
+### Changed
+
+- Mobile interaction layer: larger touch targets, safer-area handling,
+  responsive navigation drawers, a two-row chat composer, and settings layouts
+  that remain usable at phone widths.
+- Desktop packaging now bundles the embedded tailnet helper for macOS Intel,
+  macOS Apple Silicon, Windows x64 and Linux x64.
+- Chat rendering, sidebar navigation, tool activity and remote-use status use
+  bounded surfaces and lighter update paths to reduce layout churn during
+  streaming and long sessions.
+
+### Upgrade notes
+
+- Packaged users sign in to the embedded Tailscale node once from Settings →
+  Phone access. The phone must use Tailscale and join the same tailnet.
+- Computer App Control remains opt-in and still requires the platform's
+  Accessibility/Screen Recording permissions where applicable.
+- Existing source deployments can continue using the external Tailscale CLI
+  provider as a fallback.
+
 ### Removed
 
 - Plan mode is gone. The `plan` permission mode, the Plan review panel and its
@@ -686,6 +721,7 @@ For the curated release overview, see
 [`documents/releases/v1.0.0.md`](documents/releases/v1.0.0.md).
 
 [2.0.9]: https://github.com/evoelsewhere/evoflux/compare/v2.0.8...v2.0.9
+[3.0.0]: https://github.com/evoelsewhere/evoflux/compare/v2.0.9...v3.0.0
 [2.0.8]: https://github.com/evoelsewhere/evoflux/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/evoelsewhere/evoflux/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/evoelsewhere/evoflux/compare/v2.0.5...v2.0.6
