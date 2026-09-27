@@ -27,7 +27,10 @@ use windows::Win32::UI::Accessibility::{
 
 /// How to start an app with an empty surface, and leave nothing behind.
 pub(super) struct Launch {
+    /// The process whose window is looked for.
     pub(super) exe: &'static str,
+    /// What is started (a launcher may start `exe` in turn).
+    pub(super) run: &'static str,
     pub(super) args: &'static [&'static str],
     /// Keys that open an empty surface once the window is up.
     pub(super) blank: &'static [&'static str],
@@ -52,7 +55,7 @@ pub(super) fn app_windows(exe: &str) -> Vec<(u64, u32)> {
 /// `None` when the app is not installed or showed no new window.
 pub(super) fn start_private(launch: &Launch) -> Option<(u64, u32)> {
     let before: Vec<u32> = app_windows(launch.exe).into_iter().map(|(_, pid)| pid).collect();
-    let mut args = vec!["/C", "start", "", "/min", launch.exe];
+    let mut args = vec!["/C", "start", "", "/min", launch.run];
     args.extend(launch.args);
     let started = std::process::Command::new("cmd").args(&args).status().is_ok_and(|status| status.success());
     if !started {
@@ -747,16 +750,293 @@ fn measures_a_modal_dialog_in_excel() {
 
 // ── The apps measured ───────────────────────────────────────────────────
 
-pub(super) const EXCEL: Launch = Launch { exe: "excel.exe", args: &["/x", "/e"], blank: &["ctrl+n"], cleanup: &[] };
-const WORD: Launch = Launch { exe: "winword.exe", args: &["/w", "/q"], blank: &[], cleanup: &[] };
+pub(super) const EXCEL: Launch =
+    Launch { exe: "excel.exe", run: "excel.exe", args: &["/x", "/e"], blank: &["ctrl+n"], cleanup: &[] };
+const WORD: Launch = Launch { exe: "winword.exe", run: "winword.exe", args: &["/w", "/q"], blank: &[], cleanup: &[] };
+/// A browser instance of its own (a separate profile), so the user's
+/// windows and tabs are never touched.
+const EDGE: Launch = Launch {
+    exe: "msedge.exe",
+    run: "msedge",
+    args: &[
+        "--user-data-dir=%TEMP%\\evoflux-bench-edge",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--new-window",
+        "https://en.wikipedia.org/wiki/Computer",
+    ],
+    blank: &[],
+    cleanup: &[],
+};
+/// A code editor instance of its own (a separate profile), so the user's
+/// windows and projects are never touched.
+const VSCODE: Launch = Launch {
+    exe: "Code.exe",
+    run: "code",
+    args: &[
+        "--user-data-dir",
+        "%TEMP%\\evoflux-bench-code",
+        "--extensions-dir",
+        "%TEMP%\\evoflux-bench-code-ext",
+        "--new-window",
+        "--disable-workspace-trust",
+    ],
+    blank: &[],
+    cleanup: &[],
+};
 const NOTEPAD: Launch = Launch {
     exe: "notepad.exe",
+    run: "notepad.exe",
     args: &[],
     // Notepad restores the tabs of earlier sessions: work in a new one, and
     // empty and close it at the end.
     blank: &["ctrl+n"],
     cleanup: &["ctrl+a", "delete", "ctrl+w"],
 };
+
+// ── Scenarios: tasks as an agent would do them ──────────────────────────
+
+/// The first control `find` lists whose role is `role` and whose name
+/// contains `name` (any case): its ref and its centre.
+fn control_named(emit: &dyn Fn(Value), session: &str, role: &str, name: &str) -> Option<(String, f64, f64)> {
+    let found = act(emit, session, "find", json!({ "query": name })).ok()?;
+    let wanted = format!("{role} \"");
+    let lower = name.to_lowercase();
+    let line = found.as_str()?.lines().find(|line| {
+        let line = line.trim_start().trim_start_matches("- ");
+        line.starts_with(&wanted) && line.to_lowercase().contains(&lower)
+    })?;
+    let reference = line.split("[ref=").nth(1)?.split(']').next()?.to_string();
+    let geometry = line.split(" @").nth(1)?;
+    let (at, size) = geometry.split_once(' ')?;
+    let (x, y) = at.split_once(',')?;
+    let (width, height) = size.split_once('x')?;
+    let centre = |start: &str, length: &str| Some(start.parse::<f64>().ok()? + length.parse::<f64>().ok()? / 2.0);
+    Some((reference, centre(x, width)?, centre(y, height)?))
+}
+
+/// The attached window's title, once it contains `text` (within `seconds`).
+fn title_becomes(session: &str, text: &str, seconds: u64) -> (bool, String) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(seconds);
+    loop {
+        let title = Target::resolve(session).map(|target| window_title(target.top)).unwrap_or_default();
+        if title.to_lowercase().contains(&text.to_lowercase()) || std::time::Instant::now() >= deadline {
+            return (title.to_lowercase().contains(&text.to_lowercase()), title);
+        }
+        pause(300);
+    }
+}
+
+/// One step, printed with a short form of its result.
+fn step(emit: &dyn Fn(Value), session: &str, action: &str, params: Value) -> Result<Value, String> {
+    let result = act(emit, session, action, params.clone());
+    let shown = match &result {
+        Ok(value) if value.is_string() => format!("{} chars of text", value.as_str().unwrap_or("").len()),
+        Ok(value) => {
+            let mut value = value.clone();
+            if let Some(object) = value.as_object_mut() {
+                object.remove("data");
+            }
+            value.to_string().chars().take(220).collect()
+        }
+        Err(error) => format!("ERROR {error}"),
+    };
+    eprintln!("    {action} {params} -> {shown}");
+    result
+}
+
+fn browse_the_web() {
+    let session = "live-scenario-edge";
+    let mut rows = Rows::default();
+    with_private_app(&EDGE, session, |emit| {
+        let (loaded, title) = title_becomes(session, "Computer", 20);
+        rows.record("a page loads", loaded, &title);
+
+        // Replace the address bar's text, then Enter: as a person would.
+        match control_named(emit, session, "Edit", "address") {
+            Some((address, _, _)) => {
+                let _ = step(emit, session, "set_value", json!({ "ref": address, "value": "en.wikipedia.org/wiki/Memory_safety" }));
+                let _ = step(emit, session, "key", json!({ "key": "enter" }));
+                let (went, title) = title_becomes(session, "Memory safety", 20);
+                rows.record("navigate through the address bar", went, &title);
+            }
+            None => rows.record("navigate through the address bar", false, "no address bar in find"),
+        }
+
+        match control_named(emit, session, "", "search wikipedia").or_else(|| control_named(emit, session, "ComboBox", "search")) {
+            Some((search, _, _)) => {
+                let _ = step(emit, session, "set_value", json!({ "ref": search, "value": "Buffer overflow" }));
+                let _ = step(emit, session, "key", json!({ "key": "enter" }));
+                let (went, title) = title_becomes(session, "Buffer overflow", 20);
+                rows.record("search the site through its search box", went, &title);
+            }
+            None => rows.record("search the site through its search box", false, "no search box in find"),
+        }
+
+        match control_named(emit, session, "Hyperlink", "stack buffer overflow") {
+            Some((link, _, _)) => {
+                let _ = step(emit, session, "click", json!({ "ref": link }));
+                let (went, title) = title_becomes(session, "Stack buffer overflow", 20);
+                rows.record("follow a link by ref", went, &title);
+            }
+            None => rows.record("follow a link by ref", false, "no such link in find"),
+        }
+
+        let scrolled = step(emit, session, "scroll", json!({ "direction": "down", "amount": 10 }));
+        rows.record("scroll the page", scrolled.is_ok(), "");
+
+        let _ = step(emit, session, "key", json!({ "key": "alt+left" }));
+        let (back, title) = title_becomes(session, "Buffer overflow", 15);
+        rows.record("go back with alt+left", back && !title.contains("Stack"), &title);
+
+        let tree = step(emit, session, "snapshot", json!({})).unwrap_or_default();
+        rows.record("a snapshot reads the page", tree.as_str().unwrap_or("").contains("Buffer overflow"), "");
+
+        if let Some((link, x, y)) = control_named(emit, session, "Hyperlink", "overflow") {
+            let _ = link;
+            let result = step(emit, session, "click", json!({ "x": x, "y": y, "button": "right" }));
+            let menu = result.as_ref().is_ok_and(|result| result["note"].as_str().unwrap_or("").contains("menu"));
+            rows.record("right-click a link opens its menu", menu, "");
+            let _ = step(emit, session, "key", json!({ "key": "escape" }));
+        }
+    });
+    rows.print("Browsing", EDGE.exe);
+}
+
+fn edit_code() {
+    let session = "live-scenario-code";
+    let mut rows = Rows::default();
+    with_private_app(&VSCODE, session, |emit| {
+        let (_, title) = title_becomes(session, "Visual Studio Code", 10);
+        eprintln!("    started: {title}");
+
+        let _ = step(emit, session, "key", json!({ "key": "ctrl+n" }));
+        let (opened, title) = title_becomes(session, "Untitled", 10);
+        rows.record("a new file opens (ctrl+n)", opened, &title);
+
+        let _ = step(emit, session, "type", json!({ "text": "let answer = 42;" }));
+        pause(500);
+        let tree = step(emit, session, "snapshot", json!({})).unwrap_or_default();
+        let typed = tree.as_str().unwrap_or("").contains("answer = 42");
+        rows.record("typed code reads back from the tree", typed, "");
+
+        let _ = step(emit, session, "key", json!({ "key": "ctrl+shift+p" }));
+        pause(600);
+        let _ = step(emit, session, "type", json!({ "text": "Preferences: Open Settings (UI)" }));
+        pause(600);
+        let _ = step(emit, session, "key", json!({ "key": "enter" }));
+        let (settings, title) = title_becomes(session, "Settings", 10);
+        rows.record("run a command from the command palette", settings, &title);
+
+        match control_named(emit, session, "", "search settings") {
+            Some((search, _, _)) => {
+                let _ = step(emit, session, "click", json!({ "ref": search }));
+                let _ = step(emit, session, "type", json!({ "text": "font size" }));
+                pause(1500);
+                let found = act(emit, session, "find", json!({ "query": "Font Size" })).unwrap_or_default();
+                rows.record("search the settings", found.as_str().unwrap_or("").contains("Font Size"), "");
+            }
+            None => rows.record("search the settings", false, "no settings search box in find"),
+        }
+
+        let _ = step(emit, session, "key", json!({ "key": "ctrl+w" }));
+        let (closed, title) = title_becomes(session, "Untitled", 10);
+        rows.record("close the settings tab (ctrl+w)", closed, &title);
+    });
+    rows.print("Code editing", VSCODE.exe);
+}
+
+/// The Settings app: navigating and reading only — nothing is changed.
+fn read_system_settings() {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
+    let session = "live-scenario-settings";
+    let mut rows = Rows::default();
+    let emit = |_: Value| {};
+    let settings_windows = || -> Vec<(u64, String, String)> {
+        list_windows("live-bench", &json!({ "query": "settings" }))["windows"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .map(|row| (row["id"].as_u64().unwrap_or(0), row["app"].as_str().unwrap_or("").to_string(), row["title"].as_str().unwrap_or("").to_string()))
+            .collect()
+    };
+    let before: Vec<u64> = settings_windows().into_iter().map(|(id, _, _)| id).collect();
+    let _ = std::process::Command::new("cmd").args(["/C", "start", "", "ms-settings:display"]).status();
+    let mut opened = None;
+    for _ in 0..40 {
+        pause(300);
+        opened = settings_windows().into_iter().find(|(id, _, title)| !before.contains(id) && title == "Settings");
+        if opened.is_some() {
+            break;
+        }
+    }
+    let Some((window_id, app, _)) = opened else {
+        eprintln!("skipped: no new Settings window (listed: {:?})", settings_windows());
+        return;
+    };
+    eprintln!("    Settings window {window_id} of {app}");
+    pause(2000);
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let attached = step(&emit, session, "attach", json!({ "window_id": window_id, "hide": true }));
+        rows.record("attach", attached.is_ok(), "");
+        let tree = step(&emit, session, "snapshot", json!({})).unwrap_or_default();
+        rows.record("read the page (Display)", tree.as_str().unwrap_or("").contains("Display"), "");
+
+        match control_named(&emit, session, "", "find a setting") {
+            Some((search, _, _)) => {
+                let _ = step(&emit, session, "set_value", json!({ "ref": search, "value": "sound" }));
+                pause(1500);
+                let found = act(&emit, session, "find", json!({ "query": "sound" })).unwrap_or_default();
+                rows.record("search shows suggestions", found.as_str().unwrap_or("").lines().count() > 1, "");
+                let _ = step(&emit, session, "key", json!({ "key": "escape" }));
+            }
+            None => rows.record("search shows suggestions", false, "no search box in find"),
+        }
+
+        match control_named(&emit, session, "ListItem", "bluetooth") {
+            Some((item, _, _)) => {
+                let _ = step(&emit, session, "invoke", json!({ "ref": item }));
+                pause(1500);
+                let tree = step(&emit, session, "snapshot", json!({})).unwrap_or_default();
+                let page = tree.as_str().unwrap_or("");
+                rows.record("open another page from the navigation", page.contains("Devices") || page.contains("Bluetooth"), "");
+            }
+            None => rows.record("open another page from the navigation", false, "no Bluetooth item in find"),
+        }
+
+        let scrolled = step(&emit, session, "scroll", json!({ "direction": "down", "amount": 5 }));
+        rows.record("scroll", scrolled.is_ok(), "");
+        let shot = step(&emit, session, "screenshot", json!({}));
+        rows.record("screenshot", shot.is_ok(), "");
+    }));
+    let _ = step(&emit, session, "close_app", json!({}));
+    detach(session);
+    rows.print("Settings", &app);
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
+#[test]
+#[ignore = "opens an Edge window (its own profile) on the local desktop"]
+fn scenario_browses_the_web_in_edge() {
+    browse_the_web();
+}
+
+#[test]
+#[ignore = "opens a VS Code window (its own profile) on the local desktop"]
+fn scenario_edits_code_in_vscode() {
+    edit_code();
+}
+
+#[test]
+#[ignore = "opens the Settings app on the local desktop"]
+fn scenario_reads_system_settings() {
+    read_system_settings();
+}
 
 #[test]
 #[ignore = "opens an Excel window on the local desktop"]
