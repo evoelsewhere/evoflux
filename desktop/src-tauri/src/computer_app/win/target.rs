@@ -175,10 +175,30 @@ impl Target {
 }
 
 /// A window disabled by a modal dialog cannot take input; the dialog can.
+///
+/// A dialog owned by a hidden window of the app (see `is_dialog_of`) is not
+/// the window's enabled popup to Windows, and the app may not disable the
+/// window for it either: a spreadsheet left its workbook enabled behind its
+/// Create Table dialog while taking no input but the dialog's. While one is
+/// shown, it is the window acted on — and seen in screenshots and snapshots.
 pub(super) fn effective_window(top: HWND, pid: u32) -> HWND {
+    let app_dialog = || {
+        top_level_windows().into_iter().find(|hwnd| unsafe {
+            *hwnd != top
+                && window_pid(*hwnd) == pid
+                && IsWindowVisible(*hwnd).as_bool()
+                && IsWindowEnabled(*hwnd).as_bool()
+                && !is_cloaked(*hwnd)
+                // A palette or floating pane (a tool window) sits beside
+                // the window without stopping it; a dialog does not.
+                && GetWindowLongPtrW(*hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 == 0
+                && owned_by_hidden_window_of(*hwnd, top)
+                && is_dialog_of(*hwnd, top)
+        })
+    };
     unsafe {
         if IsWindowEnabled(top).as_bool() {
-            return top;
+            return app_dialog().unwrap_or(top);
         }
         match GetWindow(top, GW_ENABLEDPOPUP) {
             Ok(popup)
@@ -189,7 +209,7 @@ pub(super) fn effective_window(top: HWND, pid: u32) -> HWND {
             {
                 popup
             }
-            _ => top,
+            _ => app_dialog().unwrap_or(top),
         }
     }
 }

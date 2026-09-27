@@ -684,6 +684,67 @@ fn measures_typing_in_word() {
     measure_typing(&WORD);
 }
 
+/// A command that opens a modal dialog, clicked at its position: the dialog
+/// must leave the user's screen with the parked window, the next action
+/// must reach it promptly, and Escape must close it.
+fn measure_modal_dialog(launch: &Launch, tab: &str, command: &str) {
+    let session = "live-bench-dialog";
+    let mut rows = Rows::default();
+    with_private_app(launch, session, |emit| {
+        let tabs = act(emit, session, "find", json!({ "query": tab })).unwrap_or_default();
+        if let Some(reference) = tabs
+            .as_str()
+            .and_then(|text| text.lines().find(|line| line.contains(&format!("TabItem \"{tab}\""))))
+            .and_then(|line| line.split("[ref=").nth(1))
+            .and_then(|rest| rest.split(']').next())
+        {
+            let _ = act(emit, session, "invoke", json!({ "ref": reference }));
+            pause(800);
+        }
+        let found = act(emit, session, "find", json!({ "query": command })).unwrap_or_default();
+        let Some(line) = found.as_str().and_then(|text| text.lines().find(|line| line.contains(&format!("Button \"{command}\"")))) else {
+            eprintln!("no {command:?} button");
+            return;
+        };
+        let geometry = line.split(" @").nth(1).unwrap_or("0,0 0x0");
+        let (at, size) = geometry.split_once(' ').unwrap();
+        let (x, y) = at.split_once(',').unwrap();
+        let (w, h) = size.split_once('x').unwrap();
+        let x = x.parse::<f64>().unwrap() + w.parse::<f64>().unwrap() / 2.0;
+        let y = y.parse::<f64>().unwrap() + h.parse::<f64>().unwrap() / 2.0;
+        let started = std::time::Instant::now();
+        let clicked = act(emit, session, "click", json!({ "x": x, "y": y }));
+        eprintln!("click took {} ms: {clicked:?}", started.elapsed().as_millis());
+        pause(1500);
+        let started = std::time::Instant::now();
+        let status = act(emit, session, "screenshot", json!({}));
+        let took = started.elapsed().as_millis();
+        let target = Target::resolve(session).unwrap();
+        let dialog = target.window != target.top;
+        rows.record("the dialog is the window acted on", dialog, window_title(target.window));
+        rows.record("the dialog is off the user's screen", dialog && is_off_screen(target.window), format!("{:?}", frame_rect(target.window).left));
+        rows.record("the next action is prompt", took < 3000 && status.is_ok(), format!("{took} ms"));
+        let shot_size = status.as_ref().map(|shot| (shot["width"].clone(), shot["height"].clone()));
+        rows.record("the screenshot shows the dialog", dialog, format!("{shot_size:?}"));
+        let started = std::time::Instant::now();
+        let tree = act(emit, session, "snapshot", json!({})).unwrap_or_default();
+        let tree = tree.as_str().unwrap_or("");
+        let buttons = tree.contains("Button \"OK\"") && tree.contains("Button \"Cancel\"");
+        rows.record("a snapshot reads the dialog's buttons", buttons, format!("{} ms", started.elapsed().as_millis()));
+        let _ = act(emit, session, "key", json!({ "key": "escape" }));
+        pause(800);
+        let target = Target::resolve(session).unwrap();
+        rows.record("escape closes the dialog", target.window == target.top, "");
+    });
+    rows.print("Modal dialog", launch.exe);
+}
+
+#[test]
+#[ignore = "opens an Excel window on the local desktop"]
+fn measures_a_modal_dialog_in_excel() {
+    measure_modal_dialog(&EXCEL, "Insert", "Table");
+}
+
 // ── The apps measured ───────────────────────────────────────────────────
 
 pub(super) const EXCEL: Launch = Launch { exe: "excel.exe", args: &["/x", "/e"], blank: &["ctrl+n"], cleanup: &[] };

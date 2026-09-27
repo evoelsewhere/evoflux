@@ -297,7 +297,22 @@ pub(super) fn is_dialog_of(hwnd: HWND, top: HWND) -> bool {
     hwnd != top
         && style & WS_CHILD.0 == 0
         && style & WS_CAPTION.0 == WS_CAPTION.0
-        && owned_by(hwnd, top, top)
+        && (owned_by(hwnd, top, top) || owned_by_hidden_window_of(hwnd, top))
+}
+
+/// Whether `hwnd` is owned by a window of `top`'s process that is never
+/// shown. Apps often own their dialogs by such a window rather than by the
+/// window the dialog is about: a spreadsheet's Create Table dialog, owned
+/// that way, opened on the user's screen while its workbook was parked. A
+/// dialog owned by another window the user can see (a second document
+/// window) is that window's, and is left alone.
+pub(super) fn owned_by_hidden_window_of(hwnd: HWND, top: HWND) -> bool {
+    match unsafe { GetWindow(hwnd, GW_OWNER) } {
+        Ok(owner) if !owner.0.is_null() && owner != top => {
+            !unsafe { IsWindowVisible(owner) }.as_bool() && window_pid(owner) == window_pid(top)
+        }
+        _ => false,
+    }
 }
 
 /// Centre `window` on `over`, resized neither.

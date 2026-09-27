@@ -290,6 +290,17 @@ cannot see, and its panes and palettes go back where they opened
 `keeps_a_parked_apps_panes_and_palettes_off_screen`). A second document
 window of the app is not a tool window and stays where the user put it.
 
+A dialog counts as the parked window's when the window owns it, or when a
+hidden window of the same process does: apps often own their dialogs by
+such a window, and a spreadsheet's Create Table dialog, owned that way,
+opened on the user's screen and was never followed. While such a dialog is
+shown (and is not a tool window) it is also the window acted on, captured
+and read, even when the app leaves the main window enabled behind it, as
+that spreadsheet did (`measures_a_modal_dialog_in_excel`: the dialog leaves
+the user's screen, the next action reaches it in about 40 ms, a snapshot
+lists its OK and Cancel, Escape closes it). A dialog owned by another
+visible window of the app is that window's and is left alone.
+
 Edge and Electron apps have one catch: Chromium stops repainting and stops
 updating its accessibility values while its own window is hidden. Input still
 arrives, but the card's picture, screenshots and snapshot values can lag
