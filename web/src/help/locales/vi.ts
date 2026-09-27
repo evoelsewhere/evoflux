@@ -367,8 +367,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ask dừng trước mọi tool call; accept-edits tự nhận file edit nhưng vẫn hỏi shell và thao tác phá hủy.',
       'Plan mode ghi nhận edit/shell đề xuất đến khi bạn Accept trong Plan review — hoặc Revise / Reject.',
       'Bôi đen text plan trong review panel để quote vào tin revise trên composer.',
-      'Khi tool cần duyệt, chọn Once, Always hoặc Reject trên permission bar.',
-      'Ask-user modal hiện khi agent cần câu trả lời có cấu trúc trước khi tiếp tục — trả lời để mở khóa run.',
+      'Khi tool cần duyệt, chọn Once, Always hoặc Reject trên permission bar — Enter cho phép một lần, Esc từ chối.',
+      'Ask-user modal hiện khi agent cần câu trả lời có cấu trúc trước khi tiếp tục — bấm 1–9 để chọn câu trả lời gợi ý, hoặc tự gõ, rồi Enter.',
       'Goal không bao giờ nới permission hay sandbox scope của session — set shield chủ đích trước `/goal`.',
       'Bypass bỏ mọi permission check — nhanh nhất, chỉ dùng trong môi trường disposable hoặc host bạn hoàn toàn tin cậy.',
       'Always dính theo rule khớp — ưu tiên Once khi còn đang học agent muốn chạy gì.'

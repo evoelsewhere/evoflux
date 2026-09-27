@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { ShieldAlert, ShieldCheck, ShieldX } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 import { replyPermissionRequest } from '@/api/client'
@@ -8,16 +7,20 @@ import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { PermissionRequestPending } from '@/api/types'
 
-const TOOL_ICON_MAP: Record<string, string> = {
-  shell: '💻',
-  python: '🐍',
-  bg: '⚙️',
-  rm: '🗑️',
-  edit: '✏️',
-  write: '📝',
-  patch: '🩹',
-  browser: '🌐',
+/** The question the card asks, phrased for what the tool actually does. */
+const TOOL_PROMPTS: Record<string, string> = {
+  shell: 'Allow this command?',
+  python: 'Allow this Python script?',
+  bg: 'Allow this background process?',
+  rm: 'Allow deleting these files?',
+  edit: 'Allow this edit?',
+  write: 'Allow writing this file?',
+  patch: 'Allow this patch?',
+  browser: 'Allow browser access?',
 }
+
+const KBD_CLASS =
+  'hidden h-4.5 min-w-4.5 items-center justify-center rounded-[4px] border border-current/25 px-1 font-sans text-[10px] leading-none opacity-70 sm:inline-flex'
 
 function PermissionApprovalForm({
   permissionRequest,
@@ -66,6 +69,8 @@ function PermissionApprovalForm({
     }
   }
 
+  const isShell = permissionRequest.tool === 'shell' || permissionRequest.tool === 'bg'
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 * preset.distance }}
@@ -74,60 +79,80 @@ function PermissionApprovalForm({
       transition={preset.spring}
       className="mx-auto w-full max-w-3xl px-4 pb-2"
     >
-      <div className="rounded-xl border border-(--color-warning)/35 bg-(--bg-page) shadow-sm overflow-hidden" role="region" aria-label="Permission required">
-        <div className="flex items-center gap-2 border-b border-(--color-border) bg-(--color-warning)/5 px-4 py-2.5">
-          <ShieldAlert size={14} className="shrink-0 text-(--color-warning)" aria-hidden="true" />
-          <span className="text-xs font-semibold text-(--color-text)">Permission required</span>
-          <span className="text-xs text-(--color-text-muted)">— agent wants to run:</span>
-          <span className="ml-0.5 rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text)">
-            {permissionRequest.tool}
-          </span>
-          {TOOL_ICON_MAP[permissionRequest.tool] && (
-            <span aria-hidden="true" className="text-xs">
-              {TOOL_ICON_MAP[permissionRequest.tool]}
+      <div
+        className="overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-(--shadow-depth)"
+        role="region"
+        aria-label="Permission required"
+        onKeyDown={(e) => {
+          // Rejecting is the safe direction, so Esc inside the card maps to it.
+          if (e.key === 'Escape' && !replying) {
+            e.preventDefault()
+            void handleReply('reject')
+          }
+        }}
+      >
+        <div className="px-4 pb-3 pt-3.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-sm font-medium text-(--color-text)">
+              {TOOL_PROMPTS[permissionRequest.tool] ?? 'Allow this action?'}
+            </p>
+            <span className="shrink-0 font-mono text-[11px] text-(--color-text-subtle)">
+              {permissionRequest.tool}
             </span>
+          </div>
+
+          {permissionRequest.patterns.length > 0 ? (
+            <div className="mt-2.5 max-h-36 overflow-auto rounded-lg border border-(--color-border-subtle) bg-(--bg-page) px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-all text-(--color-text)">
+              {permissionRequest.patterns.map((p, i) => (
+                <div key={i}>
+                  {isShell && <span className="select-none text-(--color-text-subtle)">$ </span>}
+                  {p}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-(--color-text-muted)">No arguments</p>
           )}
         </div>
 
-        <div className="flex items-center gap-3 px-4 py-2.5 flex-wrap">
-          <div className="flex-1 min-w-0">
-            {permissionRequest.patterns.length > 0 ? (
-              <div className="flex flex-wrap gap-1">
-                {permissionRequest.patterns.map((p, i) => (
-                  <span
-                    key={i}
-                    className="break-all rounded bg-(--bg-key) px-1.5 py-0.5 font-mono text-xs text-(--color-text-muted)"
-                  >
-                    {p}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <span className="text-xs italic text-(--color-text-subtle)">no arguments</span>
-            )}
-            {alwaysScope && (
-              <p className="mt-1.5 text-[11px] leading-4 text-(--color-text-subtle)">
+        <div className="flex flex-wrap items-center gap-2 border-t border-(--color-border-subtle) px-3 py-2">
+          <p className="min-w-0 flex-1 px-1 text-[11px] leading-4 text-(--color-text-muted)">
+            {alwaysScope ? (
+              <>
                 Always allow covers{' '}
-                <span className="font-mono text-(--color-text-muted)">{alwaysScope}</span>{' '}
+                <span className="font-mono text-(--color-text-2)">{alwaysScope}</span>{' '}
                 for the rest of this run.
-              </p>
-            )}
-          </div>
+              </>
+            ) : null}
+          </p>
 
-          <div className="flex shrink-0 items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               type="button"
               disabled={replying}
               onClick={() => handleReply('reject')}
               className={cn(
-                'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
-                'text-red-600 hover:bg-red-500/10 dark:text-red-400',
+                'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-(--color-text-muted) transition-colors',
+                'hover:bg-(--bg-key) hover:text-(--color-text)',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
                 replying && 'pointer-events-none opacity-50',
               )}
             >
-              <ShieldX size={12} aria-hidden="true" />
               Reject
+              <kbd aria-hidden="true" className={KBD_CLASS}>Esc</kbd>
+            </button>
+            <button
+              type="button"
+              disabled={replying}
+              onClick={() => handleReply('always')}
+              className={cn(
+                'flex h-7 items-center rounded-md border border-(--color-border) px-2.5 text-xs font-medium text-(--color-text) transition-colors',
+                'hover:bg-(--bg-key)',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
+                replying && 'pointer-events-none opacity-50',
+              )}
+            >
+              Always allow
             </button>
             <button
               ref={onceBtnRef}
@@ -135,32 +160,19 @@ function PermissionApprovalForm({
               disabled={replying}
               onClick={() => handleReply('once')}
               className={cn(
-                'flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                'flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors',
                 'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring) focus-visible:ring-offset-1 focus-visible:ring-offset-(--bg-card)',
                 replying && 'pointer-events-none opacity-50',
               )}
             >
-              <ShieldCheck size={12} aria-hidden="true" />
               {replying ? 'Allowing…' : 'Allow once'}
-            </button>
-            <button
-              type="button"
-              disabled={replying}
-              onClick={() => handleReply('always')}
-              className={cn(
-                'flex items-center gap-1 rounded-lg border border-(--color-border) px-2.5 py-1.5 text-xs font-medium transition-colors',
-                'bg-(--bg-card) text-(--color-text) hover:bg-(--bg-key)',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
-                replying && 'pointer-events-none opacity-50',
-              )}
-            >
-              Always allow
+              {!replying && <kbd aria-hidden="true" className={KBD_CLASS}>↵</kbd>}
             </button>
           </div>
         </div>
         {replyError && (
-          <p className="border-t border-(--color-border) px-4 py-2 text-xs text-red-600 dark:text-red-400" role="alert">
+          <p className="border-t border-(--color-border-subtle) px-4 py-2 text-xs text-(--color-danger)" role="alert">
             {replyError}
           </p>
         )}

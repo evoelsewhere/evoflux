@@ -380,8 +380,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Ask pauses before every tool call; accept-edits auto-accepts file edits but still asks for shell and destructive ops.',
       'Plan mode records proposed edits/shell until you Accept in the Plan review panel — or Revise / Reject.',
       'Select plan text in the review panel to quote it into a revise message in the composer.',
-      'When a tool needs approval, choose Once, Always, or Reject on the permission bar.',
-      'Ask-user question modals appear when the agent needs structured answers before continuing — answer to unblock the run.',
+      'When a tool needs approval, choose Once, Always, or Reject on the permission bar — Enter allows once, Esc rejects.',
+      'Ask-user question modals appear when the agent needs structured answers before continuing — press 1–9 to pick a suggested answer, or type your own, then Enter.',
       'Goal mode never expands the session’s permissions or sandbox scope — set the shield deliberately before `/goal`.',
       'Bypass skips all permission checks — fastest, but use only in a disposable environment or a host you fully trust.',
       'Always is sticky for matching rules — Prefer Once when you are still learning what the agent wants to run.'

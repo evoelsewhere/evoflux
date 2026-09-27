@@ -2,10 +2,12 @@
  * AskUserQuestionModal — floating bar (same slot as PermissionApprovalModal,
  * right above the input) showing one clarifying question at a time from the
  * batch the agent asked via the `ask_user` tool. Step through with
- * next/back; the last question shows Submit instead of Next.
+ * next/back; the last question shows Submit instead of Next. Suggested
+ * answers are a numbered list — the digit keys pick one — with a free-text
+ * row underneath.
  */
-import { forwardRef, useState } from 'react'
-import { Bot, ChevronDown, ChevronLeft, ChevronRight, HelpCircle, Send, X } from 'lucide-react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, ChevronLeft } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 import { replyAskUserQuestion } from '@/api/client'
@@ -54,6 +56,21 @@ function clearDraft(requestId: string) {
   askUserDrafts.delete(requestId)
 }
 
+const KBD_CLASS =
+  'hidden h-4.5 min-w-4.5 items-center justify-center rounded-[4px] border border-current/25 px-1 font-sans text-[10px] leading-none opacity-70 sm:inline-flex'
+
+const GHOST_BUTTON = cn(
+  'flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium text-(--color-text-muted) transition-colors',
+  'hover:bg-(--bg-key) hover:text-(--color-text)',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
+)
+
+const PRIMARY_BUTTON = cn(
+  'flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors',
+  'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring) focus-visible:ring-offset-1 focus-visible:ring-offset-(--bg-card)',
+)
+
 const AskUserQuestionForm = forwardRef<
   HTMLDivElement,
   {
@@ -70,8 +87,20 @@ const AskUserQuestionForm = forwardRef<
   const [replying, setReplying] = useState(false)
   const [replyError, setReplyError] = useState<string | null>(null)
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
 
   const q = questions[step]
+  const hasOptions = (q?.options.length ?? 0) > 0
+
+  // With suggestions on screen, focus the card so the digit keys pick one.
+  // A question with no suggestions autofocuses its text field on mount
+  // instead — the step body mounts only after the previous one exits.
+  useEffect(() => {
+    if (!hasOptions) return
+    const frame = requestAnimationFrame(() => cardRef.current?.focus({ preventScroll: true }))
+    return () => cancelAnimationFrame(frame)
+  }, [step, hasOptions])
+
   if (!q) return null
 
   // Defend against a duplicated choice reaching the UI: two identical buttons
@@ -152,6 +181,26 @@ const AskUserQuestionForm = forwardRef<
     }
   }
 
+  const handleCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Typing belongs to the text field, and a focused button handles its own
+    // Enter; only keys pressed on the card itself are shortcuts.
+    if (e.target !== e.currentTarget || replying || isAgentSpawn) return
+    const digit = Number.parseInt(e.key, 10)
+    if (digit >= 1 && digit <= Math.min(options.length, 9)) {
+      e.preventDefault()
+      setAnswer(options[digit - 1])
+      return
+    }
+    if (e.key === 'Enter' && currentAnswered) {
+      e.preventDefault()
+      if (isLast) {
+        if (allAnswered) void handleSend()
+      } else {
+        goToStep(step + 1)
+      }
+    }
+  }
+
   return (
     <motion.div
       ref={ref}
@@ -166,24 +215,12 @@ const AskUserQuestionForm = forwardRef<
         isAgentSpawn ? 'max-w-2xl' : 'max-w-3xl',
       )}
     >
-      <div className="overflow-hidden rounded-xl border border-(--color-primary)/35 bg-(--bg-page) shadow-sm">
-        <div className={cn(
-          'flex items-center gap-2 border-b border-(--color-border) bg-(--color-primary)/5',
-          isAgentSpawn ? 'px-3 py-2' : 'px-4 py-2.5',
-        )}>
-          {isAgentSpawn ? (
-            <Bot size={14} className="shrink-0 text-(--color-primary)" aria-hidden="true" />
-          ) : (
-            <HelpCircle size={14} className="shrink-0 text-(--color-primary)" aria-hidden="true" />
-          )}
-          <span className="text-xs font-semibold text-(--color-text)">
-            {spawnSpec ? `Spawn ${spawnSpec.blueprint}` : 'Agent has a question'}
-          </span>
-          {questions.length > 1 && (
-            <span className="text-xs text-(--color-text-muted)">— {step + 1}/{questions.length}</span>
-          )}
-        </div>
-
+      <div
+        ref={cardRef}
+        tabIndex={-1}
+        onKeyDown={handleCardKeyDown}
+        className="overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-(--shadow-depth) outline-none"
+      >
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
@@ -191,15 +228,21 @@ const AskUserQuestionForm = forwardRef<
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -8 * preset.distance }}
             transition={preset.spring}
-            className={cn(
-              'space-y-2',
-              isAgentSpawn ? 'px-3 py-2.5' : 'px-4 py-3',
-            )}
+            className="px-4 pb-3 pt-3.5"
           >
-            {!isAgentSpawn && <p className="text-sm text-(--color-text)">{q.question}</p>}
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="min-w-0 text-sm font-medium whitespace-pre-wrap text-(--color-text)">
+                {spawnSpec ? `Spawn ${spawnSpec.blueprint}` : q.question}
+              </p>
+              {questions.length > 1 && (
+                <span className="shrink-0 text-[11px] tabular-nums text-(--color-text-subtle)">
+                  {step + 1} / {questions.length}
+                </span>
+              )}
+            </div>
             {isAgentSpawn && spawnSelection ? (
-              <div className="space-y-2">
-                <div className="rounded-lg border border-(--color-border) bg-(--bg-card) p-2">
+              <div className="mt-2.5 space-y-2">
+                <div className="rounded-lg border border-(--color-border-subtle) bg-(--bg-page) p-1.5">
                   <button
                     type="button"
                     aria-expanded={modelPickerOpen}
@@ -249,7 +292,7 @@ const AskUserQuestionForm = forwardRef<
                   </AnimatePresence>
                 </div>
 
-                <div className="flex items-center gap-2 rounded-lg border border-(--color-border) bg-(--bg-card) p-2">
+                <div className="flex items-center gap-2 rounded-lg border border-(--color-border-subtle) bg-(--bg-page) p-1.5 pl-3">
                   <p className="shrink-0 text-[11px] font-medium text-(--color-text-muted)">Thinking</p>
                   <div
                     className="flex min-w-0 flex-1 gap-1 overflow-x-auto overscroll-contain pb-0.5"
@@ -269,8 +312,8 @@ const AskUserQuestionForm = forwardRef<
                           className={cn(
                             'flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors',
                             selected
-                              ? 'border-(--color-primary) bg-(--color-primary)/10 text-(--color-text)'
-                              : 'border-(--color-border) text-(--color-text-muted) hover:bg-(--bg-key)',
+                              ? 'border-(--color-border-strong) bg-(--bg-key) text-(--color-text)'
+                              : 'border-transparent text-(--color-text-muted) hover:bg-(--bg-key)',
                           )}
                         >
                           <span
@@ -285,110 +328,130 @@ const AskUserQuestionForm = forwardRef<
                   </div>
                 </div>
               </div>
-            ) : options.length > 0 && (
-              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggested answers">
-                {options.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
+            ) : (
+              <div className="mt-2.5 flex flex-col gap-0.5">
+                {options.length > 0 && (
+                  <div className="flex flex-col gap-0.5" role="group" aria-label="Suggested answers">
+                    {options.map((option, index) => {
+                      const selected = answers[step] === option
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          disabled={replying}
+                          onClick={() => setAnswer(option)}
+                          aria-pressed={selected}
+                          className={cn(
+                            'group flex min-h-8 w-full items-center gap-2.5 rounded-lg px-2 py-1 text-left text-[13px] transition-colors',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
+                            selected
+                              ? 'bg-(--bg-key) text-(--color-text)'
+                              : 'text-(--color-text-2) hover:bg-(--bg-key)/60 hover:text-(--color-text)',
+                            replying && 'pointer-events-none opacity-50',
+                          )}
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={cn(
+                              'flex size-5 shrink-0 items-center justify-center rounded-[5px] border text-[11px] tabular-nums transition-colors',
+                              selected
+                                ? 'border-(--color-text) bg-(--color-text) text-(--bg-card)'
+                                : 'border-(--color-border) text-(--color-text-muted)',
+                            )}
+                          >
+                            {index < 9 ? index + 1 : '·'}
+                          </span>
+                          <span className="min-w-0 flex-1">{option}</span>
+                          {selected && <Check size={14} aria-hidden="true" className="shrink-0 text-(--color-text-muted)" />}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                <div
+                  className={cn(
+                    'flex items-center gap-2.5 rounded-lg border px-2 transition-colors',
+                    options.length > 0
+                      ? 'border-transparent focus-within:border-(--color-border) focus-within:bg-(--bg-page)'
+                      : 'border-(--color-border) bg-(--bg-page) focus-within:border-(--color-border-strong)',
+                  )}
+                >
+                  {options.length > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="flex size-5 shrink-0 items-center justify-center rounded-[5px] border border-dashed border-(--color-border) text-[11px] text-(--color-text-subtle)"
+                    >
+                      …
+                    </span>
+                  )}
+                  <input
+                    type="text"
+                    autoFocus={options.length === 0}
+                    // A picked suggestion is shown by its row, not echoed here.
+                    value={options.includes(answers[step] ?? '') ? '' : answers[step] ?? ''}
+                    onChange={(e) => setAnswer(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' || !currentAnswered) return
+                      e.stopPropagation()
+                      if (isLast) void handleSend()
+                      else goToStep(step + 1)
+                    }}
                     disabled={replying}
-                    onClick={() => setAnswer(option)}
-                    aria-pressed={answers[step] === option}
-                    className={cn(
-                      'rounded-full border px-2.5 py-1 text-xs font-medium transition-colors',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
-                      answers[step] === option
-                        ? 'border-(--color-primary) bg-(--color-primary) text-(--color-text-on-accent)'
-                        : 'border-(--color-border) bg-(--bg-card) text-(--color-text) hover:bg-(--bg-key)',
-                      replying && 'pointer-events-none opacity-50',
-                    )}
-                  >
-                    {option}
-                  </button>
-                ))}
+                    placeholder={options.length > 0 ? 'Or type your own answer…' : 'Type your answer…'}
+                    aria-label={q.question}
+                    className="h-8 min-w-0 flex-1 bg-transparent text-[13px] text-(--color-text) outline-none placeholder:text-(--color-text-subtle)"
+                  />
+                </div>
               </div>
             )}
-            {!isAgentSpawn && <input
-              type="text"
-              value={answers[step] ?? ''}
-              onChange={(e) => setAnswer(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter' || !currentAnswered) return
-                if (isLast) void handleSend()
-                else goToStep(step + 1)
-              }}
-              disabled={replying}
-              placeholder={options.length > 0 ? 'Or type your own answer…' : 'Type your answer…'}
-              aria-label={q.question}
-              className="h-8 w-full rounded-md border border-(--color-border) bg-(--bg-card) px-2.5 text-xs text-(--color-text) outline-none focus:border-(--color-primary)"
-              autoFocus
-            />}
           </motion.div>
         </AnimatePresence>
 
-        <div className={cn(
-          'flex items-center justify-between gap-3 border-t border-(--color-border)',
-          isAgentSpawn ? 'px-3 py-2' : 'px-4 py-2.5',
-        )}>
+        <div className="flex items-center gap-2 border-t border-(--color-border-subtle) px-3 py-2">
           {isAgentSpawn ? (
             <button
               type="button"
               disabled={replying}
               onClick={() => void handleSend(['__cancel__'])}
-              className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+              className={cn(GHOST_BUTTON, replying && 'pointer-events-none opacity-50')}
             >
-              <X size={13} aria-hidden="true" />
               Cancel
             </button>
-          ) : (
+          ) : step > 0 ? (
             <button
               type="button"
-              disabled={replying || step === 0}
+              disabled={replying}
               onClick={() => goToStep(step - 1)}
-              className={cn(
-                'flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-medium text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
-                (replying || step === 0) && 'pointer-events-none opacity-40',
-              )}
+              className={cn(GHOST_BUTTON, 'pl-1.5', replying && 'pointer-events-none opacity-50')}
             >
               <ChevronLeft size={13} aria-hidden="true" />
               Back
             </button>
-          )}
+          ) : null}
 
-          {replyError && (
-            <p className="text-xs text-red-600 dark:text-red-400" role="alert">{replyError}</p>
-          )}
+          <p className="min-w-0 flex-1 truncate px-1 text-xs text-(--color-danger)" role={replyError ? 'alert' : undefined}>
+            {replyError}
+          </p>
 
           {isLast ? (
             <button
               type="button"
               disabled={replying || !allAnswered}
               onClick={() => void handleSend()}
-              className={cn(
-                'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
-                'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
-                (replying || !allAnswered) && 'pointer-events-none opacity-50',
-              )}
+              className={cn(PRIMARY_BUTTON, (replying || !allAnswered) && 'pointer-events-none opacity-50')}
             >
-              <Send size={12} aria-hidden="true" />
               {replying ? 'Sending…' : isAgentSpawn ? 'Spawn agent' : 'Submit'}
+              {!replying && <kbd aria-hidden="true" className={KBD_CLASS}>↵</kbd>}
             </button>
           ) : (
             <button
               type="button"
               disabled={!currentAnswered}
               onClick={() => goToStep(step + 1)}
-              className={cn(
-                'flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
-                'bg-(--color-primary) text-(--color-text-on-accent) hover:opacity-90',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)',
-                !currentAnswered && 'pointer-events-none opacity-50',
-              )}
+              className={cn(PRIMARY_BUTTON, !currentAnswered && 'pointer-events-none opacity-50')}
             >
               Next
-              <ChevronRight size={12} aria-hidden="true" />
+              <kbd aria-hidden="true" className={KBD_CLASS}>↵</kbd>
             </button>
           )}
         </div>
