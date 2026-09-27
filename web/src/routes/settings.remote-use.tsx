@@ -92,7 +92,7 @@ export function RemoteUseSettingsPage() {
   } else if (tailscale && tailscale.https_certs === false) {
     readiness = {
       tone: 'warning',
-      text: 'HTTPS certificates are disabled for this tailnet. Enable them in the Tailscale admin console before turning phone access on.',
+      text: 'HTTPS certificates are not enabled. Phone access requires them. To enable: open Tailscale app or admin console, then Settings > HTTPS certificates > turn on.',
     }
   } else if (tunnelReady) {
     readiness = { tone: 'success', text: 'This computer is reachable over your tailnet.' }

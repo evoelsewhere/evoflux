@@ -230,6 +230,10 @@ def _web_entry_active(entry: Any) -> bool:
 
 
 def _normalize_serve_url(url: str) -> str:
+    # Tailscale serve status returns bare hostnames like
+    # "host.tailnet.ts.net:443" - normalise to a scannable HTTPS URL.
+    if not url.startswith(("https://", "http://")):
+        url = f"https://{url}"
     if url.startswith("https://") and url.endswith(":443"):
         return url[: -len(":443")]
     if url.startswith("http://") and url.endswith(":80"):
