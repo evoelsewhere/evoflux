@@ -2384,6 +2384,87 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
 ],
   },
   {
+    id: 'phone-access',
+    category: 'settings',
+    title: 'Truy cập điện thoại (Tailscale Serve)',
+    summary:
+      'Truy cập máy tính này từ điện thoại qua chính tailnet của bạn — địa chỉ HTTPS .ts.net ổn định kèm mã QR, bảo bởi khóa một thiết bị mà bạn có thể nhả ngay trên desktop.',
+    keywords: [
+      'phone access',
+      'tailscale',
+      'serve',
+      'tailnet',
+      'remote use',
+      'QR code',
+      '.ts.net',
+      'device lock',
+      'HTTPS certificate',
+      'truy cập điện thoại',
+      'khóa thiết bị',
+      'điện thoại',
+      'tailscale serve'
+],
+    openAction: { type: 'settings', path: 'remote-use' },
+    setup:
+      'Cài Tailscale trên máy tính này và đăng nhập (`tailscale up`), bật HTTPS certificates trong Tailscale admin console, rồi mở Settings → Phone access và gạt công tắc.',
+    tricks: [
+      'Serve giữ một địa chỉ .ts.net ổn định — không cần dynamic DNS, không có cloud relay.',
+      'Mã QR trỏ tới URL HTTPS ổn định — quét khi điện thoại đang ở trong tailnet.',
+      'Một thiết bị giữ khóa; nhả từ desktop hoặc chờ hết idle 30 phút.',
+      'Điện thoại thứ hai thấy “device X holds the lock” là HTTP 409 đúng như thiết kế, không phải lỗi.',
+      'Điện thoại tự nhận dạng qua header Tailscale login — không cần token hay mã pairing.',
+      'EvoFlux phải chạy trên máy tính này thì truy cập từ điện thoại mới hoạt động.',
+      'Secret của provider/bot/plugin vẫn chỉ sửa trên desktop dù kết nối từ đâu.',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Phone access lộ máy tính này qua Tailscale Serve: tailscaled xuất một địa chỉ HTTPS ổn định trên tailnet (*.ts.net) và EvoFlux chỉ phục vụ request đến từ thiết bị đã đăng nhập tailnet. Không có listener công khai, không có cloud tunnel ở giữa.',
+      },
+      {
+        type: 'p',
+        text: 'Trang chỉ rõ bốn trạng thái trước khi bật được công tắc: chưa cài Tailscale, đã cài nhưng chưa đăng nhập, đã đăng nhập nhưng tắt HTTPS certificates, và sẵn sàng hoàn toàn. Trạng thái nào cần sửa thì nói thẳng thay vì im lặng thất bại.',
+      },
+      {
+        type: 'p',
+        text: 'Khi bật, trang hiển thị địa chỉ tunnel ổn định kèm nút copy và mã QR — quét từ điện thoại khi nó ở cùng tailnet. Địa chỉ không đổi giữa các phiên, nên shortcut đã lưu vẫn dùng được.',
+      },
+      {
+        type: 'p',
+        text: 'Chỉ một thiết bị được điều khiển máy tính này tại một thời điểm. Thẻ lock liệt kê ai giữ (Tailscale login và device label), lúc nào claim và lần thấy cuối; nút Release nhả ngay. Điện thoại thua cuộc đua nhận HTTP 409 và biết thiết bị nào giữ khóa thay vì thất bại im lặng. Khóa cũng tự nhả sau 30 phút không có request.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'Trạng thái — chưa cài → chưa đăng nhập → HTTPS certs tắt → sẵn sàng',
+          'QR — mã hóa URL HTTPS .ts.net ổn định',
+          'Lock — một người giữ, nút Release, idle 30 phút tự nhả',
+          'Auth — header đăng nhập tailnet, không cần pairing code',
+          'Giới hạn — sửa credential vẫn chỉ trên desktop khi đang remote',
+          'Điều kiện — EvoFlux và tailscaled phải cùng chạy'
+],
+      },
+      {
+        type: 'p',
+        text: 'Sai sót thường gặp: bật công tắc khi Tailscale chưa đăng nhập; quét QR khi điện thoại đang dùng dữ liệu di động thay vì tailnet; kỳ vọng điện thoại thứ hai kết nối trong khi khóa còn giữ; và tưởng phone access vẫn chạy sau khi EvoFlux tắt — Serve trả lời nhưng sidecar đã dừng.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'Cross-feature: Connection giải thích HealthDot khi sidecar không tới được.',
+          'Cross-feature: Settings map liệt kê nơi các khả năng remote nằm.',
+          'Cross-feature: Troubleshooting checklist bắt đầu từ HealthDot → Connection.'
+],
+      }
+],
+    related: [
+      'connection-settings',
+      'settings-safety',
+      'troubleshooting-connection',
+      'getting-started'
+],
+  },
+  {
     id: 'settings-safety',
     category: 'settings',
     title: 'Bản đồ Settings',
