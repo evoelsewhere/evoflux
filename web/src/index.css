@@ -933,34 +933,107 @@ html.light[data-native-sidebar-glass="macos"] [data-app-header] {
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Agent activity — light sweeps across status glyphs without layout shifts
+ * Shimmer text — local implementation of shadcn/ui's shimmer utility.
+ * No package is required: currentColor is the base, the middle highlight is
+ * a soft 20% tint, and the gradient sweeps across the glyphs in two seconds.
  * ───────────────────────────────────────────────────────────── */
-@keyframes activity-text-sweep {
-  from { background-position: 180% 0; }
-  to   { background-position: -80% 0; }
+@property --shimmer-angle {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 20deg;
 }
+
+@keyframes tw-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+.shimmer,
 .activity-text-shimmer {
-  color: var(--color-text-sweep-base);
-  background-image: linear-gradient(
-    100deg,
-    var(--color-text-sweep-base) 15%,
-    var(--color-text-sweep-peak) 45%,
-    var(--color-text-sweep-base) 75%
+  --_spread: var(--shimmer-spread, calc(3ch + 40px));
+  --_base: currentColor;
+  --_highlight: var(
+    --shimmer-color,
+    color-mix(in srgb, currentColor 20%, transparent)
   );
-  background-size: 240% 100%;
+  background-image: linear-gradient(
+    calc(90deg + var(--shimmer-angle)),
+    var(--_base) calc(50% - var(--_spread)),
+    color-mix(in srgb, var(--_highlight), var(--_base) 50%) calc(50% - var(--_spread) * 0.5),
+    var(--_highlight) 50%,
+    color-mix(in srgb, var(--_highlight), var(--_base) 50%) calc(50% + var(--_spread) * 0.5),
+    var(--_base) calc(50% + var(--_spread))
+  );
+  background-repeat: no-repeat;
+  background-size: calc(200% + var(--_spread) * 2) 100%;
+  background-position: 0 0;
   background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: activity-text-sweep 2.2s linear infinite;
+  animation: tw-shimmer var(--shimmer-duration, 2s) linear infinite;
 }
 
-/* Applied to a wrapper, the sweep crosses everything inside it as one band
-   instead of restarting per child, so a status line reads as a single
-   travelling highlight. Descendants inherit the clip, so their own `color`
-   would be ignored anyway — hierarchy inside a swept cluster has to come
-   from size and weight. */
-.activity-text-shimmer * {
-  -webkit-text-fill-color: inherit;
+.activity-text-shimmer {
+  /* Keep the resting text quieter than normal muted copy; the moving crest
+     carries the emphasis instead of the whole status line glowing. */
+  color: color-mix(in srgb, var(--color-text-muted) 72%, var(--bg-page) 28%);
+}
+
+:root.light .activity-text-shimmer {
+  color: color-mix(in srgb, var(--color-text-muted) 82%, var(--color-text) 18%);
+}
+
+:root.dark .shimmer,
+:root.dark .activity-text-shimmer {
+  --_highlight: var(
+    --shimmer-color,
+    color-mix(in srgb, currentColor 50%, white 50%)
+  );
+}
+
+/* Prefer Shadcn's relative OKLCH highlight where the native webview supports
+   it, while retaining the sRGB fallback used by older WebKit releases. */
+@supports (color: color-mix(in oklch, currentColor l c h / calc(alpha * 0.2))) {
+  .shimmer,
+  .activity-text-shimmer {
+    --_highlight: var(
+      --shimmer-color,
+      color-mix(in oklch, currentColor l c h / calc(alpha * 0.2))
+    );
+  }
+
+  :root.dark .shimmer,
+  :root.dark .activity-text-shimmer {
+    --_highlight: var(
+      --shimmer-color,
+      color-mix(in oklch, currentColor max(0.8, calc(l + 0.4)) c h / calc(alpha + 0.4))
+    );
+  }
+}
+
+.shimmer-color-accent {
+  --shimmer-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+}
+
+.shimmer:where([dir='rtl'], [dir='rtl'] *),
+.activity-text-shimmer:where([dir='rtl'], [dir='rtl'] *) {
+  animation-direction: reverse;
+}
+
+/* Applied to a wrapper, copy the text clip onto descendants. A background
+   clipped to the flex wrapper itself cannot paint glyphs owned by its child
+   spans, which otherwise makes the text transparent in WebKit. */
+.activity-text-shimmer > *,
+.activity-text-shimmer > * * {
+  color: inherit;
+  background-image: inherit;
+  background-repeat: inherit;
+  background-size: inherit;
+  background-position: inherit;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: inherit;
 }
 
 @keyframes activity-live-pulse {
@@ -1145,7 +1218,15 @@ html.light[data-native-sidebar-glass="macos"] [data-app-header] {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .shimmer,
   .activity-text-shimmer {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+
+  .activity-text-shimmer > *,
+  .activity-text-shimmer > * * {
     animation: none;
     background: none;
     -webkit-text-fill-color: currentColor;
