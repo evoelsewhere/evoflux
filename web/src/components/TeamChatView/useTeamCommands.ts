@@ -16,6 +16,9 @@
  *   - ``Settings``   — agent / skill management routes
  */
 import type { useNavigate } from '@tanstack/react-router'
+import {
+  BookOpen, Brain, CalendarClock, Code2, FolderOpen, Home, Moon, Puzzle, Settings, Sparkles,
+} from 'lucide-react'
 import type { Command } from '../CommandPalette'
 import type { ViewMode } from './types'
 import { useUIStore } from '@/stores/useUIStore'
@@ -70,10 +73,11 @@ export function useTeamCommands({
   const switchableAgentNames = agentNames.filter((name) => name !== leadName)
   const commands: Command[] = [
     { id: 'new-chat', group: 'Team', label: 'New Team Chat', description: 'Start a fresh team conversation', shortcut: 'Ctrl+N', action: handleNewSession },
-    { id: 'dream-run', group: 'Team', label: 'Run Dream', description: 'Synthesise unprocessed sessions into Memory', action: handleDreamRun },
+    { id: 'dream-run', group: 'Team', label: 'Run Dream', description: 'Synthesise unprocessed sessions into Memory', icon: Moon, action: handleDreamRun },
     {
       id: 'open-guidelines',
       group: 'Navigation',
+      icon: BookOpen,
       label: 'Open Guidelines…',
       description: 'Search setup tips and feature tricks',
       action: () => useUIStore.getState().openGuidelines(),
@@ -83,7 +87,7 @@ export function useTeamCommands({
       label: viewMode === 'agent' ? 'Switch to Split View' : 'Switch to Agent View',
       description: 'Cycle: Agent → Split', shortcut: 'Ctrl+V', action: cycleViewMode,
     },
-    { id: 'workspace-files',  group: 'View',       label: mode === 'coding' ? 'Open Changed & Files' : 'Toggle Workspace Files', description: mode === 'coding' ? 'Browse changed files and workspace files' : 'Browse files the agent has produced', shortcut: 'Ctrl+F', action: handleWorkspaceFiles },
+    { id: 'workspace-files',  group: 'View',       label: mode === 'coding' ? 'Open Changed & Files' : 'Toggle Workspace Files', description: mode === 'coding' ? 'Browse changed files and workspace files' : 'Browse files the agent has produced', shortcut: 'Ctrl+F', icon: FolderOpen, action: handleWorkspaceFiles },
     ...(mode === 'coding' && workspace
       ? [{
           id: 'ai-review-changes',
@@ -91,6 +95,7 @@ export function useTeamCommands({
           label: 'Review changes with AI',
           description: 'Review uncommitted changes and publish findings to Problems',
           keywords: ['review thay đổi chưa commit', 'review uncommitted changes'],
+          icon: Sparkles,
           action: () => {
             useUIStore.getState().openWorkbenchTool('source-control')
             window.setTimeout(() => {
@@ -102,9 +107,9 @@ export function useTeamCommands({
     mode === 'coding'
       ? { id: 'collapse-sidebar', group: 'View', label: 'Toggle Coding Sidebar', description: 'Collapse or expand workspaces and sessions', shortcut: 'Ctrl+B', action: handleCodingSidebarToggle }
       : { id: 'collapse-sidebar', group: 'View', label: 'Toggle Sidebar', description: '', shortcut: 'Ctrl+B', action: () => useUIStore.getState().toggleSidebarCollapsed() },
-    { id: 'wiki',             group: 'View',       label: 'Memory',            description: 'Browse curated knowledge and pending notes', shortcut: 'Ctrl+M', action: () => dispatchPrimaryShortcut('m') },
-    { id: 'scheduled-tasks',  group: 'View',       label: 'Scheduled Tasks',   description: 'Manage cron and scheduled agent tasks', shortcut: 'Ctrl+S', action: () => dispatchPrimaryShortcut('s') },
-    { id: 'plugins',          group: 'View',       label: 'Plugins',           description: 'Manage portable Agent Skills and MCP packages', shortcut: 'Ctrl+K', action: () => dispatchPrimaryShortcut('k') },
+    { id: 'wiki',             group: 'View',       label: 'Memory',            description: 'Browse curated knowledge and pending notes', shortcut: 'Ctrl+M', icon: Brain, action: () => dispatchPrimaryShortcut('m') },
+    { id: 'scheduled-tasks',  group: 'View',       label: 'Scheduled Tasks',   description: 'Manage cron and scheduled agent tasks', shortcut: 'Ctrl+S', icon: CalendarClock, action: () => dispatchPrimaryShortcut('s') },
+    { id: 'plugins',          group: 'View',       label: 'Plugins',           description: 'Manage portable Agent Skills and MCP packages', shortcut: 'Ctrl+K', icon: Puzzle, action: () => dispatchPrimaryShortcut('k') },
     ...switchableAgentNames.map((name) => ({
       id: `switch-${name}`, group: 'Agents',
       label: `View ${name}`,
@@ -115,9 +120,9 @@ export function useTeamCommands({
     })),
     { id: 'next-agent', group: 'Agents', label: 'Next Agent',     description: 'Focus the next teammate',     action: () => cycleActiveAgent('next') },
     { id: 'prev-agent', group: 'Agents', label: 'Previous Agent', description: 'Focus the previous teammate', action: () => cycleActiveAgent('prev') },
-    { id: 'go-home',     group: 'Navigation', label: 'Go to Home',     description: '', action: () => navigate({ to: '/' }) },
-    ...(mode === 'work' ? [{ id: 'go-coding', group: 'Navigation', label: 'Go to Coding Mode', description: 'Open the coding workbench', action: () => navigate({ to: '/coding' }) }] : []),
-    { id: 'go-settings', group: 'Navigation', label: 'Open Settings',  description: 'Manage agents & skills', action: () => useUIStore.getState().openSettings('agents') },
+    { id: 'go-home',     group: 'Navigation', label: 'Go to Home',     description: '', icon: Home, action: () => navigate({ to: '/' }) },
+    ...(mode === 'work' ? [{ id: 'go-coding', group: 'Navigation', label: 'Go to Coding Mode', description: 'Open the coding workbench', icon: Code2, action: () => navigate({ to: '/coding' }) }] : []),
+    { id: 'go-settings', group: 'Navigation', label: 'Open Settings',  description: 'Manage agents & skills', icon: Settings, action: () => useUIStore.getState().openSettings('agents') },
     { id: 'settings-agents', group: 'Settings', label: 'Manage Agents', description: 'Edit agent .md files',  action: () => useUIStore.getState().openSettings('agents') },
     { id: 'settings-new-agent', group: 'Settings', label: 'New Agent',  description: 'Create a new agent',    action: () => useUIStore.getState().openSettings('agents/new') },
     { id: 'settings-skills', group: 'Settings', label: 'Manage Skills', description: 'Create, edit, and turn skills on or off',  action: () => useUIStore.getState().openSettings('skills') },

@@ -12,7 +12,12 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, CornerDownLeft } from 'lucide-react'
+import {
+  Search, X, Command as CommandIcon, MessageSquare, MessagesSquare, Plus,
+  Compass, PanelsTopLeft, Users, Settings, GitBranch, FileText, FileClock,
+  Code2, TriangleAlert, Sparkles, Brain, FolderKanban, FolderGit2,
+  CalendarClock, type LucideIcon,
+} from 'lucide-react'
 import { useProximityTracker, useProximityIntensity } from '@/hooks/useProximity'
 import { useModalFocus } from '@/hooks/useModalFocus'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
@@ -32,8 +37,46 @@ export interface Command {
   /** Optional category for grouping */
   group?: string
   keywords?: string[]
+  /** Leading glyph; falls back to the icon of the command's group. */
+  icon?: LucideIcon
   action: () => void
 }
+
+/**
+ * Leading glyph per group, keyed by the untranslated group name the command
+ * sources use (`useTeamCommands`, `useGlobalSearch`).
+ */
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  Team: Plus,
+  View: PanelsTopLeft,
+  Agents: Users,
+  Navigation: Compass,
+  Settings,
+  Git: GitBranch,
+  Chats: MessageSquare,
+  'Mentioned in chats': MessagesSquare,
+  Memory: Brain,
+  Projects: FolderKanban,
+  Repositories: FolderGit2,
+  'Scheduled tasks': CalendarClock,
+  Skills: Sparkles,
+  Files: FileText,
+  'Recent files': FileClock,
+  Code: Code2,
+  Problems: TriangleAlert,
+}
+
+type PaletteCommand = Command & { glyph: LucideIcon }
+
+function withGlyph(command: Command): PaletteCommand {
+  return {
+    ...command,
+    glyph: command.icon ?? (command.group ? GROUP_ICONS[command.group] : undefined) ?? CommandIcon,
+  }
+}
+
+const KBD_CLASS =
+  'inline-flex h-5 min-w-5 items-center justify-center rounded-[5px] border border-(--color-border) bg-(--bg-page) px-1.5 font-sans text-[11px] font-medium leading-none text-(--color-text-muted)'
 
 interface CommandPaletteProps {
   commands: Command[]
@@ -64,7 +107,7 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
 
   // Filter commands by query — memoised so the reference only changes when query changes
   const localizedCommands = useMemo(() => commands.map((command) => ({
-    ...command,
+    ...withGlyph(command),
     label: t(command.label),
     description: command.description ? t(command.description) : undefined,
     group: command.group ? t(command.group) : undefined,
@@ -109,14 +152,14 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
         )
       })
       : localizedCommands
-    const byId = new Map<string, Command>(
+    const byId = new Map<string, PaletteCommand>(
       local.map((command) => [command.id, command]),
     )
     // Remote rows carry user content in label/description — never translated —
     // but their group header is app chrome and follows the UI locale.
     for (const command of remoteCommands) {
       byId.set(command.id, {
-        ...command,
+        ...withGlyph(command),
         group: command.group ? t(command.group) : undefined,
       })
     }
@@ -166,7 +209,7 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
   }
 
   // Group commands for display
-  const groups = new Map<string, Command[]>()
+  const groups = new Map<string, PaletteCommand[]>()
   for (const cmd of filtered) {
     const g = cmd.group ?? ''
     if (!groups.has(g)) groups.set(g, [])
@@ -174,7 +217,7 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
   }
 
   // Flat list with group headers for rendering (track absolute index)
-  type Row = { type: 'header'; label: string } | { type: 'cmd'; cmd: Command; idx: number }
+  type Row = { type: 'header'; label: string } | { type: 'cmd'; cmd: PaletteCommand; idx: number }
   const rows: Row[] = []
   let absIdx = 0
   for (const [group, cmds] of groups.entries()) {
@@ -191,7 +234,9 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className={`fixed inset-0 z-(--z-modal) flex items-start justify-center bg-(--color-overlay) px-3 backdrop-blur-xl sm:px-0 sm:pt-[15vh] ${isTauriMobile ? 'pt-[max(5rem,calc(env(safe-area-inset-top)+3.5rem))]' : 'pt-4'}`}
+        /* A light dim, not a heavy blur: the app behind should stay legible
+           as context, and a frosted page made the panel's edges vanish. */
+        className={`fixed inset-0 z-(--z-modal) flex items-start justify-center bg-black/25 px-3 backdrop-blur-[2px] sm:px-0 sm:pt-[14vh] dark:bg-black/45 ${isTauriMobile ? 'pt-[max(5rem,calc(env(safe-area-inset-top)+3.5rem))]' : 'pt-4'}`}
         onClick={onClose}
       >
         <motion.div
@@ -202,8 +247,10 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
           transition={reducedMotionTransition(Boolean(prefersReducedMotion), preset.spring)}
           onClick={(e) => e.stopPropagation()}
           /* Wider than a command-only palette needed: rows now carry message
-             excerpts and repository paths, which read badly at 28rem. */
-          className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-(--color-border)/80 bg-(--bg-card)/82 shadow-2xl backdrop-blur-2xl sm:max-w-2xl"
+             excerpts and repository paths, which read badly at 28rem. The
+             surface is opaque — a translucent card over a blurred page read
+             as washed-out grey on grey. */
+          className="flex w-full max-w-md flex-col overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-(--shadow-popover) sm:max-w-[40rem]"
           role="dialog"
           aria-modal="true"
           aria-label="Command palette"
@@ -211,8 +258,8 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
           onKeyDown={handleKeyDown}
         >
           {/* Search input */}
-          <div className="flex items-center gap-3 border-b border-(--color-border) px-4 py-3">
-            <Search size={15} className="shrink-0 text-(--color-text-muted)" />
+          <div className="flex h-13 items-center gap-3 border-b border-(--color-border-subtle) px-4">
+            <Search size={17} className="shrink-0 text-(--color-text-muted)" />
             <input
               ref={inputRef}
               value={query}
@@ -221,19 +268,24 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
                 setActiveIdx(0)
               }}
               placeholder="Search sessions, messages, files, settings…"
-              className="flex-1 bg-transparent text-sm text-(--color-text) placeholder-(--color-text-muted) outline-none"
+              className="h-full flex-1 bg-transparent text-[15px] text-(--color-text) placeholder-(--color-text-muted) outline-none"
               aria-label="Search everything"
             />
-            {query && (
+            {query ? (
               <button
+                type="button"
                 onClick={() => {
                   setQuery('')
                   setActiveIdx(0)
+                  inputRef.current?.focus()
                 }}
-                className="text-xs text-(--color-text-muted) hover:text-(--color-text-2)"
+                className="flex size-6 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)"
+                aria-label="Clear"
               >
-                Clear
+                <X size={14} />
               </button>
+            ) : (
+              <kbd className={`${KBD_CLASS} shrink-0`}>Esc</kbd>
             )}
           </div>
 
@@ -241,15 +293,18 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
           <div
             ref={listRef}
             aria-busy={searching}
-            className="max-h-80 overflow-y-auto py-1.5 sm:max-h-[26rem]"
+            className="max-h-80 overflow-y-auto overscroll-contain p-1.5 [scrollbar-width:thin] sm:max-h-[26rem]"
           >
             {filtered.length === 0 ? (
               searching ? (
                 <SearchSkeleton count={5} still={Boolean(prefersReducedMotion)} />
               ) : (
-                <p className="px-4 py-6 text-center text-sm text-(--color-text-muted)">
-                  Nothing matches "{query}"
-                </p>
+                <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
+                  <Search size={20} className="text-(--color-text-subtle)" />
+                  <p className="text-sm text-(--color-text-muted)">
+                    Nothing matches "{query}"
+                  </p>
+                </div>
               )
             ) : (
               rows.map((row, i) => {
@@ -257,7 +312,7 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
                   return (
                     <p
                       key={`h-${i}`}
-                      className="px-4 pb-1 pt-3 text-xs font-semibold uppercase tracking-widest text-(--color-text-muted)"
+                      className={`px-2.5 pb-1.5 text-[11px] font-medium text-(--color-text-subtle) ${i === 0 ? 'pt-1.5' : 'pt-3'}`}
                     >
                       {row.label}
                     </p>
@@ -284,14 +339,23 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
           </div>
 
           {/* Footer hint */}
-          <div className="flex items-center gap-2 border-t border-(--color-border) px-4 py-2">
-            <kbd className="rounded-xs border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-muted)">↑↓</kbd>
-            <span className="text-xs text-(--color-text-muted)">navigate</span>
-            <kbd className="rounded-xs border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-muted)">↵</kbd>
-            <span className="text-xs text-(--color-text-muted)">run</span>
-            <kbd className="rounded-xs border border-(--color-border) bg-(--bg-page) px-1 py-0.5 font-mono text-xs text-(--color-text-muted)">Esc</kbd>
-            <span className="text-xs text-(--color-text-muted)">close</span>
-            {searching && <span className="ml-auto text-xs text-(--color-accent)">Searching…</span>}
+          <div className="flex h-9 items-center gap-4 border-t border-(--color-border-subtle) bg-(--bg-page)/60 px-4 text-[11px] text-(--color-text-muted)">
+            <span className="flex items-center gap-1.5">
+              <kbd className={KBD_CLASS}>↑</kbd>
+              <kbd className={KBD_CLASS}>↓</kbd>
+              <span>navigate</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className={KBD_CLASS}>↵</kbd>
+              <span>run</span>
+            </span>
+            <span className="ml-auto">
+              {searching ? (
+                <span className="text-(--color-accent)">Searching…</span>
+              ) : (
+                query.trim() && filtered.length > 0 && t('{0} results', [filtered.length])
+              )}
+            </span>
           </div>
         </motion.div>
       </motion.div>
@@ -306,15 +370,18 @@ function SearchSkeleton({ count, still }: { count: number; still: boolean }) {
   return (
     <div aria-hidden="true" data-testid="palette-skeleton">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="flex flex-col gap-2 px-4 py-3">
-          {/* Two bars per row, matching a result's label and description. */}
-          <div
-            className={`h-3.5 rounded-xs bg-(--bg-key) ${still ? '' : 'animate-pulse'}`}
-            style={{ width: SKELETON_WIDTHS[i % SKELETON_WIDTHS.length] }}
-          />
-          <div
-            className={`h-2.5 w-1/4 rounded-xs bg-(--bg-key) ${still ? '' : 'animate-pulse'}`}
-          />
+        <div key={i} className="flex min-h-11 items-center gap-3 px-2.5 py-1.5">
+          {/* Glyph tile plus two bars, matching a result row's shape. */}
+          <div className={`size-7 shrink-0 rounded-md bg-(--bg-key) ${still ? '' : 'animate-pulse'}`} />
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <div
+              className={`h-3 rounded-xs bg-(--bg-key) ${still ? '' : 'animate-pulse'}`}
+              style={{ width: SKELETON_WIDTHS[i % SKELETON_WIDTHS.length] }}
+            />
+            <div
+              className={`h-2.5 w-1/4 rounded-xs bg-(--bg-key) ${still ? '' : 'animate-pulse'}`}
+            />
+          </div>
         </div>
       ))}
     </div>
@@ -322,7 +389,7 @@ function SearchSkeleton({ count, still }: { count: number; still: boolean }) {
 }
 
 interface CommandRowProps {
-  cmd: Command
+  cmd: PaletteCommand
   idx: number
   isActive: boolean
   mouseY: number | null
@@ -344,34 +411,46 @@ interface CommandRowProps {
 function CommandRow({ cmd, idx, isActive, mouseY, onRun, onActivate }: CommandRowProps) {
   const { ref, intensity } = useProximityIntensity(mouseY)
   const showProximity = !isActive && intensity > 0
+  const Glyph = cmd.glyph
 
   return (
     <div ref={ref as React.RefObject<HTMLDivElement>} className="relative isolate">
       {showProximity && (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10"
+          className="pointer-events-none absolute inset-0 -z-10 rounded-lg"
           style={{
-            backgroundColor: `color-mix(in srgb, var(--bg-key) ${intensity * 100}%, transparent)`,
+            backgroundColor: `color-mix(in srgb, var(--bg-key) ${intensity * 60}%, transparent)`,
           }}
         />
       )}
       <button
+        type="button"
         data-idx={idx}
         onClick={() => onRun(cmd)}
         onMouseEnter={() => onActivate(idx)}
-        className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors ${
+        className={`flex min-h-11 w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left transition-colors ${
           isActive
             ? 'bg-(--bg-key) text-(--color-text)'
-            : 'text-(--color-text-2) hover:bg-(--bg-key)'
+            : 'text-(--color-text-2)'
         }`}
       >
+        <span
+          aria-hidden
+          className={`flex size-7 shrink-0 items-center justify-center rounded-md border transition-colors ${
+            isActive
+              ? 'border-(--color-border) bg-(--bg-card) text-(--color-text)'
+              : 'border-(--color-border-subtle) bg-(--bg-page) text-(--color-text-muted)'
+          }`}
+        >
+          <Glyph size={14} strokeWidth={1.75} />
+        </span>
         <div className="min-w-0 flex-1">
-          {/* Content rows carry whole message excerpts — keep every row one
-              line so the list stays scannable. */}
-          <span className="block truncate text-sm font-medium">{cmd.label}</span>
+          {/* Content rows carry whole message excerpts — keep every line
+              truncated so the list stays scannable. */}
+          <span className="block truncate text-[13px] font-medium leading-5 text-(--color-text)">{cmd.label}</span>
           {cmd.description && (
-            <span className="block truncate text-xs text-(--color-text-muted)">
+            <span className="block truncate text-xs leading-4 text-(--color-text-muted)">
               {cmd.description}
             </span>
           )}
@@ -383,12 +462,9 @@ function CommandRow({ cmd, idx, isActive, mouseY, onRun, onActivate }: CommandRo
           </span>
         )}
         {cmd.shortcut && (
-          <kbd className="shrink-0 rounded-xs border border-(--color-border) bg-(--bg-page) px-1.5 py-1 font-sans text-[11px] font-medium leading-none tracking-normal text-(--color-text-muted)">
+          <kbd className={`${KBD_CLASS} shrink-0`}>
             {formatShortcutLabel(cmd.shortcut)}
           </kbd>
-        )}
-        {isActive && (
-          <CornerDownLeft size={12} className="shrink-0 text-(--color-text-muted)" />
         )}
       </button>
     </div>
