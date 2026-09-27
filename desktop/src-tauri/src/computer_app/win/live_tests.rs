@@ -902,6 +902,164 @@ fn drives_excel_on_the_stage() {
     }
 }
 
+/// VS Code — an Electron app — parked off-screen and driven with posted
+/// keys only: a new file, typed code, a command from the command palette,
+/// a search in the Settings it opens, and closing that again. A private
+/// instance (its own profile under %TEMP%) is started and only that one is
+/// ended. Each step's screenshot and snapshot are left in
+/// `EVOFLUX_TRACE_DIR` (default: %TEMP%\evoflux-vscode-trace);
+/// `EVOFLUX_TRACE_SHOWN=1` keeps the window on screen.
+///
+/// `cargo test drives_vscode_by_its_keys -- --ignored --nocapture`
+#[test]
+#[ignore = "opens a private VS Code window on the local desktop"]
+fn drives_vscode_by_its_keys() {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
+    let out = std::env::var("EVOFLUX_TRACE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("evoflux-vscode-trace"));
+    std::fs::create_dir_all(&out).unwrap();
+    let profile = std::env::temp_dir().join("evoflux-debug-code");
+    if !std::path::Path::new(&std::env::var("LOCALAPPDATA").unwrap_or_default())
+        .join(r"Programs\Microsoft VS Code\Code.exe")
+        .exists()
+    {
+        eprintln!("skipped: VS Code (user install) is not installed");
+        return;
+    }
+    let launch = Launch {
+        exe: "Code.exe",
+        run: r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe",
+        args: &[
+            "--user-data-dir",
+            r"%TEMP%\evoflux-debug-code",
+            "--extensions-dir",
+            r"%TEMP%\evoflux-debug-code-ext",
+            "--new-window",
+            "--disable-workspace-trust",
+        ],
+        blank: &[],
+        cleanup: &[],
+    };
+    let (window_id, pid) = start_private(&launch).expect("VS Code did not open");
+    let session = "live-test-vscode";
+    let emit = |_: Value| {};
+    let hwnd = to_hwnd(window_id as isize);
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut cursor_before = POINT::default();
+        unsafe { GetCursorPos(&mut cursor_before) }.unwrap();
+        let foreground_before = unsafe { GetForegroundWindow() };
+        let hide = std::env::var("EVOFLUX_TRACE_SHOWN").is_err();
+        let attached = run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": hide })).unwrap();
+        eprintln!("attach: {attached}");
+        pause(3000);
+        // Leaves the step's picture and tree behind; returns the tree.
+        let record = |index: usize, label: &str| -> String {
+            let shot = run_action(&emit, session, "screenshot", &json!({})).unwrap();
+            let bytes = BASE64.decode(shot["data"].as_str().unwrap()).unwrap();
+            std::fs::write(out.join(format!("{index:02}-{label}.png")), bytes).unwrap();
+            let tree = snapshot_text(&emit, session);
+            std::fs::write(out.join(format!("{index:02}-{label}.txt")), &tree).unwrap();
+            let mut info = GUITHREADINFO { cbSize: std::mem::size_of::<GUITHREADINFO>() as u32, ..Default::default() };
+            let thread = unsafe { GetWindowThreadProcessId(hwnd, None) };
+            let _ = unsafe { GetGUIThreadInfo(thread, &mut info) };
+            eprintln!(
+                "[{index:02} {label}] title={:?} thread-focus={} active={}",
+                window_title(hwnd),
+                class_name(info.hwndFocus),
+                class_name(info.hwndActive)
+            );
+            tree
+        };
+        record(0, "attached");
+        // A fresh profile opens with a sign-in dialog that takes every key;
+        // leave it without signing in, and never press Enter while it shows.
+        // Its pages: sign in (skipped), then "Make It Yours" (Get Started).
+        let onboarding = |tree: &str| tree.contains("Continue with GitHub") || tree.contains("Make It Yours");
+        for _ in 0..4 {
+            let tree = snapshot_text(&emit, session);
+            if !onboarding(&tree) {
+                break;
+            }
+            // The button named exactly so, not a Welcome page item that
+            // merely contains the words.
+            let Some((button, skip)) = ["Continue without Signing In", "Get Started"].into_iter().find_map(|name| {
+                let line = tree.lines().find(|line| line.contains(&format!("Button \"{name}\" ")))?;
+                let reference = line.split("[ref=").nth(1)?.split(']').next()?.to_string();
+                Some((name, reference))
+            }) else {
+                break;
+            };
+            let skipped = run_action(&emit, session, "click", &json!({ "ref": skip }));
+            eprintln!("onboarding {button}: {skipped:?}");
+            pause(1500);
+        }
+        record(0, "onboarding-done");
+        assert!(
+            !onboarding(&snapshot_text(&emit, session)),
+            "the onboarding dialog is still up; stopping before any key reaches it"
+        );
+        // Each step, and what the window's title or tree shows after it.
+        enum Shows {
+            Title(&'static str),
+            Tree(&'static str),
+            NoTree(&'static str),
+            Nothing,
+        }
+        let steps: Vec<(&str, &str, Value, u64, Shows)> = vec![
+            // A first run opens the Chat panel with the focus in it, where
+            // Ctrl+N is "New Chat": close the panel first.
+            ("chat-closed", "key", json!({ "key": "ctrl+alt+i" }), 1000, Shows::Nothing),
+            ("ctrl-n", "key", json!({ "key": "ctrl+n" }), 1500, Shows::Title("Untitled-1")),
+            ("typed-code", "type", json!({ "text": "let answer = 42;" }), 800, Shows::Title("let answer = 42;")),
+            ("palette", "key", json!({ "key": "ctrl+shift+p" }), 1000, Shows::Tree("Type the name of a command to run.")),
+            ("palette-typed", "type", json!({ "text": "Preferences: Open Settings (UI)" }), 1000, Shows::Tree(">Preferences: Open Settings (UI)")),
+            // Settings opens as a window over the editor: the title stays.
+            ("enter", "key", json!({ "key": "enter" }), 2500, Shows::Tree("Window \"Settings\"")),
+            ("search-typed", "type", json!({ "text": "font size" }), 2000, Shows::Tree("Editor Font Size")),
+            ("closed", "key", json!({ "key": "ctrl+w" }), 1500, Shows::NoTree("Window \"Settings\"")),
+        ];
+        for (index, (label, action, params, wait, shows)) in steps.into_iter().enumerate() {
+            let result = run_action(&emit, session, action, &params);
+            eprintln!("{action} {params} -> {result:?}");
+            assert!(result.is_ok(), "{label}: {result:?}");
+            pause(wait);
+            let tree = record(index + 1, label);
+            match shows {
+                Shows::Title(text) => assert!(window_title(hwnd).contains(text), "{label}: title {:?}", window_title(hwnd)),
+                Shows::Tree(text) => assert!(tree.contains(text), "{label}: {text:?} is not in the tree"),
+                Shows::NoTree(text) => assert!(!tree.contains(text), "{label}: {text:?} is still in the tree"),
+                Shows::Nothing => {}
+            }
+        }
+        let mut cursor_after = POINT::default();
+        unsafe { GetCursorPos(&mut cursor_after) }.unwrap();
+        eprintln!("cursor {:?} -> {:?}", (cursor_before.x, cursor_before.y), (cursor_after.x, cursor_after.y));
+        // A person may move the mouse meanwhile, so only the foreground is
+        // asserted: the parked VS Code never took it.
+        if foreground_before != hwnd {
+            assert_eq!(foreground_before, unsafe { GetForegroundWindow() }, "the foreground window changed");
+        }
+    }));
+    detach(session);
+    // Only ever the private instance: its command line names the profile.
+    let command_line = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &format!("(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine")])
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+        .unwrap_or_default();
+    if command_line.contains(&*profile.file_name().unwrap().to_string_lossy()) {
+        let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).status();
+    } else {
+        eprintln!("NOT killing pid {pid}: {command_line}");
+    }
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
 #[test]
 #[ignore = "opens a Notepad window on the local desktop"]
 fn drives_notepad_in_the_background() {

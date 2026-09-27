@@ -64,6 +64,37 @@ fn resolves_lone_modifiers_numpad_and_high_function_keys() {
 }
 
 #[test]
+fn tells_toolkits_that_drop_posted_input() {
+    assert_eq!(toolkit_of_class("HwndWrapper[Notes.exe;;6b3f]"), Some(Toolkit::Wpf));
+    assert_eq!(toolkit_of_class("gdkWindowToplevel"), Some(Toolkit::Gtk));
+    assert_eq!(toolkit_of_class("gdkSurfaceToplevel"), Some(Toolkit::Gtk));
+    assert_eq!(toolkit_of_class("TkTopLevel"), Some(Toolkit::Tk));
+    assert_eq!(toolkit_of_class("SALFRAME"), Some(Toolkit::Vcl));
+    assert_eq!(toolkit_of_class("Notepad"), None);
+    assert_eq!(toolkit_of_class("SALAD"), None);
+    // Only the kinds cua measured as dropped get a note.
+    assert!(dropped_input_note(Toolkit::Wpf, PostedInput::Pointer).is_some());
+    assert!(dropped_input_note(Toolkit::Gtk, PostedInput::Keys).is_none());
+    assert!(dropped_input_note(Toolkit::Vcl, PostedInput::Keys).is_some());
+    assert!(dropped_input_note(Toolkit::Vcl, PostedInput::Pointer).is_none());
+    assert!(dropped_input_note(Toolkit::Tk, PostedInput::Text).is_some());
+
+    let mut result = json!({ "note": "A menu opened." });
+    add_note(&mut result, "It may not have landed.");
+    assert_eq!(result["note"], "A menu opened. It may not have landed.");
+    let mut plain = json!({});
+    add_note(&mut plain, "Only this.");
+    assert_eq!(plain["note"], "Only this.");
+}
+
+#[test]
+fn presses_plus_as_the_plus_character() {
+    // "=" is the key itself, "plus" and "+" the character on it.
+    assert_eq!(resolve_key("="), Some((VK_OEM_PLUS, false)));
+    assert_eq!(resolve_key("plus"), resolve_key("+"));
+}
+
+#[test]
 fn records_a_window_placement_exactly() {
     let placement = WINDOWPLACEMENT {
         length: std::mem::size_of::<WINDOWPLACEMENT>() as u32,

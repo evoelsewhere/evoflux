@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import unicodedata
 from typing import Annotated, Any, Literal
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.builtin.browser_shared import (
@@ -61,6 +62,17 @@ _CARD_CLOSED_MESSAGE = (
     "control until the turn is over. Do not attach again: finish without "
     "the app, or ask the user whether you may use it."
 )
+
+
+def _nfc(text: str) -> str:
+    """Text as the keyboard would produce it: "ệ" as one character.
+
+    Characters are posted to the app one by one, so decomposed text ("e" plus
+    combining marks, as some sources write Vietnamese) would reach the field
+    as separate marks — shown alike, but stored, searched and compared as
+    different text from what a person types.
+    """
+    return unicodedata.normalize("NFC", text)
 
 
 class PointAction(BaseModel):
@@ -159,6 +171,11 @@ class TypeAction(BaseModel):
         default=None, description="Click this field first to put the caret there."
     )
 
+    @field_validator("text")
+    @classmethod
+    def _composed(cls, text: str) -> str:
+        return _nfc(text)
+
 
 class KeyAction(BaseModel):
     action: Literal["key"]
@@ -189,6 +206,11 @@ class SetValueAction(BaseModel):
             "Only when typing did not reach the field; rich editors may ignore it."
         ),
     )
+
+    @field_validator("value")
+    @classmethod
+    def _composed(cls, value: str) -> str:
+        return _nfc(value)
 
 
 class WaitAction(BaseModel):

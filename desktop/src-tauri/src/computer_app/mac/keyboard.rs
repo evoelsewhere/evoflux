@@ -133,7 +133,8 @@ pub(super) fn press_key(target: &Target, params: &Value) -> Result<Value, String
     let (code, needs_shift) =
         resolve_key(&combo.key).ok_or_else(|| format!("Unknown key name {:?}.", combo.key))?;
     let mut combo = combo.clone();
-    combo.shift |= needs_shift;
+    // An upper-case letter is Shift only on its own: "cmd+A" is ⌘A, not ⇧⌘A.
+    combo.shift |= (needs_shift && !upper_case_letter(&combo.key)) || shifted_letter(&combo);
     post_keycode(target.pid, code, combo_flags(&combo), repeat)?;
     Ok(json!({
         "key": spec,

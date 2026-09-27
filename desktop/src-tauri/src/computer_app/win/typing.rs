@@ -171,6 +171,9 @@ pub(super) fn type_text(emit: &dyn Fn(Value), target: &Target, params: &Value) -
             _ => {}
         }
     }
+    if result.get("confirmed") != Some(&json!(true)) {
+        note_dropped_input(&mut result, hwnd, PostedInput::Text);
+    }
     Ok(result)
 }
 

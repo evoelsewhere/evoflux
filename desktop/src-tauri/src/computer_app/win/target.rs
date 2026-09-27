@@ -311,6 +311,80 @@ fn largest_chromium_widget(window: HWND) -> Option<HWND> {
     })
 }
 
+// ── Frameworks that drop posted input ───────────────────────────────────
+
+/// UI toolkits known to ignore some kinds of posted input, as trycua's
+/// cua-driver measured them (its `would_be_silently_dropped` table). The
+/// message is posted all the same — EvoFlux also holds modifiers in the
+/// app's key state, which cua does not — but the result says the input may
+/// not have landed, rather than reporting a click nobody received.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Toolkit {
+    Wpf,
+    Gtk,
+    Tk,
+    /// LibreOffice's VCL.
+    Vcl,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PostedInput {
+    Pointer,
+    Keys,
+    Text,
+}
+
+pub(super) fn toolkit_of_class(class: &str) -> Option<Toolkit> {
+    if class.starts_with("HwndWrapper[") {
+        Some(Toolkit::Wpf)
+    } else if class.starts_with("gdkWindow") || class.starts_with("gdkSurface") {
+        Some(Toolkit::Gtk)
+    } else if class.starts_with("TkTopLevel") || class == "TkChild" {
+        Some(Toolkit::Tk)
+    } else if matches!(class, "SALFRAME" | "SALSUBFRAME" | "SALTMPSUBFRAME" | "SALOBJECT") {
+        Some(Toolkit::Vcl)
+    } else {
+        None
+    }
+}
+
+/// The toolkit drawing `hwnd`, judged by it and its top-level window.
+pub(super) fn toolkit_of(hwnd: HWND) -> Option<Toolkit> {
+    toolkit_of_class(&class_name(hwnd))
+        .or_else(|| toolkit_of_class(&class_name(unsafe { GetAncestor(hwnd, GA_ROOT) })))
+}
+
+/// What to tell the agent when `input` was posted to a `toolkit` window
+/// that is known to drop it.
+pub(super) fn dropped_input_note(toolkit: Toolkit, input: PostedInput) -> Option<&'static str> {
+    use PostedInput::*;
+    use Toolkit::*;
+    match (toolkit, input) {
+        (Wpf, Pointer) => Some("This is a WPF app, which often ignores background mouse input. If nothing changed, snapshot or find the control and invoke it by ref (or set_value for a field)."),
+        (Wpf, Keys) => Some("This is a WPF app, which may ignore background keys while it is not in front. If nothing changed, invoke the command by ref instead."),
+        (Gtk, Pointer) => Some("This is a GTK app, which often ignores background clicks. If nothing changed, snapshot or find the control and invoke it by ref."),
+        (Tk, _) => Some("This is a Tk app, which ignores most background input. If nothing changed, use invoke or set_value by ref."),
+        (Vcl, Keys) => Some("This is a LibreOffice window, which ignores background shortcuts. If nothing changed, find the command in its menus and invoke it by ref."),
+        _ => None,
+    }
+}
+
+/// Add `note` to a result, after any note it already has.
+pub(super) fn add_note(result: &mut Value, note: &str) {
+    let combined = match result.get("note").and_then(Value::as_str) {
+        Some(existing) if !existing.is_empty() => format!("{existing} {note}"),
+        _ => note.to_string(),
+    };
+    result["note"] = json!(combined);
+}
+
+/// Note on `result` that posted `input` to `hwnd` may not have landed.
+pub(super) fn note_dropped_input(result: &mut Value, hwnd: HWND, input: PostedInput) {
+    if let Some(note) = toolkit_of(hwnd).and_then(|toolkit| dropped_input_note(toolkit, input)) {
+        add_note(result, note);
+    }
+}
+
 /// Where a posted pointer message for `point` goes: the deepest window
 /// there, lifted to its Chromium widget for web content.
 pub(super) fn pointer_window(target: &Target, point: POINT) -> HWND {

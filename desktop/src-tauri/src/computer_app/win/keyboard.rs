@@ -31,7 +31,10 @@ pub(super) fn resolve_key(name: &str) -> Option<(VIRTUAL_KEY, bool)> {
         "left" | "arrowleft" => VK_LEFT,
         "right" | "arrowright" => VK_RIGHT,
         "menu" | "apps" | "contextmenu" => VK_APPS,
-        ";" => VK_OEM_1, "=" | "plus" => VK_OEM_PLUS, "," => VK_OEM_COMMA,
+        // "plus" is "+", Shift and "=" on most layouts: ctrl+plus zooms in,
+        // and in Excel inserts cells, where ctrl+= does neither.
+        "plus" => return resolve_key("+"),
+        ";" => VK_OEM_1, "=" => VK_OEM_PLUS, "," => VK_OEM_COMMA,
         "-" | "minus" => VK_OEM_MINUS, "." => VK_OEM_PERIOD, "/" => VK_OEM_2,
         "`" => VK_OEM_3, "[" => VK_OEM_4, "\\" => VK_OEM_5, "]" => VK_OEM_6, "'" => VK_OEM_7,
         "numpadadd" => VK_ADD, "numpadsubtract" => VK_SUBTRACT,
@@ -213,12 +216,16 @@ pub(super) fn press_key(target: &Target, params: &Value) -> Result<Value, String
     if moves_focus(&combo) {
         forget_editable(&target.session_id);
     }
-    Ok(json!({
+    let mut result = json!({
         "key": spec,
         "repeat": repeat,
         "delivered_to": class_name(hwnd),
         "window": window_title(target.window),
-    }))
+    });
+    if !target.web {
+        note_dropped_input(&mut result, hwnd, PostedInput::Keys);
+    }
+    Ok(result)
 }
 
 /// Post one key chord `repeat` times to `hwnd`, holding its modifiers in the
@@ -227,7 +234,7 @@ pub(super) fn post_key(hwnd: HWND, thread: u32, combo: &KeyCombo, repeat: u64) -
     let mut combo = combo.clone();
     let (vk, needs_shift) =
         resolve_key(&combo.key).ok_or_else(|| format!("Unknown key name {:?}.", combo.key))?;
-    combo.shift |= needs_shift;
+    combo.shift |= needs_shift || shifted_letter(&combo);
     // Alt without Ctrl is a menu/system shortcut, which Windows delivers as
     // WM_SYSKEY* with the context bit set — and so are F10 and Alt pressed
     // on its own, the keys that open a menu bar.
@@ -267,6 +274,12 @@ pub(super) fn post_key(hwnd: HWND, thread: u32, combo: &KeyCombo, repeat: u64) -
         for key in modifiers.iter().rev() {
             let message = if system && *key == VK_MENU { WM_SYSKEYUP } else { WM_KEYUP };
             post(hwnd, message, key.0 as usize, key_lparam(*key, true, combo.alt && *key != VK_MENU))?;
+        }
+        if !modifiers.is_empty() {
+            // Held until the app has handled the keys, as for a modified
+            // click: an app busy past the fixed wait in `with_held_keys`
+            // read Ctrl as released and took ctrl+s as an "s".
+            settle(hwnd);
         }
         interrupted()
     };

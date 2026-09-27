@@ -86,7 +86,7 @@ use super::apps::{self, sorted, AppEntry, Catalog};
 use super::backend::{ComputerAppBackend, STOPPED_REFUSAL};
 use super::geometry::screenshot_scale;
 use super::interrupt::interrupted;
-use super::keys::{blocked_combo_reason, parse_key_combo, KeyCombo};
+use super::keys::{blocked_combo_reason, parse_key_combo, shifted_letter, upper_case_letter, KeyCombo};
 use super::policy::{is_command_runner, is_protected_process_name};
 use super::workers::{on_worker, post as post_to_worker};
 

@@ -233,7 +233,11 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
         }
         extra["note"] = json!("A menu or dropdown opened. Take a screenshot or snapshot to see its items (snapshot lists them first).");
     }
-    Ok(pointer_result(target, hwnd, point, extra))
+    let mut result = pointer_result(target, hwnd, point, extra);
+    if !text_set {
+        note_dropped_input(&mut result, hwnd, PostedInput::Pointer);
+    }
+    Ok(result)
 }
 
 /// Said whenever posted input had to be used on web content.
@@ -245,7 +249,9 @@ pub(super) fn hover(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
     let hwnd = pointer_window(target, point);
     target.travel(emit, point)?;
     post(hwnd, WM_MOUSEMOVE, 0, client_lparam(hwnd, point))?;
-    Ok(pointer_result(target, hwnd, point, json!({})))
+    let mut result = pointer_result(target, hwnd, point, json!({}));
+    note_dropped_input(&mut result, hwnd, PostedInput::Pointer);
+    Ok(result)
 }
 
 pub(super) fn scroll(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Result<Value, String> {
@@ -408,5 +414,7 @@ pub(super) fn drag(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Res
     outcome?;
     target.emit_pointer(emit, to, "click");
     let (x, y) = target.screenshot_point(to);
-    Ok(pointer_result(target, hwnd, from, json!({ "to": { "x": x, "y": y } })))
+    let mut result = pointer_result(target, hwnd, from, json!({ "to": { "x": x, "y": y } }));
+    note_dropped_input(&mut result, hwnd, PostedInput::Pointer);
+    Ok(result)
 }

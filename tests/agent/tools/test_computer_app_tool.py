@@ -454,6 +454,15 @@ async def test_an_allowed_app_is_checked_once_per_call(monkeypatch) -> None:
     assert [action for _, action, _ in requests] == ["status", "click", "snapshot"]
 
 
+def test_typed_and_set_text_is_composed() -> None:
+    decomposed = "Tiếng Việt"
+    assert decomposed != "Tiếng Việt"
+    typed = computer_tool.TypeAction(action="type", text=decomposed)
+    assert typed.text == "Tiếng Việt"
+    value = computer_tool.SetValueAction(action="set_value", ref="e1", value=decomposed)
+    assert value.value == "Tiếng Việt"
+
+
 def test_app_policy_matching_ignores_case_and_exe_suffix() -> None:
     policy = ComputerAppSettings(
         enabled=True, allowed_apps=["Notepad"], blocked_apps=["notepad2.exe"]

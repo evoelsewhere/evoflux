@@ -56,6 +56,19 @@ pub(crate) fn parse_key_combo(spec: &str) -> Result<KeyCombo, String> {
     Ok(combo)
 }
 
+/// Whether a key name is one upper-case letter ("A").
+pub(crate) fn upper_case_letter(key: &str) -> bool {
+    let mut chars = key.chars();
+    matches!((chars.next(), chars.next()), (Some(ch), None) if ch.is_ascii_uppercase())
+}
+
+/// Whether the key is a single upper-case letter pressed on its own ("A"),
+/// which is that letter with Shift. In a shortcut the case is how the
+/// shortcut was written, not a Shift: "ctrl+A" is Ctrl+A, "cmd+A" is ⌘A.
+pub(crate) fn shifted_letter(combo: &KeyCombo) -> bool {
+    upper_case_letter(&combo.key) && !(combo.ctrl || combo.alt || combo.win || combo.cmd)
+}
+
 /// Shortcuts that act on the whole desktop or session rather than the app.
 pub(crate) fn blocked_combo_reason(combo: &KeyCombo) -> Option<&'static str> {
     let key = combo.key.to_lowercase();
@@ -112,6 +125,19 @@ mod tests {
         } else {
             assert!(combo.ctrl && !combo.cmd);
         }
+    }
+
+    #[test]
+    fn shifts_a_lone_upper_case_letter_but_not_a_shortcut() {
+        let combo = |spec: &str| parse_key_combo(spec).unwrap();
+        assert!(shifted_letter(&combo("A")));
+        assert!(shifted_letter(&combo("shift+A")));
+        assert!(!shifted_letter(&combo("a")));
+        assert!(!shifted_letter(&combo("ctrl+A")), "select all, not ctrl+shift+a");
+        assert!(!shifted_letter(&combo("cmd+A")));
+        assert!(!shifted_letter(&combo("alt+F")));
+        assert!(!shifted_letter(&combo("F5")));
+        assert!(!shifted_letter(&combo("Enter")));
     }
 
     #[test]
