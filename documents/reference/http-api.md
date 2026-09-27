@@ -69,8 +69,9 @@ from this overview.
 
 ## Remote use
 
-Remote access over Tailscale Serve lives under `/api/remote-use`
-(`app/api/routes/remote_use.py`). All four routes return one payload:
+Remote access over embedded Tailscale or external Tailscale Serve lives under
+`/api/remote-use` (`app/api/routes/remote_use.py`). All routes return one
+payload:
 
 ```json
 {
@@ -83,6 +84,8 @@ Remote access over Tailscale Serve lives under `/api/remote-use`
 | Route | Purpose |
 | --- | --- |
 | `GET /status` | Tailscale + serve state and the current lock holder (`lock` is `null` when unlocked) |
+| `POST /bootstrap` | Start the bundled tsnet helper and restore persisted phone access |
+| `POST /connect` | Start interactive login and return `tailscale.auth_url` |
 | `POST /enable` | Runs `tailscale serve --bg http://127.0.0.1:<sidecar-port>` — port comes from the ASGI server scope, falling back to `API_PORT` |
 | `POST /disable` | Runs `tailscale serve reset` |
 | `POST /release` | Desktop force-release: retires every live remote session |
@@ -93,12 +96,19 @@ user-facing CLI failure (missing binary, not logged in, HTTPS certs
 unenabled, unparseable JSON). `serve.url` is the tailnet HTTPS origin when
 serve is active.
 
-**Identity.** A request with a non-empty `Tailscale-User-Login` header
-(injected by `tailscale serve` on the tailnet HTTPS endpoint; desktop
-loopback requests never carry it) is attributed as a remote tailnet session
-and does not require the desktop bearer token. The first API request from a
-device claims the single-device session lock; while another session holds
-it, every API request from a second device fails with HTTP 409:
+Packaged desktop responses additionally include
+`tailscale.provider = "embedded"` and `tailscale.auth_url`. Embedded enable
+starts the bundled tsnet listener and falls back to HTTP inside the encrypted
+tailnet when HTTPS certificates are unavailable. External deployments keep
+the CLI behavior described above.
+
+**Identity.** Embedded mode resolves the peer through Tailscale `WhoIs` and
+forwards a signed `Tailscale-User-Login` header. External Serve mode receives
+the equivalent header from `tailscaled`. The request is attributed as a remote
+tailnet session and does not require the desktop bearer token. The first API
+or WebSocket request from a device claims the single-device session lock;
+while another session holds it, API requests from a second device fail with
+HTTP 409:
 
 ```json
 {

@@ -12,6 +12,7 @@ Layout produced under ``<out>/``::
         fastapi/
         pydantic/
         …
+      tailnet/               ← embedded tsnet helper + license notices
 
 The Tauri shell runs a tiny bootstrap that adds
 ``sidecar-bundle/site-packages`` with ``site.addsitedir()`` so platform
@@ -764,6 +765,11 @@ def main() -> int:
             "bundles safe packages into one zip to reduce Defender cold-start I/O."
         ),
     )
+    ap.add_argument(
+        "--no-tailnet",
+        action="store_true",
+        help="Skip the embedded tsnet helper (development diagnostics only).",
+    )
     args = ap.parse_args()
 
     root = Path(args.root).resolve()
@@ -803,15 +809,31 @@ def main() -> int:
             f"packed {packages_zipped} pure-Python packages / {files_zipped} files"
         )
 
-    # ── 4. Smoke test ───────────────────────────────────────────────────
+    # ── 4. Build the embedded tailnet helper ────────────────────────────
+    if not args.no_tailnet:
+        run(
+            [
+                sys.executable,
+                str(root / "scripts" / "build_tailnet.py"),
+                "--root",
+                str(root),
+                "--out",
+                str(out / "tailnet"),
+            ],
+            cwd=root,
+        )
+
+    # ── 5. Smoke test ───────────────────────────────────────────────────
     if not args.no_smoke:
         validate_migration_bundle(python_bin, site_packages)
         smoke_test(python_bin, site_packages)
 
-    # ── 5. Report ────────────────────────────────────────────────────────
+    # ── 6. Report ────────────────────────────────────────────────────────
     print("\n=== bundle summary ===")
     report_size(python_target, "python runtime")
     report_size(site_packages, "site-packages")
+    if (out / "tailnet").is_dir():
+        report_size(out / "tailnet", "embedded tailnet")
     report_size(out, "TOTAL")
     return 0
 

@@ -6,6 +6,12 @@ from fastapi import FastAPI, Request
 from httpx import ASGITransport, AsyncClient
 
 from app.core.desktop_auth import DesktopTokenMiddleware, remote_session_login
+from app.core.desktop_auth import (
+    REMOTE_PROXY_MARKER,
+    REMOTE_PROXY_MARKER_HEADER,
+    REMOTE_PROXY_TOKEN_HEADER,
+    embedded_remote_proxy_secret,
+)
 from app.services import remote_use_service as service
 
 LOGIN_HEADER = "Tailscale-User-Login"
@@ -115,3 +121,40 @@ async def test_desktop_request_still_requires_the_token() -> None:
     assert rejected.status_code == 401
     assert accepted.status_code == 200
     assert accepted.json() == {"login": None}
+
+
+async def test_embedded_proxy_identity_requires_process_secret(monkeypatch) -> None:
+    monkeypatch.setenv("EVOFLUX_TSNET_BIN", "/bundled/evoflux-tailnet")
+    app = _app_with_token("sekrit")
+    transport = ASGITransport(app=app)
+    base_headers = {
+        LOGIN_HEADER: "alice@example.com",
+        REMOTE_PROXY_MARKER_HEADER: REMOTE_PROXY_MARKER,
+    }
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        rejected = await client.get(
+            "/api/_probe/whoami",
+            headers={**base_headers, REMOTE_PROXY_TOKEN_HEADER: "forged"},
+        )
+        accepted = await client.get(
+            "/api/_probe/whoami",
+            headers={
+                **base_headers,
+                REMOTE_PROXY_TOKEN_HEADER: embedded_remote_proxy_secret(),
+            },
+        )
+    assert rejected.status_code == 401
+    assert accepted.status_code == 200
+    assert accepted.json() == {"login": "alice@example.com"}
+
+
+async def test_embedded_mode_rejects_unsigned_legacy_identity(monkeypatch) -> None:
+    monkeypatch.setenv("EVOFLUX_TSNET_BIN", "/bundled/evoflux-tailnet")
+    app = _app_with_token("sekrit")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get(
+            "/api/_probe/whoami",
+            headers={LOGIN_HEADER: "alice@example.com"},
+        )
+    assert response.status_code == 401

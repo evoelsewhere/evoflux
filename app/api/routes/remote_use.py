@@ -1,4 +1,4 @@
-"""Remote use over Tailscale Serve: status, serve control, lock release."""
+"""Remote use over embedded Tailscale or external Serve."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from app.services import remote_use_service as remote_use
 router = APIRouter()
 
 
-async def _status_payload() -> dict[str, Any]:
+async def _status_payload(port: int | None = None) -> dict[str, Any]:
     """The uniform remote-use response: tailscale, serve, and lock."""
-    status = await remote_use.get_status()
+    status = await remote_use.get_status(port)
     holder = await remote_use.get_lock_holder()
     status["lock"] = remote_use.session_lock_payload(holder)
     return status
@@ -36,9 +36,22 @@ def _backend_port(request: Request) -> int | None:
 
 
 @router.get("/status")
-async def remote_use_status() -> dict[str, Any]:
+async def remote_use_status(request: Request) -> dict[str, Any]:
     """Tailscale state, serve state, and the current lock holder."""
-    return await _status_payload()
+    return await _status_payload(_backend_port(request))
+
+
+@router.post("/bootstrap")
+async def remote_use_bootstrap(request: Request) -> dict[str, Any]:
+    """Start bundled tsnet early so persisted phone access auto-restores."""
+    status = await remote_use.bootstrap_embedded_tailnet(_backend_port(request))
+    return await _with_lock(status)
+
+
+@router.post("/connect")
+async def remote_use_connect(request: Request) -> dict[str, Any]:
+    """Start interactive login for the bundled Tailscale node."""
+    return await _with_lock(await remote_use.connect_tailnet(_backend_port(request)))
 
 
 @router.post("/enable")
@@ -48,13 +61,13 @@ async def remote_use_enable(request: Request) -> dict[str, Any]:
 
 
 @router.post("/disable")
-async def remote_use_disable() -> dict[str, Any]:
+async def remote_use_disable(request: Request) -> dict[str, Any]:
     """Disable tailscale serve (``tailscale serve reset``)."""
-    return await _with_lock(await remote_use.disable_serve())
+    return await _with_lock(await remote_use.disable_serve(_backend_port(request)))
 
 
 @router.post("/release")
-async def remote_use_release() -> dict[str, Any]:
+async def remote_use_release(request: Request) -> dict[str, Any]:
     """Desktop force-release: retire every live remote session."""
     await remote_use.force_release()
-    return await _status_payload()
+    return await _status_payload(_backend_port(request))

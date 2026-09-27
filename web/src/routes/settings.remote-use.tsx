@@ -1,27 +1,42 @@
 /**
- * /settings/remote-use — "Phone access": Tailscale Serve control.
+ * /settings/remote-use — "Phone access": embedded/external Tailscale control.
  *
- * Enable/disable the tailnet HTTPS tunnel, show the stable .ts.net URL
+ * Connect the bundled node, enable/disable its tailnet listener, show the URL
  * (+ QR) for the phone, and surface the one-device lock: who holds it,
  * when it was claimed/last seen, and a Release button. HTTP 409 from
  * enable/release renders as "device X holds the lock".
  */
 
 import { QRCodeSVG } from 'qrcode.react'
-import { Check, Copy, Lock, Smartphone } from 'lucide-react'
+import {
+  Check,
+  Clock3,
+  Copy,
+  Link2,
+  Lock,
+  LogIn,
+  QrCode,
+  ShieldCheck,
+  Smartphone,
+  Wifi,
+  type LucideIcon,
+} from 'lucide-react'
 import { useState } from 'react'
 
 import {
   formatRemoteUseError,
+  useConnectRemoteUseMutation,
   useDisableRemoteUseMutation,
   useEnableRemoteUseMutation,
   useReleaseRemoteUseLockMutation,
   useRemoteUseStatusQuery,
 } from '@/api/client/remoteUse'
-import { SettingsCallout, SettingsGroup, SettingsPage, SettingsRow } from '@/components/settings/SettingsLayout'
+import { SettingsCallout, SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { openExternalUrl } from '@/lib/open-external'
 
 function relativeTime(iso: string): string {
   if (!iso) return '—'
@@ -38,8 +53,31 @@ function relativeTime(iso: string): string {
   return future ? `in ${diffD}d` : `${diffD}d ago`
 }
 
+function ConnectionMetric({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: LucideIcon
+  label: string
+  value: string
+}) {
+  return (
+    <div className="flex min-w-0 items-center gap-3 px-4 py-3.5 sm:px-5">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--bg-key) text-(--color-text-muted)">
+        <Icon className="size-3.5" aria-hidden="true" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-(--color-text-subtle)">{label}</p>
+        <p className="mt-0.5 truncate text-xs font-medium text-(--color-text)">{value}</p>
+      </div>
+    </div>
+  )
+}
+
 export function RemoteUseSettingsPage() {
   const statusQ = useRemoteUseStatusQuery()
+  const connectM = useConnectRemoteUseMutation()
   const enableM = useEnableRemoteUseMutation()
   const disableM = useDisableRemoteUseMutation()
   const releaseM = useReleaseRemoteUseLockMutation()
@@ -49,13 +87,24 @@ export function RemoteUseSettingsPage() {
   const tailscale = status?.tailscale
   const serve = status?.serve
   const lock = status?.lock
+  const embedded = tailscale?.provider === 'embedded'
 
-  // Serve can only be enabled with Tailscale installed, signed in, and
-  // HTTPS certificates available (https_certs is null while unknown).
-  const tunnelReady =
-    !!status && !!tailscale?.installed && tailscale.logged_in && tailscale.https_certs === true && !tailscale.error
-  const tunnelBusy = enableM.isPending || disableM.isPending
-  const actionError = enableM.error ?? disableM.error
+  // Embedded tsnet can fall back to HTTP inside the encrypted tailnet. The
+  // external Serve provider still requires tailnet HTTPS certificates.
+  const tunnelReady = !!status && !!tailscale?.installed && tailscale.logged_in && !tailscale.error
+    && (embedded || tailscale.https_certs === true)
+  const tunnelBusy = connectM.isPending || enableM.isPending || disableM.isPending
+  const actionError = connectM.error ?? enableM.error ?? disableM.error
+
+  async function connectTailnet() {
+    try {
+      const next = await connectM.mutateAsync()
+      const authUrl = next.tailscale.auth_url
+      if (authUrl) await openExternalUrl(authUrl)
+    } catch {
+      // Surfaced below through the mutation error state.
+    }
+  }
 
   async function toggleTunnel(next: boolean) {
     try {
@@ -77,155 +126,290 @@ export function RemoteUseSettingsPage() {
     }
   }
 
-  let readiness: { tone: 'info' | 'success' | 'warning' | 'error'; text: string } | null = null
+  let stateTone: 'live' | 'ready' | 'setup' | 'warning' = 'setup'
+  let stateEyebrow = 'Setup required'
+  let stateTitle = 'Connect your tailnet'
+  let stateDescription = 'Sign in once to make this computer available to your phone.'
   if (statusQ.isError) {
-    readiness = { tone: 'error', text: formatRemoteUseError(statusQ.error) }
-  } else if (tailscale?.error) {
-    readiness = { tone: 'warning', text: `Tailscale reports: ${tailscale.error}` }
+    stateTone = 'warning'
+    stateEyebrow = 'Connection error'
+    stateTitle = 'Could not read phone access status'
+    stateDescription = formatRemoteUseError(statusQ.error)
+  } else if (tailscale?.error && !(embedded && tailscale.auth_url)) {
+    stateTone = 'warning'
+    stateEyebrow = 'Needs attention'
+    stateTitle = 'Tailscale is not ready'
+    stateDescription = tailscale.error
   } else if (tailscale && !tailscale.installed) {
-    readiness = {
-      tone: 'warning',
-      text: 'Tailscale is not installed on this computer. Install it and sign in to allow phone access.',
-    }
+    stateTone = 'warning'
+    stateEyebrow = 'External provider'
+    stateTitle = 'Install Tailscale to continue'
+    stateDescription = 'This source build uses the external Tailscale service. Install it, sign in, then try again.'
   } else if (tailscale && !tailscale.logged_in) {
-    readiness = { tone: 'warning', text: 'Tailscale is installed but not signed in. Run `tailscale up` first.' }
-  } else if (tailscale && tailscale.https_certs === false) {
-    readiness = {
-      tone: 'warning',
-      text: 'HTTPS certificates are not enabled. Phone access requires them. To enable: open Tailscale app or admin console, then Settings > HTTPS certificates > turn on.',
-    }
+    stateEyebrow = embedded ? 'Built into EvoFlux' : 'Sign-in required'
+    stateTitle = 'Connect your tailnet'
+    stateDescription = embedded
+      ? 'No separate app or command line setup. Sign in once and EvoFlux remembers this computer.'
+      : 'Open the Tailscale app or run `tailscale up`, then return here.'
+  } else if (tailscale && tailscale.https_certs === false && !embedded) {
+    stateTone = 'warning'
+    stateEyebrow = 'HTTPS required'
+    stateTitle = 'Enable tailnet certificates'
+    stateDescription = 'Turn on HTTPS certificates in the Tailscale admin console before enabling phone access.'
+  } else if (serve?.enabled && serve.url) {
+    stateTone = 'live'
+    stateEyebrow = 'Live on your tailnet'
+    stateTitle = 'Phone access is ready'
+    stateDescription = 'Your phone can securely reach this EvoFlux desktop while the app stays open.'
   } else if (tunnelReady) {
-    readiness = { tone: 'success', text: 'This computer is reachable over your tailnet.' }
+    stateTone = 'ready'
+    stateEyebrow = 'Tailnet connected'
+    stateTitle = 'Ready to enable phone access'
+    stateDescription = 'Turn it on when you want this computer to accept connections from your phone.'
   }
+
+  const live = stateTone === 'live'
+  const stateAccent = live
+    ? 'border-(--color-success)/30 bg-(--color-success)/10 text-(--color-success)'
+    : stateTone === 'warning'
+      ? 'border-(--color-warning)/30 bg-(--color-warning)/10 text-(--color-warning)'
+      : 'border-(--color-accent)/25 bg-(--color-accent-soft) text-(--color-accent)'
 
   return (
     <SettingsPage
       icon={Smartphone}
       title="Phone access"
-      lede="Reach this computer from your phone over your own tailnet — no cloud relay, no pairing codes. Tailscale Serve exposes a stable HTTPS address that only tailnet devices can open."
+      size="wide"
+      lede="Reach this computer from your phone over your own tailnet — no cloud relay or pairing code. Desktop builds include their own Tailscale node, so no separate CLI or daemon setup is required."
     >
-      <SettingsGroup title="Tailscale">
-        {statusQ.isLoading && (
-          <SettingsRow label="Status" description="Loading tailnet status…" control={<Skeleton className="size-9" />} />
-        )}
-        {readiness && (
-          <SettingsRow
-            label="Status"
-            description={readiness.text}
-            control={
-              statusQ.isError ? (
-                <Button variant="outline" size="sm" onClick={() => statusQ.refetch()}>
-                  Try again
-                </Button>
-              ) : undefined
-            }
+      <SettingsGroup bare>
+        <div className="relative overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-[0_18px_50px_rgba(0,0,0,0.06)]">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full bg-(--color-accent)/8 blur-3xl"
           />
-        )}
-        {tailscale && (
-          <SettingsRow
-            label="HTTPS certificates"
-            description={
-              tailscale.https_certs === null
-                ? 'Unknown until Tailscale finishes its first check.'
-                : tailscale.https_certs
-                  ? 'Issued by your tailnet — *.ts.net addresses use HTTPS.'
-                  : 'Off — Serve would only expose plain HTTP.'
-            }
-            control={<span className="text-xs text-(--color-text-muted)">{tailscale.https_certs ? 'On' : 'Off'}</span>}
-          />
-        )}
+          {statusQ.isLoading ? (
+            <div className="space-y-4 p-5 sm:p-6">
+              <Skeleton className="h-5 w-32 rounded-full" />
+              <Skeleton className="h-8 w-72 max-w-full" />
+              <Skeleton className="h-4 w-full max-w-xl" />
+            </div>
+          ) : (
+            <>
+              <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+                <div className="flex min-w-0 gap-4">
+                  <div className={`flex size-11 shrink-0 items-center justify-center rounded-xl border ${stateAccent}`}>
+                    {live ? <Wifi className="size-5" aria-hidden="true" /> : <Smartphone className="size-5" aria-hidden="true" />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-(--color-text-subtle)">
+                        <span className={`size-1.5 rounded-full ${live ? 'bg-(--color-success) shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-success)_14%,transparent)]' : 'bg-(--color-text-subtle)'}`} />
+                        {stateEyebrow}
+                      </span>
+                      <Badge variant="outline">{embedded ? 'Built in' : 'External'}</Badge>
+                    </div>
+                    <h2 className="mt-2 font-heading text-xl font-semibold tracking-[-0.025em] text-(--color-text) sm:text-2xl">
+                      {stateTitle}
+                    </h2>
+                    <p className="mt-1.5 max-w-[58ch] text-sm leading-relaxed text-(--color-text-muted)">
+                      {stateDescription}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 items-center sm:pt-1">
+                  {statusQ.isError ? (
+                    <Button variant="outline" onClick={() => statusQ.refetch()}>
+                      Try again
+                    </Button>
+                  ) : embedded && !tailscale?.logged_in ? (
+                    <Button
+                      disabled={connectM.isPending}
+                      onClick={() => {
+                        if (tailscale?.auth_url) void openExternalUrl(tailscale.auth_url)
+                        else void connectTailnet()
+                      }}
+                    >
+                      <LogIn className="size-4" />
+                      {connectM.isPending ? 'Connecting…' : tailscale?.auth_url ? 'Open login' : 'Connect Tailscale'}
+                    </Button>
+                  ) : (
+                    <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-(--color-border) bg-(--bg-page)/70 px-3.5 py-2.5 shadow-sm">
+                      <span>
+                        <span className="block text-xs font-semibold text-(--color-text)">Phone access</span>
+                        <span className="mt-0.5 block text-[11px] text-(--color-text-muted)">
+                          {serve?.enabled ? 'On' : 'Off'}
+                        </span>
+                      </span>
+                      <Switch
+                        aria-label="Enable phone access"
+                        checked={!!serve?.enabled}
+                        disabled={!tunnelReady || tunnelBusy || statusQ.isLoading}
+                        onCheckedChange={toggleTunnel}
+                      />
+                    </label>
+                  )}
+                </div>
+              </div>
+
+              <div className="relative grid divide-y divide-(--color-border-subtle) border-t border-(--color-border-subtle) bg-(--bg-page)/35 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                <ConnectionMetric
+                  icon={ShieldCheck}
+                  label="Provider"
+                  value={embedded ? 'Embedded tsnet' : 'Tailscale Serve'}
+                />
+                <ConnectionMetric
+                  icon={Wifi}
+                  label="Network"
+                  value={tailscale?.logged_in ? 'Tailnet connected' : 'Not connected'}
+                />
+                <ConnectionMetric
+                  icon={Lock}
+                  label="Transport"
+                  value={tailscale?.https_certs ? 'HTTPS' : embedded ? 'Encrypted tailnet' : 'HTTPS unavailable'}
+                />
+              </div>
+            </>
+          )}
+        </div>
       </SettingsGroup>
 
-      <SettingsGroup title="Tunnel">
-        <SettingsRow
-          label="Phone access"
-          description={
-            serve?.enabled && serve.url
-              ? `Serve is on — your phone can open ${serve.url}`
-              : 'Expose this computer at a stable .ts.net HTTPS address while it is on.'
-          }
-          control={
-            <Switch
-              checked={!!serve?.enabled}
-              disabled={!tunnelReady || tunnelBusy || statusQ.isLoading}
-              onCheckedChange={toggleTunnel}
-            />
-          }
-        />
-        {serve?.enabled && serve.url && (
-          <SettingsRow
-            label="Tunnel address"
-            description={serve.url}
-            control={
-              <Button variant="outline" size="sm" onClick={copyUrl}>
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                {copied ? 'Copied' : 'Copy'}
-              </Button>
-            }
-          />
-        )}
-        {serve?.enabled && serve.url && (
-          <SettingsRow
-            label="QR code"
-            description="Scan from your phone while it is connected to the tailnet."
-            control={
-              <div className="rounded-lg border border-(--color-border) bg-white p-2">
-                <QRCodeSVG value={serve.url} size={112} />
+      {serve?.enabled && serve.url && (
+        <SettingsGroup
+          title="Open on your phone"
+          description="Your private address only works for devices signed in to the same tailnet."
+          bare
+        >
+          <div className="grid overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-[0_10px_32px_rgba(0,0,0,0.04)] lg:grid-cols-[minmax(0,1fr)_12.5rem]">
+            <div className="p-5 sm:p-6">
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  ['1', 'Open Tailscale', 'Make sure the phone is connected.'],
+                  ['2', 'Scan the code', 'Use the camera or Tailscale browser.'],
+                  ['3', 'Keep EvoFlux open', 'Access ends when the desktop exits.'],
+                ].map(([number, title, description]) => (
+                  <div key={number} className="flex gap-2.5 rounded-xl bg-(--bg-key)/55 p-3">
+                    <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-(--color-accent) text-[10px] font-bold text-(--color-text-on-accent)">
+                      {number}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-(--color-text)">{title}</p>
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-(--color-text-muted)">{description}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            }
-          />
-        )}
-        {actionError && (
-          <SettingsCallout tone="warning" icon={Smartphone}>
-            {formatRemoteUseError(actionError)}
-          </SettingsCallout>
-        )}
-      </SettingsGroup>
+
+              <div className="mt-5 flex flex-col gap-3 rounded-xl border border-(--color-border) bg-(--bg-page)/65 p-3.5 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                  <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-(--color-accent-soft) text-(--color-accent)">
+                    <Link2 className="size-3.5" aria-hidden="true" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-medium text-(--color-text-subtle)">Private address</p>
+                    <p className="mt-0.5 truncate font-mono text-xs text-(--color-text)" title={serve.url}>
+                      {serve.url}
+                    </p>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={copyUrl}>
+                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  {copied ? 'Copied' : 'Copy address'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center justify-center border-t border-(--color-border-subtle) bg-(--bg-key)/35 p-5 lg:border-l lg:border-t-0">
+              <div className="rounded-2xl border border-black/10 bg-white p-3 shadow-[0_10px_28px_rgba(0,0,0,0.12)]">
+                <QRCodeSVG value={serve.url} size={136} aria-label="Phone access QR code" />
+              </div>
+              <span className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-medium text-(--color-text-muted)">
+                <QrCode className="size-3.5" aria-hidden="true" />
+                Scan to open
+              </span>
+            </div>
+          </div>
+        </SettingsGroup>
+      )}
+
+      {actionError && (
+        <SettingsCallout tone="warning" icon={Smartphone}>
+          {formatRemoteUseError(actionError)}
+        </SettingsCallout>
+      )}
 
       <SettingsGroup
-        title="Device lock"
-        description="One device at a time may drive this computer remotely. The lock frees itself after 30 minutes without a request."
+        title="Remote session"
+        description="Only one device can control this computer at a time. Inactive sessions release automatically after 30 minutes."
+        bare
       >
-        {statusQ.isLoading && <SettingsRow label="Holder" description="Loading…" control={<Skeleton className="size-9" />} />}
-        {!statusQ.isLoading && !lock && (
-          <SettingsRow label="Holder" description="No device holds the lock." />
-        )}
-        {lock && (
-          <>
-            <SettingsRow
-              label="Held by"
-              description={
-                [lock.user_login, lock.device_label].filter(Boolean).join(' · ') || 'Unknown device'
-              }
-            />
-            <SettingsRow label="Claimed" description={relativeTime(lock.claimed_at)} />
-            <SettingsRow
-              label="Last seen"
-              description={relativeTime(lock.last_seen_at)}
-              control={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={releaseM.isPending}
-                  onClick={() => releaseM.mutate()}
-                >
-                  <Lock className="size-3.5" />
-                  Release
-                </Button>
-              }
-            />
-          </>
-        )}
+        <div className="rounded-2xl border border-(--color-border) bg-(--bg-card) p-4 shadow-[0_10px_32px_rgba(0,0,0,0.035)] sm:p-5">
+          {statusQ.isLoading ? (
+            <div className="flex items-center gap-3">
+              <Skeleton className="size-10 rounded-xl" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-36" />
+                <Skeleton className="h-3 w-56 max-w-full" />
+              </div>
+            </div>
+          ) : lock ? (
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="relative flex size-11 shrink-0 items-center justify-center rounded-xl bg-(--color-success)/10 text-(--color-success)">
+                <Smartphone className="size-5" aria-hidden="true" />
+                <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-(--bg-card) bg-(--color-success)" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="truncate font-heading text-base font-semibold text-(--color-text)">
+                    {lock.device_label || 'Remote device'}
+                  </p>
+                  <Badge variant="secondary">Connected</Badge>
+                </div>
+                <p className="mt-1 truncate text-xs text-(--color-text-muted)">{lock.user_login}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4 sm:shrink-0 sm:gap-6">
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-(--color-text-subtle)">Connected</p>
+                  <p className="mt-1 text-xs font-medium text-(--color-text)">{relativeTime(lock.claimed_at)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-(--color-text-subtle)">Last active</p>
+                  <p className="mt-1 text-xs font-medium text-(--color-text)">{relativeTime(lock.last_seen_at)}</p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={releaseM.isPending}
+                onClick={() => releaseM.mutate()}
+              >
+                <Lock className="size-3.5" />
+                {releaseM.isPending ? 'Releasing…' : 'Release'}
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3.5">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--bg-key) text-(--color-text-muted)">
+                <ShieldCheck className="size-4.5" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-(--color-text)">No phone connected</p>
+                <p className="mt-1 text-xs text-(--color-text-muted)">The next verified device will claim this session automatically.</p>
+              </div>
+            </div>
+          )}
+        </div>
         {releaseM.error && (
-          <SettingsCallout tone="warning" icon={Lock}>
+          <SettingsCallout tone="warning" icon={Lock} className="mt-3">
             {formatRemoteUseError(releaseM.error)}
           </SettingsCallout>
         )}
       </SettingsGroup>
 
-      <SettingsCallout tone="info" icon={Smartphone}>
-        EvoFlux must stay running on this computer for phone access to work, and the phone must be signed in to the
-        same tailnet. Provider and bot credentials stay desktop-only regardless of where you connect from.
+      <SettingsCallout tone="info" icon={Clock3}>
+        Phone access only works while EvoFlux is open. Your provider, bot, and plugin credentials remain on this
+        computer and are never copied to the phone.
       </SettingsCallout>
     </SettingsPage>
   )

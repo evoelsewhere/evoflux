@@ -1,11 +1,11 @@
 /**
  * EvoFlux API client — remote-use group: /remote-use.
  *
- * Tailscale Serve phone access. Every route returns the same uniform
+ * Embedded Tailscale / external Serve phone access. Every route returns the same uniform
  * payload { tailscale, serve, lock }; a second device claiming the lock
  * receives HTTP 409 with { detail, current, live_window_minutes }.
- * Auth is automatic (the sidecar attributes sessions from the
- * Tailscale-User-Login header), so no token/pairing flow lives here.
+ * Auth is automatic: the embedded proxy verifies peers with WhoIs and the
+ * backend attributes sessions from its signed identity headers.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -15,9 +15,11 @@ import { ApiValidationError, parseDetailOrThrow } from './_shared'
 // ── /remote-use contract ─────────────────────────────────────────────────────
 
 export interface RemoteUseTailscaleState {
+  provider?: 'embedded' | 'external'
   installed: boolean
   logged_in: boolean
   https_certs: boolean | null
+  auth_url?: string | null
   error: string | null
 }
 
@@ -106,7 +108,9 @@ export async function getRemoteUseStatus(): Promise<RemoteUseStatus> {
   return res.json()
 }
 
-async function postRemoteUseAction(action: 'enable' | 'disable' | 'release'): Promise<RemoteUseStatus> {
+type RemoteUseAction = 'connect' | 'enable' | 'disable' | 'release'
+
+async function postRemoteUseAction(action: RemoteUseAction): Promise<RemoteUseStatus> {
   const res = await fetch(`${apiBaseUrl()}/remote-use/${action}`, { method: 'POST' })
   if (res.status === 409) throw await readLockConflict(res)
   if (!res.ok) await parseDetailOrThrow(res, `POST /remote-use/${action}`)
@@ -115,6 +119,10 @@ async function postRemoteUseAction(action: 'enable' | 'disable' | 'release'): Pr
 
 export function enableRemoteUse(): Promise<RemoteUseStatus> {
   return postRemoteUseAction('enable')
+}
+
+export function connectRemoteUse(): Promise<RemoteUseStatus> {
+  return postRemoteUseAction('connect')
 }
 
 export function disableRemoteUse(): Promise<RemoteUseStatus> {
@@ -136,12 +144,15 @@ export function useRemoteUseStatusQuery() {
   return useQuery({
     queryKey: remoteUseKeys.status(),
     queryFn: getRemoteUseStatus,
-    refetchInterval: 30_000,
+    refetchInterval: (query) => {
+      const status = query.state.data
+      return status?.tailscale.provider === 'embedded' && !status.tailscale.logged_in ? 3_000 : 30_000
+    },
     refetchIntervalInBackground: false,
   })
 }
 
-function useRemoteUseActionMutation(action: 'enable' | 'disable' | 'release') {
+function useRemoteUseActionMutation(action: RemoteUseAction) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => postRemoteUseAction(action),
@@ -154,6 +165,10 @@ function useRemoteUseActionMutation(action: 'enable' | 'disable' | 'release') {
 
 export function useEnableRemoteUseMutation() {
   return useRemoteUseActionMutation('enable')
+}
+
+export function useConnectRemoteUseMutation() {
+  return useRemoteUseActionMutation('connect')
 }
 
 export function useDisableRemoteUseMutation() {

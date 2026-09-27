@@ -29,9 +29,41 @@ async def test_remote_use_router_is_mounted_on_create_app() -> None:
     app = create_app()
     paths = {getattr(route, "path", "") for route in app.routes}
     assert "/api/remote-use/status" in paths
+    assert "/api/remote-use/bootstrap" in paths
+    assert "/api/remote-use/connect" in paths
     assert "/api/remote-use/enable" in paths
     assert "/api/remote-use/disable" in paths
     assert "/api/remote-use/release" in paths
+
+
+async def test_embedded_connect_returns_login_url(monkeypatch, remote_app) -> None:
+    monkeypatch.setenv(service.EMBEDDED_TAILNET_BIN_ENV, "/bundled/evoflux-tailnet")
+
+    async def fake_request(method: str, path: str, port: int | None):
+        assert (method, path) == ("POST", "/v1/login")
+        assert port is not None
+        return {
+            "tailscale": {
+                "provider": "embedded",
+                "installed": True,
+                "logged_in": False,
+                "https_certs": None,
+                "auth_url": "https://login.tailscale.com/a/example",
+                "error": None,
+            },
+            "serve": {"enabled": False, "url": None},
+        }
+
+    monkeypatch.setattr(service._embedded_manager, "request", fake_request)
+    transport = ASGITransport(app=remote_app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.post("/api/remote-use/connect")
+    assert response.status_code == 200
+    assert response.json()["tailscale"]["provider"] == "embedded"
+    assert response.json()["tailscale"]["auth_url"].startswith(
+        "https://login.tailscale.com/"
+    )
+    assert response.json()["lock"] is None
 
 
 async def test_status_shape_when_ready_and_unlocked(

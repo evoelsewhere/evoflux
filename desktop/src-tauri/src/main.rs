@@ -5431,6 +5431,33 @@ async fn sync_webbridge_native_connection(
     }
 }
 
+async fn bootstrap_embedded_tailnet(base_url: &str, desktop_token: &str) {
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            log::warn!("could not build embedded tailnet bootstrap client: {error:#}");
+            return;
+        }
+    };
+    let url = format!(
+        "{}/api/remote-use/bootstrap",
+        base_url.trim_end_matches('/')
+    );
+    match client
+        .post(url)
+        .bearer_auth(desktop_token)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+    {
+        Ok(_) => log::info!("embedded tailnet bootstrap requested"),
+        Err(error) => log::warn!("embedded tailnet bootstrap failed: {error:#}"),
+    }
+}
+
 struct ReadySidecar {
     sidecar: Sidecar,
     handshake: Handshake,
@@ -5658,6 +5685,7 @@ async fn start_bundled_backend_with_retry(
         }
 
         sync_webbridge_native_connection(app, &base_url, Some(&handshake.token)).await;
+        bootstrap_embedded_tailnet(&base_url, &handshake.token).await;
 
         log::info!(
             "desktop_startup_timing stage=sidecar_ready attempt={} attempt_ms={} total_ms={}",

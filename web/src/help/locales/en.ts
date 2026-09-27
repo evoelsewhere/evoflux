@@ -2446,9 +2446,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
   {
     id: 'phone-access',
     category: 'settings',
-    title: 'Phone access (Tailscale Serve)',
+    title: 'Phone access (built-in Tailscale)',
     summary:
-      'Reach this computer from your phone over your own tailnet — a stable .ts.net HTTPS address with a QR code, gated by a one-device lock you can release from the desktop.',
+      'Reach this computer from your phone over your own tailnet — no desktop CLI or daemon setup, with a QR code and a one-device lock.',
     keywords: [
       'phone access',
       'tailscale',
@@ -2466,10 +2466,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
     openAction: { type: 'settings', path: 'remote-use' },
     setup:
-      'Install Tailscale on this computer and sign in (`tailscale up`), enable HTTPS certificates in the Tailscale admin console, then open Settings → Phone access and flip the switch.',
+      'Open Settings → Phone access, click Connect, and sign in to Tailscale once. Install the Tailscale mobile app on the phone, join the same tailnet, then enable Phone access.',
     tricks: [
-      'Serve keeps a stable .ts.net address — no dynamic DNS, no cloud relay.',
-      'The QR code targets the stable HTTPS URL — scan it while the phone is on the tailnet.',
+      'Desktop builds include their own Tailscale node — no Homebrew, CLI, or separate tailscaled setup.',
+      'The QR code targets the tailnet URL — scan it while the phone is connected to the same tailnet.',
       'One device holds the lock; release it from the desktop or wait for the 30-minute idle timeout.',
       'A second phone showing “device X holds the lock” is the expected HTTP 409, not a bug.',
       'The phone identifies itself through the Tailscale login header — no token or pairing code to copy.',
@@ -2479,11 +2479,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Phone access exposes this computer through Tailscale Serve: tailscaled publishes a stable HTTPS address on your tailnet (*.ts.net), and EvoFlux only serves requests that arrive from a logged-in tailnet device. There is no public listener and no cloud tunnel in between.',
+        text: 'Phone access uses a Tailscale node embedded in EvoFlux. The helper verifies every peer with WhoIs and proxies it to the local sidecar; there is no public listener or cloud tunnel. It uses HTTPS when the tailnet provides certificates and otherwise uses HTTP inside the already encrypted tailnet.',
       },
       {
         type: 'p',
-        text: 'The page walks you through four readiness states before the toggle becomes usable: Tailscale not installed, installed but not signed in, signed in but HTTPS certificates disabled, and fully ready. Each state shows what to fix instead of failing silently.',
+        text: 'On first use, click Connect and finish the browser login. EvoFlux stores this node identity in its state directory, reconnects automatically on later launches, and restores Phone access when it was previously enabled.',
       },
       {
         type: 'p',
@@ -2496,17 +2496,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'States — not installed → not signed in → HTTPS certs off → ready',
-          'QR — encodes the stable .ts.net HTTPS URL',
+          'States — built in → Connect → signed in → ready',
+          'QR — encodes the URL supplied by the embedded tailnet helper',
           'Lock — one holder, Release button, 30-minute idle timeout',
           'Auth — the tailnet login header, no pairing code',
           'Cap — credential editing stays desktop-only while remote',
-          'Prerequisite — EvoFlux and tailscaled must both stay running'
+          'Prerequisite — EvoFlux stays running; the phone joins the same tailnet'
 ],
       },
       {
         type: 'p',
-        text: 'Common mistakes: trying to enable the switch before Tailscale is signed in; scanning the QR from a phone that is on mobile data instead of the tailnet; expecting a second phone to connect while the lock is held; and assuming phone access works after EvoFlux quits — Serve answers, but the sidecar is gone.',
+        text: 'Common mistakes: enabling before browser login finishes; forgetting to install or connect Tailscale on the phone; expecting a second phone to connect while the lock is held; and assuming phone access works after EvoFlux quits.',
       },
       {
         type: 'tips',

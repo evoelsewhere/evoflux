@@ -1,12 +1,13 @@
-# Remote use (Tailscale Serve)
+# Remote use (embedded Tailscale)
 
-Remote use lets a phone or another tailnet machine reach a running EvoFlux
-sidecar through the HTTPS endpoint provided by `tailscale serve`, with
-identity carried by Tailscale's request headers and exactly one live remote
-session at a time. The plan that defines this feature
-(`documents/plans/remote-use-tailscale-serve.md`, branch `feat/remote-use`)
-supersedes the earlier cloudflared draft; pairing codes and token
-session-token checks are not part of this design.
+Packaged desktop builds include an `evoflux-tailnet` helper based on Tailscale
+`tsnet`. A phone or another tailnet machine reaches the running EvoFlux
+sidecar without installing a CLI or system daemon on the desktop. Enrollment
+is still explicit: the owner clicks **Connect**, signs in through Tailscale
+once, and the machine identity persists in the EvoFlux state directory.
+
+Source/server deployments retain the external `tailscale serve` provider as a
+fallback. Pairing codes and copied session tokens are not part of either flow.
 
 ## What the backend exposes
 
@@ -16,14 +17,36 @@ HTTP routes under `/api/remote-use` (see
 | Route | Purpose |
 | --- | --- |
 | `GET /status` | Tailscale state + serve state + current lock holder |
-| `POST /enable` | `tailscale serve --bg http://127.0.0.1:<sidecar-port>` |
-| `POST /disable` | `tailscale serve reset` |
+| `POST /bootstrap` | Start bundled tsnet early and restore persisted access |
+| `POST /connect` | Begin/refresh interactive embedded-node login |
+| `POST /enable` | Start embedded listener, or external `tailscale serve` |
+| `POST /disable` | Stop embedded listener, or external Serve reset |
 | `POST /release` | Desktop force-release of every live remote session |
 
 Every route returns the same payload:
 `{tailscale: {installed, logged_in, https_certs, error}, serve: {enabled, url}, lock: {...}|null}`.
 
-## Tailscale is optional infrastructure
+## Providers
+
+### Embedded provider (packaged desktop default)
+
+The Go helper runs as a child of the Python sidecar and exits with it. It owns
+the persistent tsnet machine state, a bearer-protected loopback control API,
+and a reverse proxy to the ephemeral FastAPI port. It prefers a tailnet HTTPS
+listener when certificate domains are available; otherwise it serves HTTP
+inside the already encrypted tailnet, avoiding a separate HTTPS-admin setup
+step.
+
+Before proxying a request it resolves the peer with Tailscale `WhoIs`, removes
+caller-supplied identity headers, and injects the verified login/device. Those
+headers carry a per-process secret shared only with FastAPI. Both HTTP and
+WebSocket authentication verify that secret.
+
+The enabled preference is stored beside tsnet state, so desktop startup can
+restore phone access after Tauri calls `/bootstrap` with the new ephemeral
+backend port.
+
+### External CLI fallback
 
 `app/services/remote_use_service.py` treats the `tailscale` CLI as optional
 and reports distinct user-facing states instead of failing:
@@ -73,21 +96,19 @@ Device label resolution for transparent claims: optional
 
 ## Identity and trust
 
-- `tailscale serve` injects `Tailscale-User-Login` (plus name/profile-pic)
-  on requests arriving via the tailnet HTTPS endpoint; desktop loopback
-  requests never carry it. A non-empty header attributes the request as a
-  remote session, readable through `remote_session_login(request)`.
+- Embedded mode resolves identity with `WhoIs` and signs the forwarded
+  `Tailscale-User-Login` header using an in-memory secret. External Serve
+  mode continues to trust the header injected by `tailscaled`.
 - The header **replaces** the desktop bearer token for those requests; the
   desktop-token tiers are untouched for every other request.
-- Residual risk: a local process could forge the header on loopback while
-  token auth is enabled. Browser pages cannot (custom headers force a CORS
-  preflight the sidecar never approves), and a local process that can reach
-  loopback can usually read the desktop token anyway. This note also lives
-  in [system overview](../architecture/system-overview.md#core-boundaries).
+- Embedded mode rejects unsigned identity headers, closing the previous local
+  header-spoofing gap. External CLI mode retains the older trust boundary.
 
 ## Code ownership
 
 - Service: `app/services/remote_use_service.py`
+- Embedded helper: `desktop/tailnet/`
+- Desktop packaging/supervision: `desktop/src-tauri/src/sidecar.rs`
 - Identity hook: `app/core/desktop_auth.py`
 - Model + migration: `app/models/remote_use.py`,
   `app/migrations/versions/00000069_create_remote_use_sessions.py`
@@ -98,11 +119,14 @@ Device label resolution for transparent claims: optional
 
 ## Known limitations and open questions
 
-- `tailscale serve` configuration is machine-wide: `serve: {enabled}`
-  reflects the whole tailscaled state, not only EvoFlux's entry.
+- External `tailscale serve` configuration remains machine-wide. Embedded
+  state belongs only to EvoFlux and does not modify the system Tailscale app.
 - The lock is exclusive across the tailnet (one live session total) while
   sessions are identified by `(user_login, device_label)`. Whether two
   devices sharing one tailnet login should share or split the lock is open
   question 2 of the plan.
+- The phone still needs the Tailscale mobile app and must join the same
+  tailnet. A public app cannot safely bundle a reusable auth key to remove
+  this account enrollment step.
 - A cloudflared transport fallback (plan open question 1) is out of scope
   for v1; no pairing codes exist in this design.

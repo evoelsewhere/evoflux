@@ -130,6 +130,45 @@ class TestTokenGate:
         assert excinfo.value.code == 4401
 
 
+class TestEmbeddedRemoteGate:
+    """A WhoIs-signed tsnet upgrade substitutes for the desktop token."""
+
+    @pytest.fixture(autouse=True)
+    def _embedded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.services import remote_use_service
+
+        monkeypatch.setattr(desktop_auth, "expected_desktop_token", lambda: "s3cret")
+        monkeypatch.setenv("EVOFLUX_TSNET_BIN", "/bundled/evoflux-tailnet")
+
+        async def claim(_login: str, _device: str | None) -> None:
+            return None
+
+        monkeypatch.setattr(remote_use_service, "claim", claim)
+
+    def test_signed_tailnet_upgrade_is_accepted(self, client: TestClient) -> None:
+        headers = {
+            desktop_auth.REMOTE_USER_LOGIN_HEADER: "alice@example.com",
+            desktop_auth.REMOTE_PROXY_MARKER_HEADER: desktop_auth.REMOTE_PROXY_MARKER,
+            desktop_auth.REMOTE_PROXY_TOKEN_HEADER: desktop_auth.embedded_remote_proxy_secret(),
+            desktop_auth.REMOTE_DEVICE_LABEL_HEADER: "phone",
+            "origin": "https://evoflux.example.ts.net",
+        }
+        assert _connect(client, "/api/team/s1/probe", headers=headers) == "open:s1"
+
+    def test_forged_tailnet_upgrade_is_refused(self, client: TestClient) -> None:
+        with pytest.raises(WebSocketDisconnect) as excinfo:
+            _connect(
+                client,
+                "/api/team/s1/probe",
+                headers={
+                    desktop_auth.REMOTE_USER_LOGIN_HEADER: "alice@example.com",
+                    desktop_auth.REMOTE_PROXY_MARKER_HEADER: desktop_auth.REMOTE_PROXY_MARKER,
+                    desktop_auth.REMOTE_PROXY_TOKEN_HEADER: "forged",
+                },
+            )
+        assert excinfo.value.code == 4401
+
+
 class TestEveryRouteIsGuarded:
     def test_no_websocket_route_accepts_before_authenticating(self) -> None:
         """A new WebSocket route must not be able to forget this.
@@ -143,8 +182,7 @@ class TestEveryRouteIsGuarded:
         from app.api.routes.team import browser, terminal, webbridge
 
         sources = [
-            inspect.getsource(module)
-            for module in (browser, terminal, webbridge)
+            inspect.getsource(module) for module in (browser, terminal, webbridge)
         ]
         routes = 0
         for source in sources:

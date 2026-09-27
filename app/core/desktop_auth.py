@@ -31,7 +31,10 @@ Remote tailnet sessions
 
 A request carrying a non-empty ``Tailscale-User-Login`` header — injected by
 ``tailscale serve`` on the tailnet HTTPS endpoint, never present on desktop
-loopback requests — is attributed as a remote tailnet session: the login is
+loopback requests — is attributed as a remote tailnet session. The bundled
+``tsnet`` proxy also signs that header with an in-memory process secret, so a
+local process cannot impersonate a tailnet peer while embedded mode is active.
+The login is
 stored on the request scope for routes (:func:`remote_session_login`) and the
 single-device lock in ``app.services.remote_use_service`` is claimed
 transparently for API paths. Another live session holding the lock
@@ -190,6 +193,29 @@ def _strip_token_from_scope(request: Request) -> None:
 # never carry these (tailscaled sets them only on the Serve frontend).
 REMOTE_USER_LOGIN_HEADER = "Tailscale-User-Login"
 REMOTE_DEVICE_LABEL_HEADER = "X-EvoFlux-Device-Label"
+REMOTE_PROXY_MARKER_HEADER = "X-EvoFlux-Remote-Proxy"
+REMOTE_PROXY_TOKEN_HEADER = "X-EvoFlux-Remote-Token"
+REMOTE_PROXY_MARKER = "tsnet"
+_EMBEDDED_REMOTE_PROXY_SECRET = os.urandom(32).hex()
+
+
+def embedded_remote_proxy_secret() -> str:
+    """Per-process secret shared only with the bundled tsnet child."""
+    return _EMBEDDED_REMOTE_PROXY_SECRET
+
+
+def _embedded_proxy_required() -> bool:
+    provider = os.environ.get("EVOFLUX_REMOTE_USE_PROVIDER", "").strip().lower()
+    return provider != "external" and bool(os.environ.get("EVOFLUX_TSNET_BIN"))
+
+
+def _trusted_remote_proxy_headers(marker: str, provided: str) -> bool:
+    if marker == REMOTE_PROXY_MARKER:
+        return hmac.compare_digest(
+            provided.encode("utf-8"),
+            _EMBEDDED_REMOTE_PROXY_SECRET.encode("utf-8"),
+        )
+    return not _embedded_proxy_required()
 
 
 def remote_session_login(request: Request) -> str | None:
@@ -222,6 +248,14 @@ class DesktopTokenMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         remote_login = request.headers.get(REMOTE_USER_LOGIN_HEADER, "").strip()
         if remote_login:
+            marker = request.headers.get(REMOTE_PROXY_MARKER_HEADER, "").strip()
+            provided = request.headers.get(REMOTE_PROXY_TOKEN_HEADER, "")
+            if not _trusted_remote_proxy_headers(marker, provided):
+                logger.warning("remote_proxy_identity_rejected")
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Untrusted tailnet identity."},
+                )
             return await self._dispatch_remote(request, call_next, remote_login)
         if not self._enabled:
             return await call_next(request)
@@ -319,6 +353,31 @@ async def websocket_authorized(ws: WebSocket) -> bool:
     handshakes are not subject to CORS, so the browser will make the
     connection and hand the page a live socket unless we refuse it here.
     """
+    remote_login = ws.headers.get(REMOTE_USER_LOGIN_HEADER, "").strip()
+    if remote_login:
+        marker = ws.headers.get(REMOTE_PROXY_MARKER_HEADER, "").strip()
+        provided = ws.headers.get(REMOTE_PROXY_TOKEN_HEADER, "")
+        if not _trusted_remote_proxy_headers(marker, provided):
+            logger.warning("ws_remote_proxy_identity_rejected path={}", ws.url.path)
+            await ws.close(code=4401)
+            return False
+        from app.services.remote_use_service import RemoteUseConflict, claim
+
+        device_label = ws.headers.get(REMOTE_DEVICE_LABEL_HEADER)
+        if device_label is None:
+            device_label = ws.headers.get("user-agent")
+        try:
+            await claim(remote_login, device_label)
+        except RemoteUseConflict as conflict:
+            logger.info(
+                "ws_remote_lock_conflict blocked_login={} held_by={}",
+                remote_login,
+                conflict.current.user_login,
+            )
+            await ws.close(code=4409)
+            return False
+        return True
+
     expected = expected_desktop_token()
     if not expected:
         if trusted_local_origin(ws.headers.get("origin")):

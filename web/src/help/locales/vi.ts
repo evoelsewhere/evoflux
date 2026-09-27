@@ -2386,9 +2386,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
   {
     id: 'phone-access',
     category: 'settings',
-    title: 'Truy cập điện thoại (Tailscale Serve)',
+    title: 'Truy cập điện thoại (Tailscale tích hợp)',
     summary:
-      'Truy cập máy tính này từ điện thoại qua chính tailnet của bạn — địa chỉ HTTPS .ts.net ổn định kèm mã QR, bảo bởi khóa một thiết bị mà bạn có thể nhả ngay trên desktop.',
+      'Truy cập máy tính này từ điện thoại qua tailnet của bạn — không cần tự cài CLI hay daemon trên desktop, có mã QR và khóa một thiết bị.',
     keywords: [
       'phone access',
       'tailscale',
@@ -2406,10 +2406,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
 ],
     openAction: { type: 'settings', path: 'remote-use' },
     setup:
-      'Cài Tailscale trên máy tính này và đăng nhập (`tailscale up`), bật HTTPS certificates trong Tailscale admin console, rồi mở Settings → Phone access và gạt công tắc.',
+      'Mở Settings → Phone access, bấm Connect và đăng nhập Tailscale một lần. Trên điện thoại, cài app Tailscale và đăng nhập cùng tailnet, rồi bật công tắc Phone access.',
     tricks: [
-      'Serve giữ một địa chỉ .ts.net ổn định — không cần dynamic DNS, không có cloud relay.',
-      'Mã QR trỏ tới URL HTTPS ổn định — quét khi điện thoại đang ở trong tailnet.',
+      'Bản desktop đã tích hợp node Tailscale — không cần Homebrew, CLI hay tailscaled riêng.',
+      'Mã QR trỏ tới URL tailnet — quét khi điện thoại đang kết nối cùng tailnet.',
       'Một thiết bị giữ khóa; nhả từ desktop hoặc chờ hết idle 30 phút.',
       'Điện thoại thứ hai thấy “device X holds the lock” là HTTP 409 đúng như thiết kế, không phải lỗi.',
       'Điện thoại tự nhận dạng qua header Tailscale login — không cần token hay mã pairing.',
@@ -2419,11 +2419,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Phone access lộ máy tính này qua Tailscale Serve: tailscaled xuất một địa chỉ HTTPS ổn định trên tailnet (*.ts.net) và EvoFlux chỉ phục vụ request đến từ thiết bị đã đăng nhập tailnet. Không có listener công khai, không có cloud tunnel ở giữa.',
+        text: 'Phone access dùng node Tailscale nhúng trong EvoFlux. Helper xác minh từng thiết bị bằng WhoIs rồi proxy vào sidecar local; không có listener công khai hay cloud tunnel ở giữa. Nếu tailnet cấp certificate, URL dùng HTTPS; nếu không, HTTP vẫn nằm trong kết nối tailnet đã mã hóa.',
       },
       {
         type: 'p',
-        text: 'Trang chỉ rõ bốn trạng thái trước khi bật được công tắc: chưa cài Tailscale, đã cài nhưng chưa đăng nhập, đã đăng nhập nhưng tắt HTTPS certificates, và sẵn sàng hoàn toàn. Trạng thái nào cần sửa thì nói thẳng thay vì im lặng thất bại.',
+        text: 'Lần đầu chỉ cần bấm Connect và hoàn tất đăng nhập trong browser. Machine identity được lưu trong thư mục state của EvoFlux, nên những lần mở sau tự kết nối và tự khôi phục Phone access nếu trước đó đã bật.',
       },
       {
         type: 'p',
@@ -2436,17 +2436,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Trạng thái — chưa cài → chưa đăng nhập → HTTPS certs tắt → sẵn sàng',
-          'QR — mã hóa URL HTTPS .ts.net ổn định',
+          'Trạng thái — tích hợp sẵn → Connect → đăng nhập → sẵn sàng',
+          'QR — mã hóa URL tailnet do helper tích hợp cung cấp',
           'Lock — một người giữ, nút Release, idle 30 phút tự nhả',
           'Auth — header đăng nhập tailnet, không cần pairing code',
           'Giới hạn — sửa credential vẫn chỉ trên desktop khi đang remote',
-          'Điều kiện — EvoFlux và tailscaled phải cùng chạy'
+          'Điều kiện — EvoFlux phải chạy; điện thoại cần app Tailscale cùng tailnet'
 ],
       },
       {
         type: 'p',
-        text: 'Sai sót thường gặp: bật công tắc khi Tailscale chưa đăng nhập; quét QR khi điện thoại đang dùng dữ liệu di động thay vì tailnet; kỳ vọng điện thoại thứ hai kết nối trong khi khóa còn giữ; và tưởng phone access vẫn chạy sau khi EvoFlux tắt — Serve trả lời nhưng sidecar đã dừng.',
+        text: 'Sai sót thường gặp: bật công tắc trước khi hoàn tất đăng nhập; điện thoại chưa cài hoặc chưa kết nối Tailscale; kỳ vọng điện thoại thứ hai kết nối khi khóa còn giữ; và tưởng phone access vẫn chạy sau khi EvoFlux đã tắt.',
       },
       {
         type: 'tips',

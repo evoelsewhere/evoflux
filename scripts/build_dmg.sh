@@ -8,6 +8,7 @@ set -euo pipefail
 #   - Tauri CLI v2+ (cargo install tauri-cli --version "^2.0" --locked)
 #   - Bun (for web frontend build)
 #   - Python 3.12+ (for sidecar build)
+#   - Go 1.26.6+ (for embedded tailnet helper)
 #   - uv (for sidecar dependency management)
 #
 # Usage:
@@ -55,6 +56,7 @@ echo "Checking prerequisites..."
 command -v cargo >/dev/null 2>&1 || { echo "Error: cargo not found. Install Rust."; exit 1; }
 command -v bun >/dev/null 2>&1 || { echo "Error: bun not found. Install bun."; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "Error: python3 not found."; exit 1; }
+command -v go >/dev/null 2>&1 || { echo "Error: go not found."; exit 1; }
 
 # Check for Tauri CLI
 if ! cargo tauri --version >/dev/null 2>&1; then

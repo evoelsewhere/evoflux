@@ -291,6 +291,13 @@ async def lifespan(app: FastAPI):
     await close_language_servers()
     await close_http_client()
 
+    # The bundled tsnet node is a child of the Python sidecar. Stop it before
+    # disposing application state so desktop exit never leaves a tailnet
+    # listener orphaned in the background.
+    from app.services.remote_use_service import shutdown_embedded_tailnet
+
+    await shutdown_embedded_tailnet()
+
     # Extraction tasks own DB work and must finish (or record a retryable
     # failure) before the engines are disposed.
     from app.agent.hooks.memory_extraction import drain_memory_extraction_tasks

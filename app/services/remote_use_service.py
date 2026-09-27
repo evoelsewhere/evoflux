@@ -1,16 +1,13 @@
-"""Tailscale Serve support for remote use.
+"""Embedded Tailscale and external Serve support for remote use.
 
 Three responsibilities, all deliberately free of route and UI concerns:
 
-1. **State detection** — the ``tailscale`` CLI is optional infrastructure.
-   Every entry point reports distinct user-facing states (not installed, not
-   logged in, HTTPS certs unavailable, ready) instead of raising, so the UI
-   can prompt for the right fix.
-2. **Serve control** — ``tailscale serve --bg http://127.0.0.1:<port>`` to
-   enable and ``tailscale serve reset`` to disable. CLI calls are literal
-   argv passed to :func:`asyncio.create_subprocess_exec` (never a shell
-   string, never user-supplied interpolation) and always run outside any
-   database transaction.
+1. **Provider control** — packaged desktop builds supervise the bundled
+   ``evoflux-tailnet`` tsnet helper through a token-protected loopback API.
+   Source/server runs fall back to the optional ``tailscale`` CLI.
+2. **State and serving** — both providers expose one response contract and
+   distinct user-facing states. External CLI calls use literal argv; embedded
+   mode persists its own node identity and enabled preference.
 3. **Single-device session lock** — one live row in ``remote_use_sessions``
    at a time. :func:`claim` refreshes the caller's own session or raises
    :class:`RemoteUseConflict` (HTTP 409 body) when another live session
@@ -22,15 +19,19 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
 import shutil
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
+import httpx
 from loguru import logger
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import col, select
 
 import app.core.db as db_module
+from app.core.config import settings
 from app.models.remote_use import RemoteUseSession
 
 #: The serve target is this machine's loopback: tailscaled terminates the
@@ -44,7 +45,17 @@ IDLE_WINDOW_MINUTES = int(IDLE_WINDOW.total_seconds() // 60)
 #: Overrides CLI discovery (custom installs and the stub used by tests).
 TAILSCALE_BIN_ENV = "EVOFLUX_TAILSCALE_BIN"
 
+#: Bundled Go helper containing an embedded tsnet node. Tauri sets this only
+#: for packaged/bundled runs; source servers retain the external CLI provider.
+EMBEDDED_TAILNET_BIN_ENV = "EVOFLUX_TSNET_BIN"
+
+#: Explicit provider override for development and managed deployments.
+REMOTE_USE_PROVIDER_ENV = "EVOFLUX_REMOTE_USE_PROVIDER"
+
 _CLI_TIMEOUT_SECONDS = 15.0
+_EMBEDDED_HANDSHAKE_PREFIX = "EVOFLUX_TAILNET_HANDSHAKE "
+_EMBEDDED_START_TIMEOUT_SECONDS = 10.0
+_EMBEDDED_REQUEST_TIMEOUT_SECONDS = 12.0
 
 
 class RemoteUseConflict(Exception):
@@ -89,6 +100,220 @@ def tailscale_binary() -> str | None:
     if override:
         return override
     return shutil.which("tailscale")
+
+
+def embedded_tailnet_binary() -> str | None:
+    """Configured embedded helper path, unless external mode is forced."""
+    if os.environ.get(REMOTE_USE_PROVIDER_ENV, "").strip().lower() == "external":
+        return None
+    value = os.environ.get(EMBEDDED_TAILNET_BIN_ENV, "").strip()
+    return value or None
+
+
+def _use_embedded_provider() -> bool:
+    forced = os.environ.get(REMOTE_USE_PROVIDER_ENV, "").strip().lower()
+    if forced == "embedded":
+        return True
+    return embedded_tailnet_binary() is not None
+
+
+def _embedded_error_status(detail: str) -> dict[str, Any]:
+    return {
+        "tailscale": {
+            "provider": "embedded",
+            "installed": embedded_tailnet_binary() is not None,
+            "logged_in": False,
+            "https_certs": None,
+            "auth_url": None,
+            "error": detail,
+        },
+        "serve": {"enabled": False, "url": None},
+    }
+
+
+def _normalize_embedded_status(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise ValueError("embedded tailnet returned an invalid response")
+    tailscale = payload.get("tailscale")
+    serve = payload.get("serve")
+    if not isinstance(tailscale, dict) or not isinstance(serve, dict):
+        raise ValueError("embedded tailnet response is missing status sections")
+    tailscale.setdefault("provider", "embedded")
+    tailscale.setdefault("installed", True)
+    tailscale.setdefault("logged_in", False)
+    tailscale.setdefault("https_certs", None)
+    tailscale.setdefault("auth_url", None)
+    tailscale.setdefault("error", None)
+    serve.setdefault("enabled", False)
+    serve.setdefault("url", None)
+    return {"tailscale": tailscale, "serve": serve}
+
+
+class _EmbeddedTailnetManager:
+    """Own one bundled ``evoflux-tailnet`` process and its loopback API."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._process: asyncio.subprocess.Process | None = None
+        self._stderr_task: asyncio.Task[None] | None = None
+        self._control_url: str | None = None
+        self._control_token: str | None = None
+        self._target_port: int | None = None
+
+    async def ensure_started(self, port: int | None) -> None:
+        if port is None or not (0 < port < 65536):
+            raise RuntimeError("cannot start embedded tailnet: backend port unknown")
+        async with self._lock:
+            if (
+                self._process is not None
+                and self._process.returncode is None
+                and self._control_url is not None
+                and self._target_port == port
+            ):
+                return
+            await self._stop_locked()
+            binary = embedded_tailnet_binary()
+            if binary is None:
+                raise RuntimeError("embedded tailnet helper is not bundled")
+            path = Path(binary).expanduser()
+            if not path.is_file():
+                raise RuntimeError(f"embedded tailnet helper not found at {path}")
+
+            state_dir = Path(settings.EVOFLUX_STATE_DIR) / "tailnet"
+            state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+            control_token = secrets.token_urlsafe(32)
+            from app.core.desktop_auth import embedded_remote_proxy_secret
+
+            env = os.environ.copy()
+            env["EVOFLUX_TAILNET_CONTROL_TOKEN"] = control_token
+            env["EVOFLUX_TAILNET_PROXY_TOKEN"] = embedded_remote_proxy_secret()
+            process = await asyncio.create_subprocess_exec(
+                str(path),
+                "--state-dir",
+                str(state_dir),
+                "--hostname",
+                "evoflux",
+                "--target",
+                f"http://{SERVE_TARGET_HOST}:{port}",
+                "--parent-pid",
+                str(os.getpid()),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+            )
+            assert process.stdout is not None
+            try:
+                raw = await asyncio.wait_for(
+                    process.stdout.readline(), _EMBEDDED_START_TIMEOUT_SECONDS
+                )
+                line = raw.decode("utf-8", errors="replace").strip()
+                if not line.startswith(_EMBEDDED_HANDSHAKE_PREFIX):
+                    raise RuntimeError(
+                        "embedded tailnet exited without a valid handshake"
+                    )
+                handshake = _parse_json_object(line[len(_EMBEDDED_HANDSHAKE_PREFIX) :])
+                control_port = int((handshake or {}).get("port", 0))
+                if not (0 < control_port < 65536):
+                    raise RuntimeError("embedded tailnet handshake has no control port")
+            except Exception:
+                process.kill()
+                await process.communicate()
+                raise
+
+            self._process = process
+            self._control_url = f"http://127.0.0.1:{control_port}"
+            self._control_token = control_token
+            self._target_port = port
+            self._stderr_task = asyncio.create_task(
+                self._drain_stderr(process), name="embedded-tailnet-logs"
+            )
+            logger.info(
+                "embedded_tailnet_started pid={} control_port={} target_port={}",
+                process.pid,
+                control_port,
+                port,
+            )
+
+    async def _drain_stderr(self, process: asyncio.subprocess.Process) -> None:
+        if process.stderr is None:
+            return
+        while True:
+            line = await process.stderr.readline()
+            if not line:
+                return
+            logger.info(
+                "embedded_tailnet {}", line.decode("utf-8", errors="replace").rstrip()
+            )
+
+    async def request(self, method: str, path: str, port: int | None) -> dict[str, Any]:
+        await self.ensure_started(port)
+        control_url = self._control_url
+        control_token = self._control_token
+        if control_url is None or control_token is None:
+            raise RuntimeError("embedded tailnet control API is unavailable")
+        async with httpx.AsyncClient(
+            timeout=_EMBEDDED_REQUEST_TIMEOUT_SECONDS
+        ) as client:
+            response = await client.request(
+                method,
+                f"{control_url}{path}",
+                headers={"Authorization": f"Bearer {control_token}"},
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise RuntimeError(
+                f"embedded tailnet returned HTTP {response.status_code}"
+            ) from exc
+        if response.is_error and not (
+            isinstance(payload, dict)
+            and isinstance(payload.get("tailscale"), dict)
+            and isinstance(payload.get("serve"), dict)
+        ):
+            detail = payload.get("detail") if isinstance(payload, dict) else None
+            raise RuntimeError(
+                str(detail or f"embedded tailnet HTTP {response.status_code}")
+            )
+        return _normalize_embedded_status(payload)
+
+    async def _stop_locked(self) -> None:
+        process = self._process
+        control_url = self._control_url
+        control_token = self._control_token
+        self._process = None
+        self._control_url = None
+        self._control_token = None
+        self._target_port = None
+        if process is None:
+            return
+        if process.returncode is None and control_url and control_token:
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    await client.post(
+                        f"{control_url}/v1/shutdown",
+                        headers={"Authorization": f"Bearer {control_token}"},
+                    )
+                await asyncio.wait_for(process.wait(), 4.0)
+            except (httpx.HTTPError, TimeoutError):
+                process.terminate()
+        if process.returncode is None:
+            try:
+                await asyncio.wait_for(process.wait(), 3.0)
+            except TimeoutError:
+                process.kill()
+                await process.wait()
+        task = self._stderr_task
+        self._stderr_task = None
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def shutdown(self) -> None:
+        async with self._lock:
+            await self._stop_locked()
+
+
+_embedded_manager = _EmbeddedTailnetManager()
 
 
 async def _run_tailscale(
@@ -271,7 +496,7 @@ async def _serve_state() -> tuple[dict[str, Any], str | None]:
     return _serve_state_from_config(config), None
 
 
-async def get_status() -> dict[str, Any]:
+async def _get_cli_status() -> dict[str, Any]:
     """Tailscale + serve state (the two non-lock sections of the response)."""
     tailscale = await detect_tailscale_state()
     serve, serve_error = await _serve_state()
@@ -289,9 +514,9 @@ def _looks_like_https_error(detail: str) -> bool:
     return "https" in lowered or "cert" in lowered or "tls" in lowered
 
 
-async def enable_serve(port: int | None) -> dict[str, Any]:
+async def _enable_cli_serve(port: int | None) -> dict[str, Any]:
     """Run ``tailscale serve --bg http://127.0.0.1:<port>`` (outside the DB)."""
-    status = await get_status()
+    status = await _get_cli_status()
     tailscale = status["tailscale"]
     if not tailscale["installed"] or tailscale["error"] is not None:
         return status
@@ -313,12 +538,12 @@ async def enable_serve(port: int | None) -> dict[str, Any]:
             tailscale["https_certs"] = False
         return status
     logger.info("remote_use_serve_enabled target={}", target)
-    return await get_status()
+    return await _get_cli_status()
 
 
-async def disable_serve() -> dict[str, Any]:
+async def _disable_cli_serve() -> dict[str, Any]:
     """Run ``tailscale serve reset`` (outside the DB)."""
-    status = await get_status()
+    status = await _get_cli_status()
     tailscale = status["tailscale"]
     if not tailscale["installed"] or tailscale["error"] is not None:
         return status
@@ -331,7 +556,68 @@ async def disable_serve() -> dict[str, Any]:
         tailscale["error"] = detail
         return status
     logger.info("remote_use_serve_reset")
-    return await get_status()
+    return await _get_cli_status()
+
+
+async def get_status(port: int | None = None) -> dict[str, Any]:
+    """Return the active provider's tailnet and serving state."""
+    if not _use_embedded_provider():
+        return await _get_cli_status()
+    try:
+        return await _embedded_manager.request("GET", "/v1/status", port)
+    except (OSError, RuntimeError, httpx.HTTPError) as exc:
+        logger.warning("embedded_tailnet_status_failed error={}", exc)
+        return _embedded_error_status(str(exc))
+
+
+async def connect_tailnet(port: int | None) -> dict[str, Any]:
+    """Start or refresh the embedded interactive login flow."""
+    if not _use_embedded_provider():
+        status = await _get_cli_status()
+        if not status["tailscale"]["logged_in"]:
+            status["tailscale"]["error"] = (
+                "Open the Tailscale app or run `tailscale up` to sign in"
+            )
+        return status
+    try:
+        return await _embedded_manager.request("POST", "/v1/login", port)
+    except (OSError, RuntimeError, httpx.HTTPError) as exc:
+        logger.warning("embedded_tailnet_login_failed error={}", exc)
+        return _embedded_error_status(str(exc))
+
+
+async def enable_serve(port: int | None) -> dict[str, Any]:
+    """Enable phone access through embedded tsnet or external Serve."""
+    if not _use_embedded_provider():
+        return await _enable_cli_serve(port)
+    try:
+        return await _embedded_manager.request("POST", "/v1/enable", port)
+    except (OSError, RuntimeError, httpx.HTTPError) as exc:
+        logger.warning("embedded_tailnet_enable_failed error={}", exc)
+        return _embedded_error_status(str(exc))
+
+
+async def disable_serve(port: int | None = None) -> dict[str, Any]:
+    """Disable phone access through embedded tsnet or external Serve."""
+    if not _use_embedded_provider():
+        return await _disable_cli_serve()
+    try:
+        return await _embedded_manager.request("POST", "/v1/disable", port)
+    except (OSError, RuntimeError, httpx.HTTPError) as exc:
+        logger.warning("embedded_tailnet_disable_failed error={}", exc)
+        return _embedded_error_status(str(exc))
+
+
+async def bootstrap_embedded_tailnet(port: int | None) -> dict[str, Any]:
+    """Start the bundled helper early so persisted phone access auto-restores."""
+    if not _use_embedded_provider():
+        return await _get_cli_status()
+    return await get_status(port)
+
+
+async def shutdown_embedded_tailnet() -> None:
+    """Stop the helper during FastAPI shutdown; safe when it never started."""
+    await _embedded_manager.shutdown()
 
 
 # --------------------------------------------------------------------------

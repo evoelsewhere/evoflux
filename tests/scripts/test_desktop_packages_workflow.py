@@ -42,7 +42,17 @@ def test_deb_contents_gate_extracts_and_resolves_bundled_symlinks() -> None:
     assert "-perm -111 -print -quit" in source
     assert '[[ -x "$product_dir/sidecar/python/bin/python3" ]]' in source
     assert '[[ -f "$product_dir/sidecar/site-packages/app/cli/__main__.py" ]]' in source
+    assert '[[ -x "$product_dir/sidecar/tailnet/evoflux-tailnet" ]]' in source
+    assert '[[ -f "$product_dir/sidecar/tailnet/LICENSE.tailscale" ]]' in source
     assert "sidecar/python/bin/python3$" not in source
+
+
+def test_release_job_installs_go_for_embedded_tailnet() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "actions/setup-go@v6" in source
+    assert "desktop/tailnet/go.sum" in source
+    assert "GO_VERSION" in source
 
 
 def test_deb_declares_external_linux_runtime_helpers() -> None:

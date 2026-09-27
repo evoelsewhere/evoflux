@@ -2403,9 +2403,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
   {
     id: 'phone-access',
     category: 'settings',
-    title: 'スマホアクセス（Tailscale Serve）',
+    title: 'スマホアクセス（Tailscale 内蔵）',
     summary:
-      '自分の tailnet 経由でこのコンピュータにスマホから到達 — 安定した .ts.net HTTPS アドレスと QR コード、デスクトップから解放できるデバイスロック1つだけの制御。',
+      '自分の tailnet 経由でスマホから接続 — デスクトップ側の CLI／デーモン設定は不要で、QR コードと1台限定ロックを利用。',
     keywords: [
       'phone access',
       'tailscale',
@@ -2422,10 +2422,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
 ],
     openAction: { type: 'settings', path: 'remote-use' },
     setup:
-      'このコンピュータに Tailscale をインストールしてサインイン（`tailscale up`）、Tailscale admin console で HTTPS 証明書を有効化し、Settings → Phone access でスイッチを入れます。',
+      'Settings → Phone access で Connect を押し、一度だけ Tailscale にサインインします。スマホには Tailscale アプリを入れて同じ tailnet に参加し、Phone access を有効にします。',
     tricks: [
-      'Serve は安定した .ts.net アドレスを保持 — 動的 DNS もクラウドリレーも不要。',
-      'QR コードは安定 HTTPS URL を指す — スマホが tailnet 内にいるときに読み取る。',
+      'デスクトップ版には Tailscale ノードが内蔵 — Homebrew、CLI、別の tailscaled 設定は不要。',
+      'QR コードは tailnet URL を指す — スマホが同じ tailnet に接続中に読み取る。',
       'ロックはデバイス1台のみ。デスクトップから Release、または30分アイドルで自動解放。',
       '2台目が「device X holds the lock」と出すのは想定どおりの HTTP 409 で、バグではない。',
       'スマホは Tailscale ログインヘッダーで自分を識別 — トークンもペアリングコードも不要。',
@@ -2435,11 +2435,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Phone access は Tailscale Serve でこのコンピュータを公開します：tailscaled が tailnet 上に安定した HTTPS アドレス（*.ts.net）を出し、EvoFlux は tailnet にサインインしたデバイスからのリクエストだけを処理します。公開リスナーもクラウドトンネルもありません。',
+        text: 'Phone access は EvoFlux 内蔵の Tailscale ノードを使います。ヘルパーが WhoIs で各ピアを検証してローカル sidecar に転送し、公開リスナーやクラウドトンネルはありません。証明書があれば HTTPS、なければ暗号化済み tailnet 内の HTTP を使います。',
       },
       {
         type: 'p',
-        text: 'ページはスイッチを有効にする前に4つの状態を示します：Tailscale 未インストール、インストール済み未サインイン、サインイン済みだが HTTPS 証明書オフ、準備完了。それぞれで直すべきことを黙って失敗せず表示します。',
+        text: '初回は Connect を押してブラウザでサインインするだけです。EvoFlux はノード ID を state ディレクトリに保存し、次回以降は自動接続し、以前有効だった Phone access も復元します。',
       },
       {
         type: 'p',
@@ -2452,17 +2452,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          '状態 — 未インストール → 未サインイン → HTTPS 証明書オフ → 準備完了',
-          'QR — 安定 HTTPS .ts.net URL を符号化',
+          '状態 — 内蔵済み → Connect → サインイン → 準備完了',
+          'QR — 内蔵 tailnet ヘルパーが提供する URL を符号化',
           'Lock — 保持は1台、Release ボタン、30分アイドルで自動解放',
           'Auth — tailnet ログインヘッダー、ペアリングコード不要',
           '制限 — リモート中も機密情報の編集はデスクトップ専用',
-          '前提 — EvoFlux と tailscaled の両方が稼働していること'
+          '前提 — EvoFlux が稼働し、スマホが同じ tailnet に参加していること'
 ],
       },
       {
         type: 'p',
-        text: 'よくある失敗：Tailscale にサインインする前に入れ替えようとする、モバイルデータ回線のまま QR を読む、ロック保持中に2台目が接続できることを期待する、EvoFlux 終了後も phone access が動いていると思う（Serve は応答しますが sidecar は止まっています）。',
+        text: 'よくある失敗：ブラウザのサインイン完了前に有効化する、スマホ側で Tailscale をインストール／接続していない、ロック保持中に2台目が接続できると思う、EvoFlux 終了後も phone access が動くと思うことです。',
       },
       {
         type: 'tips',

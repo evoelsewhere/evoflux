@@ -51,6 +51,13 @@ The Tauri shell:
 9. Opens secondary WebViews against the same sidecar/token (`Cmd/Ctrl+N`).
 10. On app quit: SIGTERM the sidecar; force-kill after 5s.
 
+The sidecar bundle also contains `tailnet/evoflux-tailnet`, a static Go
+helper using `tsnet`. Tauri exposes its path to FastAPI and requests an early
+bootstrap after the backend handshake; FastAPI owns the helper lifecycle.
+Packaged users therefore do not install Homebrew, the Tailscale CLI, or a
+system daemon for Phone access. Package builds require Go 1.26.6 in addition
+to Python, Bun, Rust, and `uv`.
+
 ## Development
 
 ```sh

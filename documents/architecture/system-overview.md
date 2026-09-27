@@ -92,17 +92,13 @@ transcript and then resume live streaming.
   remains inspectable in scoped facts and Markdown wiki files.
 - **Integration:** global MCP, plugin MCP, provider adapters, WebBridge, and
   Conductor have separate configuration and lifecycle boundaries.
-- **Remote access:** Tailscale Serve fronts the sidecar on the tailnet
-  HTTPS endpoint. tailscaled injects the `Tailscale-User-Login` identity
-  header (desktop loopback requests never carry it); that header attributes
-  the request as a remote tailnet session and authorizes it in place of the
-  desktop token, and the `remote_use_sessions` single-device lock admits one
-  live remote session at a time — a second live device gets HTTP 409 with
-  the holder in the body. Residual risk: a local process could forge the
-  header on loopback while desktop-token auth is enabled (browser pages
-  cannot — custom headers force a CORS preflight the sidecar never
-  approves), which is the same local reach that can read the desktop token
-  from the environment anyway.
+- **Remote access:** packaged desktop builds run an embedded `tsnet` node;
+  source/server deployments can fall back to Tailscale Serve. Embedded mode
+  resolves peers with `WhoIs` and signs the forwarded identity using a
+  per-process secret, while external Serve receives the equivalent identity
+  from `tailscaled`. The `remote_use_sessions` lock admits one live device at
+  a time — a second device gets HTTP 409 with the holder in the body. HTTP
+  and WebSocket boundaries both enforce the identity and lock.
 
 ## Source-of-truth map
 

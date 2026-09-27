@@ -135,6 +135,15 @@ impl Sidecar {
         } else {
             cmd.arg("--generate-token");
         }
+        if let Some(tailnet_bin) = resolve_tailnet_bin(&sidecar_root) {
+            log::info!(
+                "embedded tailnet helper available at {}",
+                tailnet_bin.display()
+            );
+            cmd.env("EVOFLUX_TSNET_BIN", tailnet_bin);
+        } else {
+            log::warn!("embedded tailnet helper is not present; external Tailscale fallback only");
+        }
 
         // ``APP_ENV`` defaults to ``production`` (XDG dirs shared with a
         // terminal ``evoflux`` install). Dev-bundled runs can set
@@ -391,6 +400,16 @@ fn resolve_python_bin(sidecar_root: &Path) -> Result<PathBuf> {
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
     ))
+}
+
+fn resolve_tailnet_bin(sidecar_root: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    let candidate = sidecar_root
+        .join("tailnet")
+        .join("evoflux-tailnet.exe");
+    #[cfg(not(target_os = "windows"))]
+    let candidate = sidecar_root.join("tailnet").join("evoflux-tailnet");
+    candidate.is_file().then_some(candidate)
 }
 
 async fn pipe_lines_to_log<R>(mut reader: BufReader<R>, log_path: PathBuf)

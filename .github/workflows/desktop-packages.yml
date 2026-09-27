@@ -36,6 +36,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.12"
+  GO_VERSION: "1.26.6"
   BUN_VERSION: latest
   SIDECAR_DIR: desktop/sidecar-bundle
   SIGNING_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.signing || 'auto' }}
@@ -221,6 +222,12 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Set up Go for embedded tailnet
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: desktop/tailnet/go.sum
+
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -262,6 +269,7 @@ jobs:
           uv sync --frozen
           uv run pytest --no-cov -q \
             tests/desktop/test_install_sh.py \
+            tests/scripts/test_build_tailnet.py \
             tests/scripts/test_build_sidecar.py \
             tests/scripts/test_desktop_packages_workflow.py
 
@@ -512,6 +520,8 @@ jobs:
           fi
           [[ -x "$product_dir/sidecar/python/bin/python3" ]]
           [[ -f "$product_dir/sidecar/site-packages/app/cli/__main__.py" ]]
+          [[ -x "$product_dir/sidecar/tailnet/evoflux-tailnet" ]]
+          [[ -f "$product_dir/sidecar/tailnet/LICENSE.tailscale" ]]
 
       - name: Smoke-test first Linux DEB launch
         if: runner.os == 'Linux'
