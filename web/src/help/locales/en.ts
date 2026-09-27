@@ -2444,6 +2444,87 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
   },
   {
+    id: 'phone-access',
+    category: 'settings',
+    title: 'Phone access (Tailscale Serve)',
+    summary:
+      'Reach this computer from your phone over your own tailnet — a stable .ts.net HTTPS address with a QR code, gated by a one-device lock you can release from the desktop.',
+    keywords: [
+      'phone access',
+      'tailscale',
+      'serve',
+      'tailnet',
+      'remote use',
+      'QR code',
+      '.ts.net',
+      'device lock',
+      'HTTPS certificate',
+      'truy cập điện thoại',
+      'khóa thiết bị',
+      'スマホアクセス',
+      'リモート利用'
+],
+    openAction: { type: 'settings', path: 'remote-use' },
+    setup:
+      'Install Tailscale on this computer and sign in (`tailscale up`), enable HTTPS certificates in the Tailscale admin console, then open Settings → Phone access and flip the switch.',
+    tricks: [
+      'Serve keeps a stable .ts.net address — no dynamic DNS, no cloud relay.',
+      'The QR code targets the stable HTTPS URL — scan it while the phone is on the tailnet.',
+      'One device holds the lock; release it from the desktop or wait for the 30-minute idle timeout.',
+      'A second phone showing “device X holds the lock” is the expected HTTP 409, not a bug.',
+      'The phone identifies itself through the Tailscale login header — no token or pairing code to copy.',
+      'EvoFlux must stay running on this computer for phone access to work.',
+      'Provider, bot and plugin secrets stay desktop-only regardless of where you connect from.',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Phone access exposes this computer through Tailscale Serve: tailscaled publishes a stable HTTPS address on your tailnet (*.ts.net), and EvoFlux only serves requests that arrive from a logged-in tailnet device. There is no public listener and no cloud tunnel in between.',
+      },
+      {
+        type: 'p',
+        text: 'The page walks you through four readiness states before the toggle becomes usable: Tailscale not installed, installed but not signed in, signed in but HTTPS certificates disabled, and fully ready. Each state shows what to fix instead of failing silently.',
+      },
+      {
+        type: 'p',
+        text: 'When enabled, the page shows the stable tunnel address with a copy button and a QR code — scan it from the phone while it is on the same tailnet. The address does not change between sessions, so a saved shortcut keeps working.',
+      },
+      {
+        type: 'p',
+        text: 'Only one device may drive this computer at a time. The lock card lists who holds it (Tailscale login and device label), when it was claimed, and when it was last seen; the Release button frees it immediately. A phone that loses the race receives an HTTP 409 and is told which device holds the lock instead of silently failing. The lock also frees itself after 30 minutes without a request.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'States — not installed → not signed in → HTTPS certs off → ready',
+          'QR — encodes the stable .ts.net HTTPS URL',
+          'Lock — one holder, Release button, 30-minute idle timeout',
+          'Auth — the tailnet login header, no pairing code',
+          'Cap — credential editing stays desktop-only while remote',
+          'Prerequisite — EvoFlux and tailscaled must both stay running'
+],
+      },
+      {
+        type: 'p',
+        text: 'Common mistakes: trying to enable the switch before Tailscale is signed in; scanning the QR from a phone that is on mobile data instead of the tailnet; expecting a second phone to connect while the lock is held; and assuming phone access works after EvoFlux quits — Serve answers, but the sidecar is gone.',
+      },
+      {
+        type: 'tips',
+        items: [
+          'Cross-feature: Connection explains HealthDot when the sidecar is unreachable.',
+          'Cross-feature: Settings map lists where remote capabilities live.',
+          'Cross-feature: Troubleshooting checklist starts at HealthDot → Connection.'
+],
+      }
+],
+    related: [
+      'connection-settings',
+      'settings-safety',
+      'troubleshooting-connection',
+      'getting-started'
+],
+  },
+  {
     id: 'settings-safety',
     category: 'settings',
     title: 'Settings map',

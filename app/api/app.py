@@ -25,6 +25,7 @@ from app.api.routes.mcp import router as mcp_router
 from app.api.routes.observability import router as observability_router
 from app.api.routes.plugins import router as plugins_router
 from app.api.routes.quote import router as quote_router
+from app.api.routes.remote_use import router as remote_use_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.skills import router as skills_router
@@ -45,6 +46,7 @@ from app.core.schema_version import (
 )
 from app.core.wiki_seed import seed_wiki
 from app.core.workspace_init import ensure_workspace_initialized
+from app.api.static_web import mount_web_ui
 from app.scheduler.scheduler import task_scheduler
 from app.services import memory_stream_store as stream_store, team_manager
 from app.services.dream_scheduler import DreamScheduler
@@ -361,6 +363,10 @@ def create_app() -> FastAPI:
     app.include_router(
         diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"]
     )
+    app.include_router(remote_use_router, prefix="/api/remote-use", tags=["remote-use"])
+
+    # ── Bundled web UI (catch-all of last resort) ──────────────────────────
+    mount_web_ui(app)
 
     logger.debug("api_only_app_ready")
 

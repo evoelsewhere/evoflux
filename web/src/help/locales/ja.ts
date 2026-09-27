@@ -2401,6 +2401,86 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
 ],
   },
   {
+    id: 'phone-access',
+    category: 'settings',
+    title: 'スマホアクセス（Tailscale Serve）',
+    summary:
+      '自分の tailnet 経由でこのコンピュータにスマホから到達 — 安定した .ts.net HTTPS アドレスと QR コード、デスクトップから解放できるデバイスロック1つだけの制御。',
+    keywords: [
+      'phone access',
+      'tailscale',
+      'serve',
+      'tailnet',
+      'remote use',
+      'QR code',
+      '.ts.net',
+      'device lock',
+      'HTTPS certificate',
+      'スマホアクセス',
+      'リモート利用',
+      'デバイスロック'
+],
+    openAction: { type: 'settings', path: 'remote-use' },
+    setup:
+      'このコンピュータに Tailscale をインストールしてサインイン（`tailscale up`）、Tailscale admin console で HTTPS 証明書を有効化し、Settings → Phone access でスイッチを入れます。',
+    tricks: [
+      'Serve は安定した .ts.net アドレスを保持 — 動的 DNS もクラウドリレーも不要。',
+      'QR コードは安定 HTTPS URL を指す — スマホが tailnet 内にいるときに読み取る。',
+      'ロックはデバイス1台のみ。デスクトップから Release、または30分アイドルで自動解放。',
+      '2台目が「device X holds the lock」と出すのは想定どおりの HTTP 409 で、バグではない。',
+      'スマホは Tailscale ログインヘッダーで自分を識別 — トークンもペアリングコードも不要。',
+      'EvoFlux がこのコンピュータで起動していないと phone access は動かない。',
+      'プロバイダー／ボット／プラグインの秘密情報は、どこから接続してもデスクトップ専用。',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Phone access は Tailscale Serve でこのコンピュータを公開します：tailscaled が tailnet 上に安定した HTTPS アドレス（*.ts.net）を出し、EvoFlux は tailnet にサインインしたデバイスからのリクエストだけを処理します。公開リスナーもクラウドトンネルもありません。',
+      },
+      {
+        type: 'p',
+        text: 'ページはスイッチを有効にする前に4つの状態を示します：Tailscale 未インストール、インストール済み未サインイン、サインイン済みだが HTTPS 証明書オフ、準備完了。それぞれで直すべきことを黙って失敗せず表示します。',
+      },
+      {
+        type: 'p',
+        text: '有効化すると安定したトンネルアドレス・コピーボタン・QR コードを表示 — 同じ tailnet 内のスマホで読み取ります。アドレスはセッション間で変わらないので、保存したショートカットも有効です。',
+      },
+      {
+        type: 'p',
+        text: '同時に操作できるのはデバイス1台だけ。ロックカードは保持者（Tailscale ログインとデバイスラベル）、主張時刻、最終確認時刻を表示し、Release ボタンで即解放。競り負けたスマホは HTTP 409 でどのデバイスが保持しているかを知らされ、黙って失敗しません。30分間リクエストがなければロックは自動解放です。',
+      },
+      {
+        type: 'tips',
+        items: [
+          '状態 — 未インストール → 未サインイン → HTTPS 証明書オフ → 準備完了',
+          'QR — 安定 HTTPS .ts.net URL を符号化',
+          'Lock — 保持は1台、Release ボタン、30分アイドルで自動解放',
+          'Auth — tailnet ログインヘッダー、ペアリングコード不要',
+          '制限 — リモート中も機密情報の編集はデスクトップ専用',
+          '前提 — EvoFlux と tailscaled の両方が稼働していること'
+],
+      },
+      {
+        type: 'p',
+        text: 'よくある失敗：Tailscale にサインインする前に入れ替えようとする、モバイルデータ回線のまま QR を読む、ロック保持中に2台目が接続できることを期待する、EvoFlux 終了後も phone access が動いていると思う（Serve は応答しますが sidecar は止まっています）。',
+      },
+      {
+        type: 'tips',
+        items: [
+          'Cross-feature: Connection は sidecar に届かないときの HealthDot を解説。',
+          'Cross-feature: Settings map はリモート機能の一覧。',
+          'Cross-feature: Troubleshooting checklist は HealthDot → Connection から。',
+],
+      }
+],
+    related: [
+      'connection-settings',
+      'settings-safety',
+      'troubleshooting-connection',
+      'getting-started'
+],
+  },
+  {
     id: 'settings-safety',
     category: 'settings',
     title: 'Settings マップ',

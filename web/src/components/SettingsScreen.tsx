@@ -27,6 +27,7 @@ import { ContextSettingsPage } from '@/routes/settings.context'
 import { MemorySettingsPage } from '@/routes/settings.memory'
 import { NotificationSettingsPage } from '@/routes/settings.notifications'
 import { ProvidersSettingsPage } from '@/routes/settings.providers'
+import { RemoteUseSettingsPage } from '@/routes/settings.remote-use'
 import { SandboxSettingsPage } from '@/routes/settings.sandbox'
 import { SkillEditorPage } from '@/routes/settings.skills.$name'
 import { NewSkillPage } from '@/routes/settings.skills.new'
@@ -48,6 +49,7 @@ const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   providers: 'Providers',
   'language-servers': 'Language servers',
   connection: 'Connection',
+  'remote-use': 'Phone access',
   'version-control': 'Git & reviews',
   memory: 'Memory',
   sandbox: 'Sandbox',
@@ -106,6 +108,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'memory') return <MemorySettingsPage />
   if (section === 'context') return <ContextSettingsPage />
   if (section === 'connection') return <BackendConnectionPage />
+  if (section === 'remote-use') return <RemoteUseSettingsPage />
   if (section === 'version-control') return <VersionControlSettingsPage />
   if (section === 'providers') return <ProvidersSettingsPage />
   if (section === 'language-servers') return <LanguageServersSettingsPage />
