@@ -1517,7 +1517,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         // overflow via the overlay's ``overflow-hidden`` + scroll sync.
         // during active IME composition so the OS candidate UI renders
         // correctly; the overlay mirror is hidden for the same duration.
-        className={`block w-full resize-none scrollbar-none bg-transparent p-0 align-middle text-sm leading-relaxed break-words caret-(--color-text) placeholder-(--color-text-subtle) selection:bg-(--color-accent)/30 selection:text-(--color-text) focus:outline-none disabled:opacity-50 ${isComposing ? 'text-(--color-text)' : 'text-transparent'}`}
+        className={`block w-full resize-none scrollbar-none bg-transparent p-0 align-middle text-sm leading-relaxed break-words caret-(--color-text) placeholder-(--color-text-subtle) selection:bg-(--color-accent)/30 selection:text-(--color-text) focus:outline-none disabled:opacity-50 ${isMobile ? 'min-h-10' : ''} ${isComposing ? 'text-(--color-text)' : 'text-transparent'}`}
         // Cap matches the ``resize()`` ceiling above so the JS-driven height
         // and the CSS limit stay in lockstep.
         style={{ maxHeight: '120px' }}
@@ -1806,7 +1806,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 : cn(
                     'w-full border-(--color-border) focus-within:border-(--color-border-strong)',
                     isMobile
-                      ? 'rounded-md'
+                      ? 'rounded-t-2xl rounded-b-none border-b-0 shadow-[0_-8px_28px_rgba(0,0,0,0.08)]'
                       : 'rounded-[10px]',
                   ),
             )}
@@ -1946,21 +1946,28 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 {/* Bottom action bar — action buttons left · config selectors right · send. */}
                 <div
                   className={cn(
-                    'composer-toolbar flex min-w-0 flex-nowrap items-center gap-1.5',
+                    'composer-toolbar flex min-w-0 items-center gap-1.5',
                     isMobile
-                      ? 'px-3 pb-3 pt-1'
-                      : 'min-h-9 px-2.5 pb-2 pt-0',
+                      ? 'flex-wrap px-3 pb-3 pt-1'
+                      : 'min-h-9 flex-nowrap px-2.5 pb-2 pt-0',
                   )}
                 >
-                  <div className="composer-toolbar-primary flex min-w-0 items-center gap-1.5">
+                  <div className={cn(
+                    'composer-toolbar-primary flex min-w-0 items-center gap-1.5',
+                    isMobile && 'w-full basis-full justify-between',
+                  )}>
                     {/* Left: content & navigation actions */}
                     {!shellMode && attachmentsEnabled && attachEl}
                     {/* Wiki moved to topbar */}
                     {workspaceSelector}
+                    {isMobile && <div className="ml-auto shrink-0">{sendOrStopEl}</div>}
                   </div>
 
                   {/* Right: session config selectors */}
-                  <div className="composer-toolbar-secondary ml-auto flex shrink-0 items-center gap-1.5">
+                  <div className={cn(
+                    'composer-toolbar-secondary ml-auto flex shrink-0 items-center gap-1.5',
+                    isMobile && 'w-full min-w-0 basis-full overflow-x-auto border-t border-(--color-border-subtle) pt-2 scrollbar-none',
+                  )}>
                     {onSessionModelSettingsChange && (
                       <SessionPillsRow
                         sessionModel={sessionModel}
@@ -1989,7 +1996,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                         {charCount}
                       </span>
                     )}
-                    {sendOrStopEl}
+                    {!isMobile && sendOrStopEl}
                   </div>
                 </div>
               </>

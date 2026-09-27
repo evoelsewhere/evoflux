@@ -59,6 +59,7 @@ export function SidebarItem({
       title={title ?? (kbd ? `${label} (${formatShortcutLabel(kbd)})` : label)}
       aria-label={collapsed ? label : undefined}
       aria-current={active ? 'page' : undefined}
+      data-sidebar-item
       className={cn(
         'interactive-weight relative flex w-full items-center transition-colors',
         compact ? 'gap-2 rounded-md text-xs' : 'gap-2.5 rounded-lg text-sm',

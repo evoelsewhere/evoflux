@@ -49,6 +49,7 @@ export function SettingsPageHeader({
         <button
           type="button"
           onClick={() => settingsNavigate('/settings')}
+          data-settings-page-back
           className="-ml-1 flex size-11 shrink-0 items-center justify-center rounded-lg text-(--color-text-muted) transition-[background-color,color,transform] duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)"
           aria-label="Back to settings"
         >

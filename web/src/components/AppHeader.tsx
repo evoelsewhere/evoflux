@@ -36,7 +36,7 @@ export interface AppHeaderProps {
 }
 
 const ICON_BUTTON =
-  'flex h-9 w-9 items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 md:h-7 md:w-7'
+  'flex h-10 w-10 items-center justify-center rounded-lg text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-(--focus-ring)/40 md:h-7 md:w-7 md:rounded-md'
 
 function DefaultStatus() {
   return (
@@ -72,7 +72,7 @@ export function AppHeader({
       {...dragHandlers}
       data-app-header
       className={cn(
-        'mobile-safe-header relative z-(--z-drawer) flex h-(--spacing-app-header) shrink-0 items-center rounded-md bg-(--bg-sidebar)/80 backdrop-blur-xl',
+        'mobile-safe-header relative z-(--z-drawer) flex h-(--spacing-app-header) shrink-0 items-center rounded-none bg-(--bg-sidebar)/80 backdrop-blur-xl md:rounded-md',
         isMacOverlay && 'pl-(--spacing-mac-window-controls-inset) select-none',
         className,
       )}
