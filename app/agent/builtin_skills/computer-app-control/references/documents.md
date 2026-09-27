@@ -6,9 +6,12 @@ commands.
 
 ## Place the caret
 
-- Put the caret at a known position before typing: the start or end of the
-  document with the app's navigation keys, or a click by ref on the body.
-  Work from a known position rather than wherever the caret happens to be.
+- Put the caret at a known position before typing: a click at the point in
+  the text where it should go (aim from a screenshot of the text, or just
+  before or after a word), or the start or end of the document with the
+  app's navigation keys. Work from a known position rather than wherever
+  the caret happens to be. In a native Windows document the click's result
+  says `caret placed` once the caret is there.
 - In web content, `type` always adds at the end of the field or editor
   (the tool presses Ctrl+End first). To insert elsewhere in a web editor,
   or to replace text, use `set_value` on the whole field, or the editor's
@@ -36,11 +39,22 @@ longer text, check with the app itself: its find command for a phrase that
 must be there, its word or line count, or screenshots of each part after
 scrolling to it.
 
-## Format
+## Select and format
 
-Select with Shift plus the navigation keys, then apply the command: `find`
-it by name (Bold, Heading 1, Bulleted list) and `invoke` it, or use the
-shortcut shown in its tooltip or menu. Read back the effect.
+Select the text first, then apply the command:
+
+- a word: double-click it;
+- a passage: `drag` from just before its first character to just after its
+  last, or click there and shift+click (`modifiers: ["shift"]`) the end;
+- by keys: Shift with the navigation keys (Shift+End to the end of the
+  line, Ctrl+Shift+End to the end of the document).
+
+A click just outside a word puts the caret at its edge; a click in the
+middle of a word puts it inside the word. Read the selection back before a
+command acts on it: a snapshot of the document, or the effect the command
+shows. Then apply the command: `find` it by name (Bold, Heading 1, Bulleted
+list) and `invoke` it, or use the shortcut shown in its tooltip or menu.
+Read back the effect.
 
 ## Save
 

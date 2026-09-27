@@ -49,12 +49,15 @@ yourself.
   for the next `type` (`focus_for_typing`), or places the caret there on
   macOS.
 - **A single left click by coordinates** is a posted mouse click in a native
-  window. In web content, and on macOS, the element at that point is tried
-  through accessibility first.
+  window, except on a button, tab, link, check box or menu item, which is
+  pressed through its own action. In a document or text field the caret is
+  then put at the point (`caret placed`), and a shift+click extends the
+  selection to it. In web content, and on macOS, the element at that point
+  is tried through accessibility first.
 - **Right, double and triple clicks** are posted mouse clicks on Windows,
-  which web content often ignores; on macOS a right click opens the
-  element's menu through accessibility. Prefer `invoke`, or the command's
-  keyboard shortcut.
+  which web content often ignores; a right click that opened no menu is
+  followed by the request for a context menu Windows itself sends. On macOS
+  a right click opens the element's menu through accessibility.
 - **Hover** only moves the virtual pointer over the point; web content may
   not react, so a hover menu may not open. Look for the same command in a
   menu or by name.
@@ -63,7 +66,9 @@ yourself.
   scrollable container of the ref.
 - **Drag** presses at the start, moves in steps and releases at the drop
   point, as posted mouse input. It moves things inside the window; a file
-  drop between apps follows the real cursor instead.
+  drop between apps follows the real cursor instead. On Windows a drag
+  across text selects the text, and one from inside a grid cell to another
+  selects the cells, whatever the app does with a background drag.
 
 ## Keys
 
@@ -102,11 +107,13 @@ back: a written value is not always what the app keeps.
   by ref there.
 - Elements outside the window (scrolled out of view) are skipped and get no
   ref. Scroll, then look again.
-- Values are shown for text fields, combo boxes, documents, sliders and
-  spinners, cut at 200 characters; names are cut at 120. Many grids expose
-  no cell values at all. A long text cannot be read back from
-  a snapshot in full: read it in the app (scroll, its own find or word
-  count) or from screenshots.
+- Values are shown for text fields, combo boxes, documents, sliders,
+  spinners and grid cells, cut at 200 characters; names are cut at 120.
+  Selected cells, list and tree items and tabs are marked `[selected]`. A
+  grid that exposes no cell values shows none: read it another way
+  ([grids.md](grids.md)). A long text cannot be read back from a snapshot
+  in full: read it in the app (scroll, its own find or word count) or from
+  screenshots.
 
 ## Refusals and safety nets
 

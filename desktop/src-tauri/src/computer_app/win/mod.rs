@@ -31,6 +31,7 @@
 //! | `uia_patterns` | UI Automation patterns and hit-testing                         |
 //! | `uia_input`    | Input through UI Automation: clicks, scrolls, `invoke`, `set_value` |
 //! | `web_fill`     | Typing into web page fields with real keyboard events          |
+//! | `text_surface` | Caret and selection in documents and edit controls (Text pattern) |
 //!
 //! Every module starts with `use super::*;` and this file re-exports each
 //! module's `pub(super)` items, so they share one namespace: the imports
@@ -67,8 +68,10 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::Accessibility::{
     AccessibleObjectFromWindow, CUIAutomation, SetWinEventHook, HWINEVENTHOOK, ExpandCollapseState_Collapsed,
     ExpandCollapseState_PartiallyExpanded, IAccessible, IUIAutomation, IUIAutomationElement,
-    TreeScope_Children, UIA_BoundingRectanglePropertyId, UIA_ControlTypePropertyId,
-    UIA_IsGridPatternAvailablePropertyId, UIA_IsTablePatternAvailablePropertyId,
+    IUIAutomationTextPattern, IUIAutomationTextRange, TextPatternRangeEndpoint_End,
+    TextPatternRangeEndpoint_Start, TreeScope_Children, UIA_BoundingRectanglePropertyId,
+    UIA_ControlTypePropertyId, UIA_IsGridPatternAvailablePropertyId,
+    UIA_IsTablePatternAvailablePropertyId, UIA_IsTextPatternAvailablePropertyId, UIA_TextPatternId,
     IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
     IUIAutomationLegacyIAccessiblePattern, IUIAutomationSelectionItemPattern,
     IUIAutomationRangeValuePattern, IUIAutomationScrollPattern, IUIAutomationTogglePattern,
@@ -79,6 +82,7 @@ use windows::Win32::UI::Accessibility::{
     UIA_LegacyIAccessiblePatternId, UIA_SelectionItemPatternId, UIA_TogglePatternId,
     UIA_ValuePatternId,
 };
+use windows::Win32::System::Variant::VARIANT;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardState, IsWindowEnabled, MapVirtualKeyW, SetKeyboardState, VkKeyScanW,
@@ -108,7 +112,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CWP_SKIPTRANSPARENT, GA_ROOT, GUITHREADINFO, GWL_EXSTYLE, GW_ENABLEDPOPUP, GW_OWNER,
     GWL_STYLE, WS_CAPTION, WS_CHILD, WS_POPUP, WS_THICKFRAME, CHILDID_SELF, EVENT_OBJECT_SHOW, OBJID_WINDOW,
     WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, MSG, GetMessageW, DispatchMessageW,
-    SMTO_ABORTIFHUNG, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CHAR, WM_KEYDOWN, WM_KEYUP,
+    SMTO_ABORTIFHUNG, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CHAR, WM_CONTEXTMENU, WM_KEYDOWN, WM_KEYUP,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN,
     WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NULL, WM_RBUTTONDBLCLK,
     WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WS_EX_TOOLWINDOW,
@@ -137,12 +141,17 @@ mod pointer;
 mod popups;
 mod registry;
 mod target;
+mod text_surface;
 mod typing;
 mod uia_input;
 mod uia_patterns;
 mod uia_tree;
 mod web_fill;
 
+#[cfg(test)]
+mod live_bench;
+#[cfg(test)]
+use live_bench::*;
 #[cfg(test)]
 mod live_tests;
 #[cfg(test)]
@@ -162,6 +171,7 @@ use pointer::*;
 use popups::*;
 use registry::*;
 use target::*;
+use text_surface::*;
 use typing::*;
 use uia_input::*;
 use uia_patterns::*;

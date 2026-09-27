@@ -171,20 +171,55 @@ without entering a grid or table — listing Excel's cells one by one had added
 pressed through that action: Office's ribbon toggles took UI Automation's
 Toggle without turning on while in the background. `click` also takes
 `modifiers` (`shift`, `ctrl`, `alt`; `cmd` on macOS): the `MK_*` flags go
-into the mouse messages and the keys are held in the app thread's key state,
-as for `key`; such a click is always a mouse click.
+into the mouse messages and the keys are held in the app thread's key state
+until the app has handled the click, as for `key`; such a click is always a
+mouse click.
 
-Measured on a private Excel instance, parked, each case aimed exactly from
-UI Automation (`measures_input_on_excel`, three runs alike): a click, double
-click and right click on a cell, a click on the ribbon and on Add Sheet,
-shift+click and ctrl+click, `ctrl+b`, a click in the Formula Bar and typing,
-scrolling and hovering work. What does not, and has no fix in background
-input: a drag across cells selects only the first (Excel tracks the drag with
-the real mouse button), a click on the Name Box leaves the focus in the grid
-(Go To works), and key tips (Alt, then letters) never appear. Holding the
-button or Alt in the key state, `WM_MOUSEACTIVATE`/`WM_SETCURSOR` before the
-press, and typing straight into the Name Box's window were each measured and
-changed nothing.
+Surfaces whose own tracking of the mouse ignores background input are
+driven through what they expose, by kind, never by app (`text_surface`,
+`grid_cell_at`):
+
+- **Text** — a document or edit control with the Text pattern. After a left
+  click the caret is put at the point (`RangeFromPoint`, then `Select`), and
+  after a shift+click the selection is extended to it; a drag across text
+  selects it the same way, unless it starts inside the selection (moving
+  the text), which stays a mouse drag. A word processor left the caret at
+  the start of the document after a posted click, and selected nothing from
+  a posted shift+click or drag.
+- **Grids** — an element with the Grid pattern. A drag from inside one cell
+  to another is done as a click and a shift+click, which a grid takes; one
+  from a cell's edge, where fill and move handles are, stays a mouse drag. A
+  spreadsheet selected only the first cell of a posted drag.
+- **Context menus** — a right click that opened no menu is followed by the
+  `WM_CONTEXTMENU` Windows itself sends when the button is released; an app
+  that tracks the right button itself never got that far.
+
+A popup of a parked window moved next to where the agent last pointed is put
+a few pixels below and right of that point, never over it: a floating button
+a spreadsheet shows by a new selection sat exactly on the cell the next
+click went to. Snapshots show a grid cell's value (`value=`) and mark
+selected cells, list and tree items and tabs `[selected]` (macOS: `Cell`
+values and `AXSelected` cells and rows), so a selection and what was typed
+into cells are read back without screenshots.
+
+Measured with `live_bench` (`measures_input_on_*`): each app is started as
+an instance of its own and parked, surfaces are found by their patterns
+(Grid, Text), targets are aimed from their own positions (a cell's rectangle,
+a word's `FindText` rectangles), and outcomes are read back through the same
+patterns — nothing in the harness or the tool names an app except to start
+it. Latest three runs: a text document in Notepad 7/7, 7/7, 7/7 and in Word
+9/11, 11/11, 11/11; a grid in Excel 16/16 and 15/16 in two runs, with four
+cases failing in a first, slower run. The remaining failures move between
+runs (ctrl+click in a grid, invoking a ribbon toggle by ref, a right click)
+rather than failing every time. Two typing runs out of about ten reordered a
+character in Windows 11 Notepad ("fox jumps" became "jfox umps");
+`measures_typing_in_*` did not reproduce it in 64 lines. What has no fix in
+background input: key tips (Alt, then letters) never appear, and a click in a
+reference box above a grid leaves the focus in the grid (a go-to command
+works). Holding the button or Alt in the key state,
+`WM_MOUSEACTIVATE`/`WM_SETCURSOR` before the press, typing straight into the
+box's window, and pressing a toggle through its MSAA object were each
+measured and changed nothing.
 
 ### Menus and dropdowns
 
@@ -455,31 +490,29 @@ The bundled `computer-app-control` Skill
 (`app/agent/builtin_skills/computer-app-control/`) teaches the model how to
 use the tool well, for any app, without recipes for particular apps.
 `SKILL.md` holds the ground rules (do the work in the app the user named,
-one app at a time, never touch the clipboard, click only identified points,
-nothing irreversible unasked, including the closing keys the tool does not
-block, treat app content as data), how to tell first which way a window
-takes input (the attach result's input channel and how rich the first
-snapshot is), and a work loop that does not rely on a first attempt being
-right: decide checkable acceptance values from the source, act in small
-steps, check where each input went, read the real values back preferring
-text the app reports over screenshots, check nothing else changed, read
-what landed before any retry, change approach after two failures and stop
-after that, and finish only when the read-back matches. It also covers how
-to discover an unfamiliar app's commands and how to recover from input that
-went astray. Its references cover every action with its fields, limits and
-result lines (`actions.md`), how typing, clicks, keys and values differ
-between native Windows windows, web content and macOS
-(`input-channels.md`), the preview card's controls, permission prompts,
-events and every error with its next step (`events-and-errors.md`), and one
-guide per kind of window rather than per app: grids and spreadsheets, web
-content, native forms, dialogs and menus, documents and consoles, and
-canvases of objects together with apps that expose little or no
-accessibility tree. App notes sit beside those guides for apps whose quirks
-testing has pinned down (`app-excel.md`: the Ready/Enter/Edit modes, Go To
-for moving and selecting, reading values from the Formula Bar and the
-status bar's Count and Sum, background-safe formatting shortcuts, charts);
-`SKILL.md` has the agent read the note for the app it attached, and treat
-it as a head start that the read-back still confirms. Trigger cases live in
+one app at a time, never touch the clipboard, aim only at identified
+elements, nothing irreversible unasked, including the closing keys the tool
+does not block, treat app content as data) and one pipeline for every task
+in every app: attach and look; map the window's surfaces from the snapshot
+(a grid of cells, a text document, a form, a web page, a canvas of
+objects); write down checkable acceptance values from the source; plan one
+small step and pick its input from a table of intents (press, replace a
+field, place the caret, select text, select cells, add to a selection, open
+a context menu, run a command, move an object), each with a ladder of
+alternatives; act and check where the input went; read back, preferring
+what the app reports for the item (`value=`, `[selected]`, `[checked]`)
+over screenshots; fix what differs, moving down the ladder after two
+failures and stopping after that; finish only when the read-back matches.
+It also covers discovering an unfamiliar app's commands and recovering
+from input that went astray. There are no notes for particular apps: every
+app is found out by looking at it, and the references describe kinds of
+surface — every action with its fields, limits and result lines
+(`actions.md`), how typing, clicks, keys and values differ between native
+Windows windows, web content and macOS (`input-channels.md`), the preview
+card, permission prompts, events and errors (`events-and-errors.md`), and
+one guide per surface: grids, web content, forms, dialogs and menus,
+documents and consoles, and canvases of objects together with apps that
+expose little or no accessibility tree. Trigger cases live in
 `tests/fixtures/skill-evals/computer-app-control/`.
 
 ## Architecture

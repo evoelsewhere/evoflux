@@ -30,14 +30,30 @@ pub(super) fn bstr(value: windows::core::Result<BSTR>) -> String {
     value.map(|text| text.to_string()).unwrap_or_default()
 }
 
+/// The value a control shows. A grid cell (`DataItem`) has its content here:
+/// read back from the tree, the agent need not select each cell and read
+/// whichever field shows the selected one.
 fn element_value(element: &IUIAutomationElement, role: &str) -> Option<String> {
-    if !matches!(role, "Edit" | "ComboBox" | "Document" | "Spinner" | "Slider") {
+    if !matches!(role, "Edit" | "ComboBox" | "Document" | "Spinner" | "Slider" | "DataItem") {
         return None;
     }
     let pattern = unsafe { element.GetCurrentPattern(UIA_ValuePatternId) }.ok()?;
     let value: IUIAutomationValuePattern = pattern.cast().ok()?;
     let text = bstr(unsafe { value.CurrentValue() });
     (!text.is_empty()).then_some(text)
+}
+
+/// Whether an item that can be selected — a cell, a list, tree or tab
+/// item — is: the selection read from the tree, not from a screenshot.
+fn is_selected_item(element: &IUIAutomationElement, role: &str) -> bool {
+    if !matches!(role, "DataItem" | "ListItem" | "TreeItem" | "TabItem") {
+        return false;
+    }
+    unsafe { element.GetCurrentPattern(UIA_SelectionItemPatternId) }
+        .ok()
+        .and_then(|pattern| pattern.cast::<IUIAutomationSelectionItemPattern>().ok())
+        .and_then(|item| unsafe { item.CurrentIsSelected() }.ok())
+        .is_some_and(|selected| selected.as_bool())
 }
 
 fn toggle_state(element: &IUIAutomationElement, role: &str) -> Option<bool> {
@@ -119,6 +135,9 @@ impl Walk<'_> {
             }
             if let Some(on) = toggle_state(element, role) {
                 line.push_str(if on { " [checked]" } else { " [unchecked]" });
+            }
+            if is_selected_item(element, role) {
+                line.push_str(" [selected]");
             }
             if !unsafe { element.CurrentIsEnabled() }.map(|on| on.as_bool()).unwrap_or(true) {
                 line.push_str(" [disabled]");

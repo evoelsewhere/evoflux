@@ -242,6 +242,50 @@ fn msaa_hit(hwnd: HWND, point: POINT) -> Option<Option<IUIAutomationElement>> {
     Some(pressable.then(|| unsafe { automation().ok()?.ElementFromIAccessible(&accessible, child) }.ok()).flatten())
 }
 
+/// The cell under `point` of a grid (an element with the Grid pattern) in a
+/// native window, with whether the point is in the cell's body rather than
+/// on its edge, where a grid's handles are (moving or filling the
+/// selection). Found like [`pressable_at`]'s walk, one level per call; only
+/// the grid holding the point is listed.
+pub(super) fn grid_cell_at(target: &Target, point: POINT) -> Option<(IUIAutomationElement, bool)> {
+    const EDGE: i32 = 4;
+    let automation = automation().ok()?;
+    let request = unsafe { automation.CreateCacheRequest() }.ok()?;
+    unsafe {
+        for property in [UIA_BoundingRectanglePropertyId, UIA_IsGridPatternAvailablePropertyId] {
+            request.AddProperty(property).ok()?;
+        }
+    }
+    let controls = unsafe { automation.ControlViewCondition() }.ok()?;
+    let mut current = unsafe { automation.ElementFromHandle(pointer_window(target, point)) }.ok()?;
+    let mut in_grid = false;
+    for _ in 0..32 {
+        let children = unsafe { current.FindAllBuildCache(TreeScope_Children, &controls, &request) }.ok()?;
+        let count = unsafe { children.Length() }.unwrap_or(0);
+        let hit = (0..count).rev().find_map(|index| {
+            let child = unsafe { children.GetElement(index) }.ok()?;
+            let rect = unsafe { child.CachedBoundingRectangle() }.ok()?;
+            contains(&rect, point).then_some((child, rect))
+        });
+        let Some((child, rect)) = hit else { break };
+        if in_grid {
+            // A child of the grid that can be selected: its cell.
+            pattern::<IUIAutomationSelectionItemPattern>(&child, UIA_SelectionItemPatternId)?;
+            let body = point.x >= rect.left + EDGE
+                && point.x < rect.right - EDGE
+                && point.y >= rect.top + EDGE
+                && point.y < rect.bottom - EDGE;
+            return Some((child, body));
+        }
+        in_grid = unsafe { child.GetCachedPropertyValue(UIA_IsGridPatternAvailablePropertyId) }
+            .ok()
+            .and_then(|value| bool::try_from(&value).ok())
+            .unwrap_or(false);
+        current = child;
+    }
+    None
+}
+
 /// The innermost UI Automation control under `point` in `hwnd`, when it is
 /// pressable. Grids and tables are content and are not entered.
 fn automation_hit(hwnd: HWND, point: POINT) -> Option<IUIAutomationElement> {

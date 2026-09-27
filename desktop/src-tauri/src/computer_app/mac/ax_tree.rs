@@ -31,7 +31,7 @@ fn shows_value(role: &str) -> bool {
         || matches!(
             role,
             "AXStaticText" | "AXCheckBox" | "AXRadioButton" | "AXSwitch" | "AXSlider" | "AXIncrementor"
-                | "AXPopUpButton" | "AXValueIndicator"
+                | "AXPopUpButton" | "AXValueIndicator" | "AXCell"
         )
 }
 
@@ -185,12 +185,16 @@ impl Walk<'_> {
                         line.push_str(if on { " [checked]" } else { " [unchecked]" });
                     }
                 }
-                role if is_text_role(role) || matches!(role, "AXSlider" | "AXIncrementor" | "AXPopUpButton" | "AXValueIndicator") => {
+                role if is_text_role(role) || matches!(role, "AXSlider" | "AXIncrementor" | "AXPopUpButton" | "AXValueIndicator" | "AXCell") => {
                     if let Some(text) = value.and_then(cf_text).filter(|text| !text.is_empty()) {
                         line.push_str(&format!(" value=\"{}\"", truncate(&text, 200)));
                     }
                 }
                 _ => {}
+            }
+            // The selection, read from the tree rather than a screenshot.
+            if matches!(info.role.as_str(), "AXCell" | "AXRow") && element.flag("AXSelected") == Some(true) {
+                line.push_str(" [selected]");
             }
             if !info.enabled {
                 line.push_str(" [disabled]");

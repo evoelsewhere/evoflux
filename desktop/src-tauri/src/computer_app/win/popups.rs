@@ -132,8 +132,12 @@ pub(super) fn bring_popups_along(session_id: &str, top: HWND, window_frame: RECT
         }
         let width = frame.right - frame.left;
         let height = frame.bottom - frame.top;
-        let x = anchor.x.min(window_frame.right - width).max(window_frame.left);
-        let y = anchor.y.min(window_frame.bottom - height).max(window_frame.top);
+        // Just below and right of the point, never over it: a floating
+        // button a spreadsheet shows by a new selection was put exactly on
+        // the cell the next click went to, and took the click.
+        const CLEAR: i32 = 4;
+        let x = (anchor.x + CLEAR).min(window_frame.right - width).max(window_frame.left);
+        let y = (anchor.y + CLEAR).min(window_frame.bottom - height).max(window_frame.top);
         unsafe {
             let _ = SetWindowPos(
                 *popup,

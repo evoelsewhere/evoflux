@@ -183,6 +183,18 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
         // GetKeyState as often as through the message flags.
         with_held_keys(unsafe { GetWindowThreadProcessId(hwnd, None) }, &held, press_and_release)?;
     }
+    // In a document or edit control, the caret (for a shift+click, the
+    // selection) goes where the click landed, whether or not the app took
+    // it from the click (see `text_surface`).
+    let shift_only = flags == MK_SHIFT && !held.contains(&VK_MENU);
+    let text_set = if target.web || button != "left" || clicks != 1 || !(held.is_empty() || shift_only) {
+        false
+    } else {
+        text_at(target, point).is_some_and(|text| {
+            settle(hwnd);
+            if shift_only { select_to(&text, point) } else { place_caret(&text, point) }
+        })
+    };
     target.emit_pointer(emit, point, "click");
     remember_input_window(&target.session_id, hwnd);
     // A posted click put focus somewhere UI Automation did not report.
@@ -191,13 +203,30 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
     if params.get("modifiers").is_some() && !held.is_empty() {
         extra["modifiers"] = params["modifiers"].clone();
     }
+    if text_set {
+        extra["text"] = json!(if shift_only { "selection extended" } else { "caret placed" });
+    }
     if target.web {
         extra["note"] = json!(WEB_INPUT_NOTE);
     }
     // A click that opened a menu or dropdown: say so, and for a parked app
     // take it off the user's screen straight away.
+    if button == "right" {
+        // Once the app has handled the click, a menu it opens is up: a
+        // menu's own loop answers too.
+        settle(hwnd);
+    }
     pause(150);
-    let popups = open_popups(target.window, target.top, target.pid);
+    let mut popups = open_popups(target.window, target.top, target.pid);
+    if button == "right" && !target.web && popups.iter().all(|popup| target.popups.contains(popup)) {
+        // Windows asks for the context menu itself (WM_CONTEXTMENU) when a
+        // right button is released; an app that tracks the button itself
+        // never got that far from a background click. Ask as Windows does.
+        post(hwnd, WM_CONTEXTMENU, hwnd.0 as usize, screen_lparam(hwnd, point))?;
+        settle(hwnd);
+        pause(150);
+        popups = open_popups(target.window, target.top, target.pid);
+    }
     if popups.iter().any(|popup| !target.popups.contains(popup)) {
         if target.hidden {
             bring_popups_along(&target.session_id, target.top, frame_rect(target.window), &popups);
@@ -298,6 +327,45 @@ pub(super) fn drag(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Res
     };
     target.travel(emit, from)?;
     target.emit_pointer(emit, from, "press");
+
+    // Across text in a document or edit control, a drag selects it: done
+    // through the Text pattern, which an app that tracks the drag with the
+    // real mouse does not ignore. A drag from inside the selection moves
+    // the selected text instead, and stays a mouse drag.
+    // Across the cells of a grid, from inside a cell, a drag selects the
+    // range: done as a click on the first cell and a shift+click on the
+    // last, which a grid that tracks the drag with the real mouse takes
+    // (a spreadsheet selected only the first cell of a posted drag). A drag
+    // from a cell's edge, where the handles that move or fill the selection
+    // are, stays a mouse drag.
+    if !target.web && grid_cell_at(target, from).is_some_and(|(_, body)| body) && grid_cell_at(target, to).is_some() {
+        let (from_x, from_y) = target.screenshot_point(from);
+        let (to_x, to_y) = target.screenshot_point(to);
+        click(emit, target, &json!({ "x": from_x, "y": from_y }))?;
+        click(emit, target, &json!({ "x": to_x, "y": to_y, "modifiers": ["shift"] }))?;
+        return Ok(pointer_result(
+            target,
+            pointer_window(target, from),
+            from,
+            json!({ "to": { "x": to_x, "y": to_y }, "delivered_via": "click, shift+click", "text": "cells selected" }),
+        ));
+    }
+
+    if !target.web {
+        if let Some(text) = text_at(target, from).filter(|text| !in_selection(text, from)) {
+            if select_between(&text, from, to) {
+                target.emit_pointer(emit, to, "drag");
+                target.emit_pointer(emit, to, "click");
+                let (x, y) = target.screenshot_point(to);
+                return Ok(pointer_result(
+                    target,
+                    pointer_window(target, from),
+                    from,
+                    json!({ "to": { "x": x, "y": y }, "delivered_via": "text_pattern", "text": "selected" }),
+                ));
+            }
+        }
+    }
 
     // A hidden or fully covered page paints no frames, and Chromium drops
     // every pointer move of a drag then (see Peek). Only a Chromium

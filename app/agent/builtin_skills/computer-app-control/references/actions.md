@@ -71,10 +71,10 @@ without a target scrolls at the window's centre.
 
 | Action | Extra fields | Notes |
 |---|---|---|
-| `click` | `button`: `left` (default), `right`, `middle`; `clicks`: 1–3; `modifiers`: keys held, `shift`, `ctrl`, `alt`, `cmd` (macOS) | A single left click by ref is done through accessibility where the element has an action, so it may not move focus; so is one at a point that lands on a button, tab, link, check box or menu item of a Windows app (the result says `via UI Automation`). Shift+click extends a selection and ctrl+click (cmd+click on macOS) adds to one; such a click is always a mouse click. The result says where it landed, which control received it, and notes a menu or drop-down it opened. |
+| `click` | `button`: `left` (default), `right`, `middle`; `clicks`: 1–3; `modifiers`: keys held, `shift`, `ctrl`, `alt`, `cmd` (macOS) | A single left click by ref is done through accessibility where the element has an action, so it may not move focus; so is one at a point that lands on a button, tab, link, check box or menu item of a Windows app (the result says `via UI Automation`). A click in a document or text field puts the caret at the point (`caret placed`), and a shift+click there extends the selection to it (`selection extended`). Shift+click extends a selection and ctrl+click (cmd+click on macOS) adds to one; such a click is always a mouse click. A right click opens the context menu. The result says where it landed, which control received it, and notes a menu or drop-down it opened. |
 | `hover` | none | Moves the virtual pointer there, for tooltips and hover menus in native apps. |
 | `scroll` | `direction`: `up`, `down` (default), `left`, `right`; `amount`: 1–50 notches (default 3) | Scrolls the scrollable area under the point. |
-| `drag` | `to_x`, `to_y`: drop point in screenshot pixels | Presses at the target, moves in steps and releases at the drop point. |
+| `drag` | `to_x`, `to_y`: drop point in screenshot pixels | Presses at the target, moves in steps and releases at the drop point. On Windows, a drag across text selects it (`selected`), and one from inside a grid cell to another selects the range (`cells selected`); a drag that starts inside the selected text, or on a cell's edge, stays a mouse drag that moves or fills. |
 
 ## Keyboard and values
 
