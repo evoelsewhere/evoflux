@@ -126,6 +126,13 @@ class ClickAction(PointAction):
     action: Literal["click"]
     button: Literal["left", "right", "middle"] = "left"
     clicks: int = Field(default=1, ge=1, le=3, description="2 for a double click.")
+    modifiers: list[Literal["shift", "ctrl", "alt", "cmd"]] | None = Field(
+        default=None,
+        description=(
+            "Keys held during the click: shift+click extends a selection, "
+            "ctrl+click (cmd on macOS) adds to one. cmd is macOS only."
+        ),
+    )
 
 
 class HoverAction(PointAction):
@@ -332,6 +339,9 @@ def _describe_action(action: dict[str, Any]) -> str | None:
         button = action.get("button") or "left"
         if button != "left":
             kind = f"{button} {kind}"
+        modifiers = action.get("modifiers")
+        if isinstance(modifiers, list) and modifiers:
+            kind = "+".join([*map(str, modifiers), kind])
         return f"{kind} {_point(action)}"
     if name == "hover":
         return f"hover {_point(action)}"
@@ -541,6 +551,9 @@ def _action_summary(name: str, result: Any) -> str:
         )
         button = result.get("button", "left")
         prefix = kind if button == "left" else f"{kind} ({button})"
+        modifiers = result.get("modifiers")
+        if isinstance(modifiers, list) and modifiers:
+            prefix = f"{prefix} with {'+'.join(map(str, modifiers))}"
         return f"{prefix}{where}{into}{window}"
     if name == "type":
         return f"Typed {result.get('typed_chars')} characters{into}{window}"

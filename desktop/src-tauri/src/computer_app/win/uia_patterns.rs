@@ -44,6 +44,12 @@ pub(super) fn ui_action_for(element: &IUIAutomationElement, web: bool) -> Option
         return Some(UiAction::Invoke(p));
     }
     if let Some(p) = pattern(element, UIA_TogglePatternId) {
+        // Office's ribbon toggles (Bold) took Toggle without turning on
+        // while their window was in the background, and their default
+        // action every time.
+        if let Some(legacy) = page_default().filter(|_| !web) {
+            return Some(UiAction::Default(legacy));
+        }
         return Some(UiAction::Toggle(p));
     }
     if let Some(p) = pattern(element, UIA_SelectionItemPatternId) {
@@ -165,6 +171,118 @@ pub(super) fn is_editable(element: &IUIAutomationElement) -> bool {
     pattern::<IUIAutomationValuePattern>(element, UIA_ValuePatternId)
         .map(|value| !unsafe { value.CurrentIsReadOnly() }.map(|ro| ro.as_bool()).unwrap_or(true))
         .unwrap_or(false)
+}
+
+/// The control under `point` in a native window, when it is one a person
+/// presses — a button, tab, link, check box, radio button or menu item —
+/// rather than content (a cell, a text body, a canvas), where the exact
+/// point and the mouse matter.
+///
+/// The app is asked first through MSAA's hit test, which answers from its
+/// own layout (so also while parked off-screen) in a call or two; it knows
+/// Office's ribbon, for one. Where it knows nothing finer than the window —
+/// Excel's workbook area answers only through UI Automation — the UI
+/// Automation tree is walked to the point instead, reading each level in
+/// one call and never entering a grid or table: listing every cell of
+/// Excel's grid added 350–400 ms to each click on one.
+pub(super) fn pressable_at(target: &Target, point: POINT) -> Option<IUIAutomationElement> {
+    let hwnd = pointer_window(target, point);
+    match msaa_hit(hwnd, point) {
+        Some(Some(element)) => Some(element),
+        Some(None) => None,
+        None => automation_hit(hwnd, point),
+    }
+}
+
+/// MSAA's answer at `point`: a pressable control, something else
+/// (`Some(None)`), or nothing finer than the window itself (`None`).
+fn msaa_hit(hwnd: HWND, point: POINT) -> Option<Option<IUIAutomationElement>> {
+    use windows::Win32::System::Com::IDispatch;
+    use windows::Win32::System::Variant::VARIANT;
+    use windows::Win32::UI::HiDpi::PhysicalToLogicalPointForPerMonitorDPI;
+    let mut object: *mut core::ffi::c_void = std::ptr::null_mut();
+    unsafe { AccessibleObjectFromWindow(hwnd, 0xFFFF_FFFC, &IAccessible::IID, &mut object) }.ok()?; // OBJID_CLIENT
+    if object.is_null() {
+        return None;
+    }
+    let mut accessible = unsafe { IAccessible::from_raw(object) };
+    // MSAA takes the coordinates the app sees (logical for a DPI-unaware one).
+    let mut at = point;
+    unsafe {
+        let _ = PhysicalToLogicalPointForPerMonitorDPI(Some(hwnd), &mut at);
+    }
+    let mut child = 0; // CHILDID_SELF
+    let mut deeper = false;
+    for _ in 0..16 {
+        let Ok(hit) = (unsafe { accessible.accHitTest(at.x, at.y) }) else {
+            break;
+        };
+        if let Ok(inner) = IDispatch::try_from(&hit).and_then(|dispatch| dispatch.cast::<IAccessible>()) {
+            if inner.as_raw() == accessible.as_raw() {
+                break;
+            }
+            // A child object of its own: ask it in turn.
+            accessible = inner;
+            child = 0;
+            deeper = true;
+            continue;
+        }
+        // A simple child, or the object itself (0); empty when nothing is there.
+        child = i32::try_from(&hit).unwrap_or(0);
+        deeper |= child != 0;
+        break;
+    }
+    if !deeper {
+        return None;
+    }
+    let role = unsafe { accessible.get_accRole(&VARIANT::from(child)) }.ok()?;
+    // ROLE_SYSTEM_ MENUITEM, LINK, PAGETAB, PUSHBUTTON, CHECKBUTTON,
+    // RADIOBUTTON, BUTTONDROPDOWN, BUTTONMENU, SPLITBUTTON.
+    let pressable = matches!(i32::try_from(&role).unwrap_or(0), 0x0C | 0x1E | 0x25 | 0x2B | 0x2C | 0x2D | 0x38 | 0x39 | 0x3E);
+    Some(pressable.then(|| unsafe { automation().ok()?.ElementFromIAccessible(&accessible, child) }.ok()).flatten())
+}
+
+/// The innermost UI Automation control under `point` in `hwnd`, when it is
+/// pressable. Grids and tables are content and are not entered.
+fn automation_hit(hwnd: HWND, point: POINT) -> Option<IUIAutomationElement> {
+    let automation = automation().ok()?;
+    let request = unsafe { automation.CreateCacheRequest() }.ok()?;
+    unsafe {
+        for property in [
+            UIA_BoundingRectanglePropertyId,
+            UIA_ControlTypePropertyId,
+            UIA_IsGridPatternAvailablePropertyId,
+            UIA_IsTablePatternAvailablePropertyId,
+        ] {
+            request.AddProperty(property).ok()?;
+        }
+    }
+    let controls = unsafe { automation.ControlViewCondition() }.ok()?;
+    let mut current = unsafe { automation.ElementFromHandle(hwnd) }.ok()?;
+    for _ in 0..32 {
+        let children = unsafe { current.FindAllBuildCache(TreeScope_Children, &controls, &request) }.ok()?;
+        let count = unsafe { children.Length() }.unwrap_or(0);
+        // Later siblings are drawn over earlier ones.
+        let hit = (0..count).rev().find_map(|index| {
+            let child = unsafe { children.GetElement(index) }.ok()?;
+            let rect = unsafe { child.CachedBoundingRectangle() }.ok()?;
+            contains(&rect, point).then_some(child)
+        });
+        let Some(child) = hit else { break };
+        let is = |property| {
+            unsafe { child.GetCachedPropertyValue(property) }
+                .ok()
+                .and_then(|value| bool::try_from(&value).ok())
+                .unwrap_or(false)
+        };
+        if is(UIA_IsGridPatternAvailablePropertyId) || is(UIA_IsTablePatternAvailablePropertyId) {
+            return None;
+        }
+        current = child;
+    }
+    let kind = unsafe { current.CachedControlType() }.map(|kind| kind.0).unwrap_or(0);
+    // Button, CheckBox, Hyperlink, MenuItem, RadioButton, TabItem, SplitButton.
+    matches!(kind, 50000 | 50002 | 50005 | 50011 | 50013 | 50019 | 50031).then_some(current)
 }
 
 pub(super) fn contains(rect: &RECT, point: POINT) -> bool {

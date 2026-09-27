@@ -44,6 +44,10 @@ How much one `type` can do depends on the input channel
 - Select with the keyboard: arrow keys with Shift extend the selection from
   the active cell, with a repeat count for long ranges. On macOS these are
   posted keys that a background app may ignore; check the selection.
+- Select with the mouse by clicking the first cell, then clicking the last
+  with `modifiers: ["shift"]`; add a separate cell with `["ctrl"]` (`cmd`
+  on macOS). Dragging across cells may select only the first one in the
+  background: a grid tracks a drag with the real mouse button.
 - To select by address, look for the grid's go-to command or its reference
   box. `type` with the box's ref may open its drop-down instead of placing
   the caret, and a click may not move the focus in the background: prefer

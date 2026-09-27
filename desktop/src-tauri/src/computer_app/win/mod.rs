@@ -67,6 +67,8 @@ use windows::Win32::System::Threading::{
 use windows::Win32::UI::Accessibility::{
     AccessibleObjectFromWindow, CUIAutomation, SetWinEventHook, HWINEVENTHOOK, ExpandCollapseState_Collapsed,
     ExpandCollapseState_PartiallyExpanded, IAccessible, IUIAutomation, IUIAutomationElement,
+    TreeScope_Children, UIA_BoundingRectanglePropertyId, UIA_ControlTypePropertyId,
+    UIA_IsGridPatternAvailablePropertyId, UIA_IsTablePatternAvailablePropertyId,
     IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
     IUIAutomationLegacyIAccessiblePattern, IUIAutomationSelectionItemPattern,
     IUIAutomationRangeValuePattern, IUIAutomationScrollPattern, IUIAutomationTogglePattern,

@@ -858,6 +858,351 @@ fn excel_windows() -> Vec<(u64, u32)> {
         .collect()
 }
 
+/// Starts an Excel instance of its own (`/x`, no workbook) and returns its
+/// window id and pid, or `None` when Excel is missing or did not open.
+fn start_private_excel() -> Option<(u64, u32)> {
+    let before: Vec<u32> = excel_windows().into_iter().map(|(_, pid)| pid).collect();
+    let started = std::process::Command::new("cmd")
+        .args(["/C", "start", "", "/min", "excel.exe", "/x", "/e"])
+        .status()
+        .is_ok_and(|status| status.success());
+    if !started {
+        return None;
+    }
+    for _ in 0..100 {
+        pause(300);
+        if let Some(launched) = excel_windows().into_iter().find(|(_, pid)| !before.contains(pid)) {
+            // Excel paints its window a moment after showing it.
+            pause(2500);
+            return Some(launched);
+        }
+    }
+    None
+}
+
+/// The first control `find` lists as exactly `role "name"`: its ref and its
+/// centre in screenshot pixels.
+fn control(emit: &dyn Fn(Value), session: &str, role: &str, name: &str) -> Option<(String, f64, f64)> {
+    let found = run_action(emit, session, "find", &json!({ "query": name })).ok()?;
+    let wanted = format!("{role} \"{name}\"");
+    let line = found.as_str()?.lines().find(|line| line.trim_start().trim_start_matches("- ").starts_with(&wanted))?;
+    let reference = line.split("[ref=").nth(1)?.split(']').next()?.to_string();
+    let geometry = line.split(" @").nth(1)?;
+    let (at, size) = geometry.split_once(' ')?;
+    let (x, y) = at.split_once(',')?;
+    let (width, height) = size.split_once('x')?;
+    let centre = |start: &str, length: &str| Some(start.parse::<f64>().ok()? + length.parse::<f64>().ok()? / 2.0);
+    Some((reference, centre(x, width)?, centre(y, height)?))
+}
+
+fn element(session: &str, reference: &str) -> Option<IUIAutomationElement> {
+    element_for(&Target::resolve(session).ok()?, reference).ok()
+}
+
+/// A control's text: its Value pattern, else its legacy value, else the
+/// text of its window (`WM_GETTEXT`).
+fn text_of(element: &IUIAutomationElement) -> String {
+    if let Some(value) = pattern::<IUIAutomationValuePattern>(element, UIA_ValuePatternId) {
+        let text = bstr(unsafe { value.CurrentValue() });
+        if !text.is_empty() {
+            return text;
+        }
+    }
+    if let Some(legacy) = pattern::<IUIAutomationLegacyIAccessiblePattern>(element, UIA_LegacyIAccessiblePatternId) {
+        let text = bstr(unsafe { legacy.CurrentValue() });
+        if !text.is_empty() {
+            return text;
+        }
+    }
+    let hwnd = unsafe { element.CurrentNativeWindowHandle() }.unwrap_or_default();
+    if hwnd.0.is_null() {
+        return String::new();
+    }
+    let mut buffer = [0u16; 256];
+    let mut copied = 0usize;
+    unsafe {
+        let _ = SendMessageTimeoutW(
+            hwnd,
+            windows::Win32::UI::WindowsAndMessaging::WM_GETTEXT,
+            WPARAM(buffer.len()),
+            LPARAM(buffer.as_mut_ptr() as isize),
+            SMTO_ABORTIFHUNG,
+            500,
+            Some(&mut copied),
+        );
+    }
+    String::from_utf16_lossy(&buffer[..copied.min(buffer.len())])
+}
+
+fn is_selected(element: &IUIAutomationElement) -> bool {
+    pattern::<IUIAutomationSelectionItemPattern>(element, UIA_SelectionItemPatternId)
+        .and_then(|item| unsafe { item.CurrentIsSelected() }.ok())
+        .is_some_and(|selected| selected.as_bool())
+}
+
+/// Whether Excel has `address` selected (the Name Box has no readable text
+/// while the grid has the focus).
+fn cell_selected(emit: &dyn Fn(Value), session: &str, address: &str) -> bool {
+    control(emit, session, "DataItem", address)
+        .and_then(|(reference, _, _)| element(session, &reference))
+        .is_some_and(|cell| is_selected(&cell))
+}
+
+fn cell_text(emit: &dyn Fn(Value), session: &str, address: &str) -> String {
+    control(emit, session, "DataItem", address)
+        .and_then(|(reference, _, _)| element(session, &reference))
+        .map(|cell| text_of(&cell))
+        .unwrap_or_default()
+}
+
+/// How well each kind of input works on Excel's own surfaces, aimed
+/// exactly (from UI Automation) so that only the input is measured, not the
+/// aim. Prints a pass/fail table; fails nothing, since it is a measurement.
+#[test]
+#[ignore = "opens an Excel window on the local desktop"]
+fn measures_input_on_excel() {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
+    let Some((window_id, pid)) = start_private_excel() else { return };
+    let session = "live-test-excel-input";
+    let emit = |_: Value| {};
+    let mut rows: Vec<(String, bool, String)> = Vec::new();
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let hide = std::env::var("EXCEL_VISIBLE").is_err();
+        run_action(&emit, session, "attach", &json!({ "window_id": window_id, "hide": hide })).unwrap();
+        run_action(&emit, session, "key", &json!({ "key": "ctrl+n" })).unwrap();
+        pause(3000);
+        run_action(&emit, session, "type", &json!({ "text": "a\tb\tc\n1\t2\t3\n4\t5\t6\n" })).unwrap();
+        let act = |action: &str, params: Value| run_action(&emit, session, action, &params);
+        // Every case starts from the same state: nothing being edited, A1
+        // selected alone, not bold.
+        let reset = || {
+            let _ = act("key", json!({ "key": "escape" }));
+            let _ = act("key", json!({ "key": "ctrl+home" }));
+            pause(300);
+            let bold = run_action(&emit, session, "find", &json!({ "query": "Bold" })).unwrap_or_default();
+            if bold.as_str().unwrap_or("").contains("[checked]") {
+                let _ = act("key", json!({ "key": "ctrl+b" }));
+                pause(300);
+            }
+        };
+        let at = |role: &str, name: &str| control(&emit, session, role, name).expect(name);
+        // The Bold button follows the selection's formatting a moment later.
+        let bold_turns_on = || {
+            for _ in 0..10 {
+                pause(150);
+                let bold = run_action(&emit, session, "find", &json!({ "query": "Bold" })).unwrap_or_default();
+                if bold.as_str().unwrap_or("").contains("[checked]") {
+                    return true;
+                }
+            }
+            false
+        };
+        let mut record = |case: &str, pass: bool, detail: String| {
+            eprintln!("{} {case}: {detail}", if pass { "PASS" } else { "FAIL" });
+            rows.push((case.to_string(), pass, detail));
+        };
+
+        // Reading back, to know the checks themselves work.
+        reset();
+        record("read: A1 selected", cell_selected(&emit, session, "A1"), String::new());
+        record("read: cell B2", cell_text(&emit, session, "B2") == "2", format!("{:?}", cell_text(&emit, session, "B2")));
+
+        reset();
+        let (_, x, y) = at("DataItem", "C2");
+        {
+            let target = Target::resolve(session).unwrap();
+            let point = target.screen_point(x, y).unwrap();
+            let started = std::time::Instant::now();
+            let found = pressable_at(&target, point).is_some();
+            eprintln!("hit-test on a cell: {} ms (pressable {found})", started.elapsed().as_millis());
+        }
+        let started = std::time::Instant::now();
+        let result = act("click", json!({ "x": x, "y": y }));
+        let took = started.elapsed().as_millis();
+        pause(300);
+        let moved = cell_selected(&emit, session, "C2") && !cell_selected(&emit, session, "A1");
+        record("click a cell", moved, format!("{took} ms; {result:?}"));
+
+        reset();
+        let (_, x, y) = at("DataItem", "B3");
+        let _ = act("click", json!({ "x": x, "y": y, "clicks": 2 }));
+        pause(300);
+        let _ = act("type", json!({ "text": "X\n" }));
+        pause(300);
+        // A double click puts the caret where it lands: before a
+        // right-aligned number clicked in the middle of its cell.
+        let value = cell_text(&emit, session, "B3");
+        record("double-click a cell to edit", value == "X5" || value == "5X", format!("B3 {value:?}"));
+
+        // What a selection covers, told by what Delete clears (then undone).
+        let cleared_by_delete = |cells: &[&str]| -> Vec<bool> {
+            let _ = run_action(&emit, session, "key", &json!({ "key": "delete" }));
+            pause(300);
+            let cleared = cells.iter().map(|cell| cell_text(&emit, session, cell).is_empty()).collect();
+            let _ = run_action(&emit, session, "key", &json!({ "key": "ctrl+z" }));
+            pause(300);
+            cleared
+        };
+
+        reset();
+        let (_, from_x, from_y) = at("DataItem", "A1");
+        let (_, to_x, to_y) = at("DataItem", "C3");
+        let _ = act("drag", json!({ "x": from_x, "y": from_y, "to_x": to_x, "to_y": to_y }));
+        pause(300);
+        let cleared = cleared_by_delete(&["A1", "B2", "C3"]);
+        record("drag to select a range", cleared == [true, true, true], format!("A1, B2, C3 cleared: {cleared:?}"));
+
+        reset();
+        let (_, x, y) = at("DataItem", "C2");
+        let result = act("click", json!({ "x": x, "y": y, "button": "right" }));
+        pause(500);
+        let menu = result.as_ref().is_ok_and(|r| r["note"].as_str().unwrap_or("").contains("menu"));
+        record("right-click opens the context menu", menu, format!("{result:?}"));
+        let _ = act("key", json!({ "key": "escape" }));
+
+        reset();
+        let (_, x, y) = at("Button", "Bold");
+        let result = act("click", json!({ "x": x, "y": y }));
+        pause(400);
+        let bold = run_action(&emit, session, "find", &json!({ "query": "Bold" })).unwrap();
+        let on = bold.as_str().unwrap_or("").contains("[checked]");
+        record("click a ribbon button (Bold)", on, format!("{result:?}"));
+        if on {
+            let _ = act("key", json!({ "key": "ctrl+b" }));
+        }
+
+        reset();
+        let (reference, _, _) = at("Button", "Bold");
+        let result = act("invoke", json!({ "ref": reference }));
+        let on = bold_turns_on();
+        record("invoke a ribbon button by ref (Bold)", on, format!("{result:?}"));
+        if on {
+            let _ = act("key", json!({ "key": "ctrl+b" }));
+        }
+
+        reset();
+        let _ = act("key", json!({ "key": "ctrl+b" }));
+        let on = bold_turns_on();
+        record("shortcut ctrl+b", on, String::new());
+        if on {
+            let _ = act("key", json!({ "key": "ctrl+b" }));
+        }
+
+        reset();
+        let mut shown = Vec::new();
+        for key in ["alt", "h", "1"] {
+            let _ = act("key", json!({ "key": key }));
+            pause(400);
+            // Key tips are small windows of their own over the ribbon.
+            shown.push(Target::resolve(session).map(|target| target.popups.len()).unwrap_or(0));
+        }
+        let on = bold_turns_on();
+        record("key tips alt, h, 1 (Bold)", on, format!("popups after each key: {shown:?}"));
+        if on {
+            let _ = act("key", json!({ "key": "ctrl+b" }));
+        }
+        let _ = act("key", json!({ "key": "escape" }));
+
+        reset();
+        let (_, x, y) = at("Edit", "Name Box");
+        let _ = act("click", json!({ "x": x, "y": y }));
+        pause(300);
+        let _ = act("type", json!({ "text": "D5\n" }));
+        pause(300);
+        let went = cell_selected(&emit, session, "D5");
+        let typed_into_cell = cell_text(&emit, session, "A1");
+        record("click the Name Box and type an address", went, format!("A1 now {typed_into_cell:?}"));
+        if !went {
+            // Put back what went into the cell instead.
+            let _ = act("key", json!({ "key": "ctrl+z" }));
+        }
+
+        reset();
+        let before = cell_text(&emit, session, "A1");
+        let (_, x, y) = at("Edit", "Formula Bar");
+        let _ = act("click", json!({ "x": x, "y": y }));
+        pause(300);
+        let _ = act("type", json!({ "text": "fb\n" }));
+        pause(300);
+        let value = cell_text(&emit, session, "A1");
+        record("click the Formula Bar and type", value == format!("{before}fb"), format!("A1 {before:?} -> {value:?}"));
+
+        reset();
+        let (_, x, y) = at("DataItem", "C2");
+        let _ = act("scroll", json!({ "x": x, "y": y, "direction": "down", "amount": 5 }));
+        pause(400);
+        let scrolled = control(&emit, session, "DataItem", "A1").is_none();
+        record("scroll the grid", scrolled, format!("A1 still visible: {}", !scrolled));
+
+        reset();
+        let _ = act("key", json!({ "key": "shift+down" }));
+        pause(300);
+        record("shift+arrow extends a selection", cell_selected(&emit, session, "A2"), String::new());
+
+        reset();
+        let (_, x, y) = at("DataItem", "C3");
+        let result = act("click", json!({ "x": x, "y": y, "modifiers": ["shift"] }));
+        pause(300);
+        let range = cell_selected(&emit, session, "B2") && cell_selected(&emit, session, "C3");
+        record("shift+click extends a selection", range, format!("{result:?}"));
+
+        reset();
+        let (_, x, y) = at("DataItem", "C3");
+        let _ = act("click", json!({ "x": x, "y": y, "modifiers": ["ctrl"] }));
+        pause(300);
+        let cleared = cleared_by_delete(&["A1", "B2", "C3"]);
+        record("ctrl+click adds a cell", cleared == [true, false, true], format!("A1, B2, C3 cleared: {cleared:?}"));
+
+        reset();
+        let _ = act("key", json!({ "key": "ctrl+g" }));
+        pause(600);
+        let typed = act("type", json!({ "text": "D5\n" }));
+        pause(300);
+        let went = cell_selected(&emit, session, "D5");
+        record("Go To (ctrl+g) an address", went, format!("{typed:?}"));
+        if !went {
+            // Close the dialog if it is still open.
+            let _ = act("key", json!({ "key": "escape" }));
+        }
+
+        reset();
+        if let Some((_, x, y)) = control(&emit, session, "Button", "Add Sheet") {
+            let started = std::time::Instant::now();
+            let result = act("click", json!({ "x": x, "y": y }));
+            let took = started.elapsed().as_millis();
+            pause(800);
+            let added = control(&emit, session, "TabItem", "Sheet2").is_some();
+            record("click the Add Sheet (+) button", added, format!("{took} ms; {result:?}"));
+        }
+        if let Some((reference, _, _)) = control(&emit, session, "Button", "Add Sheet") {
+            let before = control(&emit, session, "TabItem", "Sheet2").is_some();
+            let _ = act("invoke", json!({ "ref": reference }));
+            pause(800);
+            let name = if before { "Sheet3" } else { "Sheet2" };
+            record("invoke Add Sheet by ref", control(&emit, session, "TabItem", name).is_some(), String::new());
+        }
+
+        reset();
+        let (_, x, y) = at("TabItem", "Sheet1");
+        let _ = act("click", json!({ "x": x, "y": y }));
+        pause(500);
+        let (_, x, y) = at("DataItem", "B2");
+        let result = act("hover", json!({ "x": x, "y": y }));
+        record("hover", result.is_ok(), format!("{result:?}"));
+    }));
+    eprintln!("\n{} of {} passed", rows.iter().filter(|(_, pass, _)| *pass).count(), rows.len());
+    for (case, pass, _) in &rows {
+        eprintln!("  {} {case}", if *pass { "✓" } else { "✗" });
+    }
+    detach(session);
+    let _ = std::process::Command::new("taskkill").args(["/PID", &pid.to_string(), "/F"]).status();
+    if let Err(panic) = outcome {
+        std::panic::resume_unwind(panic);
+    }
+}
+
 /// Excel, parked on the stage: sized to it, screenshotted pixel for pixel,
 /// and each typed entry lands in the grid and shows in the next picture.
 /// Starts an Excel instance of its own (`/x`) and ends only that one, so a

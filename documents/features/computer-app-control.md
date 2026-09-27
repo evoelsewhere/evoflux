@@ -158,6 +158,34 @@ aware apps, and on an unscaled display, nothing changes. Not yet verified on a
 scaled display: whether `PrintWindow` captures such an app at its physical
 size.
 
+A left click at a point in a native app goes through UI Automation when what
+is there is a button, tab, link, check box, radio button or menu item: a
+button the app draws itself often takes a click only while it tracks the
+pointer as over it, which the real pointer never is (Excel's Add Sheet
+ignored a posted click). What is there is asked first through MSAA's
+`accHitTest`, which the app answers from its own layout, parked or not, in
+about 10 ms; where MSAA knows nothing finer than the window (Excel's workbook
+area), the UI Automation tree is walked to the point one level per call,
+without entering a grid or table — listing Excel's cells one by one had added
+350–400 ms to each click on a cell. A toggle with an MSAA default action is
+pressed through that action: Office's ribbon toggles took UI Automation's
+Toggle without turning on while in the background. `click` also takes
+`modifiers` (`shift`, `ctrl`, `alt`; `cmd` on macOS): the `MK_*` flags go
+into the mouse messages and the keys are held in the app thread's key state,
+as for `key`; such a click is always a mouse click.
+
+Measured on a private Excel instance, parked, each case aimed exactly from
+UI Automation (`measures_input_on_excel`, three runs alike): a click, double
+click and right click on a cell, a click on the ribbon and on Add Sheet,
+shift+click and ctrl+click, `ctrl+b`, a click in the Formula Bar and typing,
+scrolling and hovering work. What does not, and has no fix in background
+input: a drag across cells selects only the first (Excel tracks the drag with
+the real mouse button), a click on the Name Box leaves the focus in the grid
+(Go To works), and key tips (Alt, then letters) never appear. Holding the
+button or Alt in the key state, `WM_MOUSEACTIVATE`/`WM_SETCURSOR` before the
+press, and typing straight into the Name Box's window were each measured and
+changed nothing.
+
 ### Menus and dropdowns
 
 Context menus (`#32768`), combo box lists (`ComboLBox`), WPF popups,

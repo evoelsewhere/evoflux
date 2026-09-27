@@ -38,9 +38,15 @@ starting point that the read-back confirms, not a guarantee.
 - `ctrl+g` (or `f5`) opens Go To with the focus in its Reference box: type
   an address or range (`B2`, `A1:D11`, `A1:A11,D1:D11`) and press `enter`.
   This is the reliable way to move or select by address; a background click
-  on the Name Box often leaves the focus in the grid.
+  on the Name Box leaves the focus in the grid, and what is typed next goes
+  into the active cell.
 - `ctrl+home` goes to A1; `ctrl+arrow` jumps to the edge of the data;
   `shift+arrow` with `repeat` extends a selection.
+- With the mouse: every cell is a `DataItem` in `find` (`find` "C2"), so
+  aim at its ref's position. A click selects it, a double click edits it,
+  a click with `modifiers: ["shift"]` extends the selection to it and one
+  with `["ctrl"]` adds it. Dragging across cells selects only the first
+  cell in the background; use shift+click instead.
 
 ## Entering data
 

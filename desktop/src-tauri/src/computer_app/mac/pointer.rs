@@ -28,14 +28,52 @@ fn post_mouse(
     button: CGMouseButton,
     click_state: i64,
 ) -> Result<(), String> {
+    post_mouse_with(target, kind, point, button, click_state, CGEventFlags::CGEventFlagNull)
+}
+
+/// [`post_mouse`] with modifier keys held (`flags`).
+fn post_mouse_with(
+    target: &Target,
+    kind: CGEventType,
+    point: Point,
+    button: CGMouseButton,
+    click_state: i64,
+    flags: CGEventFlags,
+) -> Result<(), String> {
     let event = CGEvent::new_mouse_event(event_source()?, kind, point_cg(point), button)
         .map_err(|()| "Could not create a mouse event.".to_string())?;
     stamp_window(&event, target);
     if click_state > 0 {
         event.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, click_state);
     }
+    if flags != CGEventFlags::CGEventFlagNull {
+        event.set_flags(flags);
+    }
     event.post_to_pid(target.pid);
     Ok(())
+}
+
+/// The keys a click holds (`modifiers`: `shift`, `ctrl`, `alt`/`option`,
+/// `cmd`, as a list or `"cmd+shift"`).
+fn click_flags(params: &Value) -> Result<CGEventFlags, String> {
+    let names: Vec<String> = match params.get("modifiers") {
+        None | Some(Value::Null) => return Ok(CGEventFlags::CGEventFlagNull),
+        Some(Value::String(text)) => text.split('+').map(str::to_string).collect(),
+        Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+        Some(other) => return Err(format!("modifiers must be a list such as [\"shift\"], not {other}.")),
+    };
+    let mut flags = CGEventFlags::CGEventFlagNull;
+    for name in names {
+        flags |= match name.trim().to_lowercase().as_str() {
+            "" => CGEventFlags::CGEventFlagNull,
+            "shift" => CGEventFlags::CGEventFlagShift,
+            "ctrl" | "control" => CGEventFlags::CGEventFlagControl,
+            "alt" | "option" => CGEventFlags::CGEventFlagAlternate,
+            "cmd" | "command" => CGEventFlags::CGEventFlagCommand,
+            other => return Err(format!("Unknown modifier {other:?}: use shift, ctrl, alt or cmd.")),
+        };
+    }
+    Ok(flags)
 }
 
 fn stamp_window(event: &CGEvent, target: &Target) {
@@ -88,14 +126,16 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
         "middle" => (CGEventType::OtherMouseDown, CGEventType::OtherMouseUp, CGMouseButton::Center),
         other => return Err(format!("Unknown mouse button {other:?}")),
     };
+    let flags = click_flags(params)?;
     let chain = match params.get("ref").and_then(Value::as_str) {
         Some(reference) => with_ancestors(element_for(&target.session_id, reference)?),
         None => elements_at(target, point),
     };
 
     // Accessibility first: it reaches a background app exactly, while
-    // posted mouse events may be dropped or bring the app forward.
-    if clicks == 1 {
+    // posted mouse events may be dropped or bring the app forward. A click
+    // with modifiers held is a mouse click: an element's action has none.
+    if clicks == 1 && flags == CGEventFlags::CGEventFlagNull {
         let done = match button {
             "left" => click_via_accessibility(emit, target, &chain, point, params.get("ref").is_none())?,
             "right" => menu_via_accessibility(emit, target, &chain, point)?,
@@ -108,12 +148,12 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
 
     target.travel(emit, point)?;
     target.emit_pointer(emit, point, "press");
-    post_mouse(target, CGEventType::MouseMoved, point, CGMouseButton::Left, 0)?;
+    post_mouse_with(target, CGEventType::MouseMoved, point, CGMouseButton::Left, 0, flags)?;
     for index in 1..=clicks {
         interrupted()?;
-        post_mouse(target, down, point, mouse_button, index)?;
+        post_mouse_with(target, down, point, mouse_button, index, flags)?;
         pause(25);
-        post_mouse(target, up, point, mouse_button, index)?;
+        post_mouse_with(target, up, point, mouse_button, index, flags)?;
         pause(40);
     }
     target.emit_pointer(emit, point, "click");

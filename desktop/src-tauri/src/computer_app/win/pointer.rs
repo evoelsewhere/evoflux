@@ -9,7 +9,37 @@ const HTTRANSPARENT: isize = -1;
 const MK_LBUTTON: usize = 0x0001;
 const MK_RBUTTON: usize = 0x0002;
 const MK_MBUTTON: usize = 0x0010;
+const MK_SHIFT: usize = 0x0004;
+const MK_CONTROL: usize = 0x0008;
 const WHEEL_DELTA: i32 = 120;
+
+/// The keys a click holds (`modifiers`: `shift`, `ctrl`, `alt`, as a list
+/// or `"ctrl+shift"`), with the `MK_*` flags its mouse messages carry.
+fn click_modifiers(params: &Value) -> Result<(Vec<VIRTUAL_KEY>, usize), String> {
+    let names: Vec<String> = match params.get("modifiers") {
+        None | Some(Value::Null) => return Ok((Vec::new(), 0)),
+        Some(Value::String(text)) => text.split('+').map(str::to_string).collect(),
+        Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+        Some(other) => return Err(format!("modifiers must be a list such as [\"shift\"], not {other}.")),
+    };
+    let (mut keys, mut flags) = (Vec::new(), 0);
+    for name in names {
+        match name.trim().to_lowercase().as_str() {
+            "" => {}
+            "shift" => {
+                keys.extend([VK_SHIFT, VK_LSHIFT]);
+                flags |= MK_SHIFT;
+            }
+            "ctrl" | "control" => {
+                keys.extend([VK_CONTROL, VK_LCONTROL]);
+                flags |= MK_CONTROL;
+            }
+            "alt" => keys.extend([VK_MENU, VK_LMENU]),
+            other => return Err(format!("Unknown modifier {other:?}: use shift, ctrl or alt.")),
+        }
+    }
+    Ok((keys, flags))
+}
 
 /// Where a pointer action lands: a ref's centre or screenshot coordinates.
 fn pointer_target(target: &Target, params: &Value) -> Result<POINT, String> {
@@ -86,12 +116,15 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
     let button = params.get("button").and_then(Value::as_str).unwrap_or("left");
     let clicks = params.get("clicks").and_then(Value::as_u64).unwrap_or(1).clamp(1, 3);
     let (down, up, double, mask) = button_messages(button)?;
+    let (held, flags) = click_modifiers(params)?;
     remember_point(&target.session_id, point);
 
     // A plain left click goes through UI Automation when it can: always for
     // a ref (the element's own action is exact), and for coordinates in web
-    // content, where posted mouse messages do not reach the page.
-    if button == "left" && clicks == 1 {
+    // content, where posted mouse messages do not reach the page. A click
+    // with Shift or Ctrl held is a mouse click: an element's action has no
+    // modifiers.
+    if button == "left" && clicks == 1 && held.is_empty() {
         let reference = params.get("ref").and_then(Value::as_str);
         let mut chain = match reference {
             Some(reference) => vec![element_for(target, reference)?],
@@ -105,6 +138,16 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
             if let Some(done) = click_via_automation(emit, target, &chain, point)? {
                 return Ok(done);
             }
+        } else if reference.is_none() {
+            // A button the app draws itself often takes a click only while
+            // it tracks the pointer as over it, and the real pointer never
+            // is: Excel's Add Sheet ignored a posted click, and took its
+            // own action. Content (cells, text, canvases) keeps the mouse.
+            if let Some(pressable) = pressable_at(target, point) {
+                if let Some(done) = click_via_automation(emit, target, &[pressable], point)? {
+                    return Ok(done);
+                }
+            }
         }
     }
 
@@ -114,22 +157,40 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
 
     target.travel(emit, point)?;
     target.emit_pointer(emit, point, "press");
-    post(hwnd, WM_MOUSEMOVE, 0, lparam)?;
-    for index in 0..clicks {
-        interrupted()?;
-        // The second press of a double click is WM_*BUTTONDBLCLK, as Windows
-        // itself would deliver it to a CS_DBLCLKS window.
-        let press = if index == 1 { double } else { down };
-        post(hwnd, press, mask, lparam)?;
-        pause(25);
-        post(hwnd, up, 0, lparam)?;
-        pause(40);
+    let press_and_release = || -> Result<(), String> {
+        post(hwnd, WM_MOUSEMOVE, flags, lparam)?;
+        for index in 0..clicks {
+            interrupted()?;
+            // The second press of a double click is WM_*BUTTONDBLCLK, as
+            // Windows itself would deliver it to a CS_DBLCLKS window.
+            let press = if index == 1 { double } else { down };
+            post(hwnd, press, mask | flags, lparam)?;
+            pause(25);
+            post(hwnd, up, flags, lparam)?;
+            pause(40);
+        }
+        if !held.is_empty() {
+            // Held until the app has handled the click: Excel read Ctrl as
+            // already released now and then after a fixed wait.
+            settle(hwnd);
+        }
+        Ok(())
+    };
+    if held.is_empty() {
+        press_and_release()?;
+    } else {
+        // Held in the app's key state too: apps check Shift and Ctrl with
+        // GetKeyState as often as through the message flags.
+        with_held_keys(unsafe { GetWindowThreadProcessId(hwnd, None) }, &held, press_and_release)?;
     }
     target.emit_pointer(emit, point, "click");
     remember_input_window(&target.session_id, hwnd);
     // A posted click put focus somewhere UI Automation did not report.
     forget_editable(&target.session_id);
     let mut extra = json!({ "button": button, "clicks": clicks });
+    if params.get("modifiers").is_some() && !held.is_empty() {
+        extra["modifiers"] = params["modifiers"].clone();
+    }
     if target.web {
         extra["note"] = json!(WEB_INPUT_NOTE);
     }

@@ -156,7 +156,7 @@ fn wait_for_user_pause(thread: u32) -> Result<(), String> {
 /// input queue shares its key-state table, so setting it here is what the app
 /// sees, without pressing a real key or button and without moving focus. The
 /// table is restored before detaching.
-fn with_held_keys(thread: u32, keys: &[VIRTUAL_KEY], post: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
+pub(super) fn with_held_keys(thread: u32, keys: &[VIRTUAL_KEY], post: impl FnOnce() -> Result<(), String>) -> Result<(), String> {
     wait_for_user_pause(thread)?;
     let me = unsafe { GetCurrentThreadId() };
     let attached = thread != me && unsafe { AttachThreadInput(me, thread, true) }.as_bool();

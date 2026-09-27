@@ -250,6 +250,7 @@ async def test_actions_forward_params_and_summarize(monkeypatch) -> None:
 
     result = await _run(
         {"action": "click", "x": 40, "y": 60, "clicks": 2},
+        {"action": "click", "x": 90, "y": 70, "modifiers": ["shift"]},
         {"action": "type", "text": "hello"},
         {"action": "key", "key": "ctrl+s"},
         {"action": "snapshot"},
@@ -262,6 +263,16 @@ async def test_actions_forward_params_and_summarize(monkeypatch) -> None:
     assert "Untrusted app content" in result
     assert [(action, params) for _sid, action, params in requests] == [
         ("click", {"x": 40.0, "y": 60.0, "button": "left", "clicks": 2}),
+        (
+            "click",
+            {
+                "x": 90.0,
+                "y": 70.0,
+                "button": "left",
+                "clicks": 1,
+                "modifiers": ["shift"],
+            },
+        ),
         ("type", {"text": "hello"}),
         ("key", {"key": "ctrl+s", "repeat": 1}),
         ("snapshot", {"max_depth": 30, "max_elements": 400}),
@@ -459,6 +470,7 @@ def test_permission_patterns_describe_each_action() -> None:
                 {"action": "attach", "window_id": 44},
                 {"action": "click", "x": 10, "y": 20.5, "button": "right"},
                 {"action": "click", "ref": "e3", "clicks": 2},
+                {"action": "click", "x": 7, "y": 8, "modifiers": ["shift"]},
                 {"action": "drag", "ref": "e4", "to_x": 5, "to_y": 6},
                 {"action": "type", "text": "x" * 50, "ref": "e5"},
                 {"action": "key", "key": "tab", "repeat": 3},
@@ -475,6 +487,7 @@ def test_permission_patterns_describe_each_action() -> None:
         "attach 44",
         "right click (10, 20.5)",
         "double-click e3",
+        "shift+click (7, 8)",
         "drag e4 → (5, 6)",
         f'type "{"x" * 39}…" (50 chars) into e5',
         "key tab ×3",
