@@ -140,7 +140,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '3) Work のまま短い最初のチャットを送るか、Coding に切り替えて git リポジトリを開く。',
           '4) 任意: Coding → リポジトリまたはプロジェクトを開きセッションを開始。',
           '5) セッションができたら workbench ツール（Terminal、Files、Memory、Browser）を探索。',
-          '6) 任意の硬化: auto や bypass を有効にする前に Settings → Sandbox の deny glob を見直す。'
+          '6) 任意の硬化: 「自動で承認」や「フルアクセス」を選ぶ前に Settings → Sandbox の deny glob を見直す。'
 ],
       },
       {
@@ -155,7 +155,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'tips',
         items: [
           '横断: 最初のチャットが通ったら Memory（Ctrl+M）を開き、永続メモの着地点を把握する。',
-          '横断: 実リポジトリをエージェントに編集させる前に権限シールド（キー 1–5）をざっと確認。',
+          '横断: 実リポジトリをエージェントに編集させる前に3 つの権限モード（キー 1–3）をざっと確認。',
           '横断: ヘルスは緑なのにツールパネルが空なら Ctrl+P → Diagnostics を検索。',
           'ソースのみ: API をすでに配信している `make dev` なしで Tauri シェルを起動しない。'
 ],
@@ -280,7 +280,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Settings → Agents は member を collapsible lead team 配下に表示します。Delegation card は “lead delegated → member#N” と示し、lead は coordination と final synthesis を担当します。',
       'composer のセッション pill は現在チャットだけのモデル / thinking / fast mode。',
       '単純タスクは Lead に留め、並列が明らかに壁時計時間を短くするときだけ fan-out。',
-      'Lead 専用ツール（ask_user、plan mode ヘルパー、一部 worktree ヘルパー）は specialist に付与されません — worker にプラン承認を期待しないでください。'
+      'Lead 専用ツール（ask_user、一部 worktree ヘルパー）は specialist に付与されません — worker が直接あなたに質問することは期待しないでください。'
 ],
     blocks: [
       {
@@ -321,7 +321,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           'fan-out するとき — 複数ファイル調査、並列テスト/修正、specialist レーン。',
           'Lead のみに留めるとき — 短い Q&A、単一ファイル編集、権限に敏感な初回パス。',
-          '横断: Split と Plan review を組み合わせ、worker がアイドル中にプランを読む。',
           '横断: チーム実行を止めずにメタ質問するなら /btw side chat。'
 ],
       }
@@ -337,168 +336,80 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
   {
     id: 'permissions-modes',
     category: 'chat',
-    title: '権限モードと Plan review',
+    title: '権限モード',
     summary:
-      'ask、accept-edits、plan、auto、bypass でツールの自由度を制御し、ツールを Once/Always/Reject で承認し、プランを Accept/Revise/Reject でレビューします。Sandbox の deny glob はすべてのモードの下でなお適用されます。',
+      '「承認を求める」「自動で承認」「フルアクセス」の 3 つのモードから選び、個々のツール呼び出しを Once/Always/Reject で承認します。Sandbox の deny glob はすべてのモードの下でなお適用されます。',
     keywords: [
       'permission',
+      '承認を求める',
+      '自動で承認',
+      'フルアクセス',
       'ask',
-      'accept-edits',
-      'plan',
       'auto',
       'bypass',
       'approve',
-      'shield',
       'Once',
       'Always',
       'Reject',
       'ask-user',
-      'plan review',
       '権限',
-      'プラン',
-      '承認',
-      'シールド'
+      '承認'
 ],
     setup:
-      'composer 上のシールド / 権限コントロールを開きます。メニューが開いている間はキー 1–5 が効きます。ファイルシステムが広いマシンで auto や bypass を有効にする前に Settings → Sandbox を見直してください。',
+      'composer 上の権限コントロールを開きます。メニューが開いている間はキー 1–3 が効きます。ファイルシステムが広いマシンで「自動で承認」や「フルアクセス」を選ぶ前に Settings → Sandbox を見直してください。',
     tricks: [
-      '権限メニューが開いているとき、キー 1–5 で ask → accept-edits → plan → auto → bypass にジャンプ。',
-      'Ask はすべてのツール呼び出し前に一時停止; accept-edits はファイル編集を自動受理しつつシェルと破壊的操作は尋ねます。',
-      'Plan モードは提案された編集/シェルを、Plan review パネルで Accept（または Revise / Reject）するまで記録します。',
-      'レビューパネルでプラン文を選択すると、composer への revise メッセージに引用できます。',
+      '権限メニューが開いているとき、キー 1–3 で「承認を求める」→「自動で承認」→「フルアクセス」を選択。',
+      '「承認を求める」は編集・コマンド・副作用のある操作の前に必ず一時停止; 「自動で承認」は潜在的に危険と判断された操作だけで止まります。',
       'ツール承認が必要なとき、権限バーで Once、Always、Reject を選びます — Enter で一度許可、Esc で拒否。',
       'エージェントが続行前に構造化回答を必要とするとき ask-user 質問モーダルが出ます — 1–9 で候補の回答を選ぶか自分で入力し、Enter で送信します。',
-      'Goal モードはセッションの権限や sandbox スコープを広げません — `/goal` 前にシールドを意図的に設定。',
-      'Bypass はすべての権限チェックをスキップ — 最速ですが、使い捨て環境または完全に信頼できるホストだけで使用。',
+      'Goal モードはセッションの権限や sandbox スコープを広げません — `/goal` 前に権限モードを意図的に設定。',
+      '「フルアクセス」はすべての権限チェックをスキップ — 最速ですが、使い捨て環境または完全に信頼できるホストだけで使用。誤って有効にしないよう composer 上でオレンジ色に表示されます。',
       'Always は一致ルールに対して粘着 — エージェントが何を走らせたいか学んでいる間は Once を優先。'
 ],
     blocks: [
       {
         type: 'p',
-        text: '各セッションに PermissionMode（ask、accept-edits、plan、auto、bypass）があります。別途、個々のツール呼び出しは Once / Always / Reject を出し得ます。plan モードは Accept / Revise / Reject 付きの専用 Plan review パネルを出します。シールドをセッション既定、権限バーを呼び出し単位の上書きと考えてください。',
+        text: '各セッションには 3 つの権限モード（「承認を求める」、既定の「自動で承認」、「フルアクセス」）のいずれかがあります。別途、個々のツール呼び出しは Once / Always / Reject を出し得ます。モードをセッション既定、権限バーを呼び出し単位の上書きと考えてください。',
       },
       {
         type: 'p',
-        text: 'きめ細かい制御により、ask、accept-edits、plan、auto、bypass を選べます。権限は「いつ聞くか」を決め、ファイルシステムツールは workspace と deny glob の検査を継続します。shell コマンドは denied path の best-effort 検査後にホスト上で直接実行されます。',
+        text: 'リスクのある作業は手元で確認（承認を求める）、危険または取り消せない操作だけ止めて進める（自動で承認）、あるいはプロンプトを完全に省略（フルアクセス）。権限は「いつ聞くか」を決め、ファイルシステムツールは workspace と deny glob の検査を継続します。shell コマンドは denied path の best-effort 検査後にホスト上で直接実行されます。',
       },
       {
         type: 'p',
-        text: 'composer のシールドコントロールを開き、モードを選ぶ（または 1–5）。plan モードでは Plan review パネルを待つ: Accept は実行、Revise は composer にフォーカス（任意で引用選択）、Reject はプラン停止。ツールプロンプトは Once（この呼び出し）、Always（一致ルールを記憶）、Reject。Ask-user モーダルは実行途中の構造化回答を集めます。',
+        text: 'composer の権限コントロールを開き、モードを選ぶ（または 1–3）。ツールプロンプトは Once（この呼び出し）、Always（一致ルールを記憶）、Reject。Ask-user モーダルは実行途中の構造化回答を集めます。',
       },
       {
         type: 'tips',
         items: [
-          '1 Ask — すべてのツール呼び出し前に一時停止。',
-          '2 Accept edits — ファイル編集は自動; シェル / 破壊的操作は確認。',
-          '3 Plan — 実行前にプランして承認。',
-          '4 Auto — 操作を自動承認。',
-          '5 Bypass — 権限チェックを完全スキップ。',
-          'ファイルシステムツール — bypass 下でも deny glob を適用。'
+          '1 承認を求める — 編集・コマンド・その他の操作の前に必ず確認。',
+          '2 自動で承認 — 潜在的に危険な操作だけ確認。',
+          '3 フルアクセス — すべての操作を確認なしで実行。',
+          'ファイルシステムツール — フルアクセスでも deny glob を適用。'
 ],
       },
       {
         type: 'p',
-        text: 'どのモードをいつ使うか: 未知のレポや本番隣接ツリーは ask; ツリーを信頼した日常 Coding は accept-edits; 先に読みたい多段リファクタや大きな変更は plan; 信頼できるホストと予定メンテは auto; bypass は使い捨て環境での短い意図的バーストだけ。',
+        text: 'どのモードをいつ使うか: 未知のレポ、本番隣接ツリー、呼び出しごとに追いたい多段リファクタは「承認を求める」; ツリーを信頼した日常作業は「自動で承認」; 「フルアクセス」は使い捨て環境での短い意図的バーストだけ。',
       },
       {
         type: 'p',
-        text: 'よくある失敗: 一晩 bypass のまま; Always を「このエージェントを永遠に信頼」と混同（ルール一致）; 飛行中に plan モードを抜け、保留中プランが受理されたと仮定; ask-user モーダルを無視してチームがハングしたと思う; Goal が無人作業のために権限を緩めると期待。',
+        text: 'よくある失敗: 一晩フルアクセスのまま; Always を「このエージェントを永遠に信頼」と混同（ルール一致）; ask-user モーダルを無視してチームがハングしたと思う; Goal が無人作業のために権限を緩めると期待。',
       },
       {
         type: 'tips',
         items: [
-          '手順 — シールド → Plan (3) → タスク送信 → Plan review → Accept / Revise / Reject。',
           '手順 — ツールプロンプトでは、パターンが明らかに安全になるまで Once を優先。',
-          '横断: plan と quote-into-composer で外科的な revise。',
-          '横断: マルチレポプロジェクトで auto にする前に Sandbox を締める。'
+          '手順 — 大きな変更では、まず「承認を求める」で Lead にアウトラインを依頼し、望みどおりになったら「自動で承認」に切り替える。',
+          '横断: マルチレポプロジェクトで「自動で承認」にする前に Sandbox を締める。'
 ],
       },
       {
         type: 'p',
-        text: 'MCP ツールはネイティブツールと同じ権限ルールを継承します。MCP 呼び出しの Once/Always 承認は同じバー; sandbox とアウトバウンドポリシーも適用。ツールが「突然拒否」されたら、MCP を再設定する前にシールドと Settings → Sandbox を確認。',
+        text: 'MCP ツールはネイティブツールと同じ権限ルールを継承します。MCP 呼び出しの Once/Always 承認は同じバー; sandbox とアウトバウンドポリシーも適用。ツールが「突然拒否」されたら、MCP を再設定する前に権限モードと Settings → Sandbox を確認。',
       }
 ],
-    related: ['slash-goal', 'sandbox-settings', 'plan-review', 'chat-team', 'agents-settings'],
-  },
-  {
-    id: 'plan-review',
-    category: 'chat',
-    title: 'Plan review パネル',
-    summary:
-      'plan 権限モードでは、記録された編集やシェルが走る前にエージェントの markdown プランをレビューします。Accept は実行、Revise は任意引用付きで操縦、Reject は計画パスを中止し、多段作業の制御をあなたに残します。',
-    keywords: [
-      'plan review',
-      'Accept',
-      'Revise',
-      'Reject',
-      'quote',
-      'plan mode',
-      'markdown plan',
-      'Accept & execute',
-      'プランレビュー',
-      '承認',
-      '改訂',
-      '拒否'
-],
-    setup:
-      '権限モードを Plan（シールドメニューのキー 3）にし、多段作業が必要なタスクを送ります。Plan review パネルを見える状態に保ち — 保留中プランを Accept / Revise / Reject するまで権限モードを切り替えないでください。',
-    tricks: [
-      'プラン文書内のテキストを選んで revise メッセージに引用 — 「この節だけ変えて」と言う最速の方法です。',
-      'Revise は composer にフォーカスを戻し、プラン全体を拒否せずに操縦できます。',
-      'Reject は計画実行パスを止めます。そのプランターンからの半適用ステップを残さず、新しい指示を送れます。',
-      '飛行中に plan モードを離れても保留中プランは自動 Accept されません — 促されたら先に Accept / Revise / Reject。',
-      'Accept 後、実行中のツールプロンプトを締めたければ accept-edits や ask に落としてもよいです。',
-      '大きな目標では Goal 前に plan モードを使い、最初の自律区間が承認済みアウトラインから始まるようにします。',
-      'プランが曖昧なら Accept して祈るより、具体的な Definition of Done で Revise。',
-      'Split 表示が便利: Plan review を開きつつ specialist 状態をちら見。',
-      '引用 revise チップは気が変わったら送信前にクリア — トランスクリプト選択と同じ引用パイプラインです。'
-],
-    blocks: [
-      {
-        type: 'p',
-        text: 'Plan review は plan 権限モード向けのゲート UI です。エージェントは markdown プランを起草し、編集とシェルは Accept & execute、Revise、または Reject するまで記録されたままです。その計画バッチは Accept まで走るべきではない — それがゲートの意味です。',
-      },
-      {
-        type: 'p',
-        text: '方向ミスのコストが高いときに使います: 複数ファイルリファクタ、共有モジュールに触る移行、破壊的シェル、ツール発火前に読めるアウトラインが欲しいタスク。一行修正や ask / accept-edits で十分な些細な Q&A ではスキップ。',
-      },
-      {
-        type: 'p',
-        text: 'レビューパネルでプランを上から下へ読む: 目標、手順、ファイル、リスク、検証。任意の節をハイライトし、revise 時に quote-into-composer。Accept は承認プランで続行; Reject はそのプランターンを中止。実行中のツールプロンプトを締めたければ受理後に ask や accept-edits と組み合わせ。',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Accept — 承認したプランパスを実行。',
-          'Revise — composer にフォーカス; 任意の引用選択。',
-          'Reject — このプランターンを中止; 新しい指示を送る。',
-          'Quote — プラン文を選択 → 下書き上の revise チップ。',
-          'Shield 3 — ツール開始後ではなく、タスク前に plan モードへ。'
-],
-      },
-      {
-        type: 'p',
-        text: '手順: (1) シールド → Plan、(2) 成果と制約を記述、(3) Plan review パネルを待つ、(4) リスクとファイル一覧をざっと見る、(5) Accept、または弱い節を選択 → 引用 → 訂正付き Revise、または Reject して依頼を書き直す、(6) 任意で実行フェーズの権限モードを締める。',
-      },
-      {
-        type: 'p',
-        text: 'よくある失敗: 「十分長そう」だから未読プランを Accept; Revise のつもりで Reject（有用な構造を失う）; 「とりあえず走らせる」ために bypass へ切り替え監査跡を失う; Reject が以前のターンの成功したツール呼び出しを消すと仮定 — 止めるのはその計画実行パスだけ。',
-      },
-      {
-        type: 'tips',
-        items: [
-          '良い revise プロンプトはファイル、テスト、スコープ外を明示。',
-          '悪い revise は曖昧（「もっと良く」） — まず弱い箇条を引用。',
-          '横断: 無関係なメタ質問は side chat へ送り、プランスレッドを清潔に。',
-          '横断: Coding 作業で Accept 後、Source Control（Ctrl+G）を開き diff がプランと一致するか確認。'
-],
-      },
-      {
-        type: 'p',
-        text: 'Plan review を sandbox ポリシーの代わりにしないでください。美しいプランでも触ってほしくないパスを提案し得ます — Settings → Sandbox の deny glob を保ち、シークレット、vendor ディレクトリ、無関係なレポへスコープを広げるプランは Reject。',
-      }
-],
-    related: ['permissions-modes', 'composer-power', 'attachments', 'slash-goal', 'coding-git'],
+    related: ['slash-goal', 'sandbox-settings', 'chat-team', 'agents-settings'],
   },
   {
     id: 'composer-power',
@@ -600,7 +511,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'composer',
     title: '添付、ペースト、引用',
     summary:
-      'ドラッグ&ドロップやペーストでファイルを添付し、トランスクリプトやプラン選択を次のメッセージに引用し、/undo で下書きと一緒に添付を復元します。引用とファイルは、手でコンテキストを書き直さずに証拠をピン留めする手段です。',
+      'ドラッグ&ドロップやペーストでファイルを添付し、トランスクリプトの選択を次のメッセージに引用し、/undo で下書きと一緒に添付を復元します。引用とファイルは、手でコンテキストを書き直さずに証拠をピン留めする手段です。',
     keywords: [
       'attachment',
       'drag and drop',
@@ -618,11 +529,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'チップ'
 ],
     setup:
-      'セッション/composer で添付が有効である必要があります。ポリシーでアップロードが無効な環境もあります。ドラッグ&ドロップに頼る前に composer のドロップターゲットがハイライトされることを確認。引用はトランスクリプト選択、Plan review、Send to side chat から使えます。',
+      'セッション/composer で添付が有効である必要があります。ポリシーでアップロードが無効な環境もあります。ドラッグ&ドロップに頼る前に composer のドロップターゲットがハイライトされることを確認。引用はトランスクリプト選択と Send to side chat から使えます。',
     tricks: [
       'クリップボードからペースト（画像/ファイル）するか composer ドロップターゲットへドラッグ — どちらも次のユーザーメッセージにバインド。',
       '引用コンテキストは下書き上のチップとして出ます — 送信前に気が変わったらクリア。',
-      'Plan review の引用 → composer はトランスクリプト選択と同じ引用パイプライン。',
       '/undo は取り消したユーザーメッセージの一部だった添付を復元 — テキストとファイルが一緒に戻る。',
       'Send to side chat はメイン実行を中断せず引用を /btw に運びます。',
       '前のアシスタント長文を再貼りするより、短い引用 + 短い依頼を優先。',
@@ -633,15 +543,15 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: '添付はユーザーメッセージにバインドされたファイル（多くは画像も含む）です。引用はトランスクリプト、プランパネル、または side-chat ターゲットから選んだテキストで、次の送信のコンテキストになります。合わせて、毎ターン UI 状態やエラーブロックを再説明せずに証拠をピン留めできます。',
+        text: '添付はユーザーメッセージにバインドされたファイル（多くは画像も含む）です。引用はトランスクリプトまたは side-chat ターゲットから選んだテキストで、次の送信のコンテキストになります。合わせて、毎ターン UI 状態やエラーブロックを再説明せずに証拠をピン留めできます。',
       },
       {
         type: 'p',
-        text: 'バイトが重要なとき添付を使います: スクショ、PDF、CSV、小さなログ、デザイン書き出し。テキストがすでにトランスクリプトやプランにあり、外科的フォローアップが欲しいときは引用。リポジトリ全体の添付は避け — @ メンション、Files、または Coding source search ツールを使います。',
+        text: 'バイトが重要なとき添付を使います: スクショ、PDF、CSV、小さなログ、デザイン書き出し。テキストがすでにトランスクリプトにあり、外科的フォローアップが欲しいときは引用。リポジトリ全体の添付は避け — @ メンション、Files、または Coding source search ツールを使います。',
       },
       {
         type: 'p',
-        text: 'ファイルを composer にドロップまたはペースト。トランスクリプトで Add to chat / 詳細 / Send to side chat。Plan review ではプラン文を選んで revise メッセージに引用。undo 後、復元下書き（ファイル含む）を再送または編集。送信前に下書き上の引用チップを確認。',
+        text: 'ファイルを composer にドロップまたはペースト。トランスクリプトで Add to chat / 詳細 / Send to side chat。undo 後、復元下書き（ファイル含む）を再送または編集。送信前に下書き上の引用チップを確認。',
       },
       {
         type: 'tips',
@@ -650,24 +560,23 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'ペースト — フォーカス中 composer へクリップボード画像/ファイル',
           'Add to chat — トランスクリプトをメイン下書きに引用',
           'Send to side chat — /btw 並列依頼へ引用',
-          'Plan quote — プラン markdown を選択 → revise チップ',
           '/undo — 前のユーザーテキスト + 添付を復元',
           'チップクリア — 話題が変わったら送信前に引用を削除'
 ],
       },
       {
         type: 'p',
-        text: 'バグレポートの手順: (1) 再現してスクショを撮る、(2) composer にペーストまたはドロップ、(3) 失敗したアシスタント手順やエラー行があれば引用、(4) 期待 vs 実際を述べる、(5) 多数ファイルに触る修正なら ask または plan で送信。',
+        text: 'バグレポートの手順: (1) 再現してスクショを撮る、(2) composer にペーストまたはドロップ、(3) 失敗したアシスタント手順やエラー行があれば引用、(4) 期待 vs 実際を述べる、(5) 多数ファイルに触る修正なら ask で送信。',
       },
       {
         type: 'p',
-        text: 'よくある失敗: 「コンテキストのためだけ」にシークレット（.env、キーファイル）を添付; コンテキスト予算が跳ねるまで大きなバイナリを 5 つ積む; エージェントがすでに改訂した古いプラン節を引用; side-chat 引用が親履歴にマージされると仮定（しません）。',
+        text: 'よくある失敗: 「コンテキストのためだけ」にシークレット（.env、キーファイル）を添付; コンテキスト予算が跳ねるまで大きなバイナリを 5 つ積む; エージェントがすでに修正した古い回答を引用; side-chat 引用が親履歴にマージされると仮定（しません）。',
       },
       {
         type: 'tips',
         items: [
           '添付しないとき — 巨大ビルド成果物、node_modules zip、フル DB ダンプ。',
-          '引用するとき — 1 段落への異議、1 プラン箇条の改訂、「これを説明して」。',
+          '引用するとき — 1 段落への異議、アウトラインの 1 箇条の修正、「これを説明して」。',
           '横断: /undo 後、再送前に復元添付を確認。',
           '横断: WorkFolderSelector はフォルダを添付せず、セッションルートを付け替えます。'
 ],
@@ -679,7 +588,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
 ],
     related: [
       'composer-power',
-      'plan-review',
       'side-chat',
       'slash-commands',
       'sandbox-settings'
@@ -816,7 +724,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '隠れた内部ターンは完了、予算一時停止、ユーザー pause/stop、または blocker streak まで続きます。',
       'Goal は権限モードや sandbox スコープを広げません — 開始前に意図的に設定。',
       '無人の一晩実行には明確な目標とトークン予算を優先。',
-      '大きな Goal ではまず plan モードで起草し Accept してから `/goal` — 自律が承認済みアウトラインから始まります。',
+      '大きな Goal ではまず通常チャットで Lead とアウトラインを合意してから `/goal` — 自律がそこから始まります。',
       'Goal 実行中のメタ質問は /btw — 目標トランスクリプトを脱線させない。'
 ],
     blocks: [
@@ -849,22 +757,22 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '目標には Definition of Done とスコープ外リストを書く。',
           '一晩実行の前にトークン予算を設定。',
           'blocker streak を監視 — 同じブロッカー ×3 で進捗停止。',
-          'Goal が ask → bypass に切り替えてくれると期待しない。',
+          'Goal が「承認を求める」→「フルアクセス」に切り替えてくれると期待しない。',
           '同じツリーで大きな手動編集の前に /goal:pause。'
 ],
       },
       {
         type: 'p',
-        text: '使うとき: 数時間の Coding リファクタ、チェックリスト駆動の雑務、睡眠後も続く調査。使わないとき: 対話的な設計議論、ワンショット Q&A、毎分人間の味付けが必要なもの — 通常チャットまたは plan review に留まる。',
+        text: '使うとき: 数時間の Coding リファクタ、チェックリスト駆動の雑務、睡眠後も続く調査。使わないとき: 対話的な設計議論、ワンショット Q&A、毎分人間の味付けが必要なもの — 通常チャットに留まる。',
       },
       {
         type: 'p',
-        text: 'よくある失敗: 広いホームディレクトリ上で bypass のまま Goal 開始; 予算を省略して高額請求で起きる; blocker streak を無視して同じ詰まりを再プロンプト; /goal:stop ではなく /stop（レイヤが違う）; 無関係な目標を 1 行の `/goal` に詰め込む。',
+        text: 'よくある失敗: 広いホームディレクトリ上でフルアクセスのまま Goal 開始; 予算を省略して高額請求で起きる; blocker streak を無視して同じ詰まりを再プロンプト; /goal:stop ではなく /stop（レイヤが違う）; 無関係な目標を 1 行の `/goal` に詰め込む。',
       },
       {
         type: 'tips',
         items: [
-          '手順 — シールド + sandbox → 任意の plan Accept → /goal:budget → /goal <objective>。',
+          '手順 — 権限モード + sandbox → 任意でチャットでアウトライン → /goal:budget → /goal <objective>。',
           '手順 — 詰まったら → ブロッカーを読む → /goal:pause → 環境を直す → /goal:resume。',
           '横断: Scheduler は cron プロンプト; Goal はセッション内自律。',
           '横断: Dream cron は Settings → Memory 下で別物。'
@@ -875,7 +783,6 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'permissions-modes',
       'slash-commands',
       'chat-team',
-      'plan-review',
       'scheduler-tasks'
 ],
   },
@@ -1068,7 +975,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         items: [
           'Terminal vs ! — 対話/長時間 vs 短いチャット紐づきコマンド。',
           'Files vs @ — 閲覧/探索 vs 既知パスを依頼にピン留め。',
-          '横断: plan モード Accept 後に Source Control で diff を検証。',
+          '横断: エージェントの編集後に Source Control で diff を検証。',
           '横断: 調査セッション後に Memory を開き Dream の材料を残す。'
 ],
       }
@@ -1125,7 +1032,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '/btw、Ctrl+;、workbench から Side chat、またはセッション行アイコン。任意で Send to side chat によりトランスクリプトを引用。質問し、終わったらパネルを閉じる。答えがメイン実行を操縦すべきなら、自分で Lead composer（またはプランの Revise）に要約を戻す。',
+        text: '/btw、Ctrl+;、workbench から Side chat、またはセッション行アイコン。任意で Send to side chat によりトランスクリプトを引用。質問し、終わったらパネルを閉じる。答えがメイン実行を操縦すべきなら、自分で Lead composer に要約を戻す。',
       },
       {
         type: 'tips',
@@ -1140,7 +1047,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '長い Coding 実行中の手順: (1) 混乱したアシスタント段落を選択、(2) Send to side chat、(3)「これは X と Y のどちらを主張？」と聞く、(4) Y が誤りならメイン composer に訂正指示または plan revise、(5) Side chat を閉じる。',
+        text: '長い Coding 実行中の手順: (1) 混乱したアシスタント段落を選択、(2) Send to side chat、(3)「これは X と Y のどちらを主張？」と聞く、(4) Y が誤りならメイン composer に訂正指示、(5) Side chat を閉じる。',
       },
       {
         type: 'p',
@@ -1148,12 +1055,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: 次の「実装して…」を side chat に打って Lead が動かないと不思議がる; side chat が親のプラン承認や ask-user モーダルに答えると期待; Ctrl+; を開いたままどの composer にフォーカスしているか見失う; 引用が双方向に自動同期すると仮定。',
+        text: 'よくある失敗: 次の「実装して…」を side chat に打って Lead が動かないと不思議がる; side chat が親のツール承認や ask-user モーダルに答えると期待; Ctrl+; を開いたままどの composer にフォーカスしているか見失う; 引用が双方向に自動同期すると仮定。',
       },
       {
         type: 'tips',
         items: [
-          '横断: Plan review 引用と組み合わせ、「この箇条を説明」を Reject せずに。',
           '横断: 重い並列調査は Work 兄弟チャット + share_context。',
           '横断: /stop はなおメインチーム向け — side chat は第二の Lead ではない。',
           'side chat に必要なツールがないなら、おそらく /btw の用途を超えている。'
@@ -1164,8 +1070,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'composer-power',
       'workbench-tools',
       'slash-commands',
-      'slash-goal',
-      'plan-review'
+      'slash-goal'
 ],
     openAction: { type: 'workbench', tool: 'side-chat' },
   },
@@ -1323,11 +1228,11 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'PR ループ手順: (1) accept-edits または plan でエージェントが編集、(2) Ctrl+G で diff 検査、(3) 関連 hunk を stage、(4) why 重視のメッセージで commit、(5) エージェントまたはいつものリモートフローで push、(6) 接続ホストで Review / Create PR、(7) フォローアップチャットでレビューコメント対応。',
+        text: 'PR ループ手順: (1)「承認を求める」または「自動で承認」でエージェントが編集、(2) Ctrl+G で diff 検査、(3) 関連 hunk を stage、(4) why 重視のメッセージで commit、(5) エージェントまたはいつものリモートフローで push、(6) 接続ホストで Review / Create PR、(7) フォローアップチャットでレビューコメント対応。',
       },
       {
         type: 'p',
-        text: 'エージェントに git を任せる vs 自分で: diff がプランに一致し権限モードが適切なら stage/commit を任せる; 保護ブランチでチームが人間儀式を求めるなら merge/rebase は自分で。共有ブランチで force-with-lease を気軽に有効にしない。',
+        text: 'エージェントに git を任せる vs 自分で: diff が依頼内容に一致し権限モードが適切なら stage/commit を任せる; 保護ブランチでチームが人間儀式を求めるなら merge/rebase は自分で。共有ブランチで force-with-lease を気軽に有効にしない。',
       },
       {
         type: 'p',
@@ -1336,7 +1241,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          '横断: Plan Accept → Source Control で、プランが期待どおりの diff になったか確認。',
+          '横断: 編集後 → Source Control で、diff が期待どおりか確認。',
           '横断: worktree は実験コミットを主チェックアウトから遠ざける。',
           '横断: 本番リモートへの初 push 前は権限 ask モード。'
 ],
@@ -1346,8 +1251,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'coding-workspaces',
       'workbench-tools',
       'settings-safety',
-      'permissions-modes',
-      'plan-review'
+      'permissions-modes'
 ],
     openAction: { type: 'workbench', tool: 'source-control' },
   },
@@ -2179,7 +2083,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'チームは work / coding にスコープ。',
       'コマンドパレットで Edit <agent>… や新規エージェント/スキル作成へジャンプ。',
       'tools_opt_out で code-owned ツール既定を無効化し、割り当て済み skill は skills リストから直接削除。',
-      'Lead 専用ツール（ask_user、plan mode ヘルパー、一部 worktree ヘルパー）は specialist に付与されません。',
+      'Lead 専用ツール（ask_user、一部 worktree ヘルパー）は specialist に付与されません。',
       'MCP サーバーが auth に留まるなら、composer スラッシュメニューを責める前に認証フローを完了。'
 ],
     blocks: [
@@ -2193,7 +2097,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Settings → Agents でチームメンバー編集; Settings → Skills で自分のスキルの作成・編集、検証の確認、各スキルのオン/オフ; Settings → MCP でサーバー追加とステータスドット監視。チャットでは $skill-name でスキルを今すぐ使うか、パレットの New Agent / New Skill。エージェントの Skills フィールドはそのスキルをエージェントに事前読み込みします。Lead 専用ツール（ask_user、plan mode、worktree ヘルパー）は specialist に付与されません。',
+        text: 'Settings → Agents でチームメンバー編集; Settings → Skills で自分のスキルの作成・編集、検証の確認、各スキルのオン/オフ; Settings → MCP でサーバー追加とステータスドット監視。チャットでは $skill-name でスキルを今すぐ使うか、パレットの New Agent / New Skill。エージェントの Skills フィールドはそのスキルをエージェントに事前読み込みします。Lead 専用ツール（ask_user、worktree ヘルパー）は specialist に付与されません。',
       },
       {
         type: 'tips',
@@ -2253,14 +2157,14 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
 ],
     openAction: { type: 'settings', path: 'sandbox' },
     setup:
-      'Settings → Sandbox。積極的な auto/bypass 権限モードの前に deny パターンを見直す。ページ上のヘルプポップオーバーが ** と * の glob 構文を説明します。',
+      'Settings → Sandbox。「自動で承認」や「フルアクセス」権限モードの前に deny パターンを見直す。ページ上のヘルプポップオーバーが ** と * の glob 構文を説明します。',
     tricks: [
       'Deny パターンは ** と * glob; Settings のヘルプポップオーバーが構文を説明。',
       'Worktree 配置（repository vs user_data）は Sandbox ページにあります。',
       'アウトバウンド redact/block は有効時、コンテンツがプロバイダへ届く前に走ります。',
       'Sandbox は Goal モード下でも適用 — Goal はスコープを広げません。',
       'ブロックされたルートへのシンボリックリンクは拒否; シェルコマンドは拒否パス検査のためトークン化。',
-      '日常コーディング速度には accept-edits または auto と厳しめ denylist を組み合わせ。',
+      '日常コーディング速度には「自動で承認」と厳しめ denylist を組み合わせ。',
       'モデルを信頼していても資格情報キャッシュや無関係ディスクを deny。',
       'glob 編集後はサンプルツール呼び出しで再テスト — 静かな誤 glob は「ツールが壊れた」ように感じます。',
       'ファイルシステム denylist を Settings → Browser ドメインポリシーと WebBridge 向けに組み合わせ。'
@@ -2291,17 +2195,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Coding ノート PC 硬化手順: (1) 機微ルート（キー、クラウド同期、他クライアント）を列挙、(2) deny glob を追加、(3) worktree 配置を意図的に設定、(4) ポリシーが求めるならアウトバウンド redact を有効化、(5) ask 下でプローブツール実行、(6) それから速度のため accept-edits または auto を検討。',
+        text: 'Coding ノート PC 硬化手順: (1) 機微ルート（キー、クラウド同期、他クライアント）を列挙、(2) deny glob を追加、(3) worktree 配置を意図的に設定、(4) ポリシーが求めるならアウトバウンド redact を有効化、(5)「承認を求める」でプローブツール実行、(6) それから速度のため「自動で承認」を検討。',
       },
       {
         type: 'p',
-        text: 'よくある失敗: ホームディレクトリワークスペースで空 denylist のまま bypass; シンボリックリンクを忘れる; アウトバウンド redact がシークレットを貼らないことの代替になると仮定; worktree を user_data に置きディスク使用が移動したと不思議がる; deny ヒットを MCP 認証失敗と混同。',
+        text: 'よくある失敗: ホームディレクトリワークスペースで空 denylist のままフルアクセス; シンボリックリンクを忘れる; アウトバウンド redact がシークレットを貼らないことの代替になると仮定; worktree を user_data に置きディスク使用が移動したと不思議がる; deny ヒットを MCP 認証失敗と混同。',
       },
       {
         type: 'tips',
         items: [
-          '横断: プランが拒否パスを狙うときは sandbox と戦わず plan Reject。',
-          '横断: 「ツール拒否」トラブルシューティングにはシールド + denylist が含まれる。',
+          '横断: エージェントが拒否パスを狙うときは sandbox と戦わずツール呼び出しを Reject。',
+          '横断: 「ツール拒否」トラブルシューティングには権限モード + denylist が含まれる。',
           '横断: Coding worktree は Sandbox 配置ポリシーに従う。'
 ],
       }
@@ -2596,7 +2500,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Ctrl+B はすべてのモードサイドバー向けに AppShell が一度所有。',
       'Ctrl+R は Work セッションのみ更新（アプリ全体のリロードではない）。',
       'バインディングを忘れたらアクション名で Ctrl+P 検索を優先。',
-      'キー 1–5 はシールドメニューが開いているときだけ権限モードを切り替え。',
+      'キー 1–3 は権限メニューが開いているときだけ権限モードを切り替え。',
       'Ctrl+I はチャット入力にフォーカス — workbench パネルを渡り歩いたあとに便利。'
 ],
     blocks: [
@@ -2625,7 +2529,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           { keys: 'Ctrl+I', action: 'チャット入力にフォーカス' },
           { keys: 'Ctrl+;', action: 'Side chat（ラベルは ⌥⌘S の場合あり）' },
           { keys: 'Ctrl+R', action: 'Work セッションを更新' },
-          { keys: '1–5', action: 'シールドメニューが開いているときの権限モード' }
+          { keys: '1–3', action: '権限メニューが開いているときの権限モード' }
 ],
       },
       {
@@ -2640,7 +2544,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           '⌘P / ⌥⌘S ラベル — 古い; Ctrl+F / Ctrl+; を使う',
           'Ctrl+V — ペースト中は表示循環が抑止',
           'Ctrl+R — Work セッション更新のみ',
-          '1–5 — シールドメニューが開いているときだけ'
+          '1–3 — 権限メニューが開いているときだけ'
 ],
       },
       {
@@ -2650,9 +2554,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          '横断: 権限シールド + 1–5 はモードクリックより速い。',
+          '横断: 権限メニュー + 1–3 はモードクリックより速い。',
           '横断: Goal 中に /stop なしで Ctrl+; side chat。',
-          '横断: plan Accept 後に Ctrl+G で diff 検証。'
+          '横断: エージェントの編集後に Ctrl+G で diff 検証。'
 ],
       }
 ],
@@ -2719,7 +2623,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'ソース実行 → `make dev` のあと `make -C desktop dev`',
           'モデルなし → Settings → Providers',
           'ヘルス緑でストリームエラー → モデル/プロバイダ資格情報またはレート制限',
-          'ツール拒否 → 権限モード（ask/plan）+ Sandbox deny glob',
+          'ツール拒否 → 権限モード（ask）+ Sandbox deny glob',
           'WebBridge オフライン → 拡張、ペアリング、Browser ポリシー、per-chat 有効化',
           '空の telemetry → observability extras 無効（しばしば非ブロッキング）',
           'Goal 詰まり → blocker streak、予算一時停止、または /goal:stop を確認',
@@ -2729,7 +2633,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '順序付きチェックリスト: (1) HealthDot、(2) Connection モード、(3) Welcome/チーム準備、(4) Diagnostics、(5) Providers、(6) 権限シールド、(7) Sandbox denylist、(8) Browser/WebBridge、(9) モード固有ツール（Source Control と Problems は Coding のみ）。最初に失敗した層で止める。',
+        text: '順序付きチェックリスト: (1) HealthDot、(2) Connection モード、(3) Welcome/チーム準備、(4) Diagnostics、(5) Providers、(6) 権限モード、(7) Sandbox denylist、(8) Browser/WebBridge、(9) モード固有ツール（Source Control と Problems は Coding のみ）。最初に失敗した層で止める。',
       },
       {
         type: 'p',
@@ -2739,7 +2643,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
         type: 'tips',
         items: [
           '横断: はじめにのコールドスタート順はこのチェックリストと一致。',
-          '横断: Accept 待ちの plan review はハングではない — パネルを解決。',
+          '横断: 保留中の権限プロンプトはハングではない — 権限バーを解決。',
           '横断: side chat フォーカスの誤りは「Lead が無視した」ように見える。',
           '迷ったら — Diagnostics + 小さな Work ping が推測リセットに勝つ。'
 ],

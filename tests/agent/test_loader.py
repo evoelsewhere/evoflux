@@ -227,13 +227,8 @@ def test_tier_tools_lead_only_and_tier_filters():
 
     # User-interaction tools are lead-only in Work. Worktree tools are both
     # lead-only and Coding-only.
-    for name in (
-        "ask_user",
-        "enter_plan_mode",
-        "exit_plan_mode",
-    ):
-        assert name in lead_normal
-        assert name not in member_normal
+    assert "ask_user" in lead_normal
+    assert "ask_user" not in member_normal
     for name in ("worktree_start", "worktree_finish"):
         assert name not in lead_normal
         assert name in lead_coding

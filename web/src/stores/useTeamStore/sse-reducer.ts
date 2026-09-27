@@ -723,12 +723,11 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         set((draft) => {
           draft.isTeamWorking = false
           draft.isContinuing = false
-          // Safety net: live question_replied / permission_replied /
-          // plan_approval_replied normally dismiss gates; clear any leftover
-          // if the turn ended without a matching replied event.
+          // Safety net: live question_replied / permission_replied normally
+          // dismiss gates; clear any leftover if the turn ended without a
+          // matching replied event.
           draft.askUserQuestion = null
           draft.permissionRequest = null
-          draft.planApproval = null
           const completedAtMs = Date.now()
           const completedAt = new Date(completedAtMs)
           Object.keys(draft.agentStreams).forEach((name) => {
@@ -765,7 +764,6 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           draft.isContinuing = false
           draft.askUserQuestion = null
           draft.permissionRequest = null
-          draft.planApproval = null
         })
         break
       }
@@ -871,30 +869,6 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         break
       }
 
-      case 'plan_approval_requested': {
-        const requestId = d.request_id as string
-        set((draft) => {
-          // Same pending plan on reconnect replay — keep the review panel.
-          if (draft.planApproval?.requestId === requestId) return
-          draft.planApproval = {
-            requestId,
-            sessionId: d.session_id as string,
-            plan: (d.plan as string) ?? '',
-            steps: (d.steps as Array<Record<string, unknown>>).map((s) => ({
-              tool: s.tool as string,
-              args: (s.args as Record<string, unknown>) ?? {},
-              summary: s.summary as string,
-              path: typeof s.path === 'string' ? s.path : undefined,
-              diff_stat:
-                s.diff_stat && typeof s.diff_stat === 'object'
-                  ? (s.diff_stat as { additions?: number | null; deletions?: number | null })
-                  : undefined,
-            })),
-          }
-        })
-        break
-      }
-
       case 'turn_changes': {
         const filesRaw = Array.isArray(d.files) ? d.files : []
         const files: TurnChangedFile[] = []
@@ -933,17 +907,6 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           // Coding mode renders the completed-turn summary inline. Keep the
           // larger review panel closed until the user explicitly opens it.
           draft.turnChangesOpen = false
-        })
-        break
-      }
-
-      case 'plan_approval_replied': {
-        // Another tab replied, or the request was cancelled by an
-        // interrupt — close the plan-review UI everywhere.
-        set((draft) => {
-          if (draft.planApproval?.requestId === (d.request_id as string)) {
-            draft.planApproval = null
-          }
         })
         break
       }

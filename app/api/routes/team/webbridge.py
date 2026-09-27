@@ -62,7 +62,7 @@ from app.api.routes.team._helpers import _fast_tier
 from app.api.deps import DbSession, WriteDbSession
 from app.api.schemas.commands import CommandRenderRequest, CommandRenderResponse
 from app.api.schemas.snippets import SnippetRenderResponse
-from app.api.schemas.team import PermissionReplyRequest, PlanReplyRequest
+from app.api.schemas.team import PermissionReplyRequest
 from app.webbridge_tags import (
     WEBBRIDGE_BROWSER_ORIGIN_TAG,
     WEBBRIDGE_SESSION_TAG,
@@ -1159,21 +1159,6 @@ async def reply_browser_panel_permission(
     return await reply_permission(str(session_id), request_id, body)
 
 
-@router.post("/sessions/{session_id}/plan/reply", status_code=200)
-async def reply_browser_panel_plan(
-    session_id: uuid.UUID,
-    body: PlanReplyRequest,
-    request: Request,
-    db: DbSession,
-) -> dict[str, Any]:
-    pairing = await _paired_request(request, db, required_scope="handoff:reply")
-    await _require_pairing_webbridge_session(db, session_id, pairing.id)
-
-    from app.api.routes.team.permissions import reply_plan_approval
-
-    return await reply_plan_approval(str(session_id), body)
-
-
 def _browser_composer_workspace(session: ChatSession) -> Path | None:
     if not session.workspace:
         return None
@@ -1971,8 +1956,6 @@ _BROWSER_PANEL_STREAM_EVENT_TYPES = frozenset(
         "browser_session",
         "permission_asked",
         "permission_replied",
-        "plan_approval_requested",
-        "plan_approval_replied",
         "turn_changes",
         "question_asked",
         "question_replied",
@@ -2208,10 +2191,6 @@ def _browser_panel_stream_event(event: dict[str, Any]) -> dict[str, str] | None:
     elif event_type == "permission_asked":
         copy_strings("request_id", "session_id", "tool")
     elif event_type == "permission_replied":
-        copy_strings("request_id", "session_id")
-    elif event_type == "plan_approval_requested":
-        copy_strings("request_id", "session_id")
-    elif event_type == "plan_approval_replied":
         copy_strings("request_id", "session_id")
     elif event_type == "turn_changes":
         copy_strings("session_id")

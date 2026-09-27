@@ -281,23 +281,6 @@ export async function setSessionPermissionMode(
   }
 }
 
-export async function replyPlanApproval(
-  sessionId: string,
-  requestId: string,
-  decision: 'approved' | 'rejected' | 'revise',
-  feedback?: string,
-): Promise<void> {
-  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/plan/reply`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ request_id: requestId, decision, feedback: feedback ?? null }),
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw new Error(body?.detail || `POST plan/reply failed: ${res.status}`)
-  }
-}
-
 export async function getPendingQuestions(sessionId: string): Promise<{
   questions: Array<{
     request_id: string

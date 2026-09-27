@@ -653,7 +653,7 @@ async def team_chat(
         #
         # Without this the pick was silently dropped: the row took the column
         # default, the badge went on showing what was chosen, and a user who
-        # selected "Ask permissions" got a turn that approved everything.
+        # selected "Ask for approval" got a turn that approved everything.
         # Falling back to the default rather than leaving ``team_obj`` alone
         # also stops a new chat inheriting the previous session's mode from
         # the long-lived in-memory team.
@@ -1769,7 +1769,7 @@ async def duplicate_team_session(session_id: UUID, db: DbSession) -> SessionResp
     return SessionResponse.model_validate(session)
 
 
-_VALID_PERMISSION_MODES = frozenset({"ask", "accept-edits", "plan", "auto", "bypass"})
+_VALID_PERMISSION_MODES = frozenset({"ask", "auto", "bypass"})
 DEFAULT_PERMISSION_MODE = "auto"
 
 
@@ -1800,7 +1800,7 @@ async def set_session_permission_mode(
 ) -> dict:
     """Persist the agent permission mode for a session.
 
-    ``mode`` must be one of: ``ask``, ``accept-edits``, ``plan``, ``auto``, ``bypass``.
+    ``mode`` must be one of: ``ask``, ``auto``, ``bypass``.
     The in-memory team is updated if one is loaded, and any *running* agent's
     permission service switches immediately — pending requests the new mode
     no longer gates are auto-resolved so a blocked agent resumes.

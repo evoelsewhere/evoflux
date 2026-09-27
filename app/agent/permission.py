@@ -22,11 +22,11 @@ Permission service
 persisted ``permission_mode`` decides how an unresolved ``"ask"`` action is
 handled:
 
-- ``"ask"``          — block the tool call, publish a ``permission_asked`` SSE
-  event, and wait for the user's reply.
-- ``"accept-edits"`` — like ``"ask"`` but file-edit tools are auto-allowed.
-- ``"plan"`` / ``"auto"`` — auto-allow (plan gating happens in the plan tools).
-- ``"bypass"``       — skip rule evaluation entirely.
+- ``"ask"``    — "Ask for approval": block the tool call, publish a
+  ``permission_asked`` SSE event, and wait for the user's reply.
+- ``"auto"``   — "Approve for me": auto-allow, except calls flagged
+  ``important`` (potentially unsafe / irreversible), which still ask.
+- ``"bypass"`` — "Full access": skip rule evaluation entirely.
 
 The mode lives on the service (not baked into subclasses) so the API can flip
 it mid-run and immediately resolve any now-allowed pending requests — the
@@ -35,7 +35,7 @@ frontend never has to reason about modes; it only renders events.
 The service is scoped via a ``contextvars.ContextVar`` for tool-call sites
 *and* registered in a module-level ``session_id → service`` map so HTTP
 endpoints (which run in a different async context) can find it — the same
-pattern as ``plan.py`` / ``ask_user.py``.
+pattern as ``ask_user.py``.
 
 Permission flow
 ---------------
@@ -61,7 +61,7 @@ from loguru import logger
 
 Action = Literal["allow", "deny", "ask"]
 Reply = Literal["once", "always", "reject"]
-Mode = Literal["ask", "accept-edits", "plan", "auto", "bypass"]
+Mode = Literal["ask", "auto", "bypass"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,10 +185,8 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         # parks a suggestion for the user; starting it is the user's click
         "spawn_task",
         "dismiss_task",
-        # user interaction & plan flow (already block on the user)
+        # user interaction (already blocks on the user)
         "ask_user",
-        "enter_plan_mode",
-        "exit_plan_mode",
         # team coordination (no system side effects)
         "team_message",
         "team_handoff",
@@ -207,9 +205,6 @@ _DEFAULT_BASE_RULESET: Ruleset = [
     Rule(permission=t, pattern="*", action="allow") for t in sorted(_SAFE_TOOLS)
 ]
 
-# File-edit tools additionally auto-allowed in "accept-edits" mode.
-_ACCEPT_EDITS_TOOLS: frozenset[str] = frozenset({"edit", "write", "patch"})
-
 
 # ── Permission request ────────────────────────────────────────────────────────
 
@@ -224,6 +219,8 @@ class PermissionRequest:
     patterns: list[str]  # command fragments / path globs to approve
     always_patterns: list[str]  # patterns added to session ruleset on "always"
     metadata: dict = field(default_factory=dict)
+    #: Flagged potentially unsafe: "Approve for me" (``auto``) still asks.
+    important: bool = False
     # Future is created lazily via create() — do NOT set a default_factory here
     # because asyncio.get_event_loop() cannot be called at module import time.
     _future: "asyncio.Future | None" = field(default=None, compare=False, repr=False)
@@ -236,6 +233,8 @@ class PermissionRequest:
         patterns: list[str],
         always_patterns: list[str],
         metadata: dict | None = None,
+        *,
+        important: bool = False,
     ) -> "PermissionRequest":
         req = cls(
             id=str(uuid.uuid4()),
@@ -244,6 +243,7 @@ class PermissionRequest:
             patterns=patterns,
             always_patterns=always_patterns,
             metadata=metadata or {},
+            important=important,
         )
         req._future = asyncio.get_event_loop().create_future()
         return req
@@ -327,9 +327,9 @@ class PermissionService:
 
         - ``"allow"`` → returns immediately.
         - ``"deny"``  → raises ``PermissionDeniedError``.
-        - ``"ask"``   → resolved by ``self.mode``: auto-allow in
-          ``auto``/``plan`` (and ``accept-edits`` for edit tools), otherwise
-          publish a ``permission_asked`` SSE event and await the reply.
+        - ``"ask"``   → resolved by ``self.mode``: auto-allow in ``auto``
+          unless *important*, otherwise publish a ``permission_asked`` SSE
+          event and await the reply.
 
         Raises:
             PermissionDeniedError: if any rule explicitly denies the call.
@@ -370,7 +370,7 @@ class PermissionService:
         if self._already_rejected(tool, patterns):
             raise PermissionRejectedError("", tool=tool, repeated=True)
 
-        if not important and not self._blocks(tool):
+        if not self._blocks(important=important):
             return
 
         req = PermissionRequest.create(
@@ -379,6 +379,7 @@ class PermissionService:
             patterns=patterns,
             always_patterns=always_patterns or patterns,
             metadata=metadata or {},
+            important=important,
         )
         self.pending[req.id] = req
 
@@ -415,23 +416,13 @@ class PermissionService:
         """
         return bool(patterns) and all((tool, p) in self.rejected for p in patterns)
 
-    def _blocks(self, tool: str) -> bool:
-        """Whether an unresolved ``ask`` action blocks on the user in ``self.mode``."""
-        if self.mode == "auto":
-            return False
-        if self.mode == "plan":
-            # Only the tools plan mode actually records get a free pass —
-            # they are not going to run, so approving them is meaningless.
-            # Everything else executes for real and is asked about. Waving
-            # all of them through made "Plan mode" the single most permissive
-            # setting in the list for MCP tools, browser control and anything
-            # else the recorder does not cover.
-            from app.agent.plan import PLAN_INTERCEPTED_TOOLS
+    def _blocks(self, *, important: bool) -> bool:
+        """Whether an unresolved ``ask`` action blocks on the user in ``self.mode``.
 
-            return tool not in PLAN_INTERCEPTED_TOOLS
-        if self.mode == "accept-edits" and tool in _ACCEPT_EDITS_TOOLS:
-            return False
-        return True
+        ``auto`` ("Approve for me") only stops for calls flagged *important* —
+        the potentially unsafe ones; ``ask`` stops for every call.
+        """
+        return important or self.mode != "auto"
 
     def reply(self, request_id: str, reply: Reply) -> bool:
         """Resolve a pending permission request with *reply*.
@@ -463,7 +454,7 @@ class PermissionService:
         self.rejected.clear()
         resolved: list[str] = []
         for req_id, req in list(self.pending.items()):
-            if mode == "bypass" or not self._blocks(req.tool):
+            if mode == "bypass" or not self._blocks(important=req.important):
                 if self.reply(req_id, "once"):
                     resolved.append(req_id)
         return resolved

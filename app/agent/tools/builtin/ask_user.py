@@ -1,6 +1,6 @@
 """ask_user — pause the task and ask the human one or more questions at once.
 
-Presents the questions via a blocking SSE round-trip (mirrors plan-mode
+Presents the questions via a blocking SSE round-trip (mirrors permission
 approval): the frontend renders a question UI for the whole batch and POSTs
 all replies together, which resolves the future this tool is awaiting.
 """

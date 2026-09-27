@@ -31,8 +31,6 @@ from app.agent.schemas.events import (
     MessageEvent,
     PermissionAskedEvent,
     PermissionRepliedEvent,
-    PlanApprovalRepliedEvent,
-    PlanApprovalRequestedEvent,
     ProviderStatusEvent,
     QuestionAskedEvent,
     QuestionRepliedEvent,
@@ -84,8 +82,6 @@ AnyStreamEvent = Union[
     SummarizationContentEvent,
     SummarizationEndEvent,
     BrowserSessionEvent,
-    PlanApprovalRequestedEvent,
-    PlanApprovalRepliedEvent,
     WidgetDeltaEvent,
 ]
 

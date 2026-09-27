@@ -142,7 +142,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           '3) Stay in Work and send a short first chat, or switch to Coding and open a git repository.',
           '4) Optional: switch to Coding → open a repo or project and start a session.',
           '5) Explore workbench tools (Terminal, Files, Memory, Browser) once a session exists.',
-          '6) Optional hardening: review Settings → Sandbox deny globs before enabling auto or bypass.'
+          '6) Optional hardening: review Settings → Sandbox deny globs before choosing Approve for me or Full access.'
 ],
       },
       {
@@ -161,7 +161,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'Cross-feature: after first chat works, open Memory (Ctrl+M) so you know where durable notes will land.',
-          'Cross-feature: skim permission shield modes (keys 1–5) before letting agents edit a real repo.',
+          'Cross-feature: skim the three permission modes (keys 1–3) before letting agents edit a real repo.',
           'Cross-feature: Ctrl+P → Search “Diagnostics” if health is green but a tool panel stays empty.',
           'From source only: never start the Tauri shell without `make dev` already serving the API.'
 ],
@@ -292,7 +292,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Settings → Agents groups members under collapsible lead teams. Delegation cards read “lead delegated → member#N”; the lead still owns coordination and final synthesis.',
       'Session pills on the composer set model, thinking level, and fast mode for the current chat only.',
       'Keep simple tasks on the Lead; fan-out only when parallelism clearly shortens wall time.',
-      'Lead-only tools (ask_user, plan mode helpers, some worktree helpers) are never granted to specialists — do not expect workers to approve plans.'
+      'Lead-only tools (ask_user, some worktree helpers) are never granted to specialists — do not expect workers to ask you questions directly.'
 ],
     blocks: [
       {
@@ -333,7 +333,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'When to fan out — multi-file investigation, parallel test/fix, specialist lanes.',
           'When to stay Lead-only — short Q&A, single-file edits, permission-sensitive first passes.',
-          'Cross-feature: pair Split with Plan review so you can read the plan while workers idle.',
           'Cross-feature: /btw side chat for meta questions without stopping the team run.'
 ],
       }
@@ -349,169 +348,83 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
   {
     id: 'permissions-modes',
     category: 'chat',
-    title: 'Permission modes and plan review',
+    title: 'Permission modes',
     summary:
-      'Control how freely tools run with ask, accept-edits, plan, auto, or bypass — then approve tools Once/Always/Reject and review plans with Accept/Revise/Reject. Filesystem-tool deny globs apply underneath every mode.',
+      'Pick one of three modes — Ask for approval, Approve for me, or Full access — then approve individual tool calls with Once/Always/Reject. Filesystem-tool deny globs apply underneath every mode.',
     keywords: [
       'permission',
+      'Ask for approval',
+      'Approve for me',
+      'Full access',
       'ask',
-      'accept-edits',
-      'plan',
       'auto',
       'bypass',
       'approve',
-      'shield',
       'Once',
       'Always',
       'Reject',
       'ask-user',
-      'plan review',
       'quyền',
       'chế độ quyền',
       'phê duyệt',
       '権限',
-      'プラン',
       '承認'
 ],
     setup:
-      'Open the shield / permission control on the composer. Keys 1–5 work while that menu is open. Review Settings → Sandbox before enabling auto or bypass on a machine with broad filesystem access.',
+      'Open the permission control on the composer. Keys 1–3 work while that menu is open. Review Settings → Sandbox before choosing Approve for me or Full access on a machine with broad filesystem access.',
     tricks: [
-      'With the permission menu open, keys 1–5 jump to ask → accept-edits → plan → auto → bypass.',
-      'Ask pauses before every tool call; accept-edits auto-accepts file edits but still asks for shell and destructive ops.',
-      'Plan mode records proposed edits/shell until you Accept in the Plan review panel — or Revise / Reject.',
-      'Select plan text in the review panel to quote it into a revise message in the composer.',
+      'With the permission menu open, keys 1–3 pick Ask for approval → Approve for me → Full access.',
+      'Ask for approval pauses before every edit, command, or other action with side effects; Approve for me only stops for actions detected as potentially unsafe.',
       'When a tool needs approval, choose Once, Always, or Reject on the permission bar — Enter allows once, Esc rejects.',
       'Ask-user question modals appear when the agent needs structured answers before continuing — press 1–9 to pick a suggested answer, or type your own, then Enter.',
-      'Goal mode never expands the session’s permissions or sandbox scope — set the shield deliberately before `/goal`.',
-      'Bypass skips all permission checks — fastest, but use only in a disposable environment or a host you fully trust.',
+      'Goal mode never expands the session’s permissions or sandbox scope — set the permission mode deliberately before `/goal`.',
+      'Full access skips all permission checks — fastest, but use only in a disposable environment or a host you fully trust. It shows in orange on the composer so it is never on by accident.',
       'Always is sticky for matching rules — Prefer Once when you are still learning what the agent wants to run.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Each session has a PermissionMode: ask, accept-edits, plan, auto, or bypass. Separately, individual tool calls may still surface Once / Always / Reject, and plan mode surfaces a dedicated Plan review panel with Accept / Revise / Reject. Think of the shield as the session default and the permission bar as per-call overrides.',
+        text: 'Each session has one of three permission modes: Ask for approval, Approve for me (the default), or Full access. Separately, individual tool calls may still surface Once / Always / Reject. Think of the mode as the session default and the permission bar as per-call overrides.',
       },
       {
         type: 'p',
-        text: 'Fine-grained control lets you stay hands-on for risky work (ask), move faster on edits (accept-edits), force an explicit plan gate (plan), run unattended in a trusted tree (auto), or skip prompts entirely (bypass). Permissions decide when to ask; filesystem tools still apply workspace and deny-glob checks. Shell commands run directly on the host after a best-effort denied-path scan.',
+        text: 'Stay hands-on for risky work (Ask for approval), let the agent run while it still stops for anything that looks unsafe or irreversible (Approve for me), or skip prompts entirely (Full access). Permissions decide when to ask; filesystem tools still apply workspace and deny-glob checks. Shell commands run directly on the host after a best-effort denied-path scan.',
       },
       {
         type: 'p',
-        text: 'Open the shield control on the composer, pick a mode (or press 1–5). In plan mode, wait for the Plan review panel: Accept executes, Revise focuses the composer (optionally with a quoted selection), Reject stops the plan. Tool prompts offer Once (this call), Always (remember for matching rules), or Reject. Ask-user modals collect structured answers mid-run.',
+        text: 'Open the permission control on the composer and pick a mode (or press 1–3). Tool prompts offer Once (this call), Always (remember for matching rules), or Reject. Ask-user modals collect structured answers mid-run.',
       },
       {
         type: 'tips',
         items: [
-          '1 Ask — pause before every tool call.',
-          '2 Accept edits — auto file edits; ask for shell / destructive.',
-          '3 Plan — plan then approve before execution.',
-          '4 Auto — automatically approve operations.',
-          '5 Bypass — skip permission checks entirely.',
-          'Filesystem tools — still apply deny globs even under bypass.'
+          '1 Ask for approval — ask before every edit, command, or other action.',
+          '2 Approve for me — only ask for actions detected as potentially unsafe.',
+          '3 Full access — run every action without asking.',
+          'Filesystem tools — still apply deny globs even under Full access.'
 ],
       },
       {
         type: 'p',
-        text: 'When to use which mode: ask for unfamiliar repos and production-adjacent trees; accept-edits for day-to-day Coding once you trust the tree; plan for multi-step refactors and large changes you want to read first; auto for trusted hosts and scheduled maintenance; bypass only for short, deliberate bursts in disposable environments.',
+        text: 'When to use which mode: Ask for approval for unfamiliar repos, production-adjacent trees, and multi-step refactors you want to follow call by call; Approve for me for day-to-day work once you trust the tree; Full access only for short, deliberate bursts in disposable environments.',
       },
       {
         type: 'p',
-        text: 'Common mistakes: leaving bypass on overnight; confusing Always with “trust this agent forever” (it is rule-matched); switching out of plan mode mid-flight and assuming the pending plan was accepted; ignoring ask-user modals and thinking the team hung; expecting Goal to loosen permissions for unattended work.',
+        text: 'Common mistakes: leaving Full access on overnight; confusing Always with “trust this agent forever” (it is rule-matched); ignoring ask-user modals and thinking the team hung; expecting Goal to loosen permissions for unattended work.',
       },
       {
         type: 'tips',
         items: [
-          'Step — shield → Plan (3) → send task → Plan review → Accept / Revise / Reject.',
           'Step — on a tool prompt, prefer Once until the pattern is clearly safe.',
-          'Cross-feature: pair plan with quote-into-composer for surgical revises.',
-          'Cross-feature: tighten Sandbox before auto on multi-repo projects.'
+          'Step — for a large change, ask the Lead for an outline first under Ask for approval, then switch to Approve for me once it matches what you want.',
+          'Cross-feature: tighten Sandbox before Approve for me on multi-repo projects.'
 ],
       },
       {
         type: 'p',
-        text: 'MCP tools inherit the same permission rules as native tools. Approving an MCP call Once/Always follows the same bar; sandbox and outbound policy still apply. If tools are “denied unexpectedly,” check the shield and Settings → Sandbox before reconfiguring MCP.',
+        text: 'MCP tools inherit the same permission rules as native tools. Approving an MCP call Once/Always follows the same bar; sandbox and outbound policy still apply. If tools are “denied unexpectedly,” check the permission mode and Settings → Sandbox before reconfiguring MCP.',
       }
 ],
-    related: ['slash-goal', 'sandbox-settings', 'plan-review', 'chat-team', 'agents-settings'],
-  },
-  {
-    id: 'plan-review',
-    category: 'chat',
-    title: 'Plan review panel',
-    summary:
-      'In plan permission mode, review the agent’s markdown plan before any recorded edits or shell run. Accept executes, Revise steers with an optional quote, and Reject aborts the planned path so you stay in control of multi-step work.',
-    keywords: [
-      'plan review',
-      'Accept',
-      'Revise',
-      'Reject',
-      'quote',
-      'plan mode',
-      'markdown plan',
-      'Accept & execute',
-      'xem kế hoạch',
-      'chấp nhận',
-      'プランレビュー'
-],
-    setup:
-      'Set permission mode to Plan (key 3 in the shield menu), then send a task that needs multi-step work. Keep the Plan review panel visible — do not switch permission mode until you Accept, Revise, or Reject a pending plan.',
-    tricks: [
-      'Select text in the plan document to quote it into a revise message — the fastest way to say “change only this section.”',
-      'Revise returns focus to the composer so you can steer without rejecting the whole plan.',
-      'Reject stops the planned execution path; you can send a new instruction afterward without leftover half-applied steps from that plan turn.',
-      'Leaving plan mode mid-flight does not auto-accept a pending plan — resolve Accept / Revise / Reject first when prompted.',
-      'After Accept, consider dropping to accept-edits or ask if you want tighter tool prompts during execution.',
-      'Use plan mode before Goal for large objectives so the first autonomous stretch starts from an approved outline.',
-      'If the plan is vague, Revise with a concrete Definition of Done rather than Accepting and hoping.',
-      'Split view helps: keep Plan review open while you glance at specialist status.',
-      'Quoted revise chips clear before send if you change your mind — same quote pipeline as transcript selections.'
-],
-    blocks: [
-      {
-        type: 'p',
-        text: 'Plan review is the gated UI for plan permission mode. The agent drafts a markdown plan; edits and shell stay recorded until you Accept & execute, ask to Revise, or Reject. Nothing in that planned batch should run until Accept — that is the point of the gate.',
-      },
-      {
-        type: 'p',
-        text: 'Use plan review when the cost of a wrong direction is high: multi-file refactors, migrations touching shared modules, destructive shell, or any task where you want a readable outline before tools fire. Skip it for one-line fixes and trivial Q&A where ask or accept-edits is enough.',
-      },
-      {
-        type: 'p',
-        text: 'Read the plan in the review panel top to bottom: goal, steps, files, risks, and verification. Highlight any section and use quote-into-composer when revising. Accept continues with the approved plan; Reject aborts that plan turn. Pair with ask or accept-edits after acceptance if you want tighter tool prompts during execution.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Accept — execute the approved plan path.',
-          'Revise — focus composer; optional quoted selection.',
-          'Reject — abort this plan turn; send a new instruction.',
-          'Quote — select plan text → revise chip above draft.',
-          'Shield 3 — enter plan mode before the task, not after tools started.'
-],
-      },
-      {
-        type: 'p',
-        text: 'Step-by-step: (1) open shield → Plan, (2) describe the outcome and constraints, (3) wait for the Plan review panel, (4) skim risks and file list, (5) Accept, or select a weak section → quote → Revise with corrections, or Reject and rewrite the ask, (6) optionally tighten permission mode for the execution phase.',
-      },
-      {
-        type: 'p',
-        text: 'Common mistakes: Accepting unread plans because they “look long enough”; Rejecting when you meant Revise (you lose the useful structure); switching to bypass to “just run it” and losing the audit trail you wanted; assuming Reject deletes prior successful tool calls from earlier turns — it only stops that planned execution path.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Good revise prompts name files, tests, and out-of-scope items explicitly.',
-          'Bad revise prompts are vague (“make it better”) — quote the weak bullet first.',
-          'Cross-feature: Send unrelated meta questions to side chat so the plan thread stays clean.',
-          'Cross-feature: after Accept on Coding work, open Source Control (Ctrl+G) to verify the diff matches the plan.'
-],
-      },
-      {
-        type: 'p',
-        text: 'Do not use plan review as a substitute for sandbox policy. A beautiful plan can still propose paths you never want touched — keep deny globs in Settings → Sandbox, and Reject plans that expand scope into secrets, vendor dirs, or unrelated repos.',
-      }
-],
-    related: ['permissions-modes', 'composer-power', 'attachments', 'slash-goal', 'coding-git'],
+    related: ['slash-goal', 'sandbox-settings', 'chat-team', 'agents-settings'],
   },
   {
     id: 'composer-power',
@@ -615,7 +528,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'composer',
     title: 'Attachments, paste, and quotes',
     summary:
-      'Attach files by drag-and-drop or paste, quote transcript or plan selections into the next message, and rely on /undo to restore attachments with the draft. Quotes and files are how you pin evidence without rewriting context by hand.',
+      'Attach files by drag-and-drop or paste, quote transcript selections into the next message, and rely on /undo to restore attachments with the draft. Quotes and files are how you pin evidence without rewriting context by hand.',
     keywords: [
       'attachment',
       'drag and drop',
@@ -634,11 +547,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       '引用'
 ],
     setup:
-      'Attachments must be enabled for the session/composer; some environments disable uploads for policy reasons. Confirm the composer drop target highlights before relying on drag-and-drop. Quotes work from transcript selections, Plan review, and Send to side chat.',
+      'Attachments must be enabled for the session/composer; some environments disable uploads for policy reasons. Confirm the composer drop target highlights before relying on drag-and-drop. Quotes work from transcript selections and Send to side chat.',
     tricks: [
       'Paste from the clipboard (images/files) or drag onto the composer drop target — both bind to the next user message.',
       'Quoted context appears as a chip above the draft — clear it if you change your mind before send.',
-      'Plan review quote → composer is the same quote pipeline used for transcript selections.',
       '/undo restores attachments that were part of the undone user message — text and files come back together.',
       'Send to side chat carries a quote into /btw without interrupting the main run.',
       'Prefer a tight quote plus a short ask over re-pasting an entire prior assistant essay.',
@@ -649,15 +561,15 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Attachments are files (and often images) bound to a user message. Quotes are selected text from the transcript, plan panel, or side-chat targeting that become context for the next send. Together they pin evidence so you are not re-describing a UI state or an error block every turn.',
+        text: 'Attachments are files (and often images) bound to a user message. Quotes are selected text from the transcript or side-chat targeting that become context for the next send. Together they pin evidence so you are not re-describing a UI state or an error block every turn.',
       },
       {
         type: 'p',
-        text: 'Use attachments when the bytes matter: screenshots, PDFs, CSVs, small logs, design exports. Use quotes when the text already lives in the transcript or plan and you want surgical follow-up. Avoid attaching entire repositories — use @ mentions, Files, or Coding source search tools instead.',
+        text: 'Use attachments when the bytes matter: screenshots, PDFs, CSVs, small logs, design exports. Use quotes when the text already lives in the transcript and you want surgical follow-up. Avoid attaching entire repositories — use @ mentions, Files, or Coding source search tools instead.',
       },
       {
         type: 'p',
-        text: 'Drop or paste files onto the composer. Select text in the transcript for Add to chat / more details / Send to side chat. In Plan review, select plan text to quote into a revise message. After undo, re-send or edit the restored draft including files. Watch for the quote chip above the draft before you hit send.',
+        text: 'Drop or paste files onto the composer. Select text in the transcript for Add to chat / more details / Send to side chat. After undo, re-send or edit the restored draft including files. Watch for the quote chip above the draft before you hit send.',
       },
       {
         type: 'tips',
@@ -666,24 +578,23 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Paste — clipboard images/files into a focused composer',
           'Add to chat — quote transcript into the main draft',
           'Send to side chat — quote into /btw parallel ask',
-          'Plan quote — select plan markdown → revise chip',
           '/undo — restore previous user text + attachments',
           'Clear chip — remove quote before send if topic changed'
 ],
       },
       {
         type: 'p',
-        text: 'Step-by-step for a bug report: (1) reproduce and capture a screenshot, (2) paste or drop it on the composer, (3) quote the failing assistant step or error line if present, (4) state expected vs actual, (5) send under ask or plan if fixes will touch many files.',
+        text: 'Step-by-step for a bug report: (1) reproduce and capture a screenshot, (2) paste or drop it on the composer, (3) quote the failing assistant step or error line if present, (4) state expected vs actual, (5) send under ask if fixes will touch many files.',
       },
       {
         type: 'p',
-        text: 'Common mistakes: attaching secrets (.env, key files) “just for context”; stacking five large binaries until the context budget spikes; quoting an outdated plan section after the agent already revised; assuming side-chat quotes merge back into the parent history (they do not).',
+        text: 'Common mistakes: attaching secrets (.env, key files) “just for context”; stacking five large binaries until the context budget spikes; quoting an outdated answer after the agent already revised it; assuming side-chat quotes merge back into the parent history (they do not).',
       },
       {
         type: 'tips',
         items: [
           'When not to attach — huge build artifacts, node_modules zips, full database dumps.',
-          'When to quote — disagreeing with one parasource search, revising one plan bullet, asking “explain this”.',
+          'When to quote — disagreeing with one parasource search, revising one bullet of an outline, asking “explain this”.',
           'Cross-feature: after /undo, review restored attachments before re-send.',
           'Cross-feature: WorkFolderSelector does not attach a folder; it retargets the session root.'
 ],
@@ -695,7 +606,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
     related: [
       'composer-power',
-      'plan-review',
       'side-chat',
       'slash-commands',
       'sandbox-settings'
@@ -837,7 +747,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Hidden internal turns continue until completion, budget pause, user pause/stop, or blocker streak.',
       'Goal never expands permission mode or sandbox scope — set those deliberately before starting.',
       'Prefer a clear objective and a token budget for unattended overnight runs.',
-      'Draft with plan mode first on large goals, Accept, then `/goal` so autonomy starts from an approved outline.',
+      'On large goals, agree an outline with the Lead in normal chat first, then `/goal` so autonomy starts from it.',
       'Use /btw for meta questions while a goal runs so you do not derail the objective transcript.'
 ],
     blocks: [
@@ -870,22 +780,22 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Write objectives with a Definition of Done and out-of-scope list.',
           'Set a token budget before overnight runs.',
           'Watch blocker streak — same blocker ×3 stops progress.',
-          'Do not expect Goal to flip ask → bypass for you.',
+          'Do not expect Goal to flip Ask for approval → Full access for you.',
           'Use /goal:pause before large manual edits in the same tree.'
 ],
       },
       {
         type: 'p',
-        text: 'When to use: multi-hour Coding refactors, checklist-driven chores, research that should continue after sleep. When not to use: interactive design debates, one-shot Q&A, or anything that needs frequent human taste every minute — stay in normal chat or plan review.',
+        text: 'When to use: multi-hour Coding refactors, checklist-driven chores, research that should continue after sleep. When not to use: interactive design debates, one-shot Q&A, or anything that needs frequent human taste every minute — stay in normal chat.',
       },
       {
         type: 'p',
-        text: 'Common mistakes: starting Goal under bypass on a broad home directory; omitting a budget and waking up to a huge bill; ignoring blocker streak and re-prompting the same stuck step; using /stop instead of /goal:stop (they address different layers); packing multiple unrelated objectives into one `/goal` line.',
+        text: 'Common mistakes: starting Goal under Full access on a broad home directory; omitting a budget and waking up to a huge bill; ignoring blocker streak and re-prompting the same stuck step; using /stop instead of /goal:stop (they address different layers); packing multiple unrelated objectives into one `/goal` line.',
       },
       {
         type: 'tips',
         items: [
-          'Step — shield + sandbox → optional plan Accept → /goal:budget → /goal <objective>.',
+          'Step — permission mode + sandbox → optional outline in chat → /goal:budget → /goal <objective>.',
           'Step — stuck → read blocker → /goal:pause → fix environment → /goal:resume.',
           'Cross-feature: Scheduler is for cron prompts; Goal is in-session autonomy.',
           'Cross-feature: Dream cron is separate under Settings → Memory.'
@@ -896,7 +806,6 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'permissions-modes',
       'slash-commands',
       'chat-team',
-      'plan-review',
       'scheduler-tasks'
 ],
   },
@@ -1097,7 +1006,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         items: [
           'When to use Terminal vs ! — interactive/long vs short chat-tied commands.',
           'When to use Files vs @ — browse/explore vs pin a known path into the ask.',
-          'Cross-feature: Source Control after Accept in plan mode to verify diffs.',
+          'Cross-feature: Source Control after an agent edit run to verify diffs.',
           'Cross-feature: Memory after research sessions so Dream has material.'
 ],
       }
@@ -1154,7 +1063,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Run /btw, press Ctrl+;, open Side chat from the workbench, or use the session-row icon. Optionally quote transcript text via Send to side chat. Ask your question; close the panel when done. If the answer must steer the main run, summarize it back into the Lead composer (or Revise a plan) yourself.',
+        text: 'Run /btw, press Ctrl+;, open Side chat from the workbench, or use the session-row icon. Optionally quote transcript text via Send to side chat. Ask your question; close the panel when done. If the answer must steer the main run, summarize it back into the Lead composer yourself.',
       },
       {
         type: 'tips',
@@ -1169,7 +1078,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step during a long Coding run: (1) select the confusing assistant parasource search, (2) Send to side chat, (3) ask “is this claiming X or Y?”, (4) if Y was wrong, return to the main composer with a corrective instruction or plan revise, (5) close Side chat.',
+        text: 'Step-by-step during a long Coding run: (1) select the confusing assistant parasource search, (2) Send to side chat, (3) ask “is this claiming X or Y?”, (4) if Y was wrong, return to the main composer with a corrective instruction, (5) close Side chat.',
       },
       {
         type: 'p',
@@ -1177,12 +1086,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: typing the next “please implement…” into side chat and wondering why the Lead did not act; expecting side chat to approve plans or answer ask-user modals for the parent; leaving Ctrl+; open and losing track of which composer is focused; assuming quotes auto-sync both ways.',
+        text: 'Common mistakes: typing the next “please implement…” into side chat and wondering why the Lead did not act; expecting side chat to approve tool calls or answer ask-user modals for the parent; leaving Ctrl+; open and losing track of which composer is focused; assuming quotes auto-sync both ways.',
       },
       {
         type: 'tips',
         items: [
-          'Cross-feature: pair with Plan review quotes for “explain this bullet” without Rejecting.',
           'Cross-feature: Work sibling chats + share_context for heavier parallel research.',
           'Cross-feature: /stop still targets the main team — side chat is not a second Lead.',
           'If side chat lacks a tool you need, you are probably past the /btw use case.'
@@ -1193,8 +1101,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'composer-power',
       'workbench-tools',
       'slash-commands',
-      'slash-goal',
-      'plan-review'
+      'slash-goal'
 ],
     openAction: { type: 'workbench', tool: 'side-chat' },
   },
@@ -1355,11 +1262,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step PR loop: (1) agent edits under accept-edits or plan, (2) Ctrl+G to inspect the diff, (3) stage related hunks, (4) commit with a why-focused message, (5) push via agent or your usual remote flow, (6) open Review / Create PR on the connected host, (7) address review comments in a follow-up chat.',
+        text: 'Step-by-step PR loop: (1) agent edits under Ask for approval or Approve for me, (2) Ctrl+G to inspect the diff, (3) stage related hunks, (4) commit with a why-focused message, (5) push via agent or your usual remote flow, (6) open Review / Create PR on the connected host, (7) address review comments in a follow-up chat.',
       },
       {
         type: 'p',
-        text: 'When to let the agent run git vs do it yourself: let the agent stage/commit when the diff matches the plan and permission mode is appropriate; do merges/rebases yourself on protected branches if your team requires human ceremony. Never enable force-with-lease casually on shared branches.',
+        text: 'When to let the agent run git vs do it yourself: let the agent stage/commit when the diff matches what you asked for and permission mode is appropriate; do merges/rebases yourself on protected branches if your team requires human ceremony. Never enable force-with-lease casually on shared branches.',
       },
       {
         type: 'p',
@@ -1368,7 +1275,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Cross-feature: Plan Accept → Source Control to verify the plan became the diff you expected.',
+          'Cross-feature: after an edit run → Source Control to verify the diff is what you expected.',
           'Cross-feature: worktrees keep experimental commits off your main checkout.',
           'Cross-feature: permission ask mode before first push on a production remote.'
 ],
@@ -1378,8 +1285,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'coding-workspaces',
       'workbench-tools',
       'settings-safety',
-      'permissions-modes',
-      'plan-review'
+      'permissions-modes'
 ],
     openAction: { type: 'workbench', tool: 'source-control' },
   },
@@ -2220,7 +2126,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Teams are scoped to work / coding.',
       'Command palette jumps to Edit <agent>… or create new agents and skills.',
       'Use tools_opt_out to disable code-owned tool defaults for one agent; remove an assigned skill directly from its skills list.',
-      'Lead-only tools (ask_user, plan mode helpers, some worktree helpers) are never granted to specialists.',
+      'Lead-only tools (ask_user, some worktree helpers) are never granted to specialists.',
       'If an MCP server sits on auth, finish the auth flow before blaming the composer slash menu.'
 ],
     blocks: [
@@ -2234,7 +2140,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Settings → Agents to edit team members; Settings → Skills to create or edit your skills, check validation, and turn any skill on or off; Settings → MCP to add servers and watch status dots. From chat, type $skill-name to use a skill now, or open the palette for New Agent / New Skill. An agent\'s Skills field preloads those skills into that agent. Lead-only tools (ask_user, plan mode, worktree helpers) are never granted to specialists.',
+        text: 'Settings → Agents to edit team members; Settings → Skills to create or edit your skills, check validation, and turn any skill on or off; Settings → MCP to add servers and watch status dots. From chat, type $skill-name to use a skill now, or open the palette for New Agent / New Skill. An agent\'s Skills field preloads those skills into that agent. Lead-only tools (ask_user, worktree helpers) are never granted to specialists.',
       },
       {
         type: 'tips',
@@ -2296,14 +2202,14 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
     openAction: { type: 'settings', path: 'sandbox' },
     setup:
-      'Settings → Sandbox. Review deny patterns before enabling aggressive auto/bypass permission modes. Help popovers on the page explain ** and * glob syntax.',
+      'Settings → Sandbox. Review deny patterns before choosing the Approve for me or Full access permission modes. Help popovers on the page explain ** and * glob syntax.',
     tricks: [
       'Deny patterns use ** and * globs; help popovers in Settings explain syntax.',
       'Worktree location (repository vs user_data) lives on the Sandbox page.',
       'Outbound redact/block runs before content reaches the provider when enabled.',
       'Goal mode keeps the same workspace and deny-pattern policy.',
       'Symlinks into blocked roots are rejected; shell commands are tokenized for denied-path checks.',
-      'Combine accept-edits or auto with a tight denylist for day-to-day coding speed.',
+      'Combine Approve for me with a tight denylist for day-to-day coding speed.',
       'Deny credential caches and unrelated disks even if you trust the model.',
       'Re-test a sample tool call after editing globs — silent mis-globs feel like “tools are broken.”',
       'Pair filesystem denylist with Settings → Browser domain policy for WebBridge.'
@@ -2334,17 +2240,17 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step harden a Coding laptop: (1) list sensitive roots (keys, cloud sync, other clients), (2) add deny globs, (3) set worktree location intentionally, (4) enable outbound redact if policy requires, (5) run a probe tool under ask, (6) only then consider accept-edits or auto for speed.',
+        text: 'Step-by-step harden a Coding laptop: (1) list sensitive roots (keys, cloud sync, other clients), (2) add deny globs, (3) set worktree location intentionally, (4) enable outbound redact if policy requires, (5) run a probe tool under Ask for approval, (6) only then consider Approve for me for speed.',
       },
       {
         type: 'p',
-        text: 'Common mistakes: enabling bypass with an empty denylist on a home directory workspace; forgetting symlinks; assuming outbound redact replaces not pasting secrets; putting worktrees on user_data then wondering why disk usage moved; confusing a deny hit with an MCP auth failure.',
+        text: 'Common mistakes: enabling Full access with an empty denylist on a home directory workspace; forgetting symlinks; assuming outbound redact replaces not pasting secrets; putting worktrees on user_data then wondering why disk usage moved; confusing a deny hit with an MCP auth failure.',
       },
       {
         type: 'tips',
         items: [
-          'Cross-feature: plan Reject when a plan targets denied paths instead of fighting the sandbox.',
-          'Cross-feature: Troubleshooting “tools denied” checklist includes shield + denylist.',
+          'Cross-feature: Reject the tool call when an agent targets denied paths instead of fighting the sandbox.',
+          'Cross-feature: Troubleshooting “tools denied” checklist includes permission mode + denylist.',
           'Cross-feature: Coding worktrees follow the Sandbox location policy.'
 ],
       }
@@ -2640,7 +2546,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Ctrl+B is owned once by AppShell for all mode sidebars.',
       'Ctrl+R refreshes Work sessions only (not a full app reload).',
       'Prefer Ctrl+P search by action name when you forget a binding.',
-      'Keys 1–5 only switch permission modes while the shield menu is open.',
+      'Keys 1–3 only switch permission modes while the permission menu is open.',
       'Ctrl+I focuses chat input — useful after clicking through workbench panels.'
 ],
     blocks: [
@@ -2669,7 +2575,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           { keys: 'Ctrl+I', action: 'Focus chat input' },
           { keys: 'Ctrl+;', action: 'Side chat (label may show ⌥⌘S)' },
           { keys: 'Ctrl+R', action: 'Refresh Work sessions' },
-          { keys: '1–5', action: 'Permission modes when shield menu is open' }
+          { keys: '1–3', action: 'Permission modes when the permission menu is open' }
 ],
       },
       {
@@ -2684,7 +2590,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           '⌘P / ⌥⌘S labels — stale; use Ctrl+F / Ctrl+;',
           'Ctrl+V — view cycle suppressed while pasting',
           'Ctrl+R — Work sessions refresh only',
-          '1–5 — only with shield menu open'
+          '1–3 — only with the permission menu open'
 ],
       },
       {
@@ -2694,9 +2600,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Cross-feature: permission shield + 1–5 is faster than clicking modes.',
+          'Cross-feature: permission menu + 1–3 is faster than clicking modes.',
           'Cross-feature: Ctrl+; side chat during Goal without /stop.',
-          'Cross-feature: Ctrl+G after plan Accept to verify diffs.'
+          'Cross-feature: Ctrl+G after an agent edit run to verify diffs.'
 ],
       }
 ],
@@ -2764,7 +2670,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Source runs → `make dev` then `make -C desktop dev`',
           'No models → Settings → Providers',
           'Stream errors with green health → model/provider credentials or rate limits',
-          'Tools denied → permission mode (ask/plan) + Sandbox deny globs',
+          'Tools denied → permission mode + Sandbox deny globs',
           'WebBridge offline → extension, pairing, Browser policy, per-chat enable',
           'Empty telemetry → observability extras disabled (often non-blocking)',
           'Goal stuck → inspect blocker streak, budget pause, or /goal:stop',
@@ -2774,7 +2680,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Ordered checklist: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) mode-specific tools (Source Control and Problems only in Coding). Stop at the first failing layer.',
+        text: 'Ordered checklist: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission mode, (7) Sandbox denylist, (8) Browser/WebBridge, (9) mode-specific tools (Source Control and Problems only in Coding). Stop at the first failing layer.',
       },
       {
         type: 'p',
@@ -2784,7 +2690,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
         type: 'tips',
         items: [
           'Cross-feature: Getting started cold-start order matches this checklist.',
-          'Cross-feature: plan review pending Accept is not a hang — resolve the panel.',
+          'Cross-feature: a pending permission prompt is not a hang — resolve the bar.',
           'Cross-feature: side chat focus mistakes look like “Lead ignored me.”',
           'When in doubt — Diagnostics + a tiny Work ping beat speculative resets.'
 ],

@@ -213,7 +213,7 @@ export function ComputerAppsSettingsPage() {
               />
               <SettingsRow
                 label={t('Permission')}
-                description={t('Ask before each action, even when the chat runs in Auto mode, or let agents act in allowed apps without asking. Only Bypass mode skips the question. Stop in the preview card works either way.')}
+                description={t('Ask before each action, even when the chat runs in Approve for me, or let agents act in allowed apps without asking. Only Full access skips the question. Stop in the preview card works either way.')}
                 control={
                   <SelectControl
                     value={draft.permission}

@@ -1,7 +1,7 @@
 """Ask-user — let an agent pause mid-task and ask the human one or more
 questions in a single batch.
 
-Context-var + session registry pattern mirrors :mod:`app.agent.plan`: the
+Context-var + session registry pattern mirrors :mod:`app.agent.permission`: the
 ``ask_user`` tool calls :meth:`AskUserService.ask`, which pushes a
 ``question_asked`` SSE event carrying every question at once and blocks on
 a future until the user answers all of them, then resolves with one answer

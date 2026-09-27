@@ -306,7 +306,6 @@ const SESSION_OWNED_KEYS = [
   'suggestedTasks',
   'setupRequired',
   'browserSession',
-  'planApproval',
   'turnChanges',
   'turnChangesOpen',
   'permissionRequest',
@@ -424,7 +423,6 @@ function resetSessionState(
   state.activeGoal = null
   state.suggestedTasks = []
   state.setupRequired = null
-  state.planApproval = null
   state.turnChanges = null
   state.turnChangesOpen = false
   state.permissionRequest = null
@@ -543,7 +541,6 @@ export const useTeamStore = create<TeamStore>()(
     suggestedTasks: [],
     setupRequired: null,
     browserSession: null,
-    planApproval: null,
     turnChanges: null,
     turnChangesOpen: false,
     permissionRequest: null,
@@ -1216,7 +1213,6 @@ export const useTeamStore = create<TeamStore>()(
         draft._abortController = abort
         draft.permissionRequest = null
         draft.askUserQuestion = null
-        draft.planApproval = null
       })
 
       const streamScheduler = createStreamScheduler((type, data) => {
@@ -1283,7 +1279,6 @@ export const useTeamStore = create<TeamStore>()(
               if (!draft.isTeamWorking) {
                 draft.permissionRequest = null
                 draft.askUserQuestion = null
-                draft.planApproval = null
               }
             })
             // The response body ended without ever flipping `isTeamWorking`

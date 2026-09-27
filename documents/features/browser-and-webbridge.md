@@ -70,7 +70,7 @@ Implemented capabilities include:
 - tab-to-session binding without stealing focus;
 - page navigation, semantic read/write/select and bounded browser actions;
 - intentional selection/page/screenshot sharing with provenance;
-- questions, permissions, plan review, attachments, queues and live SSE in the
+- questions, permissions, attachments, queues and live SSE in the
   browser panel;
 - interaction ingestion, Teach drafts, approval, replay and step resolution;
 - appearance synchronization, status and audit views.

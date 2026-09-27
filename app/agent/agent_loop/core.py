@@ -498,8 +498,8 @@ class Agent(Generic[TContext]):
                 state.metadata.setdefault(key, value)
 
         # Runtime-owned metadata: the loader can only discover tools granted
-        # after hard exclusions. Callers may pre-activate deferred tools
-        # (e.g. composer Plan mode → exit_plan_mode) via config.metadata.
+        # after hard exclusions. Callers may pre-activate deferred tools via
+        # config.metadata.
         state.metadata["deferred_tool_catalog"] = deferred_catalog
         existing_activated = state.metadata.get("activated_deferred_tools")
         if existing_activated:

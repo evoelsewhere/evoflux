@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from app.agent.plan import PLAN_INTERCEPTED_TOOLS as plan_intercepted_tools_const
 from app.agent.errors import ToolArgumentError, ToolNotFoundError
 from app.agent.schemas.chat import ContentBlock, TextBlock, ToolResult
 from app.agent.tool_media import materialize_tool_attachments
@@ -40,33 +39,6 @@ ObservationRange = tuple[str, int, int]
 def sanitize_error(message: str) -> str:
     """Normalise sandbox paths in tool error messages."""
     return message
-
-
-# Tools intercepted in plan mode — recorded rather than executed. Re-exported
-# from app.agent.plan so the permission service gates on the same list.
-_PLAN_INTERCEPTED = plan_intercepted_tools_const
-
-
-def _plan_summary(tool_name: str, args: dict) -> str:
-    """Build a short human-readable summary of a planned tool call."""
-    if tool_name in ("edit", "write", "patch"):
-        path = str(args.get("file_path") or args.get("path") or "?")
-        return path
-    if tool_name == "rm":
-        return str(args.get("path") or "?")
-    if tool_name == "shell":
-        cmd = str(args.get("command") or "")
-        return (cmd[:120] + "…") if len(cmd) > 120 else cmd or "(no command)"
-    if tool_name == "python":
-        code = str(args.get("code") or "")
-        first = code.split("\n")[0].strip()
-        return (first[:120] + "…") if len(first) > 120 else first or "(python code)"
-    if tool_name == "process":
-        action = str(args.get("action") or "?")
-        process_id = str(args.get("process_id") or "")
-        return f"{action} {process_id}".strip()
-    raw = str(args)
-    return (raw[:120] + "…") if len(raw) > 120 else raw
 
 
 def _observation_cache_key(tool: Tool, args: dict[str, Any]) -> str | None:
@@ -244,56 +216,6 @@ def make_tool_executor(
                     observation_short_circuit.splitlines()[0],
                 )
                 return observation_short_circuit
-
-            # ── Plan mode intercept ────────────────────────────────────────
-            # When the agent is in plan mode, record destructive tool calls
-            # instead of executing them. The agent receives a [PLAN] ack and
-            # continues planning; the actual execution only happens after the
-            # user approves the plan via exit_plan_mode.
-            if s.metadata.get("_plan_mode") and tc.function.name in _PLAN_INTERCEPTED:
-                from app.agent.plan import get_plan_mode_service
-
-                plan_svc = get_plan_mode_service()
-                summary = _plan_summary(tc.function.name, args)
-                result = plan_svc.record_step(tc.function.name, args, summary)
-                tool_elapsed = time.monotonic() - tool_start
-                logger.debug(
-                    "plan_step_recorded agent={} tool={} elapsed={:.2f}s step={}",
-                    agent_name,
-                    tc.function.name,
-                    tool_elapsed,
-                    plan_svc.step_count,
-                )
-                return result
-            # ─────────────────────────────────────────────────────────────
-
-            # Approved plan execution is bound to the exact recorded call
-            # sequence. A model cannot silently alter arguments after approval.
-            if (
-                not s.metadata.get("_plan_mode")
-                and tc.function.name in _PLAN_INTERCEPTED
-            ):
-                from app.agent.plan import get_plan_mode_service
-
-                authorization = get_plan_mode_service().authorize_approved_call(
-                    tc.function.name, args
-                )
-                if authorization is not None:
-                    allowed, detail = authorization
-                    if not allowed:
-                        logger.warning(
-                            "approved_plan_call_blocked agent={} tool={} detail={}",
-                            agent_name,
-                            tc.function.name,
-                            detail,
-                        )
-                        return f"[Blocked — approved plan mismatch] {detail}"
-                    logger.debug(
-                        "approved_plan_call_matched agent={} tool={} detail={}",
-                        agent_name,
-                        tc.function.name,
-                        detail,
-                    )
 
             # Surface team routing context as first-class injected args so
             # tools (e.g. schedule_task) don't have to fish through

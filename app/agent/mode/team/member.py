@@ -85,11 +85,6 @@ from app.agent.permission import (
     reset_permission_service,
     set_permission_service,
 )
-from app.agent.plan import (
-    PlanModeService,
-    reset_plan_mode_service,
-    set_plan_mode_service,
-)
 from app.agent.ask_user import (
     AskUserService,
     reset_ask_user_service,
@@ -479,7 +474,7 @@ class TeamMemberBase(abc.ABC):
                         folder_id=folder_id,
                         # The mode the user picked before this row existed.
                         # Omitting it let the column default win, so a draft
-                        # chat set to "Ask permissions" was born in "auto".
+                        # chat set to "Ask for approval" was born in "auto".
                         permission_mode=(
                             self._team.permission_mode if self._team else "auto"
                         ),
@@ -1726,7 +1721,7 @@ class TeamMemberBase(abc.ABC):
         token = set_sandbox(session_sandbox)
 
         # Scope permission service — mode comes from the session's persisted
-        # permission_mode (ask | accept-edits | plan | auto | bypass).  Events
+        # permission_mode (ask | auto | bypass).  Events
         # publish to the lead's stream; the service registers globally so the
         # reply endpoint can resolve requests from its own request context.
         permission_service = PermissionService(
@@ -1736,39 +1731,14 @@ class TeamMemberBase(abc.ABC):
         )
         perm_token = set_permission_service(permission_service)
 
-        # Scope plan mode service — tracks active plan and pending approvals.
-        plan_service = PlanModeService(
-            session_id=self.session_id,
-            stream_session_id=lead_session_id,
-        )
-        plan_token = set_plan_mode_service(plan_service)
-
-        # Composer "Plan mode" unifies permission auto-allow with agent plan
-        # mode: lead starts recording destructive tools until exit_plan_mode.
-        # Pre-activate deferred plan tools so the model can exit without
-        # load_tool (otherwise recorded steps can vanish with no approval UI).
-        if self._team.permission_mode == "plan" and self._role_label == "lead":
-            plan_service.enter()
-            run_metadata["_plan_mode"] = True
-            run_metadata["activated_deferred_tools"] = {
-                "enter_plan_mode",
-                "exit_plan_mode",
-            }
-
-        # Built here, after the last write to ``run_metadata``.
-        #
-        # ``RunConfig`` is a pydantic model, so validation *copies* the dict it
-        # is handed. Constructing it earlier meant every key written after that
-        # point — the two above among them — landed in a dict the run never
-        # read. Plan mode was the casualty: ``_plan_mode`` never arrived, the
-        # tool executor never intercepted anything, and because ``_blocks()``
-        # returns False for "plan" the mode degraded into approving everything
-        # while still calling itself Plan mode. Do not move this back up, and
-        # do not mutate ``run_metadata`` below it.
+        # Built after the last write to ``run_metadata``: ``RunConfig`` is a
+        # pydantic model, so validation *copies* the dict it is handed and any
+        # key written afterwards never reaches the run. Do not mutate
+        # ``run_metadata`` below this line.
         config = RunConfig(session_id=self.session_id, metadata=run_metadata)
 
         # Scope ask-user service — blocks the ask_user tool until the user
-        # answers, publishing to the same lead stream as plan approvals.
+        # answers, publishing to the same lead stream as permission prompts.
         ask_user_service = AskUserService(
             session_id=self.session_id,
             stream_session_id=lead_session_id,
@@ -1812,7 +1782,6 @@ class TeamMemberBase(abc.ABC):
             reset_role(role_token)
             _sandbox_ctx.reset(token)
             reset_permission_service(perm_token, self.session_id)
-            reset_plan_mode_service(plan_token, self.session_id)
             reset_ask_user_service(ask_user_token, self.session_id)
 
         # If interrupted, mark last assistant message

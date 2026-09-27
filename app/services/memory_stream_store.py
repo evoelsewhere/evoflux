@@ -53,7 +53,6 @@ _NON_REPLAYABLE_EVENT_TYPES = frozenset(
 )
 _GATE_REPLY_TO_REQUEST = {
     "permission_replied": "permission_asked",
-    "plan_approval_replied": "plan_approval_requested",
     "question_replied": "question_asked",
 }
 _GATE_REQUEST_EVENT_TYPES = frozenset(_GATE_REPLY_TO_REQUEST.values())
@@ -111,7 +110,6 @@ class _ReplaySnapshot:
     goal_status: dict[str, Any] | None = None
     agent_not_configured: dict[str, Any] | None = None
     browser_session: dict[str, Any] | None = None
-    plan_approval: dict[str, Any] | None = None
     question_asked: dict[str, Any] | None = None
     permission_asked: dict[str, Any] | None = None
 
@@ -132,7 +130,6 @@ class _TurnState:
         "error",
         "agent_not_configured",
         "browser_session",
-        "plan_approval",
         "question_asked",
         "permission_asked",
         "replay_events",
@@ -169,15 +166,10 @@ class _TurnState:
         # Latest browser session state for the next-turn baseline. The ordered
         # journal separately retains each within-turn browser transition.
         self.browser_session: dict[str, Any] | None = None
-        # Pending plan-approval request for reconnect replay.  The agent
-        # stays blocked on its future while the user reviews, so a page
-        # refresh must be able to rediscover the pending plan.  Cleared by
-        # ``plan_approval_replied``.
-        self.plan_approval: dict[str, Any] | None = None
-        # Pending ask-user / permission requests for reconnect replay.
+        # Pending ask-user / permission requests for reconnect replay.  The
+        # agent stays blocked on its future while the user answers, and
         # Forge/Coding restore these only from SSE (no REST poll on attach),
-        # so a mid-turn refresh must re-emit them like plan_approval.
-        # Cleared by ``question_replied`` / ``permission_replied``.
+        # so a mid-turn refresh must re-emit them.  Cleared by ``question_replied`` / ``permission_replied``.
         self.question_asked: dict[str, Any] | None = None
         self.permission_asked: dict[str, Any] | None = None
         # Original replayable wire frames in producer order. Accumulators
@@ -202,7 +194,6 @@ class _TurnState:
         self.usage = None
         self.error = None
         self.agent_not_configured = None
-        self.plan_approval = None
         self.question_asked = None
         self.permission_asked = None
         self.replay_events = []
@@ -240,7 +231,6 @@ def _take_replay_snapshot(state: _TurnState) -> _ReplaySnapshot:
         goal_status=deepcopy(state.goal_status),
         agent_not_configured=deepcopy(state.agent_not_configured),
         browser_session=deepcopy(state.browser_session),
-        plan_approval=deepcopy(state.plan_approval),
         question_asked=deepcopy(state.question_asked),
         permission_asked=deepcopy(state.permission_asked),
     )
@@ -486,16 +476,9 @@ def _push_event_locked(
             # below still retains every within-turn browser transition.
             state.browser_session = data
 
-        elif event_type == "plan_approval_requested":
-            # The agent blocks on this until the user replies — keep the
-            # request so a reconnect can rediscover the pending plan.
-            state.plan_approval = data
-
-        elif event_type == "plan_approval_replied":
-            state.plan_approval = None
-
         elif event_type == "question_asked":
-            # Same reconnect contract as plan_approval — agent stays blocked.
+            # The agent blocks on this until the user replies — keep the
+            # request so a reconnect can rediscover the pending question.
             state.question_asked = data
 
         elif event_type == "question_replied":
@@ -735,13 +718,6 @@ def _legacy_replay_events(snapshot: _ReplaySnapshot) -> list[dict[str, str]]:
         events.append(
             StreamEnvelope.from_parts(
                 event="browser_session", data=snapshot.browser_session
-            ).to_wire()
-        )
-
-    if snapshot.plan_approval is not None:
-        events.append(
-            StreamEnvelope.from_parts(
-                event="plan_approval_requested", data=snapshot.plan_approval
             ).to_wire()
         )
 

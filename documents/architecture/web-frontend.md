@@ -40,7 +40,7 @@ cache rather than maintaining a second durable truth in component state.
 - Work or Coding sidebar;
 - transcript, streaming activity and agent switching;
 - composer, attachments, skills, snippets and commands;
-- plan, permission and question interaction surfaces;
+- permission and question interaction surfaces;
 - single and Split layouts;
 - a lazy workbench dock for files, editor, Git, graph, Problems, terminal,
   browser, wiki, scheduler, plugins, processes and Side Chat.

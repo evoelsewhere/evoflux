@@ -34,23 +34,6 @@ export interface DiagnosticsResponse {
   summary: DiagnosticsStatus
 }
 
-export interface PlanStep {
-  tool: string
-  args: Record<string, unknown>
-  summary: string
-  /** Workspace-relative path when the step mutates a file. */
-  path?: string
-  diff_stat?: { additions?: number | null; deletions?: number | null }
-}
-
-export interface PlanApprovalPending {
-  requestId: string
-  sessionId: string
-  /** Agent-authored markdown plan document (may be empty for legacy plans). */
-  plan: string
-  steps: PlanStep[]
-}
-
 export interface TurnChangedFile {
   path: string
   status: 'added' | 'modified' | 'removed' | 'changed'
@@ -64,8 +47,6 @@ export interface TurnChangesPending {
   deletions: number
   files: TurnChangedFile[]
 }
-
-export type PlanDecision = 'approved' | 'rejected' | 'revise'
 
 export interface AskUserQuestionItem {
   question: string
@@ -84,7 +65,8 @@ export interface AskUserQuestionPending {
   questions: AskUserQuestionItem[]
 }
 
-export type PermissionMode = 'ask' | 'accept-edits' | 'plan' | 'auto' | 'bypass'
+/** Ask for approval · Approve for me · Full access. */
+export type PermissionMode = 'ask' | 'auto' | 'bypass'
 
 export interface PermissionRequestPending {
   requestId: string

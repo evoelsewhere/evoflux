@@ -163,7 +163,7 @@ export function AgentForm({
         description: t.description,
       })) ?? []
 
-  // Lead-only tools (ask_user, plan mode, worktree…) are never granted to
+  // Lead-only tools (ask_user, worktree…) are never granted to
   // members — used below to hide them from a member agent's tool picker.
   const leadOnlyTools = new Set(
     registry.data?.tools.filter((t) => t.lead_only).map((t) => t.name) ?? [],

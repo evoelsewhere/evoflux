@@ -138,7 +138,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           '2) Settings → Providers → kết nối ít nhất một model; xác nhận đã configured.',
           '3) Ở Work gửi chat ngắn đầu tiên, hoặc sang Coding mở git repository.',
           '5) Khi đã có session, thử workbench (Terminal, Files, Memory, Browser).',
-          '6) Trước khi bật auto hoặc bypass: xem lại Settings → Sandbox deny globs.'
+          '6) Trước khi chọn Tự duyệt giúp tôi hoặc Toàn quyền: xem lại Settings → Sandbox deny globs.'
 ],
       },
       {
@@ -157,7 +157,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'tips',
         items: [
           'Sau chat đầu thành công, mở Memory (Ctrl+M) để biết note bền sẽ nằm đâu.',
-          'Lướt permission shield (phím 1–5) trước khi cho agent sửa repo thật.',
+          'Lướt ba permission mode (phím 1–3) trước khi cho agent sửa repo thật.',
           'Ctrl+P → Search “Diagnostics” nếu health xanh mà panel tool vẫn trống.',
           'Chỉ khi chạy từ source: đừng mở Tauri khi `make dev` chưa phục vụ API.'
 ],
@@ -282,7 +282,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Settings → Agents group member dưới từng lead team có thể collapse. Delegation card ghi “lead delegated → member#N”; lead vẫn chỉ coordination và final synthesis.',
       'Session pills trên composer set model, thinking level, fast mode chỉ cho chat hiện tại.',
       'Việc đơn giản để Lead làm; chỉ fan-out khi parallelism rõ ràng rút wall time.',
-      'Tool chỉ Lead (ask_user, plan mode helper, một số worktree helper) không bao giờ cấp cho specialist — đừng chờ worker approve plan.'
+      'Tool chỉ Lead (ask_user, một số worktree helper) không bao giờ cấp cho specialist — đừng chờ worker hỏi bạn trực tiếp.'
 ],
     blocks: [
       {
@@ -323,7 +323,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Nên fan-out — điều tra nhiều file, test/fix song song, lane specialist.',
           'Nên Lead-only — Q&A ngắn, sửa một file, lượt đầu nhạy permission.',
-          'Ghép Split với Plan review để đọc plan khi worker chờ.',
           '/btw side chat cho câu meta mà không dừng team run.'
 ],
       }
@@ -339,166 +338,81 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
   {
     id: 'permissions-modes',
     category: 'chat',
-    title: 'Permission mode và plan review',
+    title: 'Permission mode',
     summary:
-      'Điều khiển độ tự do của tool bằng ask, accept-edits, plan, auto hoặc bypass — rồi duyệt tool Once/Always/Reject và review plan bằng Accept/Revise/Reject. Tool filesystem áp deny glob dưới mọi mode.',
+      'Chọn một trong ba mode — Hỏi để phê duyệt, Tự duyệt giúp tôi hoặc Toàn quyền — rồi duyệt từng tool call bằng Once/Always/Reject. Tool filesystem áp deny glob dưới mọi mode.',
     keywords: [
       'permission',
+      'Hỏi để phê duyệt',
+      'Tự duyệt giúp tôi',
+      'Toàn quyền',
       'ask',
-      'accept-edits',
-      'plan',
       'auto',
       'bypass',
       'approve',
-      'shield',
       'Once',
       'Always',
       'Reject',
       'ask-user',
-      'plan review',
       'quyền',
       'phê duyệt',
       'sandbox'
 ],
     setup:
-      'Mở shield / permission control trên composer. Phím 1–5 hoạt động khi menu đó mở. Xem Settings → Sandbox trước khi bật auto hoặc bypass trên máy có quyền filesystem rộng.',
+      'Mở permission control trên composer. Phím 1–3 hoạt động khi menu đó mở. Xem Settings → Sandbox trước khi chọn Tự duyệt giúp tôi hoặc Toàn quyền trên máy có quyền filesystem rộng.',
     tricks: [
-      'Menu permission đang mở thì phím 1–5 nhảy ask → accept-edits → plan → auto → bypass.',
-      'Ask dừng trước mọi tool call; accept-edits tự nhận file edit nhưng vẫn hỏi shell và thao tác phá hủy.',
-      'Plan mode ghi nhận edit/shell đề xuất đến khi bạn Accept trong Plan review — hoặc Revise / Reject.',
-      'Bôi đen text plan trong review panel để quote vào tin revise trên composer.',
+      'Menu permission đang mở thì phím 1–3 chọn Hỏi để phê duyệt → Tự duyệt giúp tôi → Toàn quyền.',
+      'Hỏi để phê duyệt dừng trước mọi edit, lệnh hoặc thao tác có side effect; Tự duyệt giúp tôi chỉ dừng với thao tác được phát hiện là có thể không an toàn.',
       'Khi tool cần duyệt, chọn Once, Always hoặc Reject trên permission bar — Enter cho phép một lần, Esc từ chối.',
       'Ask-user modal hiện khi agent cần câu trả lời có cấu trúc trước khi tiếp tục — bấm 1–9 để chọn câu trả lời gợi ý, hoặc tự gõ, rồi Enter.',
-      'Goal không bao giờ nới permission hay sandbox scope của session — set shield chủ đích trước `/goal`.',
-      'Bypass bỏ mọi permission check — nhanh nhất, chỉ dùng trong môi trường disposable hoặc host bạn hoàn toàn tin cậy.',
+      'Goal không bao giờ nới permission hay sandbox scope của session — set permission mode chủ đích trước `/goal`.',
+      'Toàn quyền bỏ mọi permission check — nhanh nhất, chỉ dùng trong môi trường disposable hoặc host bạn hoàn toàn tin cậy. Mode này hiện màu cam trên composer để không bao giờ bật nhầm.',
       'Always dính theo rule khớp — ưu tiên Once khi còn đang học agent muốn chạy gì.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Mỗi session có PermissionMode: ask, accept-edits, plan, auto hoặc bypass. Song song, từng tool call vẫn có thể hiện Once / Always / Reject; plan mode có Plan review riêng với Accept / Revise / Reject. Coi shield là mặc định session, permission bar là override theo call.',
+        text: 'Mỗi session có một trong ba permission mode: Hỏi để phê duyệt, Tự duyệt giúp tôi (mặc định) hoặc Toàn quyền. Song song, từng tool call vẫn có thể hiện Once / Always / Reject. Coi mode là mặc định session, permission bar là override theo call.',
       },
       {
         type: 'p',
-        text: 'Kiểm soát mịn giúp bạn giữ tay trên việc rủi ro (ask), nhanh hơn với edit (accept-edits), buộc cổng plan rõ (plan), chạy không người canh trong cây tin cậy (auto), hoặc bỏ prompt hẳn (bypass). Permission quyết định khi nào hỏi; tool filesystem vẫn kiểm tra workspace và deny glob. Lệnh shell chạy trực tiếp trên host sau bước quét denied path ở mức best effort.',
+        text: 'Giữ tay trên việc rủi ro (Hỏi để phê duyệt), để agent chạy nhưng vẫn dừng với bất cứ thứ gì có vẻ không an toàn hoặc không đảo ngược được (Tự duyệt giúp tôi), hoặc bỏ prompt hẳn (Toàn quyền). Permission quyết định khi nào hỏi; tool filesystem vẫn kiểm tra workspace và deny glob. Lệnh shell chạy trực tiếp trên host sau bước quét denied path ở mức best effort.',
       },
       {
         type: 'p',
-        text: 'Mở shield trên composer, chọn mode (hoặc 1–5). Ở plan mode, đợi Plan review: Accept chạy, Revise focus composer (có thể kèm selection đã quote), Reject dừng plan. Prompt tool đưa Once (call này), Always (nhớ theo rule khớp), hoặc Reject. Ask-user modal thu câu trả lời có cấu trúc giữa run.',
+        text: 'Mở permission control trên composer, chọn mode (hoặc 1–3). Prompt tool đưa Once (call này), Always (nhớ theo rule khớp), hoặc Reject. Ask-user modal thu câu trả lời có cấu trúc giữa run.',
       },
       {
         type: 'tips',
         items: [
-          '1 Ask — dừng trước mọi tool call.',
-          '2 Accept edits — tự nhận file edit; hỏi shell / destructive.',
-          '3 Plan — lập plan rồi duyệt trước khi chạy.',
-          '4 Auto — tự approve thao tác.',
-          '5 Bypass — bỏ permission check hoàn toàn.',
-          'Tool filesystem — vẫn áp deny glob kể cả dưới bypass.'
+          '1 Hỏi để phê duyệt — hỏi trước mọi edit, lệnh hoặc thao tác khác.',
+          '2 Tự duyệt giúp tôi — chỉ hỏi với thao tác có thể không an toàn.',
+          '3 Toàn quyền — chạy mọi thao tác mà không hỏi.',
+          'Tool filesystem — vẫn áp deny glob kể cả dưới Toàn quyền.'
 ],
       },
       {
         type: 'p',
-        text: 'Chọn mode nào: ask cho repo lạ và cây sát production; accept-edits cho Coding ngày thường khi đã tin cây; plan cho refactor nhiều bước và thay đổi lớn bạn muốn đọc trước; auto cho host tin cậy và bảo trì theo lịch; bypass chỉ dùng theo burst ngắn, có chủ đích trong môi trường disposable.',
+        text: 'Chọn mode nào: Hỏi để phê duyệt cho repo lạ, cây sát production và refactor nhiều bước bạn muốn theo dõi từng call; Tự duyệt giúp tôi cho công việc ngày thường khi đã tin cây; Toàn quyền chỉ dùng theo burst ngắn, có chủ đích trong môi trường disposable.',
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: để bypass qua đêm; nhầm Always với “tin agent mãi mãi” (nó khớp theo rule); thoát plan mode giữa chừng rồi tưởng plan pending đã Accept; bỏ qua ask-user modal rồi nghĩ team treo; chờ Goal nới permission cho việc chạy không người canh.',
+        text: 'Sai thường gặp: để Toàn quyền qua đêm; nhầm Always với “tin agent mãi mãi” (nó khớp theo rule); bỏ qua ask-user modal rồi nghĩ team treo; chờ Goal nới permission cho việc chạy không người canh.',
       },
       {
         type: 'tips',
         items: [
-          'Bước — shield → Plan (3) → gửi task → Plan review → Accept / Revise / Reject.',
           'Bước — trên tool prompt, ưu tiên Once đến khi pattern rõ ràng an toàn.',
-          'Ghép plan với quote-into-composer để revise đúng chỗ.',
-          'Siết Sandbox trước khi auto trên multi-repo project.'
+          'Bước — với thay đổi lớn, nhờ Lead phác outline trước dưới Hỏi để phê duyệt, rồi chuyển sang Tự duyệt giúp tôi khi nó khớp ý bạn.',
+          'Siết Sandbox trước khi dùng Tự duyệt giúp tôi trên multi-repo project.'
 ],
       },
       {
         type: 'p',
-        text: 'MCP tool chịu cùng rule permission như tool native. Duyệt MCP call Once/Always theo cùng bar; sandbox và outbound policy vẫn áp. Tool “bị deny bất ngờ” → kiểm shield và Settings → Sandbox trước khi cấu hình lại MCP.',
+        text: 'MCP tool chịu cùng rule permission như tool native. Duyệt MCP call Once/Always theo cùng bar; sandbox và outbound policy vẫn áp. Tool “bị deny bất ngờ” → kiểm permission mode và Settings → Sandbox trước khi cấu hình lại MCP.',
       }
 ],
-    related: ['slash-goal', 'sandbox-settings', 'plan-review', 'chat-team', 'agents-settings'],
-  },
-  {
-    id: 'plan-review',
-    category: 'chat',
-    title: 'Plan review panel',
-    summary:
-      'Ở plan permission mode, đọc markdown plan của agent trước khi edit hay shell đã ghi nhận chạy. Accept thực thi, Revise chỉnh hướng (có thể kèm quote), Reject hủy đường plan — bạn giữ kiểm soát việc nhiều bước.',
-    keywords: [
-      'plan review',
-      'Accept',
-      'Revise',
-      'Reject',
-      'quote',
-      'plan mode',
-      'markdown plan',
-      'Accept & execute',
-      'xem kế hoạch',
-      'chấp nhận',
-      'plan'
-],
-    setup:
-      'Set permission mode sang Plan (phím 3 trong shield menu), rồi gửi task cần nhiều bước. Giữ Plan review panel hiện — đừng đổi permission mode đến khi Accept, Revise hoặc Reject plan đang pending.',
-    tricks: [
-      'Bôi text trong plan document để quote vào tin revise — cách nhanh nhất để nói “chỉ đổi đoạn này”.',
-      'Revise trả focus về composer để bạn chỉnh hướng mà không Reject cả plan.',
-      'Reject dừng đường thực thi đã lập; sau đó gửi instruction mới mà không còn nửa bước nửa vời từ lượt plan đó.',
-      'Thoát plan mode giữa chừng không tự Accept plan pending — giải Accept / Revise / Reject trước khi được nhắc.',
-      'Sau Accept, cân nhắc hạ xuống accept-edits hoặc ask nếu muốn tool prompt chặt hơn lúc thực thi.',
-      'Dùng plan mode trước Goal cho objective lớn để đoạn tự hành đầu bắt đầu từ outline đã duyệt.',
-      'Plan mơ hồ thì Revise với Definition of Done cụ thể, đừng Accept rồi cầu may.',
-      'Split hữu ích: giữ Plan review mở trong khi liếc trạng thái specialist.',
-      'Chip quote revise xóa được trước khi send nếu đổi ý — cùng pipeline quote như selection trên transcript.'
-],
-    blocks: [
-      {
-        type: 'p',
-        text: 'Plan review là UI cổng cho plan permission mode. Agent soạn markdown plan; edit và shell được ghi nhận đến khi bạn Accept & execute, yêu cầu Revise, hoặc Reject. Không gì trong batch plan đó nên chạy trước Accept — đó chính là ý nghĩa của cổng.',
-      },
-      {
-        type: 'p',
-        text: 'Dùng khi hướng sai đắt: refactor nhiều file, migration chạm module dùng chung, shell phá hủy, hoặc task bạn muốn outline đọc được trước khi tool nổ. Bỏ qua với fix một dòng và Q&A tầm thường — ask hoặc accept-edits đủ.',
-      },
-      {
-        type: 'p',
-        text: 'Đọc plan trong review panel từ trên xuống: goal, bước, file, rủi ro, verification. Highlight đoạn cần và quote-into-composer khi revise. Accept tiếp tục với plan đã duyệt; Reject hủy lượt plan đó. Sau Accept có thể hạ ask hoặc accept-edits nếu muốn tool prompt chặt hơn lúc chạy.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Accept — thực thi đường plan đã duyệt.',
-          'Revise — focus composer; optional selection đã quote.',
-          'Reject — hủy lượt plan này; gửi instruction mới.',
-          'Quote — chọn text plan → chip revise phía trên draft.',
-          'Shield 3 — vào plan mode trước task, không phải sau khi tool đã chạy.'
-],
-      },
-      {
-        type: 'p',
-        text: 'Từng bước: (1) mở shield → Plan, (2) mô tả outcome và ràng buộc, (3) đợi Plan review, (4) lướt rủi ro và danh sách file, (5) Accept, hoặc chọn đoạn yếu → quote → Revise, hoặc Reject rồi viết lại ask, (6) tùy chọn siết permission mode cho giai thực thi.',
-      },
-      {
-        type: 'p',
-        text: 'Sai thường gặp: Accept plan chưa đọc vì “trông dài đủ”; Reject khi ý là Revise (mất cấu trúc hữu ích); nhảy bypass để “chạy luôn” rồi mất audit trail bạn muốn; tưởng Reject xóa tool call thành công từ lượt trước — nó chỉ dừng đường thực thi plan đó.',
-      },
-      {
-        type: 'tips',
-        items: [
-          'Revise tốt nêu rõ file, test và out-of-scope.',
-          'Revise xấu mơ hồ (“làm tốt hơn”) — quote bullet yếu trước.',
-          'Câu meta không liên quan đẩy sang side chat để thread plan sạch.',
-          'Sau Accept việc Coding, mở Source Control (Ctrl+G) xem diff có khớp plan không.'
-],
-      },
-      {
-        type: 'p',
-        text: 'Đừng dùng plan review thay sandbox policy. Plan đẹp vẫn có thể đề xuất path bạn không bao giờ muốn chạm — giữ deny globs trong Settings → Sandbox, và Reject plan nới scope vào secret, vendor dir hoặc repo không liên quan.',
-      }
-],
-    related: ['permissions-modes', 'composer-power', 'attachments', 'slash-goal', 'coding-git'],
+    related: ['slash-goal', 'sandbox-settings', 'chat-team', 'agents-settings'],
   },
   {
     id: 'composer-power',
@@ -599,7 +513,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'composer',
     title: 'Attachment, paste và quote',
     summary:
-      'Đính file bằng kéo-thả hoặc paste, quote selection từ transcript hoặc plan vào tin tiếp, và dựa vào /undo để khôi phục attachment cùng draft. Quote và file là cách ghim evidence mà không viết lại context tay.',
+      'Đính file bằng kéo-thả hoặc paste, quote selection từ transcript vào tin tiếp, và dựa vào /undo để khôi phục attachment cùng draft. Quote và file là cách ghim evidence mà không viết lại context tay.',
     keywords: [
       'attachment',
       'drag and drop',
@@ -615,11 +529,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'trích dẫn'
 ],
     setup:
-      'Attachment phải được bật cho session/composer; một số môi trường tắt upload vì policy. Xác nhận drop target của composer highlight trước khi tin kéo-thả. Quote hoạt động từ selection trên transcript, Plan review và Send to side chat.',
+      'Attachment phải được bật cho session/composer; một số môi trường tắt upload vì policy. Xác nhận drop target của composer highlight trước khi tin kéo-thả. Quote hoạt động từ selection trên transcript và Send to side chat.',
     tricks: [
       'Paste từ clipboard (ảnh/file) hoặc kéo lên drop target composer — cả hai gắn vào user message tiếp theo.',
       'Context đã quote hiện chip phía trên draft — xóa nếu đổi ý trước khi send.',
-      'Quote từ Plan review → composer dùng cùng pipeline với selection trên transcript.',
       '/undo khôi phục attachment thuộc user message vừa undo — text và file về cùng nhau.',
       'Send to side chat mang quote vào /btw mà không ngắt run chính.',
       'Ưu tiên quote gọn + ask ngắn hơn paste lại cả bài assistant trước.',
@@ -630,15 +543,15 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Attachment là file (thường cả ảnh) gắn với user message. Quote là text chọn từ transcript, plan panel hoặc targeting side-chat, trở thành context cho lần send tiếp. Cùng nhau chúng ghim evidence — bạn khỏi mô tả lại UI state hay khối lỗi mỗi lượt.',
+        text: 'Attachment là file (thường cả ảnh) gắn với user message. Quote là text chọn từ transcript hoặc targeting side-chat, trở thành context cho lần send tiếp. Cùng nhau chúng ghim evidence — bạn khỏi mô tả lại UI state hay khối lỗi mỗi lượt.',
       },
       {
         type: 'p',
-        text: 'Dùng attachment khi byte quan trọng: screenshot, PDF, CSV, log nhỏ, design export. Dùng quote khi text đã nằm trong transcript hoặc plan và bạn muốn follow-up chính xác. Đừng attach cả repository — dùng @ mention, Files hoặc Coding source search tool.',
+        text: 'Dùng attachment khi byte quan trọng: screenshot, PDF, CSV, log nhỏ, design export. Dùng quote khi text đã nằm trong transcript và bạn muốn follow-up chính xác. Đừng attach cả repository — dùng @ mention, Files hoặc Coding source search tool.',
       },
       {
         type: 'p',
-        text: 'Drop hoặc paste file lên composer. Bôi text trên transcript cho Add to chat / more details / Send to side chat. Trong Plan review, chọn text plan để quote vào tin revise. Sau undo, gửi lại hoặc sửa draft đã restore kèm file. Nhìn chip quote phía trên draft trước khi bấm send.',
+        text: 'Drop hoặc paste file lên composer. Bôi text trên transcript cho Add to chat / more details / Send to side chat. Sau undo, gửi lại hoặc sửa draft đã restore kèm file. Nhìn chip quote phía trên draft trước khi bấm send.',
       },
       {
         type: 'tips',
@@ -647,24 +560,23 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Paste — ảnh/file clipboard vào composer đang focus',
           'Add to chat — quote transcript vào draft chính',
           'Send to side chat — quote vào /btw song song',
-          'Plan quote — chọn markdown plan → chip revise',
           '/undo — khôi phục text user trước + attachment',
           'Clear chip — bỏ quote trước send nếu đã đổi chủ đề'
 ],
       },
       {
         type: 'p',
-        text: 'Báo bug từng bước: (1) reproduce và chụp screenshot, (2) paste hoặc drop lên composer, (3) quote bước assistant lỗi hoặc dòng error nếu có, (4) nêu expected vs actual, (5) send dưới ask hoặc plan nếu fix chạm nhiều file.',
+        text: 'Báo bug từng bước: (1) reproduce và chụp screenshot, (2) paste hoặc drop lên composer, (3) quote bước assistant lỗi hoặc dòng error nếu có, (4) nêu expected vs actual, (5) send dưới ask nếu fix chạm nhiều file.',
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: attach secret (.env, key file) “cho có context”; xếp năm binary lớn đến khi context budget nhảy; quote đoạn plan cũ sau khi agent đã revise; tưởng quote side-chat tự merge vào history parent (không).',
+        text: 'Sai thường gặp: attach secret (.env, key file) “cho có context”; xếp năm binary lớn đến khi context budget nhảy; quote câu trả lời cũ sau khi agent đã sửa; tưởng quote side-chat tự merge vào history parent (không).',
       },
       {
         type: 'tips',
         items: [
           'Không nên attach — artifact build khổng lồ, zip node_modules, dump DB đầy.',
-          'Nên quote — bất đồng một đoạn, revise một bullet plan, hỏi “explain this”.',
+          'Nên quote — bất đồng một đoạn, sửa một bullet của outline, hỏi “explain this”.',
           'Sau /undo, xem lại attachment đã restore trước khi gửi lại.',
           'WorkFolderSelector không attach folder; nó đổi session root trên đĩa.'
 ],
@@ -676,7 +588,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
 ],
     related: [
       'composer-power',
-      'plan-review',
       'side-chat',
       'slash-commands',
       'sandbox-settings'
@@ -811,7 +722,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Turn nội bộ ẩn tiếp tục đến khi hoàn thành, budget pause, bạn pause/stop, hoặc blocker streak.',
       'Goal không nới permission mode hay sandbox — set chúng chủ đích trước khi start.',
       'Objective rõ + token budget cho run overnight không người canh.',
-      'Objective lớn: draft bằng plan mode trước, Accept, rồi `/goal` để autonomy bắt đầu từ outline đã duyệt.',
+      'Objective lớn: thống nhất outline với Lead trong chat thường trước, rồi `/goal` để autonomy bắt đầu từ đó.',
       'Dùng /btw cho câu meta khi Goal đang chạy để không lệch transcript objective.'
 ],
     blocks: [
@@ -844,22 +755,22 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Viết objective kèm Definition of Done và danh sách out-of-scope.',
           'Đặt token budget trước run overnight.',
           'Theo dõi blocker streak — cùng blocker ×3 thì dừng tiến độ.',
-          'Đừng chờ Goal tự flip ask → bypass giúp bạn.',
+          'Đừng chờ Goal tự flip Hỏi để phê duyệt → Toàn quyền giúp bạn.',
           'Dùng /goal:pause trước khi sửa tay lớn trên cùng cây.'
 ],
       },
       {
         type: 'p',
-        text: 'Nên dùng: refactor Coding nhiều giờ, chore theo checklist, research cần tiếp sau khi ngủ. Không nên: tranh luận design tương tác, Q&A một phát, hoặc việc cần phán đoán của người mỗi phút — ở chat thường hoặc plan review.',
+        text: 'Nên dùng: refactor Coding nhiều giờ, chore theo checklist, research cần tiếp sau khi ngủ. Không nên: tranh luận design tương tác, Q&A một phát, hoặc việc cần phán đoán của người mỗi phút — ở chat thường.',
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: start Goal dưới bypass trên home directory rộng; quên budget rồi dậy thấy bill khổng lồ; bỏ qua blocker streak rồi prompt lại bước kẹt; dùng /stop thay /goal:stop (khác lớp); nhồi nhiều objective không liên quan vào một dòng `/goal`.',
+        text: 'Sai thường gặp: start Goal dưới Toàn quyền trên home directory rộng; quên budget rồi dậy thấy bill khổng lồ; bỏ qua blocker streak rồi prompt lại bước kẹt; dùng /stop thay /goal:stop (khác lớp); nhồi nhiều objective không liên quan vào một dòng `/goal`.',
       },
       {
         type: 'tips',
         items: [
-          'Bước — shield + sandbox → optional plan Accept → /goal:budget → /goal <objective>.',
+          'Bước — permission mode + sandbox → optional outline trong chat → /goal:budget → /goal <objective>.',
           'Bước — kẹt → đọc blocker → /goal:pause → sửa môi trường → /goal:resume.',
           'Scheduler cho cron prompt; Goal là autonomy trong session.',
           'Dream cron riêng dưới Settings → Memory.'
@@ -870,7 +781,6 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'permissions-modes',
       'slash-commands',
       'chat-team',
-      'plan-review',
       'scheduler-tasks'
 ],
   },
@@ -1061,7 +971,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         items: [
           'Terminal vs ! — tương tác/dài vs lệnh ngắn gắn chat.',
           'Files vs @ — browse/khám vs ghim path đã biết vào ask.',
-          'Source Control sau Accept plan mode để verify diff.',
+          'Source Control sau một lượt agent sửa code để verify diff.',
           'Memory sau session research để Dream có nguyên liệu.'
 ],
       }
@@ -1116,7 +1026,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Chạy /btw, nhấn Ctrl+;, mở Side chat từ workbench, hoặc dùng icon hàng session. Tùy chọn quote transcript qua Send to side chat. Hỏi xong đóng panel. Nếu câu trả lời phải lái run chính, tự tóm tắt lại vào composer Lead (hoặc Revise plan).',
+        text: 'Chạy /btw, nhấn Ctrl+;, mở Side chat từ workbench, hoặc dùng icon hàng session. Tùy chọn quote transcript qua Send to side chat. Hỏi xong đóng panel. Nếu câu trả lời phải lái run chính, tự tóm tắt lại vào composer Lead.',
       },
       {
         type: 'tips',
@@ -1131,7 +1041,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Trong Coding run dài: (1) chọn đoạn assistant khó hiểu, (2) Send to side chat, (3) hỏi “đang claim X hay Y?”, (4) nếu Y sai, về composer chính với instruction sửa hoặc plan revise, (5) đóng Side chat.',
+        text: 'Trong Coding run dài: (1) chọn đoạn assistant khó hiểu, (2) Send to side chat, (3) hỏi “đang claim X hay Y?”, (4) nếu Y sai, về composer chính với instruction sửa, (5) đóng Side chat.',
       },
       {
         type: 'p',
@@ -1139,12 +1049,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: gõ “please implement…” vào side chat rồi thắc mắc Lead không làm; chờ side chat approve plan hoặc trả ask-user cho parent; để Ctrl+; mở rồi mất dấu composer nào đang focus; tưởng quote tự sync hai chiều.',
+        text: 'Sai thường gặp: gõ “please implement…” vào side chat rồi thắc mắc Lead không làm; chờ side chat approve tool call hoặc trả ask-user cho parent; để Ctrl+; mở rồi mất dấu composer nào đang focus; tưởng quote tự sync hai chiều.',
       },
       {
         type: 'tips',
         items: [
-          'Ghép quote Plan review để “explain bullet này” mà không Reject.',
           'Sibling Work chat + share_context cho research song song nặng hơn.',
           '/stop vẫn nhắm team chính — side chat không phải Lead thứ hai.',
           'Side chat thiếu tool bạn cần thường nghĩa bạn đã vượt use case /btw.'
@@ -1155,8 +1064,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'composer-power',
       'workbench-tools',
       'slash-commands',
-      'slash-goal',
-      'plan-review'
+      'slash-goal'
 ],
     openAction: { type: 'workbench', tool: 'side-chat' },
   },
@@ -1311,11 +1219,11 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Vòng PR: (1) agent sửa dưới accept-edits hoặc plan, (2) Ctrl+G xem diff, (3) stage hunk liên quan, (4) commit với message giải thích lý do (why), (5) push qua agent hoặc flow remote quen, (6) mở Review / Create PR trên host đã nối, (7) xử lý comment review trong chat follow-up.',
+        text: 'Vòng PR: (1) agent sửa dưới Hỏi để phê duyệt hoặc Tự duyệt giúp tôi, (2) Ctrl+G xem diff, (3) stage hunk liên quan, (4) commit với message giải thích lý do (why), (5) push qua agent hoặc flow remote quen, (6) mở Review / Create PR trên host đã nối, (7) xử lý comment review trong chat follow-up.',
       },
       {
         type: 'p',
-        text: 'Khi để agent chạy git vs tự làm: để agent stage/commit khi diff khớp plan và permission mode phù hợp; tự merge/rebase trên branch được bảo vệ nếu đội yêu cầu nghi thức người. Đừng bật force-with-lease tùy tiện trên shared branch.',
+        text: 'Khi để agent chạy git vs tự làm: để agent stage/commit khi diff khớp điều bạn yêu cầu và permission mode phù hợp; tự merge/rebase trên branch được bảo vệ nếu đội yêu cầu nghi thức người. Đừng bật force-with-lease tùy tiện trên shared branch.',
       },
       {
         type: 'p',
@@ -1324,7 +1232,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Plan Accept → Source Control để verify plan thành diff bạn kỳ vọng.',
+          'Sau một lượt sửa → Source Control để verify diff đúng như bạn kỳ vọng.',
           'Worktree giữ commit thí nghiệm khỏi checkout chính.',
           'Permission ask trước lần push đầu lên remote production.'
 ],
@@ -1334,8 +1242,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'coding-workspaces',
       'workbench-tools',
       'settings-safety',
-      'permissions-modes',
-      'plan-review'
+      'permissions-modes'
 ],
     openAction: { type: 'workbench', tool: 'source-control' },
   },
@@ -2165,7 +2072,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Team scope theo work / coding.',
       'Command palette nhảy tới Edit <agent>… hoặc tạo agent và skill mới.',
       'Dùng tools_opt_out để tắt default tool code-owned; bỏ skill đã assign trực tiếp khỏi danh sách skills.',
-      'Tool chỉ Lead (ask_user, plan mode helper, một số worktree helper) không bao giờ cấp cho specialist.',
+      'Tool chỉ Lead (ask_user, một số worktree helper) không bao giờ cấp cho specialist.',
       'MCP server kẹt auth thì hoàn tất auth flow trước khi đổ lỗi slash menu composer.'
 ],
     blocks: [
@@ -2179,7 +2086,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Settings → Agents để sửa thành viên team; Settings → Skills để tạo, sửa skill của bạn, xem validation và bật/tắt bất kỳ skill nào; Settings → MCP để thêm server và xem chấm trạng thái. Từ chat, gõ $tên-skill để dùng skill ngay, hoặc mở palette cho New Agent / New Skill. Trường Skills của agent preload các skill đó vào agent. Tool chỉ Lead (ask_user, plan mode, worktree helper) không bao giờ cấp cho specialist.',
+        text: 'Settings → Agents để sửa thành viên team; Settings → Skills để tạo, sửa skill của bạn, xem validation và bật/tắt bất kỳ skill nào; Settings → MCP để thêm server và xem chấm trạng thái. Từ chat, gõ $tên-skill để dùng skill ngay, hoặc mở palette cho New Agent / New Skill. Trường Skills của agent preload các skill đó vào agent. Tool chỉ Lead (ask_user, worktree helper) không bao giờ cấp cho specialist.',
       },
       {
         type: 'tips',
@@ -2238,14 +2145,14 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
 ],
     openAction: { type: 'settings', path: 'sandbox' },
     setup:
-      'Settings → Sandbox. Xem lại deny pattern trước khi bật permission auto/bypass mạnh. Help popover trên trang giải thích cú pháp glob ** và *.',
+      'Settings → Sandbox. Xem lại deny pattern trước khi chọn permission mode Tự duyệt giúp tôi hoặc Toàn quyền. Help popover trên trang giải thích cú pháp glob ** và *.',
     tricks: [
       'Deny pattern dùng glob ** và *; help popover trong Settings giải thích cú pháp.',
       'Vị trí worktree (repository vs user_data) nằm trên trang Sandbox.',
       'Outbound redact/block chạy trước khi nội dung tới provider khi bật.',
       'Sandbox vẫn áp dưới Goal mode — Goal không nới scope.',
       'Symlink vào root bị chặn bị reject; shell command được tokenize để check path bị deny.',
-      'Ghép accept-edits hoặc auto với denylist chặt cho tốc độ coding ngày thường.',
+      'Ghép Tự duyệt giúp tôi với denylist chặt cho tốc độ coding ngày thường.',
       'Deny credential cache và đĩa không liên quan dù bạn tin model.',
       'Test lại một tool call mẫu sau khi sửa globs — glob sai im lặng giống “tool hỏng”.',
       'Ghép filesystem denylist với domain policy Settings → Browser cho WebBridge.'
@@ -2276,17 +2183,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Cứng hóa laptop Coding: (1) liệt kê root nhạy cảm (key, cloud sync, client khác), (2) thêm deny globs, (3) set vị trí worktree chủ đích, (4) bật outbound redact nếu policy yêu cầu, (5) chạy probe tool dưới ask, (6) rồi mới cân nhắc accept-edits hoặc auto cho tốc độ.',
+        text: 'Cứng hóa laptop Coding: (1) liệt kê root nhạy cảm (key, cloud sync, client khác), (2) thêm deny globs, (3) set vị trí worktree chủ đích, (4) bật outbound redact nếu policy yêu cầu, (5) chạy probe tool dưới Hỏi để phê duyệt, (6) rồi mới cân nhắc Tự duyệt giúp tôi cho tốc độ.',
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: bật bypass với denylist trống trên workspace home directory; quên symlink; tưởng outbound redact thay thế việc không paste secret; để worktree trên user_data rồi thắc mắc dung lượng đĩa chuyển chỗ; nhầm deny hit với MCP auth fail.',
+        text: 'Sai thường gặp: bật Toàn quyền với denylist trống trên workspace home directory; quên symlink; tưởng outbound redact thay thế việc không paste secret; để worktree trên user_data rồi thắc mắc dung lượng đĩa chuyển chỗ; nhầm deny hit với MCP auth fail.',
       },
       {
         type: 'tips',
         items: [
-          'Plan Reject khi plan nhắm path bị deny thay vì vật lộn với sandbox.',
-          'Checklist Troubleshooting “tools denied” gồm shield + denylist.',
+          'Reject tool call khi agent nhắm path bị deny thay vì vật lộn với sandbox.',
+          'Checklist Troubleshooting “tools denied” gồm permission mode + denylist.',
           'Coding worktree theo policy vị trí Sandbox.'
 ],
       }
@@ -2577,7 +2484,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ctrl+B do AppShell sở hữu một lần cho mọi mode sidebar.',
       'Ctrl+R chỉ refresh session Work (không reload cả app).',
       'Quên binding thì Ctrl+P search theo tên action.',
-      'Phím 1–5 chỉ đổi permission mode khi shield menu đang mở.',
+      'Phím 1–3 chỉ đổi permission mode khi menu permission đang mở.',
       'Ctrl+I focus chat input — hữu ích sau khi click qua panel workbench.'
 ],
     blocks: [
@@ -2606,7 +2513,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           { keys: 'Ctrl+I', action: 'Focus chat input' },
           { keys: 'Ctrl+;', action: 'Side chat (label có thể hiện ⌥⌘S)' },
           { keys: 'Ctrl+R', action: 'Refresh Work sessions' },
-          { keys: '1–5', action: 'Permission modes khi shield menu đang mở' }
+          { keys: '1–3', action: 'Permission modes khi menu permission đang mở' }
 ],
       },
       {
@@ -2621,7 +2528,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Nhãn ⌘P / ⌥⌘S — cũ; dùng Ctrl+F / Ctrl+;',
           'Ctrl+V — xoay view bị suppress lúc paste',
           'Ctrl+R — chỉ refresh session Work',
-          '1–5 — chỉ khi shield menu mở'
+          '1–3 — chỉ khi menu permission mở'
 ],
       },
       {
@@ -2631,9 +2538,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'tips',
         items: [
-          'Permission shield + 1–5 nhanh hơn click mode.',
+          'Menu permission + 1–3 nhanh hơn click mode.',
           'Ctrl+; side chat trong Goal mà không /stop.',
-          'Ctrl+G sau plan Accept để verify diff.'
+          'Ctrl+G sau một lượt agent sửa code để verify diff.'
 ],
       }
 ],
@@ -2698,7 +2605,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Chạy source → `make dev` rồi `make -C desktop dev`',
           'Không có model → Settings → Providers',
           'Lỗi stream mà health xanh → credential model/provider hoặc rate limit',
-          'Tool bị deny → permission mode (ask/plan) + Sandbox deny globs',
+          'Tool bị deny → permission mode + Sandbox deny globs',
           'WebBridge offline → extension, pairing, Browser policy, per-chat enable',
           'Telemetry trống → extras observability tắt (thường không chặn)',
           'Goal kẹt → xem blocker streak, budget pause, hoặc /goal:stop',
@@ -2708,7 +2615,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Checklist theo thứ tự: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission shield, (7) Sandbox denylist, (8) Browser/WebBridge, (9) tool theo mode (Source Control và Problems chỉ Coding). Dừng ở lớp fail đầu tiên.',
+        text: 'Checklist theo thứ tự: (1) HealthDot, (2) Connection mode, (3) Welcome/team ready, (4) Diagnostics, (5) Providers, (6) permission mode, (7) Sandbox denylist, (8) Browser/WebBridge, (9) tool theo mode (Source Control và Problems chỉ Coding). Dừng ở lớp fail đầu tiên.',
       },
       {
         type: 'p',
@@ -2718,7 +2625,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
         type: 'tips',
         items: [
           'Thứ tự cold-start Getting started khớp checklist này.',
-          'Plan review đang chờ Accept không phải hang — giải panel.',
+          'Permission prompt đang chờ không phải hang — giải permission bar.',
           'Nhầm focus side chat trông như “Lead bỏ qua tôi.”',
           'Khi nghi — Diagnostics + Work ping nhỏ thắng speculative reset.'
 ],

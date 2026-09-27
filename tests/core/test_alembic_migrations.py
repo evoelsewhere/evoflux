@@ -8,8 +8,9 @@ cleanup, durable goals, the AIM table drop, scheduler routing, and
 application-database graph removal through revision 00000046).
 Revision 00000048 repairs project-owned Coding sessions hidden by the sidebar;
 revision 00000049 removes the retired parallel Memory processing table,
-revision 00000051 removes the retired Artifact Fabric tables, and revision
-00000068 removes the retired Workflows tables.
+revision 00000051 removes the retired Artifact Fabric tables, revision
+00000068 removes the retired Workflows tables, and revision 00000070 moves
+sessions off the removed ``plan`` / ``accept-edits`` permission modes.
 Complements ``tests/core/test_db_extra.py``, which only covers
 ``run_migrations`` error paths with mocks.
 """
@@ -233,6 +234,55 @@ def test_work_mode_migration_rewrites_forge_rows_and_defaults(tmp_path, monkeypa
         assert mode == "work"
         assert chat_mode["default"] == "'work'"
         assert task_mode["default"] == "'work'"
+    finally:
+        engine.dispose()
+
+
+def test_removed_permission_modes_migrate_to_ask(tmp_path, monkeypatch):
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "permission-modes.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000069")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            for mode in ("plan", "accept-edits", "ask", "auto", "bypass"):
+                conn.execute(
+                    sa.text(
+                        "INSERT INTO chat_sessions "
+                        "(id, mode, permission_mode, session_type, created_at, "
+                        "updated_at) VALUES (:id, 'work', :mode, 'main', "
+                        "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    ),
+                    {"id": f"session-{mode}", "mode": mode},
+                )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.connect() as conn:
+            modes = dict(
+                conn.execute(
+                    sa.text("SELECT id, permission_mode FROM chat_sessions")
+                ).all()
+            )
+        assert modes == {
+            "session-plan": "ask",
+            "session-accept-edits": "ask",
+            "session-ask": "ask",
+            "session-auto": "auto",
+            "session-bypass": "bypass",
+        }
     finally:
         engine.dispose()
 

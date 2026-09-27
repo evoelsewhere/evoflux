@@ -1,4 +1,4 @@
-import type { ContentBlock, AgentUsage, TeamCommandResponse, PlanApprovalPending, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse, PermissionMode, MessageAttachment, SuggestedTask } from '@/api/types'
+import type { ContentBlock, AgentUsage, TeamCommandResponse, PermissionRequestPending, AskUserQuestionPending, TurnChangesPending, GoalResponse, PermissionMode, MessageAttachment, SuggestedTask } from '@/api/types'
 
 export interface PendingMessage {
   id: string
@@ -124,7 +124,6 @@ export interface TeamStoreState {
   suggestedTasks: SuggestedTask[]
   setupRequired: SetupRequiredNotice | null
   browserSession: BrowserSessionInfo | null
-  planApproval: PlanApprovalPending | null
   turnChanges: TurnChangesPending | null
   /** When true and ``turnChanges`` is set, ChangesReviewPanel is visible. */
   turnChangesOpen: boolean

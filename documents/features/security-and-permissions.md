@@ -12,18 +12,17 @@ default. When nothing matches, the result is `ask`. Read-only inspection,
 bookkeeping and team-coordination tools have safe defaults that can still be
 overridden by later rules.
 
-Session permission modes resolve `ask` as follows:
+Each session has one of three permission modes, which resolve `ask` as follows:
 
-| Mode | Behavior |
-|---|---|
-| `ask` | Pause and publish a permission request |
-| `accept-edits` | Auto-allow edit/write/patch; ask for other unresolved calls |
-| `plan` | Auto-allow tool layer after explicit plan gating |
-| `auto` | Auto-allow unresolved calls within remaining sandbox/policy checks |
-| `bypass` | Skip permission-rule evaluation; intended only for explicitly trusted use |
+| Mode | UI label | Behavior |
+|---|---|---|
+| `ask` | Ask for approval | Pause and publish a permission request |
+| `auto` (default) | Approve for me | Auto-allow unresolved calls within remaining sandbox/policy checks; calls flagged potentially unsafe (merging or closing a code review, a tool whose own Settings page says "ask") still pause |
+| `bypass` | Full access | Skip permission-rule evaluation; intended only for explicitly trusted use |
 
 User replies can allow once, add a session-scoped always rule, or reject. A mode
-change resolves pending requests that the new mode permits. Permission modes do
+change resolves pending requests that the new mode permits; switching to
+`auto` leaves potentially unsafe requests waiting for the user. Permission modes do
 not bypass filesystem sandboxing, browser policies, provider capability checks
 or Conductor enforcement.
 

@@ -183,7 +183,7 @@ backoff; interruption cancels active work and leaves a coherent persisted
 boundary. Empty post-tool responses receive one continuation prompt instead of
 silently abandoning completed tool work.
 
-Questions, permissions and plan approval pause at explicit interaction points.
+Questions and permissions pause at explicit interaction points.
 A specialist safety net reports failures back to the lead; terminal errors are
 visible rather than converted into a successful handoff.
 

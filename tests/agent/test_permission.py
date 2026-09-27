@@ -234,22 +234,20 @@ async def test_bypass_mode_skips_even_deny_rules():
 
 
 @pytest.mark.asyncio
-async def test_accept_edits_mode_allows_edit_tools_but_blocks_shell():
-    service = PermissionService(session_id="s1", mode="accept-edits")
-    # Edit tools pass without a reply
+async def test_auto_mode_asks_only_for_potentially_unsafe_calls():
+    """Approve for me runs ordinary calls and stops for important ones."""
+    service = PermissionService(session_id="s1", mode="auto")
     await service.ask("edit", ["/tmp/file.py"])
-    await service.ask("write", ["/tmp/file.py"])
-    await service.ask("patch", ["/tmp/file.py"])
+    await service.ask("shell", ["git status"])
+    assert service.list_pending() == []
 
-    # Shell still blocks until replied
     async def _reply_later():
-        await asyncio.sleep(0.01)
-        reqs = service.list_pending()
-        assert len(reqs) == 1
-        service.reply(reqs[0].id, "once")
+        while not service.list_pending():
+            await asyncio.sleep(0)
+        service.reply(service.list_pending()[0].id, "once")
 
     asyncio.create_task(_reply_later())
-    await service.ask("shell", ["rm file.txt"])
+    await service.ask("shell", ["rm -rf build"], important=True)
 
 
 @pytest.mark.asyncio
@@ -262,33 +260,6 @@ async def test_ask_mode_allows_safe_read_only_tools():
     await service.ask("load_tool", ["load_tool"])
     await service.ask("schedule_task", ["schedule_task"])
     assert service.list_pending() == []
-
-
-@pytest.mark.asyncio
-async def test_plan_mode_asks_about_tools_the_plan_does_not_record():
-    """Plan mode must never be looser than Ask.
-
-    The plan recorder intercepts a fixed set of tools — those are not going to
-    run this turn, so approving them is meaningless. Everything else executes
-    for real. Waving all of it through made the mode with the most cautious
-    name the most permissive setting in the list for MCP tools, browser
-    control, and anything else the recorder does not cover.
-    """
-    service = PermissionService(session_id="s1", mode="plan")
-
-    # Recorded by the plan, so no prompt.
-    await service.ask("shell", ["rm -rf /"])
-    await service.ask("edit", ["/tmp/file.py"])
-    assert service.list_pending() == []
-
-    # Not recorded — runs for real, so it asks.
-    async def _reply_later():
-        while not service.list_pending():
-            await asyncio.sleep(0)
-        service.reply(service.list_pending()[0].id, "once")
-
-    asyncio.create_task(_reply_later())
-    await service.ask("browser_use", ["click #buy"])
 
 
 def _computer_app_policy(monkeypatch, **policy) -> None:
@@ -333,21 +304,20 @@ async def test_computer_app_allow_setting_runs_in_auto_mode_too(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_computer_app_ask_setting_still_asks_in_auto_and_plan_modes(monkeypatch):
+async def test_computer_app_ask_setting_still_asks_in_auto_mode(monkeypatch):
     """Sessions default to auto, which waves every "ask" through. The feature's
     own "Ask every time" must not be silently overridden by that default."""
     _computer_app_policy(monkeypatch, enabled=True, permission="ask")
-    for mode in ("auto", "plan", "accept-edits"):
-        service = PermissionService(session_id="s1", mode=mode)
+    service = PermissionService(session_id="s1", mode="auto")
 
-        async def _reply_later(service=service):
-            while not service.list_pending():
-                await asyncio.sleep(0)
-            service.reply(service.list_pending()[0].id, "once")
+    async def _reply_later():
+        while not service.list_pending():
+            await asyncio.sleep(0)
+        service.reply(service.list_pending()[0].id, "once")
 
-        task = asyncio.create_task(_reply_later())
-        await service.ask("computer_app", ["computer_app"])
-        await task
+    task = asyncio.create_task(_reply_later())
+    await service.ask("computer_app", ["computer_app"])
+    await task
 
 
 @pytest.mark.asyncio
@@ -504,22 +474,35 @@ async def test_set_mode_to_auto_resolves_pending():
 
 
 @pytest.mark.asyncio
-async def test_set_mode_to_accept_edits_resolves_only_edit_tools():
+async def test_set_mode_to_auto_keeps_important_requests_pending():
+    """Switching to "Approve for me" must not wave through an unsafe call."""
     service = PermissionService(session_id="s1", mode="ask")
     edit_task = asyncio.create_task(service.ask("edit", ["/tmp/f.py"]))
-    shell_task = asyncio.create_task(service.ask("shell", ["rm -rf /tmp"]))
+    unsafe_task = asyncio.create_task(
+        service.ask("shell", ["rm -rf /tmp"], important=True)
+    )
     await asyncio.sleep(0.01)
     assert len(service.list_pending()) == 2
 
-    resolved = service.set_mode("accept-edits")
+    resolved = service.set_mode("auto")
     assert len(resolved) == 1
     await edit_task  # unblocked
 
-    # shell request still pending — resolve it to let the task finish
+    # the unsafe request still waits for the user
     assert len(service.list_pending()) == 1
     service.reply(service.list_pending()[0].id, "reject")
     with pytest.raises(PermissionRejectedError):
-        await shell_task
+        await unsafe_task
+
+
+@pytest.mark.asyncio
+async def test_set_mode_to_bypass_resolves_important_requests():
+    service = PermissionService(session_id="s1", mode="ask")
+    task = asyncio.create_task(service.ask("shell", ["rm -rf /tmp"], important=True))
+    await asyncio.sleep(0.01)
+
+    assert len(service.set_mode("bypass")) == 1
+    await task
 
 
 # ---------------------------------------------------------------------------

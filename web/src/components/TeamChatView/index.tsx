@@ -51,7 +51,7 @@ import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { SuggestedTaskDock } from '../SuggestedTaskDock'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import { useFollowUpSettingsQuery, useRegistryQuery, useTriggerDreamMutation, useWebBridgeSettingsQuery } from '@/queries'
-import { getSessionWorkspaceRoot, getWebBridgeStatus, replyPlanApproval, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
+import { getSessionWorkspaceRoot, getWebBridgeStatus, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -72,7 +72,6 @@ import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import { useWorkspaceFileWatcher } from '@/hooks/useWorkspaceFileWatcher'
 import { Button } from '@/components/ui/button'
 import type { AgentStream } from '@/stores/useTeamStore'
-import { PlanActionBar } from '../PlanReviewPanel'
 import { type InputBarHandle } from '../InputBar'
 import { splitQuotedContext } from '../InputBar.skills'
 import { FloatingInputBar } from '../FloatingInputBar'
@@ -1160,13 +1159,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     inputRef.current?.focus()
   }, [])
 
-  /** Plan panel → composer: quote the selected plan text with the user's comment. */
-  const handlePlanQuoteComment = useCallback((quote: string, comment: string) => {
-    inputRef.current?.setQuoteContext(quote)
-    inputRef.current?.appendValue(comment)
-    inputRef.current?.focus()
-  }, [])
-
   /** Editor context menu → Chat: user requests an action on selected code */
   const handleSendToChat = useCallback((action: string, code: string, path: string, startLine: number, endLine: number) => {
     const lineRef = startLine === endLine ? `L${startLine}` : `L${startLine}-L${endLine}`
@@ -1588,26 +1580,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       }
     }
 
-    // While a plan is pending review, a text-only message is the revision
-    // feedback — a normal send would just queue behind the blocked agent turn.
-    const pendingPlan = useTeamStore.getState().planApproval
-    if (pendingPlan && (!files || files.length === 0)) {
-      const planSessionId = useTeamStore.getState().sessionId
-      if (planSessionId) {
-        try {
-          await replyPlanApproval(planSessionId, pendingPlan.requestId, 'revise', content)
-          useTeamStore.setState({ planApproval: null })
-          pushToast({ tone: 'info', title: 'Revision sent — agent is updating the plan' })
-        } catch (err) {
-          pushToast({
-            tone: 'error',
-            title: 'Failed to send revision',
-            description: err instanceof Error ? err.message : undefined,
-          })
-        }
-        return true
-      }
-    }
     // Quoted chat context is prepended as ``> `` lines, so a command the user
     // typed is no longer at index 0 — matching the raw content used to send
     // "> …\n\n/goal x" to the model as ordinary prose instead of starting the
@@ -1832,7 +1804,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const trailingPanels = (
     <>
       <ChatTrailingPanels
-        onQuoteComment={handlePlanQuoteComment}
         workspace={workspace}
         mode={mode}
         onOpenChangedFile={(path) => {
@@ -2145,7 +2116,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         <SuggestedTaskDock />
         <PermissionApprovalModal />
         <AskUserQuestionModal />
-        <PlanActionBar onRevise={() => inputRef.current?.focus()} />
         {(mode !== 'coding' || workspace) && (
           <FloatingInputBar
             ref={inputRef}

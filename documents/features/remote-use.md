@@ -112,7 +112,6 @@ Device label resolution for transparent claims: optional
 - Identity hook: `app/core/desktop_auth.py`
 - Model + migration: `app/models/remote_use.py`,
   `app/migrations/versions/00000069_create_remote_use_sessions.py`
-  (`SCHEMA_HEAD = "00000069"`)
 - Routes: `app/api/routes/remote_use.py` (mounted at `/api/remote-use` in
   `app/api/app.py`)
 - Tests: `tests/remote_use/` (stub `tailscale` fixture in `conftest.py`)

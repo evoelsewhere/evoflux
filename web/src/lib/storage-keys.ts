@@ -44,7 +44,6 @@ export const STORAGE_KEYS = {
     codingWorkspace: 'oa.codingWorkspacePanel.width',
     codingWorkspacePicker: 'oa.codingWorkspacePicker.width',
     codingFileViewer: 'oa.codingFileViewer.width',
-    plan: 'planPanelWidth',
     workspace: 'workspace-panel-width',
     workspaceTree: 'workspace-tree-width',
     codingWorkspaceTree: 'oa.codingWorkspace.treeWidth',

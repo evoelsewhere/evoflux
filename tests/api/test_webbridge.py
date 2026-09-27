@@ -454,40 +454,6 @@ def test_side_chat_stream_strips_question_reply_answers():
             },
         ),
         (
-            "plan_approval_requested",
-            {
-                "request_id": "plan-1",
-                "session_id": "session-1",
-                "plan": "Private plan body",
-                "steps": [
-                    {
-                        "tool": "shell",
-                        "args": {"command": "must-not-leak"},
-                        "summary": "Internal summary",
-                    }
-                ],
-            },
-            {
-                "type": "plan_approval_requested",
-                "request_id": "plan-1",
-                "session_id": "session-1",
-            },
-        ),
-        (
-            "plan_approval_replied",
-            {
-                "request_id": "plan-1",
-                "session_id": "session-1",
-                "decision": "revise",
-                "metadata": {"feedback": "must-not-leak"},
-            },
-            {
-                "type": "plan_approval_replied",
-                "request_id": "plan-1",
-                "session_id": "session-1",
-            },
-        ),
-        (
             "agent_not_configured",
             {
                 "agent": "lead",
@@ -2492,7 +2458,7 @@ async def test_prepared_interactive_message_queues_when_session_is_busy():
         session = ChatSession(
             title="Busy",
             tags=["webbridge"],
-            permission_mode="accept-edits",
+            permission_mode="ask",
             model="model:persisted",
         )
         db.add(session)
@@ -2508,7 +2474,7 @@ async def test_prepared_interactive_message_queues_when_session_is_busy():
         assert queued.extra["queue_status"] == "queued"
         assert queued.extra["model"] == "model:persisted"
         assert team.session_tags == frozenset({"webbridge"})
-        assert team.permission_mode == "accept-edits"
+        assert team.permission_mode == "ask"
 
 
 async def test_prepared_interactive_message_queues_attachment_when_session_is_busy(
@@ -3300,16 +3266,8 @@ async def test_side_panel_desktop_commands_and_approval_replies_are_pairing_scop
             "reply": "once",
         }
     )
-    plan_reply = AsyncMock(
-        return_value={
-            "status": "ok",
-            "request_id": "plan-1",
-            "decision": "revise",
-        }
-    )
     monkeypatch.setattr(chat_routes, "team_command", command)
     monkeypatch.setattr(permission_routes, "reply_permission", permission_reply)
-    monkeypatch.setattr(permission_routes, "reply_plan_approval", plan_reply)
 
     continued = client.post(
         f"{_PREFIX}/sessions/{session.id}/commands",
@@ -3332,19 +3290,6 @@ async def test_side_panel_desktop_commands_and_approval_replies_are_pairing_scop
         "permission-1",
     )
     assert permission_reply.await_args.args[2].reply == "once"
-
-    plan = client.post(
-        f"{_PREFIX}/sessions/{session.id}/plan/reply",
-        headers=owner_headers,
-        json={
-            "request_id": "plan-1",
-            "decision": "revise",
-            "feedback": "Add a verification step",
-        },
-    )
-    assert plan.status_code == 200
-    assert plan_reply.await_args.args[0] == str(session.id)
-    assert plan_reply.await_args.args[1].feedback == "Add a verification step"
 
     denied = client.post(
         f"{_PREFIX}/sessions/{session.id}/commands",

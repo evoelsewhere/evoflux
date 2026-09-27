@@ -228,7 +228,7 @@ class Tool:
         # restrict, e.g. ``tiers=("work",)``.
         self.tiers = frozenset(tiers) if tiers is not None else None
         # Tools that talk to the user or restructure the session (ask_user,
-        # plan mode, worktree, ...) are lead-only: team members never get them.
+        # worktree, ...) are lead-only: team members never get them.
         self.lead_only = lead_only
         # Deferred tools remain executable by this agent but omit their full
         # schema until the model explicitly activates them via load_tool.

@@ -12,21 +12,39 @@ function open(mode: PermissionMode = 'auto') {
 }
 
 describe('ModeSelector', () => {
+  it('offers exactly the three permission modes, in order', () => {
+    open()
+
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      expect.stringContaining('Ask for approval'),
+      expect.stringContaining('Approve for me'),
+      expect.stringContaining('Full access'),
+    ])
+  })
+
   it('states in full what each mode still asks about', () => {
     open()
 
     // The truncated half used to be the half that mattered: what a mode
-    // keeps asking about, and what Bypass gives up.
+    // keeps asking about, and what Full access gives up.
+    expect(screen.getByText(/Always asks before editing files/i)).toBeInTheDocument()
     expect(
-      screen.getByText(/Shell and destructive operations still ask/i),
+      screen.getByText(/Only asks for actions detected as potentially unsafe/i),
     ).toBeInTheDocument()
-    expect(
-      screen.getByText(/deny rules and irreversible-action confirmations do not apply/i),
-    ).toBeInTheDocument()
-    // Auto and Bypass are no longer described as the same thing.
-    expect(
-      screen.getByText(/still honours deny rules and confirms irreversible actions/i),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/Runs every action without asking/i)).toBeInTheDocument()
+  })
+
+  it('marks the selected mode', () => {
+    open('ask')
+
+    expect(screen.getByRole('option', { name: /Ask for approval/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    expect(screen.getByRole('option', { name: /Approve for me/ })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    )
   })
 
   it('takes focus so its keys do not reach the composer behind it', () => {
@@ -39,7 +57,7 @@ describe('ModeSelector', () => {
     const { onModeChange, list } = open()
 
     const event = new KeyboardEvent('keydown', {
-      key: '5',
+      key: '3',
       bubbles: true,
       cancelable: true,
     })
@@ -51,17 +69,25 @@ describe('ModeSelector', () => {
     expect(event.defaultPrevented).toBe(true)
   })
 
+  it('ignores digits past the last mode', () => {
+    const { onModeChange, list } = open()
+
+    fireEvent.keyDown(list, { key: '4' })
+
+    expect(onModeChange).not.toHaveBeenCalled()
+  })
+
   it('moves through the options with the arrow keys', () => {
     const { list, onModeChange } = open('ask')
 
     // Opens on the active mode, so Enter alone changes nothing.
     expect(list.getAttribute('aria-activedescendant')).toBe(
-      screen.getByRole('option', { name: /Ask permissions/ }).id,
+      screen.getByRole('option', { name: /Ask for approval/ }).id,
     )
 
     fireEvent.keyDown(list, { key: 'ArrowDown' })
     expect(list.getAttribute('aria-activedescendant')).toBe(
-      screen.getByRole('option', { name: /Accept edits/ }).id,
+      screen.getByRole('option', { name: /Approve for me/ }).id,
     )
 
     fireEvent.keyDown(list, { key: 'End' })
@@ -74,7 +100,7 @@ describe('ModeSelector', () => {
 
     fireEvent.keyDown(list, { key: 'ArrowUp' })
     expect(list.getAttribute('aria-activedescendant')).toBe(
-      screen.getByRole('option', { name: /Bypass permissions/ }).id,
+      screen.getByRole('option', { name: /Full access/ }).id,
     )
   })
 
@@ -95,17 +121,18 @@ describe('ModeSelector', () => {
     }
   })
 
-  it('marks the trigger for a mode that changes what the agent may do', () => {
-    const { container: guarded } = render(
-      <ModeSelector mode="ask" onModeChange={vi.fn()} />,
+  it('marks the trigger when Full access is on', () => {
+    const { container: unguarded } = render(
+      <ModeSelector mode="bypass" onModeChange={vi.fn()} />,
     )
     const { container: neutral } = render(
       <ModeSelector mode="auto" onModeChange={vi.fn()} />,
     )
 
-    // Bypass and Plan have to be legible without opening the menu.
-    expect(guarded.querySelector('button')?.className).not.toBe(
+    // Full access has to be legible without opening the menu.
+    expect(unguarded.querySelector('button')?.className).not.toBe(
       neutral.querySelector('button')?.className,
     )
+    expect(unguarded.querySelector('button')).toHaveTextContent('Full access')
   })
 })

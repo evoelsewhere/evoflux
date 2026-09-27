@@ -3,7 +3,7 @@
  * (extracted, unchanged, from its layout).
  *
  *   - ``ChatTrailingPanels`` — rendered after <main> inside AppShell's body
- *     row: PlanReviewPanel, BrowserViewer, TerminalPanel.
+ *     row: ChangesReviewPanel, ChangeSetReviewPanel.
  *     Coding workspace / file viewer live in ``fullHeightTrailing`` (same
  *     slot as Work's WorkspaceFilesPanel) so they cover the right corner
  *     beside the main card instead of sitting under the topbar.
@@ -13,13 +13,11 @@
  *
  * Props-driven; every conditional and the exact DOM order are preserved.
  */
-import { PlanReviewPanel } from '../PlanReviewPanel'
 import { ChangesReviewPanel } from '../ChangesReviewPanel'
 import { ChangeSetReviewPanel } from '../ChangeSetReviewPanel'
 import { CommandPalette, type Command } from '../CommandPalette'
 
 interface ChatTrailingPanelsProps {
-  onQuoteComment: (quote: string, comment: string) => void
   workspace?: string | null
   mode?: 'work' | 'coding'
   onOpenChangedFile?: (path: string) => void
@@ -27,14 +25,12 @@ interface ChatTrailingPanelsProps {
 
 // Side panels rendered after <main> inside AppShell's body row.
 export function ChatTrailingPanels({
-  onQuoteComment,
   workspace,
   mode = 'work',
   onOpenChangedFile,
 }: ChatTrailingPanelsProps) {
   return (
     <>
-      <PlanReviewPanel onQuoteComment={onQuoteComment} />
       <ChangesReviewPanel
         workspace={workspace}
         mode={mode}

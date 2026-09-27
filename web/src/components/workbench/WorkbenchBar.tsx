@@ -3,7 +3,6 @@ import { motion } from 'framer-motion'
 import {
   Check,
   ChevronDown,
-  ClipboardList,
   FileDiff,
   GitPullRequest,
   Menu,
@@ -73,7 +72,6 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const toggleWorkbench = useUIStore((state) => state.toggleWorkbench)
   const turnChanges = useTeamStore((s) => s.turnChanges)
   const showTurnChanges = useTeamStore((s) => s.showTurnChanges)
-  const planApproval = useTeamStore((s) => s.planApproval)
   const sessionModel = useTeamStore((s) => s.sessionModel)
   const sessionId = useTeamStore((s) => s.sessionId)
   const leadName = useTeamStore((s) => s.leadName)
@@ -96,7 +94,6 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
     (props.workspace != null || props.onChooseWorkspace != null)
   const webBridgePolicyEnabled = webBridgeSettings.data?.enabled !== false
   const changesCount = turnChanges?.files.length ?? 0
-  const planPending = Boolean(planApproval)
   const modelId = sessionModel ?? activeModel ?? null
   const modelEntry = modelId
     ? registry.data?.models.find((entry) => entry.id === modelId)
@@ -283,17 +280,6 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             onCompact={canCompactContext ? compactTeam : undefined}
             compactDisabled={isTeamWorking}
           />
-        )}
-
-        {planPending && (
-          <span
-            className="flex h-7 items-center gap-1.5 rounded-lg border border-(--color-border) bg-(--bg-key) px-2 text-[11px] font-medium text-(--color-text)"
-            title="Plan awaiting approval"
-            aria-label="Plan awaiting approval"
-          >
-            <ClipboardList size={12} className="text-(--color-text-muted)" aria-hidden />
-            Plan
-          </span>
         )}
 
         {changesCount > 0 && (

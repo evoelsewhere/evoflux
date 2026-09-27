@@ -1,9 +1,8 @@
 /**
  * TextSelectionAction — floating action toolbar for transcript selections.
  *
- * Follows the same `window.getSelection()` approach used in PlanReviewPanel
- * but renders via a portal so it sits above all other UI without affecting
- * transcript layout.
+ * Uses `window.getSelection()` and renders via a portal so it sits above all
+ * other UI without affecting transcript layout.
  *
  * The toolbar only appears once the selection is *stable*: no mouse button
  * is held and the selected text has not changed for a short settle window.

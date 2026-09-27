@@ -2,6 +2,26 @@
 
 All notable changes to EvoFlux are documented in this file.
 
+## [Unreleased]
+
+### Removed
+
+- Plan mode is gone. The `plan` permission mode, the Plan review panel and its
+  Accept / Revise / Reject bar, the `enter_plan_mode` / `exit_plan_mode`
+  tools, the `plan_approval_requested` / `plan_approval_replied` stream events
+  and `POST /api/team/{session_id}/plan/reply` (plus the WebBridge
+  side-panel equivalent) are removed.
+
+### Changed
+
+- Permission modes are down to three, matching how people actually choose:
+  **Ask for approval** (`ask`), **Approve for me** (`auto`, the default) and
+  **Full access** (`bypass`, shown in orange), on shortcut keys 1–3.
+  `accept-edits` is gone. Approve for me still stops for calls flagged
+  potentially unsafe, and switching to it mid-run no longer approves such a
+  pending request. Revision `00000070` moves sessions saved in `plan` or
+  `accept-edits` mode to `ask`.
+
 ## [2.0.9] - 2026-09-25
 
 ### Added

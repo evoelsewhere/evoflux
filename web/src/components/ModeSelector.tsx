@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Check, ChevronDown, Shield } from 'lucide-react'
+import { Check, ChevronDown, CircleAlert, Hand, ShieldCheck, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PermissionMode } from '@/api/types'
 
@@ -7,61 +7,41 @@ interface ModeDef {
   id: PermissionMode
   label: string
   description: string
-  shortcut: number
+  icon: LucideIcon
   /**
-   * How the closed trigger reads. A mode that changes what the agent is
-   * allowed to do has to be visible without opening the menu — Plan mode
-   * silently behaving like Plan mode is the point, and Bypass silently
-   * behaving like Bypass is a hazard.
+   * Full access has to be visible without opening the menu — the mode that
+   * stops asking must never pass for one of the others.
    */
-  tone?: 'guarded' | 'planning' | 'unguarded'
+  unguarded?: boolean
 }
 
-const TRIGGER_TONE: Record<NonNullable<ModeDef['tone']>, string> = {
-  guarded: 'text-(--color-marker-blue)',
-  planning: 'text-(--color-violet)',
-  unguarded: 'text-(--color-warning)',
-}
+const UNGUARDED_TONE = 'text-(--color-warning)'
 
+// Digits 1–3 pick a mode while the list is open, in this order.
 const MODES: ModeDef[] = [
   {
     id: 'ask',
-    label: 'Ask permissions',
-    description: 'Pauses before every tool call for your approval.',
-    shortcut: 1,
-    tone: 'guarded',
-  },
-  {
-    id: 'accept-edits',
-    label: 'Accept edits',
-    description:
-      'Auto-accepts file edits. Shell and destructive operations still ask.',
-    shortcut: 2,
-  },
-  {
-    id: 'plan',
-    label: 'Plan mode',
-    description:
-      'Records edits and shell as a plan instead of running them, until you accept it.',
-    shortcut: 3,
-    tone: 'planning',
+    label: 'Ask for approval',
+    description: 'Always asks before editing files, running commands or taking other actions.',
+    icon: Hand,
   },
   {
     id: 'auto',
-    label: 'Auto mode',
-    description:
-      'Approves every operation, but still honours deny rules and confirms irreversible actions.',
-    shortcut: 4,
+    label: 'Approve for me',
+    description: 'Only asks for actions detected as potentially unsafe.',
+    icon: ShieldCheck,
   },
   {
     id: 'bypass',
-    label: 'Bypass permissions',
-    description:
-      'Runs everything unchecked — deny rules and irreversible-action confirmations do not apply.',
-    shortcut: 5,
-    tone: 'unguarded',
+    label: 'Full access',
+    description: 'Runs every action without asking. Only the sandbox still applies.',
+    icon: CircleAlert,
+    unguarded: true,
   },
 ]
+
+// Sessions default to auto; an unknown mode falls back to it.
+const DEFAULT_INDEX = MODES.findIndex((m) => m.id === 'auto')
 
 interface ModeSelectorProps {
   mode: PermissionMode
@@ -80,7 +60,7 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
   const optionId = (index: number) => `${optionIdPrefix}-option-${index}`
 
   const currentIndex = MODES.findIndex((m) => m.id === mode)
-  const current = currentIndex >= 0 ? MODES[currentIndex] : MODES[3]
+  const current = currentIndex >= 0 ? MODES[currentIndex] : MODES[DEFAULT_INDEX]
 
   // Close on outside click
   useEffect(() => {
@@ -108,7 +88,7 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
       setOpen(false)
       return
     }
-    setActiveIndex(currentIndex >= 0 ? currentIndex : 3)
+    setActiveIndex(currentIndex >= 0 ? currentIndex : DEFAULT_INDEX)
     setOpen(true)
   }
 
@@ -164,12 +144,12 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
         className={cn(
           'composer-mode-trigger flex h-7 max-w-40 items-center gap-1.5 rounded-[7px] px-2 text-xs font-medium outline-none transition-[background-color,color,transform]',
           'hover:bg-(--bg-key) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
-          current.tone ? TRIGGER_TONE[current.tone] : 'text-(--color-text-muted) hover:text-(--color-text)',
+          current.unguarded ? UNGUARDED_TONE : 'text-(--color-text-muted) hover:text-(--color-text)',
           open && 'bg-(--bg-key)',
           disabled && 'cursor-default opacity-50',
         )}
       >
-        <Shield size={12} aria-hidden="true" className="shrink-0" />
+        <current.icon size={12} aria-hidden="true" className="shrink-0" />
         <span className="composer-mode-label truncate">{current.label}</span>
         <ChevronDown
           size={10}
@@ -192,9 +172,6 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
             'rounded-lg border border-(--color-border) bg-(--color-surface) shadow-(--shadow-popover) outline-none',
           )}
         >
-          <div className="px-2 pb-1.5 pt-1 text-xs font-semibold text-(--color-text)">
-            Permission mode
-          </div>
           {MODES.map((m, index) => (
             <button
               key={m.id}
@@ -208,31 +185,35 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
               onMouseEnter={() => setActiveIndex(index)}
               onClick={() => commit(index)}
               className={cn(
-                'grid w-full grid-cols-[14px_minmax(0,1fr)_12px] items-start gap-2 rounded-md px-2 py-1.5 text-left outline-none transition-colors',
-                mode === m.id && 'bg-(--bg-key)',
+                'grid w-full grid-cols-[16px_minmax(0,1fr)_14px] items-start gap-2.5 rounded-md px-2 py-2 text-left outline-none transition-colors',
                 activeIndex === index && 'bg-(--bg-key)',
+                m.unguarded ? UNGUARDED_TONE : 'text-(--color-text)',
               )}
             >
-              <Check
-                size={13}
+              <m.icon
+                size={15}
                 aria-hidden="true"
-                className={cn(
-                  'mt-0.5',
-                  mode === m.id ? 'opacity-100 text-(--color-text)' : 'opacity-0',
-                )}
+                className={cn('mt-0.5', !m.unguarded && 'text-(--color-text-muted)')}
               />
               <span className="min-w-0 flex-1">
-                <span className="block text-xs font-medium text-(--color-text)">{m.label}</span>
+                <span className="block text-xs font-medium">{m.label}</span>
                 {/* Wraps rather than truncating. The clipped half used to be
                     the half that mattered — what a mode still asks about, and
-                    what Bypass gives up. */}
-                <span className="block text-[11px] leading-4 text-pretty text-(--color-text-subtle)">
+                    what Full access gives up. */}
+                <span
+                  className={cn(
+                    'block text-[11px] leading-4 text-pretty',
+                    m.unguarded ? 'opacity-80' : 'text-(--color-text-subtle)',
+                  )}
+                >
                   {m.description}
                 </span>
               </span>
-              <span className="mt-0.5 text-right text-[10px] tabular-nums text-(--color-text-subtle)">
-                {m.shortcut}
-              </span>
+              <Check
+                size={14}
+                aria-hidden="true"
+                className={cn('mt-0.5', mode === m.id ? 'opacity-100' : 'opacity-0')}
+              />
             </button>
           ))}
         </div>

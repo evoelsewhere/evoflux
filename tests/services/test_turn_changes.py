@@ -1,11 +1,10 @@
-"""Unit tests for turn_changes tracker + plan step enrichment."""
+"""Unit tests for the turn_changes tracker."""
 
 from __future__ import annotations
 
 from app.services.turn_changes import (
     begin_turn,
     clear_session,
-    enrich_plan_step,
     flush_turn,
     get_latest,
     record_tool_change,
@@ -76,26 +75,3 @@ def test_rm_then_write_becomes_added() -> None:
     assert snap is not None
     assert len(snap.files) == 1
     assert snap.files[0].status == "added"
-
-
-def test_enrich_plan_step_includes_path() -> None:
-    step = enrich_plan_step("edit", {"file_path": "app/x.py"}, "Edit app/x.py")
-    assert step["tool"] == "edit"
-    assert step["path"] == "app/x.py"
-    assert step["summary"] == "Edit app/x.py"
-
-
-def test_enrich_plan_step_patch_path() -> None:
-    patch = "\n".join(
-        [
-            "*** Begin Patch",
-            "*** Update File: app/y.py",
-            "@@",
-            "-a",
-            "+b",
-            "*** End Patch",
-        ]
-    )
-    step = enrich_plan_step("patch", {"patch_text": patch}, "Patch app/y.py")
-    assert step["path"] == "app/y.py"
-    assert step.get("diff_stat")

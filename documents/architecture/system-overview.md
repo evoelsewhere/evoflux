@@ -75,7 +75,7 @@ sequenceDiagram
 
 The API acknowledges accepted work before the turn completes. A single
 session-keyed in-memory stream carries token deltas, tool activity, agent
-status, questions, permissions, plan review, goals, and completion.
+status, questions, permissions, goals, and completion.
 Durable messages and state are stored separately so reconnect can replay the
 transcript and then resume live streaming.
 
