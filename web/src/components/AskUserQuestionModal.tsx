@@ -1,6 +1,6 @@
 /**
- * AskUserQuestionModal — floating bar (same slot as PermissionApprovalModal,
- * right above the input) showing one clarifying question at a time from the
+ * AskUserQuestionModal — modal card over the chat canvas (GateOverlay, same
+ * layer as PermissionApprovalModal) showing one clarifying question at a time from the
  * batch the agent asked via the `ask_user` tool. Step through with
  * next/back; the last question shows Submit instead of Next. Suggested
  * answers are a numbered list — the digit keys pick one — with a free-text
@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 import { replyAskUserQuestion } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
+import { GateOverlay } from '@/components/chat/GateOverlay'
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { AskUserQuestionPending } from '@/api/types'
@@ -202,24 +203,16 @@ const AskUserQuestionForm = forwardRef<
   }
 
   return (
-    <motion.div
+    <GateOverlay
       ref={ref}
-      role="region"
-      aria-label="Agent questions"
-      initial={{ opacity: 0, y: 6 * preset.distance }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 6 * preset.distance }}
-      transition={preset.spring}
-      className={cn(
-        'mx-auto w-full px-4 pb-2',
-        isAgentSpawn ? 'max-w-2xl' : 'max-w-3xl',
-      )}
+      label="Agent questions"
+      className={isAgentSpawn ? 'max-w-2xl' : 'max-w-3xl'}
     >
       <div
         ref={cardRef}
         tabIndex={-1}
         onKeyDown={handleCardKeyDown}
-        className="overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-(--shadow-depth) outline-none"
+        className="min-h-0 overflow-y-auto overscroll-contain rounded-xl border border-(--color-border) bg-(--bg-card) shadow-(--shadow-depth) outline-none"
       >
         <AnimatePresence mode="wait">
           <motion.div
@@ -456,7 +449,7 @@ const AskUserQuestionForm = forwardRef<
           )}
         </div>
       </div>
-    </motion.div>
+    </GateOverlay>
   )
 })
 

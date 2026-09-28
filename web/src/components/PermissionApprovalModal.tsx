@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { AnimatePresence } from 'framer-motion'
 
 import { replyPermissionRequest } from '@/api/client'
 import { useTeamStore } from '@/stores/useTeamStore'
-import { useMotionPreset } from '@/lib/motion'
+import { GateOverlay } from '@/components/chat/GateOverlay'
 import { cn } from '@/lib/utils'
 import type { PermissionRequestPending } from '@/api/types'
 
@@ -29,14 +29,13 @@ function PermissionApprovalForm({
   permissionRequest: PermissionRequestPending
   sessionId: string
 }) {
-  const preset = useMotionPreset()
   const [replying, setReplying] = useState(false)
   const [replyError, setReplyError] = useState<string | null>(null)
   const onceBtnRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
-    // Inline gate bar (not a modal dialog) — move focus to the primary
-    // safe action so keyboard users aren't stranded in the composer.
+    // Move focus into the modal, onto the primary safe action, so keyboard
+    // users aren't stranded in the composer underneath.
     const frame = requestAnimationFrame(() => onceBtnRef.current?.focus())
     return () => cancelAnimationFrame(frame)
   }, [])
@@ -72,17 +71,9 @@ function PermissionApprovalForm({
   const isShell = permissionRequest.tool === 'shell' || permissionRequest.tool === 'bg'
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 * preset.distance }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 6 * preset.distance }}
-      transition={preset.spring}
-      className="mx-auto w-full max-w-3xl px-4 pb-2"
-    >
+    <GateOverlay label="Permission required" className="max-w-3xl">
       <div
-        className="overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card) shadow-(--shadow-depth)"
-        role="region"
-        aria-label="Permission required"
+        className="min-h-0 overflow-y-auto overscroll-contain rounded-xl border border-(--color-border) bg-(--bg-card) shadow-(--shadow-depth)"
         onKeyDown={(e) => {
           // Rejecting is the safe direction, so Esc inside the card maps to it.
           if (e.key === 'Escape' && !replying) {
@@ -177,7 +168,7 @@ function PermissionApprovalForm({
           </p>
         )}
       </div>
-    </motion.div>
+    </GateOverlay>
   )
 }
 
