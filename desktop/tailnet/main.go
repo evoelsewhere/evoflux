@@ -124,8 +124,14 @@ func (a *tailnetApp) captureUserLog(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	if match := authURLRegexp.FindString(message); match != "" {
 		a.mu.Lock()
+		repeated := match == a.authURL
 		a.authURL = match
 		a.mu.Unlock()
+		// tsnet's printAuthURLLoop re-prints the pending login URL every 5s
+		// until someone signs in; log each URL once.
+		if repeated {
+			return
+		}
 	}
 	log.Printf("tailscale: %s", authURLRegexp.ReplaceAllString(message, "<login-url>"))
 }
