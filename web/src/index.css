@@ -847,6 +847,67 @@ html.light[data-native-sidebar-glass="macos"] [data-app-header] {
 }
 
 /* ─────────────────────────────────────────────────────────────
+ * Mobile interaction polish — shared across Work, Coding and Settings.
+ * Keep touch targets generous, prevent horizontal bleed, and let the chat
+ * composer make a second toolbar row instead of squeezing controls into an
+ * unreadable single line on narrow phones.
+ * ───────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .mobile-nav-drawer [data-sidebar-item],
+  .mobile-nav-drawer [data-sidebar-search] {
+    min-height: 44px;
+  }
+
+  .mobile-nav-drawer [data-sidebar-search] {
+    height: 44px;
+  }
+
+  .mobile-nav-drawer kbd {
+    display: none;
+  }
+
+  .composer-toolbar-secondary > * {
+    min-height: 36px;
+  }
+
+  .composer-toolbar-secondary .composer-model-trigger {
+    max-width: min(12rem, 48vw);
+  }
+
+  .composer-toolbar-secondary .composer-model-name {
+    max-width: 7rem;
+  }
+
+  .settings-page-actions button {
+    min-height: 44px;
+  }
+
+  [data-settings-screen] .settings-page-actions {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  /* SettingsScreen already owns the mobile back affordance in its header.
+     Hiding the page-level duplicate keeps every settings leaf aligned. */
+  [data-settings-screen] [data-settings-page-back] {
+    display: none;
+  }
+
+  [data-settings-screen] main [data-slot='button'],
+  [data-settings-screen] main input,
+  [data-settings-screen] main select,
+  [data-settings-screen] main textarea {
+    min-height: 44px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
  * Scrollbar — minimal Arc-style
  * ───────────────────────────────────────────────────────────── */
 @layer base {

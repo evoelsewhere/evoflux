@@ -742,10 +742,10 @@ export function Sidebar({
     <motion.aside
       initial={false}
       animate={{
-        x: mobileOpen ? 0 : -(drawerMode ? sidebarWidth + 8 : 280),
+        x: mobileOpen ? 0 : -(drawerMode ? sidebarWidth + 8 : 340),
         width: drawerMode
           ? `min(${sidebarWidth}px, calc(100vw - 2rem))`
-          : "min(272px, calc(100vw - 2rem))",
+          : "min(340px, calc(100vw - 1rem))",
       }}
       transition={preset.spring}
       aria-hidden={!mobileOpen}
@@ -754,7 +754,7 @@ export function Sidebar({
       data-modal-focus={mobileOpen ? 'true' : undefined}
       {...(!mobileOpen ? { inert: true } : {})}
       className={cn(
-        "mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(272px,calc(100vw-2rem))] shrink-0 flex-col overflow-hidden bg-(--bg-sidebar) shadow-xl",
+        "mobile-nav-drawer mobile-safe-top fixed bottom-0 left-0 z-(--z-overlay) flex w-[min(340px,calc(100vw-1rem))] shrink-0 flex-col overflow-hidden rounded-r-2xl border-r border-(--color-border) bg-(--bg-sidebar) pb-safe shadow-2xl",
         !mobileOpen && "pointer-events-none",
       )}
     >

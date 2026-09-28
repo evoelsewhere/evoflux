@@ -83,7 +83,7 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
     if (isMobile) {
       return (
         <div
-          className="pointer-events-auto shrink-0 border-t border-(--color-border) bg-(--bg-page) pb-safe transition-[padding-bottom] duration-(--motion-fast)"
+          className="pointer-events-auto shrink-0 border-t border-(--color-border) bg-(--bg-page) px-2 pt-2 pb-safe transition-[padding-bottom] duration-(--motion-fast)"
           style={keyboardInset > 0 ? { paddingBottom: `calc(${keyboardInset}px + 0.5rem)` } : undefined}
         >
           {goal && onGoalCommand && <GoalProgressRow goal={goal} onCommand={onGoalCommand} />}
