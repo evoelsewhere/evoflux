@@ -1,8 +1,9 @@
 """Suggested-task endpoints — the chips an agent parks for out-of-scope work.
 
-Starting one produces a real coding session the user lands in; the prompt is
-returned rather than sent so the client posts it through the ordinary
-``POST /chat`` path and inherits everything that route already does.
+Starting one produces a real coding session the user lands in, or reuses the
+session that suggested it; either way the prompt is returned rather than sent
+so the client posts it through the ordinary ``POST /chat`` path and inherits
+everything that route already does.
 """
 
 from __future__ import annotations
@@ -44,6 +45,13 @@ class SuggestedTaskStartRequest(BaseModel):
             "sharing the parent session's working tree."
         ),
     )
+    in_current_session: bool = Field(
+        default=False,
+        description=(
+            "Run the task in the session that suggested it instead of creating "
+            "a new one. Cannot be combined with ``isolated``."
+        ),
+    )
 
 
 class SuggestedTaskStartResponse(BaseModel):
@@ -79,13 +87,20 @@ async def list_suggested_tasks(
 async def start_suggested_task(
     task_id: UUID, body: SuggestedTaskStartRequest, db: DbSession
 ) -> SuggestedTaskStartResponse:
-    """Turn a chip into its own coding session.
+    """Turn a chip into its own coding session, or run it in the current one.
 
     The worktree, when requested, is created before the session row so a git
     failure leaves the chip pending and retryable rather than stranding a
     session pointed at a directory that does not exist.
     """
 
+    if body.in_current_session and body.isolated:
+        raise HTTPException(
+            status_code=422,
+            detail="A task run in the current session cannot use a new worktree.",
+        )
+
+    current: SuggestedTaskStartResponse | None = None
     async with db.begin():
         task = await suggested_task_service.get(db, task_id)
         if task is None:
@@ -103,6 +118,36 @@ async def start_suggested_task(
         agent_name = parent.agent_name
         model = parent.model
         thinking_level = parent.thinking_level
+
+        if body.in_current_session:
+            # The current session can only reach its own workspace, so a task
+            # aimed at another repository has to get a session of its own.
+            if task.cwd and task.cwd != parent.workspace:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "This task targets a different project, so it has to "
+                        "run in a new session."
+                    ),
+                )
+            try:
+                await suggested_task_service.mark_started(
+                    db, task, spawned_session_id=parent.id
+                )
+            except SuggestedTaskConflictError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            current = SuggestedTaskStartResponse(
+                session_id=parent.id,
+                workspace=parent.workspace or "",
+                prompt=task.prompt,
+                task=suggested_task_service.snapshot(task),
+            )
+
+    if current is not None:
+        await publish_suggested_task(
+            str(current.task.session_id), current.task, source="start_suggested_task"
+        )
+        return current
 
     if not workspace:
         raise HTTPException(

@@ -162,6 +162,12 @@ spawned session inherits the normal permissions, tools and streaming. A
 started suggestion can no longer be dismissed: the spawned session owns the
 work.
 
+The chip's **Run** button starts a new session; its arrow menu also offers
+**Run in current session**, which marks the suggestion started with
+`spawned_session_id` pointing at the session that raised it and returns the
+prompt for the client to queue there. That path is refused for a suggestion
+whose `cwd` targets another project, and cannot be combined with a worktree.
+
 ## Concurrency and lifecycle
 
 One member executes one turn at a time. Safe model-emitted tool calls may run in

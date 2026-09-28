@@ -15,21 +15,24 @@ export async function getSuggestedTasks(
 }
 
 /**
- * Turn a chip into its own session.
+ * Turn a chip into its own session, or run it in the session that raised it.
  *
  * The prompt comes back rather than being sent, so the caller posts it through
- * the ordinary chat path once it has navigated to the new session.
+ * the ordinary chat path once it has navigated to the target session.
  */
 export async function startSuggestedTask(
   taskId: string,
-  options: { isolated?: boolean } = {},
+  options: { isolated?: boolean; inCurrentSession?: boolean } = {},
 ): Promise<SuggestedTaskStartResult> {
   const res = await fetch(
     `${apiBaseUrl()}/team/suggested-tasks/${encodeURIComponent(taskId)}/start`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isolated: options.isolated ?? false }),
+      body: JSON.stringify({
+        isolated: options.isolated ?? false,
+        in_current_session: options.inCurrentSession ?? false,
+      }),
     },
   )
   if (!res.ok) await parseDetailOrThrow(res, 'startSuggestedTask')

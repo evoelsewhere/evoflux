@@ -56,7 +56,7 @@ def app_with_team():
     set_team(None)
 
 
-async def _seed(tmp_path, *, title="Fix swallowed retry exception"):
+async def _seed(tmp_path, *, title="Fix swallowed retry exception", cwd=None):
     """Create a coding session with one pending suggestion; return both ids."""
     import app.core.db as _db
 
@@ -80,6 +80,7 @@ async def _seed(tmp_path, *, title="Fix swallowed retry exception"):
                 title=title,
                 tldr="Noticed while reading the retry helper.",
                 prompt=PROMPT,
+                cwd=cwd,
             )
             task_id = task.id
     return session_id, task_id, str(workspace)
@@ -131,6 +132,75 @@ async def test_start_creates_a_top_level_session_and_returns_the_prompt(
         assert task.spawned_session_id == spawned.id
 
     assert session_id is not None
+
+
+@pytest.mark.asyncio
+async def test_start_in_current_session_reuses_the_originating_session(
+    app_with_team, tmp_path
+):
+    import sqlalchemy as sa
+
+    import app.core.db as _db
+
+    session_id, task_id, workspace = await _seed(tmp_path)
+
+    response = TestClient(app_with_team).post(
+        f"/api/team/suggested-tasks/{task_id}/start",
+        json={"in_current_session": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["session_id"] == str(session_id)
+    assert body["workspace"] == workspace
+    assert body["prompt"] == PROMPT
+    assert body["task"]["status"] == "started"
+
+    async with _db.async_session_factory() as db:
+        # A spawned session would carry the task title; none should exist.
+        spawned = await db.scalar(
+            sa.select(ChatSession).where(
+                ChatSession.title == "Fix swallowed retry exception"
+            )
+        )
+        assert spawned is None
+        task = await svc.get(db, task_id)
+        assert task is not None
+        assert task.spawned_session_id == session_id
+
+
+@pytest.mark.asyncio
+async def test_start_in_current_session_rejects_a_worktree(app_with_team, tmp_path):
+    _session_id, task_id, _ = await _seed(tmp_path)
+
+    response = TestClient(app_with_team).post(
+        f"/api/team/suggested-tasks/{task_id}/start",
+        json={"in_current_session": True, "isolated": True},
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_start_in_current_session_rejects_another_project(
+    app_with_team, tmp_path
+):
+    import app.core.db as _db
+
+    other = tmp_path / "other"
+    other.mkdir()
+    _session_id, task_id, _ = await _seed(tmp_path, cwd=str(other))
+
+    response = TestClient(app_with_team).post(
+        f"/api/team/suggested-tasks/{task_id}/start",
+        json={"in_current_session": True},
+    )
+
+    assert response.status_code == 422
+    async with _db.async_session_factory() as db:
+        task = await svc.get(db, task_id)
+        assert task is not None
+        assert task.status == "pending"
 
 
 @pytest.mark.asyncio

@@ -780,7 +780,7 @@ export interface SuggestedTask {
 export interface SuggestedTaskStartResult {
   session_id: string
   workspace: string
-  /** Posted by the client as the spawned session's first message. */
+  /** Posted by the client as the target session's next message. */
   prompt: string
   worktree_path: string | null
   task: SuggestedTask

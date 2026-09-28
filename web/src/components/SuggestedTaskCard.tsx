@@ -1,9 +1,23 @@
 /** SuggestedTaskCard — a parked out-of-scope suggestion the user can act on. */
 import { useState } from 'react'
-import { GitBranch, Lightbulb, Play, X } from 'lucide-react'
+import {
+  ChevronDown,
+  GitBranch,
+  Lightbulb,
+  MessageSquare,
+  Play,
+  SquarePlus,
+  X,
+} from 'lucide-react'
 
 import { dismissSuggestedTask, startSuggestedTask } from '@/api/client'
 import type { SuggestedTask } from '@/api/types'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { cn } from '@/lib/utils'
@@ -49,8 +63,10 @@ export interface SuggestedTaskCardProps {
   className?: string
 }
 
+type StartTarget = 'current' | 'shared' | 'worktree'
+
 export function SuggestedTaskCard({ task, className }: SuggestedTaskCardProps) {
-  const [busy, setBusy] = useState<'shared' | 'worktree' | 'dismiss' | null>(null)
+  const [busy, setBusy] = useState<StartTarget | 'dismiss' | null>(null)
   const pushToast = useToastStore((state) => state.push)
 
   const removeLocally = () => {
@@ -64,18 +80,25 @@ export function SuggestedTaskCard({ task, className }: SuggestedTaskCardProps) {
     })
   }
 
-  const start = async (isolated: boolean) => {
+  const start = async (target: StartTarget) => {
     if (busy) return
-    setBusy(isolated ? 'worktree' : 'shared')
+    setBusy(target)
     try {
-      const result = await startSuggestedTask(task.id, { isolated })
+      const result = await startSuggestedTask(task.id, {
+        isolated: target === 'worktree',
+        inCurrentSession: target === 'current',
+      })
       removeLocally()
       const store = useTeamStore.getState()
-      store.beginResolvedSession(result.session_id, {
-        mode: 'coding',
-        workspace: result.workspace,
-      })
-      // Sent from here rather than server-side so the spawned session starts
+      // Running here keeps the user where they are; the message just joins
+      // this session's queue behind whatever the lead is doing now.
+      if (store.sessionId !== result.session_id) {
+        store.beginResolvedSession(result.session_id, {
+          mode: 'coding',
+          workspace: result.workspace,
+        })
+      }
+      // Sent from here rather than server-side so the target session starts
       // through the ordinary chat path, with the same permissions, tools and
       // streaming as a message the user typed.
       await store.sendMessage(result.prompt, undefined, {
@@ -134,18 +157,39 @@ export function SuggestedTaskCard({ task, className }: SuggestedTaskCardProps) {
         </button>
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        <div className="inline-flex items-stretch overflow-hidden rounded-xs bg-(--color-accent)/10 text-[11px] font-medium text-(--color-accent)">
+          <button
+            type="button"
+            onClick={() => void start('shared')}
+            disabled={busy !== null}
+            className="inline-flex items-center gap-1 px-2 py-1 transition-colors hover:bg-(--color-accent)/20 disabled:opacity-50"
+          >
+            <Play className="size-3" />
+            {busy === 'shared' || busy === 'current' ? 'Starting…' : 'Run'}
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={busy !== null}
+              aria-label={`Choose where to run: ${task.title}`}
+              className="inline-flex items-center border-l border-(--color-accent)/20 px-1 transition-colors hover:bg-(--color-accent)/20 disabled:opacity-50 data-popup-open:bg-(--color-accent)/20"
+            >
+              <ChevronDown className="size-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-auto min-w-44">
+              <DropdownMenuItem onClick={() => void start('current')} className="text-xs">
+                <MessageSquare className="size-3.5" />
+                Run in current session
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => void start('shared')} className="text-xs">
+                <SquarePlus className="size-3.5" />
+                Run in new session
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
         <button
           type="button"
-          onClick={() => void start(false)}
-          disabled={busy !== null}
-          className="inline-flex items-center gap-1 rounded-xs bg-(--color-accent)/10 px-2 py-1 text-[11px] font-medium text-(--color-accent) transition-colors hover:bg-(--color-accent)/20 disabled:opacity-50"
-        >
-          <Play className="size-3" />
-          {busy === 'shared' ? 'Starting…' : 'Start'}
-        </button>
-        <button
-          type="button"
-          onClick={() => void start(true)}
+          onClick={() => void start('worktree')}
           disabled={busy !== null}
           className="inline-flex items-center gap-1 rounded-xs bg-(--bg-key) px-2 py-1 text-[11px] font-medium text-(--color-text-muted) transition-colors hover:text-(--color-text) disabled:opacity-50"
         >
