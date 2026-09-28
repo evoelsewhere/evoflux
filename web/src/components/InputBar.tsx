@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { ArrowUp, ChevronDown, File, Folder, ListTodo, Loader2, MessageCircle, MessageSquareText, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronUp, File, Folder, ListTodo, Loader2, MessageCircle, MessageSquareText, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
@@ -1295,6 +1295,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       ? pendingTodoIndex
       : Math.max(todoCount - 1, 0)
   const currentTodoStep = todoCount > 0 ? currentTodoIndex + 1 : 0
+  const currentTodo = todos?.[currentTodoIndex]
   const allTodosFinished = todoCount > 0 && finishedTodoCount === todoCount
   const showTodoProgress = todoCount > 0 && (!allTodosFinished || isStreaming)
   const showTodosPopover = todosOpen && showTodoProgress
@@ -1734,20 +1735,21 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         )}
 
         {!minimized && showTodoProgress && (
-          <div className="relative z-(--z-panel) mb-2 flex justify-center">
+          // Floats above the composer like the pickers above: in the flow,
+          // the pill (and its list) pushed the transcript up each time the
+          // agent planned. The strip itself lets clicks through to the
+          // transcript; only the pill and the open list take them.
+          <div className="pointer-events-none absolute inset-x-0 bottom-full z-(--z-panel) mb-2 flex flex-col items-center gap-1.5">
             {showTodosPopover && (
-              <div className="absolute bottom-full left-1/2 mb-2 w-[min(30rem,calc(100vw-3rem))] -translate-x-1/2">
-                  <div
-                    id="composer-task-list"
-                    className="overflow-hidden rounded-lg border border-(--color-border)/70 bg-(--bg-card)/78 shadow-lg shadow-black/10 backdrop-blur-2xl"
-                  >
-                    <TodosList
-                      todos={todos ?? []}
-                      compact
-                      headerClassName="hidden"
-                      listClassName="max-h-[min(30vh,12rem)] py-1 opacity-85"
-                    />
-                  </div>
+              <div
+                id="composer-task-list"
+                className="pointer-events-auto w-[min(30rem,calc(100vw-3rem))] overflow-hidden rounded-xl border border-(--color-border-subtle) bg-(--bg-card) shadow-lg shadow-black/8"
+              >
+                <TodosList
+                  todos={todos ?? []}
+                  compact
+                  listClassName="max-h-[min(30vh,14rem)]"
+                />
               </div>
             )}
 
@@ -1757,29 +1759,34 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               aria-expanded={todosOpen}
               aria-controls="composer-task-list"
               className={cn(
-                'flex h-9 items-center gap-2 rounded-full border border-(--color-border) bg-(--bg-card) px-3.5',
-                'text-sm text-(--color-text-muted) outline-none transition-[background-color,border-color,color]',
-                'hover:border-(--color-border-strong) hover:bg-(--bg-key) hover:text-(--color-text)',
+                'pointer-events-auto flex h-7 max-w-[min(26rem,calc(100vw-3rem))] items-center gap-1.5 rounded-full border border-(--color-border-subtle) bg-(--bg-card) px-3',
+                'text-xs text-(--color-text-muted) shadow-sm outline-none transition-[background-color,border-color,color]',
+                'hover:border-(--color-border) hover:text-(--color-text)',
                 'focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
               )}
               title={todosOpen ? 'Hide task list' : 'Show task list'}
             >
               {allTodosFinished ? (
-                <SquareCheck size={15} className="text-(--color-success)" aria-hidden="true" />
+                <SquareCheck size={13} className="shrink-0 text-(--color-success)" aria-hidden="true" />
               ) : isStreaming ? (
                 <Loader2
-                  size={15}
-                  className="animate-spin text-(--color-info)"
+                  size={13}
+                  className="shrink-0 animate-spin text-(--color-info)"
                   aria-hidden="true"
                 />
               ) : (
-                <ListTodo size={15} className="text-(--color-info)" aria-hidden="true" />
+                <ListTodo size={13} className="shrink-0 text-(--color-info)" aria-hidden="true" />
               )}
-              <span className="tabular-nums">Step {currentTodoStep} / {todoCount}</span>
-              <ChevronDown
-                size={14}
+              <span className="shrink-0 font-medium tabular-nums text-(--color-text-2)">
+                Step {currentTodoStep} / {todoCount}
+              </span>
+              {currentTodo && !allTodosFinished && (
+                <span className="min-w-0 truncate">{currentTodo.content}</span>
+              )}
+              <ChevronUp
+                size={13}
                 className={cn(
-                  'text-(--color-text-subtle) transition-transform duration-(--motion-fast)',
+                  'shrink-0 text-(--color-text-subtle) transition-transform duration-(--motion-fast)',
                   todosOpen && 'rotate-180',
                 )}
                 aria-hidden="true"

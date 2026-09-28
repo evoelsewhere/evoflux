@@ -39,6 +39,15 @@ describe('InputBar todo progress', () => {
     expect(progress.querySelector('.animate-spin')).not.toBeInTheDocument()
   })
 
+  it('floats above the composer instead of taking space in its flow', () => {
+    render(<InputBar onSubmit={vi.fn()} todos={unfinishedTodos} isStreaming={false} />)
+
+    const progress = screen.getByRole('button', { name: /Step 1 \/ 2/ })
+    expect(progress.parentElement).toHaveClass('absolute', 'bottom-full')
+    // The pill names the step it is on.
+    expect(progress).toHaveTextContent('Finish the remaining work')
+  })
+
   it('shows the loading spinner while the session is streaming', () => {
     render(<InputBar onSubmit={vi.fn()} todos={unfinishedTodos} isStreaming />)
 

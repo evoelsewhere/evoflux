@@ -1,23 +1,23 @@
 import { motion } from 'framer-motion'
-import { Square, SquareCheck, X } from 'lucide-react'
+import { Circle, CircleCheck, CircleMinus, LoaderCircle, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { fadeRise, staggerDelay, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { TierBadge } from './TierBadge'
-import type { TodoItem } from '@/api/types'
+import type { TodoItem, TodoTier } from '@/api/types'
 
 const STATUS_ICON: Record<TodoItem['status'], LucideIcon> = {
-  completed: SquareCheck,
-  cancelled: Square,
-  in_progress: Square,
-  pending: Square,
+  completed: CircleCheck,
+  cancelled: CircleMinus,
+  in_progress: LoaderCircle,
+  pending: Circle,
 }
 
 const STATUS_ICON_COLOR: Record<TodoItem['status'], string> = {
   completed: 'text-(--color-success)',
   cancelled: 'text-(--color-text-subtle)',
-  in_progress: 'text-(--color-info)',
-  pending: 'text-(--color-text-muted)',
+  in_progress: 'text-(--color-info) animate-spin',
+  pending: 'text-(--color-text-subtle)',
 }
 
 const STATUS_ORDER: Record<TodoItem['status'], number> = {
@@ -25,6 +25,13 @@ const STATUS_ORDER: Record<TodoItem['status'], number> = {
   pending: 1,
   completed: 2,
   cancelled: 3,
+}
+
+const TIER_TEXT: Record<TodoTier, string> = {
+  trivial: 'trivial',
+  simple: 'simple',
+  multi_step: 'multi-step',
+  complex: 'complex',
 }
 
 function getAgentLabel(todo: TodoItem): string | null {
@@ -63,17 +70,15 @@ export function TodosList({
     <div className={className}>
       <div
         className={cn(
-          'flex items-center justify-between border-b border-(--color-border) px-3 py-2',
+          'flex items-center justify-between gap-3 px-3 pb-1 pt-2.5',
           headerClassName,
         )}
       >
-        <span className="font-mono text-xs font-medium uppercase tracking-wider text-(--color-text-muted)">
-          Tasks
-        </span>
+        <span className="text-xs font-medium text-(--color-text)">Tasks</span>
         <div className="flex items-center gap-2">
           {todos.length > 0 && (
-            <span className="font-mono text-xs text-(--color-text-subtle)">
-              {finishedCount}/{todos.length} done
+            <span className="text-[11px] tabular-nums text-(--color-text-muted)">
+              {finishedCount} of {todos.length} done
             </span>
           )}
           {onClose && (
@@ -93,7 +98,7 @@ export function TodosList({
         <p
           role="status"
           className={cn(
-            'px-3 py-6 text-center font-(family-name:--font-hand) text-sm text-(--color-text-subtle)',
+            'px-3 py-6 text-center text-xs text-(--color-text-subtle)',
             emptyClassName,
           )}
         >
@@ -103,7 +108,7 @@ export function TodosList({
         <ul
           aria-label="Task list"
           className={cn(
-            'scrollbar-none max-h-[min(60vh,24rem)] overflow-y-auto py-1',
+            'scrollbar-none max-h-[min(60vh,24rem)] overflow-y-auto pb-1.5',
             listClassName,
           )}
         >
@@ -120,39 +125,46 @@ export function TodosList({
                 animate={enter.animate}
                 transition={{ ...enter.transition, delay: staggerDelay(preset, index) }}
                 className={cn(
-                  'flex items-start',
-                  compact ? 'gap-2 px-2.5 py-1' : 'gap-2.5 px-3 py-1.5',
+                  'flex items-start gap-2 px-3',
+                  compact ? 'py-1.5' : 'py-2',
                 )}
               >
                 <Icon
-                  size={compact ? 12 : 14}
+                  size={14}
                   aria-hidden="true"
-                  className={`${compact ? 'mt-px' : 'mt-0.5'} shrink-0 ${STATUS_ICON_COLOR[todo.status]} ${
-                    isInProgress ? 'animate-pulse' : ''
-                  }`}
+                  className={cn('mt-px shrink-0', STATUS_ICON_COLOR[todo.status])}
                 />
                 <span
                   className={cn(
-                    'min-w-0 flex-1',
-                    compact ? 'text-[11px] leading-[1.3]' : 'text-xs leading-snug',
+                    'min-w-0 flex-1 text-xs leading-snug',
                     isStruck
                       ? 'text-(--color-text-subtle) line-through'
-                      : 'text-(--color-text)',
+                      : isInProgress
+                        ? 'font-medium text-(--color-text)'
+                        : 'text-(--color-text-2)',
                   )}
                 >
                   {todo.content}
                 </span>
                 {todo.tier && !isStruck && (
-                  <TierBadge
-                    tier={todo.tier}
-                    className={compact ? 'mt-px scale-90' : 'mt-0.5'}
-                  />
+                  compact ? (
+                    // A tinted mono badge per row outweighed the task text in
+                    // the composer's small list; the tier reads as a note.
+                    <span
+                      className="mt-px shrink-0 text-[10px] text-(--color-text-subtle)"
+                      title={`Tool access tier: ${TIER_TEXT[todo.tier]}`}
+                    >
+                      {TIER_TEXT[todo.tier]}
+                    </span>
+                  ) : (
+                    <TierBadge tier={todo.tier} className="mt-0.5" />
+                  )
                 )}
                 {agent && (
                   <span
                     className={cn(
-                      'shrink-0 font-mono uppercase tracking-wide text-(--color-text-subtle)',
-                      compact ? 'mt-px max-w-20 truncate text-[10px]' : 'mt-0.5 text-xs',
+                      'shrink-0 truncate text-(--color-text-subtle)',
+                      compact ? 'mt-px max-w-20 text-[10px]' : 'mt-0.5 text-xs',
                     )}
                     title={`Assigned to ${agent}`}
                   >
