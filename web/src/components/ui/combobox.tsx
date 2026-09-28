@@ -108,11 +108,8 @@ export function Combobox({
                 >
                   {selected.label}
                 </span>
-                {selected.meta && (
-                  <span className="hidden shrink-0 font-mono text-[9px] text-(--color-text-subtle) sm:inline">
-                    {selected.meta}
-                  </span>
-                )}
+                {/* `meta` is a hint for telling list rows apart; on the closed
+                    trigger it only took width from the label. */}
               </span>
             ) : (
               <span
@@ -194,7 +191,7 @@ export function Combobox({
                     <span className="flex min-w-0 items-center gap-2">
                       <span className="min-w-0 flex-1 truncate font-medium">{item.label}</span>
                       {item.meta && (
-                        <span className="shrink-0 rounded bg-(--bg-subtle) px-1.5 py-0.5 font-mono text-[9px] text-(--color-text-subtle)">
+                        <span className="shrink-0 text-[10px] tabular-nums text-(--color-text-subtle)">
                           {item.meta}
                         </span>
                       )}
