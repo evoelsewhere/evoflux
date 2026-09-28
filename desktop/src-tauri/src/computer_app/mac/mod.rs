@@ -11,10 +11,12 @@
 //!   activated. It needs the Accessibility permission.
 //! - Coordinate input that has no accessible element is posted to the app's
 //!   process with `CGEventPostToPid`, addressed to the window. The user's
-//!   cursor and frontmost app are never moved.
+//!   cursor is never moved.
 //! - Keyboard shortcuts are pressed through the app's menu bar when a menu
 //!   item carries that shortcut, since AppKit only hands posted key events
-//!   to an app's key window, which a background app does not have.
+//!   to an app's key window, which a background app does not have. AppKit
+//!   also disables a background app's menu, so that path briefly activates
+//!   the app and restores the user's previous frontmost app afterwards.
 //!
 //! Coordinates are points (the unit window bounds and accessibility frames
 //! use), top-left origin. Screenshots are taken at nominal resolution, so one
@@ -170,6 +172,10 @@ impl ComputerAppBackend for MacBackend {
 
     fn release_all(&self) {
         release_all();
+    }
+
+    fn recover_stranded(&self, state_dir: std::path::PathBuf) {
+        recover_stranded(state_dir);
     }
 
     fn permissions(&self) -> Value {

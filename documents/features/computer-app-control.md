@@ -4,8 +4,10 @@ Computer App Control lets an agent drive **one desktop application window** on
 Windows or macOS through the `computer_app` tool, while the user watches it in
 a floating preview card with a virtual cursor. It is the desktop counterpart of
 the persistent in-app browser: the agent works inside one app, never across the
-whole desktop, and the user's own mouse, keyboard focus and foreground window
-are never taken.
+whole desktop. The user's mouse is never moved and keyboard input stays scoped
+to the attached app. On macOS, an app-menu shortcut may briefly activate the
+target because AppKit disables menu commands in inactive apps; EvoFlux restores
+the previously frontmost app before the action returns.
 
 Available in EvoFlux Desktop on Windows and macOS. Off by default. The macOS
 backend is described in [macOS](#macos); everything else on this page applies
@@ -33,7 +35,10 @@ to both unless it names Windows mechanisms.
    also find, start and end apps (see [App lifecycle](#app-lifecycle)).
 4. The card shows the app live (about 6 fps while the agent acts, slower when
    idle), a glowing frame, and a small cursor that travels to each point
-   about 200 ms before the input lands there.
+   about 200 ms before the input lands there. Each JPEG is decoded off-DOM
+   before it replaces the prior frame, so WKWebView never clears the last good
+   picture to white while the next data URL is still decoding; a decode failure
+   pauses the preview with an explicit error instead of a blank card.
 5. The user can press **Stop** (revokes control for the chat and interrupts the
    turn), **Allow again**, **Show the app** (brings the real window forward for
    manual takeover) or **Close** (detaches). The agent can only act while an app
@@ -403,12 +408,14 @@ agent.
 | Action | Mechanism |
 |---|---|
 | List windows | `CGWindowListCopyWindowInfo`, matched to the app's accessibility windows through `_AXUIElementGetWindow`; only normal-level windows the app also reports through accessibility are listed |
-| Capture | `CGWindowListCreateImageFromArray` of the window and, above it, the app's menus, popovers and panels (above the normal window level) and its own sheets (matched by their accessibility frame) — not another document window of the app that overlaps it — at nominal resolution (one screenshot pixel is one point); works while the app is behind other windows |
+| Capture | Native apps use `CGWindowListCreateImageFromArray` for the window and, above it, the app's menus, popovers, panels and sheets. Chromium/Electron goes through ScreenCaptureKit (macOS 14+): Chromium stops repainting the image the window server keeps of a window parked all but a point off screen, which left the PiP white. Each window (the window, then its menus and sheets painted over it) gets a desktop-independent filter with `ignoreGlobalClipSingleWindow`, so the compositor renders it where it is, without moving or activating it; filters are cached for two seconds per window and size, since the preview polls about six times a second. ScreenCaptureKit is weakly linked (`build.rs`) so the app still starts on macOS 11; CoreGraphics is the fallback when it is missing or fails. Output is nominal resolution (one screenshot pixel is one point) |
 | Read (`snapshot`, `find`) | the window's `AXUIElement` tree, one `AXUIElementCopyMultipleAttributeValues` round trip per element, plus one for `AXValue` where a line shows it (text, check boxes, sliders, pop-ups). A text over 1,000 characters (a Terminal's scrollback, an Xcode file) is read only as its first 200 characters through `AXStringForRange`, never whole. `find` also searches the app's menu bar, so menu commands can be invoked by ref |
 | `click` | accessibility first: the innermost element under the point (or the ref) with `AXPress`, `AXConfirm`, `AXPick` or `AXOpen`, a disclosable row, or a selectable item; a text field gets `AXFocused`, and a click at a point (not on a ref) also puts the caret under it (`AXRangeForPosition`, then `AXSelectedTextRange`). Otherwise mouse events posted with `CGEventPostToPid`, stamped with the window number so AppKit routes them to that window. A pop-up or menu button answers `AXPress` (and anything answers `AXShowMenu`) only when its menu closes, and a button running a modal dialog only when the dialog is dismissed: a timeout from an app that still answers right after is reported as delivered with a note to take a snapshot, and menu openers get a 0.5 s timeout. An open menu is walked by `snapshot` and `find` wherever it is drawn, and a context menu (the app's, not the window's) is walked first |
 | right-click | `AXShowMenu` on the element, else posted events |
+| Menus a click opens | macOS keeps every menu on a display and EvoFlux cannot move another app's menu window, so a parked app's pop-up list or context menu showed in the corner of the user's screen. A menu is therefore dealt with in the action that opens it: `click` with `menu_item` presses the item of that title (exact, else the only one starting with it) in the menu the press opened (a child of the opener, or of the app for context menus and Chromium's `<select>`); without it, while parked, the menu's items are read into the result (`menu`, `menu_closed`) and the menu is closed with `AXCancel`. `invoke` on a menu opener does the same. The menu is up for well under a second |
+| `set_value` on a pop-up list | `AXPopUpButton` (a `<select>`, an NSPopUpButton) has no settable value and typing into it does nothing: the menu is opened, the option pressed as with `menu_item`, and `AXValue` read back (`pattern: "choose"`, `confirmed`) |
 | `type`, `set_value` | `AXSelectedText` replaced in the field (after selecting all for `set_value`), then read back through `AXValue`; if the field did not change, Unicode key events are posted to the app instead. A line break in web content is Shift+Return. `direct: true` writes `AXValue` |
-| `key` | a shortcut the app's menu bar carries (`AXMenuItemCmdChar` / `AXMenuItemCmdModifiers`) presses that menu item; a special key (⌘⌫, ⌘←, ⌘Return, F-keys) is matched by its function-key character, `AXMenuItemCmdGlyph` or `AXMenuItemCmdVirtualKey`. A menu command acts on the app's main window, so the attached window is made main first (`AXMain`, which does not activate the app); an app that will not switch while it has another window is refused, rather than ⌘S saving another document. Return and Escape use the focused control's `AXConfirm`/`AXCancel` or the window's default and cancel buttons. Anything else is a key event posted to the app. An upper-case letter pressed on its own (`A`) carries Shift; in a shortcut its case is only how it was written (`cmd+A` is ⌘A, not ⇧⌘A), as on Windows |
+| `key` | a shortcut the app's menu bar carries (`AXMenuItemCmdChar` / `AXMenuItemCmdModifiers`) presses that menu item; a special key (⌘⌫, ⌘←, ⌘Return, F-keys) is matched by its function-key character, `AXMenuItemCmdGlyph` or `AXMenuItemCmdVirtualKey`. A menu command acts on the app's main window, so the attached window is made main first (`AXMain`). macOS reports usable menu items as disabled while their app is inactive and `AXPress` then succeeds without running the command, so EvoFlux temporarily sets the app frontmost, waits until the item is enabled, presses it, and restores the previous `NSRunningApplication`; the result has `temporarily_activated: true`. An app that will not switch its main window while it has another window is refused, rather than ⌘S saving another document. Return and Escape use the focused control's `AXConfirm`/`AXCancel` or the window's default and cancel buttons. Anything else is a key event posted to the app. An upper-case letter pressed on its own (`A`) carries Shift; in a shortcut its case is only how it was written (`cmd+A` is ⌘A, not ⇧⌘A), as on Windows |
 | `scroll` | wheel events posted to the app; when the scroll area's scroll bar did not move, its `AXValue` is stepped instead |
 | `hover`, `drag` | mouse events posted to the app |
 | `set_value` on a slider or stepper | `AXValue` as a number, clamped to `AXMinValue`/`AXMaxValue` |
@@ -417,7 +424,11 @@ Shortcuts use Command: `cmd+s` is ⌘S on macOS, while elsewhere `cmd` means
 Ctrl. Chromium and Electron apps (detected by their framework in the app
 bundle) keep their page out of the accessibility tree until asked, so attaching
 sets `AXManualAccessibility` and `AXEnhancedUserInterface` and waits for the
-web area to fill in. The second is turned off again on release.
+web area to fill in. The second is turned off again on release. With **Keep the
+app off-screen**, this is done before the window is parked, where it is: asked
+once the window was parked, Chromium sometimes never filled the page in (about
+one attach in three in the live test); `AXEnhancedUserInterface` is off for the
+move itself.
 
 **Keep the app off-screen** on macOS moves the window to the bottom-right
 corner of the display furthest down and to the right, where only a point of it
@@ -425,6 +436,14 @@ shows: macOS does not let a window leave the displays completely. A minimized
 window is brought back from the Dock first, since it cannot be captured, and
 goes back there on release. An app hidden with ⌘H is shown again without being
 activated.
+
+A parked window is also recorded in `computer_app_parked.json` in EvoFlux's
+local data folder (as on Windows), and taken out once it is back. If EvoFlux
+crashed or was killed, the next start puts back every recorded window that is
+still open, still the same process's and still off screen: to where it was,
+back to the Dock if it had been minimized, and with a Chromium app's
+`AXEnhancedUserInterface` off. A window accessibility cannot reach then is
+retried for two minutes and otherwise stays recorded for the next start.
 
 A window the window server still lists but accessibility cannot reach for a
 moment (the app busy past the two-second messaging timeout, full screen,
@@ -441,8 +460,9 @@ Known limits: a window on another Space is not in the app's accessibility
 window list and cannot be attached until the user brings it to the current
 desktop. Posted mouse and key events may be ignored by an app in the
 background or may bring it forward, which is why they are only the fallback.
-Chromium may stop repainting a window it considers covered, so a parked
-browser's picture can lag behind; snapshot reads the live state.
+A parked Chromium window stops repainting the image the window server keeps of
+it; its screenshots and preview come from ScreenCaptureKit instead (see
+Capture).
 
 Not yet handled, and to be checked on a Mac:
 
@@ -455,16 +475,28 @@ Not yet handled, and to be checked on a Mac:
   key on AZERTY or other layouts. Text inserted through accessibility is not
   affected.
 - Enter posted to a background web app (Slack, Teams, VS Code) may not send,
-  since AppKit delivers keys only to the key window.
-- Capture uses `CGWindowListCreateImage`, deprecated since macOS 14; on
-  macOS 15 it can bring back the Screen Recording prompt periodically.
-  ScreenCaptureKit is the replacement.
+  since AppKit delivers keys only to the key window. In parked Chrome it
+  submitted a form in every live-test run.
+- Native-window capture still uses `CGWindowListCreateImage`, deprecated since
+  macOS 14; on macOS 15 it can bring back the Screen Recording prompt
+  periodically. The ScreenCaptureKit path (with menus and sheets painted
+  over the window) is used only for Chromium/Electron so far; moving native
+  windows to it needs checking against sheets and popovers of native apps.
+
+The live `drives_a_parked_chrome_form` test drives a form in a parked Chrome
+window (a separate instance with its own profile): a button pressed by ref,
+text typed and read back, Enter submitting the form, a `<select>` set and
+picked with `menu_item`, a context menu item picked, and checks that no menu
+stays on the user's screen, the window stays parked and the frontmost app
+does not change. Click, typing and Enter reached the parked page without the
+Windows backend's page-focus and repaint workarounds.
 
 Run `cargo test computer_app -- --ignored --nocapture` on a Mac (with the terminal
-allowed Accessibility and Screen Recording) for the live TextEdit test, which
-types into a document, saves it with ⌘S through the menu bar while a second
-document opened later is TextEdit's main window, and checks the frontmost app
-never changed.
+allowed Accessibility and Screen Recording) for the live TextEdit tests (driving a document, and putting back a window a crashed run left parked), the first of which
+uses unique document names, types into a document, saves it with ⌘S through the
+menu bar while a second document opened later is TextEdit's main window, and
+checks the previous frontmost app is restored and the real cursor never moved. The parked-Chrome test opens a page in a separate Chrome instance with its own profile, attaches with `hide`,
+and checks the screenshot and preview show the page rather than a blank frame.
 
 ## Safety boundaries
 
@@ -488,6 +520,10 @@ never changed.
 - Windows-key shortcuts and Ctrl+Alt+Delete are refused; on macOS so are
   Control+Command+Q (lock), Shift+Command+Q (log out) and Option+Command+Esc
   (Force Quit). The Apple menu is never searched or pressed.
+- PiP opens only after a successful `attach`. Protected apps such as macOS
+  System Settings remain absent from `list_windows`; a name-based attach that
+  guesses one now returns its explicit security refusal instead of the generic
+  "No controllable window matches", and no PiP is created for that failed attach.
 - `settings.yaml` `computer_app`: `enabled`, `permission` (`ask` | `allow`),
   `keep_hidden`, `allowed_apps`, `blocked_apps` (blocklist wins; matching
   ignores case and `.exe`, and uses the executable name — `TextEdit`,

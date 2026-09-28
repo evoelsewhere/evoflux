@@ -70,6 +70,7 @@ the user how to proceed.
 | `App control command timed out after …` | The action ran out of time; the desktop stopped it where it was | Read back what already happened before sending anything again; split long `type` text into parts. |
 | `No app is attached.` | Nothing attached, detached, or the card was closed | `list_windows`, then `attach`, unless the user closed the card this turn. |
 | `No controllable window matches.` | The id is stale, or the app is never listed (blocked or protected) | `list_windows` again; a window that is not listed cannot be attached. |
+| `… is part of the macOS system or its security settings and cannot be controlled.` | The requested app is protected; this includes System Settings because it grants Accessibility and Screen Recording | Do not retry and do not expect a PiP. Ask the user to perform that protected step, or attach a non-system app from `list_windows`. |
 | `"…" is already controlled from another chat.` | Another chat has it | Pick another window or ask the user. |
 | `Unknown ref …` / `… no longer exists…` / `… has closed…` | A newer snapshot retired the ref, the app replaced the control, or its dialog or menu closed | Take a snapshot or `find`, and use a ref from it. |
 | `… is waiting on the dialog …` (Windows) | A ref behind an open modal dialog | Deal with the dialog first. |

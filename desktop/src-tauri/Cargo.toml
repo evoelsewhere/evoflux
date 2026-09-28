@@ -53,7 +53,7 @@ xcap-linux = { package = "xcap", version = "=0.4.1", default-features = false }
 [target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 block2 = "0.6"
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["block2", "NSApplication", "NSButton", "NSControl", "NSEvent", "NSImage", "NSResponder", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["block2", "libc", "NSApplication", "NSButton", "NSControl", "NSEvent", "NSImage", "NSResponder", "NSRunningApplication", "NSView", "NSWindow", "NSWorkspace"] }
 objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["AVCaptureDevice", "AVMediaFormat", "block2"] }
 objc2-speech = { version = "0.3.2", default-features = false, features = ["SFSpeechRecognizer", "block2"] }
 
@@ -62,7 +62,13 @@ objc2-speech = { version = "0.3.2", default-features = false, features = ["SFSpe
 # "highsierra" scroll-wheel events.
 core-graphics = { version = "0.25", features = ["elcapitan", "highsierra"] }
 core-foundation = "0.10"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["block2", "NSData", "NSError", "NSNotification", "NSOperation"] }
+# Chromium windows parked off screen stop repainting the image the window
+# server keeps for them; ScreenCaptureKit (macOS 14+) renders them anyway.
+# Weakly linked in build.rs: the app still starts on macOS 11.
+objc2-screen-capture-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-core-foundation", "objc2-core-graphics", "SCScreenshotManager", "SCShareableContent", "SCStream"] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["std", "CGDataProvider", "CGImage", "CGWindow"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFData"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["block2", "NSArray", "NSData", "NSError", "NSNotification", "NSOperation", "NSString"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["block2", "WKPDFConfiguration", "WKSnapshotConfiguration", "WKWebView"] }
 
 

@@ -190,12 +190,28 @@ pub(super) fn fill(target: &Target, field: Option<&Ax>, text: &str, replace: boo
         }
         let before = field.value_text();
         let _ = field.set_flag("AXFocused", true);
+        // Posted keys go wherever the app's focus is, and Chromium moves it
+        // a moment later: typed before then, the text was lost.
+        for _ in 0..10 {
+            if field.flag("AXFocused") == Some(true) {
+                break;
+            }
+            pause(50);
+        }
         if replace {
             post_keycode(target.pid, KEY_A, CGEventFlags::CGEventFlagCommand, 1)?;
         }
         type_via_keyboard(target, text, web, delay)?;
-        pause(200);
-        let landed = landed(&before, &field.value_text(), text, replace);
+        // A web page reports its new value a little later still. Only read
+        // again, never typed again: a late read-back would double the text.
+        let mut landed = Landed::Unchanged;
+        for _ in 0..6 {
+            pause(if web { 150 } else { 100 });
+            landed = self::landed(&before, &field.value_text(), text, replace);
+            if !matches!(landed, Landed::Unchanged) {
+                break;
+            }
+        }
         return Ok(result("keyboard", landed));
     }
     type_via_keyboard(target, text, web, delay)?;

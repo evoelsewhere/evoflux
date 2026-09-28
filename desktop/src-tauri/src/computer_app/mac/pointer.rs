@@ -127,6 +127,7 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
         other => return Err(format!("Unknown mouse button {other:?}")),
     };
     let flags = click_flags(params)?;
+    let menu_item = params.get("menu_item").and_then(Value::as_str).map(str::trim).filter(|item| !item.is_empty());
     let chain = match params.get("ref").and_then(Value::as_str) {
         Some(reference) => with_ancestors(element_for(&target.session_id, reference)?),
         None => elements_at(target, point),
@@ -137,13 +138,16 @@ pub(super) fn click(emit: &dyn Fn(Value), target: &Target, params: &Value) -> Re
     // with modifiers held is a mouse click: an element's action has none.
     if clicks == 1 && flags == CGEventFlags::CGEventFlagNull {
         let done = match button {
-            "left" => click_via_accessibility(emit, target, &chain, point, params.get("ref").is_none())?,
-            "right" => menu_via_accessibility(emit, target, &chain, point)?,
+            "left" => click_via_accessibility(emit, target, &chain, point, params.get("ref").is_none(), menu_item)?,
+            "right" => menu_via_accessibility(emit, target, &chain, point, menu_item)?,
             _ => None,
         };
         if let Some(done) = done {
             return Ok(done);
         }
+    }
+    if menu_item.is_some() {
+        return Err("menu_item needs a single left or right click, with no modifiers, on a control that opens a menu (or anywhere, for a context menu).".into());
     }
 
     target.travel(emit, point)?;
@@ -178,6 +182,7 @@ fn click_via_accessibility(
     chain: &[Ax],
     point: Point,
     at_point: bool,
+    menu_item: Option<&str>,
 ) -> Result<Option<Value>, String> {
     let editable = chain.iter().rev().find(|element| is_editable(element));
     if let Some(editable) = editable {
@@ -207,6 +212,11 @@ fn click_via_accessibility(
         });
         if busy {
             result["note"] = json!(STILL_RUNNING_NOTE);
+        }
+        if opens_menu(element, &action) {
+            settle_menu(target, element, menu_item, &mut result)?;
+        } else if menu_item.is_some() {
+            return Err(format!("\"{name}\" does not open a menu to pick menu_item from."));
         }
         return Ok(Some(result));
     }
@@ -257,6 +267,7 @@ fn menu_via_accessibility(
     target: &Target,
     chain: &[Ax],
     point: Point,
+    menu_item: Option<&str>,
 ) -> Result<Option<Value>, String> {
     let Some(element) = chain
         .iter()
@@ -282,6 +293,7 @@ fn menu_via_accessibility(
     if busy {
         result["note"] = json!(STILL_RUNNING_NOTE);
     }
+    settle_menu(target, element, menu_item, &mut result)?;
     Ok(Some(result))
 }
 

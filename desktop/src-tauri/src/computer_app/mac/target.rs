@@ -39,6 +39,7 @@ impl Target {
         if cg_window(attached.window_id).is_none() {
             registry().attached.remove(session_id);
             clear_refs(session_id);
+            forget_parked(attached.window_id);
             return Err(format!(
                 "The attached window ({} — {}) was closed. Call list_windows and attach again.",
                 attached.app, attached.title

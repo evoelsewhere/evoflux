@@ -82,13 +82,7 @@ pub(super) fn attach(session_id: &str, params: &Value) -> Result<Value, String> 
         if app.is_none() && title.is_none() {
             return Err("attach needs window_id (from list_windows), app, or title.".into());
         }
-        rows.into_iter()
-            .filter(|row| attach_refusal(row).is_none())
-            .find(|row| {
-                app.as_ref().map_or(true, |app| row.app.to_lowercase().contains(app))
-                    && title.as_ref().map_or(true, |title| row.title.to_lowercase().contains(title))
-            })
-            .ok_or("No controllable window matches. Call list_windows to see what is open.")?
+        matching_window(rows, app.as_deref(), title.as_deref())?
     };
     if let Some(reason) = attach_refusal(&chosen) {
         return Err(reason);
@@ -118,8 +112,18 @@ pub(super) fn attach(session_id: &str, params: &Value) -> Result<Value, String> 
     release(session_id);
     let _ = app.set_flag("AXHidden", false);
     let hide = params.get("hide").and_then(Value::as_bool).unwrap_or(false);
+    let web = is_chromium_app(chosen.pid);
     let parked = if hide {
-        park(&window)
+        if web {
+            // Chromium builds a page's tree only while it considers the page
+            // shown; asked for it once the window was parked, a page
+            // sometimes never filled in. Asked first, where the window is.
+            // Its enhanced interface is off for the move (see `hand_back`).
+            enable_web_accessibility(&app, &window);
+            let _ = app.set_flag("AXEnhancedUserInterface", false);
+            pause(100);
+        }
+        park(&window, web)
     } else {
         if window.flag("AXMinimized").unwrap_or(false) {
             let _ = window.set_flag("AXMinimized", false);
@@ -128,8 +132,8 @@ pub(super) fn attach(session_id: &str, params: &Value) -> Result<Value, String> 
         None
     };
     // After parking: while Chromium's enhanced accessibility is on, window
-    // moves through accessibility are animated and can be ignored.
-    let web = is_chromium_app(chosen.pid);
+    // moves through accessibility are animated and can be ignored. Quick
+    // when the page already filled in above.
     if web {
         enable_web_accessibility(&app, &window);
     }
@@ -150,6 +154,33 @@ pub(super) fn attach(session_id: &str, params: &Value) -> Result<Value, String> 
     );
     let target = Target::resolve(session_id)?;
     Ok(json!({ "attached": true, "window": target.describe() }))
+}
+
+/// Resolve a name-based attach without disguising a protected match as a
+/// missing window. `list_windows` intentionally hides protected apps, but an
+/// agent can still guess a name such as "System Settings"; tell it the safety
+/// boundary it hit so it does not misdiagnose the absent PiP as a UI failure.
+pub(super) fn matching_window(
+    rows: Vec<WindowRow>,
+    app: Option<&str>,
+    title: Option<&str>,
+) -> Result<WindowRow, String> {
+    let mut first_refusal = None;
+    for row in rows {
+        let matches = app.map_or(true, |app| row.app.to_lowercase().contains(app))
+            && title.map_or(true, |title| row.title.to_lowercase().contains(title));
+        if !matches {
+            continue;
+        }
+        if let Some(reason) = attach_refusal(&row) {
+            first_refusal.get_or_insert(reason);
+            continue;
+        }
+        return Ok(row);
+    }
+    Err(first_refusal.unwrap_or_else(|| {
+        "No controllable window matches. Call list_windows to see what is open.".to_string()
+    }))
 }
 
 pub(super) fn detach(session_id: &str) -> Value {
