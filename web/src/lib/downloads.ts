@@ -1,2 +1,2 @@
-export const WEBBRIDGE_EXTENSION_DOWNLOAD_URL =
-  'https://evoflux.fhmq9.cloud/archive/extension/EvoFlux-WebBridge.zip'
+export const WEBBRIDGE_EXTENSION_STORE_URL =
+  'https://chromewebstore.google.com/detail/evoflux-webbridge/bdjbbajllcdbihmmlncfendednochdbc'

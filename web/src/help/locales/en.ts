@@ -1499,7 +1499,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'ティーチ'
 ],
     setup:
-      'Built-in: enable under Settings → Browser, then Ctrl+T. WebBridge: install the Chrome/Edge extension, enable master policy in Settings → Browser, pair from the desktop status control, and keep WebBridge on in the workbench bar.',
+      'Built-in: enable under Settings → Browser, then Ctrl+T. WebBridge: install the extension from the Chrome Web Store (Edge installs it from the same listing), enable master policy in Settings → Browser, pair from the desktop status control, and keep WebBridge on in the workbench bar.',
     tricks: [
       'Ctrl+T toggles the built-in browser workbench — this is not WebBridge pairing.',
       'While WebBridge is on and the extension is connected, every agent browser action runs in your real browser; otherwise it runs in the in-app browser. The switch is saved, not per chat, and flipping it mid-task applies to the next browser action.',
@@ -1541,7 +1541,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step WebBridge: (1) install the Chrome/Edge extension, (2) enable master policy in Settings → Browser, (3) pair from the desktop status control, (4) turn WebBridge on in the workbench bar, (5) ask the agent to browse — it uses your browser until you turn WebBridge off, (6) optionally Teach a flow and confirm replay, (7) revoke pairing when finished with the machine or engagement.',
+        text: 'Step-by-step WebBridge: (1) install EvoFlux WebBridge from the Chrome Web Store — the desktop status control links to it, and Edge installs it from the same listing, (2) enable master policy in Settings → Browser, (3) pair from the desktop status control, (4) turn WebBridge on in the workbench bar, (5) ask the agent to browse — it uses your browser until you turn WebBridge off, (6) optionally Teach a flow and confirm replay, (7) revoke pairing when finished with the machine or engagement.',
       },
       {
         type: 'p',

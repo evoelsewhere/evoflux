@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bell, Bug, Check, Copy, Download, Globe, Loader2, MousePointer2, Play, RefreshCw, Trash2, X } from 'lucide-react'
+import { Bell, Bug, Check, Copy, ExternalLink, Globe, Loader2, MousePointer2, Play, RefreshCw, Trash2, X } from 'lucide-react'
 import {
   Popover,
   PopoverClose,
@@ -31,7 +31,7 @@ import {
   resolveWebBridgeTeachReplay,
 } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
-import { WEBBRIDGE_EXTENSION_DOWNLOAD_URL } from '@/lib/downloads'
+import { WEBBRIDGE_EXTENSION_STORE_URL } from '@/lib/downloads'
 import { openExternalUrl } from '@/lib/open-external'
 import { useToastStore } from '@/stores/useToastStore'
 import { cn } from '@/lib/utils'
@@ -114,7 +114,6 @@ export function WebBridgeStatusPopover({
   const [status, setStatus] = useState<WebBridgeStatusResponse | null>(null)
   const [audit, setAudit] = useState<WebBridgeAuditEntry[]>([])
   const [loading, setLoading] = useState(false)
-  const [downloading, setDownloading] = useState(false)
   const [teachDrafts, setTeachDrafts] = useState<WebBridgeTeachDraft[]>([])
   const [approvingDraftId, setApprovingDraftId] = useState<string | null>(null)
   const [replayingDraftId, setReplayingDraftId] = useState<string | null>(null)
@@ -170,18 +169,15 @@ export function WebBridgeStatusPopover({
     return () => window.clearInterval(timer)
   }, [open, refresh, refreshStatus])
 
-  const handleDownload = useCallback(async () => {
-    setDownloading(true)
+  const handleOpenStore = useCallback(async () => {
     try {
-      await openExternalUrl(WEBBRIDGE_EXTENSION_DOWNLOAD_URL)
+      await openExternalUrl(WEBBRIDGE_EXTENSION_STORE_URL)
     } catch (err) {
       pushToast({
         tone: 'error',
-        title: 'Failed to open extension download',
+        title: 'Failed to open the Chrome Web Store',
         description: err instanceof Error ? err.message : String(err),
       })
-    } finally {
-      setDownloading(false)
     }
   }, [pushToast])
 
@@ -515,17 +511,9 @@ export function WebBridgeStatusPopover({
           </>
         ) : (
           <div className="space-y-3">
-            <Button
-              onClick={() => void handleDownload()}
-              disabled={downloading}
-              className="w-full"
-            >
-              {downloading ? (
-                <Loader2 className="animate-spin" aria-hidden="true" />
-              ) : (
-                <Download aria-hidden="true" />
-              )}
-              Download extension package
+            <Button onClick={() => void handleOpenStore()} className="w-full">
+              <ExternalLink aria-hidden="true" />
+              Get WebBridge from Chrome Web Store
             </Button>
 
             <div className="min-w-0 space-y-1.5 rounded-md bg-(--bg-key) px-3 py-2">
@@ -536,18 +524,10 @@ export function WebBridgeStatusPopover({
             </div>
 
             <ol className="list-decimal space-y-1.5 pl-4 text-xs text-(--color-text-2)">
-              <li>Download the package above and unzip it.</li>
               <li>
-                Open{' '}
-                <code className="rounded bg-(--bg-key) px-1 font-mono">
-                  chrome://extensions
-                </code>
-                , enable Developer mode, click Load unpacked, and select the
-                unzipped{' '}
-                <code className="rounded bg-(--bg-key) px-1 font-mono">
-                  webbridge
-                </code>{' '}
-                folder.
+                Open the Chrome Web Store page above and click Add to Chrome.
+                Edge installs it from the same page after you allow extensions
+                from other stores.
               </li>
               <li>
                 Click the WebBridge toolbar icon, enter the connection address,

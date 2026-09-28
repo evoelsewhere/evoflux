@@ -1448,7 +1448,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'dạy'
 ],
     setup:
-      'Built-in: bật trong Settings → Browser, rồi Ctrl+T. WebBridge: cài extension Chrome/Edge, bật master policy trong Settings → Browser, pair từ desktop status control, và để WebBridge bật trên workbench bar.',
+      'Built-in: bật trong Settings → Browser, rồi Ctrl+T. WebBridge: cài extension từ Chrome Web Store (Edge cài từ cùng trang đó), bật master policy trong Settings → Browser, pair từ desktop status control, và để WebBridge bật trên workbench bar.',
     tricks: [
       'Ctrl+T toggle built-in browser workbench — không phải WebBridge pairing.',
       'Khi WebBridge bật và extension đã kết nối, mọi thao tác trình duyệt của agent chạy trên trình duyệt thật của bạn; không thì chạy trong browser trong app. Công tắc được lưu lại, không theo từng chat, và bật/tắt giữa chừng sẽ áp dụng ngay từ thao tác trình duyệt kế tiếp.',
@@ -1490,7 +1490,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'WebBridge từng bước: (1) cài extension Chrome/Edge, (2) bật master policy trong Settings → Browser, (3) pair từ desktop status control, (4) bật WebBridge trên workbench bar, (5) nhờ agent duyệt web — agent dùng trình duyệt của bạn cho tới khi tắt WebBridge, (6) tùy chọn Teach một flow và xác nhận replay, (7) revoke pairing khi xong máy hoặc engagement.',
+        text: 'WebBridge từng bước: (1) cài EvoFlux WebBridge từ Chrome Web Store — desktop status control có link tới đó, Edge cài từ cùng trang, (2) bật master policy trong Settings → Browser, (3) pair từ desktop status control, (4) bật WebBridge trên workbench bar, (5) nhờ agent duyệt web — agent dùng trình duyệt của bạn cho tới khi tắt WebBridge, (6) tùy chọn Teach một flow và xác nhận replay, (7) revoke pairing khi xong máy hoặc engagement.',
       },
       {
         type: 'p',

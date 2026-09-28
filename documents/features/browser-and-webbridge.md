@@ -48,7 +48,11 @@ Primary code: `app/api/routes/team/preview.py`,
 ## WebBridge
 
 WebBridge connects EvoFlux to the user's real logged-in Chrome/Edge session
-through the independently distributed `evo-webbridge` extension.
+through the independently distributed `evo-webbridge` extension, published as
+[EvoFlux WebBridge](https://chromewebstore.google.com/detail/evoflux-webbridge/bdjbbajllcdbihmmlncfendednochdbc)
+on the Chrome Web Store. Edge installs it from the same listing. Before an
+extension connects, the desktop WebBridge status dialog links to the listing
+and shows the connection address to enter in the extension.
 
 ```text
 agent tool / browser side panel

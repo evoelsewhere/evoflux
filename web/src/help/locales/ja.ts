@@ -1460,7 +1460,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ペアリング'
 ],
     setup:
-      '内蔵: Settings → Browser で有効化し Ctrl+T。WebBridge: Chrome/Edge 拡張をインストールし、Settings → Browser でマスターポリシーを有効化、デスクトップのステータスコントロールからペアし、workbench バーで WebBridge をオンにしておく。',
+      '内蔵: Settings → Browser で有効化し Ctrl+T。WebBridge: Chrome ウェブストアから拡張をインストールし（Edge も同じページから入れられます）、Settings → Browser でマスターポリシーを有効化、デスクトップのステータスコントロールからペアし、workbench バーで WebBridge をオンにしておく。',
     tricks: [
       'Ctrl+T は内蔵ブラウザ workbench をトグル — WebBridge ペアリングではありません。',
       'WebBridge がオンで拡張が接続中なら、エージェントのブラウザ操作はすべて実ブラウザで行われ、それ以外はアプリ内ブラウザで行われます。スイッチはチャット単位ではなく保存され、作業中に切り替えても次のブラウザ操作から反映されます。',
@@ -1502,7 +1502,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'WebBridge 手順: (1) Chrome/Edge 拡張をインストール、(2) Settings → Browser でマスターポリシー有効化、(3) デスクトップステータスコントロールからペア、(4) workbench バーで WebBridge をオン、(5) エージェントにブラウザ操作を依頼 — WebBridge をオフにするまで実ブラウザを使う、(6) 任意でフローを Teach しリプレイ確認、(7) マシンや案件が終わったらペアリング取り消し。',
+        text: 'WebBridge 手順: (1) Chrome ウェブストアから EvoFlux WebBridge をインストール（デスクトップのステータスコントロールにリンクあり、Edge も同じページから）、(2) Settings → Browser でマスターポリシー有効化、(3) デスクトップステータスコントロールからペア、(4) workbench バーで WebBridge をオン、(5) エージェントにブラウザ操作を依頼 — WebBridge をオフにするまで実ブラウザを使う、(6) 任意でフローを Teach しリプレイ確認、(7) マシンや案件が終わったらペアリング取り消し。',
       },
       {
         type: 'p',
