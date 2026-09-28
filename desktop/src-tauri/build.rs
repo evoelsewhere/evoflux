@@ -18,6 +18,7 @@ fn main() {
             "app_use_external_backend",
             "app_use_bundled_backend",
             "app_new_window",
+            "app_menu_action",
             "app_browser_webview_navigate",
             "app_browser_webview_command",
             "app_browser_webview_url",

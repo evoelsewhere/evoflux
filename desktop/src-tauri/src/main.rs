@@ -277,7 +277,15 @@ fn configure_window_chrome(
     }
     #[cfg(target_os = "windows")]
     {
-        builder.transparent(true).effects(windows_sidebar_effects())
+        // The web UI draws the title bar (menu, sidebar and history controls
+        // beside its own caption buttons), so the native one is off. The
+        // shadow keeps the DWM frame: drop shadow, rounded corners on
+        // Windows 11 and the resize borders of an undecorated window.
+        builder
+            .transparent(true)
+            .decorations(false)
+            .shadow(true)
+            .effects(windows_sidebar_effects())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -4505,6 +4513,17 @@ async fn restart_backend_and_reload_window(app: &AppHandle) -> Result<()> {
     Ok(())
 }
 
+/// Run an application-menu action from the web UI.
+///
+/// Windows draws its own title bar (the native one, and with it the menu
+/// strip, is off) and opens the app menu from a button there. Its items name
+/// the same ids as the native menu, so every destination and window action
+/// keeps one implementation here.
+#[tauri::command]
+fn app_menu_action(app: AppHandle, id: String) {
+    handle_desktop_menu(&app, &id);
+}
+
 fn handle_desktop_menu(app: &AppHandle, id: &str) {
     match id {
         MENU_SHOW => show_main_window(app),
@@ -6243,6 +6262,7 @@ fn main() {
             app_use_external_backend,
             app_use_bundled_backend,
             app_new_window,
+            app_menu_action,
             app_browser_webview_navigate,
             app_browser_webview_command,
             app_browser_webview_url,

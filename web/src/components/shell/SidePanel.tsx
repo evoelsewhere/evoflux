@@ -210,10 +210,10 @@ export const SidePanel = forwardRef<HTMLElement, SidePanelProps>(function SidePa
             : 'mobile-safe-top fixed inset-x-0 bottom-0 w-full max-w-none',
         )
       : forceOverlay
-      ? 'fixed inset-0 z-(--z-overlay) box-border min-h-0 min-w-0 w-full max-w-none overflow-hidden border-l border-(--color-border-subtle)/32 shadow-xl'
+      ? 'fixed inset-0 top-[var(--app-titlebar-height,0px)] z-(--z-overlay) box-border min-h-0 min-w-0 w-full max-w-none overflow-hidden border-l border-(--color-border-subtle)/32 shadow-xl'
       : fixedDesktopDrawer
       ? cn(
-          'fixed inset-y-0 right-0 z-(--z-overlay) box-border flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border-subtle)/32',
+          'fixed inset-y-0 top-[var(--app-titlebar-height,0px)] right-0 z-(--z-overlay) box-border flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-(--color-border-subtle)/32',
           desktopOverlayShadow ? 'shadow-xl' : 'shadow-none',
         )
       : desktopOverlayInner && !overlay

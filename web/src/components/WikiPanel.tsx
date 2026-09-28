@@ -184,7 +184,7 @@ export function WikiPanel({ open, onClose, embedded = false }: WikiPanelProps) {
               'flex flex-col overflow-hidden border-(--color-border) bg-(--bg-page)',
               embedded
                 ? 'relative h-full w-full'
-                : 'fixed inset-x-0 bottom-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border',
+                : 'fixed inset-x-0 bottom-0 top-[calc(var(--app-titlebar-height,0px)+env(safe-area-inset-top,0px))] z-(--z-modal) shadow-2xl sm:left-1/2 sm:top-1/2 sm:inset-auto sm:h-[min(90vh,860px)] sm:w-[min(90vw,1180px)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:border',
             )}
             role={embedded ? 'region' : 'dialog'}
             aria-modal={embedded ? undefined : 'true'}

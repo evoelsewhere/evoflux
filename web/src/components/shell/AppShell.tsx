@@ -85,7 +85,11 @@ export function AppShell({
       ? toggleSidebarCollapsed
       : undefined
   const motionPreset = useMotionPreset()
-  const { isMacOverlay } = usePlatform()
+  const { isMacOverlay, isWindowsTitleBar } = usePlatform()
+  // Desktop title bars (macOS beside the traffic lights, Windows in its own
+  // strip) carry the sidebar toggle, so the in-canvas one is only for the
+  // web build.
+  const titleBarOwnsSidebarToggle = isMacOverlay || isWindowsTitleBar
   const sidebarWidth = useUIStore((state) => state.sidebarWidth)
   const sidebarToggleLeft = sidebarCollapsed ? 4 : sidebarWidth + 4
   const sidebarTransitionDuration = DURATIONS.base * motionPreset.scale
@@ -94,15 +98,15 @@ export function AppShell({
   // why registration is gated on this shell having a sidebar.
   useKeyboardShortcuts({ b: toggleSidebar })
 
-  // macOS renders the sidebar affordance beside the native traffic lights.
-  // Keep the action inside AppShell so adaptive drawer state remains local to
-  // TeamChatView and the title bar never needs feature-specific callbacks.
+  // The desktop title bar renders the sidebar affordance. Keep the action
+  // inside AppShell so adaptive drawer state remains local to TeamChatView
+  // and the title bar never needs feature-specific callbacks.
   useEffect(() => {
-    if (!isMacOverlay || !toggleSidebar) return
+    if (!titleBarOwnsSidebarToggle || !toggleSidebar) return
     const handleToggle = () => toggleSidebar()
     window.addEventListener(SHELL_SIDEBAR_TOGGLE_EVENT, handleToggle)
     return () => window.removeEventListener(SHELL_SIDEBAR_TOGGLE_EVENT, handleToggle)
-  }, [isMacOverlay, toggleSidebar])
+  }, [titleBarOwnsSidebarToggle, toggleSidebar])
 
   return (
     // h-dvh handles iOS Safari's dynamic toolbar.
@@ -118,7 +122,7 @@ export function AppShell({
       {mobileSidebar}
 
       {/* Sidebar toggle — same placement + affordance in every mode. */}
-      {hasDockedSidebar && !isMacOverlay && (
+      {hasDockedSidebar && !titleBarOwnsSidebarToggle && (
         <div
           data-sidebar-toggle-follower
           className="pointer-events-none absolute top-2 z-(--z-header) flex flex-col items-center"

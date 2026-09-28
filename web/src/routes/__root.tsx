@@ -8,6 +8,7 @@ import { Home } from 'lucide-react'
 import { ToastStack } from '@/components/ToastStack'
 import { AppUpdateDialog } from '@/components/AppUpdateDialog'
 import { MacTitleBar } from '@/components/MacTitleBar'
+import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { SettingsScreen } from '@/components/SettingsScreen'
 import { GuidelinesModal } from '@/components/help/GuidelinesModal'
 import { PersistentModeNavigation } from '@/components/shell/PersistentModeNavigation'
@@ -39,6 +40,7 @@ export function Root() {
   return (
     <QueryClientProvider client={queryClient}>
       <MacTitleBar />
+      <WindowsTitleBar />
       <PersistentModeNavigation />
       {settingsOpen ? (
         <Suspense fallback={<RouteLoadingFallback />}>

@@ -37,6 +37,8 @@ export function PersistentModeNavigation() {
   // 2px inset) and inset by the same 6px column the sidebar rows use, so it
   // lands exactly on the SidebarModeSlot each sidebar reserves for it —
   // `top-0.5 + pt-1.5` here must stay equal to the slot's own top padding.
+  // Fixed to the viewport, so it also clears the Windows title-bar band the
+  // shell itself sits below.
   return (
     <div
       data-testid="persistent-mode-navigation"
@@ -45,7 +47,7 @@ export function PersistentModeNavigation() {
         width: Math.max(0, sidebarWidth - 8),
         transition: `width ${transitionDuration}ms var(--ease-out)`,
       }}
-      className="pointer-events-none fixed left-1 top-0.5 z-(--z-header) hidden md:block"
+      className="pointer-events-none fixed left-1 top-[calc(var(--app-titlebar-height,0px)+--spacing(0.5))] z-(--z-header) hidden md:block"
     >
       <div
         className={`pointer-events-auto w-full px-0.5 ${

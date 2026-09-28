@@ -473,7 +473,7 @@ export function SchedulerPanel({
               'flex flex-col overflow-hidden border-l border-(--color-border) bg-(--bg-page)',
               embedded
                 ? 'relative h-full w-full'
-                : 'fixed bottom-0 right-0 top-[env(safe-area-inset-top,0px)] z-(--z-modal) w-full shadow-2xl sm:w-[460px]',
+                : 'fixed bottom-0 right-0 top-[calc(var(--app-titlebar-height,0px)+env(safe-area-inset-top,0px))] z-(--z-modal) w-full shadow-2xl sm:w-[460px]',
             )}
             role={embedded ? 'region' : 'dialog'}
             aria-modal={embedded ? undefined : 'true'}

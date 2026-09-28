@@ -10,8 +10,11 @@
  *
  * `isMacOverlay` — macOS + Tauri: the OS overlays the traffic-light
  * buttons over our WebView content, so chrome must reserve a left
- * inset and provide a manual drag region. This is the only platform
- * combination that needs special handling.
+ * inset and provide a manual drag region.
+ *
+ * `isWindowsTitleBar` — Windows + Tauri: the native title bar is off and
+ * WindowsTitleBar draws the whole strip (menu, sidebar/history controls,
+ * caption buttons) above the app.
  */
 
 export type OS = 'macos' | 'windows' | 'linux' | 'ios' | 'android' | 'unknown'
@@ -20,6 +23,7 @@ export interface PlatformInfo {
   isTauri: boolean
   os: OS
   isMacOverlay: boolean
+  isWindowsTitleBar: boolean
 }
 
 interface UAClientHints {
@@ -58,7 +62,12 @@ function detectTauri(): boolean {
 function compute(): PlatformInfo {
   const os = detectOS()
   const isTauri = detectTauri()
-  return { isTauri, os, isMacOverlay: os === 'macos' && isTauri }
+  return {
+    isTauri,
+    os,
+    isMacOverlay: os === 'macos' && isTauri,
+    isWindowsTitleBar: os === 'windows' && isTauri,
+  }
 }
 
 export function usePlatform(): PlatformInfo {

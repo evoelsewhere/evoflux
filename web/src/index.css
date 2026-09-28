@@ -833,11 +833,11 @@ html.light[data-native-sidebar-glass="macos"] [data-app-header] {
 }
 
 .mobile-safe-top {
-  top: calc(var(--spacing-app-header) + env(safe-area-inset-top, 0px));
+  top: calc(var(--app-titlebar-height, 0px) + var(--spacing-app-header) + env(safe-area-inset-top, 0px));
 }
 
 .mobile-safe-notch-top {
-  top: env(safe-area-inset-top, 0px);
+  top: calc(var(--app-titlebar-height, 0px) + env(safe-area-inset-top, 0px));
 }
 
 .mobile-safe-overlay {
@@ -856,7 +856,7 @@ html.light[data-native-sidebar-glass="macos"] [data-app-header] {
 /* Toast stack sits top-center on every width, clear of the notch and of the
  * composer/window controls that own the bottom and top-right corners. */
 .mobile-safe-toast {
-  top: max(0.75rem, env(safe-area-inset-top, 0px));
+  top: calc(var(--app-titlebar-height, 0px) + max(0.75rem, env(safe-area-inset-top, 0px)));
   right: max(1rem, env(safe-area-inset-right, 0px));
   left: max(1rem, env(safe-area-inset-left, 0px));
 }
@@ -865,6 +865,18 @@ html.light[data-native-sidebar-glass="macos"] [data-app-header] {
   .mobile-viewport {
     height: 100svh;
   }
+}
+
+/* Windows desktop draws its own title bar (WindowsTitleBar) in a fixed band
+ * at the top; every full-height shell is a .mobile-viewport, so they all
+ * start below it and keep the rest of the window. */
+html[data-windows-titlebar] {
+  --app-titlebar-height: 2.5rem;
+}
+
+html[data-windows-titlebar] .mobile-viewport {
+  height: calc(100dvh - var(--app-titlebar-height));
+  margin-top: var(--app-titlebar-height);
 }
 
 /* ─────────────────────────────────────────────────────────────

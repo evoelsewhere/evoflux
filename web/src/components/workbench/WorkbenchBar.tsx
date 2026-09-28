@@ -84,7 +84,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const registry = useRegistryQuery()
   const webBridgeSettings = useWebBridgeSettingsQuery()
   const motionPreset = useMotionPreset()
-  const { isTauri, os } = usePlatform()
+  const { isTauri, os, isWindowsTitleBar } = usePlatform()
   const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
   const showOpenWith =
     isDesktopShell &&
@@ -111,7 +111,9 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         props.isMacOverlay
           ? (props.isMobile || sidebarCollapsed || props.sidebarOverlay)
             && 'pl-(--spacing-mac-window-controls-inset)'
-          : !props.isMobile && !props.sidebarOverlay && 'pl-12',
+          // pl-12 clears the web build's in-canvas sidebar toggle; the
+          // Windows title bar carries that toggle instead.
+          : !props.isMobile && !props.sidebarOverlay && !isWindowsTitleBar && 'pl-12',
       )}
     >
       {!props.isMacOverlay && (props.isMobile || props.sidebarOverlay) && (
