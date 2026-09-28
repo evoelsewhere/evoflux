@@ -1,4 +1,4 @@
-"""Dependency-neutral WebBridge session tag constants.
+"""Dependency-neutral WebBridge provenance tag constant.
 
 Only provenance lives in tags: a session the extension created carries the
 browser-origin tag. Whether an agent drives the user's browser is live

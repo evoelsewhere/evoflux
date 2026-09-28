@@ -39,7 +39,7 @@
   {
     "query": "Open example.com and summarize the pricing page.",
     "should_trigger": false,
-    "near_miss": "The in-app browser can open a public site on its own."
+    "near_miss": "browser_use opens a web page on its own; the browser-use Skill covers it."
   },
   {
     "query": "Write a Python script that fills in Excel sheets from a CSV.",

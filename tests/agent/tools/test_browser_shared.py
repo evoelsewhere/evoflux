@@ -141,9 +141,11 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     # "portrait", which was rotating every landscape viewport request; then
     # the registry stopped emitting nested titles, dangling discriminator
     # mappings and null branches of optional fields; then the guide said the
-    # call runs through WebBridge whenever it is enabled and connected.
+    # call runs through WebBridge whenever it is enabled and connected; then
+    # it named the saved switch, the chat's own WebBridge tab and every
+    # action refused there.
     assert _definition_digest(browser_use) == (
-        "54f0f348cf379b011f0b1f6b372850df79d99bf6f4cf777cc9cb754626560f33"
+        "286fbc7d3d7c364a9a76bcba08715bf0f3aa1e75889b2b7c49d122693b9375ba"
     )
     # Changed deliberately: the tool guide (`_DESCRIPTION`) was defined but
     # never passed to `@tool`, so the model saw only the one-line docstring;
@@ -151,7 +153,8 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     # cookies, inspect, upload_file, emulate, mock and performance were added;
     # then the schema was compacted (registry noise, per-field tab_id text)
     # and the guide rewritten, 67k → 35k characters; then wait_for_hmr and
-    # console level "warn" were added.
+    # console level "warn" were added; then the guide said browser_use
+    # reaches the same browser and what only webbridge offers.
     assert _definition_digest(webbridge) == (
-        "2726677b3367e6b2f44a28da3eab3bdd403a0a03a700ee83465887fa4c5ff25c"
+        "5ec37fe89f79d8ba07855bdfac30b8da5ee9214e3f8e58c5cd3c5e79d401655c"
     )

@@ -1845,8 +1845,8 @@ async def team_history(
 # Tool exclusion and the read-only system-prompt addendum live in
 # app.agent.mode.team.tier_policy (side_chat_session_excluded_tools) and
 # app.agent.mode.team.member (SIDE_CHAT_SESSION_PROMPT) — applied via the
-# "side_chat" session tag set on the session by create_side_chat_session,
-# the same mechanism WebBridge sessions use. Not imported here: nothing in
+# "side_chat" session tag set on the session by create_side_chat_session.
+# Not imported here: nothing in
 # this file needs them directly, tagging happens once at session creation.
 
 

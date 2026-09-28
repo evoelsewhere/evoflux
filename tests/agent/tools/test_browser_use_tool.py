@@ -454,18 +454,33 @@ async def test_one_real_action_still_mounts_the_browser(monkeypatch) -> None:
 # ── WebBridge routing ─────────────────────────────────────────────────────
 
 
-def _webbridge_on(monkeypatch) -> list[tuple[str, dict]]:
-    """Make WebBridge ready and record what reaches the extension."""
+_NEW_TAB_ID = 7
+
+
+def _webbridge_on(
+    monkeypatch, *, browser: SimpleNamespace | None = None
+) -> list[tuple[str, dict]]:
+    """Make WebBridge ready and record what reaches the extension.
+
+    *browser* stands in for the connected extension's tab report; without it
+    the extension reports no tabs. It carries no batch capability, so every
+    action travels on its own.
+    """
     from app.agent.tools.builtin import webbridge_tool
     from app.services.webbridge_service import webbridge_manager
 
     sent: list[tuple[str, dict]] = []
     monkeypatch.setattr(webbridge_tool, "webbridge_ready", lambda: True)
-    # No batch capability: every action travels on its own.
-    monkeypatch.setattr(webbridge_manager, "resolve_target", lambda *_a, **_k: None)
+    monkeypatch.setattr(webbridge_tool, "_agent_tabs", {})
+    ext = browser or SimpleNamespace(tabs=[], current_url="", capabilities={})
+    ext.capabilities = {"commands": ["navigate"]}
+    monkeypatch.setattr(webbridge_manager, "resolve_target", lambda *_a, **_k: ext)
+    monkeypatch.setattr(webbridge_manager, "session_tab_binding", lambda _sid: None)
 
     async def send_command(_sid: str, action: str, params=None, **_kw):
         sent.append((action, dict(params or {})))
+        if action in {"open_tab", "switch_tab"}:
+            return {"success": True, "data": {"tab_id": _NEW_TAB_ID}}
         return {"success": True, "data": {"url": "https://e.com", "title": "E"}}
 
     monkeypatch.setattr(webbridge_manager, "send_command", send_command)
@@ -542,6 +557,117 @@ async def test_tab_index_survives_webbridge_translation(monkeypatch) -> None:
 
     assert sent and sent[0][0] == "switch_tab"
     assert sent[0][1]["index"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_first_navigate_opens_its_own_tab_and_later_actions_stay_in_it(
+    monkeypatch,
+) -> None:
+    """Through WebBridge the agent never replaces the page the user has open."""
+    sent = _webbridge_on(monkeypatch)
+
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "navigate", "url": "https://e.com"},
+            {"action": "snapshot"},
+        ],
+    )
+
+    assert [action for action, _ in sent] == ["open_tab", "wait_for_load", "snapshot"]
+    assert sent[0][1]["url"] == "https://e.com"
+    assert sent[1][1]["tab_id"] == _NEW_TAB_ID
+    assert sent[2][1]["tab_id"] == _NEW_TAB_ID
+    assert "this chat's actions stay in it" in str(result)
+
+
+@pytest.mark.asyncio
+async def test_the_pinned_tab_does_not_follow_the_user_to_another_tab(
+    monkeypatch,
+) -> None:
+    browser = SimpleNamespace(
+        tabs=[{"id": 3, "active": True, "url": "https://mine.example"}],
+        current_url="https://mine.example",
+    )
+    sent = _webbridge_on(monkeypatch, browser=browser)
+
+    # A first action on the current page adopts the tab in front.
+    await browser_tool.browser_use.arun(
+        _injected={"_state": _state()}, actions=[{"action": "snapshot"}]
+    )
+    # The user switches to another tab; the agent's next click stays put.
+    browser.tabs = [
+        {"id": 3, "active": False, "url": "https://mine.example"},
+        {"id": 9, "active": True, "url": "https://private.example"},
+    ]
+    browser.current_url = "https://private.example"
+    await browser_tool.browser_use.arun(
+        _injected={"_state": _state()}, actions=[{"action": "click", "ref": "e2"}]
+    )
+
+    assert [(action, params.get("tab_id")) for action, params in sent] == [
+        ("snapshot", 3),
+        ("click_selector", 3),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_closed_pinned_tab_is_replaced_by_a_new_one(monkeypatch) -> None:
+    from app.agent.tools.builtin import webbridge_tool
+
+    browser = SimpleNamespace(
+        tabs=[{"id": 4, "active": True, "url": "https://other.example"}],
+        current_url="https://other.example",
+    )
+    sent = _webbridge_on(monkeypatch, browser=browser)
+    webbridge_tool._agent_tabs["desktop-session"] = 99  # closed by the user
+
+    await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "navigate", "url": "https://e.com"}],
+    )
+
+    assert sent[0][0] == "open_tab"
+    assert webbridge_tool._agent_tabs["desktop-session"] == _NEW_TAB_ID
+
+
+@pytest.mark.asyncio
+async def test_a_side_panel_chat_keeps_its_bound_tab(monkeypatch) -> None:
+    from app.services.webbridge_service import webbridge_manager
+
+    sent = _webbridge_on(monkeypatch)
+    monkeypatch.setattr(
+        webbridge_manager, "session_tab_binding", lambda _sid: ("ext-1", 5)
+    )
+
+    await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "navigate", "url": "https://e.com"}],
+    )
+
+    # The manager routes a bound chat to its tab; no agent tab is opened.
+    assert [action for action, _ in sent][:1] == ["navigate"]
+    assert "tab_id" not in sent[0][1]
+
+
+@pytest.mark.asyncio
+async def test_webbridge_refuses_element_screenshots_and_disabled_uploads(
+    monkeypatch,
+) -> None:
+    sent = _webbridge_on(monkeypatch)
+
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "screenshot", "ref": "e3"},
+            {"action": "set_files", "ref": "e4", "paths": ["report.pdf"]},
+        ],
+    )
+
+    assert isinstance(result, str)
+    assert "Error (screenshot): element screenshots" in result
+    assert "Error (set_files): Browser file uploads are disabled" in result
+    assert sent == []
 
 
 def test_webbridge_ready_follows_settings_toggle_and_connection(monkeypatch) -> None:

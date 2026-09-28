@@ -100,7 +100,7 @@ export function McpServerForm({
               disabledLabel="No"
             />
           </Field>
-          <Field label="WebBridge safe" hint="Allows non-browser tools during a WebBridge session.">
+          <Field label="WebBridge safe" hint="Accepted for compatibility; no longer changes which tools a chat sees.">
             <EnabledToggle
               value={value.capabilities.includes('webbridge-safe')}
               onChange={(enabled) => set({

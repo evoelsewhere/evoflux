@@ -732,13 +732,20 @@ AnyAction = Annotated[
 ]
 
 _DESCRIPTION = """\
-Read and control a user-visible browser. When WebBridge is enabled and its
-extension connected, actions run in the user's real Chrome/Edge (their logins
-and tabs) and the result says so; otherwise they run in EvoFlux's in-app
-browser, whose Browser panel opens automatically when needed. Through WebBridge
-the in-app-only actions (query, page_assets, download, http, popups,
-permissions, zoom, print, save_pdf, clipboard, dispatch_event, submit,
-scroll_into_view, dblclick) are refused before anything runs.
+Read and control a user-visible browser. The backend is chosen on every
+call: while WebBridge is on (the user's saved switch) and its extension is
+connected, actions run in the user's real Chrome/Edge (their logins and tabs)
+and the result's first line says so; otherwise they run in EvoFlux's in-app
+browser, whose Browser panel opens automatically when needed.
+Through WebBridge each chat works in one tab of its own: a first navigate
+opens it instead of replacing the page the user has open, a first action on
+the current page adopts the tab in front, and later actions stay in that tab
+even when the user switches. find and accessibility return the full
+snapshot there. The in-app-only actions (query, page_assets, download, http,
+popups, dialog_behavior, clear_logs, permission_requests, resolve_permission,
+zoom, print, save_pdf, clipboard, dispatch_event, submit, scroll_into_view,
+dblclick, element screenshots, index targets) are refused before anything
+runs.
 
 Observe: status, snapshot, find, query, inspect, html, accessibility, extract,
 screenshot.
@@ -990,6 +997,12 @@ def _to_webbridge_steps(
             "and pass its ref"
         )
     focus = [{"action": "focus", **target}] if target else []
+    if name == "screenshot" and target:
+        # WebBridge captures the viewport or the full page, never one element.
+        return (
+            "element screenshots only exist in the in-app browser; scroll the "
+            "element into view and take a viewport screenshot, or inspect it"
+        )
     if name in _WEBBRIDGE_SAME:
         return [params]
     if name in {"start", "stop"}:
@@ -1073,8 +1086,15 @@ async def _browser_use_via_webbridge(
 
     from app.agent.tools.builtin.webbridge_tool import (
         WebBridgeAction,
-        run_webbridge_actions,
+        run_browser_use_actions,
     )
+
+    from app.core.runtime_settings import BuiltInBrowserSettings, load_runtime_settings
+
+    try:
+        policy = load_runtime_settings().browser
+    except Exception:
+        policy = BuiltInBrowserSettings()
 
     adapter: TypeAdapter[Any] = TypeAdapter(WebBridgeAction)
     steps: list[Any] = []
@@ -1082,6 +1102,14 @@ async def _browser_use_via_webbridge(
     for action in actions:
         params = action.model_dump(exclude_none=True)
         name = str(params["action"])
+        # A file input is an exit whichever browser holds it: the Settings
+        # switch for agent uploads applies through WebBridge too.
+        if name == "set_files" and not policy.allow_file_uploads:
+            errors.append(
+                "Error (set_files): Browser file uploads are disabled in "
+                "Settings → Browser."
+            )
+            continue
         translated = _to_webbridge_steps(
             params, targeted=isinstance(action, ElementTargetAction)
         )
@@ -1096,7 +1124,7 @@ async def _browser_use_via_webbridge(
                 errors.append(f"Error ({name}): {detail}")
     if errors:
         return "\n---\n".join([_WEBBRIDGE_NOTICE, *errors, "No actions were run."])
-    result = await run_webbridge_actions(steps, state=state)
+    result = await run_browser_use_actions(steps, state=state)
     return combine_browser_results([_WEBBRIDGE_NOTICE, result])
 
 

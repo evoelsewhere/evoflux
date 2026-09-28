@@ -1885,7 +1885,7 @@ async def create_side_chat_session(
     Tagged ``"side_chat"`` (tier_policy.SIDE_CHAT_SESSION_TAG) so the team
     lead for this session — a dedicated per-session instance, never shared
     with the main session — restricts to read-only tools and gets the
-    read-only system-prompt addendum (mirrors WebBridge session tagging).
+    read-only system-prompt addendum.
 
     The main session's recent context is copied in as messages marked
     ``extra.hidden_from_user=True``: invisible on GET .../messages (so the

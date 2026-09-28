@@ -1452,6 +1452,8 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     tricks: [
       'Ctrl+T toggle built-in browser workbench — không phải WebBridge pairing.',
       'Khi WebBridge bật và extension đã kết nối, mọi thao tác trình duyệt của agent chạy trên trình duyệt thật của bạn; không thì chạy trong browser trong app. Công tắc được lưu lại, không theo từng chat, và bật/tắt giữa chừng sẽ áp dụng ngay từ thao tác trình duyệt kế tiếp.',
+      'Trên trình duyệt của bạn, mỗi chat làm việc trong một tab riêng: agent mở tab mới thay vì ghi đè trang bạn đang mở, và vẫn làm tiếp ở tab đó khi bạn chuyển sang tab khác.',
+      'Skill tích hợp browser-use hướng dẫn agent trên mọi trang: kiểm tra từng bước bằng cách đọc lại trang, không bao giờ nhập mật khẩu hay mã một lần, và hỏi trước khi gửi, mua, đăng hoặc xóa. Có thể tắt trong Settings → Skills.',
       'Teach mode ghi action browser có nghĩa (không keystroke thô) để replay có xác nhận.',
       'Pairing dùng credential có scope và one-time session ticket; revoke pairing đóng relay live.',
       'Selection và page context từ browser thật được coi là input không tin cậy.',

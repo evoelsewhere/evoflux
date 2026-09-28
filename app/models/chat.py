@@ -193,10 +193,11 @@ class ChatSession(SQLModel, table=True):
             nullable=True,
         ),
     )
-    # Session tags (e.g. ["webbridge"]) — set at creation by the resolve
+    # Session tags (e.g. ["side_chat"]) — set at creation by the resolve
     # endpoint, matched by tag-SET equality (order-insensitive), and used to
-    # scope the lead's tool access (a "webbridge"-tagged session may only
-    # drive the web through the webbridge tool). NULL = untagged session.
+    # scope the lead's tool access (a "side_chat" session is read-only).
+    # Which browser an agent drives is live WebBridge state, never a tag.
+    # NULL = untagged session.
     # none_as_null=True: the resolve endpoint filters on SQL NULL, so an
     # untagged row must not persist as the JSON literal 'null' (the default
     # JSON-type behaviour — revert/extra have it too, but they are never

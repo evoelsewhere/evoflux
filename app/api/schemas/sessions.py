@@ -39,7 +39,7 @@ class TeamSessionResolveRequest(BaseModel):
     worktree_from: str | None = None
     worktree_name: str | None = None
     worktree_branch: str | None = None
-    # Session tags (e.g. ["webbridge"]) — matched by tag-SET equality: a
+    # Session tags (e.g. ["side_chat"]) — matched by tag-SET equality: a
     # resolve only reuses an existing session whose stored tag set equals
     # this set, so an untagged resolve never returns a tagged session and
     # vice versa. Persisted on the session when ``create`` (or no match)

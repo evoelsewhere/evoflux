@@ -1,0 +1,46 @@
+[
+  {
+    "query": "Log into our staging admin at https://staging.example.com and check whether the new coupon field shows up on the checkout form.",
+    "should_trigger": true
+  },
+  {
+    "query": "Open my Jira board in Chrome and list the tickets assigned to me that are still in review.",
+    "should_trigger": true
+  },
+  {
+    "query": "Fill in the contact form on example.com with my name and the message from notes.md, but don't send it yet.",
+    "should_trigger": true
+  },
+  {
+    "query": "I just changed the signup page styles; open the dev server and make sure nothing is broken on mobile.",
+    "should_trigger": true
+  },
+  {
+    "query": "Use browser_use to click through the onboarding wizard and tell me which step throws a console error.",
+    "should_trigger": true
+  },
+  {
+    "query": "With WebBridge on, go to the vendor portal I'm signed into and download the latest invoice.",
+    "should_trigger": true
+  },
+  {
+    "query": "Summarize the article at https://example.com/blog/post-42.",
+    "should_trigger": false,
+    "near_miss": "Reading one public page needs no interaction; web_fetch does it."
+  },
+  {
+    "query": "Find three recent sources on WebAssembly garbage collection.",
+    "should_trigger": false,
+    "near_miss": "A search task; web_search and web_fetch handle it."
+  },
+  {
+    "query": "Copy the totals from the Excel window I have open into the Word report.",
+    "should_trigger": false,
+    "near_miss": "Desktop app windows belong to the computer-app-control Skill."
+  },
+  {
+    "query": "Write a Playwright test file for the login page.",
+    "should_trigger": false,
+    "near_miss": "Writing test code is coding work, not driving a browser."
+  }
+]

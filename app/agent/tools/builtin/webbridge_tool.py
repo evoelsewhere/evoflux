@@ -1,9 +1,9 @@
 """webbridge tool — control the user's real browser via the WebBridge extension.
 
-Unlike ``browser_use`` which controls EvoFlux's visible in-app browser with no
-external-browser fallback, ``webbridge`` sends commands through a
-WebSocket relay to a Chrome/Edge extension running in the user's external
-browser. This gives the agent access to that browser's login sessions, cookies,
+``webbridge`` sends commands through a WebSocket relay to a Chrome/Edge
+extension running in the user's external browser. ``browser_use`` reaches the
+same browser through :func:`run_browser_use_actions` while WebBridge is on
+and connected, and EvoFlux's in-app browser otherwise. This gives the agent access to that browser's login sessions, cookies,
 and open tabs.
 
 Architecture::
@@ -1063,7 +1063,9 @@ WebBridgeAction = Annotated[AnyAction, BeforeValidator(_from_browser_use_spellin
 _DESCRIPTION = """\
 Control the user's real Chrome/Edge browser — their logins, cookies and tabs —
 through the WebBridge extension, which must be installed and connected.
-(browser_use drives EvoFlux's in-app browser instead.)
+browser_use reaches this same browser for everyday page work; use webbridge
+for what only it offers: crawl, extract_elements, rich editors (semantic_*),
+mock, emulate, network_body and explicit tab_id control.
 
 How to work
 - Snapshot, then act by ref. snapshot lists interactive elements, inside
@@ -1227,6 +1229,23 @@ async def run_webbridge_actions(
     state: Any = None,
 ) -> str | ToolResult:
     """Run validated WebBridge actions for the chat that owns *state*."""
+    results, _failed = await _run_webbridge_sequence(
+        actions, continue_on_error=continue_on_error, state=state
+    )
+    return combine_browser_results(results)
+
+
+async def _run_webbridge_sequence(
+    actions: list[Any],
+    *,
+    continue_on_error: bool,
+    state: Any,
+    stop_hint: str = (
+        "Fix the step that failed, or pass continue_on_error for actions that "
+        "do not depend on it."
+    ),
+) -> tuple[list[str | ToolResult], bool]:
+    """Run actions in order; return their results and whether one failed."""
     session_id = _get_sid(state)
     metadata = state.metadata if state else {}
     target_token = _webbridge_target_id.set(
@@ -1239,6 +1258,7 @@ async def run_webbridge_actions(
     motion_token = _webbridge_pointer_motion.set(motion)
     devtools_token = _webbridge_devtools_capture.set(coding)
     results: list[str | ToolResult] = []
+    failed = False
     try:
         index = 0
         while index < len(actions):
@@ -1283,15 +1303,165 @@ async def run_webbridge_actions(
                 if skipped:
                     results.append(
                         f"Stopped after {act.action} failed: {skipped} later "
-                        "action(s) not run. Fix the step that failed, or pass "
-                        "continue_on_error for actions that do not depend on it."
+                        f"action(s) not run. {stop_hint}"
                     )
                 break
-        return combine_browser_results(results)
+        return results, failed
     finally:
         _webbridge_devtools_capture.reset(devtools_token)
         _webbridge_pointer_motion.reset(motion_token)
         _webbridge_target_id.reset(target_token)
+
+
+#: The tab each chat's ``browser_use`` works in when WebBridge runs it and the
+#: chat has no tab binding of its own (a side-panel chat has one). Without a
+#: pin every command lands on whichever tab the user has in front, so a user
+#: who switches tabs mid-task would redirect the agent's clicks and typing
+#: into the page they are reading.
+_agent_tabs: dict[str, int] = {}
+
+_BROWSER_USE_STOP_HINT = (
+    "Fix the step that failed, then send the steps that depend on it again."
+)
+
+
+def _pinned_tab(session_id: str) -> int | None:
+    """This chat's tab, dropped once the browser reports it gone."""
+    tab_id = _agent_tabs.get(session_id)
+    if tab_id is None:
+        return None
+    ext = webbridge_manager.resolve_target(session_id, _webbridge_target_id.get())
+    if ext is not None and ext.tabs and all(t.get("id") != tab_id for t in ext.tabs):
+        _agent_tabs.pop(session_id, None)
+        return None
+    return tab_id
+
+
+def _front_tab(session_id: str) -> int | None:
+    """The tab the user has in front, from the extension's last tab report."""
+    ext = webbridge_manager.resolve_target(session_id, _webbridge_target_id.get())
+    if ext is None:
+        return None
+    active = [t for t in ext.tabs if t.get("active") and t.get("id") is not None]
+    front = next((t for t in active if t.get("url") == ext.current_url), None)
+    chosen = front or (active[0] if active else None)
+    return int(chosen["id"]) if chosen else None
+
+
+async def _choose_tab(session_id: str, act: Any) -> tuple[str, int | None]:
+    """Open or switch to a tab and pin it; the result line and its id."""
+    if act.action == "open_tab":
+        resp = await _send_command(
+            session_id, "open_tab", {"url": act.url, "active": act.active}
+        )
+        verb = f"Opened {act.url} in a new tab"
+    else:
+        params = {"id": act.id} if act.id is not None else {"index": act.index}
+        resp = await _send_command(session_id, "switch_tab", params)
+        verb = "Switched to the tab"
+    tab_id = (resp.get("data") or {}).get("tab_id") if resp.get("success") else None
+    if tab_id is None:
+        return (
+            f"Error ({act.action}): {resp.get('error') or 'no tab id returned'}",
+            None,
+        )
+    _agent_tabs[session_id] = int(tab_id)
+    return f"{verb} (id={tab_id}); this chat's actions stay in it.", int(tab_id)
+
+
+async def run_browser_use_actions(
+    actions: list[Any], *, state: Any = None
+) -> str | ToolResult:
+    """Run ``browser_use``'s translated actions in one tab of the user's browser.
+
+    A chat bound to a tab (the side panel's) keeps its binding. Any other
+    chat works in a tab of its own: a first ``navigate`` opens it rather than
+    replacing the page the user has open, and a first action on the current
+    page adopts the tab in front. Every later action carries that tab's id,
+    so the user switching tabs does not move the agent. ``new_tab`` and
+    ``switch_tab`` pin the tab they land on.
+    """
+    session_id = _get_sid(state)
+    if webbridge_manager.session_tab_binding(session_id) is not None:
+        results, _failed = await _run_webbridge_sequence(
+            actions,
+            continue_on_error=False,
+            state=state,
+            stop_hint=_BROWSER_USE_STOP_HINT,
+        )
+        return combine_browser_results(results)
+
+    results: list[str | ToolResult] = []
+    segment: list[Any] = []
+
+    async def flush() -> bool:
+        if not segment:
+            return False
+        lines, failed = await _run_webbridge_sequence(
+            segment,
+            continue_on_error=False,
+            state=state,
+            stop_hint=_BROWSER_USE_STOP_HINT,
+        )
+        results.extend(lines)
+        segment.clear()
+        return failed
+
+    for position, act in enumerate(actions):
+        stopped = False
+        if act.action in {"open_tab", "switch_tab"}:
+            stopped = await flush()
+            if not stopped:
+                line, tab_id = await _choose_tab(session_id, act)
+                results.append(line)
+                stopped = tab_id is None
+        elif getattr(act, "tab_id", "absent") is None:
+            tab_id = _pinned_tab(session_id)
+            if tab_id is None and act.action == "navigate":
+                stopped = await flush()
+                if not stopped:
+                    line, tab_id = await _choose_tab(
+                        session_id, OpenTabAction(action="open_tab", url=act.url)
+                    )
+                    results.append(line)
+                    stopped = tab_id is None
+                    if tab_id is not None:
+                        segment.append(
+                            WaitForLoadAction(action="wait_for_load", tab_id=tab_id)
+                        )
+                act = None
+            elif tab_id is None:
+                tab_id = _front_tab(session_id)
+                # Earlier steps report first, so the lines stay in order.
+                stopped = await flush()
+                if stopped:
+                    act = None
+                elif tab_id is None:
+                    results.append(
+                        f"Error ({act.action}): no browser tab to work in — "
+                        "navigate to a URL to open one."
+                    )
+                    stopped = True
+                else:
+                    _agent_tabs[session_id] = tab_id
+                    results.append(
+                        f"Working in the tab the user has open (id={tab_id}); "
+                        "this chat's actions stay in it."
+                    )
+            if act is not None and not stopped:
+                segment.append(act.model_copy(update={"tab_id": tab_id}))
+        else:
+            segment.append(act)
+        if stopped:
+            skipped = len(actions) - position - 1
+            if skipped:
+                results.append(
+                    f"Stopped: {skipped} later action(s) not run. "
+                    f"{_BROWSER_USE_STOP_HINT}"
+                )
+            return combine_browser_results(results)
+    await flush()
+    return combine_browser_results(results)
 
 
 #: Actions that leave the tab on a different document. The model's next move

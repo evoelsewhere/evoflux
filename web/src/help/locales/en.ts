@@ -1503,6 +1503,8 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     tricks: [
       'Ctrl+T toggles the built-in browser workbench — this is not WebBridge pairing.',
       'While WebBridge is on and the extension is connected, every agent browser action runs in your real browser; otherwise it runs in the in-app browser. The switch is saved, not per chat, and flipping it mid-task applies to the next browser action.',
+      'In your browser each chat works in a tab of its own: the agent opens a new tab instead of replacing the page you have open, and keeps working there when you switch to another tab.',
+      'The built-in browser-use Skill guides the agent on every site: it checks each step by reading the page back, never types passwords or one-time codes, and asks before submitting, sending, buying or deleting. You can turn it off in Settings → Skills.',
       'Teach mode records meaningful browser actions (not raw keystrokes) for reviewable replay with confirmation.',
       'Pairing uses scoped credentials and one-time session tickets; revoking a pairing closes the live relay.',
       'Selections and page context from the real browser are treated as untrusted input.',

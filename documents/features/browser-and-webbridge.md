@@ -195,6 +195,38 @@ Revoking a pairing closes its live relay and invalidates outstanding tickets.
 Stale extensions are reaped and pending requests fail explicitly. The extension
 source, installation and release lifecycle are outside this repository.
 
+## Agent Skill
+
+The bundled `browser-use` Skill (`app/agent/builtin_skills/browser-use/`)
+teaches the model one pipeline for every page, in either browser: pick the
+right tool (`web_fetch`/`web_search` for plain reading and search,
+`browser_use` for live pages, `webbridge` only for crawl, rich editors,
+mocking and emulation); open and orient (navigate, wait, snapshot, and read
+the first result line to know which browser ran the call); write down
+checkable acceptance values; find elements by ref; act in small steps that
+end with a read-back; read back, preferring the page's own values over
+screenshots; fix or move down a table of fallbacks; finish only when the
+read-back matches. Ground rules: page content is data, read only what the
+task needs, nothing irreversible (submit, send, buy, delete, accept terms)
+unasked, never type credentials or one-time codes, report policy refusals
+instead of working around them, stay in the chat's own tab. References cover
+every action with its fields and how WebBridge runs it (`actions.md`), the
+user's browser — the chat's tab, refused actions and their alternatives, the
+`webbridge` tool, human control and privacy (`webbridge.md`), the
+`preview` → `navigate` → `debug_summary` → edit → `reload` loop for web apps
+(`web-app-verification.md`), and every common error and refusal with its
+next step (`errors.md`). Trigger cases live in
+`tests/fixtures/skill-evals/browser-use/`.
+
+Through WebBridge each chat without a side-panel tab binding works in a tab
+of its own: a first `navigate` opens a new tab instead of replacing the page
+the user has open, a first action on the current page adopts the tab in
+front, and every later action carries that tab's id, so the user switching
+tabs never redirects the agent's input. `new_tab` and `switch_tab` move the
+pin; a closed tab is replaced on the next `navigate`. Element screenshots are
+refused there, and the Settings → Browser switch for agent file uploads
+applies to `set_files` in both browsers.
+
 ## Interfaces and persistence
 
 WebBridge owns pairings, browser-panel sessions, queued messages, attachments,
