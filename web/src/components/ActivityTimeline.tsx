@@ -6,6 +6,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { BlockEnter } from './motion/BlockEnter'
+import { ThinkingHeaderlessContext } from './thinking-context'
 import { groupLabel } from './ToolCallGroup'
 import { usePinnedTranscript } from '@/hooks/usePinnedTranscript'
 import { cn } from '@/lib/utils'
@@ -113,16 +114,20 @@ export function ActivityTimeline({
             className="activity-timeline-scroll px-1"
           >
             <div ref={contentRef}>
-              {blocks.map((block) => {
-                const itemIsStreaming = isActive && block.id === blocks.at(-1)?.id
-                return (
-                  <BlockEnter key={block.id} disabled={itemIsStreaming && block.type === 'thinking'}>
-                    <div className="activity-group-row">
-                      {renderBlock({ block, isStreaming: itemIsStreaming })}
-                    </div>
-                  </BlockEnter>
-                )
-              })}
+              {/* A reasoning-only group is already labelled "Thought" by the
+                  summary row above, so its traces drop their own toggle. */}
+              <ThinkingHeaderlessContext.Provider value={toolBlocks.length === 0}>
+                {blocks.map((block) => {
+                  const itemIsStreaming = isActive && block.id === blocks.at(-1)?.id
+                  return (
+                    <BlockEnter key={block.id} disabled={itemIsStreaming && block.type === 'thinking'}>
+                      <div className="activity-group-row">
+                        {renderBlock({ block, isStreaming: itemIsStreaming })}
+                      </div>
+                    </BlockEnter>
+                  )
+                })}
+              </ThinkingHeaderlessContext.Provider>
             </div>
             {/* Visibility of this is how the viewport knows it is at the
                 bottom, so nothing measures the scroller to find out. */}

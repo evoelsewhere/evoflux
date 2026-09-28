@@ -13,9 +13,10 @@
  */
 import { ChevronRight } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ActivityStatus } from '@/components/motion/ActivityStatus'
+import { ThinkingHeaderlessContext } from '@/components/thinking-context'
 import { panelTransition, useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { splitSections } from '@/utils/thinking'
@@ -27,6 +28,47 @@ interface ThinkingProps {
 }
 
 export function Thinking({ content, isStreaming }: ThinkingProps) {
+  const headerless = useContext(ThinkingHeaderlessContext)
+  if (headerless) return <ThinkingBody content={content} isStreaming={isStreaming} />
+  return <ThinkingDisclosure content={content} isStreaming={isStreaming} />
+}
+
+function ThinkingSections({ content }: { content: string }) {
+  const sections = useMemo(() => splitSections(content), [content])
+  return (
+    <div data-i18n-ignore className="min-w-0 space-y-1.5 font-mono text-[11px] leading-relaxed text-(--color-text-muted) [overflow-wrap:anywhere]">
+      {sections.map((s, i) => (
+        <div key={i} className="min-w-0">
+          {s.header && (
+            <p className="mb-0.5 break-words text-[11px] font-medium text-(--color-text-subtle) [overflow-wrap:anywhere]">
+              {s.header}
+            </p>
+          )}
+          {s.body && (
+            <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+              {s.body}
+            </p>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ThinkingBody({ content, isStreaming }: ThinkingProps) {
+  return (
+    <div
+      className={cn(
+        'my-1 ml-2 min-w-0 border-l border-(--color-border) pl-3',
+        isStreaming ? 'opacity-60' : 'opacity-80',
+      )}
+    >
+      <ThinkingSections content={content} />
+    </div>
+  )
+}
+
+function ThinkingDisclosure({ content, isStreaming }: ThinkingProps) {
   const preset = useMotionPreset()
   const [open, setOpen] = useState(Boolean(isStreaming))
   const contentRef = useRef<HTMLDivElement>(null)
@@ -43,12 +85,6 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight
     }
   }, [content, isStreaming])
-
-  // Only parse sections while open — keep collapsed updates cheap.
-  const sections = useMemo(
-    () => (open ? splitSections(content) : []),
-    [content, open],
-  )
 
   const charCount = content.length
 
@@ -99,22 +135,8 @@ export function Thinking({ content, isStreaming }: ThinkingProps) {
                 isStreaming ? 'opacity-60' : 'opacity-80',
               )}
             >
-              <div data-i18n-ignore className="min-w-0 space-y-1.5 font-mono text-[11px] leading-relaxed text-(--color-text-muted) [overflow-wrap:anywhere]">
-                {sections.map((s, i) => (
-                  <div key={i} className="min-w-0">
-                    {s.header && (
-                      <p className="mb-0.5 break-words text-[11px] font-medium text-(--color-text-subtle) [overflow-wrap:anywhere]">
-                        {s.header}
-                      </p>
-                    )}
-                    {s.body && (
-                      <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                        {s.body}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
+              {/* Mounted only while open — keeps collapsed updates cheap. */}
+              <ThinkingSections content={content} />
             </div>
           </motion.div>
         )}

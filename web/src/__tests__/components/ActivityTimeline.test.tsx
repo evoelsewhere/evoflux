@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ActivityTimeline } from '@/components/ActivityTimeline'
 import { AssistantTurnContent } from '@/components/AssistantTurnContent'
+import { Thinking } from '@/components/Thinking'
 import { segmentAssistantTurn } from '@/utils/activity-timeline'
 import type { ContentBlock } from '@/api/types'
 
@@ -246,6 +247,39 @@ describe('ActivityTimeline', () => {
 
     expect(screen.getByRole('button', { name: 'Expand Read files, 2 activities' })).toBeInTheDocument()
     expect(screen.queryByRole('log', { name: 'Activity history' })).not.toBeInTheDocument()
+  })
+
+  it('renders a reasoning-only group without a second Thought toggle', () => {
+    render(
+      <ActivityTimeline
+        blocks={[block('thought', 'thinking', 'Surveying the three repos')]}
+        isActive={false}
+        renderBlock={({ block: item, isStreaming }) => (
+          <Thinking content={item.content} isStreaming={isStreaming} />
+        )}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Thought, 1 activity' }))
+
+    expect(screen.getByText('Surveying the three repos')).toBeVisible()
+    expect(screen.getAllByRole('button').filter((b) => /thought/i.test(b.getAttribute('aria-label') ?? ''))).toHaveLength(1)
+  })
+
+  it('keeps each trace collapsible inside a group that also ran tools', () => {
+    render(
+      <ActivityTimeline
+        blocks={[block('thought', 'thinking', 'Planning'), block('tool', 'tool')]}
+        isActive={false}
+        renderBlock={({ block: item, isStreaming }) => item.type === 'thinking'
+          ? <Thinking content={item.content} isStreaming={isStreaming} />
+          : renderBlock({ block: item, isStreaming })}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand Read files, 2 activities' }))
+
+    expect(screen.getByRole('button', { name: /expand thought/i })).toBeInTheDocument()
   })
 
   it('stops following when the user scrolls upward and offers Latest activity', () => {
