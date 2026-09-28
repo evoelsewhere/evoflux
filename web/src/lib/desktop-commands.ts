@@ -22,6 +22,11 @@ function execCommand(command: string): void {
 }
 
 function runDesktopCommand(command: unknown): void {
+  // "settings:<page>" opens the Settings screen at that page ("" = hub).
+  if (typeof command === 'string' && command.startsWith('settings:')) {
+    useUIStore.getState().openSettings(command.slice('settings:'.length))
+    return
+  }
   switch (command) {
     case 'command_palette':
       dispatchPrimaryShortcut('p')

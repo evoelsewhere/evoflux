@@ -4524,9 +4524,12 @@ fn handle_desktop_menu(app: &AppHandle, id: &str) {
         MENU_SCHEDULER => emit_frontend_command(app, "scheduler"),
         MENU_EDIT_UNDO => emit_frontend_command(app, "edit_undo"),
         MENU_EDIT_REDO => emit_frontend_command(app, "edit_redo"),
-        MENU_SETTINGS => navigate_main_window(app, "/settings"),
-        MENU_PROVIDERS => navigate_main_window(app, "/settings/providers"),
-        MENU_NOTIFICATIONS => navigate_main_window(app, "/settings/notifications"),
+        // Settings is a screen over the current route (useUIStore), not a
+        // route of its own: loading "/settings" landed on a stray session
+        // path. The web UI opens it at the named page.
+        MENU_SETTINGS => emit_frontend_command(app, "settings:"),
+        MENU_PROVIDERS => emit_frontend_command(app, "settings:providers"),
+        MENU_NOTIFICATIONS => emit_frontend_command(app, "settings:notifications"),
         MENU_TELEMETRY => navigate_main_window(app, "/telemetry"),
         MENU_RELOAD => reload_main_window(app),
         MENU_FORCE_RELOAD => force_reload_app(app),
