@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from app.agent.sandbox import SandboxConfig, _looks_path_like
+from app.agent import sandbox as sandbox_mod
+from app.agent.sandbox import CommandViolation, SandboxConfig, _looks_path_like
 from app.core.config import settings
 
 
@@ -232,3 +233,174 @@ def test_dollar_var_evasion_is_documented(tmp_path: Path) -> None:
     # `$HIDDEN` is not expanded; the literal token "$HIDDEN" doesn't
     # resolve under a denied root.
     assert sandbox.check_command("HIDDEN=secrets/key.pem cat $HIDDEN") is None
+
+
+# ---------------------------------------------------------------------------
+# command_violations — shell structure
+# ---------------------------------------------------------------------------
+
+
+def _outside(tmp_path: Path, name: str = "outside") -> Path:
+    path = tmp_path / name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_reports_every_violation_not_just_the_first(tmp_path: Path) -> None:
+    a, b = _outside(tmp_path, "a"), _outside(tmp_path, "b")
+    sandbox = _make(tmp_path)
+
+    found = [
+        v.resolved for v in sandbox.command_violations(f"ls {a}; ls {b} && ls {a}")
+    ]
+    assert found == [a, b]
+
+
+def test_operators_are_not_glued_to_paths(tmp_path: Path) -> None:
+    outside = _outside(tmp_path)
+    sandbox = _make(tmp_path)
+
+    hit = sandbox.check_command(f"cd {outside}; pwd")
+    assert hit is not None
+    assert hit[0] == outside
+
+
+def test_relative_operands_follow_cd(tmp_path: Path) -> None:
+    outside = _outside(tmp_path)
+    sandbox = _make(tmp_path, denied_patterns=["**/.env"])
+
+    violations = sandbox.command_violations(f"cd {outside} && cat .config/.env")
+    assert [v.resolved for v in violations] == [outside, outside / ".config" / ".env"]
+    assert violations[1].kind == "denied_pattern"
+
+
+def test_relative_operands_resolve_against_cwd(tmp_path: Path) -> None:
+    outside = _outside(tmp_path)
+    sandbox = _make(tmp_path)
+
+    hit = sandbox.check_command("cat docs/notes.txt", cwd=outside)
+    assert hit is not None
+    assert hit[0] == outside / "docs" / "notes.txt"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "curl -s -o /dev/null -w '%{http_code}' https://example.com/jira9/rest/api/2/myself",
+        "curl -s \\n  -o /dev/null \\n  https://example.com/a/b",
+        "find . \( -name '*.db' -o -name '*.sqlite' \) 2>/dev/null",
+        "sed -E 's/=(.*)$/=<redacted>/' notes.txt",
+        "echo $(cat VERSION) | tee out/version.txt",
+        "python - <<'EOF'\nPATH = \"/jira9/rest/api/2/myself\"\nprint(PATH)\nEOF",
+    ],
+)
+def test_non_path_words_are_not_flagged(tmp_path: Path, command: str) -> None:
+    sandbox = _make(tmp_path)
+    assert sandbox.command_violations(command) == []
+
+
+def test_heredoc_body_is_data_for_non_interpreters(tmp_path: Path) -> None:
+    outside = _outside(tmp_path)
+    sandbox = _make(tmp_path)
+
+    command = f"cat > notes.md <<'EOF'\nSee {outside.as_posix()} for details.\nEOF"
+    assert sandbox.command_violations(command) == []
+
+
+def test_interpreter_script_literals_that_exist_are_flagged(tmp_path: Path) -> None:
+    secret = _outside(tmp_path, "state") / "app.db"
+    secret.touch()
+    sandbox = _make(tmp_path, denied_roots=[secret.parent])
+
+    one_liner = (
+        f'PYTHONUTF8=1 python -c "import sqlite3; '
+        f"sqlite3.connect('file:{secret.as_posix()}?mode=ro', uri=True)\""
+    )
+    heredoc = f"python3 - <<'PY'\nopen('{secret.as_posix()}').read()\nPY"
+    missing = f"python -c \"open('{(secret.parent / 'nope.db').as_posix()}')\""
+
+    for command in (one_liner, heredoc):
+        violations = sandbox.command_violations(command)
+        assert [(v.resolved, v.kind) for v in violations] == [(secret, "denied_root")]
+    assert sandbox.command_violations(missing) == []
+
+
+def test_shell_dash_c_is_scanned_as_a_command(tmp_path: Path) -> None:
+    outside = _outside(tmp_path)
+    sandbox = _make(tmp_path)
+
+    hit = sandbox.check_command(f"bash -c \"ls '{outside.as_posix()}'\"")
+    assert hit is not None
+    assert hit[0] == outside
+
+
+def test_violation_reasons_name_the_rule(tmp_path: Path) -> None:
+    path = tmp_path / "x"
+    assert CommandViolation(path, "denied_root", "/data").reason == "denied root /data"
+    assert (
+        CommandViolation(path, "denied_pattern", "**/.env").reason
+        == "denied pattern **/.env"
+    )
+    assert (
+        CommandViolation(path, "read_only", "/uploads").reason
+        == "redirect into read-only root /uploads"
+    )
+    assert (
+        CommandViolation(path, "outside", "outside allowed sandbox roots").reason
+        == "outside allowed sandbox roots"
+    )
+
+
+def test_audit_logs_each_violation(tmp_path: Path) -> None:
+    from loguru import logger
+
+    a, b = _outside(tmp_path, "a"), _outside(tmp_path, "b")
+    sandbox = _make(tmp_path, denied_roots=[b])
+    messages: list[str] = []
+    sink = logger.add(messages.append, format="{message}", level="WARNING")
+    try:
+        sandbox.audit_command(f"ls {a} {b}", tool="shell")
+    finally:
+        logger.remove(sink)
+
+    assert len(messages) == 2
+    assert "reason=outside allowed sandbox roots" in messages[0]
+    assert f"reason=denied root {b}" in messages[1]
+
+
+# ---------------------------------------------------------------------------
+# Windows / Git Bash normalisation (string-level, runs on every platform)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        ("/c/Users/alice", "C:/Users/alice"),
+        ("/d", None),  # ambiguous with a cmd switch; treated as a switch
+        ("/s", None),
+        ("/AD", None),
+        ("/dev/null", None),
+        ("NUL", None),
+        ("C:/Users/alice", "C:/Users/alice"),
+        ("/etc/hosts", "/etc/hosts"),
+    ],
+)
+def test_normalize_operand_on_windows(
+    monkeypatch: pytest.MonkeyPatch, token: str, expected: str | None
+) -> None:
+    monkeypatch.setattr(sandbox_mod, "_IS_WINDOWS", True)
+    assert sandbox_mod._normalize_operand(token) == expected
+
+
+def test_windows_backslashes_keep_shell_escapes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sandbox_mod, "_IS_WINDOWS", True)
+    tokens = sandbox_mod._shell_tokens(
+        r"dir /s C:\Users\alice\*.md; find . \( -name \*.py \)"
+    )
+    assert tokens == [
+        "dir", "/s", "C:/Users/alice/*.md", ";",
+        "find", ".", "(", "-name", "*.py", ")",
+    ]  # fmt: skip
