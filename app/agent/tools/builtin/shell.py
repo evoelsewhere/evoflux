@@ -267,13 +267,13 @@ async def _shell(
     """Run a command, or yield a tracked process for long-running work."""
 
     sandbox = get_sandbox()
-    cwd = _resolve_workdir(workdir)
     # Commands are never blocked on path grounds — see `audit_command`. Out
     # of scope paths are recorded and execution proceeds.
-    sandbox.audit_command(command, tool="shell", cwd=cwd)
+    sandbox.audit_command(command, tool="shell")
     if not command.strip():
         return "[Succeeded]\n\n(No output)"
 
+    cwd = _resolve_workdir(workdir)
     requested_timeout = (
         timeout_seconds if timeout_seconds is not None else _DEFAULT_TIMEOUT_SECONDS
     )

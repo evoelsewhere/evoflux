@@ -591,7 +591,7 @@ async def _start_locked(
 
     # Commands are never blocked on path grounds — see `audit_command`. Out
     # of scope paths are recorded and execution proceeds.
-    sandbox.audit_command(command, tool="preview start", cwd=cwd)
+    sandbox.audit_command(command, tool="preview start")
 
     env = _scrubbed_env(inherit=sandbox.inherit_shell_environment)
     env.update(dict(cfg.env))

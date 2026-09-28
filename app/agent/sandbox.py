@@ -42,14 +42,11 @@ from __future__ import annotations
 import contextvars
 import fnmatch
 import os
-import re
 import shlex
 import stat as stat_module
 import sys
-import tempfile
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Literal, NamedTuple
+from typing import Literal
 
 from loguru import logger
 
@@ -58,34 +55,6 @@ from app.core.config import settings
 # ── Module-level defaults (no env-var overrides) ──────────────────────────
 DEFAULT_MAX_EXECUTION_SECONDS = 600
 DEFAULT_MAX_OUTPUT_BYTES = 131072
-
-# A single command rarely touches more paths than this; the rest is summarised
-# so one ``find`` over many roots cannot flood the log.
-_AUDIT_MAX_VIOLATIONS_LOGGED = 10
-
-ViolationKind = Literal["denied_root", "denied_pattern", "outside", "read_only"]
-
-
-class CommandViolation(NamedTuple):
-    """One out-of-scope path operand found by :meth:`SandboxConfig.command_violations`."""
-
-    resolved: Path
-    kind: ViolationKind
-    # The matched denied root / pattern or read-only root, or a fixed message
-    # for ``outside``.
-    detail: str
-
-    @property
-    def reason(self) -> str:
-        """Human-readable reason for audit logs."""
-        if self.kind == "denied_root":
-            return f"denied root {self.detail}"
-        if self.kind == "denied_pattern":
-            return f"denied pattern {self.detail}"
-        if self.kind == "read_only":
-            return f"redirect into read-only root {self.detail}"
-        return self.detail
-
 
 # ── Context-aware Sandbox ───────────────────────────────────────────────
 
@@ -392,69 +361,53 @@ class SandboxConfig:
 
     # ── Command validation (best-effort) ─────────────────────────────────
 
-    def command_violations(
-        self, command: str, *, cwd: Path | None = None
-    ) -> list[CommandViolation]:
+    def check_command(self, command: str) -> tuple[Path, str] | None:
         """Scan *command* for path operands outside the sandbox roots.
 
-        Returns every distinct violation in command order: arguments inside
-        denied roots or matching deny patterns, arguments outside the allowed
-        roots, and — when ``read_only_paths`` is set — ``>``/``>>``
-        redirection targets landing inside one of them. Relative operands
-        resolve against *cwd* (default: the workspace root), following any
-        ``cd``/``pushd`` earlier in the command.
+        Returns the first violation as ``(resolved_path, reason)``, or
+        ``None`` when nothing is flagged. Detected are arguments inside
+        denied roots, arguments outside the allowed roots, and — when
+        ``read_only_paths`` is set — ``>``/``>>`` redirection targets landing
+        inside one of them.
 
         This reports; it does not gate. Command execution deliberately runs
-        unrestricted (see :meth:`audit_command`), so the result is for
+        unrestricted (see :meth:`audit_command`), so the return value is for
         logging, telemetry, and tests. Filesystem *tools* enforce their own
         scope separately, and OS permissions remain the last line of defence.
         """
-        violations: list[CommandViolation] = []
-        seen: set[Path] = set()
-        base = cwd if cwd is not None else self.workspace_root
-        for resolved, redirected in _command_operands(command, base):
-            if resolved in seen:
-                continue
-            violation = self._classify_operand(resolved, redirected=redirected)
-            if violation is not None:
-                seen.add(resolved)
-                violations.append(violation)
-        return violations
-
-    def check_command(
-        self, command: str, *, cwd: Path | None = None
-    ) -> tuple[Path, str] | None:
-        """Return the first :meth:`command_violations` entry as
-        ``(resolved_path, detail)``, or ``None`` when nothing is flagged.
-
-        ``detail`` is the matched denied root or pattern, the read-only root,
-        or ``"outside allowed sandbox roots"``.
-        """
-        violations = self.command_violations(command, cwd=cwd)
-        if not violations:
+        try:
+            tokens = _tokenize_command(command)
+        except ValueError:
             return None
-        return violations[0].resolved, violations[0].detail
 
-    def _classify_operand(
-        self, resolved: Path, *, redirected: bool
-    ) -> CommandViolation | None:
-        denied = self._is_denied(resolved)
-        if denied is not None:
-            kind = "denied_root" if isinstance(denied, Path) else "denied_pattern"
-            return CommandViolation(resolved, kind, str(denied))
-        if not self._is_allowed(resolved):
-            return CommandViolation(
-                resolved, "outside", "outside allowed sandbox roots"
-            )
-        if redirected and self.read_only_paths:
-            read_only_root = self._is_read_only(resolved)
-            if read_only_root is not None:
-                return CommandViolation(resolved, "read_only", str(read_only_root))
+        for index, tok in enumerate(tokens):
+            if not _looks_path_like(tok):
+                continue
+            expanded = os.path.expanduser(tok)
+            p = Path(expanded)
+            candidate = p if p.is_absolute() else (self.workspace_root / p)
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            # The first shell token is the executable, not a workspace
+            # operand. Skipping it lets callers report a missing executable
+            # cleanly instead of misclassifying it as file access. This scan
+            # remains a guardrail and does not constrain the spawned process.
+            if index == 0:
+                continue
+            denied = self._is_denied(resolved)
+            if denied is not None:
+                return resolved, str(denied)
+            if not self._is_allowed(resolved):
+                return resolved, "outside allowed sandbox roots"
+            if self.read_only_paths and index > 0 and tokens[index - 1] in (">", ">>"):
+                read_only_root = self._is_read_only(resolved)
+                if read_only_root is not None:
+                    return resolved, str(read_only_root)
         return None
 
-    def audit_command(
-        self, command: str, *, tool: str, cwd: Path | None = None
-    ) -> None:
+    def audit_command(self, command: str, *, tool: str) -> None:
         """Log any sandbox violation in *command* without blocking it.
 
         Command execution is unrestricted by product decision: an agent's
@@ -469,20 +422,16 @@ class SandboxConfig:
         return from this method as permission having been granted; it never
         withholds it.
         """
-        violations = self.command_violations(command, cwd=cwd)
-        for violation in violations[:_AUDIT_MAX_VIOLATIONS_LOGGED]:
-            logger.warning(
-                "sandbox_command_audit tool={} resolved={} reason={} (not blocked)",
-                tool,
-                violation.resolved,
-                violation.reason,
-            )
-        if len(violations) > _AUDIT_MAX_VIOLATIONS_LOGGED:
-            logger.warning(
-                "sandbox_command_audit tool={} more_violations={} (not blocked)",
-                tool,
-                len(violations) - _AUDIT_MAX_VIOLATIONS_LOGGED,
-            )
+        hit = self.check_command(command)
+        if hit is None:
+            return
+        resolved, reason = hit
+        logger.warning(
+            "sandbox_command_audit tool={} resolved={} reason={} (not blocked)",
+            tool,
+            resolved,
+            reason,
+        )
 
     # ── Display helpers ──────────────────────────────────────────────────
 
@@ -513,273 +462,23 @@ def _allowed_internal_roots(session_id: str | None) -> list[Path]:
     return roots
 
 
-# ── Command scanning ────────────────────────────────────────────────────
-#
-# A best-effort, POSIX-shell-shaped reading of agent commands for
-# ``audit_command``. It never gates execution, so the goal is a log that is
-# right about what a command touches: few false alarms, and no blind spot for
-# the obvious ways agents reach files (``cd`` then relative paths, Git Bash
-# ``/c/...`` drive paths, interpreter one-liners that open a path literal).
+def _tokenize_command(command: str) -> list[str]:
+    """Split *command* into argv-like tokens for sandbox scanning.
 
-_IS_WINDOWS = sys.platform == "win32"
-
-# Operators split simple commands; newline is one too (outside quotes).
-_SHELL_PUNCTUATION = "();<>|&\n"
-# A backslash run followed by a path character is a Windows separator; any
-# other backslash is a shell escape (``\(``, ``\;``, ``\*``) and must survive.
-_WINDOWS_SEPARATOR_RE = re.compile(r"\\+(?=[\w.~%-])")
-# ...except a glob right after a path component: ``C:\dir\*.md``. At the start
-# of a word (``find -name \*.py``) the backslash is still an escape.
-_WINDOWS_GLOB_SEPARATOR_RE = re.compile(r"(?<=[\w.~%-])\\+(?=[*?])")
-# Characters that make a word an expression (sed/awk programs, regexes,
-# command substitution) rather than a path.
-_NON_PATH_CHARS = frozenset("$<>|`")
-_LINE_CONTINUATION_RE = re.compile(r"\\\r?\n")
-_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-_URL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
-# Git Bash/MSYS drive mounts: ``/c/Users`` is ``C:/Users``.
-_MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])(?=/|$)")
-# cmd.exe-style switches (``/s``, ``/b``, ``/AD``, ``/O:N``) are not paths.
-_WINDOWS_SWITCH_RE = re.compile(r"^/[A-Za-z?]{1,2}(?::\S*)?$")
-_DEVICE_PATHS = frozenset(
-    {"/dev/null", "/dev/stdin", "/dev/stdout", "/dev/stderr", "/dev/tty", "nul"}
-)
-# ``<<EOF`` / ``<<-'EOF'`` / ``<<"EOF"`` — not the ``<<<`` here-string.
-_HEREDOC_RE = re.compile(r"(?<!<)<<(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
-# A quoted absolute path literal inside an interpreter script, optionally as a
-# ``file:`` URI (``sqlite3.connect('file:C:/…/app.db?mode=ro')``).
-_SCRIPT_PATH_LITERAL_RE = re.compile(
-    r"""(['"])(?:file:(?://)?)?((?:[A-Za-z]:[\\/]|~[\\/]|/)[^'"\n?*<>|]*)"""
-)
-_INTERPRETER_RE = re.compile(
-    r"^(python[0-9.]*|py|node|deno|bun|ruby|perl|php|pwsh|powershell)$"
-)
-_SHELL_RE = re.compile(r"^(bash|sh|zsh|dash|ksh)$")
-_SCRIPT_FLAGS = frozenset({"-c", "-e", "--eval", "-command"})
-_CD_COMMANDS = frozenset({"cd", "pushd"})
-_MAX_SCRIPT_DEPTH = 2
-
-
-def _to_slashes(match: re.Match[str]) -> str:
-    return "/" * len(match.group())
-
-
-def _shell_tokens(command: str) -> list[str]:
-    """Split *command* into shell words and operator tokens.
-
-    Operators (``;``, ``&&``, ``|``, ``>``, newline, …) come back as their own
-    tokens so callers can find command boundaries and redirect targets.
-    Raises ``ValueError`` on unbalanced quotes.
+    On Windows, ``shlex`` in POSIX mode treats ``\\`` as an escape and
+    mangles drive paths (``C:\\Users\\...`` → ``C:Users...``). Normalize
+    separators to ``/`` first — pathlib accepts either form, and agent
+    commands already mix styles under PowerShell/Git Bash.
     """
-    command = _LINE_CONTINUATION_RE.sub(" ", command)
-    if _IS_WINDOWS:
-        # POSIX-mode shlex treats ``\`` as an escape and would mangle
-        # ``C:\Users\...`` into ``C:Users...``.
-        command = _WINDOWS_GLOB_SEPARATOR_RE.sub(_to_slashes, command)
-        command = _WINDOWS_SEPARATOR_RE.sub(_to_slashes, command)
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=_SHELL_PUNCTUATION)
-    lexer.whitespace = " \t\r"
-    lexer.whitespace_split = True
-    return list(lexer)
-
-
-def _is_operator(token: str) -> bool:
-    return bool(token) and all(ch in _SHELL_PUNCTUATION for ch in token)
-
-
-def _is_redirect(token: str) -> bool:
-    return set(token) <= set("<>&") and ("<" in token or ">" in token)
-
-
-def _program_name(token: str) -> str:
-    name = token.replace("\\", "/").rsplit("/", 1)[-1].lower()
-    return name.removesuffix(".exe")
-
-
-def _simple_commands(tokens: list[str]) -> Iterator[list[tuple[str, bool]]]:
-    """Group *tokens* into simple commands of ``(word, written_to)`` pairs.
-
-    ``written_to`` marks the target of a ``>``/``>>`` redirection.
-    """
-    words: list[tuple[str, bool]] = []
-    written_to = False
-    for token in tokens:
-        if _is_operator(token):
-            if _is_redirect(token):
-                written_to = ">" in token
-                continue
-            if words:
-                yield words
-            words = []
-            written_to = False
-            continue
-        words.append((token, written_to))
-        written_to = False
-    if words:
-        yield words
-
-
-def _extract_heredocs(command: str) -> tuple[str, list[tuple[str, str]]]:
-    """Remove here-document bodies from *command*.
-
-    Returns the remaining command plus ``(text_before_operator, body)`` for
-    each here-document. Bodies are data for the receiving program, not shell
-    words, so they must not be tokenised as arguments.
-    """
-    lines = command.split("\n")
-    kept: list[str] = []
-    bodies: list[tuple[str, str]] = []
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        kept.append(line)
-        index += 1
-        for match in _HEREDOC_RE.finditer(line):
-            strip_tabs = match.group(1) == "-"
-            delimiter = match.group(3)
-            body: list[str] = []
-            while index < len(lines):
-                candidate = lines[index].rstrip("\r")
-                index += 1
-                if (candidate.lstrip("\t") if strip_tabs else candidate) == delimiter:
-                    break
-                body.append(candidate)
-            bodies.append((line[: match.start()], "\n".join(body)))
-    return "\n".join(kept), bodies
-
-
-def _command_program(prefix: str) -> str | None:
-    """Return the program of the last simple command in *prefix*."""
-    try:
-        tokens = _shell_tokens(prefix)
-    except ValueError:
-        return None
-    last: list[tuple[str, bool]] | None = None
-    for words in _simple_commands(tokens):
-        last = words
-    if not last:
-        return None
-    for word, _ in last:
-        if not _ASSIGNMENT_RE.match(word):
-            return _program_name(word)
-    return None
-
-
-def _normalize_operand(token: str) -> str | None:
-    """Map a shell word to a filesystem path string, or None if it is not one."""
-    if not _looks_path_like(token):
-        return None
-    if token.lower() in _DEVICE_PATHS or token.startswith("/dev/fd/"):
-        return None
-    if _IS_WINDOWS:
-        if _WINDOWS_SWITCH_RE.match(token):
-            return None
-        drive = _MSYS_DRIVE_RE.match(token)
-        if drive:
-            rest = token[drive.end() :]
-            return f"{drive.group(1).upper()}:{rest or '/'}"
-        if token == "/tmp" or token.startswith("/tmp/"):
-            return tempfile.gettempdir() + token[len("/tmp") :]
-    return token
-
-
-def _resolve_operand(path: str, cwd: Path) -> Path | None:
-    candidate = Path(os.path.expanduser(path))
-    if not candidate.is_absolute():
-        candidate = cwd / candidate
-    try:
-        return candidate.resolve()
-    except OSError:
-        return None
-
-
-def _script_path_literals(script: str, cwd: Path) -> Iterator[Path]:
-    """Yield existing absolute paths quoted inside an interpreter script.
-
-    Only quoted absolute literals are considered, and only when they exist:
-    scripts are full of strings that merely look like paths (URL paths,
-    ``"/api/…"`` routes), whereas a real file the script opens exists.
-    """
-    for match in _SCRIPT_PATH_LITERAL_RE.finditer(script):
-        raw = match.group(2).rstrip()
-        if _IS_WINDOWS:
-            raw = re.sub(r"\\+", "/", raw)
-        candidate = Path(os.path.expanduser(raw))
-        if not candidate.is_absolute():
-            continue
-        resolved = _resolve_operand(str(candidate), cwd)
-        if resolved is not None and resolved.exists():
-            yield resolved
-
-
-def _command_operands(
-    command: str, cwd: Path, *, depth: int = 0
-) -> Iterator[tuple[Path, bool]]:
-    """Yield ``(resolved_path, written_to)`` for each path *command* touches."""
-    command, heredocs = _extract_heredocs(command)
-    try:
-        tokens = _shell_tokens(command)
-    except ValueError:
-        # Malformed quoting: the shell will reject it too.
-        return
-
-    for words in _simple_commands(tokens):
-        # Leading ``VAR=value`` words are environment assignments.
-        start = 0
-        while start < len(words) and _ASSIGNMENT_RE.match(words[start][0]):
-            start += 1
-        if start == len(words):
-            continue
-        # The first word is the executable, not a workspace operand.
-        program = _program_name(words[start][0])
-        operands = words[start + 1 :]
-        takes_script = bool(_INTERPRETER_RE.match(program) or _SHELL_RE.match(program))
-        index = 0
-        while index < len(operands):
-            word, written_to = operands[index]
-            index += 1
-            if takes_script and word.lower() in _SCRIPT_FLAGS and index < len(operands):
-                script = operands[index][0]
-                index += 1
-                if _SHELL_RE.match(program):
-                    if depth < _MAX_SCRIPT_DEPTH:
-                        yield from _command_operands(script, cwd, depth=depth + 1)
-                else:
-                    for path in _script_path_literals(script, cwd):
-                        yield path, False
-                continue
-            normalized = _normalize_operand(word)
-            if normalized is None:
-                continue
-            resolved = _resolve_operand(normalized, cwd)
-            if resolved is None:
-                continue
-            yield resolved, written_to
-            if program in _CD_COMMANDS:
-                # Later relative operands resolve from the new directory.
-                cwd = resolved
-                break
-
-    for prefix, body in heredocs:
-        program = _command_program(prefix)
-        if program is None:
-            continue
-        if _SHELL_RE.match(program):
-            if depth < _MAX_SCRIPT_DEPTH:
-                yield from _command_operands(body, cwd, depth=depth + 1)
-        elif _INTERPRETER_RE.match(program):
-            for path in _script_path_literals(body, cwd):
-                yield path, False
+    if sys.platform == "win32":
+        command = command.replace("\\", "/")
+    return shlex.split(command, posix=True)
 
 
 def _looks_path_like(token: str) -> bool:
     if not token:
         return False
     if token.startswith("-"):
-        return False
-    if _URL_RE.match(token):
-        return False
-    if not _NON_PATH_CHARS.isdisjoint(token):
         return False
     if "/" in token or "\\" in token:
         return True
@@ -799,6 +498,8 @@ _default_sandbox_instance: SandboxConfig | None = None
 def _get_default_sandbox() -> SandboxConfig:
     global _default_sandbox_instance
     if _default_sandbox_instance is None:
+        import tempfile
+
         _default_sandbox_instance = SandboxConfig(
             workspace=str(Path(tempfile.gettempdir()) / "EvoFlux-default-sandbox"),
         )

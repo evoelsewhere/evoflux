@@ -33,14 +33,8 @@ root. EvoFlux data/state/cache roots are denied. Path validation rejects
 traversal and symlink escapes. `sandbox.yaml` adds configurable denied glob
 patterns and initially protects `.env` files.
 
-Shell commands receive a controlled environment and hide internal `EVOFLUX_*`
-variables. They are not blocked on path grounds; instead each command is
-scanned and every path it touches outside the allowed roots, inside a denied
-root or pattern, or redirected into a read-only root is logged as
-`sandbox_command_audit` with the rule that matched. The scan follows `cd` and
-the tool's working directory, understands Git Bash `/c/...` drive paths, skips
-devices, URLs, cmd switches and here-document data, and reads existing path
-literals from `python -c`-style one-liners and interpreter here-documents. Worktrees may live beside
+Shell commands are tokenized for denied-path checks, receive a controlled
+environment and hide internal `EVOFLUX_*` variables. Worktrees may live beside
 the repository or in user data according to Settings. Destructive actions still
 require the applicable permission decision.
 
