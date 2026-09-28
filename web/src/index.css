@@ -747,6 +747,28 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
   box-shadow: none;
 }
 
+/* Vibrant labels over the OS material. The fixed greys of the page palette
+ * sat on top of whatever the wallpaper tints Mica/vibrancy with and read as
+ * muddy or off-tone; pure black (light) or white (dark) at falling opacity
+ * lets the backdrop show through the glyphs, so each level keeps its contrast
+ * against the real backdrop colour. Tints built from --color-text (row
+ * hover/selection fills) follow along. */
+html.light[data-native-sidebar-glass] [data-sidebar-card],
+html.light[data-native-sidebar-glass] [data-settings-sidebar] {
+  --color-text: rgb(0 0 0 / 0.88);
+  --color-text-2: rgb(0 0 0 / 0.74);
+  --color-text-muted: rgb(0 0 0 / 0.56);
+  --color-text-subtle: rgb(0 0 0 / 0.46);
+}
+
+html.dark[data-native-sidebar-glass] [data-sidebar-card],
+html.dark[data-native-sidebar-glass] [data-settings-sidebar] {
+  --color-text: rgb(255 255 255 / 0.94);
+  --color-text-2: rgb(255 255 255 / 0.8);
+  --color-text-muted: rgb(255 255 255 / 0.62);
+  --color-text-subtle: rgb(255 255 255 / 0.5);
+}
+
 /* No borders on sidebar cards — seamless glass surface. */
 [data-desktop-sidebar-glass="true"] [data-sidebar-card] {
   border: 0;
