@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { MessageSquareText, Paperclip, Sparkles } from 'lucide-react'
+import { MessageSquareText, Paperclip } from 'lucide-react'
 
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import type { ObservabilitySummary } from '@/api/client'
@@ -96,7 +96,24 @@ function heatLevel(turns: number, maxTurns: number): number {
   return 4
 }
 
-export function ChatWelcome({ context }: ChatWelcomeProps) {
+/**
+ * The empty-state welcome shared by Work and Coding: a centered greeting
+ * (icon, title, one line of guidance, then actions or hints) over a light
+ * usage summary. It used to be a split card of boxed tiles in 10px bold type,
+ * which read as dense and heavy for a screen whose job is to invite a start.
+ */
+export function WelcomeHero({
+  icon,
+  title,
+  description,
+  children,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  /** Actions (a primary button) or hint chips under the description. */
+  children?: React.ReactNode
+}) {
   const preset = useMotionPreset()
   const enter = fadeRise(preset, 12)
 
@@ -105,67 +122,55 @@ export function ChatWelcome({ context }: ChatWelcomeProps) {
       initial={enter.initial}
       animate={enter.animate}
       transition={enter.transition}
-      className="relative mx-auto w-full max-w-[620px] select-none"
+      className="mx-auto flex w-full max-w-[34rem] flex-col items-center text-center"
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute top-1/2 left-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-(--color-accent)/8 blur-3xl" />
+      <div className="flex size-11 items-center justify-center rounded-2xl bg-(--color-accent)/10 text-(--color-accent)">
+        {icon}
       </div>
-
-      <div className="@container/work-empty relative overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card)/95 shadow-md shadow-black/8">
-        <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-(--color-accent)/60 to-transparent" aria-hidden="true" />
-
-        <div className="grid @[36rem]/work-empty:grid-cols-[minmax(13rem,0.68fr)_minmax(22.5rem,1.32fr)]">
-          <section className="flex flex-col border-b border-(--color-border-subtle) p-3 @[36rem]/work-empty:border-r @[36rem]/work-empty:border-b-0">
-            <div className="flex items-start gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-(--color-accent)/12 text-(--color-accent) shadow-sm shadow-(--color-accent)/10 ring-1 ring-(--color-accent)/20 ring-inset">
-                <img
-                  src={EvoFluxLogo}
-                  className="h-6 w-6 rounded-md"
-                  width={24}
-                  height={24}
-                  alt=""
-                  aria-hidden="true"
-                />
-              </div>
-              <div className="min-w-0">
-                <div className="inline-flex w-fit items-center gap-1 rounded-full border border-(--color-border-subtle) bg-(--bg-page)/70 px-2 py-0.5 text-[0.56rem] font-semibold tracking-[0.12em] text-(--color-text-muted) uppercase">
-                  <Sparkles size={9} aria-hidden="true" />
-                  Work mode
-                </div>
-                <h2 className="mt-0.5 text-sm leading-4.5 font-semibold tracking-tight text-(--color-text)">
-                  What would you like to accomplish?
-                </h2>
-              </div>
-            </div>
-
-            <p className="mt-1.5 text-[10px] leading-3.5 text-(--color-text-muted)">
-              Start with the outcome. EvoFlux will plan the work and carry the task through.
-            </p>
-
-            {context && <div className="mt-2">{context}</div>}
-
-            <div className="mt-2 grid gap-1 @[28rem]/work-empty:grid-cols-2 @[36rem]/work-empty:grid-cols-1">
-              <div className="flex items-center gap-2 rounded-lg bg-(--bg-page)/55 px-2 py-1.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-(--bg-key) text-(--color-accent) ring-1 ring-(--color-border)">
-                  <MessageSquareText size={11} strokeWidth={2} aria-hidden="true" />
-                </span>
-                <p className="text-[10px] font-semibold text-(--color-text)">Describe the outcome</p>
-              </div>
-              <div className="flex items-center gap-2 rounded-lg bg-(--bg-page)/55 px-2 py-1.5">
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-(--bg-key) text-(--color-accent) ring-1 ring-(--color-border)">
-                  <Paperclip size={11} strokeWidth={2} aria-hidden="true" />
-                </span>
-                <p className="text-[10px] font-semibold text-(--color-text)">Add useful context</p>
-              </div>
-            </div>
-          </section>
-
-          <div className="flex items-center p-1.5 @[36rem]/work-empty:p-2">
-            <RecentUsageCard className="relative border-0 bg-transparent p-0 shadow-none" />
-          </div>
-        </div>
-      </div>
+      <h2 className="mt-4 text-lg font-medium tracking-tight text-balance text-(--color-text)">
+        {title}
+      </h2>
+      <p className="mt-1.5 max-w-[26rem] text-sm leading-relaxed text-pretty text-(--color-text-muted)">
+        {description}
+      </p>
+      {children && (
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">{children}</div>
+      )}
+      <RecentUsageCard className="mt-8" />
     </motion.div>
+  )
+}
+
+/** A quiet suggestion chip for the welcome's hint row. */
+export function WelcomeHint({ icon: Icon, label }: { icon: typeof Paperclip; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-(--color-border-subtle) px-3 py-1 text-xs text-(--color-text-2)">
+      <Icon size={13} className="text-(--color-text-muted)" aria-hidden="true" />
+      {label}
+    </span>
+  )
+}
+
+export function ChatWelcome({ context }: ChatWelcomeProps) {
+  return (
+    <WelcomeHero
+      icon={
+        <img
+          src={EvoFluxLogo}
+          className="size-7 rounded-lg"
+          width={28}
+          height={28}
+          alt=""
+          aria-hidden="true"
+        />
+      }
+      title="What would you like to accomplish?"
+      description="Start with the outcome. EvoFlux will plan the work and carry the task through."
+    >
+      <WelcomeHint icon={MessageSquareText} label="Describe the outcome" />
+      <WelcomeHint icon={Paperclip} label="Add useful context" />
+      {context && <div className="w-full">{context}</div>}
+    </WelcomeHero>
   )
 }
 
@@ -178,77 +183,92 @@ export function RecentUsageCard({ className }: { className?: string }) {
   return (
     <section
       className={cn(
-        '@container/usage w-full rounded-xl border border-(--color-border-subtle) bg-(--bg-sidebar) p-2 shadow-sm',
+        '@container/usage w-full rounded-2xl border border-(--color-border-subtle) bg-(--bg-card)/60 p-4 text-left',
         className,
       )}
       aria-label="Recent usage"
     >
-        <div className="mb-1 flex items-center justify-between">
-          <div className="flex items-center gap-1" role="tablist" aria-label="Usage view">
-            {(['overview', 'models'] as const).map((item) => (
-              <button
-                key={item}
-                type="button"
-                role="tab"
-                aria-selected={view === item}
-                onClick={() => setView(item)}
-                className={`rounded-md px-2 py-0.5 text-[11px] capitalize transition-colors ${
-                  view === item
-                    ? 'bg-(--bg-key) font-medium text-(--color-text) shadow-xs'
-                    : 'text-(--color-text-muted) hover:text-(--color-text)'
-                }`}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-1" aria-label="Usage period">
-            {([
-              ['all', 'All'],
-              [30, '30d'],
-              [7, '7d'],
-            ] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={period === value}
-                onClick={() => setPeriod(value)}
-                className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
-                  period === value
-                    ? 'bg-(--bg-key) font-medium text-(--color-text) shadow-xs'
-                    : 'text-(--color-text-muted) hover:text-(--color-text)'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <Segmented
+          role="tablist"
+          ariaLabel="Usage view"
+          options={[['overview', 'Overview'], ['models', 'Models']] as const}
+          value={view}
+          onChange={setView}
+        />
+        <Segmented
+          ariaLabel="Usage period"
+          options={[['all', 'All'], [30, '30d'], [7, '7d']] as const}
+          value={period}
+          onChange={setPeriod}
+        />
+      </div>
 
-        {summary.isLoading ? (
-          <div className="space-y-1.5">
-            <div className="grid grid-cols-2 gap-1 @[24rem]/usage:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="skeleton-shimmer h-8 rounded-md p-1.5">
-                  <div className="h-2 w-12 rounded bg-(--color-border)" />
-                  <div className="mt-1.5 h-3 w-8 rounded bg-(--color-border)" />
-                </div>
-              ))}
-            </div>
-            <div className="skeleton-shimmer h-[74px] rounded-md" />
+      {summary.isLoading ? (
+        <div className="mt-4 space-y-4" aria-hidden="true">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 @[26rem]/usage:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index}>
+                <div className="skeleton-shimmer h-2.5 w-12 rounded" />
+                <div className="skeleton-shimmer mt-1.5 h-4 w-10 rounded" />
+              </div>
+            ))}
           </div>
-        ) : summary.isError || !summary.data ? (
-          <div className="flex h-28 items-center justify-center rounded-md bg-(--bg-key)">
-            <p className="text-center text-xs text-(--color-text-subtle)">
-              Usage data is unavailable.
-            </p>
-          </div>
-        ) : view === 'overview' ? (
-          <UsageOverview data={summary.data} queryDays={queryDays} />
-        ) : (
-          <ModelUsage data={summary.data} />
-        )}
+          <div className="skeleton-shimmer h-[5.25rem] rounded-md" />
+        </div>
+      ) : summary.isError || !summary.data ? (
+        <p className="py-8 text-center text-xs text-(--color-text-subtle)">
+          Usage data is unavailable.
+        </p>
+      ) : view === 'overview' ? (
+        <UsageOverview data={summary.data} queryDays={queryDays} />
+      ) : (
+        <ModelUsage data={summary.data} />
+      )}
     </section>
+  )
+}
+
+/** Small text segmented control for the usage card's view and period. */
+function Segmented<T extends string | number>({
+  role,
+  ariaLabel,
+  options,
+  value,
+  onChange,
+}: {
+  role?: 'tablist'
+  ariaLabel: string
+  options: ReadonlyArray<readonly [T, string]>
+  value: T
+  onChange: (value: T) => void
+}) {
+  return (
+    <div
+      role={role}
+      aria-label={ariaLabel}
+      className="flex items-center gap-0.5 rounded-lg bg-(--color-text)/4 p-0.5"
+    >
+      {options.map(([option, label]) => {
+        const selected = option === value
+        return (
+          <button
+            key={String(option)}
+            type="button"
+            {...(role === 'tablist' ? { role: 'tab', 'aria-selected': selected } : { 'aria-pressed': selected })}
+            onClick={() => onChange(option)}
+            className={cn(
+              'rounded-md px-2 py-0.5 text-xs transition-colors',
+              selected
+                ? 'bg-(--bg-card) text-(--color-text) shadow-xs'
+                : 'text-(--color-text-muted) hover:text-(--color-text)',
+            )}
+          >
+            {label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
@@ -264,12 +284,16 @@ function UsageOverview({ data, queryDays }: { data: ObservabilitySummary; queryD
       )
     : '—'
   const tokens = totalTokens(data.totals.input_tokens, data.totals.output_tokens)
+  // Four headline numbers; the rest read as one quiet line underneath
+  // instead of eight equal boxes competing for attention.
   const stats = [
     ['Turns', formatInt(data.totals.turns)],
-    ['LLM calls', formatInt(data.totals.llm_calls)],
     ['Total tokens', tokens],
     ['Active days', formatInt(activeDayCount)],
     ['Current streak', `${current}d`],
+  ]
+  const details = [
+    ['LLM calls', formatInt(data.totals.llm_calls)],
     ['Longest streak', `${longest}d`],
     ['Peak day', peakDayLabel],
     ['Favorite model', favoriteModel],
@@ -278,27 +302,20 @@ function UsageOverview({ data, queryDays }: { data: ObservabilitySummary; queryD
   const maxTurns = Math.max(...days.map((day) => day.turns), 1)
 
   return (
-    <div>
-      <div className="grid grid-cols-2 gap-1 @[24rem]/usage:grid-cols-4">
+    <div className="mt-4">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 @[26rem]/usage:grid-cols-4">
         {stats.map(([label, value]) => (
-          <div key={label} className="min-w-0 rounded-md bg-(--bg-key) px-1.5 py-0.5">
-            <p className="truncate text-[10px] leading-3 text-(--color-text-muted)" title={label}>
-              {label}
-            </p>
-            <p
-              className={`mt-0.5 truncate leading-3.5 font-semibold text-(--color-text) ${
-                label === 'Favorite model' ? 'text-[10px]' : 'text-xs'
-              }`}
-              title={value}
-            >
+          <div key={label} className="min-w-0">
+            <dt className="truncate text-[11px] text-(--color-text-muted)">{label}</dt>
+            <dd className="mt-0.5 truncate text-base font-medium tabular-nums text-(--color-text)" title={value}>
               {value}
-            </p>
+            </dd>
           </div>
         ))}
-      </div>
+      </dl>
 
       <div
-        className="mt-1 grid grid-flow-col grid-rows-7 gap-[3px]"
+        className="mt-4 grid grid-flow-col grid-rows-7 gap-[3px]"
         style={{ gridTemplateColumns: `repeat(${HEATMAP_WEEKS}, minmax(0, 1fr))` }}
         role="grid"
         aria-label="Daily turns activity"
@@ -309,10 +326,11 @@ function UsageOverview({ data, queryDays }: { data: ObservabilitySummary; queryD
             <div
               key={day.day}
               role="gridcell"
-              className={`h-2 min-w-0 rounded-[2px] ${
-                level === 0 ? 'bg-(--bg-key)' : 'bg-(--accent-blue)'
-              }`}
-              style={{ opacity: day.future ? 0.35 : level === 0 ? 1 : 0.2 + level * 0.2 }}
+              className={cn(
+                'h-2.5 min-w-0 rounded-[3px]',
+                level === 0 ? 'bg-(--color-text)/6' : 'bg-(--accent-blue)',
+              )}
+              style={{ opacity: day.future ? 0.4 : level === 0 ? 1 : 0.25 + level * 0.18 }}
               title={day.future ? day.day : `${day.day}: ${day.turns} turns`}
               aria-label={day.future ? day.day : `${day.day}: ${day.turns} turns`}
             />
@@ -320,8 +338,12 @@ function UsageOverview({ data, queryDays }: { data: ObservabilitySummary; queryD
         })}
       </div>
 
-      <p className="mt-1 px-0.5 text-[10px] text-(--color-text-muted)">
-        You&rsquo;ve used {tokens} tokens across {formatInt(data.totals.turns)} turns.
+      <p className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-(--color-text-muted)">
+        {details.map(([label, value]) => (
+          <span key={label} className="min-w-0 truncate">
+            {label} <span className="text-(--color-text-2)">{value}</span>
+          </span>
+        ))}
       </p>
     </div>
   )
@@ -332,28 +354,26 @@ function ModelUsage({ data }: { data: ObservabilitySummary }) {
 
   if (models.length === 0) {
     return (
-      <div className="flex h-36 items-center justify-center rounded-md bg-(--bg-key)">
-        <p className="text-xs text-(--color-text-subtle)">No model usage in this period.</p>
-      </div>
+      <p className="py-8 text-center text-xs text-(--color-text-subtle)">No model usage in this period.</p>
     )
   }
 
   const maxCalls = Math.max(...models.map((model) => model.calls), 1)
 
   return (
-    <div className="space-y-1">
+    <div className="mt-4 space-y-3">
       {models.map((model) => (
-        <div key={model.provider_model} className="rounded-md bg-(--bg-key) px-2.5 py-2">
+        <div key={model.provider_model}>
           <div className="flex items-center gap-3 text-xs">
-            <span className="min-w-0 flex-1 truncate font-medium text-(--color-text-2)" title={model.provider_model}>
+            <span className="min-w-0 flex-1 truncate text-(--color-text-2)" title={model.provider_model}>
               {model.provider_model}
             </span>
-            <span className="shrink-0 text-(--color-text-muted)">{formatInt(model.calls)} calls</span>
-            <span className="w-14 shrink-0 text-right font-semibold text-(--color-text)">
+            <span className="shrink-0 tabular-nums text-(--color-text-muted)">{formatInt(model.calls)} calls</span>
+            <span className="w-14 shrink-0 text-right font-medium tabular-nums text-(--color-text)">
               {totalTokens(model.input_tokens, model.output_tokens)}
             </span>
           </div>
-          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-(--color-border-subtle)">
+          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-(--color-text)/6">
             <div
               className="h-full rounded-full bg-(--accent-blue)"
               style={{ width: `${Math.max((model.calls / maxCalls) * 100, 4)}%` }}

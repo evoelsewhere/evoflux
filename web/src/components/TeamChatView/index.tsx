@@ -37,7 +37,7 @@ import {
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AgentView } from '../AgentView'
-import { RecentUsageCard } from '../ChatWelcome'
+import { WelcomeHero } from '../ChatWelcome'
 import { AppShell } from '@/components/shell/AppShell'
 import { WorkspaceInfoCard } from '../WorkspaceInfoCard'
 import { WorkFolderSelector } from '../WorkFolderSelector'
@@ -72,7 +72,7 @@ import {
   useUpdateTeamSessionLeadMutation,
 } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, ArrowRight, FolderPlus, GitBranch, X } from 'lucide-react'
+import { AlertCircle, FolderPlus, X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
@@ -1879,53 +1879,17 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             </div>
           </div>
         ) : mode === 'coding' && !workspace ? (
-          <div className="relative flex flex-1 items-center justify-center overflow-y-auto px-3 py-3 sm:px-5">
-            <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-              <div className="absolute left-1/2 top-1/2 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-(--color-accent)/8 blur-3xl" />
-            </div>
-            <div className="@container/coding-empty relative w-full max-w-[620px] overflow-hidden rounded-xl border border-(--color-border) bg-(--bg-card)/95 shadow-md shadow-black/8">
-              <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-(--color-accent)/60 to-transparent" aria-hidden="true" />
-              <div className="grid @[36rem]/coding-empty:grid-cols-[minmax(13rem,0.68fr)_minmax(22.5rem,1.32fr)]">
-                <section className="flex flex-col border-b border-(--color-border-subtle) p-3 @[36rem]/coding-empty:border-b-0 @[36rem]/coding-empty:border-r">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-(--color-accent)/12 text-(--color-accent) ring-1 ring-inset ring-(--color-accent)/20 shadow-sm shadow-(color:--color-accent)/10">
-                      <FolderPlus size={16} strokeWidth={1.8} aria-hidden="true" />
-                    </div>
-                    <div className="inline-flex w-fit items-center gap-1 rounded-full border border-(--color-border-subtle) bg-(--bg-page)/70 px-2 py-0.5 text-[0.56rem] font-semibold uppercase tracking-[0.12em] text-(--color-text-muted)">
-                      <GitBranch size={9} aria-hidden="true" />
-                      Coding workspace
-                    </div>
-                  </div>
-                  <h2 className="mt-1.5 text-sm leading-4.5 font-semibold tracking-tight text-(--color-text)">Start with a project folder</h2>
-                  <p className="mt-1 text-[10px] leading-3.5 text-(--color-text-muted)">
-                    Open a repository to give your coding team files, source control, and project context.
-                  </p>
-
-                  <div className="mt-2 grid gap-1 @[28rem]/coding-empty:grid-cols-2 @[36rem]/coding-empty:grid-cols-1">
-                    <div className="flex items-center gap-2 rounded-lg bg-(--bg-page)/55 px-2 py-1.5">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-(--bg-key) font-mono text-[0.6rem] font-semibold text-(--color-accent) ring-1 ring-(--color-border)">1</span>
-                      <p className="text-[10px] font-semibold text-(--color-text)">Choose a folder</p>
-                    </div>
-                    <div className="flex items-center gap-2 rounded-lg bg-(--bg-page)/55 px-2 py-1.5">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-(--bg-key) font-mono text-[0.6rem] font-semibold text-(--color-accent) ring-1 ring-(--color-border)">2</span>
-                      <p className="text-[10px] font-semibold text-(--color-text)">Start building</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-auto pt-2.5">
-                    <Button type="button" size="sm" className="h-8 w-full rounded-lg px-3 text-[11px] shadow-sm shadow-(color:--color-accent)/15" onClick={handleOpenWorkspaceDialog}>
-                      <FolderPlus size={13} aria-hidden="true" />
-                      Open workspace
-                      <ArrowRight size={12} aria-hidden="true" />
-                    </Button>
-                  </div>
-                </section>
-
-                <div className="flex items-center p-1.5 @[36rem]/coding-empty:p-2">
-                  <RecentUsageCard className="relative border-0 bg-transparent p-0 shadow-none" />
-                </div>
-              </div>
-            </div>
+          <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8 sm:px-6">
+            <WelcomeHero
+              icon={<FolderPlus size={20} strokeWidth={1.8} aria-hidden="true" />}
+              title="Start with a project folder"
+              description="Open a repository to give your coding team files, source control, and project context."
+            >
+              <Button type="button" size="sm" className="h-8 rounded-lg px-3.5 text-xs" onClick={handleOpenWorkspaceDialog}>
+                <FolderPlus size={14} aria-hidden="true" />
+                Open workspace
+              </Button>
+            </WelcomeHero>
           </div>
         ) : agentViewAgent && hasAgentViewStream ? (
           <ActiveAgentTranscript
