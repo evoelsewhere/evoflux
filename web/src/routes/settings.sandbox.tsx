@@ -193,11 +193,6 @@ export function SandboxSettingsPage() {
         sourceMaxOutputBytes: saved.max_output_bytes,
         maxOutputBytes: saved.max_output_bytes,
       })
-      push({
-        tone: 'success',
-        title: 'Sandbox saved',
-        description: `${cleaned.length} pattern${cleaned.length === 1 ? '' : 's'} active.`,
-      })
     } catch (err) {
       push({
         tone: 'error',

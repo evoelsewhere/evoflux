@@ -23,19 +23,13 @@ describe('useAppUpdaterStore', () => {
     useToastStore.setState({ toasts: [] })
   })
 
-  it('shows an in-app toast when EvoFlux is current', async () => {
+  it('stays quiet when EvoFlux is current', async () => {
     updater.checkForAppUpdates.mockResolvedValue({ status: 'up_to_date', version: '0.0.7' })
 
     await useAppUpdaterStore.getState().check()
 
     expect(useAppUpdaterStore.getState().available).toBeNull()
-    expect(useToastStore.getState().toasts).toEqual([
-      expect.objectContaining({
-        tone: 'success',
-        title: 'EvoFlux is up to date',
-        description: 'You already have the latest version (0.0.7).',
-      }),
-    ])
+    expect(useToastStore.getState().toasts).toEqual([])
   })
 
   it('opens the in-app install dialog when an update is available', async () => {

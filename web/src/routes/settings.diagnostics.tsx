@@ -100,7 +100,6 @@ export function DiagnosticsPage() {
       onConfirm: () => {
         close()
         runAction.mutate(action.id, {
-          onSuccess: (result) => pushToast({ tone: 'success', title: result.message }),
           onError: (mutationError) => pushToast({
             tone: 'error',
             title: `${action.label} failed`,

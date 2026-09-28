@@ -134,11 +134,6 @@ export function ComputerAppsSettingsPage() {
     try {
       await update.mutateAsync(draft)
       setEditedDraft(null)
-      push({
-        tone: 'success',
-        title: t('Computer app settings saved'),
-        description: t('Agent actions use this policy immediately.'),
-      })
     } catch (error) {
       push({
         tone: 'error',

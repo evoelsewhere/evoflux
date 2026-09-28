@@ -177,10 +177,6 @@ export function AgentsListPage() {
     const response = await bulkModelMut.mutateAsync({ names, model: bulkModel })
     const failed = response.results.filter((result) => !result.ok)
     if (failed.length === 0) {
-      push({
-        tone: 'success',
-        title: `Model updated for ${names.length} agent${names.length === 1 ? '' : 's'}`,
-      })
       setChecked(new Set())
       setBulkModel('')
       return

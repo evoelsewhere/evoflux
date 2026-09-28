@@ -1,7 +1,6 @@
 import { Copy, Sparkles, X } from 'lucide-react'
 
 import type { GitAIResponse } from '@/api/types'
-import { useToastStore } from '@/stores/useToastStore'
 
 export function GitAiResultDialog({
   result,
@@ -10,11 +9,9 @@ export function GitAiResultDialog({
   result: GitAIResponse
   onClose: () => void
 }) {
-  const pushToast = useToastStore((state) => state.push)
   const content = [result.title, result.body, result.message].filter(Boolean).join('\n\n')
   const copy = async () => {
     await navigator.clipboard.writeText(content || result.summary)
-    pushToast({ tone: 'success', title: 'Copied AI Git result' })
   }
   return (
     <div className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="AI Git result">

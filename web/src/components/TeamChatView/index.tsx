@@ -787,11 +787,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         fastMode: sessionFastMode,
       })
       setLeadReloadToken((value) => value + 1)
-      pushToast({
-        tone: 'success',
-        title: `Lead changed to ${nextLead}`,
-        description: 'This session now uses only that lead’s owned members.',
-      })
     } catch (error) {
       pushToast({
         tone: 'error',
@@ -836,19 +831,13 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       fastMode: pending.fastMode,
     }).then(() => {
       const error = useTeamStore.getState().error
-      pushToast(
-        error
-          ? {
-              tone: 'error',
-              title: 'Review chat could not start',
-              description: error,
-            }
-          : {
-              tone: 'success',
-              title: 'Review context sent',
-              description: 'This PR/MR is now linked to its Coding session.',
-            },
-      )
+      if (error) {
+        pushToast({
+          tone: 'error',
+          title: 'Review chat could not start',
+          description: error,
+        })
+      }
     })
   }, [pendingCodeReviewStart, pushToast, sessionId, isSessionLoading])
 
@@ -949,12 +938,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           thinkingLevel: session.thinking_level ?? carryThinkingLevel,
           fastMode: carryFastMode,
         })
-      } else {
-        pushToast({
-          tone: 'info',
-          title: 'Review chat reopened',
-          description: `Continuing the linked session for review #${item.number}.`,
-        })
       }
       useUIStore.getState().closeWorkbench()
       navigate(
@@ -1051,17 +1034,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             title: 'Dream skipped',
             description: `${result.skipped}. ${result.remaining} pending.`,
           })
-          return
         }
-        const { sessions_processed, notes_processed, remaining } = result
-        const processed = sessions_processed + notes_processed
-        pushToast({
-          tone: 'success',
-          title: 'Dream complete',
-          description: processed > 0
-            ? `${processed} item${processed !== 1 ? 's' : ''} processed. ${remaining} remaining.`
-            : `Nothing to process.`,
-        })
       },
       onError: (err) => {
         pushToast({

@@ -73,15 +73,6 @@ export function ManagedResourceUpdateBanner({
       }
       await onPulled?.(resource)
       setOpen(false)
-      push({
-        tone: 'success',
-        title: resource.observed_state === CONDUCTOR_RESOURCE_STATE.TRUST_PENDING
-          ? `${resourceName} downloaded for trust review`
-          : `${resourceName} updated to ${available}`,
-        description: resource.observed_state === CONDUCTOR_RESOURCE_STATE.TRUST_PENDING
-          ? 'Review the Plugin trust boundary before enabling the new version.'
-          : 'The managed version is active locally.',
-      })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason)
       setError(message)

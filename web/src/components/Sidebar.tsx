@@ -323,14 +323,7 @@ export function Sidebar({
 
   const handleDuplicate = (session: SessionResponse) => {
     duplicateSession.mutate(session.id, {
-      onSuccess: (copy) => {
-        pushToast({
-          tone: "success",
-          title: "Session duplicated",
-          description: `Opened ${copy.title || "the copied session"}.`,
-        });
-        handleSelect(copy.id);
-      },
+      onSuccess: (copy) => handleSelect(copy.id),
       onError: (err) =>
         pushToast({
           tone: "error",

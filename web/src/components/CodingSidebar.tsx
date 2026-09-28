@@ -665,14 +665,6 @@ export function CodingSidebar({
             },
           );
         }
-        const project = projects.find((item) => item.id === projectId);
-        useToastStore.getState().push({
-          tone: "success",
-          title: `${selected.length} ${selected.length === 1 ? "repository" : "repositories"} added`,
-          description: project
-            ? `They are now visible under ${project.name}.`
-            : "They are now visible under the project.",
-        });
         setLastPickPath(selected[selected.length - 1]);
         return;
       }
@@ -687,7 +679,7 @@ export function CodingSidebar({
     } finally {
       setLoading(false);
     }
-  }, [addRepoDialogProjectId, addWorkspaceMutation, lastPickPath, projects, setExpandedProjects]);
+  }, [addRepoDialogProjectId, addWorkspaceMutation, lastPickPath, setExpandedProjects]);
 
   const refreshWorkspaceTree = useCallback(async () => {
     // Force the merged Projects + Workspaces snapshot to be fetched even if
@@ -1130,11 +1122,6 @@ export function CodingSidebar({
       setSelectedWorkspace(result.workspace);
       const validation = await validateWorkspace(result.workspace);
       setTrustWorkspace(validation.workspace);
-      useToastStore.getState().push({
-        tone: "success",
-        title: "Repository cloned",
-        description: `${result.name} is ready to trust and open.`,
-      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to clone repository");
     } finally {
@@ -1159,14 +1146,6 @@ export function CodingSidebar({
               const next = new Set(current);
               next.add(projectId);
               return next;
-            });
-            const project = projects.find((item) => item.id === projectId);
-            useToastStore.getState().push({
-              tone: "success",
-              title: "Repository added",
-              description: project
-                ? `It is now visible under ${project.name}.`
-                : "It is now visible under the project.",
             });
           },
           onError: (err) => {
@@ -1236,11 +1215,6 @@ export function CodingSidebar({
   const handleSessionDuplicate = (session: SessionResponse) => {
     duplicateSession.mutate(session.id, {
       onSuccess: (copy) => {
-        useToastStore.getState().push({
-          tone: "success",
-          title: "Session duplicated",
-          description: `Opened ${copy.title || "the copied session"}.`,
-        });
         handleSessionSelect(copy, copy.workspace ?? "");
       },
       onError: (err) =>

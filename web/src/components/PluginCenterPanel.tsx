@@ -549,14 +549,9 @@ export function PluginCenterPanel() {
     }
   }
 
-  const stageTrustReview = (result: PluginOperationResponse, action: string) => {
+  const stageTrustReview = (result: PluginOperationResponse) => {
     setInspection(result.inspection)
     setTrustReview(result)
-    pushToast({
-      tone: 'success',
-      title: `${result.installation.name} ${action}`,
-      description: 'The plugin is installed but disabled until you review its access.',
-    })
   }
 
   const confirmTrust = async () => {
@@ -580,7 +575,7 @@ export function PluginCenterPanel() {
       if (!path) return
       await run(`link:${path}`, async () => {
         const result = await importPlugin(path, 'link', false)
-        stageTrustReview(result, 'linked')
+        stageTrustReview(result)
       })
       return
     }
@@ -591,7 +586,7 @@ export function PluginCenterPanel() {
     if (!path) return
     await run(`${mode}:${path}`, async () => {
       const result = await importPlugin(path, mode, false)
-      stageTrustReview(result, 'imported')
+      stageTrustReview(result)
     })
   }
 
@@ -612,13 +607,6 @@ export function PluginCenterPanel() {
     await run(`update:${item.installation.id}`, async () => {
       const result = await updatePluginFromPath(item.installation.id, path)
       setInspection(result.inspection)
-      pushToast({
-        tone: 'success',
-        title: `${result.installation.name} updated`,
-        description: result.installation.version
-          ? `Version ${result.installation.version}`
-          : undefined,
-      })
     })
   }
 
@@ -649,7 +637,6 @@ export function PluginCenterPanel() {
         name: resultInspection.manifest?.name || name,
       })
       setShowCreate(false)
-      pushToast({ tone: 'success', title: 'Plugin scaffold created', description: result.path })
     })
   }
 
@@ -685,7 +672,7 @@ export function PluginCenterPanel() {
         onLink={async () => {
           const result = await importPlugin(activeView.root, 'link', false)
           setActiveView(null)
-          stageTrustReview(result, 'linked')
+          stageTrustReview(result)
           await refresh()
         }}
       />
@@ -802,7 +789,7 @@ export function PluginCenterPanel() {
               if (!file) return
               void run(`upload:${file.name}`, async () => {
                 const result = await uploadPlugin(file, false)
-                stageTrustReview(result, 'imported')
+                stageTrustReview(result)
               })
             }}
           />
@@ -823,13 +810,6 @@ export function PluginCenterPanel() {
                   file,
                 )
                 setInspection(result.inspection)
-                pushToast({
-                  tone: 'success',
-                  title: `${result.installation.name} updated`,
-                  description: result.installation.version
-                    ? `Version ${result.installation.version}`
-                    : undefined,
-                })
               })
             }}
           />
@@ -1016,8 +996,7 @@ export function PluginCenterPanel() {
                   void run(`toggle:${item.installation.id}`, () => setPluginEnabled(item.installation.id, false))
                 }}
                 onPack={() => void run(`pack:${item.installation.id}`, async () => {
-                  const result = await packPlugin(item.installation.root)
-                  pushToast({ tone: 'success', title: 'Plugin archive created', description: result.path })
+                  await packPlugin(item.installation.root)
                 })}
                 onDelete={() => confirmAction({
                   title: `Uninstall ${item.installation.name}?`,

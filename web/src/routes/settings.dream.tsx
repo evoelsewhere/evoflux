@@ -88,7 +88,6 @@ export function DreamSettingsPanel({ embedded = false }: { embedded?: boolean })
       const saved = await updateMut.mutateAsync(normalized(form))
       setForm(saved)
       setSourceRaw(saved)
-      push({ tone: 'success', title: 'Dream settings saved' })
     } catch (err) {
       push({
         tone: 'error',
@@ -107,13 +106,7 @@ export function DreamSettingsPanel({ embedded = false }: { embedded?: boolean })
           title: 'Dream skipped',
           description: `${result.skipped}. ${result.remaining ?? 0} pending.`,
         })
-        return
       }
-      push({
-        tone: 'success',
-        title: 'Dream run complete',
-        description: `${result.sessions_processed} sessions, ${result.notes_processed} notes processed.`,
-      })
     } catch (err) {
       push({
         tone: 'error',

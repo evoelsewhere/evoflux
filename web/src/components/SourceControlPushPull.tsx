@@ -26,10 +26,11 @@ export function SourceControlPushPull({ workspace }: SourceControlPushPullProps)
   const handleFetch = () => {
     fetchMutation.mutate(undefined, {
       onSuccess: (data) => {
+        if (!data.error) return
         useToastStore.getState().push({
-          tone: data.error ? 'error' : 'success',
-          title: 'Fetch complete',
-          description: data.message || data.error || undefined,
+          tone: 'error',
+          title: 'Fetch failed',
+          description: data.message || data.error,
         })
       },
       onError: (err) => {
@@ -45,10 +46,11 @@ export function SourceControlPushPull({ workspace }: SourceControlPushPullProps)
   const handlePull = () => {
     pullMutation.mutate(undefined, {
       onSuccess: (data) => {
+        if (!data.error) return
         useToastStore.getState().push({
-          tone: data.error ? 'error' : 'success',
-          title: 'Pull complete',
-          description: data.message || data.error || undefined,
+          tone: 'error',
+          title: 'Pull failed',
+          description: data.message || data.error,
         })
       },
       onError: (err) => {
@@ -64,10 +66,11 @@ export function SourceControlPushPull({ workspace }: SourceControlPushPullProps)
   const handlePush = () => {
     pushMutation.mutate(undefined, {
       onSuccess: (data) => {
+        if (!data.error) return
         useToastStore.getState().push({
-          tone: data.error ? 'error' : 'success',
-          title: 'Push complete',
-          description: data.message || data.error || undefined,
+          tone: 'error',
+          title: 'Push failed',
+          description: data.message || data.error,
         })
       },
       onError: (err) => {

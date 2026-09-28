@@ -103,11 +103,6 @@ export function McpServerDetailPage() {
     }
     try {
       await updateMut.mutateAsync({ name, server: result.body })
-      push({
-        tone: 'success',
-        title: `Saved "${name}"`,
-        description: 'Available on next turn.',
-      })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       setSaveError(msg)
@@ -118,7 +113,6 @@ export function McpServerDetailPage() {
   const handleDelete = async () => {
     try {
       await deleteMut.mutateAsync(name)
-      push({ tone: 'success', title: `Deleted "${name}"` })
       navigate('/settings/mcp')
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
@@ -129,7 +123,6 @@ export function McpServerDetailPage() {
   const handleRestart = async () => {
     try {
       await restartMut.mutateAsync(name)
-      push({ tone: 'success', title: `Restarted "${name}"` })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       push({ tone: 'error', title: `Failed to restart "${name}"`, description: msg })
@@ -139,7 +132,6 @@ export function McpServerDetailPage() {
   const handleConnectOAuth = async () => {
     try {
       await connectOAuthMut.mutateAsync(name)
-      push({ tone: 'success', title: `Connected OAuth for "${name}"` })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)
       push({ tone: 'error', title: `OAuth connect failed for "${name}"`, description: msg })

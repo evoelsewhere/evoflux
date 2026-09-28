@@ -45,8 +45,7 @@ import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 
 /**
  * Edit an existing agent. Loads the raw .md, renders the hybrid form,
- * saves via PUT (which auto-reloads the team server-side). On save
- * success the toast shows the reload diff.
+ * saves via PUT (which auto-reloads the team server-side).
  */
 export function AgentEditorPage() {
   const { name } = useSettingsParams()
@@ -109,11 +108,6 @@ export function AgentEditorPage() {
     }
     try {
       const res = await updateMut.mutateAsync({ name, content: draft })
-      push({
-        tone: 'success',
-        title: `Saved "${name}"`,
-        description: 'Active on next turn.',
-      })
       setDraft(res.content)
       setFormSeed(res.content)
       setFormEpoch((epoch) => epoch + 1)
@@ -128,7 +122,6 @@ export function AgentEditorPage() {
   const handleDelete = async () => {
     try {
       await deleteMut.mutateAsync(name)
-      push({ tone: 'success', title: `Deleted "${name}"` })
       navigate('/settings/agents')
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)

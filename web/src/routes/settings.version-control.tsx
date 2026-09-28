@@ -90,11 +90,6 @@ export function VersionControlSettingsPage() {
     try {
       await update.mutateAsync(normalized)
       setEditedDraft(null)
-      push({
-        tone: 'success',
-        title: 'Git settings saved',
-        description: 'New Git and review operations use these guardrails immediately.',
-      })
     } catch (error) {
       push({
         tone: 'error',

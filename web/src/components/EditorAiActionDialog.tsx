@@ -100,7 +100,6 @@ export function EditorAiActionDialog({
       setResult(response)
       if (response.change_set) {
         setChangeSet(response.change_set)
-        pushToast({ tone: 'success', title: 'AI changes ready for review' })
         onClose()
       } else if (response.kind === 'findings') {
         pushToast({

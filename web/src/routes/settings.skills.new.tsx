@@ -67,11 +67,6 @@ export function NewSkillPage() {
     try {
       const bundle = getSkillBundleChanges(files, [])
       await createMut.mutateAsync({ name, content, files: bundle.files })
-      push({
-        tone: 'success',
-        title: `Created skill "${name}"`,
-        description: 'Available on the next turn.',
-      })
       navigate('/settings/skills/$name', { params: { name }, force: true })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)

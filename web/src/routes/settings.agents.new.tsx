@@ -72,11 +72,6 @@ export function NewAgentPage() {
     try {
       const agentName = agentMode === 'coding' ? `coding/${name}` : name
       await createMut.mutateAsync({ name: agentName, content: draft })
-      push({
-        tone: 'success',
-        title: `Created "${agentName}"`,
-        description: 'Active on next turn.',
-      })
       navigate('/settings/agents/$name', { params: { name: agentName } })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)

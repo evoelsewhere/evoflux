@@ -121,11 +121,6 @@ export function ChangeSetReviewPanel() {
         ? await applyChangeSet(active.workspace, active.id, paths, sessionId)
         : await rejectChangeSet(active.workspace, active.id, paths)
       setActive(updated)
-      pushToast({
-        tone: decision === 'apply' ? 'success' : 'info',
-        title: decision === 'apply' ? 'Changes applied' : 'Changes rejected',
-        description: `${paths.length} file${paths.length === 1 ? '' : 's'}`,
-      })
     } catch (error) {
       pushToast({
         tone: 'error',

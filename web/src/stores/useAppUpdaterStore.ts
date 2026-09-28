@@ -45,11 +45,6 @@ function showResult(result: AppUpdateCheckResult): AvailableUpdate | null {
     case 'available':
       return result
     case 'up_to_date':
-      pushToast({
-        tone: 'success',
-        title: 'EvoFlux is up to date',
-        description: `You already have the latest version (${result.version}).`,
-      })
       return null
     case 'error':
       pushToast({ tone: 'error', title: result.title, description: result.message }, 8_000)

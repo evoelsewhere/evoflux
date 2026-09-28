@@ -377,11 +377,10 @@ export function DirectBrowserShell({
   const handleClearData = useCallback(async () => {
     try {
       await browser.clearBrowsingData()
-      pushToast({ tone: 'success', title: 'Browsing data cleared' })
     } catch (error) {
       reportError(error instanceof Error ? error.message : String(error))
     }
-  }, [browser, pushToast, reportError])
+  }, [browser, reportError])
 
   if (!open || !sessionId) return null
 

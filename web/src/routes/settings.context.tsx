@@ -82,19 +82,10 @@ export function ContextSettingsPage() {
   const push = useToastStore((state) => state.push)
   const settings = query.data ?? null
 
-  const change = (field: Field, label: string, format: (v: number) => string) =>
+  const change = (field: Field) =>
     (raw: string) => {
       const next = raw === 'default' ? null : Number(raw)
       update.mutate({ [field]: next } as Partial<ContextOverrides>, {
-        onSuccess: () =>
-          push({
-            tone: 'success',
-            title: `${label} updated`,
-            description:
-              next === null
-                ? 'Back to the built-in default.'
-                : `Now ${format(next)}, for every session.`,
-          }),
         onError: (error) =>
           push({
             tone: 'error',
@@ -152,7 +143,7 @@ export function ContextSettingsPage() {
                   spec={spec}
                   settings={settings}
                   disabled={update.isPending}
-                  onChange={change(spec.field, spec.label, spec.format)}
+                  onChange={change(spec.field)}
                 />
               ))}
               <SettingsCallout tone="info" icon={Info}>
@@ -174,7 +165,7 @@ export function ContextSettingsPage() {
                   spec={spec}
                   settings={settings}
                   disabled={update.isPending}
-                  onChange={change(spec.field, spec.label, spec.format)}
+                  onChange={change(spec.field)}
                 />
               ))}
             </SettingsGroup>

@@ -210,7 +210,6 @@ export function WebBridgeStatusPopover({
     try {
       await approveWebBridgeTeachDraft(draftId)
       await refresh()
-      pushToast({ tone: 'success', title: 'Recorded task approved for supervised replay' })
     } catch (err) {
       pushToast({
         tone: 'error',
@@ -250,12 +249,6 @@ export function WebBridgeStatusPopover({
         })
       }
       await refresh()
-      pushToast({
-        tone: 'success',
-        title: result.next_step === null
-          ? 'Recorded task completed'
-          : `Recorded step ${result.next_step} completed`,
-      })
     } catch (err) {
       if (err instanceof ApiValidationError) {
         delete replayRequestKeysRef.current[requestIdentity]
@@ -284,12 +277,6 @@ export function WebBridgeStatusPopover({
         outcome,
       )
       await refresh()
-      pushToast({
-        tone: 'success',
-        title: outcome === 'completed'
-          ? 'Recorded step marked as completed'
-          : 'Recorded step marked as not completed',
-      })
     } catch (err) {
       pushToast({
         tone: 'error',

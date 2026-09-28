@@ -1995,11 +1995,6 @@ export function CreateReviewDialog({
         title: draftTitle,
         body: draftBody,
       }))
-      push({
-        tone: 'success',
-        title: 'Review draft generated',
-        description: `Based on committed changes from ${targetBranch} to ${sourceBranch}.`,
-      })
     } catch (error) {
       push({
         tone: 'error',
@@ -2052,16 +2047,11 @@ export function CreateReviewDialog({
           throw new Error(job.error || `Git push ended with status ${job.status}.`)
         }
       }
-      const created = await create.mutateAsync({
+      await create.mutateAsync({
         title: form.title.trim(),
         body: form.body.trim(),
         source_branch: sourceBranch.trim(),
         target_branch: targetBranch.trim(),
-      })
-      push({
-        tone: 'success',
-        title: `${providerReviewName(target.provider)} created`,
-        description: created.web_url || `#${created.number} is now open.`,
       })
       onClose()
     } catch (error) {

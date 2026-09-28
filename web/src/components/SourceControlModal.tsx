@@ -216,12 +216,6 @@ export function SourceControlPanel({
       queryClient.invalidateQueries({ queryKey: queryKeys.git.log(workspace, 0) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.git.conflicts(workspace) }),
     ])
-    if (job.status === 'done') {
-      useToastStore.getState().push({
-        tone: 'success',
-        title: `${job.op.charAt(0).toUpperCase()}${job.op.slice(1)} complete`,
-      })
-    }
   }, [jobsQuery.data, queryClient, workspace])
 
   // Auto-select first file when dialog opens
@@ -365,7 +359,6 @@ export function SourceControlPanel({
             onClick={() => fetchMutation.mutate(undefined, {
               onSuccess: () => {
                 observedRunningJob.current = true
-                useToastStore.getState().push({ tone: 'info', title: 'Fetch started' })
               },
               onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Fetch failed', description: error instanceof Error ? error.message : undefined }),
             })}
@@ -377,7 +370,6 @@ export function SourceControlPanel({
             onClick={() => pullMutation.mutate(undefined, {
               onSuccess: () => {
                 observedRunningJob.current = true
-                useToastStore.getState().push({ tone: 'info', title: 'Pull started' })
               },
               onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Pull failed', description: error instanceof Error ? error.message : undefined }),
             })}
@@ -390,7 +382,6 @@ export function SourceControlPanel({
             onClick={() => pushMutation.mutate(undefined, {
               onSuccess: () => {
                 observedRunningJob.current = true
-                useToastStore.getState().push({ tone: 'info', title: 'Push started' })
               },
               onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Push failed', description: error instanceof Error ? error.message : undefined }),
             })}
@@ -475,8 +466,8 @@ export function SourceControlPanel({
         {hasConflicts && (
           <ConflictBar
             conflicts={conflicts!}
-            onContinue={() => continueMutation.mutate(undefined, { onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Continued' }), onError: () => useToastStore.getState().push({ tone: 'error', title: 'Failed' }) })}
-            onAbort={() => abortMutation.mutate(undefined, { onSuccess: () => useToastStore.getState().push({ tone: 'info', title: 'Aborted' }), onError: () => useToastStore.getState().push({ tone: 'error', title: 'Failed' }) })}
+            onContinue={() => continueMutation.mutate(undefined, { onError: () => useToastStore.getState().push({ tone: 'error', title: 'Failed' }) })}
+            onAbort={() => abortMutation.mutate(undefined, { onError: () => useToastStore.getState().push({ tone: 'error', title: 'Failed' }) })}
             onResolve={() => { void runAi('propose_conflict_resolution') }}
             resolving={gitAiBusy}
           />
@@ -592,7 +583,6 @@ function GitInitPanel({ workspace }: { workspace: string }) {
             type="button"
             disabled={!defaultBranch.trim() || initMutation.isPending}
             onClick={() => initMutation.mutate(defaultBranch.trim(), {
-              onSuccess: () => useToastStore.getState().push({ tone: 'success', title: 'Git repository initialized' }),
               onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Initialization failed', description: error instanceof Error ? error.message : undefined }),
             })}
             className="flex h-8 items-center gap-1.5 rounded-md bg-(--color-accent) px-3 text-[11px] font-semibold text-(--color-text-on-accent) disabled:opacity-40"
@@ -620,7 +610,7 @@ function CommitArea({ workspace, stagedCount }: { workspace: string; stagedCount
     commitMutation.mutate(
       { message: message.trim(), amend },
       {
-        onSuccess: () => { setMessage(''); setAmend(false); useToastStore.getState().push({ tone: 'success', title: 'Committed' }) },
+        onSuccess: () => { setMessage(''); setAmend(false) },
         onError: (err) => useToastStore.getState().push({ tone: 'error', title: 'Commit failed', description: err instanceof Error ? err.message : undefined }),
       },
     )
@@ -761,7 +751,6 @@ function FileRow({ file, selected, onSelect, onToggleStage, onDiscard }: {
       icon: <Copy size={12} />,
       onSelect: () => {
         void navigator.clipboard.writeText(file.path)
-        useToastStore.getState().push({ tone: 'info', title: 'File path copied' })
       },
       separatorBefore: true,
     },
@@ -1077,7 +1066,6 @@ function BranchRow({ branch, busy, remote = false, onCheckout, onDelete, onMerge
     icon: <Copy size={12} />,
     onSelect: () => {
       void navigator.clipboard.writeText(branch.name)
-      useToastStore.getState().push({ tone: 'info', title: 'Branch name copied' })
     },
     separatorBefore: !branch.current,
   })
@@ -1280,14 +1268,12 @@ function HistoryPanel({ workspace }: { workspace: string }) {
               onToggle={() => setExpandedSha(expandedSha === entry.sha ? null : entry.sha)}
               onCherryPick={() => cherryPickMutation.mutate([entry.sha], {
                 onSuccess: (data) => {
-                  if (data.success) useToastStore.getState().push({ tone: 'success', title: 'Cherry-picked' })
-                  else useToastStore.getState().push({ tone: 'error', title: 'Conflicts', description: data.conflicts.join(', ') })
+                  if (!data.success) useToastStore.getState().push({ tone: 'error', title: 'Conflicts', description: data.conflicts.join(', ') })
                 },
               })}
               onRevert={() => revertMutation.mutate(entry.sha, {
                 onSuccess: (data) => {
-                  if (data.success) useToastStore.getState().push({ tone: 'success', title: 'Commit reverted' })
-                  else useToastStore.getState().push({ tone: 'error', title: 'Revert needs resolution', description: data.conflicts.join(', ') })
+                  if (!data.success) useToastStore.getState().push({ tone: 'error', title: 'Revert needs resolution', description: data.conflicts.join(', ') })
                 },
                 onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to revert commit', description: error instanceof Error ? error.message : undefined }),
               })}
@@ -1374,7 +1360,6 @@ function CommitRow({
       icon: <Copy size={12} />,
       onSelect: () => {
         void navigator.clipboard.writeText(entry.sha)
-        useToastStore.getState().push({ tone: 'info', title: 'SHA copied' })
       },
       separatorBefore: true,
     },
@@ -1465,7 +1450,6 @@ function CommitRow({
               onClick={(e) => {
                 e.stopPropagation()
                 void navigator.clipboard.writeText(entry.sha)
-                useToastStore.getState().push({ tone: 'info', title: 'SHA copied' })
               }}
               title="Copy full SHA"
             >
@@ -1594,7 +1578,6 @@ function StashPanel({ workspace }: { workspace: string }) {
                 icon: <Copy size={12} />,
                 onSelect: () => {
                   void navigator.clipboard.writeText(stash.sha)
-                  useToastStore.getState().push({ tone: 'info', title: 'Stash SHA copied' })
                 },
                 separatorBefore: true,
               },
@@ -1684,21 +1667,12 @@ function RemotesPanel({
     const input = { name: editingName ?? name.trim(), url: url.trim() }
     const options = {
       onSuccess: () => {
-        useToastStore.getState().push({ tone: 'success', title: editingName ? 'Remote updated' : 'Remote added' })
         resetForm()
       },
       onError: (error: Error) => useToastStore.getState().push({ tone: 'error' as const, title: 'Remote operation failed', description: error.message }),
     }
     if (editingName) updateMutation.mutate(input, options)
     else createMutation.mutate(input, options)
-  }
-
-  const startSync = (
-    kind: 'fetch' | 'pull' | 'push',
-    action: () => void,
-  ) => {
-    action()
-    useToastStore.getState().push({ tone: 'info', title: `${kind.charAt(0).toUpperCase()}${kind.slice(1)} started` })
   }
 
   return (
@@ -1725,7 +1699,7 @@ function RemotesPanel({
           <button
             type="button"
             disabled={remotes.length === 0 || fetchMutation.isPending}
-            onClick={() => startSync('fetch', () => fetchMutation.mutate({ remote: selectedRemote, prune }))}
+            onClick={() => fetchMutation.mutate({ remote: selectedRemote, prune })}
             className="flex h-8 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2.5 text-[10px] font-medium text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-40"
           >
             <CloudDownload size={12} /> Fetch
@@ -1733,7 +1707,7 @@ function RemotesPanel({
           <button
             type="button"
             disabled={remotes.length === 0 || pullMutation.isPending}
-            onClick={() => startSync('pull', () => pullMutation.mutate({ remote: selectedRemote, rebase }))}
+            onClick={() => pullMutation.mutate({ remote: selectedRemote, rebase })}
             className="flex h-8 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-card) px-2.5 text-[10px] font-medium text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-40"
           >
             <RefreshCw size={12} /> Pull
@@ -1741,12 +1715,12 @@ function RemotesPanel({
           <button
             type="button"
             disabled={remotes.length === 0 || !branch || pushMutation.isPending}
-            onClick={() => startSync('push', () => pushMutation.mutate({
+            onClick={() => pushMutation.mutate({
               remote: selectedRemote,
               branch: branch ?? undefined,
               setUpstream: !upstream,
               forceWithLease,
-            }))}
+            })}
             className={cn(
               'flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-semibold text-(--color-text-on-accent) disabled:opacity-40',
               forceWithLease ? 'bg-(--color-warning)' : 'bg-(--color-accent)',
@@ -1778,7 +1752,7 @@ function RemotesPanel({
                 onClick={() => identityMutation.mutate(
                   { name: identityName.trim(), email: identityEmail.trim() },
                   {
-                    onSuccess: () => { setShowIdentity(false); useToastStore.getState().push({ tone: 'success', title: 'Git identity saved for this repository' }) },
+                    onSuccess: () => { setShowIdentity(false) },
                     onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to save Git identity', description: error instanceof Error ? error.message : undefined }),
                   },
                 )}
@@ -1838,21 +1812,20 @@ function RemotesPanel({
             setShowForm(true)
           }
           const removeRemote = () => deleteMutation.mutate(remote.name, {
-            onSuccess: () => useToastStore.getState().push({ tone: 'info', title: `${remote.name} removed` }),
             onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to remove remote', description: error instanceof Error ? error.message : undefined }),
           })
           const actions: GitAction[] = [
-            { label: `Fetch ${remote.name}`, icon: <CloudDownload size={12} />, onSelect: () => startSync('fetch', () => fetchMutation.mutate({ remote: remote.name, prune })) },
-            { label: `Pull from ${remote.name}`, icon: <RefreshCw size={12} />, onSelect: () => startSync('pull', () => pullMutation.mutate({ remote: remote.name, rebase })) },
+            { label: `Fetch ${remote.name}`, icon: <CloudDownload size={12} />, onSelect: () => fetchMutation.mutate({ remote: remote.name, prune }) },
+            { label: `Pull from ${remote.name}`, icon: <RefreshCw size={12} />, onSelect: () => pullMutation.mutate({ remote: remote.name, rebase }) },
             {
               label: `Push ${branch ?? 'current branch'} to ${remote.name}`,
               icon: <CloudUpload size={12} />,
-              onSelect: () => startSync('push', () => pushMutation.mutate({
+              onSelect: () => pushMutation.mutate({
                 remote: remote.name,
                 branch: branch ?? undefined,
                 setUpstream: !upstream,
                 forceWithLease,
-              })),
+              }),
               disabled: !branch,
             },
             { label: 'Edit remote URL', icon: <Pencil size={12} />, onSelect: editRemote, separatorBefore: true },
@@ -1861,7 +1834,6 @@ function RemotesPanel({
               icon: <Copy size={12} />,
               onSelect: () => {
                 void navigator.clipboard.writeText(remote.fetch_url)
-                useToastStore.getState().push({ tone: 'info', title: 'Remote URL copied' })
               },
             },
             { label: 'Remove remote', icon: <Trash2 size={12} />, onSelect: removeRemote, danger: true, separatorBefore: true },
@@ -1920,7 +1892,6 @@ function TagsPanel({ workspace }: { workspace: string }) {
           setTarget('HEAD')
           setMessage('')
           setShowCreate(false)
-          useToastStore.getState().push({ tone: 'success', title: 'Tag created' })
         },
         onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to create tag', description: error instanceof Error ? error.message : undefined }),
       },
@@ -1941,7 +1912,6 @@ function TagsPanel({ workspace }: { workspace: string }) {
               type="button"
               disabled={pushMutation.isPending}
               onClick={() => pushMutation.mutate({ remote }, {
-                onSuccess: () => useToastStore.getState().push({ tone: 'info', title: 'Tag push started' }),
                 onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to push tags', description: error instanceof Error ? error.message : undefined }),
               })}
               className="flex h-7 items-center gap-1 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-[10px] font-medium text-(--color-text-muted) hover:bg-(--bg-key)"
@@ -1968,7 +1938,6 @@ function TagsPanel({ workspace }: { workspace: string }) {
       <div className="min-h-0 flex-1 overflow-y-auto divide-y divide-(--color-border)/40">
         {tags.map((item) => {
           const deleteTag = () => deleteMutation.mutate(item.name, {
-            onSuccess: () => useToastStore.getState().push({ tone: 'info', title: `${item.name} deleted locally` }),
             onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to delete tag', description: error instanceof Error ? error.message : undefined }),
           })
           const actions: GitAction[] = [
@@ -1977,7 +1946,6 @@ function TagsPanel({ workspace }: { workspace: string }) {
               icon: <Copy size={12} />,
               onSelect: () => {
                 void navigator.clipboard.writeText(item.name)
-                useToastStore.getState().push({ tone: 'info', title: 'Tag name copied' })
               },
             },
             {
@@ -1985,7 +1953,6 @@ function TagsPanel({ workspace }: { workspace: string }) {
               icon: <GitCommit size={12} />,
               onSelect: () => {
                 void navigator.clipboard.writeText(item.sha)
-                useToastStore.getState().push({ tone: 'info', title: 'Tag SHA copied' })
               },
             },
             {
@@ -1994,7 +1961,6 @@ function TagsPanel({ workspace }: { workspace: string }) {
               onSelect: () => pushMutation.mutate(
                 { remote, tag: item.name },
                 {
-                  onSuccess: () => useToastStore.getState().push({ tone: 'info', title: `Pushing ${item.name}` }),
                   onError: (error) => useToastStore.getState().push({ tone: 'error', title: 'Unable to push tag', description: error instanceof Error ? error.message : undefined }),
                 },
               ),

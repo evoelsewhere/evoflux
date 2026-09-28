@@ -109,11 +109,6 @@ export function PluginCredentialsPanel({
       const credentials = await updatePluginCredentials(installation.id, values)
       queryClient.setQueryData(credentialQueryKey, credentials)
       await onSaved(credentials)
-      pushToast({
-        tone: 'success',
-        title: 'Plugin credentials saved',
-        description: 'The MCP runtime was refreshed with the new values.',
-      })
     } catch (error) {
       pushToast({
         tone: 'error',
@@ -131,7 +126,6 @@ export function PluginCredentialsPanel({
       const credentials = await clearPluginCredentials(installation.id)
       queryClient.setQueryData(credentialQueryKey, credentials)
       await onSaved(credentials)
-      pushToast({ tone: 'success', title: 'Plugin credentials cleared' })
     } catch (error) {
       pushToast({
         tone: 'error',

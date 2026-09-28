@@ -419,11 +419,6 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
         setVerifiedKey(trimmedKey)
         if (provider.kind === 'cloud_creds') setVerifiedCloudSignature(cloudSignature)
         setModelsExpanded(true)
-        push({
-          tone: 'success',
-          title: 'Connection verified',
-          description: `${listed.models.length} models available.`,
-        })
       } else {
         push({
           tone: 'error',
@@ -454,11 +449,6 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
       setApiKey('')
       setVerifiedKey('')
       setVerifiedCloudSignature('')
-      push({
-        tone: 'success',
-        title: 'Provider saved',
-        description: provider.label,
-      })
     } catch (err) {
       push({
         tone: 'error',
@@ -476,11 +466,6 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
       setVerifiedCloudSignature('')
       setCloudValues({})
       setHasReachabilityFailure(false)
-      push({
-        tone: 'success',
-        title: 'Provider cleared',
-        description: provider.label,
-      })
     } catch (err) {
       push({
         tone: 'error',
@@ -951,7 +936,6 @@ function ModelsPanel({
   const handleCopy = async (qualifiedId: string) => {
     try {
       await navigator.clipboard.writeText(qualifiedId)
-      push({ tone: 'success', title: 'Copied', description: qualifiedId })
     } catch {
       push({ tone: 'error', title: 'Copy failed', description: qualifiedId })
     }
@@ -1327,13 +1311,6 @@ function OAuthLoginDialog({
             const model = event.suggested_model
             if (model) {
               void installSeed(model)
-                .then(() => {
-                  useToastStore.getState().push({
-                    tone: 'success',
-                    title: 'Provider connected',
-                    description: 'Default agents and skills are ready.',
-                  })
-                })
                 .catch((err: unknown) => {
                   useToastStore.getState().push({
                     tone: 'error',
@@ -1341,8 +1318,6 @@ function OAuthLoginDialog({
                     description: err instanceof Error ? err.message : String(err),
                   })
                 })
-            } else {
-              useToastStore.getState().push({ tone: 'success', title: 'Provider connected', description: provider.label })
             }
           }
           if (event.event === 'failed') {
@@ -1358,7 +1333,7 @@ function OAuthLoginDialog({
       authMode === 'browser' ? 'browser' : undefined,
     )
     return () => abort.abort()
-  }, [authMode, open, provider.id, provider.label, queryClient])
+  }, [authMode, open, provider.id, queryClient])
 
   return (
     <Dialog
@@ -1465,8 +1440,6 @@ function OAuthLoginDialog({
                     setEvents((current) => [...current, { event: 'success', suggested_model: result.suggested_model }])
                     void queryClient.invalidateQueries({ queryKey: queryKeys.settings.providers() })
                     void queryClient.invalidateQueries({ queryKey: queryKeys.agentFiles.registry() })
-
-                    useToastStore.getState().push({ tone: 'success', title: 'Provider connected', description: provider.label })
                   })
                   .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
                   .finally(() => setSubmittingCode(false))

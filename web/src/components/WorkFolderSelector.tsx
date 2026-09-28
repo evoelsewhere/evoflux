@@ -167,12 +167,6 @@ export function WorkFolderSelector({
       onDraftChange?.(path)
       if (path) rememberFolder(path)
       setBrowserOpen(false)
-      pushToast({
-        tone: 'success',
-        title: path
-          ? `This chat will use ${folderName(path)}`
-          : 'Using the default session folder',
-      })
       return
     }
     if (!sessionId) return
@@ -188,10 +182,6 @@ export function WorkFolderSelector({
       void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
       if (path) rememberFolder(result.workspace_root ?? path)
       setBrowserOpen(false)
-      pushToast({
-        tone: 'success',
-        title: path ? `Folder changed to ${folderName(path)}` : 'Using the default session folder',
-      })
     } catch (error) {
       pushToast({
         tone: 'error',

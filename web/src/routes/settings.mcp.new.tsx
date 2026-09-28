@@ -66,11 +66,6 @@ export function NewMcpServerPage() {
     }
     try {
       await createMut.mutateAsync({ name: draft.name, server: result.body })
-      push({
-        tone: 'success',
-        title: `Created MCP server "${draft.name}"`,
-        description: 'Available on next turn.',
-      })
       navigate('/settings/mcp/$name', { params: { name: draft.name } })
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)

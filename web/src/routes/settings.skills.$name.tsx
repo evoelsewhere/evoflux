@@ -107,11 +107,6 @@ export function SkillEditorPage() {
         files: bundle.files,
         deletedFiles: bundle.deletedFiles,
       })
-      push({
-        tone: 'success',
-        title: `Saved "${name}"`,
-        description: 'Used from the next turn.',
-      })
       setDraft(res.content)
       setFiles(skillBundleFilesFromApi(res.files))
       setDeletedFiles([])
@@ -126,11 +121,6 @@ export function SkillEditorPage() {
   const handleEnabledChange = async (enabled: boolean) => {
     try {
       await enableMut.mutateAsync({ name, enabled })
-      push({
-        tone: 'success',
-        title: enabled ? `Enabled "${name}"` : `Disabled "${name}"`,
-        description: 'Applies from the next turn.',
-      })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       push({ tone: 'error', title: 'Could not change skill', description: msg })
@@ -140,7 +130,6 @@ export function SkillEditorPage() {
   const handleDelete = async () => {
     try {
       await deleteMut.mutateAsync(name)
-      push({ tone: 'success', title: `Deleted "${name}"` })
       navigate('/settings/skills')
     } catch (err) {
       const msg = err instanceof ApiValidationError ? err.message : String(err)

@@ -99,11 +99,6 @@ export function ManagedAgentRuntimeModel({
         extraSkills: selectedSkills,
         extraMcp: selectedMcp,
       })
-      push({
-        tone: 'success',
-        title: 'Local additions updated',
-        description: `${name} keeps its managed base and applies these additions from its next safe turn.`,
-      })
     } catch (error) {
       push({
         tone: 'error',
@@ -124,13 +119,6 @@ export function ManagedAgentRuntimeModel({
         extraMcp: selectedMcp,
       })
       setSelectedModel(inheritedModel)
-      push({
-        tone: 'success',
-        title: 'Runtime model reset',
-        description: inheritedModel
-          ? `Using the ${provider.project_name} bundle default again.`
-          : 'Choose a model before this Agent can run on this installation.',
-      })
     } catch (error) {
       push({
         tone: 'error',

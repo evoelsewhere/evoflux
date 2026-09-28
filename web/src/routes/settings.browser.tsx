@@ -93,11 +93,6 @@ export function BrowserSettingsPage() {
     try {
       await update.mutateAsync(draft)
       setEditedDraft(null)
-      push({
-        tone: 'success',
-        title: t('WebBridge settings saved'),
-        description: t('New chats and agent actions use this policy immediately.'),
-      })
     } catch (error) {
       push({
         tone: 'error',

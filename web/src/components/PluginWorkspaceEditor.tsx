@@ -313,7 +313,6 @@ export function PluginWorkspaceEditor({
       const result = await writePluginWorkspaceFile(root, selectedPath, content)
       setSavedContent(content)
       onInspection(result.inspection)
-      pushToast({ tone: 'success', title: `${selectedPath} saved` })
       await tree.refetch()
     })
   }
@@ -376,17 +375,15 @@ export function PluginWorkspaceEditor({
     await run('validate', async () => {
       const result = await inspectPlugin(root)
       onInspection(result)
-      pushToast({
-        tone: result.valid ? 'success' : 'error',
-        title: result.valid ? 'Plugin is valid' : 'Plugin validation failed',
-      })
+      if (!result.valid) {
+        pushToast({ tone: 'error', title: 'Plugin validation failed' })
+      }
     })
   }
 
   const pack = async () => {
     await run('pack', async () => {
-      const result = await packPlugin(root)
-      pushToast({ tone: 'success', title: 'Plugin archive created', description: result.path })
+      await packPlugin(root)
     })
   }
 
