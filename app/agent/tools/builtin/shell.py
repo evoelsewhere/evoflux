@@ -227,7 +227,12 @@ def _resolve_workdir(workdir: str | None) -> Path:
 async def _shell(
     command: Annotated[
         str,
-        Field(description="Shell command to run via the user's preferred POSIX shell."),
+        Field(
+            description=(
+                "Shell command to run, in the shell dialect named in the tool "
+                "description."
+            )
+        ),
     ],
     description: Annotated[
         str,
@@ -372,13 +377,48 @@ async def _shell(
     return result
 
 
+_SHELL_DESCRIPTION = (
+    "Run a non-interactive shell command in the session workspace. The tool "
+    "returns a process_id when work outlives yield_time_ms; continue it with "
+    "process. Full output is archived while the model receives a bounded view. "
+    "Prefer file tools for file operations and always use non-interactive flags."
+)
+
+
+def _shell_environment_note() -> str:
+    """Name the OS and shell dialect commands actually run in.
+
+    Without it models guess, and on Windows they mix cmd.exe (``dir /s``,
+    ``2>nul``) and PowerShell (``Get-ChildItem``) into Git Bash commands,
+    which then fail.
+    """
+    shell = _shell_mod.name()
+    if sys.platform == "win32":
+        if _shell_mod.is_posix(shell):
+            return (
+                "Commands run in Git Bash on Windows: use POSIX syntax "
+                "(`/dev/null`, `/c/Users/...` or `C:/Users/...`), not cmd.exe or "
+                "PowerShell syntax (`dir /s`, `2>nul`, `Get-ChildItem`)."
+            )
+        if shell == "cmd":
+            return (
+                "Commands run in cmd.exe on Windows: use cmd syntax (`dir`, `nul`, "
+                "`%NAME%`), not POSIX or PowerShell syntax."
+            )
+        return (
+            "Commands run in PowerShell on Windows: use PowerShell syntax "
+            "(`Get-ChildItem`, `$null`, `$env:NAME`), not POSIX or cmd.exe syntax."
+        )
+    if sys.platform == "darwin":
+        return (
+            f"Commands run in {shell} on macOS, with BSD tools "
+            "(`sed -i ''`, no GNU-only flags)."
+        )
+    return f"Commands run in {shell} on Linux."
+
+
 shell_tool = Tool(
     _shell,
     name="shell",
-    description=(
-        "Run a non-interactive shell command in the session workspace. The tool "
-        "returns a process_id when work outlives yield_time_ms; continue it with "
-        "process. Full output is archived while the model receives a bounded view. "
-        "Prefer file tools for file operations and always use non-interactive flags."
-    ),
+    description=lambda: f"{_SHELL_DESCRIPTION} {_shell_environment_note()}",
 )

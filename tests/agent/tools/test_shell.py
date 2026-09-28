@@ -793,3 +793,31 @@ class TestSandboxCommandScan:
         assert "[Succeeded]" in result
         assert "immediate_flush" in "".join(emitted_chunks)
         assert len(emitted_chunks) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Tool description names the OS and shell dialect
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("platform", "shell", "expected", "absent"),
+    [
+        ("win32", r"C:\Program Files\Git\bin\bash.exe", "Git Bash on Windows", None),
+        ("win32", "powershell.exe", "PowerShell on Windows", "Git Bash"),
+        ("win32", r"C:\Windows\System32\cmd.exe", "cmd.exe on Windows", "Git Bash"),
+        ("darwin", "/bin/zsh", "zsh on macOS", None),
+        ("linux", "/usr/bin/bash", "bash on Linux", None),
+    ],
+)
+def test_shell_description_names_os_and_shell(
+    monkeypatch, platform, shell, expected, absent
+):
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr("app.agent.tools.builtin.shell_runtime._CACHED_SHELL", shell)
+
+    description = shell_tool.definition["function"]["description"]
+    assert description.startswith("Run a non-interactive shell command")
+    assert expected in description
+    if absent:
+        assert absent not in description
