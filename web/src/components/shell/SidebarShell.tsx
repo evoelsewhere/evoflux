@@ -248,11 +248,18 @@ export function SidebarModeSlot({ className }: { className?: string }) {
 export function SidebarNavGroup({
   ariaLabel,
   compact = false,
+  grid = false,
   className,
   children,
 }: {
   ariaLabel: string
   compact?: boolean
+  /**
+   * Lay the rows out as a responsive tile grid (pair with `<SidebarItem
+   * tile>`): as many ~76px columns as the sidebar width fits, wrapping when
+   * it is narrow, instead of one full-width row per action.
+   */
+  grid?: boolean
   className?: string
   children: ReactNode
 }) {
@@ -260,8 +267,10 @@ export function SidebarNavGroup({
     <nav
       aria-label={ariaLabel}
       className={cn(
-        'flex shrink-0 flex-col',
-        compact ? 'gap-0.5' : 'gap-1',
+        'shrink-0',
+        grid
+          ? 'grid grid-cols-[repeat(auto-fit,minmax(4.75rem,1fr))] gap-1'
+          : cn('flex flex-col', compact ? 'gap-0.5' : 'gap-1'),
         className,
       )}
     >

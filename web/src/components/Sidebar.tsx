@@ -688,26 +688,26 @@ export function Sidebar({
               <SidebarSearchTrigger onClick={onCommandPalette} compact />
             </div>
           )}
-          <SidebarNavGroup ariaLabel="Primary" compact className="px-1.5 pb-1 pt-1">
+          <SidebarNavGroup ariaLabel="Primary" grid className="px-1.5 pb-1 pt-2">
             <SidebarItem
               Icon={Plus}
               label="New Chat"
               kbd="^N"
-              compact
+              tile
               onClick={handleNewChat}
             />
             <SidebarItem
               Icon={CalendarClock}
               label="Scheduler"
               kbd="^S"
-              compact
+              tile
               onClick={toggleScheduler}
             />
             <SidebarItem
               Icon={Blocks}
               label="Plugins"
               kbd="^K"
-              compact
+              tile
               onClick={() => togglePlugins("plugins")}
             />
           </SidebarNavGroup>
@@ -776,23 +776,26 @@ export function Sidebar({
       </div>
 
       {/* Nav */}
-      <SidebarNavGroup ariaLabel="Primary" className="px-1.5 pb-1.5 pt-1.5">
+      <SidebarNavGroup ariaLabel="Primary" grid className="px-2.5 pb-1.5 pt-2">
         <SidebarItem
           Icon={Plus}
           label="New Chat"
           kbd="^N"
+          tile
           onClick={handleNewChat}
         />
         <SidebarItem
           Icon={CalendarClock}
           label="Scheduler"
           kbd="^S"
+          tile
           onClick={() => { toggleScheduler(); onMobileClose?.(); }}
         />
         <SidebarItem
           Icon={Blocks}
           label="Plugins"
           kbd="^K"
+          tile
           onClick={() => { togglePlugins("plugins"); onMobileClose?.(); }}
         />
       </SidebarNavGroup>

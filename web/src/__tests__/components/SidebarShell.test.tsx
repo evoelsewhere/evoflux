@@ -78,6 +78,25 @@ describe('SidebarShell', () => {
     )
   })
 
+  it('lays primary actions out as a responsive tile grid', () => {
+    render(
+      <SidebarNavGroup ariaLabel="Primary" grid>
+        <SidebarItem Icon={CalendarClock} label="Scheduler" kbd="^S" tile />
+        <SidebarItem Icon={CalendarClock} label="Plugins" tile />
+      </SidebarNavGroup>,
+    )
+
+    expect(screen.getByRole('navigation', { name: 'Primary' })).toHaveClass(
+      'grid',
+      'grid-cols-[repeat(auto-fit,minmax(4.75rem,1fr))]',
+    )
+    const tile = screen.getByRole('button', { name: 'Scheduler' })
+    expect(tile).toHaveClass('flex-col', 'h-14')
+    // No inline kbd in a tile; the shortcut lives in the tooltip.
+    expect(tile.querySelector('kbd')).toBeNull()
+    expect(tile.title).toMatch(/Scheduler \(.+S\)/)
+  })
+
   it('overlays the collapse control without reserving a layout rail', () => {
     render(
       <AppShell sidebar={<div>Sidebar</div>}>
