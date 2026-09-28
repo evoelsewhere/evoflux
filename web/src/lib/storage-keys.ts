@@ -94,4 +94,9 @@ export const STORAGE_KEYS = {
     /** sessionStorage: this window's open cards, kept across a reload. */
     openCards: 'oa.computer-app.open-cards',
   },
+
+  remoteControl: {
+    /** "1" once the user ticked "Don't show again" on the policy warning. */
+    policyAcknowledged: 'oa.remoteControl.policyAcknowledged',
+  },
 } as const

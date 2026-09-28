@@ -2352,10 +2352,11 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
   {
     id: 'phone-access',
     category: 'settings',
-    title: 'Phone access (built-in Tailscale)',
+    title: 'Remote Control (built-in Tailscale)',
     summary:
       'Reach this computer from your phone over your own tailnet — no desktop CLI or daemon setup, with a QR code and a one-device lock.',
     keywords: [
+      'remote control',
       'phone access',
       'tailscale',
       'serve',
@@ -2372,24 +2373,25 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
     openAction: { type: 'settings', path: 'remote-use' },
     setup:
-      'Open Settings → Phone access, click Connect, and sign in to Tailscale once. Install the Tailscale mobile app on the phone, join the same tailnet, then enable Phone access.',
+      'Open Settings → Remote Control, click Connect, and sign in to Tailscale once. Install the Tailscale mobile app on the phone, join the same tailnet, then enable Remote Control.',
     tricks: [
       'Desktop builds include their own Tailscale node — no Homebrew, CLI, or separate tailscaled setup.',
       'The QR code targets the tailnet URL — scan it while the phone is connected to the same tailnet.',
       'One device holds the lock; release it from the desktop or wait for the 30-minute idle timeout.',
       'A second phone showing “device X holds the lock” is the expected HTTP 409, not a bug.',
       'The phone identifies itself through the Tailscale login header — no token or pairing code to copy.',
-      'EvoFlux must stay running on this computer for phone access to work.',
+      'EvoFlux must stay running on this computer for Remote Control to work.',
+      'The page opens with a policy warning; tick “Don’t show this again” to skip it on this computer. Its “How to set up” steps tick themselves off as you go.',
       'Provider, bot and plugin secrets stay desktop-only regardless of where you connect from.',
     ],
     blocks: [
       {
         type: 'p',
-        text: 'Phone access uses a Tailscale node embedded in EvoFlux. The helper verifies every peer with WhoIs and proxies it to the local sidecar; there is no public listener or cloud tunnel. It uses HTTPS when the tailnet provides certificates and otherwise uses HTTP inside the already encrypted tailnet.',
+        text: 'Remote Control uses a Tailscale node embedded in EvoFlux. The helper verifies every peer with WhoIs and proxies it to the local sidecar; there is no public listener or cloud tunnel. It uses HTTPS when the tailnet provides certificates and otherwise uses HTTP inside the already encrypted tailnet.',
       },
       {
         type: 'p',
-        text: 'On first use, click Connect and finish the browser login. EvoFlux stores this node identity in its state directory, reconnects automatically on later launches, and restores Phone access when it was previously enabled.',
+        text: 'On first use, click Connect and finish the browser login. EvoFlux stores this node identity in its state directory, reconnects automatically on later launches, and restores Remote Control when it was previously enabled.',
       },
       {
         type: 'p',
@@ -2412,7 +2414,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: enabling before browser login finishes; forgetting to install or connect Tailscale on the phone; expecting a second phone to connect while the lock is held; and assuming phone access works after EvoFlux quits.',
+        text: 'Common mistakes: enabling before browser login finishes; forgetting to install or connect Tailscale on the phone; expecting a second phone to connect while the lock is held; and assuming Remote Control works after EvoFlux quits.',
       },
       {
         type: 'tips',

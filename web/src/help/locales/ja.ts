@@ -2307,10 +2307,12 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
   {
     id: 'phone-access',
     category: 'settings',
-    title: 'スマホアクセス（Tailscale 内蔵）',
+    title: 'Remote Control（Tailscale 内蔵）',
     summary:
       '自分の tailnet 経由でスマホから接続 — デスクトップ側の CLI／デーモン設定は不要で、QR コードと1台限定ロックを利用。',
     keywords: [
+      'remote control',
+      'リモートコントロール',
       'phone access',
       'tailscale',
       'serve',
@@ -2326,24 +2328,25 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
 ],
     openAction: { type: 'settings', path: 'remote-use' },
     setup:
-      'Settings → Phone access で Connect を押し、一度だけ Tailscale にサインインします。スマホには Tailscale アプリを入れて同じ tailnet に参加し、Phone access を有効にします。',
+      'Settings → Remote Control で Connect を押し、一度だけ Tailscale にサインインします。スマホには Tailscale アプリを入れて同じ tailnet に参加し、Remote Control を有効にします。',
     tricks: [
       'デスクトップ版には Tailscale ノードが内蔵 — Homebrew、CLI、別の tailscaled 設定は不要。',
       'QR コードは tailnet URL を指す — スマホが同じ tailnet に接続中に読み取る。',
       'ロックはデバイス1台のみ。デスクトップから Release、または30分アイドルで自動解放。',
       '2台目が「device X holds the lock」と出すのは想定どおりの HTTP 409 で、バグではない。',
       'スマホは Tailscale ログインヘッダーで自分を識別 — トークンもペアリングコードも不要。',
-      'EvoFlux がこのコンピュータで起動していないと phone access は動かない。',
+      'EvoFlux がこのコンピュータで起動していないと Remote Control は動かない。',
+      'ページを開くとポリシー警告が出ます。「Don’t show this again」にチェックするとこのコンピュータでは次回から省略。「How to set up」の手順は進むと自動でチェックされます。',
       'プロバイダー／ボット／プラグインの秘密情報は、どこから接続してもデスクトップ専用。',
     ],
     blocks: [
       {
         type: 'p',
-        text: 'Phone access は EvoFlux 内蔵の Tailscale ノードを使います。ヘルパーが WhoIs で各ピアを検証してローカル sidecar に転送し、公開リスナーやクラウドトンネルはありません。証明書があれば HTTPS、なければ暗号化済み tailnet 内の HTTP を使います。',
+        text: 'Remote Control は EvoFlux 内蔵の Tailscale ノードを使います。ヘルパーが WhoIs で各ピアを検証してローカル sidecar に転送し、公開リスナーやクラウドトンネルはありません。証明書があれば HTTPS、なければ暗号化済み tailnet 内の HTTP を使います。',
       },
       {
         type: 'p',
-        text: '初回は Connect を押してブラウザでサインインするだけです。EvoFlux はノード ID を state ディレクトリに保存し、次回以降は自動接続し、以前有効だった Phone access も復元します。',
+        text: '初回は Connect を押してブラウザでサインインするだけです。EvoFlux はノード ID を state ディレクトリに保存し、次回以降は自動接続し、以前有効だった Remote Control も復元します。',
       },
       {
         type: 'p',
@@ -2366,7 +2369,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗：ブラウザのサインイン完了前に有効化する、スマホ側で Tailscale をインストール／接続していない、ロック保持中に2台目が接続できると思う、EvoFlux 終了後も phone access が動くと思うことです。',
+        text: 'よくある失敗：ブラウザのサインイン完了前に有効化する、スマホ側で Tailscale をインストール／接続していない、ロック保持中に2台目が接続できると思う、EvoFlux 終了後も Remote Control が動くと思うことです。',
       },
       {
         type: 'tips',

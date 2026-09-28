@@ -9,6 +9,22 @@ once, and the machine identity persists in the EvoFlux state directory.
 Source/server deployments retain the external `tailscale serve` provider as a
 fallback. Pairing codes and copied session tokens are not part of either flow.
 
+## Settings page (Remote Control)
+
+The feature appears in the UI as **Settings → Remote Control**
+(`web/src/routes/settings.remote-use.tsx`; route and API keep the
+`remote-use` name).
+
+- Entering the page first shows a policy warning
+  (`RemoteControlPolicyDialog`): a remote device acts with this computer's
+  access, use only your own devices, follow your organization's policy, and
+  access ends when EvoFlux quits. **I understand** continues; **Go back**,
+  Escape or the outside click return to the Settings hub. **Don't show this
+  again** stores `oa.remoteControl.policyAcknowledged` in localStorage.
+- A **How to set up** walkthrough lists the four steps (connect this computer,
+  get Tailscale on the phone, turn on Remote Control, open it from the phone),
+  ticked off from live status, with a link to the full Guidelines topic.
+
 ## What the backend exposes
 
 HTTP routes under `/api/remote-use` (see

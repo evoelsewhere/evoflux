@@ -2293,10 +2293,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
   {
     id: 'phone-access',
     category: 'settings',
-    title: 'Truy cập điện thoại (Tailscale tích hợp)',
+    title: 'Remote Control (Tailscale tích hợp)',
     summary:
       'Truy cập máy tính này từ điện thoại qua tailnet của bạn — không cần tự cài CLI hay daemon trên desktop, có mã QR và khóa một thiết bị.',
     keywords: [
+      'remote control',
+      'điều khiển từ xa',
       'phone access',
       'tailscale',
       'serve',
@@ -2313,7 +2315,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
 ],
     openAction: { type: 'settings', path: 'remote-use' },
     setup:
-      'Mở Settings → Phone access, bấm Connect và đăng nhập Tailscale một lần. Trên điện thoại, cài app Tailscale và đăng nhập cùng tailnet, rồi bật công tắc Phone access.',
+      'Mở Settings → Remote Control, bấm Connect và đăng nhập Tailscale một lần. Trên điện thoại, cài app Tailscale và đăng nhập cùng tailnet, rồi bật công tắc Remote Control.',
     tricks: [
       'Bản desktop đã tích hợp node Tailscale — không cần Homebrew, CLI hay tailscaled riêng.',
       'Mã QR trỏ tới URL tailnet — quét khi điện thoại đang kết nối cùng tailnet.',
@@ -2321,16 +2323,17 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Điện thoại thứ hai thấy “device X holds the lock” là HTTP 409 đúng như thiết kế, không phải lỗi.',
       'Điện thoại tự nhận dạng qua header Tailscale login — không cần token hay mã pairing.',
       'EvoFlux phải chạy trên máy tính này thì truy cập từ điện thoại mới hoạt động.',
+      'Trang mở kèm cảnh báo chính sách; tick “Don’t show this again” để bỏ qua trên máy này. Các bước “How to set up” tự đánh dấu khi bạn làm xong.',
       'Secret của provider/bot/plugin vẫn chỉ sửa trên desktop dù kết nối từ đâu.',
     ],
     blocks: [
       {
         type: 'p',
-        text: 'Phone access dùng node Tailscale nhúng trong EvoFlux. Helper xác minh từng thiết bị bằng WhoIs rồi proxy vào sidecar local; không có listener công khai hay cloud tunnel ở giữa. Nếu tailnet cấp certificate, URL dùng HTTPS; nếu không, HTTP vẫn nằm trong kết nối tailnet đã mã hóa.',
+        text: 'Remote Control dùng node Tailscale nhúng trong EvoFlux. Helper xác minh từng thiết bị bằng WhoIs rồi proxy vào sidecar local; không có listener công khai hay cloud tunnel ở giữa. Nếu tailnet cấp certificate, URL dùng HTTPS; nếu không, HTTP vẫn nằm trong kết nối tailnet đã mã hóa.',
       },
       {
         type: 'p',
-        text: 'Lần đầu chỉ cần bấm Connect và hoàn tất đăng nhập trong browser. Machine identity được lưu trong thư mục state của EvoFlux, nên những lần mở sau tự kết nối và tự khôi phục Phone access nếu trước đó đã bật.',
+        text: 'Lần đầu chỉ cần bấm Connect và hoàn tất đăng nhập trong browser. Machine identity được lưu trong thư mục state của EvoFlux, nên những lần mở sau tự kết nối và tự khôi phục Remote Control nếu trước đó đã bật.',
       },
       {
         type: 'p',
@@ -2353,7 +2356,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai sót thường gặp: bật công tắc trước khi hoàn tất đăng nhập; điện thoại chưa cài hoặc chưa kết nối Tailscale; kỳ vọng điện thoại thứ hai kết nối khi khóa còn giữ; và tưởng phone access vẫn chạy sau khi EvoFlux đã tắt.',
+        text: 'Sai sót thường gặp: bật công tắc trước khi hoàn tất đăng nhập; điện thoại chưa cài hoặc chưa kết nối Tailscale; kỳ vọng điện thoại thứ hai kết nối khi khóa còn giữ; và tưởng Remote Control vẫn chạy sau khi EvoFlux đã tắt.',
       },
       {
         type: 'tips',

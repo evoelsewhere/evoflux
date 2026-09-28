@@ -49,7 +49,7 @@ const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   providers: 'Providers',
   'language-servers': 'Language servers',
   connection: 'Connection',
-  'remote-use': 'Phone access',
+  'remote-use': 'Remote Control',
   'version-control': 'Git & reviews',
   memory: 'Memory',
   sandbox: 'Sandbox',

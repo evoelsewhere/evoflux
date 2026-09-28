@@ -1,5 +1,5 @@
 /**
- * /settings/remote-use — "Phone access": embedded/external Tailscale control.
+ * /settings/remote-use — "Remote Control": embedded/external Tailscale control.
  *
  * Connect the bundled node, enable/disable its tailnet listener, show the URL
  * (+ QR) for the phone, and surface the one-device lock: who holds it,
@@ -9,12 +9,14 @@
 
 import { QRCodeSVG } from 'qrcode.react'
 import {
+  BookOpen,
   Check,
   Clock3,
   Copy,
   Link2,
   Lock,
   LogIn,
+  MonitorSmartphone,
   QrCode,
   ShieldCheck,
   Smartphone,
@@ -31,12 +33,17 @@ import {
   useReleaseRemoteUseLockMutation,
   useRemoteUseStatusQuery,
 } from '@/api/client/remoteUse'
+import { RemoteControlPolicyDialog } from '@/components/settings/RemoteControlPolicyDialog'
 import { SettingsCallout, SettingsGroup, SettingsPage } from '@/components/settings/SettingsLayout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { useSettingsNavigate } from '@/contexts/SettingsContext'
 import { openExternalUrl } from '@/lib/open-external'
+import { isRemoteControlPolicyAcknowledged } from '@/lib/remote-control-policy'
+import { cn } from '@/lib/utils'
+import { useUIStore } from '@/stores/useUIStore'
 
 function relativeTime(iso: string): string {
   if (!iso) return '—'
@@ -75,7 +82,78 @@ function ConnectionMetric({
   )
 }
 
+interface GuideStep {
+  title: string
+  text: string
+  done: boolean
+}
+
+/**
+ * The page's own setup walkthrough: four steps from signing in to opening
+ * EvoFlux on the phone, ticked off from live status so the next thing to do
+ * is always the highlighted one. The Guidelines topic holds the long form.
+ */
+function SetupGuide({ steps }: { steps: GuideStep[] }) {
+  const current = steps.findIndex((step) => !step.done)
+  return (
+    <SettingsGroup
+      title="How to set up"
+      description="Four steps, once. After that, Remote Control reconnects on its own whenever EvoFlux starts."
+      actions={(
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => useUIStore.getState().openGuidelines('phone-access')}
+        >
+          <BookOpen className="size-3.5" />
+          Full guide
+        </Button>
+      )}
+      bare
+    >
+      <ol className="grid gap-2 sm:grid-cols-2">
+        {steps.map((step, index) => {
+          const isCurrent = index === current
+          return (
+            <li
+              key={step.title}
+              aria-current={isCurrent ? 'step' : undefined}
+              className={cn(
+                'flex gap-3 rounded-xl border p-3.5 transition-colors',
+                isCurrent
+                  ? 'border-(--color-accent)/35 bg-(--color-accent-soft)'
+                  : 'border-(--color-border-subtle) bg-(--bg-card)',
+              )}
+            >
+              <span
+                className={cn(
+                  'flex size-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums',
+                  step.done
+                    ? 'bg-(--color-success)/12 text-(--color-success)'
+                    : isCurrent
+                      ? 'bg-(--color-accent) text-(--color-text-on-accent)'
+                      : 'bg-(--bg-key) text-(--color-text-muted)',
+                )}
+              >
+                {step.done ? <Check className="size-3.5" aria-label="Done" /> : index + 1}
+              </span>
+              <div className="min-w-0">
+                <p className={cn('text-xs font-medium', step.done ? 'text-(--color-text-muted)' : 'text-(--color-text)')}>
+                  {step.title}
+                </p>
+                <p className="mt-0.5 text-xs leading-relaxed text-(--color-text-muted)">{step.text}</p>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+    </SettingsGroup>
+  )
+}
+
 export function RemoteUseSettingsPage() {
+  const navigate = useSettingsNavigate()
+  const [policyAccepted, setPolicyAccepted] = useState(isRemoteControlPolicyAcknowledged)
   const statusQ = useRemoteUseStatusQuery()
   const connectM = useConnectRemoteUseMutation()
   const enableM = useEnableRemoteUseMutation()
@@ -133,7 +211,7 @@ export function RemoteUseSettingsPage() {
   if (statusQ.isError) {
     stateTone = 'warning'
     stateEyebrow = 'Connection error'
-    stateTitle = 'Could not read phone access status'
+    stateTitle = 'Could not read Remote Control status'
     stateDescription = formatRemoteUseError(statusQ.error)
   } else if (tailscale?.error && !(embedded && tailscale.auth_url)) {
     stateTone = 'warning'
@@ -155,18 +233,43 @@ export function RemoteUseSettingsPage() {
     stateTone = 'warning'
     stateEyebrow = 'HTTPS required'
     stateTitle = 'Enable tailnet certificates'
-    stateDescription = 'Turn on HTTPS certificates in the Tailscale admin console before enabling phone access.'
+    stateDescription = 'Turn on HTTPS certificates in the Tailscale admin console before enabling Remote Control.'
   } else if (serve?.enabled && serve.url) {
     stateTone = 'live'
     stateEyebrow = 'Live on your tailnet'
-    stateTitle = 'Phone access is ready'
+    stateTitle = 'Remote Control is ready'
     stateDescription = 'Your phone can securely reach this EvoFlux desktop while the app stays open.'
   } else if (tunnelReady) {
     stateTone = 'ready'
     stateEyebrow = 'Tailnet connected'
-    stateTitle = 'Ready to enable phone access'
+    stateTitle = 'Ready to enable Remote Control'
     stateDescription = 'Turn it on when you want this computer to accept connections from your phone.'
   }
+
+  const guideSteps: GuideStep[] = [
+    {
+      title: embedded ? 'Connect this computer' : 'Sign in to Tailscale',
+      text: embedded
+        ? 'Click Connect Tailscale and finish the sign-in in your browser. EvoFlux remembers this computer.'
+        : 'Open the Tailscale app, or run tailscale up, on this computer.',
+      done: !!tailscale?.logged_in,
+    },
+    {
+      title: 'Get Tailscale on your phone',
+      text: 'Install the Tailscale app and sign in to the same tailnet as this computer.',
+      done: !!lock,
+    },
+    {
+      title: 'Turn on Remote Control',
+      text: 'Use the switch above. A private address and a QR code appear on this page.',
+      done: !!serve?.enabled,
+    },
+    {
+      title: 'Open it from your phone',
+      text: 'Scan the QR code or open the address. One device can connect at a time.',
+      done: !!lock,
+    },
+  ]
 
   const live = stateTone === 'live'
   const stateAccent = live
@@ -177,11 +280,17 @@ export function RemoteUseSettingsPage() {
 
   return (
     <SettingsPage
-      icon={Smartphone}
-      title="Phone access"
+      icon={MonitorSmartphone}
+      title="Remote Control"
       size="wide"
       lede="Reach this computer from your phone over your own tailnet — no cloud relay or pairing code. Desktop builds include their own Tailscale node, so no separate CLI or daemon setup is required."
     >
+      <RemoteControlPolicyDialog
+        open={!policyAccepted}
+        onAccept={() => setPolicyAccepted(true)}
+        onLeave={() => navigate('/settings')}
+      />
+
       <SettingsGroup bare>
         <div className="relative overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-card) shadow-[0_18px_50px_rgba(0,0,0,0.06)]">
           <div
@@ -199,7 +308,7 @@ export function RemoteUseSettingsPage() {
               <div className="relative flex flex-col gap-5 p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
                 <div className="flex min-w-0 gap-4">
                   <div className={`flex size-11 shrink-0 items-center justify-center rounded-xl border ${stateAccent}`}>
-                    {live ? <Wifi className="size-5" aria-hidden="true" /> : <Smartphone className="size-5" aria-hidden="true" />}
+                    {live ? <Wifi className="size-5" aria-hidden="true" /> : <MonitorSmartphone className="size-5" aria-hidden="true" />}
                   </div>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -237,13 +346,13 @@ export function RemoteUseSettingsPage() {
                   ) : (
                     <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-(--color-border) bg-(--bg-page)/70 px-3.5 py-2.5 shadow-sm">
                       <span>
-                        <span className="block text-xs font-semibold text-(--color-text)">Phone access</span>
+                        <span className="block text-xs font-semibold text-(--color-text)">Remote Control</span>
                         <span className="mt-0.5 block text-[11px] text-(--color-text-muted)">
                           {serve?.enabled ? 'On' : 'Off'}
                         </span>
                       </span>
                       <Switch
-                        aria-label="Enable phone access"
+                        aria-label="Enable Remote Control"
                         checked={!!serve?.enabled}
                         disabled={!tunnelReady || tunnelBusy || statusQ.isLoading}
                         onCheckedChange={toggleTunnel}
@@ -274,6 +383,8 @@ export function RemoteUseSettingsPage() {
           )}
         </div>
       </SettingsGroup>
+
+      {!statusQ.isLoading && !statusQ.isError && <SetupGuide steps={guideSteps} />}
 
       {serve?.enabled && serve.url && (
         <SettingsGroup
@@ -322,7 +433,7 @@ export function RemoteUseSettingsPage() {
 
             <div className="flex flex-col items-center justify-center border-t border-(--color-border-subtle) bg-(--bg-key)/35 p-5 lg:border-l lg:border-t-0">
               <div className="rounded-2xl border border-black/10 bg-white p-3 shadow-[0_10px_28px_rgba(0,0,0,0.12)]">
-                <QRCodeSVG value={serve.url} size={136} aria-label="Phone access QR code" />
+                <QRCodeSVG value={serve.url} size={136} aria-label="Remote Control QR code" />
               </div>
               <span className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-medium text-(--color-text-muted)">
                 <QrCode className="size-3.5" aria-hidden="true" />
@@ -408,7 +519,7 @@ export function RemoteUseSettingsPage() {
       </SettingsGroup>
 
       <SettingsCallout tone="info" icon={Clock3}>
-        Phone access only works while EvoFlux is open. Your provider, bot, and plugin credentials remain on this
+        Remote Control only works while EvoFlux is open. Your provider, bot, and plugin credentials remain on this
         computer and are never copied to the phone.
       </SettingsCallout>
     </SettingsPage>
