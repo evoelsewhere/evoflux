@@ -507,9 +507,30 @@ async def _discover_configured_registry_models() -> list[tuple[str, str]]:
         cached = _registry_model_cache.get(provider_id)
         if cached and now - cached[0] < _REGISTRY_MODEL_CACHE_TTL_S:
             return provider_id, cached[1]
-        models = await discover_provider_models(
-            entry, overrides=_provider_saved_overrides(entry)
-        )
+        last_good = cached[1] if cached and cached[1] else None
+        try:
+            models = await discover_provider_models(
+                entry, overrides=_provider_saved_overrides(entry)
+            )
+        except Exception:
+            if last_good is None:
+                raise
+            models = []
+        if not models:
+            # Discovery swallows transport errors and answers ``[]`` (or
+            # raises), so nothing from a configured provider is almost always
+            # a transient outage — the network still coming up after the
+            # machine wakes from sleep. Caching it emptied the registry for
+            # the whole TTL and every chat reported its model as gone. Keep
+            # serving the last good list, and cache nothing so the next call
+            # asks again.
+            if last_good is not None:
+                logger.info(
+                    "registry_model_discovery_empty_using_last_good provider={}",
+                    provider_id,
+                )
+                return provider_id, last_good
+            return provider_id, models
         _registry_model_cache[provider_id] = (now, models)
         return provider_id, models
 

@@ -1947,6 +1947,62 @@ def test_registry_survives_discovery_errors(monkeypatch: pytest.MonkeyPatch) -> 
     assert response.json()["models"] == []
 
 
+@pytest.mark.parametrize("outage", ["empty", "raise"])
+def test_registry_keeps_last_good_models_through_a_discovery_outage(
+    monkeypatch: pytest.MonkeyPatch, outage: str
+) -> None:
+    """After sleep the network is not back yet: a configured provider's
+    discovery comes back empty (or raises). The registry must keep offering
+    the models it last saw instead of emptying, which made every chat say its
+    model was no longer available — and it must not cache the outage."""
+    from fastapi import FastAPI
+
+    from app.api.routes import agents as agents_module
+    from app.api.routes.agents import router as agents_router
+
+    agents_module._registry_model_cache.clear()
+    monkeypatch.setattr(
+        "app.api.routes.settings._provider_is_configured",
+        lambda entry: entry["id"] == "openai",
+    )
+
+    online = True
+    calls = 0
+
+    async def _discover(_entry, **_kwargs):  # type: ignore[no-untyped-def]
+        nonlocal calls
+        calls += 1
+        if online:
+            return ["gpt-live"]
+        if outage == "raise":
+            raise RuntimeError("network unreachable")
+        return []
+
+    monkeypatch.setattr("app.api.routes.agents.discover_provider_models", _discover)
+
+    app = FastAPI()
+    app.include_router(agents_router, prefix="/api/agents")
+    client = TestClient(app)
+
+    def model_ids() -> set[str]:
+        return {m["id"] for m in client.get("/api/agents/registry").json()["models"]}
+
+    assert "openai:gpt-live" in model_ids()
+
+    # Expire the cached entry, then lose the network.
+    stamp, models = agents_module._registry_model_cache["openai"]
+    agents_module._registry_model_cache["openai"] = (
+        stamp - agents_module._REGISTRY_MODEL_CACHE_TTL_S - 1,
+        models,
+    )
+    online = False
+    assert "openai:gpt-live" in model_ids()
+    calls_during_outage = calls
+    # The outage is not cached: the next call asks the provider again.
+    model_ids()
+    assert calls == calls_during_outage + 1
+
+
 def test_build_overrides_skips_blank_candidate_values() -> None:
     """A blank form field must not clobber a saved credential.
 
