@@ -7,11 +7,42 @@ all replies together, which resolves the future this tool is awaiting.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agent.tools.registry import Tool
+
+_OPTION_LABEL_KEYS = ("label", "value", "text", "title")
+
+
+def coerce_option_labels(options: Any) -> Any:
+    """Unwrap ``{"label": ...}`` option objects into their label string.
+
+    Models trained on richer question tools (label + description per choice)
+    send objects even though the schema asks for strings, and the whole
+    ``ask_user`` call used to fail validation over it. Only the label is a
+    quick-pick answer, so any description is dropped. Anything else is left
+    as-is for normal validation to reject.
+    """
+
+    if not isinstance(options, list):
+        return options
+    coerced: list[Any] = []
+    for option in options:
+        if isinstance(option, dict):
+            label = next(
+                (
+                    option[key]
+                    for key in _OPTION_LABEL_KEYS
+                    if isinstance(option.get(key), str)
+                ),
+                None,
+            )
+            coerced.append(option if label is None else label)
+        else:
+            coerced.append(option)
+    return coerced
 
 
 def normalize_question_options(options: list[str]) -> list[str]:
@@ -78,6 +109,11 @@ class QuestionSpec(BaseModel):
     kind: Literal["text", "agent_spawn"] = "text"
     agent_spawn: AgentSpawnSpec | None = None
 
+    @field_validator("options", mode="before")
+    @classmethod
+    def _option_labels(cls, value: Any) -> Any:
+        return coerce_option_labels(value)
+
     @field_validator("options")
     @classmethod
     def _unique_options(cls, value: list[str]) -> list[str]:
@@ -105,6 +141,11 @@ class AskUserQuestionSpec(BaseModel):
         ),
     )
     browser_handoff: BrowserHandoffSpec | None = None
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def _option_labels(cls, value: Any) -> Any:
+        return coerce_option_labels(value)
 
     @field_validator("options")
     @classmethod

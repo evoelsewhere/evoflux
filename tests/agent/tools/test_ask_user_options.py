@@ -9,10 +9,13 @@ also lit both chips, because selection is compared by value.
 
 from __future__ import annotations
 
+import pytest
 
 from app.agent.tools.builtin.ask_user import (
     AskUserQuestionSpec,
     QuestionSpec,
+    ask_user,
+    coerce_option_labels,
     normalize_question_options,
 )
 
@@ -86,3 +89,57 @@ class TestModelFacingSpec:
     def test_option_description_warns_against_repeats(self):
         description = AskUserQuestionSpec.model_fields["options"].description or ""
         assert "distinct answer" in description
+
+
+class TestLabelObjectOptions:
+    """Models used to richer question tools send ``{label, description}``
+    objects; the whole call failed pydantic validation over it."""
+
+    def test_label_objects_unwrap_to_their_label(self):
+        assert coerce_option_labels(
+            [
+                {"label": "Verb riêng", "description": "Tách biệt nhất."},
+                "Cùng verb",
+                {"value": "Phân hóa"},
+            ]
+        ) == ["Verb riêng", "Cùng verb", "Phân hóa"]
+
+    def test_objects_without_a_label_are_left_for_validation(self):
+        assert coerce_option_labels([{"description": "no label"}]) == [
+            {"description": "no label"}
+        ]
+
+    def test_model_facing_spec_accepts_label_objects(self):
+        spec = AskUserQuestionSpec.model_validate(
+            {
+                "question": "Which direction?",
+                "options": [
+                    {"label": "A", "description": "recommended"},
+                    {"label": "B"},
+                    {"label": "a"},
+                ],
+            }
+        )
+        assert spec.options == ["A", "B"]
+
+    @pytest.mark.asyncio
+    async def test_tool_call_with_label_objects_reaches_the_user(self, monkeypatch):
+        captured: list[QuestionSpec] = []
+
+        class _Service:
+            async def ask(self, questions: list[QuestionSpec]) -> list[str]:
+                captured.extend(questions)
+                return ["A"]
+
+        monkeypatch.setattr(
+            "app.agent.ask_user.get_ask_user_service", lambda: _Service()
+        )
+
+        result = await ask_user.arun(
+            questions=[
+                {"question": "Pick one?", "options": [{"label": "A"}, {"label": "B"}]}
+            ]
+        )
+
+        assert captured[0].options == ["A", "B"]
+        assert result == "Q: Pick one?\nA: A"
