@@ -67,6 +67,23 @@ export function formatRelativeDate(dateStr: string | null): string {
   }).format(date)
 }
 
+/**
+ * Compact date for a list column: "14:32" today, "Yesterday", "Sep 5" this
+ * year, "Sep 5, 2025" before that. One shape everywhere a row shows a date,
+ * with the full stamp from formatRelativeDate left for the tooltip.
+ */
+export function formatShortDate(dateStr: string | null, now: Date = new Date()): string {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  if (isToday(date)) return format(date, 'HH:mm')
+  if (isYesterday(date)) return translate('Yesterday')
+  return new Intl.DateTimeFormat(getIntlLocale(), {
+    month: 'short',
+    day: 'numeric',
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  }).format(date)
+}
+
 // ── IANA timezone helpers ────────────────────────────────────────────────────
 //
 // The browser's `Intl` API can both render a given UTC instant in any IANA
