@@ -31,9 +31,27 @@ function isSafeLocalRoute(route: string): boolean {
   return route.startsWith('/') && !route.startsWith('//')
 }
 
+const SESSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Session ids are UUIDs; anything else in `/$sessionId` is a stray path. */
+export function isSessionId(value: string): boolean {
+  return SESSION_ID_RE.test(value)
+}
+
+/**
+ * Work mode owns `/` and `/$sessionId`, so every unknown top-level path
+ * (`/settings`, a typo) lands there too. Only `/` and `/<uuid>` are worth
+ * remembering: restoring anything else reopened the stray path on every
+ * launch and fired session requests the backend rejects.
+ */
+function isRestorableWorkPath(pathname: string): boolean {
+  return pathname === '/' || isSessionId(pathname.slice(1))
+}
+
 export function saveModeRoute(pathname: string, fullPath: string): void {
   const mode = appModeForPath(pathname)
   if (!mode || !isSafeLocalRoute(fullPath)) return
+  if (mode === 'work' && !isRestorableWorkPath(pathname)) return
   try {
     // Entering Coding mode is intentionally session-neutral. Keep Work
     // route restoration, but persist only the Coding landing page so mode
@@ -49,7 +67,11 @@ export function loadModeRoute(mode: PersistedAppMode): string | null {
     const route = localStorage.getItem(MODE_ROUTE_KEYS[mode])
       ?? (mode === 'work' ? localStorage.getItem(STORAGE_KEYS.legacyModeRoutes.work) : null)
     if (!route || !isSafeLocalRoute(route)) return null
-    if (appModeForPath(pathnameOf(route)) !== mode) {
+    const pathname = pathnameOf(route)
+    if (
+      appModeForPath(pathname) !== mode
+      || (mode === 'work' && !isRestorableWorkPath(pathname))
+    ) {
       // Drop retired/mismatched values (e.g. former `/aim` written under Work).
       localStorage.removeItem(MODE_ROUTE_KEYS[mode])
       return null
@@ -77,17 +99,19 @@ export function restoreLastRouteBeforeRouterMount(): void {
   try {
     const savedRoute = localStorage.getItem(STORAGE_KEYS.lastRoute)
     if (!savedRoute || savedRoute === '/' || !isSafeLocalRoute(savedRoute)) return
-    const mode = appModeForPath(pathnameOf(savedRoute))
+    const savedPathname = pathnameOf(savedRoute)
+    const mode = appModeForPath(savedPathname)
     if (mode === 'coding') {
       window.history.replaceState(window.history.state, '', '/coding')
       return
     }
-    if (mode === 'work') {
+    if (mode === 'work' && isRestorableWorkPath(savedPathname)) {
       window.history.replaceState(window.history.state, '', savedRoute)
       return
     }
-    // Retired modes (e.g. former `/aim`) or standalone pages — stay on `/`
-    // and clear the stale last-route so Work is not poisoned later.
+    // Retired modes (e.g. former `/aim`), standalone pages, or a stray
+    // non-session path — stay on `/` and clear the stale last-route so Work
+    // is not poisoned later.
     localStorage.removeItem(STORAGE_KEYS.lastRoute)
   } catch {
     // Keep the current route when storage/history is unavailable.

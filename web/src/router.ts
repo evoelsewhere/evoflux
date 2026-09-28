@@ -1,7 +1,7 @@
 import { lazy } from 'react'
-import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router'
+import { createRootRoute, createRoute, createRouter, Outlet, redirect } from '@tanstack/react-router'
 import { Root, NotFound } from './routes/__root'
-import { restoreLastRouteBeforeRouterMount } from '@/lib/mode-route'
+import { isSessionId, restoreLastRouteBeforeRouterMount } from '@/lib/mode-route'
 import { TelemetryRedirect } from './routes/telemetry'
 
 restoreLastRouteBeforeRouterMount()
@@ -32,9 +32,15 @@ const teamIndexRoute = createRoute({
   path: '/',
   component: () => null,
 })
+// `$sessionId` also catches every unknown top-level path (`/settings`, a
+// typo); anything that isn't a session UUID goes home instead of being sent
+// to the session API as an id.
 const teamSessionRoute = createRoute({
   getParentRoute: () => teamLayoutRoute,
   path: '$sessionId',
+  beforeLoad: ({ params }) => {
+    if (!isSessionId(params.sessionId)) throw redirect({ to: '/', replace: true })
+  },
   component: () => null,
 })
 
