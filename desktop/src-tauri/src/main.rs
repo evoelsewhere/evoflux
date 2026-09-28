@@ -306,58 +306,192 @@ fn configure_frontend_drag_drop(
     builder.disable_drag_drop_handler()
 }
 
-/// Reapply the macOS controls after Tauri/Wry installs and sizes its content
-/// view. The builder inset is applied too early and AppKit resets it during
-/// the post-build size pass, so relying on the builder alone has no visible
-/// effect for restored windows.
 #[cfg(target_os = "macos")]
-fn enforce_macos_traffic_light_position(window: &tauri::WebviewWindow) -> Result<()> {
-    use objc2_app_kit::{NSView, NSWindow, NSWindowButton};
+type MacNotificationObserver =
+    objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2::runtime::NSObjectProtocol>>;
 
+#[cfg(target_os = "macos")]
+thread_local! {
+    /// Observers pinning each window's traffic lights, keyed by window
+    /// label. Only touched on the AppKit main thread.
+    static MACOS_TRAFFIC_LIGHT_OBSERVERS: std::cell::RefCell<HashMap<String, Vec<MacNotificationObserver>>> =
+        std::cell::RefCell::new(HashMap::new());
+    /// Set while EvoFlux moves the controls, so the frame notifications its
+    /// own moves post do not re-enter the layout half-way through.
+    static MACOS_TRAFFIC_LIGHT_LAYOUT_ACTIVE: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Move the macOS controls to the EvoFlux title-bar strip. Idempotent: a
+/// frame is only written when it differs, so the frame notification each
+/// write posts settles instead of looping.
+///
+/// ``spacing`` is measured once when the window is pinned. Re-measuring
+/// here would read a half-reset row whenever AppKit moves one button and
+/// notifies before it has moved the next.
+#[cfg(target_os = "macos")]
+fn layout_macos_traffic_lights(ns_window: &objc2_app_kit::NSWindow, spacing: f64) {
+    use objc2_app_kit::{NSView, NSWindowButton};
+
+    if MACOS_TRAFFIC_LIGHT_LAYOUT_ACTIVE.replace(true) {
+        return;
+    }
+    let differs = |a: f64, b: f64| (a - b).abs() > 0.01;
+    let buttons: Vec<_> = [
+        NSWindowButton::CloseButton,
+        NSWindowButton::MiniaturizeButton,
+        NSWindowButton::ZoomButton,
+    ]
+    .into_iter()
+    .filter_map(|kind| ns_window.standardWindowButton(kind))
+    .collect();
+    if let Some(title_bar_container) = buttons
+        .first()
+        // SAFETY: the title-bar views are only read on the main thread.
+        .and_then(|close| unsafe { close.superview() })
+        .and_then(|button_group| unsafe { button_group.superview() })
+    {
+        let title_bar_height = NSView::frame(&buttons[0]).size.height + MACOS_TRAFFIC_LIGHT_Y;
+        let title_bar_y = ns_window.frame().size.height - title_bar_height;
+        let mut title_bar_frame = NSView::frame(&title_bar_container);
+        if differs(title_bar_frame.size.height, title_bar_height)
+            || differs(title_bar_frame.origin.y, title_bar_y)
+        {
+            title_bar_frame.size.height = title_bar_height;
+            title_bar_frame.origin.y = title_bar_y;
+            title_bar_container.setFrame(title_bar_frame);
+        }
+        for (index, button) in buttons.iter().enumerate() {
+            let mut origin = NSView::frame(button).origin;
+            let x = MACOS_TRAFFIC_LIGHT_X + index as f64 * spacing;
+            // AppKit may move the controls vertically when entering or
+            // leaving a maximized/full-height window. Keep their visual
+            // center locked to the 36 pt React title-bar strip.
+            let y = (title_bar_height - NSView::frame(button).size.height) / 2.0;
+            if differs(origin.x, x) || differs(origin.y, y) {
+                origin.x = x;
+                origin.y = y;
+                button.setFrameOrigin(origin);
+            }
+        }
+    }
+    MACOS_TRAFFIC_LIGHT_LAYOUT_ACTIVE.set(false);
+}
+
+/// Keep the macOS controls beside the React title-bar controls.
+///
+/// Tao reapplies ``traffic_light_position`` only from its content view's
+/// ``drawRect:``, which the transparent WebView often skips, and AppKit
+/// re-lays out the title bar on every resize, fullscreen change, and
+/// maximize. A reapply from Tauri's async ``Resized`` event lands before or
+/// after that layout at random, so the lights regularly stayed at AppKit's
+/// default position. Observing the title-bar views' own frame changes
+/// instead reacts synchronously to every AppKit reset, whatever caused it.
+#[cfg(target_os = "macos")]
+fn pin_macos_traffic_lights(window: &tauri::WebviewWindow) -> Result<()> {
+    use block2::RcBlock;
+    use objc2::{
+        rc::{Retained, Weak},
+        runtime::AnyObject,
+    };
+    use objc2_app_kit::{
+        NSView, NSViewFrameDidChangeNotification, NSWindow, NSWindowButton,
+        NSWindowDidEndLiveResizeNotification, NSWindowDidExitFullScreenNotification,
+        NSWindowDidResizeNotification,
+    };
+    use objc2_foundation::{NSNotification, NSNotificationCenter};
+
+    let label = window.label().to_string();
     window
-        .with_webview(|webview| unsafe {
+        .with_webview(move |webview| unsafe {
             let ns_window: &NSWindow = &*webview.ns_window().cast();
-            let Some(close) = ns_window.standardWindowButton(NSWindowButton::CloseButton) else {
-                log::warn!("desktop: macOS close button is unavailable");
+            let (Some(close), Some(minimize)) = (
+                ns_window.standardWindowButton(NSWindowButton::CloseButton),
+                ns_window.standardWindowButton(NSWindowButton::MiniaturizeButton),
+            ) else {
+                log::warn!("desktop: macOS window buttons are unavailable");
                 return;
             };
-            let Some(minimize) = ns_window.standardWindowButton(NSWindowButton::MiniaturizeButton)
-            else {
-                log::warn!("desktop: macOS minimize button is unavailable");
+            let Some(button_group) = close.superview() else {
+                log::warn!("desktop: macOS title-bar button group is unavailable");
                 return;
             };
-            let Some(title_bar_container) = close
-                .superview()
-                .and_then(|button_group| button_group.superview())
-            else {
+            let Some(title_bar_container) = button_group.superview() else {
                 log::warn!("desktop: macOS title-bar container is unavailable");
                 return;
             };
 
-            let close_frame = NSView::frame(&close);
-            let title_bar_height = close_frame.size.height + MACOS_TRAFFIC_LIGHT_Y;
-            let mut title_bar_frame = NSView::frame(&title_bar_container);
-            title_bar_frame.size.height = title_bar_height;
-            title_bar_frame.origin.y = ns_window.frame().size.height - title_bar_height;
-            title_bar_container.setFrame(title_bar_frame);
+            let spacing = NSView::frame(&minimize).origin.x - NSView::frame(&close).origin.x;
+            layout_macos_traffic_lights(ns_window, spacing);
 
-            let spacing = NSView::frame(&minimize).origin.x - close_frame.origin.x;
-            let mut buttons = vec![close, minimize];
-            if let Some(zoom) = ns_window.standardWindowButton(NSWindowButton::ZoomButton) {
-                buttons.push(zoom);
+            let weak_window = Weak::new(ns_window);
+            let relayout = RcBlock::new(move |_: std::ptr::NonNull<NSNotification>| {
+                if let Some(ns_window) = weak_window.load() {
+                    layout_macos_traffic_lights(&ns_window, spacing);
+                }
+            });
+            let mut views: Vec<Retained<NSView>> = vec![title_bar_container, button_group];
+            views.extend(
+                [
+                    NSWindowButton::CloseButton,
+                    NSWindowButton::MiniaturizeButton,
+                    NSWindowButton::ZoomButton,
+                ]
+                .into_iter()
+                .filter_map(|kind| ns_window.standardWindowButton(kind))
+                .map(|button| Retained::into_super(Retained::into_super(button))),
+            );
+
+            let center = NSNotificationCenter::defaultCenter();
+            // No queue: AppKit posts these on the main thread and the block
+            // must run before the frame reaches the screen.
+            let mut observers = Vec::new();
+            for view in &views {
+                view.setPostsFrameChangedNotifications(true);
+                let object: &AnyObject = view;
+                observers.push(center.addObserverForName_object_queue_usingBlock(
+                    Some(NSViewFrameDidChangeNotification),
+                    Some(object),
+                    None,
+                    &relayout,
+                ));
             }
-            for (index, button) in buttons.into_iter().enumerate() {
-                let button_frame = NSView::frame(&button);
-                let mut origin = button_frame.origin;
-                origin.x = MACOS_TRAFFIC_LIGHT_X + index as f64 * spacing;
-                // AppKit may move the controls vertically when entering or
-                // leaving a maximized/full-height window. Keep their visual
-                // center locked to the 36 pt React title-bar strip.
-                origin.y = (title_bar_height - button_frame.size.height) / 2.0;
-                button.setFrameOrigin(origin);
+            for name in [
+                NSWindowDidResizeNotification,
+                NSWindowDidEndLiveResizeNotification,
+                NSWindowDidExitFullScreenNotification,
+            ] {
+                let object: &AnyObject = ns_window;
+                observers.push(center.addObserverForName_object_queue_usingBlock(
+                    Some(name),
+                    Some(object),
+                    None,
+                    &relayout,
+                ));
             }
+
+            let replaced = MACOS_TRAFFIC_LIGHT_OBSERVERS
+                .with_borrow_mut(|pinned| pinned.insert(label, observers));
+            remove_macos_notification_observers(replaced.unwrap_or_default());
         })
-        .context("position macOS title-bar controls")
+        .context("pin macOS title-bar controls")
+}
+
+/// Drop a destroyed window's traffic-light observers. Runs on the main
+/// thread from the Tauri event loop.
+#[cfg(target_os = "macos")]
+fn unpin_macos_traffic_lights(label: &str) {
+    let observers = MACOS_TRAFFIC_LIGHT_OBSERVERS.with_borrow_mut(|pinned| pinned.remove(label));
+    remove_macos_notification_observers(observers.unwrap_or_default());
+}
+
+#[cfg(target_os = "macos")]
+fn remove_macos_notification_observers(observers: Vec<MacNotificationObserver>) {
+    let center = objc2_foundation::NSNotificationCenter::defaultCenter();
+    for observer in observers {
+        // SAFETY: each token came from this center's block-observer API.
+        unsafe { center.removeObserver(observer.as_ref()) };
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -5998,7 +6132,7 @@ async fn build_app_window(
     win.set_zoom(*state.zoom.lock().await).ok();
     win.show().context("show window")?;
     #[cfg(target_os = "macos")]
-    enforce_macos_traffic_light_position(&win)?;
+    pin_macos_traffic_lights(&win)?;
     win.set_focus().ok();
     Ok(win)
 }
@@ -6338,14 +6472,10 @@ fn main() {
             #[cfg(target_os = "macos")]
             RunEvent::WindowEvent {
                 label,
-                event: WindowEvent::Resized(_),
+                event: WindowEvent::Destroyed,
                 ..
             } if label == MAIN_WINDOW || label.starts_with(SECONDARY_WINDOW_PREFIX) => {
-                if let Some(window) = app.get_webview_window(label.as_str()) {
-                    if let Err(error) = enforce_macos_traffic_light_position(&window) {
-                        log::warn!("desktop: could not realign macOS window controls: {error:#}");
-                    }
-                }
+                unpin_macos_traffic_lights(&label);
             }
             RunEvent::WindowEvent {
                 label,

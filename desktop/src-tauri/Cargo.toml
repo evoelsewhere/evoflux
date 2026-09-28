@@ -62,7 +62,7 @@ objc2-speech = { version = "0.3.2", default-features = false, features = ["SFSpe
 # "highsierra" scroll-wheel events.
 core-graphics = { version = "0.25", features = ["elcapitan", "highsierra"] }
 core-foundation = "0.10"
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSData", "NSError"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["block2", "NSData", "NSError", "NSNotification", "NSOperation"] }
 objc2-web-kit = { version = "0.3.2", default-features = false, features = ["block2", "WKPDFConfiguration", "WKSnapshotConfiguration", "WKWebView"] }
 
 
