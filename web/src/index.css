@@ -832,18 +832,12 @@ html.light[data-native-sidebar-glass="macos"] [data-app-header] {
   left: max(1rem, env(safe-area-inset-left, 0px));
 }
 
+/* Toast stack sits top-center on every width, clear of the notch and of the
+ * composer/window controls that own the bottom and top-right corners. */
 .mobile-safe-toast {
-  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  top: max(0.75rem, env(safe-area-inset-top, 0px));
   right: max(1rem, env(safe-area-inset-right, 0px));
   left: max(1rem, env(safe-area-inset-left, 0px));
-}
-
-/* Desktop: pin the toast stack to the bottom-right corner instead of
- * stretching across the bottom edge. */
-@media (min-width: 640px) {
-  .mobile-safe-toast {
-    left: auto;
-  }
 }
 
 @supports (height: 100svh) {
