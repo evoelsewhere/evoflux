@@ -466,6 +466,23 @@ async def _mark_item_processed(
             await db.commit()
 
 
+async def _release_connection(db: AsyncSession) -> None:
+    """End ``db``'s implicit transaction so its pooled connection is returned
+    before a long LLM await.
+
+    A SELECT autobegins a transaction that keeps the connection checked out
+    until commit/rollback.  The scheduler hands Dream the writer lane, which
+    on SQLite is a single connection, so holding it across ``agent.run`` (up
+    to ``timeout_seconds``) starves every chat write into a QueuePool timeout.
+
+    ``commit`` rather than ``rollback``: the factories set
+    ``expire_on_commit=False`` so already-loaded ``ChatSession`` rows stay
+    readable, whereas ``rollback`` expires them and the next attribute access
+    would lazy-load outside a greenlet.
+    """
+    await db.commit()
+
+
 # ── Dream agent loader ────────────────────────────────────────────────────────
 
 
@@ -793,6 +810,7 @@ async def _synthesise_session(
     from app.agent.schemas.chat import HumanMessage
 
     transcript = await _fetch_session_transcript(db, session)
+    await _release_connection(db)
     if transcript == "(empty session)":
         logger.debug("dream_session_empty session_id={}", session.id)
         return []
@@ -1368,6 +1386,8 @@ async def _run_dream_locked(db: AsyncSession, *, drain: bool) -> dict:
                     )
                 except OSError:
                     source_modified_at = datetime.now(timezone.utc)
+                # The selection queries above may still hold the connection.
+                await _release_connection(db)
                 try:
                     topics_written = await _synthesise_note(
                         agent,

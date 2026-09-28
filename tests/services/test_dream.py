@@ -592,6 +592,75 @@ async def test_synthesise_session_does_not_carry_target_session_id(
     assert captured[0] != str(session.id)
 
 
+@pytest.mark.asyncio
+async def test_synthesise_session_releases_connection_during_llm_call(
+    setup_db, _wiki_dir: Path
+):
+    """The transcript SELECT must not keep the (single, writer-lane) connection
+    checked out while the agent runs — that starved chat writes into QueuePool
+    timeouts when the 02:00 UTC fire overlapped an active chat."""
+    from app.core.db import async_session_factory
+
+    session = ChatSession(agent_name="test-agent")
+    async with async_session_factory() as db:
+        db.add(session)
+        await db.flush()
+        db.add(SessionMessage(session_id=session.id, role="user", content="Hello!"))
+        await db.commit()
+
+    agent = _make_dream_agent()
+    in_txn: list[bool] = []
+    original_run = agent.run
+
+    async with async_session_factory() as db:
+
+        async def _spy(messages, **kwargs):
+            in_txn.append(db.in_transaction())
+            return await original_run(messages, **kwargs)
+
+        agent.run = _spy  # type: ignore[method-assign]
+        await _synthesise_session(agent, db, session, timeout_seconds=60)
+        # Loaded attributes survive the release (expire_on_commit=False).
+        assert session.agent_name == "test-agent"
+
+    assert in_txn == [False]
+
+
+@pytest.mark.asyncio
+async def test_run_dream_releases_connection_during_note_llm_call(
+    setup_db, _wiki_dir: Path
+):
+    """The selection queries in ``run_dream`` must not hold the connection
+    across a note's LLM call either."""
+    from app.core.db import async_session_factory
+
+    _write_dream_md()
+    (_wiki_dir / "notes" / "2026-04-29.md").write_text(
+        "User prefers Vim.\n", encoding="utf-8"
+    )
+
+    in_txn: list[bool] = []
+
+    async with async_session_factory() as db:
+
+        def _loaded(cfg):
+            agent, token = _make_loaded_agent()
+            original_run = agent.run
+
+            async def _spy(messages, **kwargs):
+                in_txn.append(db.in_transaction())
+                return await original_run(messages, **kwargs)
+
+            agent.run = _spy  # type: ignore[method-assign]
+            return agent, token
+
+        with patch("app.services.dream._load_dream_agent", side_effect=_loaded):
+            result = await run_dream(db)
+
+    assert result["notes_processed"] == 1
+    assert in_txn == [False]
+
+
 # ── _synthesise_note ──────────────────────────────────────────────────────────
 
 
