@@ -620,7 +620,7 @@ class TestTeamAgentsRouteExtra:
 
         def fake_run(*args, **kwargs):
             command = args[0]
-            if command[3:6] == ["ls-files", "--others", "--exclude-standard"]:
+            if command[-3:] == ["ls-files", "--others", "--exclude-standard"]:
                 return SimpleNamespace(returncode=0, stdout="test.py\n", stderr="")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
@@ -654,7 +654,7 @@ class TestTeamAgentsRouteExtra:
             if "diff" in command:
                 captured_diff_args.append(command)
                 return SimpleNamespace(returncode=0, stdout="", stderr="")
-            if command[3:6] == ["ls-files", "--others", "--exclude-standard"]:
+            if command[-3:] == ["ls-files", "--others", "--exclude-standard"]:
                 # Both files are untracked; the route must filter to the
                 # ones the caller asked about.
                 return SimpleNamespace(

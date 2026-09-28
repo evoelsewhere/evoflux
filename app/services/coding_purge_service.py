@@ -228,6 +228,8 @@ def _git(source: Path, *args: str) -> subprocess.CompletedProcess[str] | None:
             ["git", "-C", str(source), *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=20,
             check=False,
         )

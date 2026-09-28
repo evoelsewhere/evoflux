@@ -534,7 +534,7 @@ async def get_diff_view(workspace: str, path: str) -> dict:
                     status_code=413,
                     detail=f"Diff exceeds the configured {max_bytes} byte limit.",
                 )
-            content = resolved.read_text(errors="replace")
+            content = resolved.read_text(encoding="utf-8", errors="replace")
             diff_lines = [
                 "--- /dev/null",
                 f"+++ b/{path}",

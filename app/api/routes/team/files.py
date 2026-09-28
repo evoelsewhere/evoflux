@@ -1249,9 +1249,20 @@ async def get_coding_workspace_git_diff(
     try:
         result = await asyncio.to_thread(
             subprocess.run,
-            ["git", "-C", resolved, "diff", "--", *diff_paths],
+            [
+                "git",
+                "-C",
+                resolved,
+                "-c",
+                "core.quotepath=false",
+                "diff",
+                "--",
+                *diff_paths,
+            ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
             check=False,
         )
@@ -1326,9 +1337,11 @@ async def _run_git(cwd: str, *args: str, timeout: float = 5.0) -> str | None:
     try:
         result = await asyncio.to_thread(
             subprocess.run,
-            ["git", "-C", cwd, *args],
+            ["git", "-C", cwd, "-c", "core.quotepath=false", *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout,
             check=False,
         )

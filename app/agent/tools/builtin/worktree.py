@@ -52,6 +52,8 @@ def _git_sync(workspace: Path, *args: str) -> tuple[int, str, str]:
             ["git", "-C", str(workspace), *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             check=False,
         )

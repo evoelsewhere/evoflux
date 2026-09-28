@@ -260,6 +260,38 @@ def test_diff_view_handles_c_quoted_untracked_path(
     assert "+first" in response.json()["diff"]
 
 
+def test_diff_views_decode_utf8_regardless_of_locale(
+    app_without_team,
+    tmp_path: Path,
+):
+    repo = _repo(tmp_path)
+    (repo / "README.md").write_text("xin chào thế giới\n", encoding="utf-8")
+    untracked = "ghi chú.txt"
+    (repo / untracked).write_text("tiếng Việt có dấu\n", encoding="utf-8")
+    client = TestClient(app_without_team)
+
+    tracked = client.get(
+        "/api/team/workspace/git/diff-view",
+        params={"workspace": str(repo), "path": "README.md"},
+    )
+    new_file = client.get(
+        "/api/team/workspace/git/diff-view",
+        params={"workspace": str(repo), "path": untracked},
+    )
+    workspace = client.get(
+        "/api/team/workspace/git-diff/view",
+        params={"workspace": str(repo)},
+    )
+
+    assert "+xin chào thế giới" in tracked.json()["diff"]
+    assert "+tiếng Việt có dấu" in new_file.json()["diff"]
+    body = workspace.json()
+    assert "+xin chào thế giới" in body["diff"]
+    assert body["untracked"] == [untracked]
+    assert f"diff --git a/{untracked} b/{untracked}" in body["diff"]
+    assert "+tiếng Việt có dấu" in body["diff"]
+
+
 def test_repository_identity_and_revert_commit(app_without_team, tmp_path: Path):
     repo = _repo(tmp_path)
     client = TestClient(app_without_team)
