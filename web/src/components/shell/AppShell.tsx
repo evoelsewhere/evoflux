@@ -108,7 +108,7 @@ export function AppShell({
     // h-dvh handles iOS Safari's dynamic toolbar.
     <div
       data-app-shell
-      className="mobile-safe-shell mobile-viewport relative flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:p-0.5"
+      className="mobile-safe-shell mobile-viewport relative flex h-dvh flex-col bg-(--bg-page) md:flex-row md:gap-0.5 md:py-0.5 md:[--shell-gutter-x:--spacing(0.5)]"
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -144,13 +144,16 @@ export function AppShell({
         </div>
       )}
 
-      {/* Right column — optional header + the body row. */}
+      {/* Right column — optional header + the body row. On desktop widths the
+          header and canvas read as one rounded card over the shell gutter (the
+          OS material when native glass is on); the header's square top edge
+          used to hide the canvas's own rounding. */}
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
         <div
           className={
             mainHidden
               ? 'hidden'
-              : 'flex min-h-0 min-w-0 flex-1 flex-col'
+              : 'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-(--bg-page) md:rounded-xl'
           }
         >
           {header}

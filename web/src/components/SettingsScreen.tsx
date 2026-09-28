@@ -186,7 +186,7 @@ export function SettingsScreen() {
       ref={screenRef}
       tabIndex={-1}
       aria-labelledby="settings-screen-title"
-      className="mobile-safe-shell mobile-viewport flex h-dvh min-h-0 overflow-hidden bg-(--bg-page) text-(--color-text) outline-none"
+      className="mobile-safe-shell mobile-viewport flex h-dvh min-h-0 overflow-hidden bg-(--bg-page) text-(--color-text) outline-none md:gap-0.5 md:py-0.5 md:[--shell-gutter-x:--spacing(0.5)]"
     >
       <h1 id="settings-screen-title" className="sr-only">Settings</h1>
 
@@ -198,7 +198,8 @@ export function SettingsScreen() {
         />
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-(--bg-page)">
+      {/* Same rounded content card as AppShell's main column. */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-(--bg-page) md:rounded-xl">
         <header
           {...dragHandlers}
           className="mobile-safe-header flex min-h-12 shrink-0 items-center gap-2 border-b border-(--color-border-subtle) bg-(--bg-sidebar)/65 px-3 md:px-5"

@@ -659,9 +659,12 @@ html[data-mobile-shell] .text-\[11px\] {
   }
 }
 
+/* Unlayered, so it outranks Tailwind padding utilities; a shell that wants a
+ * desktop gutter sets --shell-gutter-x instead of px-*, and the larger of the
+ * gutter and the safe-area inset wins. */
 .mobile-safe-shell {
-  padding-right: env(safe-area-inset-right, 0px);
-  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: max(env(safe-area-inset-right, 0px), var(--shell-gutter-x, 0px));
+  padding-left: max(env(safe-area-inset-left, 0px), var(--shell-gutter-x, 0px));
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -755,10 +758,6 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
 
 [data-desktop-sidebar-glass="true"] {
   box-shadow: none;
-}
-
-html[data-native-sidebar-glass] [data-settings-sidebar] {
-  border-color: color-mix(in srgb, var(--color-border-subtle) 32%, transparent);
 }
 
 /* Desktop controls should read as part of the native sidebar material rather
