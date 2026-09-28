@@ -23,9 +23,11 @@ fn menu_modifiers(combo: &KeyCombo) -> i64 {
     mask
 }
 
-/// The enabled menu item whose keyboard shortcut is `combo`, if the app has
-/// one. Pressing it runs the command without the app being in front.
-pub(super) fn menu_item_for(app: &Ax, combo: &KeyCombo) -> Option<(Ax, String)> {
+/// The menu item whose keyboard shortcut is `combo`, if the app has one.
+///
+/// `AXEnabled` is returned too, but is only authoritative while the app is
+/// frontmost. macOS reports usable commands in a background app as disabled.
+pub(super) fn menu_item_for(app: &Ax, combo: &KeyCombo) -> Option<(Ax, String, bool)> {
     let key = combo.key.to_lowercase();
     if !(combo.cmd || combo.ctrl || combo.alt) {
         return None;
@@ -54,11 +56,9 @@ pub(super) fn menu_item_for(app: &Ax, combo: &KeyCombo) -> Option<(Ax, String)> 
             let key_matches = virtual_key.is_some() && number(&cmd_virtual_key) == virtual_key;
             let modifiers = number(&cmd_modifiers);
             if (char_matches || glyph_matches || key_matches) && modifiers == Some(wanted) {
-                if enabled.as_ref().and_then(cf_bool).unwrap_or(true) {
-                    let label = element.label();
-                    return Some((element, label));
-                }
-                return None;
+                let label = element.label();
+                let enabled = enabled.as_ref().and_then(cf_bool).unwrap_or(true);
+                return Some((element, label, enabled));
             }
         }
         let children = children.as_ref().map(cf_elements).unwrap_or_default();

@@ -786,6 +786,7 @@
   "api_key": "API_キー",
   "App notifications are disabled.": "アプリの通知が無効になっています。",
   "App preview unavailable": "アプリのプレビューを表示できません",
+  "App preview frame could not be displayed": "アプリのプレビュー画像を表示できませんでした",
   "App updates": "App updates",
   "app_browser_webview_agent_action": "app_browser_webview_agent_action",
   "App: {0}": "アプリ: {0}",

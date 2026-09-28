@@ -1573,7 +1573,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'browser',
     title: 'Computer App Control',
     summary:
-      'Let an agent drive one desktop app on Windows or macOS in the background — Notepad, TextEdit, Excel, an internal tool — while you watch it in a preview card with a virtual cursor. Your own mouse, keyboard and active window stay yours.',
+      'Let an agent drive one desktop app on Windows or macOS — Notepad, TextEdit, Excel, an internal tool — while you watch it in a preview card with a virtual cursor. Your mouse stays yours; on macOS a menu shortcut may briefly surface the target, then restore your active app.',
     keywords: [
       'computer use',
       'computer app',
@@ -1604,7 +1604,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Pick allowed and blocked apps from the list of apps on your computer, shown with their icons.',
       'Modal dialogs the app opens (Save As, confirmations) are followed automatically.',
       'The built-in computer-app-control Skill guides the agent in any app: it works inside the app you named rather than editing the file behind it, never touches your clipboard, reads before it clicks, and checks each step by reading the result back from the app before going on. You can turn it off in Settings → Skills.',
-      'On macOS, shortcuts such as ⌘S run through the app’s own menu bar, so they work while the app stays in the background.',
+      'On macOS, shortcuts such as ⌘S run through the app’s own menu bar. Because AppKit disables menus in inactive apps, the target may appear briefly, then EvoFlux restores the app you were using.',
       'On macOS, the macOS permissions card in Settings → Computer App Control shows whether Accessibility and Screen Recording are allowed; Allow opens the exact System Settings pane, and Restart EvoFlux applies Screen Recording.',
     ],
     blocks: [

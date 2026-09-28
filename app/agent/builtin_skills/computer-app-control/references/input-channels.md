@@ -81,11 +81,13 @@ yourself.
   element. That is not necessarily the field last clicked by ref; click or
   invoke the field before keys that edit it (select all, delete).
 - **macOS:** a shortcut that some menu item carries runs through the app's
-  menu bar, which works in the background. Other keys (Tab, arrows, Delete,
-  function keys, shortcuts on no menu) are posted events that a background
-  app may ignore; check their effect. Enter and Escape confirm or cancel the
-  focused element, or press the default or cancel button of a sheet or
-  dialog: read the dialog before pressing Enter.
+  menu bar. AppKit disables those commands while an app is inactive, so
+  EvoFlux briefly activates that app for the command and restores the app
+  that was in front; the result says `temporarily_activated: true`. Other
+  keys (Tab, arrows, Delete, function keys, shortcuts on no menu) are posted
+  events that a background app may ignore; check their effect. Enter and
+  Escape confirm or cancel the focused element, or press the default or
+  cancel button of a sheet or dialog: read the dialog before pressing Enter.
 - `cmd` means Ctrl on Windows and Command on macOS; on macOS `ctrl` is the
   Control key. `option`/`opt` and `command`/`meta` are accepted names.
 
@@ -139,3 +141,11 @@ parked web page may stop repainting, and both its picture and its
 accessibility values can lag behind what the page holds. When a read-back
 of web content disagrees with what you just did, wait a moment and read
 again before acting on it.
+
+On macOS a menu cannot be kept out of sight: one a parked app opens (a
+pop-up list, a menu button, a context menu) would show in the corner of the
+user's screen. So such a menu is dealt with in the action that opens it.
+To pick an item, give the click its title in `menu_item` (or use
+`set_value` on a pop-up list, a `<select>`). A click without `menu_item`
+reads the menu into the result (`Menu it opened (now closed): …`) and
+closes it; repeat the click with one of those titles.

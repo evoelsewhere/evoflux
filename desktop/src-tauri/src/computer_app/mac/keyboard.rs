@@ -8,7 +8,7 @@ use super::*;
 pub(super) const KEY_A: u16 = 0x00;
 pub(super) const KEY_RETURN: u16 = 0x24;
 const KEY_TAB: u16 = 0x30;
-const KEY_ESCAPE: u16 = 0x35;
+pub(super) const KEY_ESCAPE: u16 = 0x35;
 
 /// A key name → (virtual key code, needs Shift on a US layout).
 pub(super) fn resolve_key(name: &str) -> Option<(u16, bool)> {
@@ -95,6 +95,30 @@ pub(super) fn post_keycode(pid: i32, code: u16, flags: CGEventFlags, repeat: u64
     Ok(())
 }
 
+pub(super) fn workspace_frontmost_pid() -> Option<i32> {
+    objc2_app_kit::NSWorkspace::sharedWorkspace()
+        .frontmostApplication()
+        .map(|app| app.processIdentifier())
+}
+
+/// Wait until AppKit has completed an activation. Requiring a stable result
+/// avoids accepting the old frontmost value during the hand-off.
+fn wait_frontmost(pid: i32) -> bool {
+    let mut stable = 0;
+    for _ in 0..80 {
+        if workspace_frontmost_pid() == Some(pid) {
+            stable += 1;
+            if stable >= 8 {
+                return true;
+            }
+        } else {
+            stable = 0;
+        }
+        pause(25);
+    }
+    false
+}
+
 pub(super) fn press_key(target: &Target, params: &Value) -> Result<Value, String> {
     let spec = params
         .get("key")
@@ -105,19 +129,81 @@ pub(super) fn press_key(target: &Target, params: &Value) -> Result<Value, String
         return Err(format!("Refused {spec}: {reason}."));
     }
     let repeat = params.get("repeat").and_then(Value::as_u64).unwrap_or(1).clamp(1, 50);
-    if let Some((item, title)) = menu_item_for(&target.app, &combo) {
+    if let Some((item, title, enabled)) = menu_item_for(&target.app, &combo) {
         make_main(target)?;
+        let previous = objc2_app_kit::NSWorkspace::sharedWorkspace().frontmostApplication();
+        let front_before = previous.as_ref().map(|app| app.processIdentifier());
+        let activate = !enabled && front_before != Some(target.pid);
+        if !enabled && !activate {
+            return Err(format!("The menu command \"{title}\" is disabled."));
+        }
+        // AppKit disables an application's menu commands while the app is
+        // in the background. AXPress misleadingly returns success in that
+        // state but performs nothing. Activate only for the command, then
+        // restore the app the user was in. Pointer position is untouched.
+        // This is the same native state an ordinary menu shortcut requires;
+        // accessibility still addresses the attached window through AXMain.
+        if activate {
+            target
+                .app
+                .set_flag("AXFrontmost", true)
+                .map_err(|error| format!("Could not activate {} for its menu command: {}", target.app_name, ax_error(error)))?;
+            let mut menu_ready = false;
+            for _ in 0..40 {
+                if item.flag("AXEnabled").unwrap_or(false) {
+                    menu_ready = true;
+                    break;
+                }
+                pause(25);
+            }
+            if !menu_ready {
+                if let (Some(pid), Some(app)) = (front_before, previous.as_ref()) {
+                    let _ = app.activateWithOptions(
+                        objc2_app_kit::NSApplicationActivationOptions::empty(),
+                    );
+                    let _ = wait_frontmost(pid);
+                }
+                return Err(format!("Could not activate {} for its menu command.", target.app_name));
+            }
+        }
+        let mut command_error = None;
         for _ in 0..repeat {
-            interrupted()?;
-            item.perform("AXPress")
-                .map_err(|error| format!("The menu command \"{title}\" failed: {}", ax_error(error)))?;
+            if let Err(error) = interrupted() {
+                command_error = Some(error);
+                break;
+            }
+            if let Err(error) = item.perform("AXPress") {
+                command_error = Some(format!("The menu command \"{title}\" failed: {}", ax_error(error)));
+                break;
+            }
             pause(60);
+        }
+        let restored = if activate {
+            match (front_before, previous.as_ref()) {
+                (None, _) => true,
+                (Some(pid), Some(app)) => {
+                    app.activateWithOptions(objc2_app_kit::NSApplicationActivationOptions::empty())
+                        && wait_frontmost(pid)
+                }
+                (Some(_), None) => false,
+            }
+        } else {
+            true
+        };
+        if let Some(error) = command_error {
+            return Err(error);
+        }
+        if !restored {
+            return Err(format!(
+                "The menu command \"{title}\" ran, but macOS did not restore the app that was in front. Do not repeat the command."
+            ));
         }
         return Ok(json!({
             "key": spec,
             "repeat": repeat,
             "delivered_to": title,
             "delivered_via": "menu",
+            "temporarily_activated": activate,
             "window": target.title(),
         }));
     }

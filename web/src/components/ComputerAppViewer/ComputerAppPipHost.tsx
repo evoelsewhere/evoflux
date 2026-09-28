@@ -94,6 +94,8 @@ export function ComputerAppPipHost({
   const [gesture, setGesture] = useState<'move' | 'resize' | null>(null)
   const [frame, setFrame] = useState<ComputerFrame | null>(null)
   const [frameError, setFrameError] = useState<string | null>(null)
+  const [renderedPicture, setRenderedPicture] = useState<string | null>(null)
+  const [pictureFailed, setPictureFailed] = useState(false)
   const [pointer, setPointer] = useState<AgentPointer | null>(null)
   const [lastActivity, setLastActivity] = useState(0)
   const [now, setNow] = useState(() => Date.now())
@@ -104,6 +106,17 @@ export function ComputerAppPipHost({
   const active = now - lastActivity < ACTIVE_WINDOW_MS
   // Read by the polling loop, which must not restart on every pointer event.
   const lastActivityRef = useRef(0)
+  const pictureSequenceRef = useRef(0)
+  const renderedSequenceRef = useRef(0)
+  const picturesValidAfterRef = useRef(0)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   // Poll frames: fast while the agent works, slowly while it is quiet or
   // the app window is hidden, and never two requests at once.
@@ -266,18 +279,56 @@ export function ComputerAppPipHost({
   const growing = preset.width === PREVIEW_SIZES.large.width
   const attached = Boolean(frame?.attached)
   const stopped = Boolean(frame?.stopped)
-  const picture = attached && frame?.data && !frame.closed && !frame.minimized
+  const nextPicture = attached && frame?.data && !frame.closed && !frame.minimized
     ? `data:${frame.media_type ?? 'image/jpeg'};base64,${frame.data}`
     : null
+  // WKWebView may clear an <img> while a newly assigned data URL is still
+  // decoding. At preview polling speed that can leave the card permanently
+  // white. Decode off-DOM and swap only after the new frame is ready, keeping
+  // the last good frame painted in the meantime.
+  useEffect(() => {
+    if (!nextPicture) {
+      picturesValidAfterRef.current = ++pictureSequenceRef.current
+      renderedSequenceRef.current = picturesValidAfterRef.current
+      setRenderedPicture(null)
+      setPictureFailed(false)
+      return
+    }
+    const sequence = ++pictureSequenceRef.current
+    const probe = new Image()
+    const accept = () => {
+      if (
+        !mountedRef.current
+        || sequence <= picturesValidAfterRef.current
+        || sequence <= renderedSequenceRef.current
+      ) return
+      renderedSequenceRef.current = sequence
+      setRenderedPicture(nextPicture)
+      setPictureFailed(false)
+    }
+    const reject = () => {
+      if (mountedRef.current && sequence === pictureSequenceRef.current) {
+        setPictureFailed(true)
+      }
+    }
+    probe.decoding = 'async'
+    probe.onload = accept
+    probe.onerror = reject
+    probe.src = nextPicture
+    if (typeof probe.decode === 'function') {
+      void probe.decode().then(accept, reject)
+    }
+  }, [nextPicture])
   const content = { width: frame?.width ?? 16, height: frame?.height ?? 10 }
   const label = attached
     ? [frame?.app, frame?.title].filter(Boolean).join(' — ')
     : t('Computer App Control')
 
+  const previewError = frameError ?? (pictureFailed ? t('App preview frame could not be displayed') : null)
   const notice = stopped
     ? { title: t('You stopped app control'), body: t('The agent cannot use apps in this chat until you allow it again.') }
-    : frameError && !frame
-      ? { title: t('App preview unavailable'), body: frameError }
+    : previewError && !frame
+      ? { title: t('App preview unavailable'), body: previewError }
       : !attached
         ? { title: t('No app attached'), body: t('The app an agent controls will appear here.') }
         : frame?.closed
@@ -285,8 +336,8 @@ export function ComputerAppPipHost({
           : frame?.minimized
             ? { title: t('The app is minimized'), body: t('It is restored without taking focus when the agent acts again.') }
             // The last good frame would otherwise stay up as if it were live.
-            : frameError
-              ? { title: t('Preview paused'), body: frameError }
+            : previewError
+              ? { title: t('Preview paused'), body: previewError }
               : null
 
   return createPortal((
@@ -343,15 +394,16 @@ export function ComputerAppPipHost({
           className="relative w-full select-none overflow-hidden bg-black/90"
           style={{ height: stacked.height }}
         >
-          {picture && (
+          {renderedPicture && (
             <img
-              src={picture}
+              src={renderedPicture}
               alt=""
               draggable={false}
+              onError={() => setPictureFailed(true)}
               className="absolute inset-0 h-full w-full object-contain"
             />
           )}
-          {picture && !stopped && !frameError && (
+          {renderedPicture && !stopped && !previewError && (
             <AgentCursorOverlay
               box={box}
               content={content}

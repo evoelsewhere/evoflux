@@ -2,6 +2,12 @@ fn main() {
     // The updater verification key is compiled into release binaries. Make
     // Cargo invalidate cached builds when CI provisions or rotates the key.
     println!("cargo:rerun-if-env-changed=EVOFLUX_UPDATER_PUBLIC_KEY");
+    // ScreenCaptureKit only exists from macOS 12.3 and its screenshot API
+    // from 14; the app supports macOS 11, so a missing framework must not stop
+    // it from launching. The capture code checks for the classes at run time.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg=-Wl,-weak_framework,ScreenCaptureKit");
+    }
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "request_voice_permissions",

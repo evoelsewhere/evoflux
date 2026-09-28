@@ -584,6 +584,7 @@ async def test_mac_attach_and_menu_shortcut_are_explained(monkeypatch) -> None:
                 "repeat": 1,
                 "delivered_to": "Save…",
                 "delivered_via": "menu",
+                "temporarily_activated": True,
                 "window": "notes.txt",
             },
         },
@@ -596,7 +597,80 @@ async def test_mac_attach_and_menu_shortcut_are_explained(monkeypatch) -> None:
 
     assert isinstance(result, str)
     assert "shortcuts use cmd" in result
-    assert 'Pressed cmd+s ×1 → Save… in "notes.txt" (via the app\'s menu bar)' in result
+    assert (
+        'Pressed cmd+s ×1 → Save… in "notes.txt" '
+        "(via the app's menu bar; macOS briefly activated it, then restored focus)"
+    ) in result
+
+
+@pytest.mark.asyncio
+async def test_mac_menus_of_a_parked_app_are_reported(monkeypatch) -> None:
+    _use_policy(monkeypatch, enabled=True)
+    _fake_bridge(
+        monkeypatch,
+        {
+            "list_windows": {
+                "windows": [{"id": 7, "app": "Google Chrome", "title": "form"}]
+            },
+            "attach": {
+                "attached": True,
+                "window": {
+                    "id": 7,
+                    "app": "Google Chrome",
+                    "title": "form",
+                    "screenshot_size": [800, 600],
+                    "platform": "macos",
+                    "hidden": True,
+                },
+            },
+            "click": {
+                "button": "right",
+                "clicks": 1,
+                "delivered_to": "Press me",
+                "delivered_via": "accessibility",
+                "pattern": "show_menu",
+                "menu": ["Back", "Reload", "Print… (disabled)"],
+                "menu_closed": True,
+                "note": "read and closed",
+                "window": "form",
+            },
+            "set_value": {
+                "ref": "e6",
+                "value": "Blue",
+                "confirmed": True,
+                "delivered_via": "accessibility",
+                "pattern": "choose",
+                "window": "form",
+            },
+        },
+    )
+
+    result = await _run(
+        {"action": "attach", "window_id": 7},
+        {"action": "click", "ref": "e2", "button": "right"},
+        {"action": "set_value", "ref": "e6", "value": "Blue"},
+    )
+
+    assert isinstance(result, str)
+    assert "Menu it opened (now closed): Back; Reload; Print… (disabled)" in result
+    assert 'Chose "Blue" in e6 in "form"' in result
+
+
+def test_permission_patterns_name_the_menu_item() -> None:
+    patterns = computer_tool.permission_patterns(
+        {
+            "actions": [
+                {
+                    "action": "click",
+                    "ref": "e2",
+                    "button": "right",
+                    "menu_item": "Reload",
+                }
+            ]
+        }
+    )
+
+    assert patterns == ['right click e2, menu "Reload"']
 
 
 _APPS = {

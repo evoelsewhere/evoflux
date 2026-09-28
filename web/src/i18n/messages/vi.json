@@ -786,6 +786,7 @@
   "api_key": "api_key",
   "App notifications are disabled.": "Thông báo ứng dụng bị tắt.",
   "App preview unavailable": "Không xem trước được app",
+  "App preview frame could not be displayed": "Không thể hiển thị khung hình xem trước của ứng dụng",
   "App updates": "App updates",
   "app_browser_webview_agent_action": "app_browser_webview_agent_action",
   "App: {0}": "App: {0}",

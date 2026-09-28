@@ -1522,7 +1522,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'browser',
     title: 'Computer App Control',
     summary:
-      'Cho agent điều khiển một app desktop trên Windows hoặc macOS ở chế độ nền — Notepad, TextEdit, Excel, một công cụ nội bộ — trong khi bạn theo dõi qua thẻ xem trước có con trỏ ảo. Chuột, bàn phím và cửa sổ đang dùng vẫn là của bạn.',
+      'Cho agent điều khiển một app desktop trên Windows hoặc macOS — Notepad, TextEdit, Excel, một công cụ nội bộ — trong khi bạn theo dõi qua thẻ xem trước có con trỏ ảo. Chuột vẫn là của bạn; trên macOS, phím tắt menu có thể làm app đích hiện lên thoáng qua rồi khôi phục app đang dùng.',
     keywords: [
       'computer use',
       'computer app',
@@ -1552,7 +1552,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Chọn app được phép và bị chặn từ danh sách app trên máy, có kèm logo.',
       'Hộp thoại mà app mở ra (Save As, xác nhận) được tự động theo dõi.',
       'Skill có sẵn computer-app-control hướng dẫn agent trong mọi app: làm việc ngay trong app bạn chỉ định thay vì sửa file phía sau, không bao giờ đụng vào clipboard của bạn, đọc trước khi click, và kiểm tra từng bước bằng cách đọc lại kết quả từ app trước khi làm tiếp. Có thể tắt nó trong Settings → Skills.',
-      'Trên macOS, phím tắt như ⌘S được chạy qua thanh menu của chính app, nên vẫn dùng được khi app ở chế độ nền.',
+      'Trên macOS, phím tắt như ⌘S chạy qua thanh menu của chính app. Vì AppKit vô hiệu hóa menu của app không hoạt động, app đích có thể hiện lên trong chốc lát; EvoFlux sẽ trả focus về app bạn đang dùng.',
       'Trên macOS, thẻ Quyền trên macOS trong Cài đặt → Computer App Control cho biết Accessibility và Screen Recording đã được cho phép chưa; nút Cho phép mở đúng mục trong System Settings, và Khởi động lại EvoFlux để áp dụng Screen Recording.',
     ],
     blocks: [

@@ -146,6 +146,16 @@ class ClickAction(PointAction):
             "ctrl+click (cmd on macOS) adds to one. cmd is macOS only."
         ),
     )
+    menu_item: str | None = Field(
+        default=None,
+        max_length=200,
+        description=(
+            "macOS: title of the item to press in the menu this click opens "
+            "(a pop-up list, a menu button, a right-click context menu), in "
+            "the same action. While the app is kept off-screen, a menu opened "
+            "without it is read and closed at once."
+        ),
+    )
 
 
 class HoverAction(PointAction):
@@ -365,6 +375,10 @@ def _describe_action(action: dict[str, Any]) -> str | None:
         modifiers = action.get("modifiers")
         if isinstance(modifiers, list) and modifiers:
             kind = "+".join([*map(str, modifiers), kind])
+        if action.get("menu_item"):
+            return (
+                f'{kind} {_point(action)}, menu "{_preview(action["menu_item"], 40)}"'
+            )
         return f"{kind} {_point(action)}"
     if name == "hover":
         return f"hover {_point(action)}"
@@ -557,13 +571,23 @@ def _action_summary(name: str, result: Any) -> str:
     elif via == "accessibility":
         window += f" (via accessibility: {result.get('pattern', 'value')})"
     elif via == "menu":
-        window += " (via the app's menu bar)"
+        window += " (via the app's menu bar"
+        if result.get("temporarily_activated"):
+            window += "; macOS briefly activated it, then restored focus"
+        window += ")"
     elif via == "keyboard":
         confirmed = result.get("confirmed")
         window += (
             " (via keyboard"
             + (", not confirmed yet" if confirmed is False else "")
             + ")"
+        )
+    if result.get("menu_item"):
+        window += f'; chose "{result["menu_item"]}" in the menu it opened'
+    menu = result.get("menu")
+    if isinstance(menu, list):
+        window += "\nMenu it opened (now closed): " + (
+            "; ".join(map(str, menu)) or "no items"
         )
     if result.get("note"):
         window += f"\nNote: {result['note']}"
@@ -587,6 +611,10 @@ def _action_summary(name: str, result: Any) -> str:
             f"{result.get('pattern', 'invoke')} on {result.get('ref')} "
             f'"{result.get("name", "")}"{window}'
         )
+    if name == "set_value" and result.get("pattern") in {"choose", "already_set"}:
+        state = "" if result.get("confirmed") else ", not confirmed"
+        verb = "Already" if result["pattern"] == "already_set" else "Chose"
+        return f'{verb} "{result.get("value")}" in {result.get("ref")}{state}{window}'
     if name == "set_value":
         return (
             f"Set {result.get('ref')} ({result.get('value_chars')} characters){window}"

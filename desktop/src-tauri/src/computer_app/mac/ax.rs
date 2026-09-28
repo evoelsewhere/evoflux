@@ -54,6 +54,12 @@ extern "C" {
     fn AXUIElementPerformAction(element: AXUIElementRef, action: CFStringRef) -> AXError;
     fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> AXError;
     fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, seconds: f32) -> AXError;
+    fn AXUIElementCopyElementAtPosition(
+        application: AXUIElementRef,
+        x: f32,
+        y: f32,
+        element: *mut AXUIElementRef,
+    ) -> AXError;
     fn AXValueCreate(kind: u32, value: *const c_void) -> CFTypeRef;
     fn AXValueGetTypeID() -> CFTypeID;
     fn AXValueGetValue(value: CFTypeRef, kind: u32, out: *mut c_void) -> u8;
@@ -86,6 +92,18 @@ impl Ax {
             }
         });
         Self::wrap(unsafe { AXUIElementCreateApplication(pid) })
+    }
+
+    /// The app's element drawn at `point` on the screen, whatever window
+    /// of the app it is in (a menu, say).
+    pub(super) fn element_at_position(&self, point: Point) -> Option<Self> {
+        let mut raw: AXUIElementRef = std::ptr::null();
+        let found = unsafe { AXUIElementCopyElementAtPosition(self.raw(), point.x as f32, point.y as f32, &mut raw) };
+        if found == AX_SUCCESS {
+            Self::wrap(raw)
+        } else {
+            None
+        }
     }
 
     pub(super) fn system_wide() -> Option<Self> {

@@ -6,7 +6,7 @@ use super::*;
 
 // ── Session registry ────────────────────────────────────────────────────
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Parked {
     /// Where the window's top-left corner was before it was parked.
     pub(super) origin: (f64, f64),
@@ -51,8 +51,9 @@ pub(super) fn release(session_id: &str) -> Option<Attached> {
             // handed back off unless another chat still drives the app.
             match attached.parked {
                 Some(parked) => match reach_window(&app, attached.window_id) {
-                    Some(window) => hand_back(&app, &window, parked, false, attached.web, still_used),
-                    None => put_back_later(attached.pid, attached.window_id, parked, attached.web),
+                    Some(window) if hand_back(&app, &window, parked, false, attached.web, still_used) => {}
+                    // Out of reach, or it did not take the move yet.
+                    _ => put_back_later(attached.pid, attached.window_id, parked, attached.web),
                 },
                 None if attached.web && !still_used => {
                     let _ = app.set_flag("AXEnhancedUserInterface", false);
@@ -85,16 +86,18 @@ pub(super) fn reach_window(app: &Ax, id: u32) -> Option<Ax> {
 /// accessibility cannot reach now (the user is on another Space, the app is
 /// busy). Its own thread looks the app up itself: accessibility elements do
 /// not cross threads.
-fn put_back_later(pid: i32, window_id: u32, parked: Parked, web: bool) {
+pub(super) fn put_back_later(pid: i32, window_id: u32, parked: Parked, web: bool) {
     let _ = std::thread::Builder::new()
         .name("computer-app-put-back".into())
         .spawn(move || {
             for _ in 0..60 {
                 pause(2000);
                 // Gone, or attached (and parked) again meanwhile.
-                if cg_window(window_id).is_none()
-                    || registry().attached.values().any(|attached| attached.window_id == window_id)
-                {
+                if cg_window(window_id).is_none() {
+                    forget_parked(window_id);
+                    return;
+                }
+                if registry().attached.values().any(|attached| attached.window_id == window_id) {
                     return;
                 }
                 let Some(app) = Ax::application(pid) else {
@@ -102,8 +105,9 @@ fn put_back_later(pid: i32, window_id: u32, parked: Parked, web: bool) {
                 };
                 if let Some(window) = ax_window(&app, window_id) {
                     let still_used = registry().attached.values().any(|attached| attached.pid == pid);
-                    hand_back(&app, &window, parked, false, web, still_used);
-                    return;
+                    if hand_back(&app, &window, parked, false, web, still_used) {
+                        return;
+                    }
                 }
             }
         });
@@ -145,7 +149,9 @@ pub(super) fn reveal(session_id: &str) -> Result<Value, String> {
     let _ = app.set_flag("AXHidden", false);
     match attached.parked {
         // Still attached, so the app keeps its enhanced interface.
-        Some(parked) => hand_back(&app, &window, parked, true, attached.web, true),
+        Some(parked) => {
+            hand_back(&app, &window, parked, true, attached.web, true);
+        }
         None => {
             let _ = window.set_flag("AXMinimized", false);
         }
