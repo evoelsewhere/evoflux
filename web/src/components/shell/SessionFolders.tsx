@@ -8,8 +8,9 @@
  *
  * Sessions filed together also share context: the backend gives every
  * session in a sharing folder a digest of its siblings, so a follow-up chat
- * knows what the others established. The link icon on the folder row toggles
- * that per folder.
+ * knows what the others established. The folder menu toggles that per
+ * folder; a quiet link icon on the row shows it is on (on hover, or always
+ * on touch).
  *
  * Session rows themselves are rendered by the parent through
  * `renderSession`, so the sidebar keeps owning rename/delete/pin state and
@@ -366,8 +367,8 @@ export function SessionFolders({
                     'group/folder relative flex items-center rounded-lg pr-1 transition-colors',
                     isMobile ? 'min-h-11' : 'min-h-8',
                     isDropTarget
-                      ? 'bg-(--bg-key)'
-                      : 'hover:bg-(--bg-key)/50',
+                      ? 'bg-(--color-text)/7'
+                      : 'hover:bg-(--color-text)/4',
                   )}
                   onContextMenu={(event) => {
                     event.preventDefault()
@@ -393,8 +394,12 @@ export function SessionFolders({
                     <Folder size={isMobile ? 17 : 15} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate font-medium">{folder.name}</span>
                     {folder.share_context && (
-                      <span title="Shared context on" aria-label="Shared context on">
-                        <Link2 size={12} className="shrink-0 text-(--color-accent)" aria-hidden="true" />
+                      <span
+                        title="Shared context on"
+                        aria-label="Shared context on"
+                        className="opacity-0 transition-opacity group-hover/folder:opacity-100 group-focus-within/folder:opacity-100 pointer-coarse:opacity-100"
+                      >
+                        <Link2 size={12} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
                       </span>
                     )}
                     <span className="min-w-4 shrink-0 text-right text-xs tabular-nums text-(--color-text-subtle)">
@@ -425,7 +430,14 @@ export function SessionFolders({
                 </div>
 
                 {isExpanded && (
-                  <div className={isMobile ? 'pb-1 pl-5' : 'pb-0.5 pl-1.5'}>
+                  // Children hang off a guide line under the folder's chevron,
+                  // so they read as inside it rather than as its siblings.
+                  <div
+                    className={cn(
+                      'border-l border-(--color-border-subtle)',
+                      isMobile ? 'mb-1 ml-[1.1875rem] pl-2' : 'mb-0.5 ml-4 pl-1.5',
+                    )}
+                  >
                     {folder.sessions.length === 0 ? (
                       <p className={cn(
                         'text-(--color-text-subtle)',
