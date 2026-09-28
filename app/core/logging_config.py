@@ -2,7 +2,8 @@
 
 Sinks
 -----
-- **stderr** — human-readable, colourised, respects ``log_level``
+- **stderr** — human-readable (colourised on a TTY), respects ``log_level``;
+  the desktop shell captures it as ``backend.log``
 - ``{STATE_DIR}/logs/app/app.log`` — compact JSON diagnostics. Production
   keeps WARNING+ only; explicitly selecting DEBUG restores verbose file logs.
 
@@ -56,17 +57,24 @@ def setup_logging(log_level: str = "INFO") -> None:
     # Remove loguru's default stderr handler
     logger.remove()
 
-    # Console: human-readable, colourised, respects log_level
+    # Console: human-readable, respects log_level. The desktop shell redirects
+    # the sidecar's stderr into backend.log, so colour only on a real terminal
+    # (loguru's auto-detection) and stamp the full date with UTC offset —
+    # the file spans days and is read next to logs from other processes.
     logger.add(
         sys.stderr,
         level=log_level.upper(),
         format=(
-            "<green>{time:HH:mm:ss.SSS}</green> | "
+            "<green>{time:YYYY-MM-DD HH:mm:ss.SSSZ}</green> | "
             "<level>{level:<8}</level> | "
             "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | "
             "{message}"
         ),
-        colorize=True,
+        colorize=None,
+        # ``diagnose`` renders local variable values into tracebacks, which
+        # can put tokens and message contents into files users attach to
+        # bug reports. Frame locations are enough; applies to every sink.
+        diagnose=False,
     )
 
     # Persistent logs are for post-mortem diagnostics, not a duplicate of the
@@ -83,6 +91,7 @@ def setup_logging(log_level: str = "INFO") -> None:
         APP_LOG_DIR / "app.log",
         level=persistent_level,
         serialize=True,
+        diagnose=False,
         rotation="5 MB",
         retention=3,
         compression="gz",
@@ -132,6 +141,7 @@ def add_session_sink(session_id: str) -> int:
             "{message}"
         ),
         filter=_session_filter,
+        diagnose=False,
         rotation="2 MB",
         retention=2,
         compression="gz",

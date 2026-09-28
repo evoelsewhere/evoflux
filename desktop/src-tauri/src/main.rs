@@ -6193,8 +6193,11 @@ fn main() {
         zoom: Arc::new(Mutex::new(ZOOM_DEFAULT)),
     };
 
+    // Local time so EvoFlux.log lines up with backend.log, which the sidecar
+    // stamps in local time; the plugin defaults to UTC.
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
+        .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
         .build();
     let mut updater_plugin = tauri_plugin_updater::Builder::new();
     if let Some(public_key) = option_env!("EVOFLUX_UPDATER_PUBLIC_KEY")

@@ -53,6 +53,12 @@ a provider may state those on one chunk and omit them from the next.
 Session-specific JSONL logs provide a local evidence trail per agent. Sensitive
 values are sanitized before tool/provider errors are logged or streamed.
 
+The sidecar's console log is captured by the desktop shell as `backend.log`:
+plain text (colour only on a terminal) with a full local timestamp and UTC
+offset. `{STATE_DIR}/logs/app/app.log` keeps WARNING and above as JSON.
+Tracebacks name frames without rendering local variable values. The desktop
+shell's own `EvoFlux.log` is stamped in local time to line up with it.
+
 ### Diagnostics actions
 
 A check may carry an `action` alongside its hint, and the row renders it as a
