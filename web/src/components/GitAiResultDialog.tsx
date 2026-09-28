@@ -14,7 +14,7 @@ export function GitAiResultDialog({
     await navigator.clipboard.writeText(content || result.summary)
   }
   return (
-    <div className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="AI Git result">
+    <div className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-3" role="dialog" aria-modal="true" aria-label="AI Git result">
       <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-page) shadow-2xl">
         <header className="flex items-center gap-2 border-b border-(--color-border) px-4 py-3">
           <Sparkles size={15} className="text-(--color-accent)" />

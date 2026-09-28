@@ -236,7 +236,7 @@ export function CommandPalette({ commands, searchCommands, onClose }: CommandPal
         exit={{ opacity: 0 }}
         /* A light dim, not a heavy blur: the app behind should stay legible
            as context, and a frosted page made the panel's edges vanish. */
-        className={`fixed inset-0 z-(--z-modal) flex items-start justify-center bg-black/25 px-3 backdrop-blur-[2px] sm:px-0 sm:pt-[14vh] dark:bg-black/45 ${isTauriMobile ? 'pt-[max(5rem,calc(env(safe-area-inset-top)+3.5rem))]' : 'pt-4'}`}
+        className={`fixed inset-0 z-(--z-modal) flex items-start justify-center bg-black/25 px-3 sm:px-0 sm:pt-[14vh] dark:bg-black/45 ${isTauriMobile ? 'pt-[max(5rem,calc(env(safe-area-inset-top)+3.5rem))]' : 'pt-4'}`}
         onClick={onClose}
       >
         <motion.div

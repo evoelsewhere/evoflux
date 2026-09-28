@@ -1005,7 +1005,7 @@ function BrowserPermissionPrompt({
     : null
   return (
     <div
-      className="absolute inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4 backdrop-blur-sm"
+      className="absolute inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4"
       role="alertdialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -1055,7 +1055,7 @@ function BrowserPageDialogPrompt({
   const messageId = useId()
   return (
     <div
-      className="absolute inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4 backdrop-blur-sm"
+      className="absolute inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-4"
       role="alertdialog"
       aria-modal="true"
       aria-labelledby={titleId}

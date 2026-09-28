@@ -119,7 +119,7 @@ export function EditorAiActionDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={ACTION_LABELS[request.action]}>
+    <div className="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) p-3" role="dialog" aria-modal="true" aria-label={ACTION_LABELS[request.action]}>
       <div className="flex max-h-[min(48rem,calc(100vh-1.5rem))] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-(--color-border) bg-(--bg-page) shadow-2xl">
         <header className="flex shrink-0 items-center gap-3 border-b border-(--color-border) px-4 py-3">
           <Sparkles size={16} className="text-(--color-accent)" aria-hidden />

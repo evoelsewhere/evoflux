@@ -27,7 +27,7 @@ export const GateOverlay = forwardRef<
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={preset.spring}
-      className="absolute inset-0 z-(--z-overlay) flex items-center justify-center bg-black/10 p-4 supports-backdrop-filter:backdrop-blur-xs"
+      className="absolute inset-0 z-(--z-overlay) flex items-center justify-center bg-black/10 p-4"
     >
       <motion.div
         role="dialog"

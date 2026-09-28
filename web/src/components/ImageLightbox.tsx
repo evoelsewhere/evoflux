@@ -236,7 +236,7 @@ export function ImageLightbox({
 
   return createPortal(
     <div
-      className="mobile-safe-overlay fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) backdrop-blur-sm transition-opacity duration-(--motion-base)"
+      className="mobile-safe-overlay fixed inset-0 z-(--z-modal) flex items-center justify-center bg-(--color-overlay) transition-opacity duration-(--motion-base)"
       onClick={closeLightbox}
       role="dialog"
       aria-modal="true"

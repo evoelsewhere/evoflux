@@ -332,7 +332,7 @@ export function GuidelinesModal() {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className={cn(
-          'fixed inset-0 z-(--z-modal) flex items-start justify-center bg-(--color-overlay) px-3 backdrop-blur-sm sm:px-4',
+          'fixed inset-0 z-(--z-modal) flex items-start justify-center bg-(--color-overlay) px-3 sm:px-4',
           isTauriMobile
             ? 'pt-[max(5rem,calc(env(safe-area-inset-top)+3.5rem))]'
             : 'pt-4 sm:pt-[8vh]',
