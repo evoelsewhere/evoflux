@@ -241,12 +241,22 @@ function effectiveLeadModel(state: TeamStore, leadName: string | null, requested
   return requestedModel ?? state.sessionModel ?? (leadName ? state.agentStreams[leadName]?.model : null) ?? null
 }
 
-function availableModelRegistry() {
-  return queryClient.fetchQuery({
+async function availableModelRegistry() {
+  const fetchRegistry = (staleTime: number) => queryClient.fetchQuery({
     queryKey: queryKeys.agentFiles.registry(),
     queryFn: () => getRegistry(),
-    staleTime: Infinity,
-  }).catch(() => null)
+    staleTime,
+  })
+  try {
+    const registry = await fetchRegistry(Infinity)
+    // An empty cached registry is never trusted on its own: it is what a
+    // refetch caught mid-outage (the network still waking after sleep)
+    // leaves behind, and kept forever it told every chat its model was gone.
+    // Ask once more before concluding no provider is configured.
+    return registry.models.length > 0 ? registry : await fetchRegistry(0)
+  } catch {
+    return null
+  }
 }
 
 function availableTeamAgents(
@@ -658,6 +668,14 @@ export const useTeamStore = create<TeamStore>()(
               }
             })
             return false
+          }
+
+          // Models are back (e.g. the network returned after sleep): drop a
+          // provider-setup banner this same check raised earlier.
+          if (current.setupRequired?.action?.type === 'open_settings') {
+            set((draft) => {
+              draft.setupRequired = null
+            })
           }
 
           // Only rescue a model that *was* chosen and has since gone away.
