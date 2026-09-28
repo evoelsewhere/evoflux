@@ -1,14 +1,13 @@
 /**
  * SessionRow — the unified session list row shared by the mode sidebars.
  *
- * Three densities, tuned for the two mode sidebars and touch drawers:
- *   - "comfortable" (work Sidebar): two-line row — animated title +
- *     sched badge + running spinner, relative date underneath
- *     (`px-2.5 py-2 rounded-lg`).
- *   - "dense" (docked work Sidebar): keeps the two-line information model
- *     while reducing type and vertical padding.
- *   - "compact" (CodingSidebar): single-line row — running dot + title +
- *     right-aligned date (`px-2 py-1 text-xs rounded-md`).
+ * Every density is one line; the full date (and a scheduled task's name) is
+ * the row's tooltip:
+ *   - "comfortable" (work Sidebar touch drawer): animated title + sched
+ *     badge + running spinner at a 40px touch height.
+ *   - "dense" (docked work Sidebar): the same at the nav rows' 32px.
+ *   - "compact" (CodingSidebar): title + a short right-aligned date, with a
+ *     leading dot only while running (`px-2 py-1 text-xs rounded-md`).
  *
  * Shared behavior: hover-reveal pencil (rename) and trash (delete) action
  * buttons, inline pending-delete Cancel/Delete confirmation, `sched` badge
@@ -20,7 +19,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Globe2, Loader2, MessageCirclePlus, Pencil, Trash2 } from 'lucide-react'
 import { LongPressButton } from '@/components/ui/long-press-button'
-import { formatRelativeDate } from '@/utils/format'
+import { formatRelativeDate, formatShortDate } from '@/utils/format'
 import { useMotionPreset, fadeRise, staggerDelay } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { SessionResponse } from '@/api/types'
@@ -84,6 +83,11 @@ export function SessionRow({
   const isScheduled = Boolean(session.scheduled_task_name)
   const isRunning = session.running === true
   const isBrowserCreated = session.tags?.includes('webbridge_origin:browser') ?? false
+  const tooltip = [
+    session.title || 'Untitled',
+    session.scheduled_task_name,
+    formatRelativeDate(session.created_at),
+  ].filter(Boolean).join(' · ')
 
   const row = (
     <div
@@ -103,7 +107,9 @@ export function SessionRow({
         'group relative [content-visibility:auto]',
         compact
           ? '[contain-intrinsic-size:auto_28px]'
-          : '[contain-intrinsic-size:auto_44px]',
+          : dense
+            ? '[contain-intrinsic-size:auto_32px]'
+            : '[contain-intrinsic-size:auto_40px]',
       )}
       draggable={draggable || undefined}
       onDragStart={draggable ? (event) => onDragStart?.(session, event) : undefined}
@@ -123,27 +129,34 @@ export function SessionRow({
           e.preventDefault()
           onContextActions?.(session, e)
         }}
-        className={
+        title={tooltip}
+        className={cn(
+          'flex w-full items-center rounded-md text-left transition-colors',
           compact
-            ? `w-full rounded-md px-2 py-1 text-left text-xs transition-colors ${
-                isActive
-                  ? 'bg-(--bg-key) text-(--color-accent)'
-                  : 'text-(--color-text-2) hover:bg-(--bg-key)/50 hover:text-(--color-text)'
-              }`
-            : `flex w-full items-start rounded-md text-left transition-colors ${
-                isActive
-                  ? 'bg-(--bg-key) text-(--color-accent)'
-                  : 'text-(--color-text-2) hover:bg-(--bg-key)/50 hover:text-(--color-text)'
-              } ${dense ? 'gap-1.5 px-2.5 py-1.5' : 'gap-2 px-2 py-1.5'}`
-        }
+            ? 'gap-1.5 px-2 py-1 text-xs'
+            : dense
+              ? 'h-8 gap-1.5 px-2.5 text-xs'
+              : 'min-h-10 gap-2 px-2.5 text-[13px]',
+          // Weight never changes on hover — a bolder title reflowed the row
+          // under the pointer. The active row is the only one set heavier.
+          // Fills are tints of the text colour, not the opaque --bg-key, so
+          // they stay translucent over the sidebar's glass/Mica backdrop.
+          isActive
+            ? 'bg-(--color-text)/7 font-medium text-(--color-text)'
+            : 'text-(--color-text-2) hover:bg-(--color-text)/4 hover:text-(--color-text)',
+        )}
       >
         {compact ? (
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${isRunning ? 'bg-(--color-accent)' : 'bg-(--color-border)'}`}
-              aria-hidden="true"
-            />
-            <span className="min-w-0 flex-1 truncate font-medium">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            {/* Only a running session gets a dot; a grey one on every row
+                was noise that said nothing. */}
+            {isRunning && (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-(--color-accent)"
+                aria-label="Session running"
+              />
+            )}
+            <span className="min-w-0 flex-1 truncate">
               {session.title || 'Untitled'}
             </span>
             {isScheduled && (
@@ -158,80 +171,53 @@ export function SessionRow({
                 aria-label="Created from browser"
               />
             )}
-            <span className="shrink-0 text-[10px] text-(--color-text-subtle) transition-opacity duration-(--motion-fast) group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0">
-              {formatRelativeDate(session.created_at)}
+            <span className="shrink-0 text-[10px] tabular-nums text-(--color-text-subtle) transition-opacity duration-(--motion-fast) group-hover:opacity-0 group-focus-within:opacity-0 pointer-coarse:opacity-0">
+              {formatShortDate(session.created_at)}
             </span>
           </div>
         ) : (
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.p
-                  key={session.title ?? 'untitled'}
-                  initial={{ opacity: 0, y: -6 * preset.distance }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 6 * preset.distance }}
-                  className={`min-w-0 truncate transition-colors ${dense ? 'text-[11px] leading-4' : 'text-xs'} ${
-                    isActive
-                      ? 'font-semibold text-(--color-accent)'
-                      : 'text-(--color-text-2) group-hover:font-medium group-hover:text-(--color-text)'
-                  }`}
-                >
-                  {session.title || 'Untitled'}
-                </motion.p>
-              </AnimatePresence>
-              {isScheduled && (
-                <span className={cn(
-                  'shrink-0 rounded-xs bg-(--bg-key) px-1 py-px leading-tight text-(--color-text-subtle)',
-                  dense ? 'text-[10px]' : 'text-xs',
-                )}>
-                  sched
-                </span>
-              )}
-              {isBrowserCreated && (
-                <span title="Created from browser" aria-label="Created from browser">
-                  <Globe2 size={dense ? 10 : 11} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
-                </span>
-              )}
-              {isRunning && (
-                <span
-                  className="shrink-0 text-(--color-accent)"
-                  aria-label="Session running"
-                >
-                  <Loader2
-                    size={dense ? 10 : 11}
-                    className="animate-spin"
-                    aria-hidden="true"
-                  />
-                </span>
-              )}
-            </div>
+          // One line: the date group header above already says when, so the
+          // full stamp (and a scheduled task's name) lives in the tooltip.
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={session.title ?? 'untitled'}
+                initial={{ opacity: 0, y: -6 * preset.distance }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 6 * preset.distance }}
+                className="min-w-0 truncate"
+              >
+                {session.title || 'Untitled'}
+              </motion.span>
+            </AnimatePresence>
             {isScheduled && (
-              <p className={cn(
-                'truncate text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)',
-                dense ? 'text-[10px] leading-3.5' : 'mt-0.5 text-xs',
-              )}>
-                {session.scheduled_task_name}
-              </p>
+              <span className="shrink-0 rounded-xs bg-(--bg-key) px-1 py-px text-[10px] leading-tight font-normal text-(--color-text-subtle)">
+                sched
+              </span>
             )}
-            <p className={cn(
-              'truncate text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)',
-              dense ? 'text-[10px] leading-3.5' : 'mt-0.5 text-xs',
-            )}>
-              {formatRelativeDate(session.created_at)}
-            </p>
+            {isBrowserCreated && (
+              <span title="Created from browser" aria-label="Created from browser">
+                <Globe2 size={dense ? 10 : 11} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
+              </span>
+            )}
+            {isRunning && (
+              <span
+                className="shrink-0 text-(--color-accent)"
+                aria-label="Session running"
+              >
+                <Loader2
+                  size={dense ? 10 : 11}
+                  className="animate-spin"
+                  aria-hidden="true"
+                />
+              </span>
+            )}
           </div>
         )}
       </LongPressButton>
 
       {!pendingDelete && (
         <>
-          {compact && (
-            <span
-              className="pointer-events-none absolute inset-y-0 right-0 w-20 rounded-r-md bg-linear-to-l from-(--bg-key) via-(--bg-key)/95 to-transparent opacity-0 transition-opacity duration-(--motion-fast) group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100"
-              aria-hidden="true"
-            />
-          )}
           <div
             className={cn(
               'absolute top-1/2 z-(--z-panel) flex origin-right -translate-y-1/2 scale-95 items-center gap-0.5 rounded-md border border-(--color-border)/80 bg-(--bg-card)/95 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition-[opacity,transform] duration-(--motion-fast) group-hover:scale-100 group-hover:opacity-100 group-focus-within:scale-100 group-focus-within:opacity-100 pointer-coarse:scale-100 pointer-coarse:opacity-100',
