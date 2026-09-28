@@ -25,7 +25,6 @@ from app.agent.schemas.chat import (
     ChatMessage,
     ToolCallDelta,
 )
-from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
 from app.core import db as app_db
 from app.models.chat import ChatSession
 from app.services.chat_service import save_message
@@ -299,35 +298,24 @@ class TestOnDemandActivation:
         assert captured["summary_provider"] is override_provider
         assert captured["summary_model"] == "googlegenai:gemini-3.1-flash-lite"
 
-    async def test_webbridge_lead_keeps_workspace_and_delegation_tools(self):
+    @pytest.mark.parametrize("ready", [False, True], ids=["off", "ready"])
+    async def test_webbridge_availability_not_tags_decides_browser_tools(
+        self, monkeypatch, ready
+    ):
+        """browser_use always stays; the webbridge tool is offered only while
+        WebBridge is ready. A legacy "webbridge" tag changes nothing."""
         from app.agent.tools.builtin.load_tool import load_tool
         from app.agent.tools.registry import Tool
+        from app.services.webbridge_service import webbridge_manager
 
+        monkeypatch.setattr(webbridge_manager, "agent_browsing_ready", lambda: ready)
         db_factory = _make_mock_db_factory()
-        filesystem_tool = Tool(
-            lambda: None,
-            name="mcp_filesystem_read_file",
-            deferred=True,
-            capabilities=("webbridge-safe",),
-        )
-        filesystem_tool.origin = "mcp"
-        browser_tool = Tool(
-            lambda: None,
-            name="mcp_playwright_navigate",
-            deferred=True,
-            capabilities=("browser",),
-        )
-        browser_tool.origin = "mcp"
         tools = [
             Tool(lambda: None, name="read"),
-            Tool(lambda: None, name="write"),
-            Tool(lambda: None, name="shell"),
             load_tool,
             Tool(lambda: None, name="webbridge", deferred=True),
             Tool(lambda: None, name="browser_use", deferred=True),
             Tool(lambda: None, name="web_search", deferred=True),
-            filesystem_tool,
-            browser_tool,
         ]
         lead = TeamLead(
             Agent(name="lead", llm_provider=MockTeamProvider(), tools=tools),
@@ -336,7 +324,7 @@ class TestOnDemandActivation:
         team = AgentTeam(
             lead=lead,
             db_factory=db_factory,
-            session_tags=frozenset({WEBBRIDGE_SESSION_TAG}),
+            session_tags=frozenset({"webbridge"}),
         )
         lead.register(team)
         captured: dict[str, object] = {}
@@ -351,61 +339,19 @@ class TestOnDemandActivation:
 
         excluded = frozenset(captured["excluded_tools"] or ())  # type: ignore[arg-type]
         deferred = frozenset(captured["deferred_tools"] or ())  # type: ignore[arg-type]
-        assert {
-            "read",
-            "write",
-            "shell",
-            "load_tool",
-            "mcp_filesystem_read_file",
-            "team_manage",
-            "team_delegate",
-        }.isdisjoint(excluded)
-        assert {"browser_use", "web_search", "mcp_playwright_navigate"} <= excluded
-        assert "webbridge" not in deferred
-        assert "mcp_filesystem_read_file" in deferred
+        assert {"read", "load_tool", "browser_use", "web_search"}.isdisjoint(excluded)
+        assert {"browser_use", "web_search"} <= deferred
+        assert ("webbridge" in excluded) is not ready
 
-    async def test_normal_session_uses_browser_use_not_webbridge(self):
-        from app.agent.tools.builtin.load_tool import load_tool
-        from app.agent.tools.registry import Tool
-
-        db_factory = _make_mock_db_factory()
-        tools = [
-            load_tool,
-            Tool(lambda: None, name="webbridge", deferred=True),
-            Tool(lambda: None, name="browser_use", deferred=True),
-        ]
-        lead = TeamLead(
-            Agent(name="lead", llm_provider=MockTeamProvider(), tools=tools),
-            db_factory=db_factory,
-        )
-        team = AgentTeam(lead=lead, db_factory=db_factory)
-        lead.register(team)
-        captured: dict[str, object] = {}
-
-        async def fake_run(*_args, **kwargs):
-            captured.update(kwargs)
-            return []
-
-        lead.agent.run = fake_run  # type: ignore[method-assign]
-
-        await lead._handle_messages(force_compaction=True)
-
-        excluded = frozenset(captured["excluded_tools"] or ())  # type: ignore[arg-type]
-        deferred = frozenset(captured["deferred_tools"] or ())  # type: ignore[arg-type]
-        assert "webbridge" in excluded
-        assert "browser_use" not in excluded
-        assert "browser_use" in deferred
-
-    @pytest.mark.parametrize(
-        "session_tags",
-        [frozenset(), frozenset({WEBBRIDGE_SESSION_TAG})],
-        ids=["ordinary", "webbridge"],
-    )
+    @pytest.mark.parametrize("ready", [False, True], ids=["off", "ready"])
     async def test_team_lead_hot_refreshes_new_mcp_with_session_exclusions(
-        self, tmp_path, monkeypatch, session_tags
+        self, tmp_path, monkeypatch, ready
     ):
         """The real TeamLead path always passes exclusions; they must not
-        disable same-run MCP discovery in either browser session mode."""
+        disable same-run MCP discovery whichever browser WebBridge picks."""
+        from app.services.webbridge_service import webbridge_manager
+
+        monkeypatch.setattr(webbridge_manager, "agent_browsing_ready", lambda: ready)
         from app.agent.mcp import mcp_manager
         from app.agent.tools.builtin.load_tool import load_tool
         from app.agent.tools.registry import Tool
@@ -449,11 +395,7 @@ class TestOnDemandActivation:
             db_factory=db_factory,
         )
         lead.agent.source_path = source
-        team = AgentTeam(
-            lead=lead,
-            db_factory=db_factory,
-            session_tags=session_tags,
-        )
+        team = AgentTeam(lead=lead, db_factory=db_factory)
         lead.register(team)
 
         await lead._handle_messages()
@@ -462,12 +404,14 @@ class TestOnDemandActivation:
         assert "mcp_docs_search" not in provider.tool_schemas[0]
         assert "mcp_docs_search" in provider.tool_schemas[2]
 
-    async def test_webbridge_member_keeps_workspace_tools_but_loses_other_browsers(
-        self,
+    async def test_member_keeps_every_browser_tool_while_webbridge_is_ready(
+        self, monkeypatch
     ):
         from app.agent.tools.builtin.load_tool import load_tool
         from app.agent.tools.registry import Tool
+        from app.services.webbridge_service import webbridge_manager
 
+        monkeypatch.setattr(webbridge_manager, "agent_browsing_ready", lambda: True)
         db_factory = _make_mock_db_factory()
         lead = TeamLead(
             Agent(name="lead", llm_provider=MockTeamProvider()),
@@ -500,7 +444,6 @@ class TestOnDemandActivation:
             lead=lead,
             members={"worker": worker},
             db_factory=db_factory,
-            session_tags=frozenset({WEBBRIDGE_SESSION_TAG}),
         )
         worker.register(team)
         captured: dict[str, object] = {}
@@ -514,10 +457,16 @@ class TestOnDemandActivation:
         await worker._handle_messages(force_compaction=True)
 
         excluded = frozenset(captured["excluded_tools"] or ())  # type: ignore[arg-type]
-        assert {"read", "edit", "shell", "load_tool", "team_message"}.isdisjoint(
-            excluded
-        )
-        assert {"browser_use", "mcp_chrome-devtools_click"} <= excluded
+        assert {
+            "read",
+            "edit",
+            "shell",
+            "load_tool",
+            "team_message",
+            "webbridge",
+            "browser_use",
+            "mcp_chrome-devtools_click",
+        }.isdisjoint(excluded)
 
     async def test_worker_activates_on_inbox_message(self, team_with_db):
         """Worker activates when a message arrives in inbox."""

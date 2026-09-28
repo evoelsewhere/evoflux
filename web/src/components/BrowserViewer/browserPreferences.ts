@@ -234,14 +234,3 @@ export function saveBrowserZoomForOrigin(origin: string | null, zoom: number | n
 export function isBuiltInBrowserEnabled(): boolean {
   return loadBrowserPreferences().enabled
 }
-
-export function areWebBridgeDefaultsEnabled(): boolean {
-  if (typeof window === 'undefined') return false
-  return window.localStorage.getItem(STORAGE_KEYS.browser.webBridgeDefaultEnabled) === 'true'
-}
-
-export function setWebBridgeDefaultsEnabled(enabled: boolean): void {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(STORAGE_KEYS.browser.webBridgeDefaultEnabled, String(enabled))
-  window.dispatchEvent(new CustomEvent(BROWSER_PREFERENCES_CHANGED))
-}

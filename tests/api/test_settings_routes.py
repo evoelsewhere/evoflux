@@ -1501,8 +1501,12 @@ def test_version_control_settings_round_trip(tmp_path, monkeypatch):
 def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
     from app.api.app import create_app
     from app.core.config import settings
+    from app.services.webbridge_service import webbridge_manager
 
     monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    # The PUT below reloads the shared manager's policy with WebBridge off;
+    # restore it so later tests do not inherit a disabled WebBridge.
+    monkeypatch.setattr(webbridge_manager, "_policy_cache", None)
     client = TestClient(create_app())
     defaults = client.get("/api/settings/webbridge")
 
@@ -1539,6 +1543,41 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
     reread = client.get("/api/settings/webbridge")
     assert reread.status_code == 200
     assert reread.json() == payload
+
+
+def test_webbridge_agent_browsing_toggle_applies_live(tmp_path, monkeypatch):
+    """The composer toggle is saved on its own and reaches the live policy
+    at once, so an agent's next browser call follows it mid-turn."""
+    from app.api.app import create_app
+    from app.core.config import settings
+    from app.services.webbridge_service import webbridge_manager
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(webbridge_manager, "_policy_cache", None)
+    client = TestClient(create_app())
+
+    assert client.get("/api/settings/webbridge/agent-browsing").json() == {
+        "enabled": True
+    }
+
+    off = client.put("/api/settings/webbridge/agent-browsing", json={"enabled": False})
+    assert off.status_code == 200
+    assert off.json() == {"enabled": False}
+    assert webbridge_manager.agent_browsing_allowed() is False
+    assert "agent_browsing: false" in (tmp_path / "settings.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    # Saving the Settings form, which does not carry the toggle, keeps it.
+    form = client.get("/api/settings/webbridge").json()
+    assert "agent_browsing" not in form
+    assert client.put("/api/settings/webbridge", json=form).status_code == 200
+    assert client.get("/api/settings/webbridge/agent-browsing").json() == {
+        "enabled": False
+    }
+
+    client.put("/api/settings/webbridge/agent-browsing", json={"enabled": True})
+    assert webbridge_manager.agent_browsing_allowed() is True
 
 
 def test_computer_app_settings_default_off_and_round_trip(tmp_path, monkeypatch):

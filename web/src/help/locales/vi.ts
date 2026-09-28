@@ -1431,7 +1431,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'browser',
     title: 'Built-in browser và WebBridge',
     summary:
-      'Dùng browser trong app (Ctrl+T), hoặc pair session Chrome/Edge thật qua extension WebBridge với teach mode và bật theo chat. WebBridge là companion CDP cho app desktop — không phải bản web của EvoFlux.',
+      'Dùng browser trong app (Ctrl+T), hoặc pair session Chrome/Edge thật qua extension WebBridge với teach mode và một công tắc WebBridge cho việc duyệt web của agent. WebBridge là companion CDP cho app desktop — không phải bản web của EvoFlux.',
     keywords: [
       'browser',
       'webbridge',
@@ -1442,16 +1442,16 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Ctrl+T',
       'teach',
       'pairing',
-      'per-chat',
+      'browser_use',
       'trình duyệt',
       'tiện ích',
       'dạy'
 ],
     setup:
-      'Built-in: bật trong Settings → Browser, rồi Ctrl+T. WebBridge: cài extension Chrome/Edge, bật master policy trong Settings → Browser, pair từ desktop status control, rồi bật WebBridge theo từng chat cần dùng.',
+      'Built-in: bật trong Settings → Browser, rồi Ctrl+T. WebBridge: cài extension Chrome/Edge, bật master policy trong Settings → Browser, pair từ desktop status control, và để WebBridge bật trên workbench bar.',
     tricks: [
       'Ctrl+T toggle built-in browser workbench — không phải WebBridge pairing.',
-      'WebBridge bật theo chat; master policy nằm trong Settings → Browser.',
+      'Khi WebBridge bật và extension đã kết nối, mọi thao tác trình duyệt của agent chạy trên trình duyệt thật của bạn; không thì chạy trong browser trong app. Công tắc được lưu lại, không theo từng chat, và bật/tắt giữa chừng sẽ áp dụng ngay từ thao tác trình duyệt kế tiếp.',
       'Teach mode ghi action browser có nghĩa (không keystroke thô) để replay có xác nhận.',
       'Pairing dùng credential có scope và one-time session ticket; revoke pairing đóng relay live.',
       'Selection và page context từ browser thật được coi là input không tin cậy.',
@@ -1472,14 +1472,14 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Built-in: Settings → Browser → enable, rồi Ctrl+T hoặc tool Browser. WebBridge: cài extension, bật policy trong Settings → Browser, mở desktop WebBridge status control để pair, rồi bật WebBridge cho chat cần dùng. Dùng Teach để ghi chuỗi action xem lại được; xác nhận trước khi kết quả monitored được chia sẻ.',
+        text: 'Built-in: Settings → Browser → enable, rồi Ctrl+T hoặc tool Browser. WebBridge: cài extension, bật policy trong Settings → Browser, mở desktop WebBridge status control để pair, và để WebBridge bật ở đó khi muốn agent duyệt web trên trình duyệt của bạn. Dùng Teach để ghi chuỗi action xem lại được; xác nhận trước khi kết quả monitored được chia sẻ.',
       },
       {
         type: 'tips',
         items: [
           'Ctrl+T — chỉ built-in browser',
           'Status control — pair / unpair WebBridge',
-          'Per-chat toggle — cho phép browser thật cho session này',
+          'Công tắc WebBridge — agent duyệt web trên browser thật (được lưu, áp dụng cả khi đang chạy)',
           'Teach — action có nghĩa, không raw keystroke',
           'Revoke pairing — giết relay + ticket còn lại',
           'Settings → Browser — master policy cho cả hai đường',
@@ -1488,7 +1488,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'WebBridge từng bước: (1) cài extension Chrome/Edge, (2) bật master policy trong Settings → Browser, (3) pair từ desktop status control, (4) mở chat đích, (5) bật WebBridge cho chat đó, (6) tùy chọn Teach một flow và xác nhận replay, (7) revoke pairing khi xong máy hoặc engagement.',
+        text: 'WebBridge từng bước: (1) cài extension Chrome/Edge, (2) bật master policy trong Settings → Browser, (3) pair từ desktop status control, (4) bật WebBridge trên workbench bar, (5) nhờ agent duyệt web — agent dùng trình duyệt của bạn cho tới khi tắt WebBridge, (6) tùy chọn Teach một flow và xác nhận replay, (7) revoke pairing khi xong máy hoặc engagement.',
       },
       {
         type: 'p',
@@ -1496,7 +1496,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: Ctrl+T chờ extension pair; bật master policy mà quên per-chat toggle; coi teach recording như script keylogger thô; để pairing cũ sống trên laptop dùng chung; paste text trang WebBridge vào prompt không hoài nghi.',
+        text: 'Sai thường gặp: Ctrl+T chờ extension pair; bật master policy mà để công tắc WebBridge tắt; coi teach recording như script keylogger thô; để pairing cũ sống trên laptop dùng chung; paste text trang WebBridge vào prompt không hoài nghi.',
       },
       {
         type: 'tips',
@@ -1938,7 +1938,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           ['Skill precedence', 'Thư mục skill của project và user override plugin enabled; plugin enabled override EvoFlux built-in. Skill nào cũng tắt được trong Settings → Skills.'],
           ['MCP configuration', 'Plugin dùng manager in-memory riêng, không sửa global mcp.json.'],
           ['Agent availability', 'Explicit MCP selection, hoặc đọc SKILL.md của một Skill cùng installation, đưa ready tools vào run.'],
-          ['WebBridge', 'Chỉ capability an toàn khai báo rõ mới giữ non-browser server trong WebBridge run.'],
+          ['WebBridge', 'Plugin server vẫn hiển thị dù agent duyệt web qua WebBridge hay browser trong app; `webbridge-safe` vẫn được chấp nhận nhưng không còn cần.'],
           ['Failure isolation', 'Skill/server hỏng bị cô lập; manifest/package fatal sẽ reject package.'],
         ],
       },
@@ -2580,7 +2580,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Từ source: Terminal 1 `make dev`, Terminal 2 `make -C desktop dev`.',
       'Không có model listed → Settings → Providers trước mọi thứ khác.',
       'Tool bị deny bất ngờ → permission mode + Sandbox deny globs.',
-      'WebBridge offline → extension đã cài, pairing còn, Browser settings bật, per-chat toggle on.',
+      'WebBridge offline → extension đã cài, pairing còn, Browser settings bật, công tắc WebBridge bật.',
       'Telemetry trống → extras observability/DuckDB có thể tắt — không nhất thiết chat outage.',
       'Goal kẹt → xem blocker streak, budget pause, hoặc /goal:stop.',
       '/scheduler cảm giác 404 → dùng panel Ctrl+S; route redirect home.'
@@ -2606,7 +2606,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Không có model → Settings → Providers',
           'Lỗi stream mà health xanh → credential model/provider hoặc rate limit',
           'Tool bị deny → permission mode + Sandbox deny globs',
-          'WebBridge offline → extension, pairing, Browser policy, per-chat enable',
+          'WebBridge offline → extension, pairing, Browser policy, công tắc WebBridge',
           'Telemetry trống → extras observability tắt (thường không chặn)',
           'Goal kẹt → xem blocker streak, budget pause, hoặc /goal:stop',
           '/scheduler cảm giác 404 → panel Ctrl+S; route redirect home',

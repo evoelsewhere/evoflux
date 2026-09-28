@@ -128,7 +128,7 @@ Declare server capabilities separately from credentials:
 }
 ```
 
-`webbridge-safe` explicitly keeps a non-browser plugin server available in a WebBridge-tagged conversation. Servers without it stay hidden there so an undeclared MCP browser cannot bypass the selected browser surface. Declare it only after verifying the server is safe and useful in that context.
+`webbridge-safe` is still accepted but no longer changes tool visibility: conversations are not WebBridge-tagged any more, and plugin servers stay available whether `browser_use` is running through WebBridge or the in-app browser.
 
 The pre-canonical `evoflux.mcp` alias remains supported for compatibility. New
 and updated packages should declare `org.evoelsewhere.evoflux.mcp`.

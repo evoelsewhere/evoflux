@@ -95,12 +95,11 @@ function teachActionLabel(action: WebBridgeTeachAction): string {
 interface WebBridgeStatusPopoverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** The saved toggle: agents' browser calls run in the connected browser. */
   enabled: boolean
   onEnabledChange: (enabled: boolean) => void
-  selectedExtensionId: string | null
-  onSelectedExtensionChange: (extensionId: string) => void
   onStatusChange?: (status: WebBridgeStatusResponse) => void
-  /** When false, the master policy switch is off and per-chat enable is blocked. */
+  /** When false, the master policy switch in Settings is off. */
   policyEnabled?: boolean
 }
 
@@ -109,8 +108,6 @@ export function WebBridgeStatusPopover({
   onOpenChange,
   enabled,
   onEnabledChange,
-  selectedExtensionId,
-  onSelectedExtensionChange,
   onStatusChange,
   policyEnabled = true,
 }: WebBridgeStatusPopoverProps) {
@@ -189,10 +186,10 @@ export function WebBridgeStatusPopover({
   }, [pushToast])
 
   const extensions = status?.extensions ?? []
-  const extension = extensions.find((item) => item.extension_id === selectedExtensionId)
-    ?? (extensions.length === 1 ? extensions[0] : null)
+  // With several browsers connected the backend drives the one each chat
+  // last used, else the most recently seen; the first listed stands in here.
+  const extension = extensions[0] ?? null
   const connected = status?.connected ?? false
-  const browserSelected = extension !== null
   const relayUrl = deriveRelayUrl()
   const automation = extension?.automation
   const textWatches = automation?.text_watches ?? []
@@ -204,12 +201,9 @@ export function WebBridgeStatusPopover({
     automation.agent_control_tab_ids?.includes(automation.active_tab_id),
   )
   const automationIsIdle = !textWatches.length && !teachRecording && !issueCapture
-
-  // A live disconnection invalidates the per-chat capability immediately.
-  // Do not leave a green "enabled" state around until the next message send.
-  useEffect(() => {
-    if (status !== null && !connected && enabled) onEnabledChange(false)
-  }, [connected, enabled, onEnabledChange, status])
+  // The toggle is saved, so a disconnect leaves it on: browser_use then
+  // falls back to the in-app browser until an extension connects again.
+  const toggledOn = enabled && policyEnabled
 
   const handleApproveDraft = useCallback(async (draftId: string) => {
     setApprovingDraftId(draftId)
@@ -331,12 +325,12 @@ export function WebBridgeStatusPopover({
             type="button"
             aria-label="Open WebBridge"
             aria-haspopup="dialog"
-            title={enabled ? 'WebBridge is enabled · View status' : 'View WebBridge status and settings'}
+            title={toggledOn ? 'WebBridge is on · View status' : 'View WebBridge status and settings'}
             className={cn(
               'flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium outline-none transition-[background-color,color,box-shadow]',
               'focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
-              enabled
-                ? 'bg-(--color-accent)/10 text-(--color-accent) shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_22%,transparent)]'
+              toggledOn
+                ?'bg-(--color-accent)/10 text-(--color-accent) shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-accent)_22%,transparent)]'
                 : 'text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)',
             )}
           />
@@ -350,7 +344,7 @@ export function WebBridgeStatusPopover({
           aria-hidden="true"
           className={cn(
             'size-1.5 rounded-full transition-colors',
-            enabled ? 'bg-(--color-accent)' : 'bg-(--color-text-subtle)',
+            toggledOn ? 'bg-(--color-accent)' : 'bg-(--color-text-subtle)',
           )}
         />
       </PopoverTrigger>
@@ -385,17 +379,15 @@ export function WebBridgeStatusPopover({
 
         <div className="flex items-center justify-between gap-3 rounded-md border border-(--color-border-subtle) bg-(--bg-key) px-3 py-2.5">
           <div className="min-w-0">
-            <p className="text-xs font-medium text-(--color-text)">Use in this chat</p>
+            <p className="text-xs font-medium text-(--color-text)">Use for agent browsing</p>
             <p className="mt-0.5 text-xs text-(--color-text-subtle)">
               {!policyEnabled
                 ? 'WebBridge is disabled in Settings.'
-                : !connected
-                  ? 'Connect the browser extension to enable WebBridge.'
-                  : !browserSelected
-                    ? 'Choose the browser this chat can control.'
-                : enabled
-                  ? 'The agent can use WebBridge.'
-                  : 'WebBridge is currently disabled.'}
+                : !enabled
+                  ? 'Agents browse in the in-app browser.'
+                  : status !== null && !connected
+                    ? 'On — agents use the in-app browser until the extension connects.'
+                    : 'Agents browse in your browser. Applies to the next browser action, even mid-task.'}
             </p>
           </div>
           <Button
@@ -403,43 +395,13 @@ export function WebBridgeStatusPopover({
             size="sm"
             variant={enabled ? 'outline' : 'default'}
             onClick={() => onEnabledChange(!enabled)}
-            disabled={!policyEnabled || !connected || !browserSelected}
-            aria-label={enabled ? 'Disable WebBridge for this chat' : 'Enable WebBridge for this chat'}
+            disabled={!policyEnabled}
+            aria-label={enabled ? 'Turn off WebBridge for agent browsing' : 'Turn on WebBridge for agent browsing'}
             className="shrink-0"
           >
             {enabled ? 'Disable' : 'Enable'}
           </Button>
         </div>
-
-        {extensions.length > 1 && (
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-(--color-text-muted)">Browser for this chat</p>
-            <div className="space-y-1 rounded-md border border-(--color-border-subtle) bg-(--bg-key) p-1.5">
-              {extensions.map((candidate) => {
-                const selected = candidate.extension_id === extension?.extension_id
-                return (
-                  <button
-                    key={candidate.extension_id}
-                    type="button"
-                    onClick={() => onSelectedExtensionChange(candidate.extension_id)}
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors',
-                      selected
-                        ? 'bg-(--color-accent)/12 text-(--color-text)'
-                        : 'text-(--color-text-muted) hover:bg-(--bg-2) hover:text-(--color-text)',
-                    )}
-                    aria-pressed={selected}
-                  >
-                    <span className={cn('size-1.5 shrink-0 rounded-full', selected ? 'bg-(--color-accent)' : 'bg-(--color-text-subtle)')} />
-                    <span className="min-w-0 flex-1 truncate">
-                      {candidate.browser} · {candidate.current_title || candidate.current_url || `v${candidate.version}`}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
 
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">

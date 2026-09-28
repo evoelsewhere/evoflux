@@ -140,9 +140,10 @@ def test_browser_tool_definitions_are_unchanged() -> None:
     # Changed deliberately: `resize.orientation` no longer defaults to
     # "portrait", which was rotating every landscape viewport request; then
     # the registry stopped emitting nested titles, dangling discriminator
-    # mappings and null branches of optional fields.
+    # mappings and null branches of optional fields; then the guide said the
+    # call runs through WebBridge whenever it is enabled and connected.
     assert _definition_digest(browser_use) == (
-        "9b007c0542d39d4801c794dcdeace81368f30a960868d7b229ab23917a514ae7"
+        "54f0f348cf379b011f0b1f6b372850df79d99bf6f4cf777cc9cb754626560f33"
     )
     # Changed deliberately: the tool guide (`_DESCRIPTION`) was defined but
     # never passed to `@tool`, so the model saw only the one-line docstring;

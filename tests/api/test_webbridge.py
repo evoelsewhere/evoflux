@@ -4566,7 +4566,9 @@ async def test_paired_extension_lists_and_creates_browser_sessions(
     async with db_module.async_session_factory() as db:
         created_row = await db.get(ChatSession, UUID(created.json()["id"]))
     assert created_row is not None
-    assert "webbridge" in (created_row.tags or ())
+    # Provenance and pairing only: which browser an agent drives is live
+    # state, never a session tag.
+    assert "webbridge" not in (created_row.tags or ())
     assert "webbridge_origin:browser" in (created_row.tags or ())
     assert f"webbridge_pairing:{pairing['pairing_id']}" in (created_row.tags or ())
 
@@ -4755,7 +4757,7 @@ async def test_browser_session_bridge_excludes_side_chats(
     assert response.json() == []
 
 
-async def test_browser_binding_rejects_session_without_webbridge_tag(
+async def test_browser_binding_rejects_session_not_assigned_to_pairing(
     client: TestClient,
 ):
     from app.core import db as db_module
@@ -4776,10 +4778,10 @@ async def test_browser_binding_rejects_session_without_webbridge_tag(
         },
     )
     assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "session_not_webbridge_enabled"
+    assert response.json()["detail"]["code"] == "session_not_pairing_assigned"
 
 
-async def test_browser_interaction_rejects_session_without_webbridge_tag(
+async def test_browser_interaction_rejects_session_not_assigned_to_pairing(
     client: TestClient,
 ):
     from app.core import db as db_module
@@ -4811,7 +4813,34 @@ async def test_browser_interaction_rejects_session_without_webbridge_tag(
     )
 
     assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "session_not_webbridge_enabled"
+    assert response.json()["detail"]["code"] == "session_not_pairing_assigned"
+
+
+async def test_browser_binding_refused_while_webbridge_is_turned_off(
+    client: TestClient, manager: WebBridgeManager
+):
+    from app.core import db as db_module
+    from app.core.runtime_settings import WebBridgeSettings
+    from app.models.chat import ChatSession
+
+    pairing = _pair_extension(client)
+    async with db_module.async_session_factory() as db:
+        session = ChatSession(
+            title="Paired session",
+            tags=[f"webbridge_pairing:{pairing['pairing_id']}"],
+        )
+        db.add(session)
+        await db.commit()
+    manager._policy_cache = WebBridgeSettings(enabled=False)
+
+    response = client.put(
+        f"{_PREFIX}/bindings/42",
+        headers={"Authorization": f"Bearer {pairing['credential']}"},
+        json={"session_id": str(session.id), "origin": "https://example.com"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "webbridge_disabled"
 
 
 async def test_browser_interaction_requires_http_origin(client: TestClient):

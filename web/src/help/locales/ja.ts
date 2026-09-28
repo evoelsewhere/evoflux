@@ -1442,7 +1442,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'browser',
     title: '内蔵ブラウザと WebBridge',
     summary:
-      'アプリ内ブラウザ（Ctrl+T）を使うか、teach モードとチャット単位の有効化付き WebBridge 拡張で実 Chrome/Edge セッションをペアします。WebBridge はデスクトップアプリの CDP コンパニオンであり、EvoFlux の Web 版ではありません。',
+      'アプリ内ブラウザ（Ctrl+T）を使うか、teach モードとエージェントのブラウザ操作用の WebBridge スイッチ付き WebBridge 拡張で実 Chrome/Edge セッションをペアします。WebBridge はデスクトップアプリの CDP コンパニオンであり、EvoFlux の Web 版ではありません。',
     keywords: [
       'browser',
       'webbridge',
@@ -1453,17 +1453,17 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Ctrl+T',
       'teach',
       'pairing',
-      'per-chat',
+      'browser_use',
       'ブラウザ',
       '拡張機能',
       'ティーチ',
       'ペアリング'
 ],
     setup:
-      '内蔵: Settings → Browser で有効化し Ctrl+T。WebBridge: Chrome/Edge 拡張をインストールし、Settings → Browser でマスターポリシーを有効化、デスクトップのステータスコントロールからペアし、使うチャットごとに WebBridge を有効化。',
+      '内蔵: Settings → Browser で有効化し Ctrl+T。WebBridge: Chrome/Edge 拡張をインストールし、Settings → Browser でマスターポリシーを有効化、デスクトップのステータスコントロールからペアし、workbench バーで WebBridge をオンにしておく。',
     tricks: [
       'Ctrl+T は内蔵ブラウザ workbench をトグル — WebBridge ペアリングではありません。',
-      'WebBridge はチャット単位で有効化可能; マスターポリシーは Settings → Browser。',
+      'WebBridge がオンで拡張が接続中なら、エージェントのブラウザ操作はすべて実ブラウザで行われ、それ以外はアプリ内ブラウザで行われます。スイッチはチャット単位ではなく保存され、作業中に切り替えても次のブラウザ操作から反映されます。',
       'Teach モードは意味のあるブラウザ操作（生キーストロークではない）を記録し、確認付きで再生可能なリプレイにします。',
       'ペアリングはスコープ付き資格情報とワンタイムセッションチケット; ペアリング取り消しでライブ中継が閉じます。',
       '実ブラウザからの選択とページコンテキストは信頼できない入力として扱います。',
@@ -1484,14 +1484,14 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '内蔵: Settings → Browser → 有効化、その後 Ctrl+T または Browser ツール。WebBridge: 拡張を入れ、Settings → Browser でポリシー有効化、デスクトップ WebBridge ステータスコントロールでペアし、使うチャットで WebBridge を有効化。Teach でレビュー可能な操作列を記録; 監視結果共有前に確認。',
+        text: '内蔵: Settings → Browser → 有効化、その後 Ctrl+T または Browser ツール。WebBridge: 拡張を入れ、Settings → Browser でポリシー有効化、デスクトップ WebBridge ステータスコントロールでペアし、エージェントに実ブラウザを使わせる間はそこで WebBridge をオンにしておく。Teach でレビュー可能な操作列を記録; 監視結果共有前に確認。',
       },
       {
         type: 'tips',
         items: [
           'Ctrl+T — 内蔵ブラウザのみ',
           'Status control — WebBridge のペア / 解除',
-          'Per-chat toggle — このセッションで実ブラウザを許可',
+          'WebBridge スイッチ — エージェントが実ブラウザで操作（保存され、実行中にも反映）',
           'Teach — 意味のある操作、生キーストロークなし',
           'Revoke pairing — 中継 + 未処理チケットを殺す',
           'Settings → Browser — 両経路のマスターポリシー',
@@ -1500,7 +1500,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'WebBridge 手順: (1) Chrome/Edge 拡張をインストール、(2) Settings → Browser でマスターポリシー有効化、(3) デスクトップステータスコントロールからペア、(4) 対象チャットを開く、(5) そのチャットで WebBridge を有効化、(6) 任意でフローを Teach しリプレイ確認、(7) マシンや案件が終わったらペアリング取り消し。',
+        text: 'WebBridge 手順: (1) Chrome/Edge 拡張をインストール、(2) Settings → Browser でマスターポリシー有効化、(3) デスクトップステータスコントロールからペア、(4) workbench バーで WebBridge をオン、(5) エージェントにブラウザ操作を依頼 — WebBridge をオフにするまで実ブラウザを使う、(6) 任意でフローを Teach しリプレイ確認、(7) マシンや案件が終わったらペアリング取り消し。',
       },
       {
         type: 'p',
@@ -1508,7 +1508,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: Ctrl+T で拡張がペアすると期待; マスターポリシーを有効にして per-chat トグルを忘れる; teach 記録を生キーロガースクリプトとして扱う; 共有ノート PC に古いペアリングを残す; WebBridge ページ文を疑いなくプロンプトへ貼る。',
+        text: 'よくある失敗: Ctrl+T で拡張がペアすると期待; マスターポリシーを有効にして WebBridge スイッチをオフのままにする; teach 記録を生キーロガースクリプトとして扱う; 共有ノート PC に古いペアリングを残す; WebBridge ページ文を疑いなくプロンプトへ貼る。',
       },
       {
         type: 'tips',
@@ -1950,7 +1950,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           ['Skill precedence', 'project と user の skill フォルダ > enabled plugins > EvoFlux built-ins。どの Skill も Settings → Skills でオフにできます。'],
           ['MCP configuration', 'Plugin は別 in-memory manager を使い global mcp.json を変更しない。'],
           ['Agent availability', '明示 MCP selection、または同 installation の Skill の SKILL.md を読むことで ready tools を run に追加。'],
-          ['WebBridge', '明示 safe capability のみ non-browser server を WebBridge run に保持。'],
+          ['WebBridge', 'エージェントが WebBridge とアプリ内ブラウザのどちらで操作しても plugin server は表示されたまま。`webbridge-safe` は受け付けるがもう不要。'],
           ['Failure isolation', '不正 Skill/server は隔離、fatal manifest/package は reject。'],
         ],
       },
@@ -2598,7 +2598,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'ソースから: Terminal 1 `make dev`、Terminal 2 `make -C desktop dev`。',
       'モデル一覧が空 → 何より先に Settings → Providers。',
       'ツールが突然拒否 → 権限モード + Sandbox deny glob。',
-      'WebBridge オフライン → 拡張インストール、ペアリング有効、Browser 設定有効、per-chat トグルオン。',
+      'WebBridge オフライン → 拡張インストール、ペアリング有効、Browser 設定有効、WebBridge スイッチオン。',
       '空の telemetry → observability/DuckDB extras が無効の可能性 — 必ずしもチャット障害ではない。',
       'Goal が詰まった → blocker streak、予算一時停止、または /goal:stop を確認。',
       '/scheduler が 404 っぽい → Ctrl+S パネルを使う; ルートはホームへリダイレクト。'
@@ -2624,7 +2624,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'モデルなし → Settings → Providers',
           'ヘルス緑でストリームエラー → モデル/プロバイダ資格情報またはレート制限',
           'ツール拒否 → 権限モード（ask）+ Sandbox deny glob',
-          'WebBridge オフライン → 拡張、ペアリング、Browser ポリシー、per-chat 有効化',
+          'WebBridge オフライン → 拡張、ペアリング、Browser ポリシー、WebBridge スイッチ',
           '空の telemetry → observability extras 無効（しばしば非ブロッキング）',
           'Goal 詰まり → blocker streak、予算一時停止、または /goal:stop を確認',
           '/scheduler が 404 っぽい → Ctrl+S パネル; ルートはホームへリダイレクト',

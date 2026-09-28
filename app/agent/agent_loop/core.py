@@ -513,15 +513,11 @@ class Agent(Generic[TContext]):
             """Add permitted runtime MCP tools to this run-local catalog."""
 
             added: list[str] = []
-            webbridge_session = bool(state.metadata.get("webbridge_session"))
             side_chat_session = bool(state.metadata.get("side_chat_session"))
             for run_tool in candidates:
                 if not getattr(run_tool, "deferred", False):
                     continue
                 if excluded_tools and run_tool.name in excluded_tools:
-                    continue
-                capabilities = getattr(run_tool, "capabilities", frozenset())
-                if webbridge_session and "webbridge-safe" not in capabilities:
                     continue
                 if side_chat_session and not getattr(run_tool, "read_only", False):
                     continue

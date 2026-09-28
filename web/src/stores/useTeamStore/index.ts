@@ -630,7 +630,7 @@ export const useTeamStore = create<TeamStore>()(
       return true
     },
 
-    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean; webBridgeExtensionId?: string | null; delivery?: 'steer' | 'queue' }) => {
+    sendMessage: async (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; delivery?: 'steer' | 'queue' }) => {
       let resolvedOptions = options
       // Queue unless the caller names a lane: holding a follow-up never
       // redirects work the agent is part-way through, and the tray's Steer
@@ -707,8 +707,6 @@ export const useTeamStore = create<TeamStore>()(
             resolvedOptions?.thinkingLevel ?? get().sessionThinkingLevel,
             resolvedOptions?.shell ?? false,
             resolvedOptions?.fastMode ?? get().sessionFastMode,
-            resolvedOptions?.webBridgeEnabled,
-            resolvedOptions?.webBridgeExtensionId,
             undefined,
             delivery,
           )
@@ -808,8 +806,6 @@ export const useTeamStore = create<TeamStore>()(
           resolvedOptions?.thinkingLevel ?? get().sessionThinkingLevel,
           resolvedOptions?.shell ?? false,
           resolvedOptions?.fastMode ?? get().sessionFastMode,
-          resolvedOptions?.webBridgeEnabled,
-          resolvedOptions?.webBridgeExtensionId,
           draftPlacement(get()),
           delivery,
         )
@@ -1102,8 +1098,6 @@ export const useTeamStore = create<TeamStore>()(
           options?.thinkingLevel ?? get().sessionThinkingLevel,
           false,
           options?.fastMode ?? get().sessionFastMode,
-          undefined,
-          undefined,
           draftPlacement(get()),
         )
         const goal = await getTeamGoal(result.session_id)

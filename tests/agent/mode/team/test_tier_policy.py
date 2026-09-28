@@ -20,20 +20,17 @@ from app.agent.agent_loop import Agent
 from app.agent.mode.team.member import TeamLead
 from app.agent.mode.team.team import AgentTeam
 from app.agent.mode.team.tier_policy import (
-    NON_WEBBRIDGE_SESSION_DENIED_TOOLS,
     SIDE_CHAT_ALWAYS_EXCLUDED_TOOLS,
     SIDE_CHAT_SESSION_TAG,
     TIER_DENIED_TOOLS,
-    WEBBRIDGE_SESSION_DENIED_WEB_TOOLS,
+    WEBBRIDGE_OFF_DENIED_TOOLS,
     deferred_tools_for_run,
     denied_tools_for_tier,
     resolve_member_tier,
     side_chat_session_excluded_tools,
-    webbridge_session_excluded_tools,
 )
 from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.tools import Tool
-from app.webbridge_tags import WEBBRIDGE_SESSION_TAG
 
 
 # ── denied_tools_for_tier ────────────────────────────────────────────────
@@ -279,18 +276,6 @@ class TestDeferredTools:
 
         assert {"browser_use", "preview", "webbridge", "lsp_diagnostics"} <= deferred
 
-    def test_webbridge_tag_reveals_webbridge_without_headless_browser(self):
-        tools = [
-            self._tool("load_tool"),
-            self._tool("browser_use", deferred=True),
-            self._tool("webbridge", deferred=True),
-        ]
-
-        deferred = deferred_tools_for_run(tools, reveal_webbridge=True)
-
-        assert "webbridge" not in deferred
-        assert "browser_use" in deferred
-
 
 # ── resolve_member_tier ──────────────────────────────────────────────────
 
@@ -483,151 +468,20 @@ class TestResolveMemberTier:
         assert resolve_member_tier("exec#1") is None
 
 
-# ── WebBridge session scoping ────────────────────────────────────────────
+# ── WebBridge availability ───────────────────────────────────────────────
 
 
-# Representative lead tool set: workspace/core tools, competing web backends,
-# deferred loaders, injected team tools, and browser/non-browser MCP tools.
-def _policy_tool(
-    name: str,
-    *,
-    capabilities: tuple[str, ...] = (),
-    origin: str = "builtin",
-) -> Tool:
-    tool = Tool(lambda: None, name=name, capabilities=capabilities)
-    tool.origin = origin
-    return tool
+class TestWebbridgeAvailability:
+    def test_only_the_webbridge_tool_hides_while_it_is_unavailable(self):
+        assert WEBBRIDGE_OFF_DENIED_TOOLS == frozenset({"webbridge"})
 
-
-_LEAD_REGISTRY_TOOLS = [
-    _policy_tool(
-        name,
-        capabilities=(
-            ("browser",)
-            if name == "mcp_browser_navigate"
-            else ("webbridge-safe",)
-            if name == "mcp_filesystem_read_file"
-            else ()
-        ),
-        origin="mcp" if name.startswith("mcp_") else "builtin",
-    )
-    for name in [
-        "webbridge",
-        "ask_user",
-        "todo_manage",
-        "note",
-        "date",
-        "browser_use",
-        "web_search",
-        "web_fetch",
-        "image_search",
-        "schedule_task",
-        "read",
-        "write",
-        "shell",
-        "load_tool",
-        "preview",
-        "mcp_browser_navigate",
-        "mcp_filesystem_read_file",
-        "team_message",
-        "team_handoff",
-        "team_state",
-        "team_manage",
-        "team_delegate",
-        "team_reject",
-        "team_worktree",
-    ]
-]
-
-
-class TestWebbridgeSessionExcludedTools:
-    def test_webbridge_is_opt_in_for_normal_sessions(self):
-        assert NON_WEBBRIDGE_SESSION_DENIED_TOOLS == frozenset({"webbridge"})
-
-    def test_web_tools_excluded(self):
-        excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
-        assert {"browser_use", "web_search", "web_fetch", "image_search"} <= excluded
-
-    def test_workspace_and_loader_tools_survive(self):
-        excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
-        assert {
-            "read",
-            "write",
-            "shell",
-            "load_tool",
-            "preview",
-            "mcp_filesystem_read_file",
-        }.isdisjoint(excluded)
-
-    def test_denied_web_tools_match_pinned_contract(self):
-        assert WEBBRIDGE_SESSION_DENIED_WEB_TOOLS == frozenset(
-            {"browser_use", "web_search", "web_fetch", "image_search"}
-        )
-
-    def test_mcp_tools_excluded(self):
-        # An MCP browser server must not bypass the webbridge-only rule.
-        excluded = webbridge_session_excluded_tools(_LEAD_REGISTRY_TOOLS)
-        assert "mcp_browser_navigate" in excluded
-
-    def test_mcp_name_does_not_imply_browser_capability(self):
-        tool = _policy_tool(
-            "mcp_playwright_navigate",
-            capabilities=("webbridge-safe",),
-            origin="mcp",
-        )
-
-        assert tool.name not in webbridge_session_excluded_tools([tool])
-
-    def test_unclassified_mcp_tool_is_excluded(self):
-        tool = _policy_tool("mcp_custom_action", origin="mcp")
-
-        assert tool.name in webbridge_session_excluded_tools([tool])
-
-    def test_all_injected_team_tools_survive(self):
-        injected = {
-            "team_message",
-            "team_handoff",
-            "todo_manage",
-            "team_state",
-            "team_manage",
-            "team_delegate",
-            "team_reject",
-            "team_worktree",
-        }
-
-        excluded = webbridge_session_excluded_tools(
-            [Tool(lambda: None, name=name) for name in {"webbridge", *injected}]
-        )
-
-        assert injected.isdisjoint(excluded)
-
-
-class TestWebbridgeSessionTagOnTeam:
-    def _make_lead(self):
+    def test_a_legacy_webbridge_tag_changes_nothing_in_the_prompt(self):
+        """Old sessions still carry the retired "webbridge" tag; routing is
+        live state now, so the tag must not add a WebBridge-only section."""
         from tests.agent.mode.team.conftest import MockTeamProvider
 
-        return TeamLead(Agent(name="lead", llm_provider=MockTeamProvider()))
-
-    def test_session_tags_default_empty(self):
-        team = AgentTeam(lead=self._make_lead())
-        assert team.session_tags == frozenset()
-        # Untagged → no webbridge scoping, lead keeps full access (no regression).
-        assert WEBBRIDGE_SESSION_TAG not in team.session_tags
-
-    def test_tagged_lead_prompt_has_webbridge_suffix(self):
-        team = AgentTeam(
-            lead=self._make_lead(), session_tags=frozenset({WEBBRIDGE_SESSION_TAG})
-        )
-        prompt = team.lead.build_protocol("base", team)
-        assert "WebBridge session" in prompt
-        assert "webbridge" in prompt
-        assert "read and edit files" in prompt
-        assert "delegate workspace work" in prompt
-        assert "browser_use, web_search, web_fetch" in prompt
-        assert "## Deferred tool activation" in prompt
-
-    def test_untagged_lead_prompt_has_no_webbridge_suffix(self):
-        team = AgentTeam(lead=self._make_lead())
+        lead = TeamLead(Agent(name="lead", llm_provider=MockTeamProvider()))
+        team = AgentTeam(lead=lead, session_tags=frozenset({"webbridge"}))
         prompt = team.lead.build_protocol("base", team)
         assert "WebBridge session" not in prompt
         assert "## Deferred tool activation" in prompt
@@ -691,15 +545,4 @@ class TestSideChatSessionTagOnTeam:
     def test_untagged_lead_prompt_has_no_side_chat_suffix(self):
         team = AgentTeam(lead=self._make_lead())
         prompt = team.lead.build_protocol("base", team)
-        assert "Side Chat session" not in prompt
-
-    def test_webbridge_and_side_chat_suffixes_independent(self):
-        """A team tagged only "webbridge" must not also get the side-chat
-        suffix, and vice versa — the two elif-free `if`s must not bleed
-        into each other."""
-        webbridge_team = AgentTeam(
-            lead=self._make_lead(), session_tags=frozenset({WEBBRIDGE_SESSION_TAG})
-        )
-        prompt = webbridge_team.lead.build_protocol("base", webbridge_team)
-        assert "WebBridge session" in prompt
         assert "Side Chat session" not in prompt

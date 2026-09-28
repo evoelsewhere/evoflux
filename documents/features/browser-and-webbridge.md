@@ -64,8 +64,12 @@ Implemented capabilities include:
 
 - native discovery and scoped pairing;
 - one-time relay tickets and persistent extension connections;
-- explicit browser selection per EvoFlux chat when multiple paired browsers are
-  connected; the selected connection remains pinned for later tool calls;
+- one saved WebBridge switch for agent browsing (`webbridge.agent_browsing`,
+  `GET/PUT /api/settings/webbridge/agent-browsing`), shared by the workbench
+  bar and Settings → Browser; it is not a session tag, and a change applies to
+  the next browser call of an agent that is already working. With several
+  paired browsers connected, a chat keeps driving the one it last used, else
+  the most recently seen;
 - session/model management and full agent chat in the browser side panel;
 - tab-to-session binding without stealing focus;
 - page navigation, semantic read/write/select and bounded browser actions;
@@ -88,8 +92,10 @@ Agent-facing behavior of the `webbridge` tool:
   target, so hover state and the on-page cursor are unchanged.
 - A batched run of clicks, fills and keys stays on the session's bound tab and
   its origin pin, like each of those actions sent alone.
-- In a WebBridge session, `preview start` points the agent at
-  `webbridge open_tab` instead of the excluded `browser_use`.
+- The `webbridge` tool is discoverable only while WebBridge is ready
+  (enabled, switch on, an extension connected) and refuses once the switch is
+  turned off; `browser_use` stays available in every chat and `preview start`
+  always points at it.
 - Debugging actions read a per-tab devtools log the extension keeps from CDP
   events: `console` (every level, uncaught exceptions and browser log entries,
   with source location and stack), `network` (method, status, resource type,
@@ -162,6 +168,13 @@ Agent-facing behavior of the `webbridge` tool:
   `console {level: "warn"}`, `debug_summary {console_limit, network_limit}`);
   `SHARED_VERIFICATION_ACTIONS` in `browser_shared.py` names the loop both
   tools support.
+- `browser_use` picks its backend on every call from live state, not session
+  tags: when `webbridge.enabled` and the agent-browsing switch are on and an
+  extension is connected, the call is translated (`new_tab` → `open_tab`, `press` → `key`, `wait` →
+  `wait_for_*`, …) and runs through WebBridge in the user's browser, with a
+  first result line saying so (the chat hides its See Browser button for such
+  calls); otherwise it drives the in-app browser. In-app-only actions (`query`, `http`, `download`, `zoom`, …) and element
+  `index` targets are refused before any action runs.
 - `upload_file` puts files into an `<input type=file>` through
   `DOM.setFileInputFiles`; paths must resolve inside the session's workspace
   roots or its uploads.

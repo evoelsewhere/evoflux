@@ -3,10 +3,8 @@ import { Globe2, Save } from 'lucide-react'
 
 import type { WebBridgeSettings } from '@/api/client'
 import {
-  areWebBridgeDefaultsEnabled,
   loadBrowserPreferences,
   saveBrowserPreferences,
-  setWebBridgeDefaultsEnabled,
   subscribeBrowserPreferences,
   type BrowserPreferences,
 } from '@/components/BrowserViewer/browserPreferences'
@@ -24,7 +22,9 @@ import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
 import { useRegisterSettingsDirty } from '@/lib/settings-dirty'
 import {
+  useUpdateWebBridgeAgentBrowsingMutation,
   useUpdateWebBridgeSettingsMutation,
+  useWebBridgeAgentBrowsingQuery,
   useWebBridgeSettingsQuery,
 } from '@/queries'
 import { useToastStore } from '@/stores/useToastStore'
@@ -35,8 +35,10 @@ export function BrowserSettingsPage() {
   const update = useUpdateWebBridgeSettingsMutation()
   const push = useToastStore((state) => state.push)
 
+  const agentBrowsing = useWebBridgeAgentBrowsingQuery()
+  const updateAgentBrowsing = useUpdateWebBridgeAgentBrowsingMutation()
+
   const [preferences, setPreferences] = useState<BrowserPreferences>(loadBrowserPreferences)
-  const [webBridgeDefault, setWebBridgeDefault] = useState(areWebBridgeDefaultsEnabled)
   const [editedDraft, setEditedDraft] = useState<WebBridgeSettings | null>(null)
   const draft = editedDraft ?? query.data ?? null
   const dirty = Boolean(
@@ -46,10 +48,7 @@ export function BrowserSettingsPage() {
   )
   useRegisterSettingsDirty(dirty)
 
-  useEffect(() => subscribeBrowserPreferences((value) => {
-    setPreferences(value)
-    setWebBridgeDefault(areWebBridgeDefaultsEnabled())
-  }), [])
+  useEffect(() => subscribeBrowserPreferences(setPreferences), [])
 
   const patchBuiltIn = <K extends keyof BrowserPreferences>(
     key: K,
@@ -77,9 +76,16 @@ export function BrowserSettingsPage() {
       .filter(Boolean),
   )]
 
-  const handleWebBridgeDefaultChange = (checked: boolean) => {
-    setWebBridgeDefault(checked)
-    setWebBridgeDefaultsEnabled(checked)
+  // Saved at once through its own endpoint, not with the form below: the
+  // workbench bar flips the same switch, and it takes effect mid-task.
+  const handleAgentBrowsingChange = (checked: boolean) => {
+    updateAgentBrowsing.mutate(checked, {
+      onError: (error) => push({
+        tone: 'error',
+        title: t('Save failed'),
+        description: error instanceof Error ? error.message : String(error),
+      }),
+    })
   }
 
   const save = async () => {
@@ -387,14 +393,14 @@ export function BrowserSettingsPage() {
                 }
               />
               <SettingsRow
-                label={t('Enable for new chats')}
-                description={t('Turn WebBridge on by default when you start a new chat. You can still toggle it per chat from the workbench bar.')}
+                label={t('Use for agent browsing')}
+                description={t('While on and the extension is connected, agent browser actions run in your browser instead of the in-app one. Same switch as WebBridge in the workbench bar; it applies to the next browser action, even mid-task.')}
                 control={
                   <Switch
-                    checked={webBridgeDefault}
-                    disabled={!draft.enabled}
-                    onCheckedChange={handleWebBridgeDefaultChange}
-                    aria-label={t('Enable for new chats')}
+                    checked={agentBrowsing.data?.enabled === true}
+                    disabled={!draft.enabled || agentBrowsing.data === undefined}
+                    onCheckedChange={handleAgentBrowsingChange}
+                    aria-label={t('Use for agent browsing')}
                   />
                 }
               />
@@ -403,7 +409,7 @@ export function BrowserSettingsPage() {
                   stacked
                   control={
                     <SettingsCallout tone="warning">
-                      {t('WebBridge is disabled by policy. Per-chat controls in the workbench bar stay inactive until you turn it back on.')}
+                      {t('WebBridge is disabled by policy. Agents use the in-app browser until you turn it back on.')}
                     </SettingsCallout>
                   }
                 />

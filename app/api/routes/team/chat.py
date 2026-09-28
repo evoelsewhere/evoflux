@@ -48,11 +48,6 @@ from app.api.schemas.sessions import (
     TeamSessionUpdateRequest,
     TeamWorkspaceVisibilityRequest,
 )
-from app.webbridge_tags import (
-    WEBBRIDGE_SESSION_TAG,
-    WEBBRIDGE_TARGET_TAG_PREFIX,
-    webbridge_target_tag,
-)
 from app.api.schemas.team import GoalResponse, TeamHistoryMember, TeamHistoryResponse
 from app.api.routes.team.worktrees import (
     WorktreeCreateRequest,
@@ -80,7 +75,6 @@ from app.services.coding_purge_service import PurgeConflictError, purge_workspac
 from app.services.coding_project_service import (
     get_visible_project_ids_for_workspace_path,
 )
-from app.services.webbridge_service import webbridge_manager
 from app.services.interactive_message_service import resolve_team_for_session
 from app.services.chat_service import (
     BoundaryShift,
@@ -466,72 +460,6 @@ async def team_chat(
                 )
 
     session_tags = set(existing.tags or ()) if existing is not None else set()
-    if body.webbridge_enabled is not None:
-        if body.webbridge_enabled:
-            session_tags.add(WEBBRIDGE_SESSION_TAG)
-            if not webbridge_manager.has_active_extension():
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "WebBridge is enabled, but no browser extension is connected. "
-                        "Connect it from the WebBridge panel and try again."
-                    ),
-                )
-            active_extensions = webbridge_manager.active_extensions()
-            requested_extension_id = (body.webbridge_extension_id or "").strip()
-            if not requested_extension_id:
-                if len(active_extensions) != 1:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            "Choose a connected browser before enabling WebBridge."
-                        ),
-                    )
-                requested_extension_id = active_extensions[0].extension_id
-            if requested_extension_id not in {
-                extension.extension_id for extension in active_extensions
-            }:
-                raise HTTPException(
-                    status_code=409,
-                    detail="The selected WebBridge browser is no longer connected.",
-                )
-            session_tags = {
-                tag
-                for tag in session_tags
-                if not tag.startswith(WEBBRIDGE_TARGET_TAG_PREFIX)
-            }
-            session_tags.add(webbridge_target_tag(requested_extension_id))
-        else:
-            session_tags.discard(WEBBRIDGE_SESSION_TAG)
-            session_tags = {
-                tag
-                for tag in session_tags
-                if not tag.startswith(WEBBRIDGE_TARGET_TAG_PREFIX)
-            }
-    elif body.webbridge_extension_id is not None:
-        raise HTTPException(
-            status_code=422,
-            detail="webbridge_extension_id requires webbridge_enabled=true.",
-        )
-
-    if (
-        WEBBRIDGE_SESSION_TAG in session_tags
-        and not webbridge_manager.has_active_extension()
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "WebBridge is enabled, but no browser extension is connected. "
-                "Connect it from the WebBridge panel and try again."
-            ),
-        )
-
-    if body.webbridge_enabled is not None and existing is not None:
-        async with write_db_factory() as write_db:
-            async with write_db.begin():
-                writable = await write_db.get(ChatSession, existing.id)
-                if writable is not None:
-                    writable.tags = sorted(session_tags) or None
 
     # A persisted session owns its mode and workspace. Request fields select
     # the context only when creating a new session; they can never migrate an

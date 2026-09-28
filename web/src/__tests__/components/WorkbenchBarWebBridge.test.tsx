@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
@@ -96,35 +96,36 @@ describe('WorkbenchBar browser access control', () => {
     expect(onViewModeChange).toHaveBeenCalledWith('split')
   })
 
-  it('enables WebBridge explicitly when the extension is connected', async () => {
+  it('turns WebBridge on for agent browsing from the popover', async () => {
     const onChange = vi.fn()
     renderBar(false, onChange, true)
-    const enableButton = screen.getByRole('button', { name: 'Enable WebBridge for this chat' })
+    const enableButton = screen.getByRole('button', { name: 'Turn on WebBridge for agent browsing' })
 
-    await waitFor(() => expect(enableButton).toBeEnabled())
+    expect(enableButton).toBeEnabled()
     expect(enableButton.closest('[data-slot="popover-content"]')).toHaveAttribute('data-no-drag')
     fireEvent.click(enableButton)
     expect(onChange).toHaveBeenCalledWith(true)
   })
 
-  it('blocks enable while the extension is disconnected', async () => {
+  it('can be turned on before the extension connects', async () => {
     webBridgeApi.getWebBridgeStatus.mockResolvedValue({ connected: false, extensions: [] })
     const onChange = vi.fn()
     renderBar(false, onChange, true)
-    const enableButton = screen.getByRole('button', { name: 'Enable WebBridge for this chat' })
+    const enableButton = screen.getByRole('button', { name: 'Turn on WebBridge for agent browsing' })
 
-    await waitFor(() => expect(enableButton).toBeDisabled())
     fireEvent.click(enableButton)
-    expect(onChange).not.toHaveBeenCalled()
-    expect(screen.getByText('Connect the browser extension to enable WebBridge.')).toBeVisible()
+    expect(onChange).toHaveBeenCalledWith(true)
   })
 
-  it('turns off an enabled chat when the extension disconnects', async () => {
+  it('keeps the saved toggle on through a disconnect and says where agents browse', async () => {
     webBridgeApi.getWebBridgeStatus.mockResolvedValue({ connected: false, extensions: [] })
     const onChange = vi.fn()
     renderBar(true, onChange, true)
 
-    await waitFor(() => expect(onChange).toHaveBeenCalledWith(false))
+    expect(
+      await screen.findByText('On — agents use the in-app browser until the extension connects.'),
+    ).toBeVisible()
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('shows mode-scoped lead ownership and selects another idle lead', () => {

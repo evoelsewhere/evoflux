@@ -522,8 +522,10 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
         )}
       </button>
 
-      {/* "See Browser" button — visible when browser_use tool is active */}
-      {name === 'browser_use' && <SeeBrowserButton />}
+      {/* "See Browser" button — only for calls the in-app browser runs */}
+      {name === 'browser_use' && !ranThroughWebBridge(result) && (
+        <SeeBrowserButton whileRunning={!done} />
+      )}
 
       <ToolAttachments attachments={attachments} />
 
@@ -655,10 +657,22 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   )
 })
 
-function SeeBrowserButton() {
+/** The first line browser_use returns when WebBridge ran the call. */
+const WEBBRIDGE_BROWSER_USE_NOTICE = "Browser: the user's real Chrome/Edge through WebBridge"
+
+/** Whether a finished browser_use call ran in the user's browser, not the panel. */
+function ranThroughWebBridge(result: string | undefined): boolean {
+  return result?.trimStart().startsWith(WEBBRIDGE_BROWSER_USE_NOTICE) ?? false
+}
+
+function SeeBrowserButton({ whileRunning }: { whileRunning: boolean }) {
   const toggleBrowser = useUIStore((s) => s.toggleBrowser)
   const browserOpen = useUIStore((s) => sessionHasWorkbenchTool(s, 'browser'))
   const browserActive = useTeamStore((s) => s.browserSession?.active ?? false)
+
+  // Until the result says which browser ran the call, only a live in-app
+  // session shows there is something to see; a WebBridge call mounts none.
+  if (whileRunning && !browserActive && !browserOpen) return null
 
   return (
     <button

@@ -133,7 +133,7 @@ remote headers remain literal package data and must not contain secrets.
 Treat `${PLUGIN_DATA}` as installation-scoped mutable state. Do not write generated state into the installed package. Persist files with restrictive permissions when they contain secrets, and mask secrets in all list/read responses.
 
 Use `extensions["org.evoelsewhere.evoflux.mcp"].servers.<name>.capabilities` only for
-supported declared capabilities such as `webbridge-safe`; never infer trust from package
+supported declared capabilities (`webbridge-safe` is accepted but has no effect now); never infer trust from package
 installation alone.
 
 Existing packages using `evoflux.credentials` or `evoflux.mcp` remain readable

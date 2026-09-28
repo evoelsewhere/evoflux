@@ -134,6 +134,27 @@ export async function updateWebBridgeSettings(
   return res.json()
 }
 
+/** The composer's WebBridge toggle: agent browsing in the user's browser. */
+export type WebBridgeAgentBrowsing = { enabled: boolean }
+
+export async function getWebBridgeAgentBrowsing(): Promise<WebBridgeAgentBrowsing> {
+  const res = await fetch(`${apiBaseUrl()}/settings/webbridge/agent-browsing`)
+  if (!res.ok) await parseDetailOrThrow(res, 'GET /settings/webbridge/agent-browsing')
+  return res.json()
+}
+
+export async function updateWebBridgeAgentBrowsing(
+  enabled: boolean,
+): Promise<WebBridgeAgentBrowsing> {
+  const res = await fetch(`${apiBaseUrl()}/settings/webbridge/agent-browsing`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!res.ok) await parseDetailOrThrow(res, 'PUT /settings/webbridge/agent-browsing')
+  return res.json()
+}
+
 // Computer App Control settings
 
 export type ComputerAppSettings = {

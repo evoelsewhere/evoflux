@@ -732,8 +732,13 @@ AnyAction = Annotated[
 ]
 
 _DESCRIPTION = """\
-Read and control EvoFlux's user-visible in-app browser. The Browser panel opens
-automatically when needed; no extension or hidden Chromium process is used.
+Read and control a user-visible browser. When WebBridge is enabled and its
+extension connected, actions run in the user's real Chrome/Edge (their logins
+and tabs) and the result says so; otherwise they run in EvoFlux's in-app
+browser, whose Browser panel opens automatically when needed. Through WebBridge
+the in-app-only actions (query, page_assets, download, http, popups,
+permissions, zoom, print, save_pdf, clipboard, dispatch_event, submit,
+scroll_into_view, dblclick) are refused before anything runs.
 
 Observe: status, snapshot, find, query, inspect, html, accessibility, extract,
 screenshot.
@@ -876,16 +881,240 @@ async def _ensure_browser(session_id: str) -> bool:
     return await direct_browser_bridge.wait_connected(session_id)
 
 
+_WEBBRIDGE_NOTICE = (
+    "Browser: the user's real Chrome/Edge through WebBridge (enabled and "
+    "connected), not the in-app browser. Refs come from this browser's snapshot."
+)
+
+#: Actions WebBridge takes with the same name and fields.
+_WEBBRIDGE_SAME = frozenset(
+    {
+        "navigate",
+        "back",
+        "forward",
+        "reload",
+        "status",
+        "get_tabs",
+        "switch_tab",
+        "close_tab",
+        "snapshot",
+        "screenshot",
+        "console",
+        "network",
+        "dialogs",
+        "performance",
+        "storage",
+        "cookies",
+        "debug_summary",
+        "resize",
+        "reset_viewport",
+        "evaluate",
+    }
+)
+
+_KEY_MODIFIERS = {
+    "alt": "Alt",
+    "option": "Alt",
+    "control": "Control",
+    "ctrl": "Control",
+    "meta": "Meta",
+    "cmd": "Meta",
+    "command": "Meta",
+    "shift": "Shift",
+}
+
+
+def _webbridge_target(params: dict[str, Any], targeted: bool) -> dict[str, Any] | None:
+    """The ref/selector WebBridge targets by; None for an index-only target.
+
+    browser_use's element ``index`` is a position in its last listing, which
+    means nothing to WebBridge (its ``index`` picks among a selector's
+    matches). Tab actions keep their ``index``: it is the same tab position.
+    """
+    if not targeted:
+        return {}
+    target = {key: params[key] for key in ("ref", "selector") if key in params}
+    if not target and "index" in params:
+        return None
+    return target
+
+
+def _webbridge_key(params: dict[str, Any]) -> dict[str, Any]:
+    raw = str(params["key"])
+    *mods, key = raw.split("+") if len(raw) > 1 else [raw]
+    modifiers = [_KEY_MODIFIERS.get(m.strip().lower(), m.strip()) for m in mods]
+    return {"action": "key", "key": key or "+", "modifiers": modifiers}
+
+
+def _webbridge_wait(params: dict[str, Any]) -> dict[str, Any]:
+    timeout_ms = int(float(params.get("seconds", 2.0)) * 1000) or 100
+    if "selector" in params:
+        state = params.get("state", "attached")
+        return {
+            "action": "wait_for_selector",
+            "selector": params["selector"],
+            "state": "hidden" if state == "detached" else state,
+            "timeout_ms": max(timeout_ms, 100),
+        }
+    if "text" in params:
+        return {
+            "action": "wait_for_text",
+            "text": params["text"],
+            "timeout_ms": max(timeout_ms, 100),
+        }
+    if "url_contains" in params:
+        return {
+            "action": "wait_for_url",
+            "url": f"*{params['url_contains']}*",
+            "timeout_ms": max(timeout_ms, 100),
+        }
+    if "load_state" in params:
+        state = params["load_state"]
+        return {
+            "action": "wait_for_load",
+            "state": "domcontentloaded" if state == "interactive" else "load",
+            "timeout_ms": max(timeout_ms, 100),
+        }
+    return {"action": "wait", "ms": min(timeout_ms, 60_000)}
+
+
+def _to_webbridge_steps(
+    params: dict[str, Any], *, targeted: bool
+) -> list[dict[str, Any]] | str:
+    """Rewrite one browser_use action as WebBridge actions, or say why not."""
+    name = str(params["action"])
+    target = _webbridge_target(params, targeted)
+    if target is None:
+        return (
+            "index targets only exist in the in-app browser; take a snapshot "
+            "and pass its ref"
+        )
+    focus = [{"action": "focus", **target}] if target else []
+    if name in _WEBBRIDGE_SAME:
+        return [params]
+    if name in {"start", "stop"}:
+        return [{"action": "status"}]
+    if name == "click":
+        return [{"action": "click_selector", **target}]
+    if name == "click_at":
+        return [
+            {
+                "action": "click",
+                "x": params["x"],
+                "y": params["y"],
+                "button": params.get("button", "left"),
+            }
+        ]
+    if name in {"hover", "focus"}:
+        return [{"action": name, **target}]
+    if name == "fill":
+        return [
+            {
+                "action": "fill",
+                "value": params["text"],
+                "clear": params.get("clear", True),
+                **target,
+            }
+        ]
+    if name == "clear":
+        return [{"action": "fill", "value": "", "clear": True, **target}]
+    if name == "type":
+        return [*focus, {"action": "type", "text": params["text"]}]
+    if name == "press":
+        return [*focus, _webbridge_key(params)]
+    if name == "set_files":
+        return [{"action": "upload_file", "paths": params["paths"], **target}]
+    if name == "set_checked":
+        return [{"action": "set_checked", "checked": params["checked"], **target}]
+    if name == "select":
+        return [{"action": "select_option", "values": [params["value"]], **target}]
+    if name == "drag":
+        step: dict[str, Any] = {"action": "drag"}
+        for key in ("ref", "selector"):
+            if key in params:
+                step[f"source_{key}"] = params[key]
+            if f"target_{key}" in params:
+                step[f"target_{key}"] = params[f"target_{key}"]
+        return [step]
+    if name == "scroll":
+        pixels = int(params.get("pixels", 500))
+        dy = -pixels if params.get("direction") == "up" else pixels
+        return [{"action": "scroll", "dy": dy}]
+    if name == "extract":
+        step = {"action": "extract", "format": "text"}
+        if "selector" in params:
+            step["selector"] = params["selector"]
+        return [step]
+    if name == "html":
+        return [{"action": "extract", "format": "html", **target}]
+    if name in {"find", "accessibility"}:
+        return [{"action": "snapshot"}]
+    if name == "inspect":
+        return [{"action": "inspect", "properties": params.get("styles"), **target}]
+    if name == "new_tab":
+        return [{"action": "open_tab", "url": params["url"]}]
+    if name == "wait":
+        return [_webbridge_wait(params)]
+    return (
+        "not available while WebBridge is on — use snapshot, extract, "
+        "get_tabs or screenshot instead"
+    )
+
+
+async def _browser_use_via_webbridge(
+    actions: list[AnyAction], state: Any
+) -> str | ToolResult:
+    """Run a browser_use call in the user's browser through WebBridge.
+
+    Every action is translated and validated before any runs, so an
+    unsupported step fails the call instead of leaving a half-done sequence.
+    """
+    from pydantic import TypeAdapter, ValidationError
+
+    from app.agent.tools.builtin.webbridge_tool import (
+        WebBridgeAction,
+        run_webbridge_actions,
+    )
+
+    adapter: TypeAdapter[Any] = TypeAdapter(WebBridgeAction)
+    steps: list[Any] = []
+    errors: list[str] = []
+    for action in actions:
+        params = action.model_dump(exclude_none=True)
+        name = str(params["action"])
+        translated = _to_webbridge_steps(
+            params, targeted=isinstance(action, ElementTargetAction)
+        )
+        if isinstance(translated, str):
+            errors.append(f"Error ({name}): {translated}")
+            continue
+        for step in translated:
+            try:
+                steps.append(adapter.validate_python(step))
+            except ValidationError as exc:
+                detail = exc.errors()[0].get("msg", str(exc)) if exc.errors() else exc
+                errors.append(f"Error ({name}): {detail}")
+    if errors:
+        return "\n---\n".join([_WEBBRIDGE_NOTICE, *errors, "No actions were run."])
+    result = await run_webbridge_actions(steps, state=state)
+    return combine_browser_results([_WEBBRIDGE_NOTICE, result])
+
+
 @tool(
     name="browser_use",
     description=_DESCRIPTION,
     deferred=True,
-    deferred_summary="Read and control EvoFlux's visible in-app desktop browser.",
+    deferred_summary=(
+        "Read and control a browser: the user's real Chrome/Edge via WebBridge "
+        "when it is enabled and connected, otherwise EvoFlux's in-app browser."
+    ),
     search_aliases=(
         "screenshot",
         "chrome",
         "devtools",
         "console",
+        "webbridge",
+        "extension",
     ),
     capabilities=("browser",),
 )
@@ -893,7 +1122,13 @@ async def browser_use(
     actions: Annotated[list[AnyAction], Field(description="Ordered browser actions.")],
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str | ToolResult:
-    """Run actions against the current chat's in-app desktop browser."""
+    """Run actions in WebBridge's browser when it is ready, else the in-app one."""
+    from app.agent.tools.builtin.webbridge_tool import webbridge_ready
+
+    # Decided per call from live state, never from session tags: WebBridge
+    # enabled in Settings with an extension connected wins.
+    if webbridge_ready():
+        return await _browser_use_via_webbridge(actions, _state)
     session_id = _get_sid(_state)
     # Only work that drives a page is worth opening a browser the user did
     # not ask for; a batch of questions is answered without one.

@@ -61,6 +61,7 @@ from app.api.schemas.settings import (
     SeedInstallRequest,
     SeedInstallResponse,
     VersionControlSettingsBody,
+    WebBridgeAgentBrowsingBody,
     WebBridgeSettingsBody,
 )
 from app.services.provider_usage import (
@@ -567,6 +568,7 @@ async def update_webbridge_settings(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     cfg.webbridge = WebBridgeSettings(
         enabled=body.enabled,
+        agent_browsing=cfg.webbridge.agent_browsing,
         allow_evaluate=body.allow_evaluate,
         allowed_domains=cfg.webbridge.allowed_domains,
         blocked_domains=cfg.webbridge.blocked_domains,
@@ -593,6 +595,36 @@ async def update_webbridge_settings(
 
     webbridge_manager.reload_policy()
     return _webbridge_settings_body()
+
+
+@router.get("/webbridge/agent-browsing")
+async def get_webbridge_agent_browsing() -> WebBridgeAgentBrowsingBody:
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return WebBridgeAgentBrowsingBody(enabled=cfg.webbridge.agent_browsing)
+
+
+@router.put("/webbridge/agent-browsing")
+async def update_webbridge_agent_browsing(
+    body: WebBridgeAgentBrowsingBody,
+) -> WebBridgeAgentBrowsingBody:
+    """Save the composer's WebBridge toggle; the next browser call follows it.
+
+    Kept apart from ``PUT /settings/webbridge`` so the Settings form, which
+    replaces the whole policy, can never write back a stale toggle.
+    """
+    try:
+        cfg = load_runtime_settings()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    cfg.webbridge = cfg.webbridge.model_copy(update={"agent_browsing": body.enabled})
+    save_runtime_settings(cfg)
+    from app.services.webbridge_service import webbridge_manager
+
+    webbridge_manager.reload_policy()
+    return WebBridgeAgentBrowsingBody(enabled=cfg.webbridge.agent_browsing)
 
 
 # Computer App Control (Settings -> Computer App Control)

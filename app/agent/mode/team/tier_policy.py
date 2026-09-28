@@ -83,67 +83,33 @@ def denied_tools_for_tier(
     return denied
 
 
-def deferred_tools_for_run(
-    tools: Iterable[Tool],
-    *,
-    reveal_webbridge: bool = False,
-) -> frozenset[str]:
+def deferred_tools_for_run(tools: Iterable[Tool]) -> frozenset[str]:
     """Resolve metadata-driven deferred names for one team-agent run.
 
     Deferred tools remain hidden until the model activates them through
-    ``load_tool``. WebBridge is auto-revealed only from its explicit session
-    tag. Hard exclusions are applied separately and still win after this step.
+    ``load_tool``. Hard exclusions are applied separately and still win after
+    this step.
     """
     tool_list = tuple(tools)
     if not any(tool.name == "load_tool" for tool in tool_list):
         return frozenset()
-    deferred = {tool.name for tool in tool_list if getattr(tool, "deferred", False)}
-    if reveal_webbridge:
-        deferred.discard("webbridge")
-    return frozenset(deferred)
+    return frozenset(
+        tool.name for tool in tool_list if getattr(tool, "deferred", False)
+    )
 
 
-# ── WebBridge session scoping ─────────────────────────────────────────────
-# A normal chat can enable WebBridge through the composer; the capability is
-# persisted as the "webbridge" ChatSession tag. It keeps the lead's normal
-# workspace tools, but the lead must drive the web ONLY through the user's
-# real browser via webbridge.
-# Competing built-in and MCP browser/web backends are hard-excluded.
-
-#: Built-ins that would bypass the tagged session's real-browser backend.
-WEBBRIDGE_SESSION_DENIED_WEB_TOOLS: frozenset[str] = frozenset(
-    {"browser_use", "web_search", "web_fetch", "image_search"}
-)
-
-
-def webbridge_session_excluded_tools(tools: Iterable[Tool]) -> frozenset[str]:
-    """Return the lead's ``excluded_tools`` set for a WebBridge-tagged session.
-
-    Workspace, coding, user-interaction, and non-browser MCP tools remain
-    available. Competing web backends are excluded so browser interaction can
-    only use ``webbridge``. The call site applies this policy to every team
-    member, so normal workspace delegation cannot bypass the browser routing.
-    """
-    denied = set(WEBBRIDGE_SESSION_DENIED_WEB_TOOLS)
-    for tool in tools:
-        capabilities = getattr(tool, "capabilities", frozenset())
-        if "browser" in capabilities or (
-            getattr(tool, "origin", "builtin") == "mcp"
-            and "webbridge-safe" not in capabilities
-        ):
-            denied.add(tool.name)
-    return frozenset(denied)
-
-
-# WebBridge is an explicit composer mode, not the default browser backend.
-# Keeping it out of ordinary sessions prevents ``load_tool`` from selecting
-# the extension when the user expects EvoFlux's visible in-app browser.
-NON_WEBBRIDGE_SESSION_DENIED_TOOLS: frozenset[str] = frozenset({"webbridge"})
+# ── WebBridge availability ────────────────────────────────────────────────
+# Where an agent browses is live state, never a session tag: browser_use runs
+# through WebBridge whenever it is ready (enabled, composer toggle on, an
+# extension connected) and in the in-app browser otherwise. While WebBridge is
+# not ready the webbridge tool is hidden, so load_tool cannot offer a backend
+# that would only fail.
+WEBBRIDGE_OFF_DENIED_TOOLS: frozenset[str] = frozenset({"webbridge"})
 
 
 # ── Side Chat session scoping ─────────────────────────────────────────────
-# A side chat is tagged "side_chat" (persisted on ChatSession.tags, same
-# mechanism as WEBBRIDGE_SESSION_TAG). It has its own dedicated team instance
+# A side chat is tagged "side_chat" (persisted on ChatSession.tags). It has
+# its own dedicated team instance
 # (team_manager keys teams by session_id), so tagging it never affects the
 # main session's tools. Read-only: no file writes, no shell/code execution,
 # no team coordination or side-effecting tools.

@@ -426,9 +426,7 @@ async def test_one_real_action_still_mounts_the_browser(monkeypatch) -> None:
     """Mixing a question with real work keeps the mount."""
     mounted = False
     monkeypatch.setattr(direct_browser_bridge, "is_available", lambda _sid: True)
-    monkeypatch.setattr(
-        direct_browser_bridge, "is_connected", lambda _sid: mounted
-    )
+    monkeypatch.setattr(direct_browser_bridge, "is_connected", lambda _sid: mounted)
 
     async def request_mount(_sid: str) -> bool:
         nonlocal mounted
@@ -451,3 +449,138 @@ async def test_one_real_action_still_mounts_the_browser(monkeypatch) -> None:
     )
 
     assert mounted is True
+
+
+# ── WebBridge routing ─────────────────────────────────────────────────────
+
+
+def _webbridge_on(monkeypatch) -> list[tuple[str, dict]]:
+    """Make WebBridge ready and record what reaches the extension."""
+    from app.agent.tools.builtin import webbridge_tool
+    from app.services.webbridge_service import webbridge_manager
+
+    sent: list[tuple[str, dict]] = []
+    monkeypatch.setattr(webbridge_tool, "webbridge_ready", lambda: True)
+    # No batch capability: every action travels on its own.
+    monkeypatch.setattr(webbridge_manager, "resolve_target", lambda *_a, **_k: None)
+
+    async def send_command(_sid: str, action: str, params=None, **_kw):
+        sent.append((action, dict(params or {})))
+        return {"success": True, "data": {"url": "https://e.com", "title": "E"}}
+
+    monkeypatch.setattr(webbridge_manager, "send_command", send_command)
+
+    async def in_app(*_args, **_kwargs):
+        raise AssertionError("the in-app browser must not be used")
+
+    monkeypatch.setattr(direct_browser_bridge, "request", in_app)
+    monkeypatch.setattr(direct_browser_bridge, "request_mount", in_app)
+    return sent
+
+
+@pytest.mark.asyncio
+async def test_browser_use_runs_through_webbridge_when_ready(monkeypatch) -> None:
+    sent = _webbridge_on(monkeypatch)
+
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "new_tab", "url": "https://e.com"},
+            {"action": "fill", "ref": "e3", "text": "hello"},
+            {"action": "press", "key": "Control+A"},
+            {"action": "click", "ref": "e4"},
+            {"action": "wait", "selector": "#done", "seconds": 5},
+        ],
+    )
+
+    text = result if isinstance(result, str) else str(result)
+    assert "through WebBridge" in text
+    actions = [action for action, _ in sent]
+    assert actions[:5] == [
+        "open_tab",
+        "fill",
+        "key",
+        "click_selector",
+        "wait_for_selector",
+    ]
+    assert sent[1][1]["value"] == "hello"
+    assert sent[2][1]["key"] == "A"
+    assert sent[2][1]["modifiers"] == ["Control"]
+    assert sent[4][1]["timeout_ms"] == 5000
+
+
+@pytest.mark.asyncio
+async def test_webbridge_refuses_in_app_only_actions_before_running(
+    monkeypatch,
+) -> None:
+    sent = _webbridge_on(monkeypatch)
+
+    result = await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[
+            {"action": "navigate", "url": "https://e.com"},
+            {"action": "http", "url": "https://e.com/api"},
+            {"action": "click", "index": 2},
+        ],
+    )
+
+    assert isinstance(result, str)
+    assert "Error (http)" in result
+    assert "Error (click)" in result
+    assert "No actions were run." in result
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_tab_index_survives_webbridge_translation(monkeypatch) -> None:
+    sent = _webbridge_on(monkeypatch)
+
+    await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "switch_tab", "index": 1}],
+    )
+
+    assert sent and sent[0][0] == "switch_tab"
+    assert sent[0][1]["index"] == 1
+
+
+def test_webbridge_ready_follows_settings_toggle_and_connection(monkeypatch) -> None:
+    from app.agent.tools.builtin import webbridge_tool
+    from app.core.runtime_settings import WebBridgeSettings
+    from app.services.webbridge_service import webbridge_manager
+
+    policy = WebBridgeSettings()
+    monkeypatch.setattr(webbridge_manager, "_policy_cache", policy)
+    monkeypatch.setattr(webbridge_manager, "has_active_extension", lambda: True)
+    assert webbridge_tool.webbridge_ready() is True
+
+    # The composer toggle, saved mid-turn, applies to the very next call.
+    policy.agent_browsing = False
+    assert webbridge_tool.webbridge_ready() is False
+
+    policy.agent_browsing = True
+    policy.enabled = False
+    assert webbridge_tool.webbridge_ready() is False
+
+    policy.enabled = True
+    monkeypatch.setattr(webbridge_manager, "has_active_extension", lambda: False)
+    assert webbridge_tool.webbridge_ready() is False
+
+
+@pytest.mark.asyncio
+async def test_webbridge_tool_refuses_once_the_toggle_is_off(monkeypatch) -> None:
+    """A webbridge tool loaded while WebBridge was on stops when it is off."""
+    from app.agent.tools.builtin import webbridge_tool
+    from app.core.runtime_settings import WebBridgeSettings
+    from app.services.webbridge_service import webbridge_manager
+
+    monkeypatch.setattr(
+        webbridge_manager, "_policy_cache", WebBridgeSettings(agent_browsing=False)
+    )
+
+    result = await webbridge_tool.webbridge.arun(
+        _injected={"_state": _state()}, actions=[{"action": "status"}]
+    )
+
+    assert isinstance(result, str)
+    assert "turned off for agent browsing" in result

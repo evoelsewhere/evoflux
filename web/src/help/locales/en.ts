@@ -1479,7 +1479,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'browser',
     title: 'Built-in browser and WebBridge',
     summary:
-      'Use the in-app browser (Ctrl+T), or pair a real Chrome/Edge session via the WebBridge extension with teach mode and per-chat enable. WebBridge is a CDP companion to the desktop app — not a web version of EvoFlux.',
+      'Use the in-app browser (Ctrl+T), or pair a real Chrome/Edge session via the WebBridge extension with teach mode and one WebBridge switch for agent browsing. WebBridge is a CDP companion to the desktop app — not a web version of EvoFlux.',
     keywords: [
       'browser',
       'webbridge',
@@ -1490,7 +1490,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Ctrl+T',
       'teach',
       'pairing',
-      'per-chat',
+      'browser_use',
       'trình duyệt',
       'tiện ích',
       'dạy',
@@ -1499,10 +1499,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'ティーチ'
 ],
     setup:
-      'Built-in: enable under Settings → Browser, then Ctrl+T. WebBridge: install the Chrome/Edge extension, enable master policy in Settings → Browser, pair from the desktop status control, then enable WebBridge per chat that should use it.',
+      'Built-in: enable under Settings → Browser, then Ctrl+T. WebBridge: install the Chrome/Edge extension, enable master policy in Settings → Browser, pair from the desktop status control, and keep WebBridge on in the workbench bar.',
     tricks: [
       'Ctrl+T toggles the built-in browser workbench — this is not WebBridge pairing.',
-      'WebBridge can be enabled per chat; master policy lives in Settings → Browser.',
+      'While WebBridge is on and the extension is connected, every agent browser action runs in your real browser; otherwise it runs in the in-app browser. The switch is saved, not per chat, and flipping it mid-task applies to the next browser action.',
       'Teach mode records meaningful browser actions (not raw keystrokes) for reviewable replay with confirmation.',
       'Pairing uses scoped credentials and one-time session tickets; revoking a pairing closes the live relay.',
       'Selections and page context from the real browser are treated as untrusted input.',
@@ -1523,14 +1523,14 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Built-in: Settings → Browser → enable, then Ctrl+T or the Browser tool. WebBridge: install the extension, enable policy in Settings → Browser, open the desktop WebBridge status control to pair, then enable WebBridge for the chats that should use it. Use Teach to record reviewable action sequences; confirm before monitored results are shared.',
+        text: 'Built-in: Settings → Browser → enable, then Ctrl+T or the Browser tool. WebBridge: install the extension, enable policy in Settings → Browser, open the desktop WebBridge status control to pair, and keep WebBridge on there while agents should browse in your browser. Use Teach to record reviewable action sequences; confirm before monitored results are shared.',
       },
       {
         type: 'tips',
         items: [
           'Ctrl+T — built-in browser only',
           'Status control — pair / unpair WebBridge',
-          'Per-chat toggle — allow the real browser for this session',
+          'WebBridge switch — agents browse in the real browser (saved, applies mid-task)',
           'Teach — meaningful actions, no raw keystrokes',
           'Revoke pairing — kills relay + outstanding tickets',
           'Settings → Browser — master policy for both paths',
@@ -1539,7 +1539,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step WebBridge: (1) install the Chrome/Edge extension, (2) enable master policy in Settings → Browser, (3) pair from the desktop status control, (4) open the target chat, (5) enable WebBridge for that chat, (6) optionally Teach a flow and confirm replay, (7) revoke pairing when finished with the machine or engagement.',
+        text: 'Step-by-step WebBridge: (1) install the Chrome/Edge extension, (2) enable master policy in Settings → Browser, (3) pair from the desktop status control, (4) turn WebBridge on in the workbench bar, (5) ask the agent to browse — it uses your browser until you turn WebBridge off, (6) optionally Teach a flow and confirm replay, (7) revoke pairing when finished with the machine or engagement.',
       },
       {
         type: 'p',
@@ -1547,7 +1547,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: pressing Ctrl+T expecting the extension to pair; enabling master policy but forgetting the per-chat toggle; treating teach recordings as raw keylogger scripts; leaving an old pairing alive on a shared laptop; pasting WebBridge page text into prompts without skepticism.',
+        text: 'Common mistakes: pressing Ctrl+T expecting the extension to pair; enabling master policy but leaving the WebBridge switch off; treating teach recordings as raw keylogger scripts; leaving an old pairing alive on a shared laptop; pasting WebBridge page text into prompts without skepticism.',
       },
       {
         type: 'tips',
@@ -1991,7 +1991,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           ['Skill precedence', 'Project and user skill folders override enabled plugins; enabled plugins override EvoFlux built-ins. Any Skill can be turned off in Settings → Skills.'],
           ['MCP configuration', 'Plugin declarations stay in a separate in-memory manager and never modify global mcp.json.'],
           ['Agent availability', 'Explicit MCP selection, or reading the SKILL.md of a Skill from the same installation, makes ready tools available for that run.'],
-          ['WebBridge', 'Only explicitly declared safe capabilities may keep a non-browser plugin server visible in a WebBridge run.'],
+          ['WebBridge', 'Plugin servers stay visible whether agents browse through WebBridge or the in-app browser; `webbridge-safe` is accepted but no longer needed.'],
           ['Failure isolation', 'Bad Skill/server entries are isolated; fatal manifest/package errors reject the package.'],
         ],
       },
@@ -2645,7 +2645,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'From source: Terminal 1 `make dev`, Terminal 2 `make -C desktop dev`.',
       'No models listed → Settings → Providers before anything else.',
       'Tools denied unexpectedly → permission mode + Sandbox deny globs.',
-      'WebBridge offline → extension installed, pairing valid, Browser settings enabled, per-chat toggle on.',
+      'WebBridge offline → extension installed, pairing valid, Browser settings enabled, WebBridge switch on.',
       'Empty telemetry → observability/DuckDB extras may be disabled — not necessarily a chat outage.',
       'Goal stuck → inspect blocker streak, budget pause, or /goal:stop.',
       '/scheduler 404-feeling → use Ctrl+S panel; route redirects home.'
@@ -2671,7 +2671,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'No models → Settings → Providers',
           'Stream errors with green health → model/provider credentials or rate limits',
           'Tools denied → permission mode + Sandbox deny globs',
-          'WebBridge offline → extension, pairing, Browser policy, per-chat enable',
+          'WebBridge offline → extension, pairing, Browser policy, WebBridge switch',
           'Empty telemetry → observability extras disabled (often non-blocking)',
           'Goal stuck → inspect blocker streak, budget pause, or /goal:stop',
           '/scheduler 404-feeling → use Ctrl+S panel; route redirects home',

@@ -67,15 +67,14 @@ from app.agent.hooks.tool_context_projection import (
 )
 from app.agent.mode.team.shared_state import format_state_snapshot
 from app.agent.mode.team.tier_policy import (
-    NON_WEBBRIDGE_SESSION_DENIED_TOOLS,
     SIDE_CHAT_SESSION_TAG,
+    WEBBRIDGE_OFF_DENIED_TOOLS,
     deferred_tools_for_run,
     denied_tools_for_tier,
     resolve_member_tier,
     side_chat_session_excluded_tools,
-    webbridge_session_excluded_tools,
 )
-from app.webbridge_tags import WEBBRIDGE_SESSION_TAG, webbridge_target_from_tags
+from app.services.webbridge_service import webbridge_manager
 from app.agent.plugins.role import reset_role, set_role
 from app.agent.sandbox import SandboxConfig, _sandbox_ctx, set_sandbox
 from app.core.paths import session_workspace_dir
@@ -196,10 +195,6 @@ LEAD_PROTOCOL = """\
    - Use `team_reject` with the same Task ID, concrete `reason`, `issues`, `suggestions`, and severity (`minor`, `major`, or `redo`) for inadequate work. Reject final deliverables sent through `team_message` instead of `team_handoff`.
    - Accept only evidence-backed work, state what you verified, and add the smallest decisive check needed before promising completion.
 5. Keep useful members alive for related follow-ups and warm prompt-cache state. Dismiss only instances clearly finished for the session; their history remains restorable."""
-
-WEBBRIDGE_SESSION_PROMPT = """\
-## WebBridge session
-This is a normal workspace-capable chat with the `webbridge` tool added for the user's real browser. You may read and edit files, run shell commands, use skills, delegate workspace work to team members, and otherwise operate normally. The ONLY way anyone on the team may interact with web pages is `webbridge`; browser_use, web_search, web_fetch, image_search, and browser-automation MCP tools are unavailable. If the extension is not connected, ask the user to connect it via the WebBridge icon in the sidebar. To verify a web change, check the page's console errors and failed requests with `webbridge` (debug_summary, console, network) — not only its appearance."""
 
 SIDE_CHAT_SESSION_PROMPT = """\
 ## Side Chat session
@@ -1650,50 +1645,34 @@ class TeamMemberBase(abc.ABC):
         injected = self._team.get_injected_tools(self.name)
 
         # Resolve tier-based tool restrictions for non-lead members.
-        # The lead keeps full workspace access in a WebBridge-tagged session;
-        # only competing web/browser backends are excluded so web pages are
-        # always driven through the user's real browser.
         tier_excluded: frozenset[str] | None = None
         granted_tools = (*self.agent._tools.values(), *injected)
-        is_webbridge_session = WEBBRIDGE_SESSION_TAG in self._team.session_tags
-        deferred = deferred_tools_for_run(
-            granted_tools,
-            reveal_webbridge=is_webbridge_session,
-        )
+        deferred = deferred_tools_for_run(granted_tools)
         if self._role_label == "member":
             member_tier = resolve_member_tier(self.name)
             tier_excluded = (
                 denied_tools_for_tier(member_tier, self.agent._tools.values()) or None
             )
-        if is_webbridge_session:
-            webbridge_excluded = webbridge_session_excluded_tools(granted_tools)
-            tier_excluded = frozenset(tier_excluded or ()) | webbridge_excluded
-        else:
-            # WebBridge is opt-in. In an ordinary session browser_use drives
-            # the user-visible EvoFlux browser and WebBridge must not be
-            # discoverable through load_tool merely because it is registered.
-            tier_excluded = (
-                frozenset(tier_excluded or ()) | NON_WEBBRIDGE_SESSION_DENIED_TOOLS
-            )
-            if SIDE_CHAT_SESSION_TAG in self._team.session_tags:
-                tier_excluded |= side_chat_session_excluded_tools(
-                    (*self.agent._tools.values(), *injected)
-                )
+        # browser_use is the browser entry point and picks WebBridge or the
+        # in-app browser on every call. The webbridge tool itself (crawl, rich
+        # editors) is only discoverable while WebBridge is ready for agents.
+        if not webbridge_manager.agent_browsing_ready():
+            tier_excluded = frozenset(tier_excluded or ()) | WEBBRIDGE_OFF_DENIED_TOOLS
+        if SIDE_CHAT_SESSION_TAG in self._team.session_tags:
+            tier_excluded = frozenset(
+                tier_excluded or ()
+            ) | side_chat_session_excluded_tools(granted_tools)
 
         # Surface team routing context to tools via state.metadata.  The
         # schedule tool reads these as injected args so the LLM never has
         # to specify (or could lie about) the routing target.
         run_metadata: dict[str, object] = {
             "team_mode": self._team.mode,
-            "webbridge_session": is_webbridge_session,
             "side_chat_session": SIDE_CHAT_SESSION_TAG in self._team.session_tags,
             # Browser ownership belongs to the top-level conversation. Team
             # members keep their own session IDs for history/checkpointing,
             # but WebBridge commands must reuse the lead's tab binding/group.
             "webbridge_session_id": lead_session_id,
-            "webbridge_extension_id": webbridge_target_from_tags(
-                self._team.session_tags
-            ),
             # Lead stream id — file-change tracking + SSE publish to one place.
             "stream_session_id": lead_session_id,
             "session_id": self.session_id,
@@ -2046,15 +2025,9 @@ class TeamLead(TeamMemberBase):
         )
         sections: list[str] = [rules, LEAD_MESSAGE_FORMAT]
         # Keep the activation contract ahead of instructions that may name
-        # deferred capabilities. This applies equally to ordinary and
-        # WebBridge sessions: WebBridge is revealed eagerly, but other granted
-        # tools can still remain deferred.
+        # deferred capabilities.
         sections.append(DEFERRED_TOOL_PROTOCOL)
         sections.append(LEAD_PROTOCOL)
-        if WEBBRIDGE_SESSION_TAG in team.session_tags:
-            # Tagged sessions retain workspace tools but route all browser/web
-            # interaction through the user's real browser via WebBridge.
-            sections.append(WEBBRIDGE_SESSION_PROMPT)
         if SIDE_CHAT_SESSION_TAG in team.session_tags:
             # Tagged session (a Side Chat panel): tools are already scoped
             # read-only via excluded_tools — tell it why, and that the

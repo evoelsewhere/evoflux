@@ -206,10 +206,10 @@ non-standard fields to the portable `mcp.json` schema:
 }
 ```
 
-`webbridge-safe` explicitly allows a non-browser MCP server to remain available
-inside a WebBridge-tagged conversation. Servers without that capability remain
-hidden there so an undeclared MCP browser cannot bypass the selected browser
-surface.
+`webbridge-safe` is still accepted but no longer changes tool visibility:
+conversations are not WebBridge-tagged any more. Where an agent browses is
+live state — `browser_use` runs through WebBridge while it is enabled and
+connected — so MCP servers stay available either way.
 
 The earlier `evoflux.mcp` namespace remains a read-only compatibility alias.
 Canonical declarations win when both forms are present.

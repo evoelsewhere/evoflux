@@ -679,6 +679,19 @@ class WebBridgeManager:
     def has_active_extension(self) -> bool:
         return self.get_active_extension() is not None
 
+    def agent_browsing_allowed(self) -> bool:
+        """WebBridge on in Settings and the composer's toggle on."""
+        policy = self._policy()
+        return bool(policy.enabled and getattr(policy, "agent_browsing", True))
+
+    def agent_browsing_ready(self) -> bool:
+        """Whether agent browser work goes to the user's browser right now.
+
+        Allowed, and an extension connected — an I/O-free read, so
+        ``browser_use`` checks it per call.
+        """
+        return self.agent_browsing_allowed() and self.has_active_extension()
+
     def resolve_target(
         self, session_id: str, extension_id: str | None = None
     ) -> ExtensionConnection | None:

@@ -50,8 +50,15 @@ import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
 import { SuggestedTaskDock } from '../SuggestedTaskDock'
 import { useTodosQuery } from '@/queries/useTodosQuery'
-import { useFollowUpSettingsQuery, useRegistryQuery, useTriggerDreamMutation, useWebBridgeSettingsQuery } from '@/queries'
-import { getSessionWorkspaceRoot, getWebBridgeStatus, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
+import {
+  useFollowUpSettingsQuery,
+  useRegistryQuery,
+  useTriggerDreamMutation,
+  useUpdateWebBridgeAgentBrowsingMutation,
+  useWebBridgeAgentBrowsingQuery,
+  useWebBridgeSettingsQuery,
+} from '@/queries'
+import { getSessionWorkspaceRoot, resolveTeamSession, setSessionPermissionMode } from '@/api/client'
 import { apiBaseUrl } from '@/api/base-url'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -81,7 +88,6 @@ import {
   useComputerAppBridge,
   useReleaseComputerAppWhenIdle,
 } from '@/components/ComputerAppViewer/computerAppBridge'
-import { areWebBridgeDefaultsEnabled } from '@/components/BrowserViewer/browserPreferences'
 import { WorkbenchBar } from '@/components/workbench/WorkbenchBar'
 import { WorkbenchDock, WorkbenchSurface } from '@/components/workbench/WorkbenchDock'
 import { useSideChat } from '../SideChatPanel/useSideChat'
@@ -346,8 +352,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const layoutSwitchFrameRef = useRef<number | null>(null)
   const requestedViewModeRef = useRef<ViewMode>('agent')
   const [sideChatQuote, setSideChatQuote] = useState<string | null>(null)
-  const [webBridgeEnabled, setWebBridgeEnabled] = useState(false)
-  const [webBridgeExtensionId, setWebBridgeExtensionId] = useState<string | null>(null)
   const [webBridgeDialogOpen, setWebBridgeDialogOpen] = useState(false)
   const [pendingCodeReviewStart, setPendingCodeReviewStart] =
     useState<PendingCodeReviewStart | null>(null)
@@ -664,65 +668,17 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     () => parseCodeReviewSessionTags(sessionTags),
     [sessionTags],
   )
-  const persistedWebBridgeEnabled = sessionTags?.includes('webbridge')
-  const persistedWebBridgeExtensionId = useMemo(
-    () => sessionTags?.find((tag) => tag.startsWith('webbridge_target:'))?.slice('webbridge_target:'.length) ?? null,
-    [sessionTags],
-  )
-  const webBridgeSettings = useWebBridgeSettingsQuery()
   // Which lane the composer's primary key uses while an agent is working.
   // Settings -> Agents -> Follow-up behavior owns it; Tab takes the other.
   const followUpLane = useFollowUpSettingsQuery().data?.delivery ?? 'queue'
-  const webBridgePolicyEnabled = webBridgeSettings.data?.enabled !== false
-  // Whether WebBridge is *wanted*, which is a pure function of policy, the
-  // session's tag and the new-chat default. ``null`` means the tags have not
-  // loaded, which is not the same as "off" and must not disturb the toggle.
-  const webBridgeRequest = useMemo(() => {
-    if (!webBridgePolicyEnabled) return false
-    return activeSessionId
-      ? sessionTags === undefined
-        ? null
-        : Boolean(persistedWebBridgeEnabled)
-      : areWebBridgeDefaultsEnabled()
-  }, [activeSessionId, persistedWebBridgeEnabled, sessionTags, webBridgePolicyEnabled])
-  // Keyed on the raw inputs rather than on `webBridgeRequest`, so a change
-  // that leaves the answer the same still invalidates the last verification.
-  const webBridgeInputKey =
-    `${activeSessionId ?? ''}|${String(persistedWebBridgeEnabled)}`
-    + `|${sessionTags === undefined}|${webBridgePolicyEnabled}`
-
-  // Fail closed while connection state is unknown. A persisted session tag or
-  // the new-chat default is only a preference; it must never make the UI
-  // appear enabled before a live extension has been verified. Done during
-  // render so the stale "on" is never committed — as an effect this painted
-  // the wrong state for a frame first.
-  useResetOnChange(webBridgeInputKey, () => {
-    if (webBridgeRequest !== null) {
-      setWebBridgeEnabled(false)
-      setWebBridgeExtensionId(persistedWebBridgeExtensionId)
-    }
-  })
-
-  // Only the verification itself is an effect: it talks to the extension.
-  useEffect(() => {
-    if (!webBridgeRequest) return
-    let cancelled = false
-    void getWebBridgeStatus()
-      .then((status) => {
-        if (!cancelled && status.connected) {
-          setWebBridgeEnabled(true)
-          if (!persistedWebBridgeExtensionId && status.extensions.length === 1) {
-            setWebBridgeExtensionId(status.extensions[0].extension_id)
-          }
-        }
-      })
-      .catch(() => {
-        // Backend/status failures stay disabled.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [webBridgeInputKey, webBridgeRequest, persistedWebBridgeExtensionId])
+  // WebBridge is one saved setting, not a per-chat tag: the backend reads it
+  // on every browser call, so toggling while an agent works takes effect on
+  // its next browser action. Whether an extension is connected is shown by
+  // the popover; browser_use falls back to the in-app browser without one.
+  const webBridgePolicyEnabled = useWebBridgeSettingsQuery().data?.enabled !== false
+  const webBridgeAgentBrowsing = useWebBridgeAgentBrowsingQuery()
+  const updateWebBridgeAgentBrowsing = useUpdateWebBridgeAgentBrowsingMutation()
+  const webBridgeEnabled = webBridgePolicyEnabled && webBridgeAgentBrowsing.data?.enabled === true
   // Lead capabilities — used to drive composer affordances (slash menu).
   const agentWorkspace = mode === 'coding' ? workspace : null
   const workWorkspaceQuery = useQuery({
@@ -1196,44 +1152,18 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     inputRef.current?.focus()
   }, [])
 
-  const handleWebBridgeEnabledChange = useCallback(async (enabled: boolean) => {
-    if (!enabled) {
-      setWebBridgeEnabled(false)
-      return
-    }
-
-    // The popover disables this action while disconnected, but keep the
-    // parent defensive so keyboard/race/programmatic calls cannot bypass it.
-    setWebBridgeEnabled(false)
-    try {
-      const status = await getWebBridgeStatus()
-      if (status.connected) {
-        const selected = status.extensions.find(
-          (extension) => extension.extension_id === webBridgeExtensionId,
-        ) ?? (status.extensions.length === 1 ? status.extensions[0] : null)
-        if (!selected) {
-          pushToast({
-            tone: 'error',
-            title: 'Choose a browser',
-            description: 'Select the browser this chat should control before enabling WebBridge.',
-          })
-          setWebBridgeDialogOpen(true)
-          return
-        }
-        setWebBridgeExtensionId(selected.extension_id)
-        setWebBridgeEnabled(true)
-        return
-      }
-    } catch {
-      // Use the same disconnected UX for status failures.
-    }
-    pushToast({
-      tone: 'error',
-      title: 'WebBridge is not connected',
-      description: 'Connect the browser extension before enabling WebBridge.',
+  const { mutate: saveWebBridgeAgentBrowsing } = updateWebBridgeAgentBrowsing
+  const handleWebBridgeEnabledChange = useCallback((enabled: boolean) => {
+    saveWebBridgeAgentBrowsing(enabled, {
+      onError: (err) => {
+        pushToast({
+          tone: 'error',
+          title: 'Could not save WebBridge',
+          description: err instanceof Error ? err.message : String(err),
+        })
+      },
     })
-    setWebBridgeDialogOpen(true)
-  }, [pushToast, webBridgeExtensionId])
+  }, [pushToast, saveWebBridgeAgentBrowsing])
 
   // Lifted above the panel: the side chat session (and any in-flight
   // generation + SSE stream) survives closing/reopening the panel.
@@ -1555,31 +1485,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     files?: File[],
     delivery: 'steer' | 'queue' = followUpLane,
   ) => {
-    if (webBridgeEnabled) {
-      try {
-        const status = await getWebBridgeStatus()
-        if (!status.connected) {
-          setWebBridgeEnabled(false)
-          pushToast({
-            tone: 'error',
-            title: 'WebBridge is not connected',
-            description: 'Connect the browser extension before sending this message.',
-          })
-          setWebBridgeDialogOpen(true)
-          return false
-        }
-      } catch {
-        setWebBridgeEnabled(false)
-        pushToast({
-          tone: 'error',
-          title: 'Could not check WebBridge',
-          description: 'Reconnect the browser extension before sending this message.',
-        })
-        setWebBridgeDialogOpen(true)
-        return false
-      }
-    }
-
     // Quoted chat context is prepended as ``> `` lines, so a command the user
     // typed is no longer at index 0 — matching the raw content used to send
     // "> …\n\n/goal x" to the model as ordinary prose instead of starting the
@@ -1625,8 +1530,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       thinkingLevel: selectedThinkingLevel || null,
       fastMode: current.sessionFastMode,
       shell,
-      webBridgeEnabled,
-      webBridgeExtensionId,
       delivery,
     })
     if (sent && registersWorkspace) notifyCodingWorkspacesChanged()
@@ -1640,8 +1543,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     selectedThinkingLevel,
     sendMessage,
     tryHandleBuiltinGoalCommand,
-    webBridgeEnabled,
-    webBridgeExtensionId,
     workspace,
   ])
 
@@ -1915,8 +1816,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           onOpenReviewContext={openGitReviews}
           webBridgeEnabled={webBridgeEnabled}
           onWebBridgeEnabledChange={handleWebBridgeEnabledChange}
-          selectedExtensionId={webBridgeExtensionId}
-          onSelectedExtensionChange={setWebBridgeExtensionId}
           webBridgePopoverOpen={webBridgeDialogOpen}
           onWebBridgePopoverOpenChange={setWebBridgeDialogOpen}
         />

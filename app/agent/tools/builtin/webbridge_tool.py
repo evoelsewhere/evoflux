@@ -1197,8 +1197,38 @@ async def webbridge(
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str | ToolResult:
     """Control the user's real browser via the WebBridge Chrome extension."""
-    session_id = _get_sid(_state)
-    metadata = _state.metadata if _state else {}
+    # The toggle is read per call, so turning WebBridge off mid-turn stops a
+    # webbridge tool the agent loaded while it was on. A missing extension
+    # is reported by the command itself.
+    if not webbridge_manager.agent_browsing_allowed():
+        return (
+            "Error: WebBridge is turned off for agent browsing. Use browser_use, "
+            "which runs in EvoFlux's in-app browser."
+        )
+    return await run_webbridge_actions(
+        actions, continue_on_error=continue_on_error, state=_state
+    )
+
+
+def webbridge_ready() -> bool:
+    """Whether browser work should go to the user's browser right now.
+
+    Live state, checked per call: WebBridge on in Settings, the composer's
+    WebBridge toggle on, and an extension connected. Flipping the toggle
+    while an agent works changes where its next browser call runs.
+    """
+    return webbridge_manager.agent_browsing_ready()
+
+
+async def run_webbridge_actions(
+    actions: list[Any],
+    *,
+    continue_on_error: bool = False,
+    state: Any = None,
+) -> str | ToolResult:
+    """Run validated WebBridge actions for the chat that owns *state*."""
+    session_id = _get_sid(state)
+    metadata = state.metadata if state else {}
     target_token = _webbridge_target_id.set(
         metadata.get("webbridge_extension_id") if metadata else None
     )

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import uuid
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -290,86 +289,13 @@ class TestTeamChatRoute:
         assert response.json()["session_id"] == sid
         assert dispatch.await_args.kwargs["defer"] is True
 
-    def test_team_chat_rejects_disconnected_webbridge(
-        self, app_with_team, test_team, monkeypatch
+    def test_team_chat_ignores_the_retired_webbridge_fields(
+        self, app_with_team, test_team
     ):
+        """WebBridge is a saved setting now, not a per-message session tag:
+        an older client's fields neither tag the session nor block the send
+        while no extension is connected."""
         test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
-        monkeypatch.setattr(
-            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
-            lambda: False,
-        )
-
-        response = TestClient(app_with_team).post(
-            "/api/team/chat",
-            data={"message": "Use my browser", "webbridge_enabled": "true"},
-        )
-
-        assert response.status_code == 409
-        assert "no browser extension is connected" in response.json()["detail"]
-        test_team.handle_user_message.assert_not_awaited()
-
-    def test_team_chat_enables_webbridge_for_current_session(
-        self, app_with_team, test_team, monkeypatch
-    ):
-        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
-        monkeypatch.setattr(
-            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
-            lambda: True,
-        )
-        monkeypatch.setattr(
-            "app.api.routes.team.chat.webbridge_manager.active_extensions",
-            lambda: [SimpleNamespace(extension_id="browser-1")],
-        )
-
-        response = TestClient(app_with_team).post(
-            "/api/team/chat",
-            data={"message": "Use my browser", "webbridge_enabled": "true"},
-        )
-
-        assert response.status_code == 202
-        assert "webbridge" in test_team.session_tags
-        assert "webbridge_target:browser-1" in test_team.session_tags
-
-    def test_team_chat_requires_browser_choice_when_multiple_webbridge_extensions(
-        self, app_with_team, test_team, monkeypatch
-    ):
-        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
-        monkeypatch.setattr(
-            "app.api.routes.team.chat.webbridge_manager.active_extensions",
-            lambda: [
-                SimpleNamespace(extension_id="browser-1"),
-                SimpleNamespace(extension_id="browser-2"),
-            ],
-        )
-        monkeypatch.setattr(
-            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
-            lambda: True,
-        )
-
-        response = TestClient(app_with_team).post(
-            "/api/team/chat",
-            data={"message": "Use my browser", "webbridge_enabled": "true"},
-        )
-
-        assert response.status_code == 409
-        assert "Choose a connected browser" in response.json()["detail"]
-        test_team.handle_user_message.assert_not_awaited()
-
-    def test_team_chat_pins_webbridge_to_selected_extension(
-        self, app_with_team, test_team, monkeypatch
-    ):
-        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
-        monkeypatch.setattr(
-            "app.api.routes.team.chat.webbridge_manager.active_extensions",
-            lambda: [
-                SimpleNamespace(extension_id="browser-1"),
-                SimpleNamespace(extension_id="browser-2"),
-            ],
-        )
-        monkeypatch.setattr(
-            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
-            lambda: True,
-        )
 
         response = TestClient(app_with_team).post(
             "/api/team/chat",
@@ -381,25 +307,7 @@ class TestTeamChatRoute:
         )
 
         assert response.status_code == 202
-        assert "webbridge_target:browser-2" in test_team.session_tags
-
-    def test_team_chat_disables_webbridge_and_uses_normal_session(
-        self, app_with_team, test_team, monkeypatch
-    ):
-        test_team.handle_user_message = AsyncMock(return_value=str(uuid.uuid7()))
-        test_team.session_tags = frozenset({"webbridge"})
-        monkeypatch.setattr(
-            "app.api.routes.team.chat.webbridge_manager.has_active_extension",
-            lambda: False,
-        )
-
-        response = TestClient(app_with_team).post(
-            "/api/team/chat",
-            data={"message": "Read the in-app tab", "webbridge_enabled": "false"},
-        )
-
-        assert response.status_code == 202
-        assert "webbridge" not in test_team.session_tags
+        assert not any(tag.startswith("webbridge") for tag in test_team.session_tags)
         test_team.handle_user_message.assert_awaited_once()
 
     @pytest.mark.parametrize(
@@ -626,9 +534,7 @@ class TestTeamChatRoute:
         self, app_with_team, test_team, monkeypatch
     ):
         """An unnamed lane follows Settings -> Follow-up behavior."""
-        monkeypatch.setattr(
-            chat_routes, "follow_up_delivery_default", lambda: "queue"
-        )
+        monkeypatch.setattr(chat_routes, "follow_up_delivery_default", lambda: "queue")
         session_id = str(uuid.uuid7())
         test_team.lead.state = "working"
         test_team._activate_queued_user_messages = AsyncMock(return_value=False)
@@ -833,9 +739,7 @@ class TestTeamChatRoute:
         assert atts[0]["original_name"] == "note.txt"
         assert atts[0]["converted_text"] == "hi"
 
-    def test_team_chat_queue_accepts_paperclip_uploads(
-        self, app_with_team, test_team
-    ):
+    def test_team_chat_queue_accepts_paperclip_uploads(self, app_with_team, test_team):
         """Paperclip uploads take the queue path like ``@path`` mentions do."""
         session_id = str(uuid.uuid7())
         test_team.lead.state = "working"

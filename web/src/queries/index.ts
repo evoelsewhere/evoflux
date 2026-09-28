@@ -105,6 +105,8 @@ export {
 export {
   useWebBridgeSettingsQuery,
   useUpdateWebBridgeSettingsMutation,
+  useWebBridgeAgentBrowsingQuery,
+  useUpdateWebBridgeAgentBrowsingMutation,
 } from './useWebBridgeSettingsQuery'
 export {
   useComputerAppSettingsQuery,

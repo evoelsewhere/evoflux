@@ -216,9 +216,9 @@ async def test_start_reuses_externally_running_port(workspace):
 
 
 @pytest.mark.asyncio
-async def test_start_hint_names_the_sessions_browser_tool(workspace):
-    """A WebBridge session excludes browser_use; the hint must not send the
-    agent after it."""
+async def test_start_hint_names_browser_use(workspace):
+    """browser_use picks WebBridge or the in-app browser per call, so the hint
+    always names it."""
     port = _free_port()
     _write_config(workspace, [_server_config("web", port)])
 
@@ -226,15 +226,11 @@ async def test_start_hint_names_the_sessions_browser_tool(workspace):
         lambda _reader, writer: writer.close(), "127.0.0.1", port
     )
     try:
-        out = await pv._start("web", workspace, "webbridge")
-        assert f"webbridge open_tab http://localhost:{port}/" in out
-        assert "browser_use" not in out
+        out = await pv._start("web", workspace)
+        assert f"browser_use navigate to http://localhost:{port}/" in out
 
-        again = await pv._start("web", workspace, "webbridge")
-        assert "webbridge open_tab" in again
-
-        default = await pv._start("web", workspace)
-        assert "browser_use navigate" in default
+        again = await pv._start("web", workspace)
+        assert "browser_use navigate" in again
     finally:
         await pv.preview_tool.arun(action="stop", name="web")
         external.close()

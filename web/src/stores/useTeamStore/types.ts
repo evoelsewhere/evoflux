@@ -150,7 +150,7 @@ export interface TeamStoreState {
 
 export interface TeamStoreActions {
   /** Resolves false when the send was rejected, so the composer can restore the draft. */
-  sendMessage: (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; webBridgeEnabled?: boolean; webBridgeExtensionId?: string | null; delivery?: 'steer' | 'queue' }) => Promise<boolean>
+  sendMessage: (content: string, files?: File[], options?: { mode?: string; workspace?: string | null; model?: string | null; thinkingLevel?: string | null; fastMode?: boolean; shell?: boolean; delivery?: 'steer' | 'queue' }) => Promise<boolean>
   setSessionModelSettings: (model: string | null, thinkingLevel: string | null, fastMode?: boolean) => void
   continueTeam: () => Promise<void>
   compactTeam: () => Promise<void>

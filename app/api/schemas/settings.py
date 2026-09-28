@@ -124,6 +124,14 @@ class WebBridgeSettingsBody(BaseModel):
     built_in_allow_agent_permission_accept: bool = False
 
 
+class WebBridgeAgentBrowsingBody(BaseModel):
+    """The composer's WebBridge toggle: agent browsing in the user's browser."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
 class ComputerAppSettingsBody(BaseModel):
     """Computer App Control policy exposed in Settings → Computer App Control."""
 

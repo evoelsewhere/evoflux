@@ -63,10 +63,7 @@ from app.api.deps import DbSession, WriteDbSession
 from app.api.schemas.commands import CommandRenderRequest, CommandRenderResponse
 from app.api.schemas.snippets import SnippetRenderResponse
 from app.api.schemas.team import PermissionReplyRequest
-from app.webbridge_tags import (
-    WEBBRIDGE_BROWSER_ORIGIN_TAG,
-    WEBBRIDGE_SESSION_TAG,
-)
+from app.webbridge_tags import WEBBRIDGE_BROWSER_ORIGIN_TAG
 from app.core.desktop_auth import (
     desktop_token_matches,
     expected_desktop_token,
@@ -737,12 +734,12 @@ async def _require_webbridge_session(
                 "message": "Target session not found.",
             },
         )
-    if WEBBRIDGE_SESSION_TAG not in (session.tags or ()):
+    if not webbridge_manager._policy().enabled:
         raise HTTPException(
             status_code=403,
             detail={
-                "code": "session_not_webbridge_enabled",
-                "message": "Enable WebBridge for this session before sharing browser context.",
+                "code": "webbridge_disabled",
+                "message": "WebBridge is turned off in EvoFlux Settings.",
             },
         )
     return session
@@ -832,9 +829,7 @@ async def create_browser_session(
         session = ChatSession(
             id=session_id,
             title=body.title,
-            tags=sorted(
-                [WEBBRIDGE_BROWSER_ORIGIN_TAG, WEBBRIDGE_SESSION_TAG, pairing_tag]
-            ),
+            tags=sorted([WEBBRIDGE_BROWSER_ORIGIN_TAG, pairing_tag]),
         )
         try:
             async with db.begin_nested():
@@ -3948,7 +3943,6 @@ async def create_and_bind_browser_session(
             tags=sorted(
                 [
                     WEBBRIDGE_BROWSER_ORIGIN_TAG,
-                    WEBBRIDGE_SESSION_TAG,
                     pairing_session_tag(pairing.id),
                 ]
             ),

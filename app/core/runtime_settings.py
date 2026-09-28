@@ -171,6 +171,10 @@ class WebBridgeSettings(BaseModel):
 
     # Master switch. When False the webbridge tool refuses every action.
     enabled: bool = True
+    # The composer's WebBridge toggle: while on (and an extension is
+    # connected) agent browser_use calls run in the user's browser instead of
+    # the in-app one. Read on every call, so a change applies mid-turn.
+    agent_browsing: bool = True
     # When non-empty, ONLY these domains may be driven (suffix match, so
     # "example.com" also matches "app.example.com"). Empty = allow all.
     allowed_domains: list[str] = Field(default_factory=list)
