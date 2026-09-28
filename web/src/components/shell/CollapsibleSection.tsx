@@ -1,10 +1,10 @@
 /**
  * CollapsibleSection — the canonical sidebar section header: uppercase
- * label with an optional collapse chevron, an optional count pill, and an
+ * label with an optional collapse chevron, an optional plain count, and an
  * optional "+" action button on the right.
  *
  * Canonical label style (one source of truth; the three sidebars had
- * drifted): `text-[10px] font-semibold uppercase tracking-wider`.
+ * drifted): `text-[10px] font-medium uppercase tracking-wide`, subtle.
  *
  * Pass `onToggle` to make the label an expand/collapse button with a
  * chevron (coding's Projects/Workspaces headers); omit it for a static
@@ -50,15 +50,19 @@ export function CollapsibleSection({
   className,
 }: CollapsibleSectionProps) {
   const large = size === 'large'
-  const pill = count !== undefined && (
+  const countLabel = count !== undefined && (
     <span
       className={cn(
-        'rounded-full bg-(--bg-key) font-semibold normal-case tracking-normal text-(--color-text-subtle)',
-        large ? 'px-2 py-0.5 text-[10px]' : 'px-1.5 py-px text-[9px]',
+        'font-normal normal-case tracking-normal tabular-nums text-(--color-text-subtle)',
+        large ? 'text-xs' : 'text-[10px]',
       )}
     >
       {count}
     </span>
+  )
+  const labelClass = cn(
+    'font-medium uppercase tracking-wide text-(--color-text-subtle)',
+    large ? 'text-xs' : 'text-[10px]',
   )
 
   return (
@@ -74,7 +78,7 @@ export function CollapsibleSection({
           type="button"
           onClick={onToggle}
           className={cn(
-            'flex min-w-0 flex-1 items-center rounded-xs text-left hover:bg-(--bg-key)',
+            'flex min-w-0 flex-1 items-center rounded-xs text-left',
             large ? 'gap-1.5 py-1' : 'gap-1 py-0.5',
           )}
           aria-expanded={!collapsed}
@@ -83,51 +87,43 @@ export function CollapsibleSection({
           {collapsed ? (
             <ChevronRight
               size={large ? 12 : 10}
-              className="shrink-0 text-(--color-text-muted)"
+              className="shrink-0 text-(--color-text-subtle)"
               aria-hidden="true"
             />
           ) : (
             <ChevronDown
               size={large ? 12 : 10}
-              className="shrink-0 text-(--color-text-muted)"
+              className="shrink-0 text-(--color-text-subtle)"
               aria-hidden="true"
             />
           )}
-          <span
-            className={cn(
-              'font-semibold uppercase tracking-wider text-(--color-text-muted)',
-              large ? 'text-xs' : 'text-[10px]',
-            )}
-          >
-            {label}
-          </span>
-          {pill}
+          <span className={labelClass}>{label}</span>
+          {countLabel}
         </button>
       ) : (
-        <span
-          className={cn(
-            'flex min-w-0 flex-1 items-center gap-1 font-semibold uppercase tracking-wider text-(--color-text-muted)',
-            large ? 'text-xs' : 'text-[10px]',
-          )}
-        >
+        <span className={cn('flex min-w-0 flex-1 items-center gap-1', labelClass)}>
           {label}
-          {pill}
+          {countLabel}
         </span>
       )}
-      {rightSlot ?? (onAdd && (
-        <button
-          type="button"
-          onClick={onAdd}
-          className={cn(
-            'flex shrink-0 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)',
-            large ? 'h-7 w-7' : 'h-5 w-5',
+      {(rightSlot || onAdd) && (
+        <div className="flex shrink-0 items-center">
+          {rightSlot ?? (
+            <button
+              type="button"
+              onClick={onAdd}
+              className={cn(
+                'flex shrink-0 items-center justify-center rounded text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)',
+                large ? 'h-7 w-7' : 'h-5 w-5',
+              )}
+              title={addLabel}
+              aria-label={addLabel}
+            >
+              <AddIcon size={large ? 15 : 12} aria-hidden="true" />
+            </button>
           )}
-          title={addLabel}
-          aria-label={addLabel}
-        >
-          <AddIcon size={large ? 15 : 12} aria-hidden="true" />
-        </button>
-      ))}
+        </div>
+      )}
     </div>
   )
 }
