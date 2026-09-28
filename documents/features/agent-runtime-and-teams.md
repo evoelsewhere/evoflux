@@ -142,6 +142,11 @@ parks it with `spawn_task` instead of widening the change or burying it in the
 report. The call is non-blocking: it writes a `session_suggested_tasks` row,
 publishes a `suggested_task` event, and returns, so the turn continues.
 
+Suggestions are only for issues unrelated to the user's request. The problem
+the user asked about — its root cause, fix, and next steps — is never parked,
+even when the user asked only for a diagnosis: the lead reports the cause,
+proposes the fix in its reply, and asks before implementing.
+
 Each suggestion carries a title, a one-line rationale, and a self-contained
 prompt — the session that later picks it up never sees the conversation that
 raised it, so paths and reproduction steps live in the prompt text. Prompts

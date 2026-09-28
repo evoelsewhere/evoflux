@@ -77,10 +77,15 @@ async def _spawn_task(
 ) -> str:
     """Flag an out-of-scope issue for a separate background task.
 
-    Call this when you notice something worth fixing that would bloat the
-    current change — dead code, stale docs, missing coverage, a confirmed
-    TODO, or a security issue spotted in passing. Do not flag vague code-smell
-    observations, trivial fixes you can do inline, or low-confidence hunches.
+    Call this when you notice something worth fixing that is unrelated to the
+    user's request and would bloat the current change — dead code, stale docs,
+    missing coverage, a confirmed TODO, or a security issue spotted in passing.
+    Do not flag vague code-smell observations, trivial fixes you can do inline,
+    or low-confidence hunches.
+
+    Never flag the problem the user asked about: not its root cause, its fix,
+    or its next steps, even when they asked only for a diagnosis. Report those
+    in your reply and ask before implementing instead.
 
     A chip appears for the user; one click spins it off into its own session.
     Your current turn continues uninterrupted.
@@ -179,8 +184,10 @@ spawn_task = Tool(
     tiers=("coding",),
     lead_only=True,
     description=(
-        "Flag an out-of-scope issue as a chip the user can spin into its own "
-        "session. Non-blocking — the current turn continues."
+        "Flag an out-of-scope issue, unrelated to the user's request, as a "
+        "chip the user can spin into its own session. Never for the fix or "
+        "next step of the problem the user asked about. Non-blocking — the "
+        "current turn continues."
     ),
 )
 
