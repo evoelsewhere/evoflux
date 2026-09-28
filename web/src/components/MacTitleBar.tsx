@@ -6,19 +6,13 @@
  * Route headers reserve the full control width with
  * `--spacing-mac-window-controls-inset` when their content reaches this edge.
  */
-import { useLocation, useRouter } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight, PanelLeft } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
-import { appModeForPath } from '@/lib/mode-route'
+import { useWindowHistory } from '@/hooks/use-window-history'
 import { requestShellSidebarToggle } from '@/lib/shell-events'
-import { useUIStore } from '@/stores/useUIStore'
-
-interface HistoryBounds {
-  maxIndex: number
-}
 
 const CONTROL_CLASS =
   'flex h-7 w-[26px] items-center justify-center rounded-md text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--focus-ring)/40 disabled:pointer-events-none disabled:opacity-35'
@@ -26,32 +20,8 @@ const CONTROL_CLASS =
 export function MacTitleBar() {
   const { isMacOverlay } = usePlatform()
   const dragHandlers = useTauriDrag()
-  const router = useRouter()
-  const location = useLocation()
-  const settingsOpen = useUIStore((state) => state.settingsOpen)
-  const sidebarCollapsed = useUIStore((state) => state.sidebarCollapsed)
-  const currentIndex = location.state.__TSR_index ?? 0
-  const boundsRef = useRef<HistoryBounds>({ maxIndex: currentIndex })
-  const [maxIndex, setMaxIndex] = useState(currentIndex)
-  const hasAppSidebar = appModeForPath(location.pathname) !== null && !settingsOpen
-
-  useEffect(() => {
-    boundsRef.current.maxIndex = Math.max(
-      boundsRef.current.maxIndex,
-      router.history.location.state.__TSR_index ?? 0,
-    )
-
-    return router.history.subscribe(({ location: nextLocation, action }) => {
-      const nextIndex = nextLocation.state.__TSR_index ?? 0
-      // A push from a previously visited page replaces the browser's forward
-      // branch. Back/forward/go preserve the furthest entry seen this mount.
-      const nextMaxIndex = action.type === 'PUSH'
-        ? nextIndex
-        : Math.max(boundsRef.current.maxIndex, nextIndex)
-      boundsRef.current.maxIndex = nextMaxIndex
-      setMaxIndex(nextMaxIndex)
-    })
-  }, [router])
+  const { canGoBack, canGoForward, back, forward, hasAppSidebar, sidebarCollapsed } =
+    useWindowHistory()
 
   useEffect(() => {
     if (!isMacOverlay) return
@@ -60,9 +30,6 @@ export function MacTitleBar() {
   }, [isMacOverlay])
 
   if (!isMacOverlay) return null
-
-  const canGoBack = currentIndex > 0
-  const canGoForward = currentIndex < maxIndex
 
   return (
     <div
@@ -85,7 +52,7 @@ export function MacTitleBar() {
         </button>
         <button
           type="button"
-          onClick={() => router.history.back()}
+          onClick={back}
           disabled={!canGoBack}
           aria-label="Back"
           title="Back"
@@ -96,7 +63,7 @@ export function MacTitleBar() {
         </button>
         <button
           type="button"
-          onClick={() => router.history.forward()}
+          onClick={forward}
           disabled={!canGoForward}
           aria-label="Forward"
           title="Forward"
