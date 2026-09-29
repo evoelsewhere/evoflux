@@ -3,7 +3,8 @@ name: Bundled model registry
 # The runtime refreshes model metadata from models.dev on its own (see
 # app/agent/providers/registry_refresh.py). The bundled snapshot is what a
 # cold, offline install resolves models with before that first fetch, and
-# nothing regenerates it — so this job watches for it going stale.
+# nothing regenerates it — so this job watches for it going stale and opens
+# a reviewable pull request when models.dev changes.
 
 on:
   schedule:
@@ -13,15 +14,16 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 concurrency:
   group: model-registry
   cancel-in-progress: false
 
 jobs:
-  check:
-    name: Check snapshot against models.dev
+  refresh:
+    name: Refresh bundled model registry
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -39,27 +41,35 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      - name: Compare bundled snapshot with models.dev
+      - name: Refresh snapshot from models.dev
         shell: bash
         run: |
-          set +e
-          output="$(uv run python scripts/update_model_registry.py --check 2>&1)"
-          status=$?
-          set -e
-          echo "$output"
+          uv run python scripts/update_model_registry.py
           {
             echo "### Bundled model registry"
             echo
             echo '```'
-            echo "$output"
+            git diff --stat
+            git diff -- app/agent/providers/model_registry.json app/agent/providers/provider_catalog.json
             echo '```'
-            if [ "$status" -ne 0 ]; then
-              echo
-              echo "Regenerate with:"
-              echo
-              echo '```bash'
-              echo "uv run python scripts/update_model_registry.py"
-              echo '```'
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
-          exit "$status"
+
+      - name: Open pull request for refreshed snapshot
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: automation/model-registry-refresh
+          delete-branch: false
+          commit-message: "chore: refresh bundled model registry"
+          title: "chore: refresh bundled model registry"
+          body: |
+            ## Summary
+
+            Refresh the bundled model and provider snapshots from models.dev.
+
+            This PR was opened automatically by the scheduled model-registry workflow so the snapshot can be reviewed before landing on `main`.
+
+            ## Verification
+
+            - `uv run python scripts/update_model_registry.py`
+            - The generated snapshot and provider catalog are included in this PR.

@@ -4,7 +4,11 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- The scheduled models.dev snapshot job now opens a reviewable pull request
+  for registry updates instead of writing directly to `main` or failing with
+  an unreconciled stale snapshot.
 
 ## [3.0.2] - 2026-09-29
 
