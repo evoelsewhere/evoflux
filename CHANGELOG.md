@@ -13,6 +13,12 @@ All notable changes to EvoFlux are documented in this file.
   charcoal, so the message box, chat bubbles, cards, the code editor and the
   terminal no longer look yellowish. The accent colour is unchanged.
 
+### Fixed
+
+- In a narrow desktop window on Windows, the chat header and a maximized
+  Workbench no longer show a second sidebar button beside the one in the
+  title bar; the title-bar button opens the sidebar drawer, as on macOS.
+
 ## [3.0.1] - 2026-09-29
 
 ### Added

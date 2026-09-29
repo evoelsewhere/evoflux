@@ -85,6 +85,9 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const webBridgeSettings = useWebBridgeSettingsQuery()
   const motionPreset = useMotionPreset()
   const { isTauri, os, isWindowsTitleBar } = usePlatform()
+  // The macOS and Windows title bars already carry the sidebar toggle, which
+  // opens the drawer in mobile / overlay layouts too.
+  const titleBarOwnsSidebarToggle = props.isMacOverlay || isWindowsTitleBar
   const isDesktopShell = isTauri && os !== 'ios' && os !== 'android'
   const showOpenWith =
     isDesktopShell &&
@@ -116,7 +119,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           : !props.isMobile && !props.sidebarOverlay && !isWindowsTitleBar && 'pl-12',
       )}
     >
-      {!props.isMacOverlay && (props.isMobile || props.sidebarOverlay) && (
+      {!titleBarOwnsSidebarToggle && (props.isMobile || props.sidebarOverlay) && (
         <motion.button
           type="button"
           onClick={props.onOpenMobileSidebar}

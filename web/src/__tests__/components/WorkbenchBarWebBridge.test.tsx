@@ -190,4 +190,35 @@ describe('WorkbenchBar browser access control', () => {
       'pl-(--spacing-mac-window-controls-inset)',
     )
   })
+
+  it('uses the Windows title-bar sidebar toggle instead of rendering a duplicate mobile button', () => {
+    const platform = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('Win32')
+    Object.defineProperty(window, '__TAURI_INTERNALS__', { configurable: true, value: {} })
+    try {
+      render(
+        <WorkbenchBar
+          activeAgent="Lead"
+          leadName="Lead"
+          leadOptions={[{ name: 'Lead', description: null, model: null, is_default: true, members: [] }]}
+          leadChanging={false}
+          onLeadChange={vi.fn()}
+          viewMode="agent"
+          onViewModeChange={vi.fn()}
+          onOpenMobileSidebar={vi.fn()}
+          isMobile
+          isMacOverlay={false}
+          mode="work"
+          webBridgeEnabled={false}
+          onWebBridgeEnabledChange={vi.fn()}
+          webBridgePopoverOpen={false}
+          onWebBridgePopoverOpenChange={vi.fn()}
+        />,
+      )
+
+      expect(screen.queryByRole('button', { name: 'Open navigation' })).not.toBeInTheDocument()
+    } finally {
+      platform.mockRestore()
+      delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+    }
+  })
 })

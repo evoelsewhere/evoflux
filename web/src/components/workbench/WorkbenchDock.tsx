@@ -70,7 +70,7 @@ export function WorkbenchDock({
   const showLauncher = useUIStore((state) => state.showWorkbenchLauncher)
   const toggleMaximized = useUIStore((state) => state.toggleWorkbenchMaximized)
   const motionPreset = useMotionPreset()
-  const { isMacOverlay } = usePlatform()
+  const { isMacOverlay, isWindowsTitleBar } = usePlatform()
   const dragHandlers = useTauriDrag()
   const dockTransition = motionPreset.intensity === 'reduced'
     ? { duration: 0 }
@@ -161,7 +161,8 @@ export function WorkbenchDock({
             && 'pl-(--spacing-mac-window-controls-inset) select-none',
         )}
       >
-        {maximized && onOpenSidebar && !isMacOverlay && (
+        {/* The macOS / Windows title bar already carries the sidebar toggle. */}
+        {maximized && onOpenSidebar && !isMacOverlay && !isWindowsTitleBar && (
           <motion.button
             type="button"
             onClick={onOpenSidebar}
