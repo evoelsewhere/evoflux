@@ -4,6 +4,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.0.1] - 2026-09-29
+
 ### Added
 
 - **Settings → Desktop** with three switches: **Run on startup** (EvoFlux
@@ -815,6 +819,7 @@ For the curated release overview, see
 
 [2.0.9]: https://github.com/evoelsewhere/evoflux/compare/v2.0.8...v2.0.9
 [3.0.0]: https://github.com/evoelsewhere/evoflux/compare/v2.0.9...v3.0.0
+[3.0.1]: https://github.com/evoelsewhere/evoflux/compare/v3.0.0...v3.0.1
 [2.0.8]: https://github.com/evoelsewhere/evoflux/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/evoelsewhere/evoflux/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/evoelsewhere/evoflux/compare/v2.0.5...v2.0.6
