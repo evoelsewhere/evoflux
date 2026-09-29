@@ -159,43 +159,43 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
- * Dark mode — warm charcoal surfaces with a quiet warm-gray default accent.
+ * Dark mode — neutral charcoal surfaces; the accent carries the colour.
  * ───────────────────────────────────────────────────────────── */
 :root.dark {
     color-scheme: dark;
 
     /* Surfaces — distinct enough to scan, close enough to feel like one app. */
     --bg-page:           #222222;
-    --bg-sidebar:        #1F1E1C;
-    --bg-card:           #2D2C2A;
-    --bg-input:          #282725;
-    --bg-key:            #383534;
-    --bg-hover:          #403D3A;
-    --bg-muted:          #312F2D;
-    --bg-send:           #E9E5DE;
-    --terminal-bg:       #1A1918;
-    --color-surface:     #2D2C2A;
-    --color-surface-2:   #383534;
-    --color-bg-elevated: #34312F;
+    --bg-sidebar:        #1E1E1E;
+    --bg-card:           #2C2C2C;
+    --bg-input:          #272727;
+    --bg-key:            #363636;
+    --bg-hover:          #3E3E3E;
+    --bg-muted:          #303030;
+    --bg-send:           #E6E6E6;
+    --terminal-bg:       #1A1A1A;
+    --color-surface:     #2C2C2C;
+    --color-surface-2:   #363636;
+    --color-bg-elevated: #333333;
 
     /* Fine borders — quiet at rest, clear on interactive surfaces. */
-    --border-soft:         #363330;
-    --border-card:         #45413D;
-    --color-border-subtle: #363330;
-    --color-border:        #494540;
-    --color-border-strong: #69635C;
+    --border-soft:         #353535;
+    --border-card:         #444444;
+    --color-border-subtle: #353535;
+    --color-border:        #474747;
+    --color-border-strong: #666666;
 
     /* Text — four deliberate levels instead of near-white everywhere. */
-    --color-text:           #F3F2EF;
-    --color-text-2:         #D9D5CF;
-    --color-text-muted:     #B4AEA7;
-    --color-text-subtle:    #A39D96;
+    --color-text:           #F2F2F2;
+    --color-text-2:         #D6D6D6;
+    --color-text-muted:     #B0B0B0;
+    --color-text-subtle:    #9E9E9E;
     --color-text-on-accent: #211A16;
 
     /* Shimmer sweep — the trough sits above body text so a live line reads
        brighter than a settled one, and the crest goes past the brightest
        text level so the sweep stays legible against it. */
-    --color-text-sweep-base: #C8C3BC;
+    --color-text-sweep-base: #C4C4C4;
     --color-text-sweep-peak: #FFFFFF;
 
     /* Accent — clay, the product default. Warm enough to belong on the
@@ -226,9 +226,9 @@
     --color-overlay: rgba(0, 0, 0, 0.62);
 
     /* Loading feedback stays neutral and never follows the user accent. */
-    --skeleton-base:      #2F2E2C;
-    --skeleton-highlight: #3A3835;
-    --skeleton-sweep:     #4A4743;
+    --skeleton-base:      #2E2E2E;
+    --skeleton-highlight: #383838;
+    --skeleton-sweep:     #474747;
 
     /* Composer effort scale */
     --thinking-neutral:        #8B8D91;
@@ -239,7 +239,7 @@
     --thinking-thumb-contrast: #FFFFFF;
 
     /* Arc gradients */
-    --color-gradient-primary: linear-gradient(135deg, #706B66 0%, #A39D96 100%);
+    --color-gradient-primary: linear-gradient(135deg, #6B6B6B 0%, #9E9E9E 100%);
     --color-gradient-cyan:    linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
     --color-gradient-rose:    linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     --color-gradient-amber:   linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
@@ -291,8 +291,8 @@
     --color-diff-del-text:  #FCA5A5;
 
     /* Syntax — VSCode 2026 Dark inspired: each token category gets a distinct hue */
-    /* Comment: warm gray — de-emphasised but AA-readable on page and card. */
-    --color-syn-comment:  #A39D96;
+    /* Comment: neutral gray — de-emphasised but AA-readable on page and card. */
+    --color-syn-comment:  #9E9E9E;
     /* Keyword/control-flow: coral-red — 7.4:1 AAA */
     --color-syn-keyword:  #FF7B72;
     /* Function call-site: lavender — 9.6:1 AAA, distinct from keyword red */

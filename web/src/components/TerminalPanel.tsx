@@ -32,22 +32,22 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useToastStore } from '@/stores/useToastStore'
 
 const DARK_ANSI_THEME: ITheme = {
-  black: '#232220',
+  black: '#232323',
   red: '#F87171',
   green: '#55A27C',
   yellow: '#D0A04B',
   blue: '#60A5FA',
   magenta: '#C084FC',
   cyan: '#22D3EE',
-  white: '#D9D5CF',
-  brightBlack: '#A39D96',
+  white: '#D6D6D6',
+  brightBlack: '#9E9E9E',
   brightRed: '#FCA5A5',
   brightGreen: '#8BC6A8',
   brightYellow: '#E3BD76',
   brightBlue: '#93C5FD',
   brightMagenta: '#D8B4FE',
   brightCyan: '#67E8F9',
-  brightWhite: '#F3F2EF',
+  brightWhite: '#F2F2F2',
 }
 
 const LIGHT_ANSI_THEME: ITheme = {
@@ -78,15 +78,15 @@ function terminalTheme(): ITheme {
 
   return {
     ...(dark ? DARK_ANSI_THEME : LIGHT_ANSI_THEME),
-    background: cssColor('--terminal-bg', dark ? '#1A1918' : '#F9F9F9'),
-    foreground: cssColor('--color-text-2', dark ? '#D9D5CF' : '#353535'),
-    cursor: cssColor('--color-accent', dark ? '#A39D96' : '#575757'),
-    cursorAccent: cssColor('--terminal-bg', dark ? '#1A1918' : '#F9F9F9'),
-    selectionBackground: dark ? '#A39D9640' : '#57575726',
-    selectionInactiveBackground: dark ? '#A39D9620' : '#57575714',
-    scrollbarSliderBackground: dark ? '#69635C66' : '#ABABAB66',
-    scrollbarSliderHoverBackground: dark ? '#817A7299' : '#89867F99',
-    scrollbarSliderActiveBackground: dark ? '#A39D96B3' : '#5F5D58B3',
+    background: cssColor('--terminal-bg', dark ? '#1A1A1A' : '#F9F9F9'),
+    foreground: cssColor('--color-text-2', dark ? '#D6D6D6' : '#353535'),
+    cursor: cssColor('--color-accent', dark ? '#9E9E9E' : '#575757'),
+    cursorAccent: cssColor('--terminal-bg', dark ? '#1A1A1A' : '#F9F9F9'),
+    selectionBackground: dark ? '#9E9E9E40' : '#57575726',
+    selectionInactiveBackground: dark ? '#9E9E9E20' : '#57575714',
+    scrollbarSliderBackground: dark ? '#66666666' : '#ABABAB66',
+    scrollbarSliderHoverBackground: dark ? '#7D7D7D99' : '#89867F99',
+    scrollbarSliderActiveBackground: dark ? '#9E9E9EB3' : '#5F5D58B3',
   }
 }
 
