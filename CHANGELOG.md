@@ -9,9 +9,20 @@ All notable changes to EvoFlux are documented in this file.
 - Suggested-task chips float in the top-left corner of the chat instead of
   sitting above the message box, behind a collapsible **N suggested tasks**
   button.
+- The message box keeps its toolbar on one row at every width. On narrow
+  windows and phones the attach button, folder, model and permission pickers
+  shrink to icons instead of wrapping onto a second row, and the send button
+  always stays at the right edge. On phones the message
+  box is a fully rounded card floating over the chat, without the divider
+  line above it.
 - Dark mode uses neutral gray surfaces, borders and text instead of warm
   charcoal, so the message box, chat bubbles, cards, the code editor and the
   terminal no longer look yellowish. The accent colour is unchanged.
+
+### Removed
+
+- The **ⓘ Agent info & tools** button next to the model picker in the
+  message box, with its capabilities and tools popover.
 
 ### Fixed
 

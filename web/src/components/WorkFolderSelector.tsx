@@ -246,7 +246,7 @@ export function WorkFolderSelector({
           className={cn(
             'composer-workspace-trigger flex h-7 min-w-0 max-w-52 shrink items-center gap-1.5 rounded-[7px] px-2 text-xs outline-none',
             'text-(--color-text-muted) transition-colors hover:bg-(--bg-key) hover:text-(--color-text)',
-            'focus-visible:ring-2 focus-visible:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-55',
+            'focus-visible:bg-(--bg-key) focus-visible:ring-1 focus-visible:ring-(--color-border-strong) disabled:cursor-not-allowed disabled:opacity-55',
           )}
         >
           {saving || (loading && !workspaceRoot) ? (

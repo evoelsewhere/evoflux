@@ -177,10 +177,6 @@ interface InputBarProps {
   sessionThinkingLevel?: string | null
   sessionFastMode?: boolean
   onSessionModelSettingsChange?: SessionPillsRowProps['onSessionModelSettingsChange']
-  agentNames?: string[]
-  agentWorkspace?: string | null
-  /** Roster mode for the workspace team ('coding'). */
-  agentMode?: 'coding' | null
   /**
    * Composer-anchored task popover. ``todosOpen`` controls visibility and
    * ``onTodosOpenChange`` is fired by the progress pill above the input card.
@@ -267,9 +263,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   sessionThinkingLevel,
   sessionFastMode,
   onSessionModelSettingsChange,
-  agentNames,
-  agentWorkspace,
-  agentMode,
   todos,
   todosOpen = false,
   onTodosOpenChange,
@@ -1270,11 +1263,14 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     />
   )
 
+  // Toolbar controls take their size and radius from the ``--composer-control``
+  // / ``--composer-radius`` tokens on ``.composer-toolbar`` (index.css), so
+  // attach, pickers and send share one centre line and silhouette. The
+  // fallbacks cover the minimized strip, which sits outside the toolbar.
+  const controlSizeClass = 'size-(--composer-control,1.75rem) rounded-(--composer-radius,7px)'
   const actionBtnClass = cn(
-    'flex shrink-0 items-center justify-center text-(--color-text-muted) outline-none transition-[background-color,color,transform] hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/30 disabled:cursor-not-allowed disabled:opacity-50',
-    isMobile
-      ? 'h-8 w-8 rounded-full border border-(--color-border) bg-(--color-surface)'
-      : 'h-7 w-7 rounded-[7px] bg-transparent',
+    'flex shrink-0 items-center justify-center bg-transparent text-(--color-text-muted) outline-none transition-[background-color,color,transform] hover:bg-(--bg-key) hover:text-(--color-text) active:translate-y-px focus-visible:bg-(--bg-key) focus-visible:ring-1 focus-visible:ring-(--color-border-strong) disabled:cursor-not-allowed disabled:opacity-50',
+    controlSizeClass,
   )
   const shellBtnClass = shellMode
     ? cn(
@@ -1390,10 +1386,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       aria-label="Stop generation"
       className={cn(
         'flex shrink-0 items-center justify-center bg-(--color-error) text-(--color-text-on-accent) outline-none transition-[opacity,transform] hover:opacity-90 active:scale-95 focus-visible:ring-2 focus-visible:ring-(--color-error)/40',
-        isMobile ? 'h-9 w-9 rounded-full' : 'h-7 w-7 rounded-[7px]',
+        controlSizeClass,
       )}
     >
-      <Square size={13} fill="currentColor" />
+      <Square size={12} fill="currentColor" />
     </button>
   ) : (
     <button
@@ -1404,7 +1400,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       title={isMobile ? 'Send message' : 'Send (Enter) · New line (Shift+Enter) · Commands (/)'}
       className={cn(
         'flex shrink-0 items-center justify-center outline-none transition-[background-color,color,opacity,transform] active:scale-95 focus-visible:ring-2 focus-visible:ring-(--color-accent)/40',
-        isMobile ? 'h-9 w-9 rounded-full' : 'h-7 w-7 rounded-[7px]',
+        controlSizeClass,
         canSend
           ? 'bg-(--bg-send) text-(--color-text-on-accent) hover:opacity-90'
           : 'cursor-not-allowed bg-(--bg-key) text-(--color-text-muted) opacity-40',
@@ -1413,7 +1409,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       {((disabled && !minimized) || submitting) ? (
         <Loader2 size={14} className="animate-spin" aria-hidden="true" />
       ) : (
-        <ArrowUp size={15} aria-hidden="true" />
+        <ArrowUp size={14} aria-hidden="true" />
       )}
     </button>
   )
@@ -1813,7 +1809,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 : cn(
                     'w-full border-(--color-border) focus-within:border-(--color-border-strong)',
                     isMobile
-                      ? 'rounded-t-2xl rounded-b-none border-b-0 shadow-[0_-8px_28px_rgba(0,0,0,0.08)]'
+                      ? 'rounded-2xl shadow-[0_8px_28px_rgba(0,0,0,0.18)]'
                       : 'rounded-[10px]',
                   ),
             )}
@@ -1950,31 +1946,26 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                   {messageSlot}
                 </div>
 
-                {/* Bottom action bar — action buttons left · config selectors right · send. */}
+                {/* Bottom action bar — one row at every width, no scrolling.
+                    The left group shrinks first (the folder name truncates),
+                    and the ``composer-input`` container queries in index.css
+                    collapse labels to icons as the card narrows; send stays
+                    pinned to the right edge. */}
                 <div
                   className={cn(
-                    'composer-toolbar flex min-w-0 items-center gap-1.5',
-                    isMobile
-                      ? 'flex-wrap px-3 pb-3 pt-1'
-                      : 'min-h-9 flex-nowrap px-2.5 pb-2 pt-0',
+                    'composer-toolbar flex min-h-9 min-w-0 flex-nowrap items-center gap-1.5',
+                    isMobile ? 'px-3 pb-3 pt-1' : 'px-2.5 pb-2 pt-0',
                   )}
                 >
-                  <div className={cn(
-                    'composer-toolbar-primary flex min-w-0 items-center gap-1.5',
-                    isMobile && 'w-full basis-full justify-between',
-                  )}>
+                  <div className="composer-toolbar-primary flex min-w-0 flex-1 items-center gap-1.5">
                     {/* Left: content & navigation actions */}
                     {!shellMode && attachmentsEnabled && attachEl}
                     {/* Wiki moved to topbar */}
                     {workspaceSelector}
-                    {isMobile && <div className="ml-auto shrink-0">{sendOrStopEl}</div>}
                   </div>
 
                   {/* Right: session config selectors */}
-                  <div className={cn(
-                    'composer-toolbar-secondary ml-auto flex shrink-0 items-center gap-1.5',
-                    isMobile && 'w-full min-w-0 basis-full overflow-x-auto border-t border-(--color-border-subtle) pt-2 scrollbar-none',
-                  )}>
+                  <div className="composer-toolbar-secondary ml-auto flex shrink-0 items-center gap-1.5">
                     {onSessionModelSettingsChange && (
                       <SessionPillsRow
                         sessionModel={sessionModel}
@@ -1982,10 +1973,6 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                         sessionThinkingLevel={sessionThinkingLevel}
                         sessionFastMode={sessionFastMode}
                         onSessionModelSettingsChange={onSessionModelSettingsChange}
-                        agentNames={agentNames}
-                        workspace={agentWorkspace}
-                        mode={agentMode}
-                        sessionId={sessionId}
                       />
                     )}
                     {permissionMode && onPermissionModeChange && (
@@ -1994,17 +1981,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                         onModeChange={onPermissionModeChange}
                       />
                     )}
-                    {showCharCount && (
-                      <span
-                        className={`shrink-0 font-mono text-xs ${
-                          charCount > 2000 ? 'text-(--color-error)' : 'text-(--color-text-muted)'
-                        }`}
-                      >
-                        {charCount}
-                      </span>
-                    )}
-                    {!isMobile && sendOrStopEl}
                   </div>
+                  {showCharCount && (
+                    <span
+                      className={`shrink-0 font-mono text-xs ${
+                        charCount > 2000 ? 'text-(--color-error)' : 'text-(--color-text-muted)'
+                      }`}
+                    >
+                      {charCount}
+                    </span>
+                  )}
+                  {sendOrStopEl}
                 </div>
               </>
             )}

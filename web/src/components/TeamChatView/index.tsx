@@ -1996,9 +1996,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             sessionThinkingLevel={sessionThinkingLevel}
             sessionFastMode={sessionFastMode}
             onSessionModelSettingsChange={setSessionModelSettings}
-            agentNames={agentNames}
-            agentWorkspace={agentWorkspace}
-            agentMode="coding"
             todos={todos}
             todosOpen={todosOpen}
             onTodosOpenChange={setTodosOpen}

@@ -143,18 +143,18 @@ export function ModeSelector({ mode, onModeChange, disabled }: ModeSelectorProps
         title={`Agent permission mode: ${current.label}. ${current.description}`}
         className={cn(
           'composer-mode-trigger flex h-7 max-w-40 items-center gap-1.5 rounded-[7px] px-2 text-xs font-medium outline-none transition-[background-color,color,transform]',
-          'hover:bg-(--bg-key) active:translate-y-px focus-visible:ring-2 focus-visible:ring-(--color-accent)/30',
+          'hover:bg-(--bg-key) active:translate-y-px focus-visible:bg-(--bg-key) focus-visible:ring-1 focus-visible:ring-(--color-border-strong)',
           current.unguarded ? UNGUARDED_TONE : 'text-(--color-text-muted) hover:text-(--color-text)',
           open && 'bg-(--bg-key)',
           disabled && 'cursor-default opacity-50',
         )}
       >
-        <current.icon size={12} aria-hidden="true" className="shrink-0" />
+        <current.icon size={14} aria-hidden="true" className="shrink-0" />
         <span className="composer-mode-label truncate">{current.label}</span>
         <ChevronDown
           size={10}
           aria-hidden="true"
-          className={cn('shrink-0 transition-transform', open && 'rotate-180')}
+          className={cn('composer-mode-chevron shrink-0 transition-transform', open && 'rotate-180')}
         />
       </button>
 

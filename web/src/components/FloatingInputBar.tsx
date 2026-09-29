@@ -79,11 +79,14 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
         innerRef.current?.setQuoteContext(text),
     }), [])
 
-    // ── Mobile: sticky bottom sheet with keyboard-inset awareness ────────
+    // ── Mobile: floating card with keyboard-inset awareness ──────────────
+    // No divider: the negative top margin lets the transcript's last lines
+    // fade out under the gradient, so the card reads as floating over the
+    // chat rather than docked below a rule.
     if (isMobile) {
       return (
         <div
-          className="pointer-events-auto shrink-0 border-t border-(--color-border) bg-(--bg-page) px-2 pt-2 pb-safe transition-[padding-bottom] duration-(--motion-fast)"
+          className="pointer-events-auto relative z-(--z-panel) -mt-6 shrink-0 bg-linear-to-t from-(--bg-page) from-70% to-transparent px-3 pt-6 pb-safe transition-[padding-bottom] duration-(--motion-fast)"
           style={keyboardInset > 0 ? { paddingBottom: `calc(${keyboardInset}px + 0.5rem)` } : undefined}
         >
           {goal && onGoalCommand && <GoalProgressRow goal={goal} onCommand={onGoalCommand} />}

@@ -16,12 +16,11 @@ import {
 import { DiscreteSlider } from '@/components/ui/discrete-slider'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SegmentedControl } from '@/components/ui/segmented-control'
-import { AgentInfoPopover } from './AgentInfoPopover'
 import { ProviderBrandIcon } from '@/components/providers/ProviderBrandIcon'
 import { ModelOptions } from '@/components/model-picker/ModelOptions'
 
 const CONTROL_CLASS =
-  'flex h-7 min-w-0 items-center rounded-md px-2 text-xs text-(--color-text-muted) outline-none transition-colors duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-2 focus-visible:ring-(--color-accent)/30'
+  'flex h-7 min-w-0 items-center rounded-[7px] px-2 text-xs text-(--color-text-muted) outline-none transition-colors duration-(--motion-fast) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:bg-(--bg-key) focus-visible:ring-1 focus-visible:ring-(--color-border-strong)'
 
 function ThinkingEffortButtons({
   options,
@@ -180,7 +179,7 @@ function AdvancedComposerControl({
         <ChevronDown
           aria-hidden="true"
           size={10}
-          className={cn('shrink-0 transition-transform', open && 'rotate-180')}
+          className={cn('composer-model-chevron shrink-0 transition-transform', open && 'rotate-180')}
         />
       </PopoverTrigger>
 
@@ -289,10 +288,6 @@ export interface SessionPillsRowProps {
     thinkingLevel: string | null,
     fastMode: boolean,
   ) => void
-  agentNames?: string[]
-  workspace?: string | null
-  mode?: 'coding' | null
-  sessionId?: string | null
 }
 
 export function SessionPillsRow({
@@ -301,10 +296,6 @@ export function SessionPillsRow({
   sessionThinkingLevel,
   sessionFastMode,
   onSessionModelSettingsChange,
-  agentNames,
-  workspace,
-  mode,
-  sessionId,
 }: SessionPillsRowProps) {
   return (
     <div className="flex min-w-0 items-center gap-1">
@@ -314,13 +305,6 @@ export function SessionPillsRow({
         sessionThinkingLevel={sessionThinkingLevel ?? null}
         sessionFastMode={sessionFastMode ?? false}
         onChange={onSessionModelSettingsChange}
-      />
-      <AgentInfoPopover
-        agentNames={agentNames}
-        workspace={workspace}
-        sessionModel={sessionModel ?? null}
-        mode={mode}
-        sessionId={sessionId}
       />
     </div>
   )

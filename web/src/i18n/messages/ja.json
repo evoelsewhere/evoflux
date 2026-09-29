@@ -636,7 +636,6 @@
   "Agent error": "エージェントエラー",
   "Agent filesystem, process and worktree isolation": "エージェントのファイルシステム、プロセス、ワークツリーの分離",
   "Agent has a question": "エージェントに質問があります",
-  "Agent info & tools": "エージェントの情報とツール",
   "Agent permission mode: {0}. {1}": "Agent permission mode: {0}. {1}",
   "Agent Plugin": "Agent Plugin",
   "Agent Plugins troubleshooting and diagnostics": "Agent Plugins troubleshooting and diagnostics",
