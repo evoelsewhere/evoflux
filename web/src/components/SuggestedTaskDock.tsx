@@ -6,7 +6,7 @@
  * the user is least likely to have decided about it yet.
  */
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, Lightbulb } from 'lucide-react'
 
 import { getSuggestedTasks } from '@/api/client'
 import { SuggestedTaskCard } from '@/components/SuggestedTaskCard'
@@ -40,24 +40,28 @@ export function SuggestedTaskDock() {
 
   if (tasks.length === 0) return null
 
+  // Floats in the main column's top-left corner, beside the centred
+  // transcript, so it neither pushes the composer up nor reads as part of
+  // the latest turn.
   return (
     <section
       aria-label="Suggested tasks"
-      className="mx-auto w-full max-w-3xl px-3 pb-2"
+      className="pointer-events-none absolute top-2 left-2 z-(--z-panel) flex w-[min(20rem,calc(100%-1rem))] flex-col items-start"
     >
       <button
         type="button"
         onClick={() => setCollapsed((value) => !value)}
         aria-expanded={!collapsed}
-        className="mb-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-(--color-text-subtle) transition-colors hover:text-(--color-text)"
+        className="pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-(--color-border-subtle) bg-(--bg-card) px-2 py-1 text-[11px] font-medium text-(--color-text-muted) shadow-sm transition-colors hover:text-(--color-text)"
       >
-        {collapsed ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
+        <Lightbulb className="size-3 text-(--color-warning)" />
         {tasks.length === 1 ? '1 suggested task' : `${tasks.length} suggested tasks`}
+        {collapsed ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />}
       </button>
       {!collapsed && (
-        <div className="flex flex-col gap-1.5">
+        <div className="pointer-events-auto mt-1.5 flex max-h-[min(60vh,32rem)] w-full flex-col gap-1.5 overflow-y-auto">
           {tasks.map((task) => (
-            <SuggestedTaskCard key={task.id} task={task} />
+            <SuggestedTaskCard key={task.id} task={task} className="bg-(--bg-card) shadow-md" />
           ))}
         </div>
       )}

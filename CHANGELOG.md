@@ -4,7 +4,11 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- Suggested-task chips float in the top-left corner of the chat instead of
+  sitting above the message box, behind a collapsible **N suggested tasks**
+  button.
 
 ## [3.0.1] - 2026-09-29
 
