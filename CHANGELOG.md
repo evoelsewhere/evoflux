@@ -66,6 +66,8 @@ All notable changes to EvoFlux are documented in this file.
 - The Coding lead no longer parks the fix for the problem you asked about as
   a suggested task; it answers in the reply and asks before implementing.
 - A closed combobox shows only the option label, not its meta.
+- Contributor rules in `AGENTS.md` now require every change to add its entry
+  under `[Unreleased]` in this changelog in the same commit.
 
 ### Fixed
 

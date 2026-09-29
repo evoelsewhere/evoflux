@@ -138,9 +138,29 @@ During iteration, run the smallest focused tests named by the nearest nested
 - When a feature changes, update its feature page, catalogue entry, affected
   architecture/API/config reference, and in-app Help in the same change.
 
+## Changelog
+
+Every change must be reflected in `CHANGELOG.md`, in the same commit as the
+change. There are no exempt changes.
+
+- Add the entry under `## [Unreleased]`, in the matching group: `Added`,
+  `Changed`, `Fixed`, `Removed` or `Security`, plus `Upgrade notes` for
+  anything a user must do when upgrading.
+- Describe what changed for the person using EvoFlux, not how it was built.
+  Bold UI names (**Settings → Desktop**), put tools, commands, paths and API
+  names in backticks, and leave out commit hashes.
+- A change with no user-visible effect (refactor, tests, CI, build, dependency
+  bump) still gets a short entry, usually under `Changed`.
+- Extend or correct an existing `[Unreleased]` entry rather than adding a
+  second one for the same change. A revert removes the entry it undoes.
+- A release moves the `[Unreleased]` entries under the new
+  `## [x.y.z] - YYYY-MM-DD` heading and leaves `[Unreleased]` as
+  "No changes yet.".
+
 ## Verification and handoff
 
 - Run `git diff --check` before handoff.
+- Check that `CHANGELOG.md` `[Unreleased]` describes the change.
 - Report the exact focused checks run and any checks not run.
 - Distinguish pre-existing failures or user-owned changes from failures caused
   by the current work.
