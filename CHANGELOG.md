@@ -65,6 +65,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- On Windows 10 the sidebar, **Settings** rail and title bar no longer turn
+  dark over a dark wallpaper while the light (or **System** light) theme is
+  active; they now follow the selected theme.
+
 - A file write or edit the agent was refused (for example into the checkout a
   worktree chat may only read) shows as **Write failed** with its error in
   the chat, instead of **Wrote** with a diff of the change that never
@@ -155,7 +159,6 @@ All notable changes to EvoFlux are documented in this file.
   repository folders on disk are not touched: open a folder from
   **Projects** to keep working in it. Bookmarks to `/coding/<folder path>`
   go back to the Coding home page.
-
 ## [3.0.1] - 2026-09-29
 
 ### Added
