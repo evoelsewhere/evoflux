@@ -4,7 +4,93 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- **Settings → Desktop** with three switches: **Run on startup** (EvoFlux
+  opens at sign-in and waits in the tray), **Show in system tray** (menu bar
+  on macOS; with it off on Windows and Linux, closing the last window quits)
+  and **Keep computer awake** (stops idle sleep while EvoFlux runs; the
+  display can still turn off).
+- Windows draws its own title bar: an app menu (File, Edit, View, Go,
+  Developer, Help), the sidebar toggle, back/forward and the caption buttons,
+  keeping Mica, the window shadow and rounded corners. The window stays
+  movable and closable while a dialog is open.
+- Suggested-task chips have a split **Run** button. **Run in current
+  session** queues the prompt in the session that raised it instead of
+  opening a new one (not offered with a worktree or for another project).
+- A built-in **browser-use** Skill: which web tool and browser to use, ground
+  rules for acting on sites, and one step-by-step routine from opening a page
+  to reading the result back.
+- Remote Control settings open with a policy warning (**Don't show this
+  again** is remembered) and a **How to set up** walkthrough that ticks off
+  its four steps from live status.
+- WebBridge installs from the Chrome Web Store (Edge uses the same listing)
+  instead of a zip loaded unpacked in Developer mode.
+- Computer App Control on macOS drives a parked Chrome or Electron window:
+  it is captured through ScreenCaptureKit (the preview is no longer white),
+  menus are handled inside the action that opens them instead of staying on
+  screen, and parked windows are put back after a crash. EvoFlux still starts
+  on macOS 11.
+
+### Changed
+
+- `browser_use` follows the live WebBridge state: with WebBridge enabled, the
+  agent-browsing switch on and the extension connected, actions run in your
+  browser; otherwise in the in-app browser. The switch sits on the workbench
+  WebBridge button and in **Settings → Browser** and applies from the agent's
+  next action. The per-chat browser picker and the new-chat default are gone.
+- Through WebBridge each chat works in a tab of its own instead of whichever
+  tab is in front, the agent file-upload switch also covers `set_files`, and
+  element screenshots are refused rather than returning the viewport.
+- **Phone access** is now **Remote Control** in Settings and Help. The route
+  and API keep the `remote-use` name.
+- Successful actions no longer raise a toast; the change shows in the UI
+  itself. A repeated toast extends the visible one instead of stacking, and
+  the stack moved from the bottom-right corner to top-center.
+- Sidebars: session rows are a single line (the full date and a scheduled
+  task's name are in the tooltip), section headers are quieter, folder chats
+  hang under a guide line, primary actions are a tile grid, text reads
+  clearly over Mica and vibrancy, and the Coding sidebar cards size to their
+  content and load more chats as you scroll.
+- Lighter Work and Coding welcome screens with a centered hero and a compact
+  usage summary.
+- `ask_user` and permission prompts float over the chat as a modal, and the
+  composer's task progress floats above the composer, so neither pushes the
+  conversation up any more.
+- Modal backdrops dim the page without blurring it, and the main and Settings
+  content areas are rounded cards on desktop.
+- A reasoning-only activity group shows its thoughts directly instead of a
+  second **Thought** toggle inside the first.
+- The shell tool tells the model which OS and shell commands run in (Git
+  Bash, PowerShell or cmd.exe on Windows), so it stops mixing their syntax.
+- The Coding lead no longer parks the fix for the problem you asked about as
+  a suggested task; it answers in the reply and asks before implementing.
+- A closed combobox shows only the option label, not its meta.
+
+### Fixed
+
+- A Dream run overlapping an active chat no longer blocks its database
+  writes, which left assistant messages unsaved and errored the team member.
+- After the computer wakes from sleep, connected providers keep their models
+  instead of every chat reporting its model unavailable or asking to
+  configure a provider.
+- Non-ASCII text and file names in the Coding Git panel no longer garble on
+  Windows.
+- `ask_user` accepts options sent as `{label, description}` objects instead
+  of failing validation.
+- Settings, Providers and Notifications in the native menu and tray open
+  Settings instead of a stray page, and a path such as `/settings` is no
+  longer treated as a session id and restored on every launch.
+- The macOS traffic lights stay in place while the window is resized.
+- `backend.log` is plain text with full dated timestamps, `EvoFlux.log` uses
+  local time to match it, and an unfinished Tailscale sign-in logs its login
+  URL once instead of every five seconds.
+
+### Security
+
+- Tracebacks in the backend log no longer include local variable values,
+  which could carry tokens or message contents into logs attached to bug
+  reports.
 
 ## [3.0.0] - 2026-09-28
 
