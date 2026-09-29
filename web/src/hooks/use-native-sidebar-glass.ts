@@ -15,7 +15,10 @@ let preWindows11: Promise<boolean> | null = null
 /**
  * Whether this is a Windows build older than Windows 11, where Rust falls back
  * from Mica to Acrylic. UA-CH reports Windows 11 as platformVersion 13 or
- * higher. Cached because the answer cannot change while the app runs.
+ * higher. Cached because the answer cannot change while the app runs. If the
+ * high-entropy hint is unavailable, choose the conservative Acrylic tint:
+ * the Windows 10 failure is a dark un-tinted surface, while a translucent
+ * tint on Windows 11 is only a small visual difference.
  */
 function isPreWindows11(): Promise<boolean> {
   if (preWindows11) return preWindows11
@@ -27,8 +30,8 @@ function isPreWindows11(): Promise<boolean> {
           const major = Number.parseInt(platformVersion?.split('.')[0] ?? '', 10)
           return Number.isFinite(major) && major < 13
         })
-        .catch(() => false)
-    : Promise.resolve(false)
+        .catch(() => true)
+    : Promise.resolve(true)
   return preWindows11
 }
 

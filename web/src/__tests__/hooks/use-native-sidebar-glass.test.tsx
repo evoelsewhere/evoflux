@@ -56,7 +56,9 @@ describe('useNativeSidebarGlass', () => {
 
     expect(document.documentElement.dataset.nativeSidebarGlass).toBe('windows')
     await waitFor(() => expect(setTheme).toHaveBeenCalledWith(null))
-    expect(document.documentElement.dataset.nativeSidebarMaterial).toBeUndefined()
+    await waitFor(() =>
+      expect(document.documentElement.dataset.nativeSidebarMaterial).toBe('acrylic'),
+    )
 
     view.unmount()
     expect(document.documentElement.dataset.nativeSidebarGlass).toBeUndefined()
@@ -76,10 +78,11 @@ describe('useNativeSidebarGlass', () => {
 
   it('leaves Windows 11 on the Mica path', async () => {
     stubPlatformVersion('15.0.0')
-    await renderSurface()
+    const view = await renderSurface()
 
     await waitFor(() => expect(setTheme).toHaveBeenCalled())
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(document.documentElement.dataset.nativeSidebarMaterial).toBeUndefined()
+    view.unmount()
   })
 })
