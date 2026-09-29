@@ -8,6 +8,7 @@ mod keep_awake;
 mod native_messaging;
 mod openers;
 mod sidecar;
+mod update_stage;
 mod workspace;
 
 use anyhow::{anyhow, Context, Result};
@@ -49,14 +50,16 @@ struct AppState {
     force_reloading: Arc<AtomicBool>,
     quitting: Arc<AtomicBool>,
     updater_busy: Arc<AtomicBool>,
+    /// A downloaded, verified update that installs on restart or quit.
+    staged_update: Arc<std::sync::Mutex<Option<StagedUpdate>>>,
     tray_status: Arc<Mutex<Option<MenuItem<Wry>>>>,
     tray_session: Arc<Mutex<Option<MenuItem<Wry>>>>,
-    active_window_label: Arc<Mutex<String>>,
-    /// Browser webviews whose keyboard shortcuts are already forwarded.
-    /// Registering twice would deliver every shortcut twice.
     /// Settings → Desktop "Show in system tray"; decides what closing the
     /// last window does.
     tray_icon_enabled: Arc<AtomicBool>,
+    active_window_label: Arc<Mutex<String>>,
+    /// Browser webviews whose keyboard shortcuts are already forwarded.
+    /// Registering twice would deliver every shortcut twice.
     browser_shortcut_labels: Arc<Mutex<HashSet<String>>>,
     /// Current webview zoom factor, mutated by the View > Zoom menu
     /// items. Session-only — not persisted across restarts.
@@ -4790,11 +4793,22 @@ enum AppUpdateCheckResult {
         version: String,
         current_version: String,
         notes: Option<String>,
+        /// Already downloaded and verified: only the restart is left.
+        ready: bool,
     },
     Error {
         title: String,
         message: String,
     },
+}
+
+/// An update whose bytes are verified and on disk, waiting for the app to
+/// close. Kept for the session so a restart or quit can install it without
+/// asking the release server again.
+struct StagedUpdate {
+    #[cfg_attr(windows, allow(dead_code))]
+    update: tauri_plugin_updater::Update,
+    path: PathBuf,
 }
 
 /// How far along an update is, for the dialog that is waiting on it.
@@ -4813,6 +4827,8 @@ enum AppUpdateProgress {
         total: Option<u64>,
     },
     Verifying,
+    /// Downloaded and verified; installs when the user restarts or quits.
+    Ready,
     Installing,
 }
 
@@ -4941,23 +4957,75 @@ async fn check_for_app_update(app: &AppHandle) -> AppUpdateCheckResult {
     };
 
     let Some(update) = update else {
+        // Nothing to install any more — a staged package would only ever be
+        // for a release that has since been withdrawn.
+        replace_staged_update(app, None);
+        if let Ok(dir) = update_stage::dir(app) {
+            update_stage::clear(&dir);
+        }
         update_tray_status(app, "Status: Running");
         return AppUpdateCheckResult::UpToDate {
             version: env!("CARGO_PKG_VERSION").into(),
         };
     };
 
-    let notes = format_update_notes(update.body.as_deref());
+    // A download from earlier — this session, or one that a relaunch in the
+    // middle of an install left behind — is picked up instead of repeated.
+    let staged_path = update_stage::dir(app)
+        .ok()
+        .and_then(|dir| update_stage::find(&dir, &update.version, &update.signature));
+    let ready = staged_path.is_some();
     let result = AppUpdateCheckResult::Available {
-        version: update.version,
-        current_version: update.current_version,
-        notes,
+        version: update.version.clone(),
+        current_version: update.current_version.clone(),
+        notes: format_update_notes(update.body.as_deref()),
+        ready,
     };
-    update_tray_status(app, "Status: Running");
+    replace_staged_update(app, staged_path.map(|path| StagedUpdate { update, path }));
+    update_tray_status(app, staged_status(ready));
     result
 }
 
-async fn install_app_update(app: &AppHandle) -> Result<()> {
+fn staged_status(ready: bool) -> &'static str {
+    if ready {
+        "Status: Update ready — restart to install"
+    } else {
+        "Status: Running"
+    }
+}
+
+fn replace_staged_update(app: &AppHandle, staged: Option<StagedUpdate>) {
+    let state: tauri::State<'_, AppState> = app.state();
+    let mut slot = state
+        .staged_update
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    *slot = staged;
+}
+
+fn take_staged_update(app: &AppHandle) -> Option<StagedUpdate> {
+    let state: tauri::State<'_, AppState> = app.state();
+    let mut slot = state
+        .staged_update
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    slot.take()
+}
+
+fn has_staged_update(app: &AppHandle) -> bool {
+    let state: tauri::State<'_, AppState> = app.state();
+    let slot = state
+        .staged_update
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    slot.is_some()
+}
+
+/// Download and verify the update, then keep it for the restart.
+///
+/// Nothing is installed here. The user decides when EvoFlux closes: restart
+/// now from the dialog, or carry on and let it install when they quit.
+async fn download_app_update(app: &AppHandle) -> Result<()> {
     if !updater_is_configured() {
         return Err(anyhow!(
             "Updates are not configured for this EvoFlux build."
@@ -5001,8 +5069,20 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
             return Err(error).context("check GitHub release update metadata");
         }
     };
+    let stage_dir = update_stage::dir(app)?;
+    if let Some(path) = update_stage::find(&stage_dir, &update.version, &update.signature) {
+        log::info!(
+            "desktop: update {} is already downloaded at {}",
+            update.version,
+            path.display()
+        );
+        replace_staged_update(app, Some(StagedUpdate { update, path }));
+        update_tray_status(app, staged_status(true));
+        emit_update_progress(app, AppUpdateProgress::Ready);
+        return Ok(());
+    }
     log::info!(
-        "desktop: installing update {} over {} from {}",
+        "desktop: downloading update {} over {} from {}",
         update.version,
         update.current_version,
         update.download_url
@@ -5073,27 +5153,31 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
     // A connection that dies mid-transfer does not fail — it simply stops
     // producing bytes, and `download` waits on it for as long as the OS
     // will, which is how a modal with no dismiss button becomes permanent.
-    tokio::pin!(download);
-    let bytes = loop {
-        tokio::select! {
-            result = &mut download => break result,
-            _ = tokio::time::sleep(UPDATE_STALL_POLL) => {
-                let idle = started
-                    .elapsed()
-                    .saturating_sub(Duration::from_millis(
-                        watchdog_stamp.load(Ordering::Relaxed),
-                    ));
-                if idle > UPDATE_DOWNLOAD_STALL_LIMIT {
-                    update_tray_status(app, "Status: Running");
-                    log::error!(
-                        "desktop: update download stalled with no data for {}s",
-                        idle.as_secs()
-                    );
-                    return Err(anyhow!(
-                        "The download stopped responding after {}s with no data. \
-                         Check the network connection and try again.",
-                        idle.as_secs()
-                    ));
+    // Scoped so the future, which borrows `update`, is gone before the
+    // update is kept for the restart.
+    let bytes = {
+        tokio::pin!(download);
+        loop {
+            tokio::select! {
+                result = &mut download => break result,
+                _ = tokio::time::sleep(UPDATE_STALL_POLL) => {
+                    let idle = started
+                        .elapsed()
+                        .saturating_sub(Duration::from_millis(
+                            watchdog_stamp.load(Ordering::Relaxed),
+                        ));
+                    if idle > UPDATE_DOWNLOAD_STALL_LIMIT {
+                        update_tray_status(app, "Status: Running");
+                        log::error!(
+                            "desktop: update download stalled with no data for {}s",
+                            idle.as_secs()
+                        );
+                        return Err(anyhow!(
+                            "The download stopped responding after {}s with no data. \
+                             Check the network connection and try again.",
+                            idle.as_secs()
+                        ));
+                    }
                 }
             }
         }
@@ -5115,6 +5199,57 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
         }
     };
 
+    let (version, signature) = (update.version.clone(), update.signature.clone());
+    let staged = tauri::async_runtime::spawn_blocking(move || {
+        update_stage::check_package(&bytes)?;
+        update_stage::write(&stage_dir, &version, &signature, &bytes)
+    })
+    .await
+    .context("stage the downloaded update")
+    .and_then(|result| result);
+    let path = match staged {
+        Ok(path) => path,
+        Err(error) => {
+            update_tray_status(app, "Status: Running");
+            log::error!("desktop: could not keep the downloaded update: {error:#}");
+            return Err(error);
+        }
+    };
+    log::info!("desktop: update {} staged at {}", update.version, path.display());
+    replace_staged_update(app, Some(StagedUpdate { update, path }));
+    update_tray_status(app, staged_status(true));
+    emit_update_progress(app, AppUpdateProgress::Ready);
+    Ok(())
+}
+
+/// Close EvoFlux and install the staged update.
+///
+/// `relaunch` is the dialog's "Restart now"; without it this is the install
+/// that runs because the user quit, and EvoFlux stays closed afterwards.
+async fn install_staged_update(app: &AppHandle, relaunch: bool) -> Result<()> {
+    // Taken first, so that however this ends the next exit request is an
+    // ordinary one rather than another attempt at the same install.
+    let staged = take_staged_update(app)
+        .ok_or_else(|| anyhow!("No downloaded update is waiting to be installed."))?;
+    let busy = {
+        let state: tauri::State<'_, AppState> = app.state();
+        state.updater_busy.clone()
+    };
+    let _busy_guard = if busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        Some(UpdateBusyGuard(busy))
+    } else if relaunch {
+        replace_staged_update(app, Some(staged));
+        return Err(anyhow!(
+            "An update check or download is already in progress."
+        ));
+    } else {
+        // The user is quitting; a check still in flight does not get a vote.
+        None
+    };
+
     update_tray_status(app, "Status: Installing update…");
     emit_update_progress(app, AppUpdateProgress::Installing);
     persist_active_window_state(app);
@@ -5131,15 +5266,46 @@ async fn install_app_update(app: &AppHandle) -> Result<()> {
     // object they were all put into kills the whole tree in one call.
     sidecar::terminate_process_tree();
 
-    log::info!("desktop: handing off to the platform installer");
-    if let Err(error) = update.install(bytes) {
-        log::error!("desktop: update installation failed, restarting current version: {error:#}");
-        app.restart();
+    log::info!(
+        "desktop: installing staged update from {} (relaunch={relaunch})",
+        staged.path.display()
+    );
+    if let Err(error) = run_platform_installer(staged, relaunch).await {
+        // The sidecar is already gone, so there is no staying open: come
+        // back on the current version, or stay closed if the user quit.
+        log::error!("desktop: update installation failed: {error:#}");
+        if relaunch {
+            app.restart();
+        }
+        app.exit(0);
+        return Err(error);
     }
 
-    // On Windows the NSIS updater exits and restarts the application during
-    // `install`. macOS returns here after replacing the bundle.
-    app.restart();
+    // The Windows installer waits for this process to go before copying,
+    // and restarts EvoFlux itself when asked to. macOS has already
+    // replaced the bundle by now.
+    if relaunch && !cfg!(windows) {
+        app.restart();
+    }
+    app.exit(0);
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn run_platform_installer(staged: StagedUpdate, relaunch: bool) -> Result<()> {
+    update_stage::launch_windows_installer(&staged.path, relaunch)
+}
+
+#[cfg(not(windows))]
+async fn run_platform_installer(staged: StagedUpdate, _relaunch: bool) -> Result<()> {
+    let bytes = tokio::fs::read(&staged.path)
+        .await
+        .with_context(|| format!("read staged update {}", staged.path.display()))?;
+    let update = staged.update;
+    tauri::async_runtime::spawn_blocking(move || update.install(bytes))
+        .await
+        .context("run the update installer")?
+        .context("install desktop update")
 }
 
 async fn run_update_check(app: &AppHandle, user_initiated: bool) {
@@ -5157,8 +5323,15 @@ async fn app_check_for_updates(app: AppHandle) -> AppUpdateCheckResult {
 }
 
 #[tauri::command]
-async fn app_install_update(app: AppHandle) -> Result<(), String> {
-    install_app_update(&app)
+async fn app_download_update(app: AppHandle) -> Result<(), String> {
+    download_app_update(&app)
+        .await
+        .map_err(|error| format!("{error:#}"))
+}
+
+#[tauri::command]
+async fn app_restart_to_update(app: AppHandle) -> Result<(), String> {
+    install_staged_update(&app, true)
         .await
         .map_err(|error| format!("{error:#}"))
 }
@@ -6111,6 +6284,7 @@ async fn build_app_window(
     app: &AppHandle,
     label: String,
     init_script: String,
+    show: bool,
 ) -> Result<tauri::WebviewWindow> {
     let url = frontend_webview_url()?;
     let saved_size = load_window_state(app).ok().flatten();
@@ -6192,10 +6366,16 @@ async fn create_app_window(app: &AppHandle, label: Option<&str>) -> Result<tauri
 async fn start_backend_and_window(app: AppHandle) -> Result<()> {
     let state: tauri::State<'_, AppState> = app.state();
     if app.get_webview_window(MAIN_WINDOW).is_none() {
+        // A launch at sign-in waits in the tray (or the macOS Dock) until
+        // the user opens it. Without a tray icon on Windows or Linux there
+        // would be no way back to a hidden window, so it opens as usual.
+        let start_hidden = autostart::launched_at_login()
+            && (cfg!(target_os = "macos") || desktop_settings::tray_icon_enabled(&app));
         build_app_window(
             &app,
             MAIN_WINDOW.to_string(),
             backend_unavailable_init_script(),
+            !start_hidden,
         )
         .await?;
     }
@@ -6288,7 +6468,6 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
     let init_script = frontend_init_script(Some(&token), &ready.base_url);
 
     let _ = state.sidecar.lock().await.replace(ready.sidecar);
-    show: bool,
     let _ = state
         .desktop_token
         .lock()
@@ -6353,8 +6532,10 @@ fn main() {
         force_reloading: Arc::new(AtomicBool::new(false)),
         quitting: Arc::new(AtomicBool::new(false)),
         updater_busy: Arc::new(AtomicBool::new(false)),
+        staged_update: Arc::new(std::sync::Mutex::new(None)),
         tray_status: Arc::new(Mutex::new(None)),
         tray_session: Arc::new(Mutex::new(None)),
+        tray_icon_enabled: Arc::new(AtomicBool::new(true)),
         active_window_label: Arc::new(Mutex::new(MAIN_WINDOW.to_string())),
         browser_shortcut_labels: Arc::new(Mutex::new(HashSet::new())),
         zoom: Arc::new(Mutex::new(ZOOM_DEFAULT)),
@@ -6366,16 +6547,10 @@ fn main() {
         .level(log::LevelFilter::Info)
         .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
         .build();
-        // A launch at sign-in waits in the tray (or the macOS Dock) until
-        // the user opens it. Without a tray icon on Windows or Linux there
-        // would be no way back to a hidden window, so it opens as usual.
-        let start_hidden = autostart::launched_at_login()
-            && (cfg!(target_os = "macos") || desktop_settings::tray_icon_enabled(&app));
     let mut updater_plugin = tauri_plugin_updater::Builder::new();
     if let Some(public_key) = option_env!("EVOFLUX_UPDATER_PUBLIC_KEY")
         .map(str::trim)
         .filter(|key| !key.is_empty())
-            !start_hidden,
     {
         updater_plugin = updater_plugin.pubkey(public_key);
     }
@@ -6407,7 +6582,8 @@ fn main() {
             app_retry_backend,
             app_reveal_backend_log,
             app_check_for_updates,
-            app_install_update,
+            app_download_update,
+            app_restart_to_update,
             app_remove_backend_server,
             app_save_backend_server,
             app_use_external_backend,
@@ -6431,6 +6607,8 @@ fn main() {
             computer_app::app_computer_request_permission,
             app_computer_restart,
             set_tray_session,
+            desktop_settings::app_desktop_settings,
+            desktop_settings::app_update_desktop_settings,
             workspace::list_workspace_files,
             workspace::read_workspace_file,
             workspace::open_workspace_file_with_handle,
@@ -6444,6 +6622,10 @@ fn main() {
         ])
         .setup(|app| {
             install_desktop_menus(app)?;
+            desktop_settings::apply_at_startup(app.handle());
+            if let Ok(dir) = update_stage::dir(app.handle()) {
+                update_stage::discard_installed(&dir, env!("CARGO_PKG_VERSION"));
+            }
             match app.path().app_local_data_dir() {
                 Ok(dir) => computer_app::recover_stranded(dir),
                 Err(error) => log::warn!("computer app: no local data dir to record parked windows: {error}"),
@@ -6528,16 +6710,34 @@ fn main() {
             } => {
                 show_main_window(app);
             }
+            // A downloaded update installs on the way out. A restart is left
+            // alone: it cannot be held back, and the update's own restart
+            // path has already taken the staged package.
+            RunEvent::ExitRequested { code, api, .. }
+                if code != Some(tauri::RESTART_EXIT_CODE) && has_staged_update(app) =>
+            {
+                api.prevent_exit();
+                for window in app.webview_windows().into_values() {
+                    let _ = window.hide();
+                }
+                let handle = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(error) = install_staged_update(&handle, false).await {
+                        log::error!("desktop: install on quit failed: {error:#}");
+                        handle.exit(0);
+                    }
+                });
+            }
             RunEvent::ExitRequested { .. } => {
                 persist_active_window_state(app);
                 native_messaging::clear_connection(app);
                 // Apps kept off-screen for Computer App Control go back to
                 // where the user left them.
                 computer_app::release_all();
+                keep_awake::release();
                 let state: tauri::State<'_, AppState> = app.state();
                 let sidecar = state.sidecar.clone();
                 // Block so the child receives SIGTERM before the parent exits.
-        tray_icon_enabled: Arc::new(AtomicBool::new(true)),
                 tauri::async_runtime::block_on(async move {
                     if let Some(mut s) = sidecar.lock().await.take() {
                         s.shutdown().await;
@@ -6609,8 +6809,6 @@ mod tests {
             "download_start",
             "page_assets",
             "evaluate_start",
-            desktop_settings::app_desktop_settings,
-            desktop_settings::app_update_desktop_settings,
             "async_result",
             "debug_summary",
             "evaluate",
@@ -6624,7 +6822,6 @@ mod tests {
             "set_emulation",
             "reset_emulation",
         ] {
-            desktop_settings::apply_at_startup(app.handle());
             browser_agent_action_script(action, &serde_json::json!({}))
                 .unwrap_or_else(|error| panic!("{action} should be supported: {error}"));
         }
@@ -6734,7 +6931,6 @@ mod tests {
             "set_emulation",
             &serde_json::json!({ "width": 375, "height": 812, "device_scale_factor": 2 }),
         )
-                keep_awake::release();
         .expect("device emulation action should compile");
         assert!(emulation.contains("devicePixelRatio"));
         assert!(emulation.contains("maxTouchPoints"));

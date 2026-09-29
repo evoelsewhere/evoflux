@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-restart-to-update"
+description = "Enables the app_restart_to_update command without any pre-configured scope."
+commands.allow = ["app_restart_to_update"]
+
+[[permission]]
+identifier = "deny-app-restart-to-update"
+description = "Denies the app_restart_to_update command without any pre-configured scope."
+commands.deny = ["app_restart_to_update"]

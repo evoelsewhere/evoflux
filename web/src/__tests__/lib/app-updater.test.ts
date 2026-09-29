@@ -13,7 +13,7 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: tauri.invoke,
 }))
 
-import { checkForAppUpdates, installAppUpdate } from '@/lib/app-updater'
+import { checkForAppUpdates, downloadAppUpdate, restartToUpdate } from '@/lib/app-updater'
 
 describe('Linux DEB update policy', () => {
   beforeEach(() => {
@@ -27,7 +27,8 @@ describe('Linux DEB update policy', () => {
   })
 
   it('does not replace dpkg-owned files through the self updater', async () => {
-    await expect(installAppUpdate()).rejects.toThrow('newer EvoFlux .deb')
+    await expect(downloadAppUpdate()).rejects.toThrow('newer EvoFlux .deb')
+    await expect(restartToUpdate()).rejects.toThrow('newer EvoFlux .deb')
     expect(tauri.invoke).not.toHaveBeenCalled()
   })
 })

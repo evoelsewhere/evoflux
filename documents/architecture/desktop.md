@@ -75,6 +75,33 @@ and on all affected platforms.
 - Linux builds an x86_64 Debian package and delegates updates to the package
   manager. Direct pointer/keyboard injection currently depends on X11/XWayland.
 
+## Application updates
+
+An update is downloaded and installed in two separate steps
+(`app_download_update`, then `app_restart_to_update`):
+
+1. The shell downloads the release package, verifies its minisign signature
+   and stages it under `<app local data>/updates/` with a `staged.json` that
+   records the version and the signature it was verified against. EvoFlux
+   keeps running; the dialog then asks whether to **Restart now**.
+2. The staged package installs on **Restart now**, or — if the user chooses
+   **Install when I quit** — the next time EvoFlux exits (`ExitRequested`,
+   except restarts). Before either, the sidecar and its job-object process
+   tree are stopped.
+
+On Windows the shell runs the staged NSIS installer itself in passive mode
+(`/P /UPDATE`, plus `/R` only for Restart now), so the installer shows its own
+progress window instead of copying the whole install invisibly. The NSIS
+pre-install hook also stops `evoflux-webbridge-host.exe` (a hard link to
+`EvoFlux.exe`) and `evoflux-tailnet.exe`, which would otherwise hold files the
+installer must replace. macOS installs through the Tauri updater's bundle
+replacement.
+
+A check that finds the release already staged (same version and signature)
+reports it as ready, so a relaunch never downloads the same update twice. The
+staged package is removed once the running version equals it, when a newer
+release is staged, or when a check finds no update.
+
 The exact build and release flow is in
 [Release and packaging](../development/release-and-packaging.md). Component-local
 details remain in `desktop/README.md`.

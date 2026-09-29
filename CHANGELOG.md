@@ -69,6 +69,11 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- Desktop updates no longer download twice or appear stuck while installing.
+  The update now downloads in the background and waits: **Restart now**
+  installs it, or it installs the next time EvoFlux quits. A download that is
+  already on disk is reused after a relaunch, and the Windows installer shows
+  its own progress window instead of running invisibly.
 - A Dream run overlapping an active chat no longer blocks its database
   writes, which left assistant messages unsaved and errored the team member.
 - After the computer wakes from sleep, connected providers keep their models

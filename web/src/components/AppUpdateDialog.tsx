@@ -16,11 +16,14 @@ import { useAppUpdaterStore } from '@/stores/useAppUpdaterStore'
 
 export function AppUpdateDialog() {
   const available = useAppUpdaterStore((state) => state.available)
-  const installing = useAppUpdaterStore((state) => state.installing)
+  const downloading = useAppUpdaterStore((state) => state.downloading)
+  const ready = useAppUpdaterStore((state) => state.ready)
+  const restarting = useAppUpdaterStore((state) => state.restarting)
   const progress = useAppUpdaterStore((state) => state.progress)
   const hidden = useAppUpdaterStore((state) => state.hidden)
-  const installError = useAppUpdaterStore((state) => state.installError)
-  const install = useAppUpdaterStore((state) => state.install)
+  const error = useAppUpdaterStore((state) => state.error)
+  const download = useAppUpdaterStore((state) => state.download)
+  const restart = useAppUpdaterStore((state) => state.restart)
   const dismiss = useAppUpdaterStore((state) => state.dismiss)
   const handleResult = useAppUpdaterStore((state) => state.handleResult)
   const handleProgress = useAppUpdaterStore((state) => state.handleProgress)
@@ -58,9 +61,9 @@ export function AppUpdateDialog() {
   }, [handleProgress, handleResult])
 
   // Only the install itself is uninterruptible — the app is seconds from
-  // closing. A download can be put aside: it keeps running, and the dialog
-  // comes back when the restart is imminent.
-  const sealed = progress?.phase === 'installing'
+  // closing. A download can be put aside, and so can a finished one: it
+  // installs when EvoFlux quits.
+  const sealed = restarting
 
   return (
     <Dialog open={available !== null && !hidden} onOpenChange={(open) => !open && dismiss()}>
@@ -69,10 +72,21 @@ export function AppUpdateDialog() {
           <div className="mb-1 flex size-9 items-center justify-center rounded-lg bg-(--color-accent-soft) text-(--color-accent)">
             <Download size={17} aria-hidden="true" />
           </div>
-          <DialogTitle>EvoFlux update available</DialogTitle>
+          <DialogTitle>
+            {ready ? 'EvoFlux update ready to install' : 'EvoFlux update available'}
+          </DialogTitle>
           <DialogDescription>
-            EvoFlux {available?.version} is available. You currently have{' '}
-            {available?.current_version}.
+            {ready ? (
+              <>
+                EvoFlux {available?.version} is downloaded and verified. You currently have{' '}
+                {available?.current_version}.
+              </>
+            ) : (
+              <>
+                EvoFlux {available?.version} is available. You currently have{' '}
+                {available?.current_version}.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -85,51 +99,69 @@ export function AppUpdateDialog() {
           </div>
         ) : null}
 
-        {installing ? (
+        {restarting ? (
+          <UpdateProgress progress={{ phase: 'installing' }} />
+        ) : downloading ? (
           <UpdateProgress progress={progress} />
+        ) : ready ? (
+          <p className="text-xs leading-5 text-(--color-text-muted)">
+            The update is downloaded and verified. Restart now to install it, or keep working — it
+            installs the next time you quit EvoFlux.
+          </p>
         ) : (
           <p className="text-xs leading-5 text-(--color-text-muted)">
-            EvoFlux will download and verify the signed update, then restart to finish installation.
+            EvoFlux downloads and verifies the signed update while you keep working. You choose when
+            to restart.
           </p>
         )}
 
-        {installError ? (
+        {error ? (
           <p
             role="alert"
             className="rounded-lg bg-(--color-error)/10 px-3 py-2 text-xs leading-5 text-(--color-error)"
           >
-            {installError}
+            {error}
           </p>
         ) : null}
 
         <DialogFooter>
           <Button variant="outline" disabled={sealed} onClick={dismiss}>
-            {installing ? 'Continue in background' : 'Later'}
+            {dismissLabel({ downloading, ready })}
           </Button>
-          <Button disabled={installing} onClick={() => void install()}>
-            {installing ? (
-              <RefreshCw className="animate-spin" size={14} aria-hidden="true" />
-            ) : (
-              <Download size={14} aria-hidden="true" />
-            )}
-            {installing ? phaseLabel(progress) : 'Install and restart'}
-          </Button>
+          {ready || restarting ? (
+            <Button disabled={restarting} onClick={() => void restart()}>
+              <RefreshCw
+                className={restarting ? 'animate-spin' : undefined}
+                size={14}
+                aria-hidden="true"
+              />
+              {restarting ? 'Installing…' : 'Restart now'}
+            </Button>
+          ) : (
+            <Button disabled={downloading} onClick={() => void download()}>
+              {downloading ? (
+                <RefreshCw className="animate-spin" size={14} aria-hidden="true" />
+              ) : (
+                <Download size={14} aria-hidden="true" />
+              )}
+              {downloading ? phaseLabel(progress) : 'Download update'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
-/** What the button says while the work happens. */
+function dismissLabel({ downloading, ready }: { downloading: boolean; ready: boolean }): string {
+  if (ready) return 'Install when I quit'
+  if (downloading) return 'Continue in background'
+  return 'Later'
+}
+
+/** What the button says while the download happens. */
 function phaseLabel(progress: AppUpdateProgress | null): string {
-  switch (progress?.phase) {
-    case 'verifying':
-      return 'Verifying…'
-    case 'installing':
-      return 'Installing…'
-    default:
-      return 'Downloading…'
-  }
+  return progress?.phase === 'verifying' ? 'Verifying…' : 'Downloading…'
 }
 
 function megabytes(bytes: number): string {
@@ -196,7 +228,7 @@ function UpdateProgress({ progress }: { progress: AppUpdateProgress | null }) {
       </div>
       <p className="text-[11px] leading-4 text-(--color-text-subtle)">
         {progress?.phase === 'installing'
-          ? 'Do not close EvoFlux — it restarts on its own.'
+          ? 'EvoFlux closes to install the update and opens again when it is done.'
           : 'Signed update, verified before it is installed.'}
       </p>
     </div>

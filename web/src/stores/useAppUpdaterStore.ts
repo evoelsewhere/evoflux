@@ -2,7 +2,8 @@ import { create } from 'zustand'
 
 import {
   checkForAppUpdates,
-  installAppUpdate,
+  downloadAppUpdate,
+  restartToUpdate,
   type AppUpdateCheckResult,
   type AppUpdateProgress,
 } from '@/lib/app-updater'
@@ -13,21 +14,29 @@ type AvailableUpdate = Extract<AppUpdateCheckResult, { status: 'available' }>
 interface AppUpdaterStore {
   available: AvailableUpdate | null
   checking: boolean
-  installing: boolean
-  /** Where the running install has got to, or null before one starts. */
+  /** The update is downloading or being verified. EvoFlux keeps running. */
+  downloading: boolean
+  /**
+   * Downloaded and verified. It installs when the user restarts from the
+   * dialog, or the next time EvoFlux quits — whichever comes first.
+   */
+  ready: boolean
+  /** EvoFlux is closing to install; there is no going back from here. */
+  restarting: boolean
+  /** Where the update has got to, or null before one starts. */
   progress: AppUpdateProgress | null
   /**
-   * The update is still coming, but the dialog is out of the way.
+   * The dialog is out of the way, but the update is not cancelled.
    *
-   * A download runs for minutes, and the dialog used to refuse to close for
-   * all of them — no Later, no close button, nothing to read. Putting it
-   * aside does not cancel anything; the tray keeps the status and the dialog
-   * comes back for the restart.
+   * A download runs for minutes and the dialog used to refuse to close for
+   * all of them. Putting it aside keeps the download going; the dialog comes
+   * back when the update is ready to ask about the restart.
    */
   hidden: boolean
-  installError: string | null
+  error: string | null
   check: () => Promise<void>
-  install: () => Promise<void>
+  download: () => Promise<void>
+  restart: () => Promise<void>
   dismiss: () => void
   handleResult: (result: AppUpdateCheckResult) => void
   handleProgress: (progress: AppUpdateProgress) => void
@@ -59,33 +68,49 @@ function showResult(result: AppUpdateCheckResult): AvailableUpdate | null {
 export const useAppUpdaterStore = create<AppUpdaterStore>((set, get) => ({
   available: null,
   checking: false,
-  installing: false,
+  downloading: false,
+  ready: false,
+  restarting: false,
   progress: null,
   hidden: false,
-  installError: null,
+  error: null,
 
   handleResult: (result) => {
     const available = showResult(result)
     if (available) {
-      set({ available, installError: null, progress: null, hidden: false })
+      // A download from earlier is picked up by the check itself, so a
+      // relaunch never has to fetch the same update twice.
+      const ready = available.ready === true
+      set({
+        available,
+        ready,
+        error: null,
+        progress: ready ? { phase: 'ready' } : null,
+        hidden: false,
+      })
     }
   },
 
-  // Progress can only arrive during an install, but it is also the first
-  // sign that one is under way after a restart-less retry — so it marks the
-  // store as installing rather than assuming someone already did.
-  handleProgress: (progress) =>
-    set({
-      progress,
-      installing: true,
-      // The install is the point of no return: whatever the user was doing,
-      // the app is about to close, and it should not do that from behind a
-      // dialog they put away ten minutes ago.
-      hidden: progress.phase === 'installing' ? false : undefined,
-    }),
+  // Progress is broadcast to every window, so it is also how a window that
+  // did not start the download learns that one is under way.
+  handleProgress: (progress) => {
+    switch (progress.phase) {
+      case 'ready':
+        // Back into view to ask about the restart.
+        set({ progress, downloading: false, ready: true, hidden: false })
+        return
+      case 'installing':
+        // The app is about to close; it should not do that from behind a
+        // dialog the user put away ten minutes ago.
+        set({ progress, downloading: false, restarting: true, hidden: false })
+        return
+      default:
+        set({ progress, downloading: true })
+    }
+  },
 
   check: async () => {
-    if (get().checking || get().installing) return
+    if (get().checking || get().downloading || get().restarting) return
     set({ checking: true })
     try {
       get().handleResult(await checkForAppUpdates())
@@ -103,14 +128,34 @@ export const useAppUpdaterStore = create<AppUpdaterStore>((set, get) => ({
     }
   },
 
-  install: async () => {
-    if (!get().available || get().installing) return
-    set({ installing: true, installError: null, progress: null })
+  download: async () => {
+    const { available, downloading, ready, restarting } = get()
+    if (!available || downloading || ready || restarting) return
+    set({ downloading: true, error: null, progress: null })
     try {
-      await installAppUpdate()
+      await downloadAppUpdate()
+      set({ downloading: false, ready: true, progress: { phase: 'ready' }, hidden: false })
     } catch (error) {
       const message = errorMessage(error)
-      set({ installing: false, installError: message, progress: null })
+      set({ downloading: false, error: message, progress: null })
+      useToastStore.getState().push(
+        { tone: 'error', title: 'Update download failed', description: message },
+        8_000,
+      )
+    }
+  },
+
+  restart: async () => {
+    if (!get().ready || get().restarting) return
+    set({ restarting: true, error: null, hidden: false })
+    try {
+      // On success EvoFlux exits and this never settles.
+      await restartToUpdate()
+    } catch (error) {
+      const message = errorMessage(error)
+      // Back to "Download": if the package is still on disk the shell finds
+      // it again without fetching anything.
+      set({ restarting: false, ready: false, progress: null, error: message })
       useToastStore.getState().push(
         { tone: 'error', title: 'Update installation failed', description: message },
         8_000,
@@ -119,13 +164,16 @@ export const useAppUpdaterStore = create<AppUpdaterStore>((set, get) => ({
   },
 
   dismiss: () => {
-    // Closing the dialog while an update downloads hides it; the download
-    // keeps going and the dialog returns for the restart. Closing it before
-    // one starts declines the update until the next check.
-    if (get().installing) {
-      if (get().progress?.phase !== 'installing') set({ hidden: true })
+    const { downloading, ready, restarting } = get()
+    // The install itself cannot be put aside: EvoFlux is seconds from closing.
+    if (restarting) return
+    // A download keeps going, and a ready update installs when EvoFlux quits.
+    if (downloading || ready) {
+      set({ hidden: true })
       return
     }
-    set({ available: null, installError: null, progress: null, hidden: false })
+    // Closing the dialog before anything started declines the update until
+    // the next check.
+    set({ available: null, error: null, progress: null, hidden: false })
   },
 }))

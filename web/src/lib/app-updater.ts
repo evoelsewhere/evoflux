@@ -9,19 +9,25 @@ export type AppUpdateCheckResult =
       version: string
       current_version: string
       notes?: string | null
+      /** Already downloaded and verified: only the restart is left. */
+      ready?: boolean
     }
   | { status: 'error'; title: string; message: string }
 
 /**
- * How far along an install is.
+ * How far along an update is.
  *
  * `total` is absent when the release server sends no Content-Length, which
  * is the one case a percentage cannot be shown — the bar says how much has
  * arrived instead of pretending to know how much is left.
+ *
+ * `ready` means the verified update is on disk and waits for the user: it
+ * installs on "Restart now", or the next time EvoFlux quits.
  */
 export type AppUpdateProgress =
   | { phase: 'downloading'; downloaded: number; total?: number | null }
   | { phase: 'verifying' }
+  | { phase: 'ready' }
   | { phase: 'installing' }
 
 /**
@@ -42,8 +48,7 @@ export async function checkForAppUpdates(): Promise<AppUpdateCheckResult> {
   return await invoke<AppUpdateCheckResult>('app_check_for_updates')
 }
 
-/** Download, verify, install, and restart through the native updater. */
-export async function installAppUpdate(): Promise<void> {
+function assertDesktopUpdater() {
   const platform = getPlatform()
   if (!platform.isTauri || platform.os === 'ios' || platform.os === 'android') {
     throw new Error('App updates are only available in the EvoFlux desktop app.')
@@ -51,7 +56,21 @@ export async function installAppUpdate(): Promise<void> {
   if (platform.os === 'linux') {
     throw new Error('Linux updates are installed with a newer EvoFlux .deb package.')
   }
+}
 
+/**
+ * Download and verify the update, and keep it for the restart. Nothing is
+ * installed and EvoFlux keeps running.
+ */
+export async function downloadAppUpdate(): Promise<void> {
+  assertDesktopUpdater()
   const { invoke } = await import('@tauri-apps/api/core')
-  await invoke('app_install_update')
+  await invoke('app_download_update')
+}
+
+/** Close EvoFlux, install the downloaded update, and start it again. */
+export async function restartToUpdate(): Promise<void> {
+  assertDesktopUpdater()
+  const { invoke } = await import('@tauri-apps/api/core')
+  await invoke('app_restart_to_update')
 }
