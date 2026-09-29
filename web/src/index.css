@@ -747,6 +747,15 @@ html[data-native-sidebar-glass] [data-settings-sidebar] {
   box-shadow: none;
 }
 
+/* Windows 10 has no Mica, so Rust falls back to Acrylic. Its tint is left at
+ * zero, which makes the "material" the raw blurred desktop behind the window:
+ * a dark wallpaper turned the light-theme sidebar and title bar dark, and the
+ * window theme cannot change it. Paint the theme surface once on the body so
+ * the title bar, sidebar and shell gutter stay one continuous backdrop. */
+html[data-native-sidebar-glass="windows"][data-native-sidebar-material="acrylic"] body {
+  background: color-mix(in srgb, var(--bg-sidebar) 82%, transparent);
+}
+
 /* Vibrant labels over the OS material. The fixed greys of the page palette
  * sat on top of whatever the wallpaper tints Mica/vibrancy with and read as
  * muddy or off-tone; pure black (light) or white (dark) at falling opacity
