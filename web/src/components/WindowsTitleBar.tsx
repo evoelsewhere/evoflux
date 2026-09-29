@@ -16,6 +16,7 @@ import { ChevronLeft, ChevronRight, Menu as MenuIcon, PanelLeft } from 'lucide-r
 import { useEffect, useRef, useState } from 'react'
 
 import { usePlatform } from '@/hooks/use-platform'
+import { useDesktopSettings } from '@/hooks/useDesktopSettings'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import { useWindowHistory } from '@/hooks/use-window-history'
 import { requestShellSidebarToggle } from '@/lib/shell-events'
@@ -38,7 +39,7 @@ function nativeAction(id: string) {
   return () => void invoke('app_menu_action', { id })
 }
 
-async function buildAppMenu(actions: MenuActions): Promise<Menu> {
+async function buildAppMenu(actions: MenuActions, trayIcon: boolean): Promise<Menu> {
   // Item ids carry a prefix so the app-wide native menu handler never runs
   // them a second time; each item's own action does the work.
   const item = (text: string, id: string, action: () => void, accelerator?: string) =>
@@ -57,7 +58,11 @@ async function buildAppMenu(actions: MenuActions): Promise<Menu> {
           await separator(),
           await run('Settings', 'settings', 'Ctrl+,'),
           await separator(),
-          await PredefinedMenuItem.new({ item: 'CloseWindow', text: 'Hide to Tray' }),
+          // Without the tray icon, closing the last window quits (desktop_settings.rs).
+          await PredefinedMenuItem.new({
+            item: 'CloseWindow',
+            text: trayIcon ? 'Hide to Tray' : 'Close Window',
+          }),
           await run('Quit EvoFlux', 'quit'),
         ],
       }),
@@ -146,9 +151,12 @@ export function WindowsTitleBar() {
   const { canGoBack, canGoForward, back, forward, hasAppSidebar, sidebarCollapsed } =
     useWindowHistory()
   const [maximized, setMaximized] = useState(false)
-  const menuRef = useRef<Promise<Menu> | null>(null)
+  const trayIcon = useDesktopSettings().data?.tray_icon ?? true
+  const menuRef = useRef<{ trayIcon: boolean; menu: Promise<Menu> } | null>(null)
   const actionsRef = useRef<MenuActions>({ back, forward })
-  actionsRef.current = { back, forward }
+  useEffect(() => {
+    actionsRef.current = { back, forward }
+  })
 
   useEffect(() => {
     if (!isWindowsTitleBar) return
@@ -178,12 +186,21 @@ export function WindowsTitleBar() {
   if (!isWindowsTitleBar) return null
 
   const openMenu = async (button: HTMLButtonElement) => {
-    // Built once; history items read the latest callbacks through the ref.
-    menuRef.current ??= buildAppMenu({
-      back: () => actionsRef.current.back(),
-      forward: () => actionsRef.current.forward(),
-    })
-    const menu = await menuRef.current
+    // Built once per tray setting; history items read the latest callbacks
+    // through the ref.
+    if (menuRef.current?.trayIcon !== trayIcon) {
+      menuRef.current = {
+        trayIcon,
+        menu: buildAppMenu(
+          {
+            back: () => actionsRef.current.back(),
+            forward: () => actionsRef.current.forward(),
+          },
+          trayIcon,
+        ),
+      }
+    }
+    const menu = await menuRef.current.menu
     const rect = button.getBoundingClientRect()
     await menu.popup(new LogicalPosition(rect.left, rect.bottom + 4))
   }

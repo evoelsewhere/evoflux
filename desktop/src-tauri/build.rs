@@ -43,6 +43,8 @@ fn main() {
             "app_computer_restart",
             "set_tray_session",
             "list_workspace_files",
+            "app_desktop_settings",
+            "app_update_desktop_settings",
             "read_workspace_file",
             "open_workspace_file_with_handle",
             "open_workspace_root_with_handle",

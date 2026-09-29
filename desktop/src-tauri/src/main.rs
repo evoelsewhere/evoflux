@@ -1,7 +1,10 @@
 // Prevents additional console window on Windows in release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod computer_app;
+mod desktop_settings;
+mod keep_awake;
 mod native_messaging;
 mod openers;
 mod sidecar;
@@ -51,6 +54,9 @@ struct AppState {
     active_window_label: Arc<Mutex<String>>,
     /// Browser webviews whose keyboard shortcuts are already forwarded.
     /// Registering twice would deliver every shortcut twice.
+    /// Settings → Desktop "Show in system tray"; decides what closing the
+    /// last window does.
+    tray_icon_enabled: Arc<AtomicBool>,
     browser_shortcut_labels: Arc<Mutex<HashSet<String>>>,
     /// Current webview zoom factor, mutated by the View > Zoom menu
     /// items. Session-only — not persisted across restarts.
@@ -5399,7 +5405,7 @@ fn install_desktop_menus(app: &tauri::App) -> Result<()> {
     // a launcher. We deliberately do not register ``on_menu_event`` here —
     // the app-level handler in ``main()`` already receives tray events,
     // so adding one would fire ``handle_desktop_menu`` twice.
-    let mut tray = TrayIconBuilder::new()
+    let mut tray = TrayIconBuilder::with_id(desktop_settings::TRAY_ID)
         .menu(&tray_menu)
         .show_menu_on_left_click(true)
         .tooltip("EvoFlux");
@@ -6130,10 +6136,14 @@ async fn build_app_window(
     }
     let state: tauri::State<'_, AppState> = app.state();
     win.set_zoom(*state.zoom.lock().await).ok();
-    win.show().context("show window")?;
+    if show {
+        win.show().context("show window")?;
+    }
     #[cfg(target_os = "macos")]
     pin_macos_traffic_lights(&win)?;
-    win.set_focus().ok();
+    if show {
+        win.set_focus().ok();
+    }
     Ok(win)
 }
 
@@ -6168,7 +6178,7 @@ async fn create_app_window(app: &AppHandle, label: Option<&str>) -> Result<tauri
         )
     };
     let init_script = frontend_init_script(token.as_deref(), &base);
-    let window = build_app_window(app, new_label.clone(), init_script).await?;
+    let window = build_app_window(app, new_label.clone(), init_script, true).await?;
     if external {
         state
             .window_backend_base_urls
@@ -6278,6 +6288,7 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
     let init_script = frontend_init_script(Some(&token), &ready.base_url);
 
     let _ = state.sidecar.lock().await.replace(ready.sidecar);
+    show: bool,
     let _ = state
         .desktop_token
         .lock()
@@ -6355,10 +6366,16 @@ fn main() {
         .level(log::LevelFilter::Info)
         .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
         .build();
+        // A launch at sign-in waits in the tray (or the macOS Dock) until
+        // the user opens it. Without a tray icon on Windows or Linux there
+        // would be no way back to a hidden window, so it opens as usual.
+        let start_hidden = autostart::launched_at_login()
+            && (cfg!(target_os = "macos") || desktop_settings::tray_icon_enabled(&app));
     let mut updater_plugin = tauri_plugin_updater::Builder::new();
     if let Some(public_key) = option_env!("EVOFLUX_UPDATER_PUBLIC_KEY")
         .map(str::trim)
         .filter(|key| !key.is_empty())
+            !start_hidden,
     {
         updater_plugin = updater_plugin.pubkey(public_key);
     }
@@ -6485,7 +6502,9 @@ fn main() {
                 let state: tauri::State<'_, AppState> = app.state();
                 if !state.quitting.load(Ordering::SeqCst) {
                     api.prevent_close();
-                    if label == MAIN_WINDOW {
+                    if desktop_settings::close_quits_app(app, &label) {
+                        quit_app(app);
+                    } else if label == MAIN_WINDOW {
                         if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
                             let _ = window.hide();
                         }
@@ -6518,6 +6537,7 @@ fn main() {
                 let state: tauri::State<'_, AppState> = app.state();
                 let sidecar = state.sidecar.clone();
                 // Block so the child receives SIGTERM before the parent exits.
+        tray_icon_enabled: Arc::new(AtomicBool::new(true)),
                 tauri::async_runtime::block_on(async move {
                     if let Some(mut s) = sidecar.lock().await.take() {
                         s.shutdown().await;
@@ -6589,6 +6609,8 @@ mod tests {
             "download_start",
             "page_assets",
             "evaluate_start",
+            desktop_settings::app_desktop_settings,
+            desktop_settings::app_update_desktop_settings,
             "async_result",
             "debug_summary",
             "evaluate",
@@ -6602,6 +6624,7 @@ mod tests {
             "set_emulation",
             "reset_emulation",
         ] {
+            desktop_settings::apply_at_startup(app.handle());
             browser_agent_action_script(action, &serde_json::json!({}))
                 .unwrap_or_else(|error| panic!("{action} should be supported: {error}"));
         }
@@ -6711,6 +6734,7 @@ mod tests {
             "set_emulation",
             &serde_json::json!({ "width": 375, "height": 812, "device_scale_factor": 2 }),
         )
+                keep_awake::release();
         .expect("device emulation action should compile");
         assert!(emulation.contains("devicePixelRatio"));
         assert!(emulation.contains("maxTouchPoints"));

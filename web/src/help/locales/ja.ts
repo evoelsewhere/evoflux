@@ -2390,6 +2390,68 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
 ],
   },
   {
+    id: 'desktop-settings',
+    category: 'settings',
+    title: 'Desktop: 起動、トレイ、スリープ防止',
+    summary:
+      'サインイン時にEvoFluxを開くか、システムトレイ（macOSではメニューバー）にアイコンを置くか、実行中にコンピューターをスリープさせないかを選びます。',
+    keywords: [
+      'desktop',
+      'run on startup',
+      'autostart',
+      'system tray',
+      'menu bar',
+      'keep awake',
+      'デスクトップ',
+      'スタートアップ',
+      '起動時に実行',
+      'システムトレイ',
+      'メニューバー',
+      'スリープ'
+],
+    openAction: { type: 'settings', path: 'desktop' },
+    setup:
+      'EvoFluxデスクトップアプリで Settings → Desktop を開き、必要な項目をオンにします。各スイッチはすぐに反映され、再起動は不要です。',
+    tricks: [
+      '起動時に実行はOS自身のログイン項目を使うため、タスクマネージャー → スタートアップ アプリやシステム設定でオフにした場合もここに反映されます。',
+      'サインイン時の起動では、ウィンドウを開かずにトレイ（macOSではDockとメニューバー）で待機します。',
+      'WindowsまたはLinuxでトレイアイコンをオフにすると、最後のウィンドウを閉じたときにEvoFluxが終了します。タイトルバーのメニュー項目も「Hide to Tray」から「Close Window」に変わります。',
+      'スリープ防止はアイドル時のスリープだけを止めます。ディスプレイはオフになり、WindowsとmacOSではふたを閉じたりスリープを選んだりすれば通常どおりスリープします。',
+      'Windowsでは、スリープ防止がオンの間 powercfg /requests にEvoFluxが表示されます。',
+      'スケジュールされたタスクとRemote ControlにはEvoFluxの実行が必要です。無人で動かすマシンにはトレイアイコンとスリープ防止の組み合わせが適しています。'
+],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Settings → Desktop には、エージェントやバックエンドではなくデスクトップアプリ自体に属する設定があります。このコンピューターに保存され、別のマシンには引き継がれません。',
+      },
+      {
+        type: 'table',
+        columns: ['設定', '動作', 'OSでの保存場所'],
+        rows: [
+          ['起動時に実行', 'サインイン時にEvoFluxを開き、トレイで待機します', 'Windows Run キー · macOS LaunchAgent · Linux ~/.config/autostart'],
+          ['システムトレイ / メニューバーに表示', '状態アイコンとそのメニューを表示します。WindowsとLinuxではウィンドウを閉じてもEvoFluxが動作し続けます', 'EvoFluxの desktop-settings.json'],
+          ['コンピューターをスリープさせない', 'EvoFluxの実行中はアイドル時のスリープを止めます。ディスプレイはオフになる場合があります', 'Windows power request · macOS caffeinate · Linux systemd-inhibit']
+],
+      },
+      {
+        type: 'callout',
+        tone: 'info',
+        title: 'バッテリー',
+        text: 'スリープ防止はノートPCの電力消費を増やします。離席中にスケジュールされた作業やRemote Controlを動かすマシンでオンにしてください。',
+      },
+      {
+        type: 'p',
+        text: 'よくある間違い: トレイアイコンをオフにした後、ウィンドウを閉じるとEvoFluxが終了して驚く（WindowsとLinuxでは再度開く場所がなくなるため）、スリープ防止で画面がつき続けると期待する、ブラウザ版でこれらのスイッチを探す（デスクトップアプリにのみあります）。',
+      }
+],
+    related: [
+      'phone-access',
+      'settings-safety',
+      'getting-started'
+],
+  },
+  {
     id: 'settings-safety',
     category: 'settings',
     title: 'Settings マップ',
@@ -2446,6 +2508,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Browser — 内蔵 WebView + WebBridge マスターポリシー',
           'Notifications — フォーカス外のデスクトップ/モバイルアラート; テスト ping',
           'Appearance — テーマ、アクセント、フォント、モーション、ロケール（en / vi / ja）',
+          'Desktop — 起動時に実行、システムトレイアイコン、スリープ防止',
           'Telemetry — トレースと要約（/telemetry も）',
           'Diagnostics — ライブサブシステムヘルス検査',
           'About — アプリ情報 + Guidelines リンク'

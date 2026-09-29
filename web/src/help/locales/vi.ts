@@ -2377,6 +2377,68 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
 ],
   },
   {
+    id: 'desktop-settings',
+    category: 'settings',
+    title: 'Desktop: khởi động, khay hệ thống và giữ máy thức',
+    summary:
+      'Chọn EvoFlux có mở khi bạn đăng nhập hay không, có giữ biểu tượng trong khay hệ thống (thanh menu trên macOS) và có ngăn máy tính ngủ khi đang chạy hay không.',
+    keywords: [
+      'desktop',
+      'run on startup',
+      'autostart',
+      'system tray',
+      'menu bar',
+      'keep awake',
+      'khởi động',
+      'chạy khi khởi động',
+      'khay hệ thống',
+      'thanh menu',
+      'giữ máy thức',
+      'chế độ ngủ'
+],
+    openAction: { type: 'settings', path: 'desktop' },
+    setup:
+      'Mở Settings → Desktop trong ứng dụng EvoFlux cho máy tính và bật những gì bạn cần. Mỗi công tắc áp dụng ngay — không cần khởi động lại.',
+    tricks: [
+      'Chạy khi khởi động dùng mục đăng nhập của chính hệ điều hành, nên tắt nó trong Task Manager → Startup apps hoặc System Settings cũng hiện ở đây.',
+      'Khi mở lúc đăng nhập, EvoFlux khởi động trong khay hệ thống (Dock và thanh menu trên macOS) thay vì mở cửa sổ.',
+      'Khi tắt biểu tượng khay trên Windows hoặc Linux, đóng cửa sổ cuối cùng sẽ thoát EvoFlux; mục menu thanh tiêu đề đổi từ “Hide to Tray” thành “Close Window”.',
+      'Giữ máy tính luôn thức chỉ ngăn ngủ khi rảnh. Màn hình vẫn tắt, và trên Windows và macOS gập máy hoặc chọn Sleep vẫn hoạt động.',
+      'Trên Windows, lệnh powercfg /requests liệt kê EvoFlux khi Giữ máy tính luôn thức đang bật.',
+      'Tác vụ đã lên lịch và Remote Control cần EvoFlux đang chạy — biểu tượng khay cùng Giữ máy tính luôn thức phù hợp cho máy để chạy không người trông.'
+],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Settings → Desktop chứa các tùy chọn thuộc về chính ứng dụng máy tính, không thuộc agent hay backend. Chúng được lưu trên máy này và không theo bạn sang máy khác.',
+      },
+      {
+        type: 'table',
+        columns: ['Cài đặt', 'Tác dụng', 'Nơi hệ điều hành lưu'],
+        rows: [
+          ['Chạy khi khởi động', 'Mở EvoFlux khi bạn đăng nhập, chờ trong khay hệ thống', 'Windows Run key · macOS LaunchAgent · Linux ~/.config/autostart'],
+          ['Hiển thị trong khay hệ thống / thanh menu', 'Giữ biểu tượng trạng thái và menu của nó; trên Windows và Linux, đóng cửa sổ vẫn để EvoFlux chạy', 'desktop-settings.json của EvoFlux'],
+          ['Giữ máy tính luôn thức', 'Ngăn ngủ khi rảnh trong lúc EvoFlux chạy; màn hình vẫn có thể tắt', 'Windows power request · macOS caffeinate · Linux systemd-inhibit']
+],
+      },
+      {
+        type: 'callout',
+        tone: 'info',
+        title: 'Pin',
+        text: 'Giữ máy tính luôn thức tốn pin hơn trên laptop. Hãy bật nó cho máy chạy tác vụ đã lên lịch hoặc Remote Control khi bạn vắng mặt.',
+      },
+      {
+        type: 'p',
+        text: 'Lỗi thường gặp: tắt biểu tượng khay rồi thắc mắc vì sao đóng cửa sổ lại thoát EvoFlux (trên Windows và Linux sẽ không còn chỗ nào để mở lại); mong Giữ máy tính luôn thức giữ màn hình sáng; và tìm các công tắc này trong bản trình duyệt — chúng chỉ có trong ứng dụng máy tính.',
+      }
+],
+    related: [
+      'phone-access',
+      'settings-safety',
+      'getting-started'
+],
+  },
+  {
     id: 'settings-safety',
     category: 'settings',
     title: 'Bản đồ Settings',
@@ -2432,6 +2494,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Browser — built-in WebView + master policy WebBridge',
           'Notifications — alert desktop/mobile khi không focus; test ping',
           'Appearance — theme, accent, fonts, motion, locale (en / vi / ja)',
+          'Desktop — chạy khi khởi động, biểu tượng khay hệ thống, giữ máy tính luôn thức',
           'Telemetry — trace và summary (cũng /telemetry)',
           'Diagnostics — check health subsystem live',
           'About — thông tin app + link Guidelines'

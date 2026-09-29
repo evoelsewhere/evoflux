@@ -40,6 +40,18 @@ owns operations that cannot be safely or portably implemented in browser JS:
 The Python sidecar remains the authority for agent permissions, workspace
 authorization, application persistence and WebBridge policy.
 
+## Desktop settings
+
+Run on startup, the tray icon and Keep computer awake are shell-owned
+(`desktop_settings.rs`, `autostart.rs`, `keep_awake.rs`) and exposed through
+`app_desktop_settings` / `app_update_desktop_settings`. The OS login entry is
+the source of truth for Run on startup; the other two persist in
+`desktop-settings.json` beside `desktop-backend.json` and `window-state.json`.
+A launch with `--autostart` builds the main window hidden when the tray (or
+the macOS Dock) can bring it back. With the tray icon off on Windows or Linux,
+closing the last visible window quits instead of hiding. See
+[Desktop app settings](../features/desktop-app-settings.md).
+
 ## Development variants
 
 | Mode | Web assets | Backend |

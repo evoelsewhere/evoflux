@@ -72,6 +72,8 @@
     "allow-app-computer-restart",
     "allow-set-tray-session",
     "allow-list-workspace-files",
+    "allow-app-desktop-settings",
+    "allow-app-update-desktop-settings",
     "allow-read-workspace-file",
     "allow-list-directory",
     "allow-open-workspace-file-with-handle",

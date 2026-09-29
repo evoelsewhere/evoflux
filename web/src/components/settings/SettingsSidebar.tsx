@@ -22,6 +22,7 @@ import {
   Info,
   KeyRound,
   Layers,
+  MonitorCog,
   MonitorSmartphone,
   Palette,
   Plug,
@@ -72,6 +73,7 @@ type SidebarPath =
   | '/settings/computer-apps'
   | '/settings/notifications'
   | '/settings/appearance'
+  | '/settings/desktop'
   | '/settings/diagnostics'
   | '/settings/telemetry'
   | '/settings/enterprise'
@@ -349,6 +351,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             label: t('Appearance'),
             icon: Palette,
             matchPrefix: '/settings/appearance',
+          },
+          {
+            to: '/settings/desktop',
+            label: t('Desktop'),
+            icon: MonitorCog,
+            matchPrefix: '/settings/desktop',
           },
           {
             to: '/settings/telemetry',

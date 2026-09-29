@@ -95,6 +95,10 @@ windows = { version = "0.61", features = [
     "Win32_Security",
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_JobObjects",
+    # Settings → Desktop: Keep computer awake (power requests) and Run on
+    # startup (the HKCU Run key).
+    "Win32_System_Power",
+    "Win32_System_Registry",
     "Win32_System_Threading",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",

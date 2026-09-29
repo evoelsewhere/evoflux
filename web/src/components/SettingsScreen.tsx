@@ -18,6 +18,7 @@ import { NewAgentPage } from '@/routes/settings.agents.new'
 import { AgentsListPage } from '@/routes/settings.agents'
 import { AppearanceSettingsPage } from '@/routes/settings.appearance'
 import { BackendConnectionPage } from '@/routes/settings.connection'
+import { DesktopSettingsPage } from '@/routes/settings.desktop'
 import { DiagnosticsPage } from '@/routes/settings.diagnostics'
 import { SettingsHubPage } from '@/routes/settings.index'
 import { McpServerDetailPage } from '@/routes/settings.mcp.$name'
@@ -56,6 +57,7 @@ const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   browser: 'Browser',
   'computer-apps': 'Computer App Control',
   notifications: 'Notifications',
+  desktop: 'Desktop',
   appearance: 'Appearance',
   telemetry: 'Telemetry',
   diagnostics: 'Diagnostics',
@@ -118,6 +120,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'browser') return <BrowserSettingsPage />
   if (section === 'computer-apps') return <ComputerAppsSettingsPage />
   if (section === 'notifications') return <NotificationSettingsPage />
+  if (section === 'desktop') return <DesktopSettingsPage />
   if (section === 'appearance') return <AppearanceSettingsPage />
   if (section === 'diagnostics') return <DiagnosticsPage />
   if (section === 'telemetry') return <TelemetrySettingsPage />

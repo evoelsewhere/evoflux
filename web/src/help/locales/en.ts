@@ -2435,6 +2435,71 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
   },
   {
+    id: 'desktop-settings',
+    category: 'settings',
+    title: 'Desktop: startup, tray, and staying awake',
+    summary:
+      'Choose whether EvoFlux opens when you sign in, keeps an icon in the system tray (menu bar on macOS), and stops the computer from sleeping while it runs.',
+    keywords: [
+      'desktop',
+      'run on startup',
+      'launch at login',
+      'autostart',
+      'system tray',
+      'menu bar',
+      'close to tray',
+      'keep awake',
+      'sleep',
+      'khởi động',
+      'khay hệ thống',
+      'giữ máy thức',
+      'スタートアップ',
+      'システムトレイ',
+      'スリープ'
+],
+    openAction: { type: 'settings', path: 'desktop' },
+    setup:
+      'Open Settings → Desktop in the EvoFlux desktop app and turn on what you need. Each switch applies immediately — no restart.',
+    tricks: [
+      'Run on startup uses the operating system’s own login entry, so switching it off in Task Manager → Startup apps or in System Settings shows up here too.',
+      'A launch at sign-in starts in the tray (the Dock and menu bar on macOS) instead of opening a window.',
+      'With the tray icon off on Windows or Linux, closing the last window quits EvoFlux; the title-bar menu item changes from “Hide to Tray” to “Close Window”.',
+      'Keep computer awake only prevents idle sleep. The display still turns off, and on Windows and macOS closing the lid or choosing Sleep still works.',
+      'On Windows, running powercfg /requests lists EvoFlux while Keep computer awake is on.',
+      'Scheduled tasks and Remote Control need EvoFlux running — the tray icon plus Keep computer awake covers a machine left unattended.'
+],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Settings → Desktop holds the preferences that belong to the desktop app itself rather than to agents or the backend. They are stored on this computer and do not follow you to another machine.',
+      },
+      {
+        type: 'table',
+        columns: ['Setting', 'What it does', 'Where the OS keeps it'],
+        rows: [
+          ['Run on startup', 'Opens EvoFlux when you sign in, waiting in the tray', 'Windows Run key · macOS LaunchAgent · Linux ~/.config/autostart'],
+          ['Show in system tray / menu bar', 'Keeps the status icon and its menu; on Windows and Linux, closing the window keeps EvoFlux running', 'EvoFlux desktop-settings.json'],
+          ['Keep computer awake', 'Stops idle sleep while EvoFlux runs; the display may still turn off', 'Windows power request · macOS caffeinate · Linux systemd-inhibit']
+],
+      },
+      {
+        type: 'callout',
+        tone: 'info',
+        title: 'Battery',
+        text: 'Keep computer awake uses more power on a laptop. Turn it on for machines that run scheduled work or Remote Control while you are away.',
+      },
+      {
+        type: 'p',
+        text: 'Common mistakes: turning the tray icon off and then wondering why closing the window quit EvoFlux (on Windows and Linux there would be nothing left to reopen it from); expecting Keep computer awake to keep the screen on; and looking for these switches in the browser build — they exist only in the desktop app.',
+      }
+],
+    related: [
+      'phone-access',
+      'settings-safety',
+      'getting-started'
+],
+  },
+  {
     id: 'settings-safety',
     category: 'settings',
     title: 'Settings map',
@@ -2491,6 +2556,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
           'Browser — built-in WebView + WebBridge master policy',
           'Notifications — desktop/mobile alerts when unfocused; test ping',
           'Appearance — theme, accent, fonts, motion, locale (en / vi / ja)',
+          'Desktop — run on startup, system tray icon, keep computer awake',
           'Telemetry — traces and summary (also /telemetry)',
           'Diagnostics — live subsystem health checks',
           'About — app info + Guidelines link'

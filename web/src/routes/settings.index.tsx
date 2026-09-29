@@ -20,6 +20,7 @@ import {
   Globe2,
   Info,
   KeyRound,
+  MonitorCog,
   Palette,
   Plug,
   RefreshCw,
@@ -267,6 +268,12 @@ export function SettingsHubPage() {
           icon: Palette,
           title: 'Appearance',
           description: 'Theme, accent, font, scale and motion',
+        },
+        {
+          to: '/settings/desktop',
+          icon: MonitorCog,
+          title: 'Desktop',
+          description: 'Run on startup, system tray and keep computer awake',
         },
         {
           to: '/settings/telemetry',
