@@ -23,7 +23,7 @@ The main SQLModel/Alembic database stores:
 
 | Domain | Primary tables/models |
 |---|---|
-| Chat | sessions, messages, folders, Coding workspaces/projects and memberships |
+| Chat | sessions, messages, folders, Coding projects, the repository registry and memberships |
 | Teams | durable delegation tasks |
 | Goals | objective, budget, elapsed usage, blocker state and version |
 | Memory | scoped facts, evidence and extraction state |
@@ -54,7 +54,10 @@ rejected during extraction. See [Memory and Dream](../features/memory-and-dream.
 
 Work sessions place uploads and generated files under their session workspace.
 Large tool observations may be offloaded to data-backed session artifacts with
-references in the transcript. Session snapshots support revert/undo boundaries.
+references in the transcript. Session snapshots support revert/undo boundaries:
+an out-of-tree Git repository under `{state}/snapshot/<session>` per session,
+plus one under its `repos/` directory for each other repository of a
+multi-repository Coding project, so every work tree keeps its own index.
 Preview output, OAuth responses, model catalog responses, and language servers
 belong in cache because they can be recreated.
 

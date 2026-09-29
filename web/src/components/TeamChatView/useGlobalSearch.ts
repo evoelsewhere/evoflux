@@ -24,12 +24,15 @@ import { searchApp, searchEverywhere } from '@/api/client'
 import type { AppSearchItem, TurnChangesPending, WorkspaceFileInfo } from '@/api/types'
 import { useUIStore } from '@/stores/useUIStore'
 import { formatRelativeDate } from '@/utils/format'
-import { codingFocusId } from '@/utils/workspace'
+import { resolveRepositoryPath } from '@/utils/repository-paths'
+import { codingFocusId, workspaceLabel } from '@/utils/workspace'
 import type { Command } from '../CommandPalette'
 
 interface UseGlobalSearchArgs {
   mode: 'work' | 'coding'
   workspace: string | null
+  /** Coding: every repository of the session's project, primary included. */
+  repositories?: readonly string[]
   /** Files the latest agent turn touched — offered ahead of a repository scan. */
   turnChanges: TurnChangesPending | null
   navigate: ReturnType<typeof useNavigate>
@@ -70,6 +73,7 @@ const APP_GROUPS: Record<AppSearchItem['kind'], string> = {
 export function useGlobalSearch({
   mode,
   workspace,
+  repositories,
   turnChanges,
   navigate,
   openFile,
@@ -88,29 +92,32 @@ export function useGlobalSearch({
     const focusId = metadata.mode === 'coding'
       ? codingFocusId({
         project_id: typeof metadata.project_id === 'string' ? metadata.project_id : null,
-        workspace: typeof metadata.workspace === 'string' ? metadata.workspace : null,
       })
       : null
     if (focusId) {
       navigate({ to: '/coding/$focusId/$sessionId', params: { focusId, sessionId } })
       return
     }
+    // A Coding chat with no project (one left from a standalone workspace)
+    // has no Coding page; never open it under Work chrome.
+    if (metadata.mode === 'coding') {
+      navigate({ to: '/coding' })
+      return
+    }
     navigate({ to: '/$sessionId', params: { sessionId } })
   }, [navigate])
 
   /**
-   * Focus a project or repository the way its sidebar row does: `$focusId` is
-   * the project id or the repository path, and it anchors the Coding page even
-   * before a chat is picked. The store request keeps the sidebar's own
-   * selection in step; navigation alone leaves it on the previous scope.
+   * Focus a project the way its sidebar row does: `$focusId` is the project
+   * id, and it anchors the Coding page even before a chat is picked. A
+   * repository hit opens the project that owns it. The store request keeps
+   * the sidebar's own selection in step; navigation alone leaves it on the
+   * previous scope.
    */
   const openCodingScope = useCallback(
-    (scope: { projectId?: string | null; workspace?: string | null }) => {
+    (scope: { projectId?: string | null }) => {
       useUIStore.getState().requestCodingScope(scope)
-      const focusId = codingFocusId({
-        project_id: scope.projectId ?? null,
-        workspace: scope.workspace ?? null,
-      })
+      const focusId = codingFocusId({ project_id: scope.projectId ?? null })
       if (focusId) {
         navigate({ to: '/coding/$focusId', params: { focusId } })
         return
@@ -133,7 +140,7 @@ export function useGlobalSearch({
           openCodingScope({ projectId: String(metadata.project_id ?? '') || null })
           return
         case 'workspace':
-          openCodingScope({ workspace: item.path })
+          openCodingScope({ projectId: String(metadata.project_id ?? '') || null })
           return
         case 'memory':
           if (item.path) ui().requestWikiFile(item.path)
@@ -164,6 +171,13 @@ export function useGlobalSearch({
 
   return useCallback(async (query: string, signal: AbortSignal): Promise<Command[]> => {
     const normalized = query.trim().toLowerCase()
+    // The project's repositories, primary first. Each is searched on its own
+    // and its hits open in that repository.
+    const searched = mode === 'coding' && workspace
+      ? [workspace, ...(repositories ?? []).filter((repository) => repository !== workspace)]
+      : []
+    const inRepository = (repository: string, file: WorkspaceFileInfo): WorkspaceFileInfo =>
+      repository === workspace ? file : { ...file, sourceWorkspace: repository }
     const recent: Command[] = (turnChanges?.files ?? [])
       .filter((file) => file.path.toLowerCase().includes(normalized))
       .slice(0, 8)
@@ -172,25 +186,36 @@ export function useGlobalSearch({
         group: 'Recent files',
         label: file.path,
         description: 'Changed in the latest agent turn',
-        action: () => openFile(fileInfo(file.path)),
+        action: () => {
+          // The turn lists paths as the agent wrote them, which may climb
+          // into (or name) another repository of the project.
+          const owned = workspace ? resolveRepositoryPath(workspace, searched, file.path) : null
+          openFile(owned ? inRepository(owned.workspace, fileInfo(owned.path)) : fileInfo(file.path))
+        },
       }))
 
-    // One dead source must not blank the palette: settle both and keep
+    // One dead source must not blank the palette: settle every one and keep
     // whatever came back.
-    const [appResult, repoResult] = await Promise.allSettled([
+    const perRepository = searched.length > 1 ? 25 : 50
+    const [appResult, ...repoResults] = await Promise.allSettled([
       searchApp(query, 40, signal),
-      mode === 'coding' && workspace
-        ? searchEverywhere(workspace, query, 50, signal)
-        : Promise.resolve({ items: [] }),
+      ...searched.map((repository) => searchEverywhere(repository, query, perRepository, signal)),
     ])
 
     const app: Command[] = appResult.status === 'fulfilled'
       ? appResult.value.items.map(appCommand)
       : []
 
-    const repo: Command[] = repoResult.status === 'fulfilled'
-      ? repoResult.value.items.map<Command>((item) => ({
-        id: `search:${item.id}`,
+    const repo: Command[] = repoResults.flatMap((repoResult, index) => {
+      if (repoResult.status !== 'fulfilled') return []
+      const repository = searched[index] ?? ''
+      const repositoryName = searched.length > 1 ? workspaceLabel(repository) : null
+      // Skills are not per repository; list them once, from the primary.
+      const items = index === 0
+        ? repoResult.value.items
+        : repoResult.value.items.filter((item) => item.kind !== 'skill')
+      return items.map<Command>((item) => ({
+        id: `search:${index}:${item.id}`,
         group: item.kind === 'git_branch' || item.kind === 'git_commit'
           ? 'Git'
           : item.kind === 'problem'
@@ -201,7 +226,9 @@ export function useGlobalSearch({
                 ? 'Files'
                 : 'Code',
         label: item.label,
-        description: item.description,
+        description: repositoryName && item.kind !== 'skill'
+          ? [repositoryName, item.description].filter(Boolean).join(' · ')
+          : item.description,
         action: () => {
           const ui = useUIStore.getState()
           if (item.kind === 'problem') {
@@ -220,11 +247,11 @@ export function useGlobalSearch({
             ui.openWorkbenchTool('files')
             return
           }
-          if (item.path) openFile(fileInfo(item.path, item.metadata))
+          if (item.path) openFile(inRepository(repository, fileInfo(item.path, item.metadata)))
         },
       }))
-      : []
+    })
 
     return [...recent, ...app, ...repo]
-  }, [appCommand, fillComposer, mode, openFile, turnChanges?.files, workspace])
+  }, [appCommand, fillComposer, mode, openFile, repositories, turnChanges?.files, workspace])
 }

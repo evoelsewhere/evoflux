@@ -14,6 +14,7 @@ import {
 import { createSSEHandler } from './sse-reducer'
 import { useToastStore } from '@/stores/useToastStore'
 import { isTransientNetworkError } from '@/utils/errors'
+import { turnChangesFromHistory } from '@/utils/turn-changes'
 import { createStreamScheduler } from '@/api/stream-scheduler'
 import type { AgentStream, PendingMessage, TeamStore, TeamStoreState } from './types'
 import type { ContentBlock, MessageResponse, PermissionMode, TeamHistoryResponse } from '@/api/types'
@@ -504,6 +505,7 @@ function enqueueWorkspaceInvalidation(
   paths?: string[],
 ) {
   const workspace = get()._workspace
+  const projectId = get().projectId
   if (workspace && paths !== undefined) {
     if (paths.length === 0) return
     set((draft) => {
@@ -511,6 +513,7 @@ function enqueueWorkspaceInvalidation(
         kind: 'coding_workspace_paths',
         workspace,
         paths,
+        projectId,
       })
     })
     return
@@ -518,7 +521,7 @@ function enqueueWorkspaceInvalidation(
   set((draft) => {
     draft.cacheInvalidations.push(
       workspace
-        ? { kind: 'coding_workspace', workspace }
+        ? { kind: 'coding_workspace', workspace, projectId }
         : { kind: 'workspace_files', sessionId },
     )
   })
@@ -958,6 +961,9 @@ export const useTeamStore = create<TeamStore>()(
         const boundaryTime = boundaryIso ? new Date(boundaryIso).getTime() : null
         set((draft) => {
           draft._leadRevertTime = boundaryTime
+          // The summary described the turn just undone; its files are back.
+          draft.turnChanges = null
+          draft.turnChangesOpen = false
           Object.values(draft.agentStreams).forEach((stream) => {
             applyRevertBoundary(stream, boundaryTime, {
               includeCurrent: true,
@@ -1018,6 +1024,25 @@ export const useTeamStore = create<TeamStore>()(
           if (i === MAX_ITER - 1) {
             throw new Error('Redo did not reach the live tip')
           }
+        }
+        // Back at the live tip: the latest turn's "Edited N files" summary,
+        // which the undo cleared, applies again. It is saved on the turn's
+        // user message, so read it back rather than leave the card gone
+        // until the next reload.
+        try {
+          const history = await teamHistory(sessionId)
+          const current = get()
+          if (
+            current.sessionId === sessionId
+            && current._leadRevertTime === null
+            && !current.isTeamWorking
+            && history.lead.running !== true
+          ) {
+            const summary = turnChangesFromHistory(sessionId, history.lead.messages)
+            set((draft) => { draft.turnChanges = summary })
+          }
+        } catch {
+          // The summary is a convenience; the redo itself has succeeded.
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
@@ -1477,6 +1502,14 @@ export const useTeamStore = create<TeamStore>()(
               leadStream.usage = leadUsage
               leadStream._completionBase = leadUsage.completionTokens
             }
+
+            // The finished turn's "Edited N files" summary, saved on its user
+            // message. None while a turn runs (its own event will say) or
+            // after an undo, which the live card also clears.
+            draft.turnChanges = history.lead.running === true || leadRevertTime !== null
+              ? null
+              : turnChangesFromHistory(sessionId, history.lead.messages)
+            draft.turnChangesOpen = false
 
             const queued = queuedMessagesFromHistory(sessionId, history.lead.messages)
             const queuedIds = new Set(queued.map((msg) => msg.id))

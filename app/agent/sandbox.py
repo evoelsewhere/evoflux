@@ -255,8 +255,19 @@ class SandboxConfig:
 
     def _is_read_only(self, resolved: Path) -> Path | None:
         for ro_root in self.read_only_paths:
-            if _path_is_under(resolved, ro_root):
-                return ro_root
+            if not _path_is_under(resolved, ro_root):
+                continue
+            # A writable root nested inside the read-only one keeps its own
+            # files writable: a managed worktree lives under its source
+            # repository, which a worktree session may only read.
+            if any(
+                root != ro_root
+                and _path_is_under(root, ro_root)
+                and _path_is_under(resolved, root)
+                for root in self.allowed_workspace_roots
+            ):
+                continue
+            return ro_root
         return None
 
     def validate_path(self, path: str | Path, *, is_write: bool = False) -> Path:
@@ -432,6 +443,24 @@ class SandboxConfig:
             resolved,
             reason,
         )
+
+    def repository_root(self, resolved: Path) -> Path:
+        """The workspace root that owns *resolved*.
+
+        A project session may touch every repository of its project; a file
+        in a sibling repository belongs to that repository, not the primary.
+        When roots nest — a managed worktree inside its source repository —
+        the deepest one wins. Paths outside every root fall back to the
+        primary.
+        """
+        owners = [
+            root
+            for root in self.allowed_workspace_roots
+            if _path_is_under(resolved, root)
+        ]
+        if not owners:
+            return self.workspace_root
+        return max(owners, key=lambda root: len(root.parts))
 
     # ── Display helpers ──────────────────────────────────────────────────
 

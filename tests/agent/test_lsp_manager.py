@@ -13,6 +13,7 @@ from app.agent.lsp_manager import (
     LanguageServerClient,
     LanguageServerUnavailable,
     SPECS,
+    _canonical_uri,
     _content_length,
     language_server_spec,
     _locations,
@@ -44,6 +45,34 @@ def test_common_language_server_mappings(filename: str, language: str):
     spec = language_server_spec(Path(filename))
     assert spec is not None
     assert spec.language_id == language
+
+
+def test_canonical_uri_matches_the_client_spelling(tmp_path):
+    target = (tmp_path / "a b.ts").resolve()
+    ours = target.as_uri()
+    assert _canonical_uri(ours) == ours
+    assert _canonical_uri("untitled:1") == "untitled:1"
+    if target.drive:
+        # typescript-language-server's spelling of the same Windows file.
+        drive = target.drive[0].lower()
+        server = f"file:///{drive}%3A" + ours.split(":", 2)[2]
+        assert _canonical_uri(server) == ours
+
+
+def test_canonical_uri_decodes_a_file_name_once(tmp_path):
+    # ``%41`` is part of the name; decoding twice would name ``aA.ts``.
+    target = (tmp_path / "a%41.ts").resolve()
+    ours = target.as_uri()
+    assert _canonical_uri(ours) == ours
+    if target.drive:
+        drive = target.drive[0].lower()
+        assert _canonical_uri(f"file:///{drive}%3A" + ours.split(":", 2)[2]) == ours
+
+
+def test_canonical_uri_leaves_a_malformed_uri_alone():
+    # Windows ``url2pathname`` raises OSError("Bad URL") for this; it must not
+    # escape and end the language server's message reader.
+    assert _canonical_uri("file:///c:/x:y") == "file:///c:/x:y"
 
 
 def test_locations_normalizes_single_and_list_results():

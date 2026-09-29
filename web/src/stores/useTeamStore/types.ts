@@ -33,8 +33,15 @@ export interface ActivityItem {
 export type CacheInvalidation =
   | { kind: 'wiki' }
   | { kind: 'workspace_files'; sessionId: string }
-  | { kind: 'coding_workspace'; workspace: string }
-  | { kind: 'coding_workspace_paths'; workspace: string; paths: string[] }
+  // ``workspace`` is the session's primary repository; ``projectId`` lets the
+  // bridge route each path to whichever project repository owns it.
+  | { kind: 'coding_workspace'; workspace: string; projectId?: string | null }
+  | {
+      kind: 'coding_workspace_paths'
+      workspace: string
+      paths: string[]
+      projectId?: string | null
+    }
   | { kind: 'scheduler' }
   | { kind: 'todos'; sessionId: string }
   | { kind: 'team_agents' }

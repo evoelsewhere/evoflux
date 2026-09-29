@@ -14,7 +14,7 @@ import { getCodingWorkspaceGitDiff, listCodingWorkspaceFiles } from '@/api/clien
 import { queryKeys } from '@/queries/keys'
 import { cn } from '@/lib/utils'
 import { TreeNodeView } from './CodingWorkspacePanel'
-import { buildTree, collectChangedFiles } from '@/utils/workspaceFileTree'
+import { buildTree, changedFileStatuses, collectChangedFiles } from '@/utils/workspaceFileTree'
 import { codingExplorerMenuActions } from '@/lib/coding-explorer-actions'
 import type { CodingProject, WorkspaceFileInfo } from '@/api/types'
 import { FolderTypeIcon } from './FileTypeIcon'
@@ -96,7 +96,7 @@ export function MultiRepoFileTree({
           ? taggedFiles.filter((file) => file.path.toLowerCase().includes(normalizedQuery))
           : taggedFiles
         const tree = buildTree(visibleFiles)
-        const changedPaths = new Set(collectChangedFiles(diff.data).map((f) => f.path))
+        const changedStatuses = changedFileStatuses(collectChangedFiles(diff.data))
         const isCollapsed = normalizedQuery ? false : collapsedPaths.has(w.path)
         // Each repo gets its own bundle: a file's actions must target the
         // workspace it actually lives in, not the project's first repo.
@@ -163,7 +163,7 @@ export function MultiRepoFileTree({
                       onFileSelect={onFileSelect}
                       onFileOpen={onFileOpen}
                       menuActions={menuActions}
-                      changedPaths={changedPaths}
+                      changedStatuses={changedStatuses}
                       forceOpen={Boolean(normalizedQuery)}
                     />
                   ))

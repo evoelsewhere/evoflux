@@ -6,18 +6,57 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
-- Suggested-task chips float in the top-left corner of the chat instead of
-  sitting above the message box, behind a collapsible **N suggested tasks**
-  button.
+- Suggested-task chips live behind a 💡 **N** button in the chat's top bar,
+  beside **WebBridge**, instead of sitting above the message box. The list
+  opens as a popover and no longer covers the first lines of the chat.
 - The message box keeps its toolbar on one row at every width. On narrow
   windows and phones the attach button, folder, model and permission pickers
   shrink to icons instead of wrapping onto a second row, and the send button
   always stays at the right edge. On phones the message
   box is a fully rounded card floating over the chat, without the divider
   line above it.
+- The Coding sidebar is laid out around the selected project instead of a
+  boxed card under a **Projects** section header: the project picker heads
+  the list with **+** for a new chat and a **⋯** menu for **Add repository…**
+  and **Delete project**. The project picker opens at the width of that row
+  and ends with **Open folder as project…** and **Set up a multi-repo
+  project…**. The repositories open from a quiet **N repositories** row, and
+  the chat list fills the rest of the sidebar with its **Chats** header
+  pinned while you scroll.
+- **Open folder as project**, **Add repository** and **Clone repository**
+  open as a centered dialog instead of a panel beside the chat. The
+  **Clone repository** form no longer lets its folder list overlap the note
+  below it.
+- Searchable pickers (project, repository and pull-request filters) no
+  longer leave a blank band between the search field and the list, and their
+  rows use the same text size as the picker.
 - Dark mode uses neutral gray surfaces, borders and text instead of warm
   charcoal, so the message box, chat bubbles, cards, the code editor and the
   terminal no longer look yellowish. The accent colour is unchanged.
+- Coding is project-only. The **Workspaces** section is gone from the Coding
+  sidebar: the folder **+** on **Projects** opens (or clones) a folder as a
+  project named after it and starts a chat there, and a folder that already
+  belongs to a project opens that project. **Set up a multi-repo project
+  instead** opens the project wizard, and repositories can still be added to
+  any project. Every Coding chat, worktree, suggested task, scheduled task and
+  `schedule` reminder now belongs to a project; the **Scheduler** picks a
+  **Project** for Coding tasks, and palette search opens a repository's
+  project. **Create worktree** on a repository shared by several projects
+  works from the project it was started in, and the unscoped code-review list
+  shows only project repositories. `PATCH /api/team/workspace/visibility` is
+  removed, `GET /api/team/workspace/tree` lists only project repositories,
+  and starting a Coding session on a folder in no project is refused.
+- The Coding home page offers **New chat in <project>** for the project you
+  were last in, a link to a deleted or empty project goes back to the Coding
+  home page with a notice instead of the "Backend connection failed" screen,
+  and removing a repository from a project no longer clears every cached
+  panel in the app. A link to a Coding chat that was deleted or removed with
+  its project also goes back to the Coding home page with a notice instead of
+  an "Agent error", and an old `/coding/<folder path>/<chat>` link to a chat
+  that now belongs to a project opens it there.
+- A project with a single repository shows repository suggestions such as
+  **Explain this repository structure** on its empty chat, instead of
+  cross-repository ones.
 
 ### Removed
 
@@ -26,9 +65,96 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- A file write or edit the agent was refused (for example into the checkout a
+  worktree chat may only read) shows as **Write failed** with its error in
+  the chat, instead of **Wrote** with a diff of the change that never
+  happened.
+- **Create worktree** says where the worktree goes as set in **Settings →
+  Sandbox**: inside the repository under `.evoflux/worktrees/` (the default),
+  or in EvoFlux data. It always said EvoFlux data.
+- The **Edited N files** summary under a Coding turn stays after reloading
+  the page or restarting EvoFlux, instead of disappearing, and **/undo**
+  removes it straight away. **/redo** back to the latest turn brings it
+  back.
+- The Coding file tree marks each changed file with its git status: **U**
+  for a new untracked file, **A** added, **M** modified. Every changed file
+  used to show **M**. Changes already staged with `git add` now count too:
+  they used to show no mark at all, and the Coding changes view left them
+  out.
+- **New chat in <project>** on the Coding home page names the project the
+  sidebar has selected. It could name a different, earlier project.
+- `POST /api/team/sessions/resolve` refuses (`422`) a `workspace` that is not
+  a repository of the `project_id` sent with it, instead of ignoring it.
+- **Trust this folder?** warns when the folder already belongs to a project:
+  confirming (**Trust and open project**) opens that project, and no new
+  project is created.
+- A link to a deleted Coding project says the project was deleted, instead of
+  "Project has no workspaces configured".
+- Switching repository in **Source Control** selects a file of the new
+  repository, instead of keeping the previous repository's file name over an
+  empty diff.
+- On Windows, TypeScript and JavaScript files show their type errors again: in
+  the editor, in **Problems** and in the agent's post-edit check. The language
+  server reported them under a differently spelled file path
+  (`file:///c%3A/...`), so every file looked clean. A file whose name
+  contains `%` keeps its diagnostics too, and a malformed file path from a
+  language server no longer disconnects it.
+- A Python file that does not parse shows in **Problems** as an error rather
+  than a warning.
 - In a narrow desktop window on Windows, the chat header and a maximized
   Workbench no longer show a second sidebar button beside the one in the
   title bar; the title-bar button opens the sidebar drawer, as on macOS.
+- In a multi-repository Coding project, **/undo** and **/redo** rewind and
+  restore every repository the turn changed, not only the project's first
+  one. Turns from before this change still undo their first repository only.
+- A Coding chat running in a worktree can read the checkout the worktree was
+  made from but no longer write to it, so its edits stay in the worktree
+  instead of leaking into every other chat on that repository. The project's
+  other repositories stay writable.
+- The automatic checks at the end of a turn run in the right repository for
+  a file the agent edited in another repository of the project through a
+  relative path such as `../web/src/app.ts`, instead of failing with "outside
+  repository" and sending the agent back to redo the work.
+- The Coding panels follow every repository of a multi-repository project,
+  not only its first one:
+  - When the agent edits a file in another repository, that repository's
+    file tree and changes refresh straight away, and the desktop app watches
+    every repository for outside edits.
+  - Opening a changed file from the chat, **Problems** or the command palette
+    opens it in the repository it belongs to. **Review** on a change opens
+    **Source Control** on that repository, and the editor's add-to-chat and
+    comment actions cite the file so the agent finds it there.
+  - The composer's **@** picker and the command palette list files from
+    every repository; another repository's files show as
+    `<repository>/<path>`.
+  - A chat running in a worktree shows that worktree, labelled
+    **<repository> (<worktree>)**, in the file tree and in **Source
+    Control**'s repository picker, instead of the checkout it was made from.
+  - Applying a ChangeSet refreshes the file tree, changes and **Source
+    Control**.
+  - **Problems** lists every repository's findings, each naming its
+    repository, and **Dismiss**, **Suppress**, **Restore** and **Fix** act on
+    the repository the finding came from. Diagnostics after the agent edits
+    a file in another repository, and the `lsp` and `static_diagnostics`
+    tools, run that repository's language server and file their findings
+    under it, instead of the first repository's or not at all.
+    `GET /api/team/workspace/problems` accepts `workspace` more than once.
+  - **Open in** asks which repository to open when the project has more
+    than one.
+  - The file tree no longer lists a worktree's `.git` file, and a
+    repository's list no longer includes the files of a worktree nested
+    inside it, such as one under `.evoflux/worktrees/`.
+
+### Upgrade notes
+
+- The first time EvoFlux starts after upgrading, Coding chats and Coding
+  scheduled tasks that belong to no project (the old standalone workspaces)
+  are filed under their repository's project when exactly one project owns
+  that repository (or the repository a worktree came from). The rest are
+  permanently deleted, with their side chats and generated files. The
+  repository folders on disk are not touched: open a folder from
+  **Projects** to keep working in it. Bookmarks to `/coding/<folder path>`
+  go back to the Coding home page.
 
 ## [3.0.1] - 2026-09-29
 

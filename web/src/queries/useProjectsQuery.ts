@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import {
   getCodingWorkspaceTree,
@@ -10,6 +11,7 @@ import {
   updateWorkspaceInProject,
 } from '@/api/client'
 import type { CodingProject, ProjectCreateRequest, AddWorkspaceToProjectRequest } from '@/api/types'
+import { sessionProject } from '@/utils/repository-paths'
 import { queryKeys } from './keys'
 
 export function useCodingOverviewQuery() {
@@ -34,6 +36,25 @@ export function useProjectQuery(id: string | null | undefined) {
     enabled: !!id,
     staleTime: 60_000,
   })
+}
+
+/**
+ * The project as a session on *workspace* sees it: a session running in a
+ * worktree gets the worktree in place of the repository it was made from.
+ * Use it wherever a Coding surface lists, opens or acts on the session's
+ * repositories.
+ */
+export function useSessionProjectQuery(
+  id: string | null | undefined,
+  workspace: string | null | undefined,
+) {
+  const query = useProjectQuery(id)
+  const overview = useCodingOverviewQuery().data
+  const data = useMemo(
+    () => (query.data ? sessionProject(query.data, workspace, overview) : undefined),
+    [overview, query.data, workspace],
+  )
+  return { ...query, data }
 }
 
 export function useCreateProjectMutation() {

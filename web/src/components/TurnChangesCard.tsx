@@ -11,8 +11,10 @@ import {
 import type { TurnChangedFile, TurnChangesPending } from '@/api/types'
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import { useSessionProjectQuery } from '@/queries/useProjectsQuery'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { resolveRepositoryPath } from '@/utils/repository-paths'
 
 const COLLAPSED_FILE_COUNT = 3
 
@@ -72,6 +74,9 @@ export function TurnChangesCard({
   const undoTeam = useTeamStore((state) => state.undoTeam)
   const dismissTurnChanges = useTeamStore((state) => state.dismissTurnChanges)
   const openGitChanges = useUIStore((state) => state.openGitChanges)
+  const workspace = useTeamStore((state) => state._workspace)
+  const projectId = useTeamStore((state) => state.projectId)
+  const project = useSessionProjectQuery(projectId, workspace).data
   const preset = useMotionPreset()
 
   const fileCount = changes.files.length
@@ -80,9 +85,15 @@ export function TurnChangesCard({
     ? changes.files
     : changes.files.slice(0, COLLAPSED_FILE_COUNT)
 
-  const reviewChanges = () => {
+  // Review in the repository that owns the file: the agent may have edited
+  // another repository of the project (`../web/src/app.ts`).
+  const reviewChanges = (path = changes.files[0]?.path) => {
+    const repositories = project?.workspaces.map((item) => item.path) ?? []
+    const owned = workspace && path
+      ? resolveRepositoryPath(workspace, repositories, path)
+      : null
     dismissTurnChanges()
-    openGitChanges()
+    openGitChanges(owned?.workspace)
   }
 
   const undoChanges = async () => {
@@ -146,7 +157,7 @@ export function TurnChangesCard({
           </button>
           <button
             type="button"
-            onClick={reviewChanges}
+            onClick={() => reviewChanges()}
             className="focus-ring-control inline-flex h-8 items-center rounded-lg border border-(--color-border-strong) bg-(--bg-key)/70 px-3 text-xs font-medium text-(--color-text) transition-colors hover:bg-(--bg-hover)"
           >
             Review
@@ -160,7 +171,7 @@ export function TurnChangesCard({
             key={file.path}
             file={file}
             compact={compact}
-            onReview={reviewChanges}
+            onReview={() => reviewChanges(file.path)}
           />
         ))}
       </div>

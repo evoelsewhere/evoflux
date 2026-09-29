@@ -1108,9 +1108,9 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
   {
     id: 'coding-workspaces',
     category: 'coding',
-    title: 'Coding workspaces, projects, and worktrees',
+    title: 'Coding projects and worktrees',
     summary:
-      'Open repos, group them into multi-repo projects, create managed worktrees, and use /init for AGENTS.md. Clicking a repo focuses it; it does not start a chat — use + / New chat when you want a transcript.',
+      'Every Coding chat belongs to a project. Open a folder to make a single-repo project, add more repositories to it, create managed worktrees, and use /init for AGENTS.md. Picking a project focuses it; use + / New chat when you want a transcript.',
     keywords: [
       'workspace',
       'project',
@@ -1129,22 +1129,23 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'ワークツリー'
 ],
     setup:
-      'Switch to Coding (`/coding`) and add a repository or create a project. Configure worktree location under Settings → Sandbox (repository vs user_data). Run /init in a session once conventions should live in AGENTS.md.',
+      'Switch to Coding (`/coding`) and press the folder + on Projects to open a repository as a project (or set up a multi-repo project). Configure worktree location under Settings → Sandbox (repository vs user_data). Run /init in a session once conventions should live in AGENTS.md.',
     tricks: [
-      'Clicking a repo focuses it — it does not start a chat. Use + on Repos (or New chat) to create a session.',
-      'Projects span multiple repositories under one project_id; source search tools resolve cross-repo links automatically.',
+      'Opening a folder creates a project named after it and starts a new chat there; a folder already in a project just opens that project.',
+      'Picking a project focuses it — use + on the project (or New chat) to create a session.',
+      'Add more repositories to a project from its folder + button; projects span them under one project_id and source search tools resolve cross-repo links automatically.',
+      'In a multi-repo project, Problems lists findings from every repository, each prefixed with its repository name, and Open in asks which repository to open.',
       'Worktree location is controlled in Settings → Sandbox (repository vs user_data).',
       'Uncommitted source changes are not copied into new worktrees.',
-      'Managed worktrees nest under the source repo in the sidebar tree.',
-      'Standalone repos remain valid single-workspace sessions without a project.',
+      'Create worktrees from a repository in the project’s Repositories list; their chats stay in the project.',
       'Run /init in a Coding session to create or update AGENTS.md for agent conventions.',
       'Commit or stash before spawning a worktree if you need those dirty changes elsewhere — they will not appear in the new tree.',
-      'Prefer a project when services share APIs across repos; prefer a single repo when the change set is local.'
+      'A one-repo project is the normal case; add repositories when services share APIs across repos.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Coding mode manages git repositories, optional multi-repo projects, and managed worktrees. Agents edit real trees with Files, Terminal, and Source Control available beside chat. This is the mode for persistent engineering work.',
+        text: 'Coding mode works in projects: each project holds one or more git repositories, and every Coding chat, scheduled task and worktree belongs to one. Agents edit real trees with Files, Terminal, and Source Control available beside chat. This is the mode for persistent engineering work.',
       },
       {
         type: 'p',
@@ -1152,13 +1153,13 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Add a repo from the Coding sidebar. Click to focus; press + / New chat for a session. Create a Project to bind multiple repos. Spawn a worktree from the repo menu; choose repository-local vs user_data location in Settings → Sandbox. Use /init to scaffold or refresh AGENTS.md. Files enables once a workspace is active.',
+        text: 'Open a folder (or clone a repository) from the Projects section to create a project for it. Pick a project to focus it; press + / New chat for a session. Add repositories to bind several into one project. Spawn a worktree from a repository’s menu; choose repository-local vs user_data location in Settings → Sandbox. Use /init to scaffold or refresh AGENTS.md. Files enables once a project is active.',
       },
       {
         type: 'tips',
         items: [
-          'Focus ≠ chat — click selects; + creates.',
-          'Projects — multi-repo under one project_id.',
+          'Focus ≠ chat — picking selects; + creates.',
+          'Projects — one or more repos under one project_id.',
           'Worktrees — clean trees; uncommitted source not copied.',
           '/init — AGENTS.md for Coding conventions.',
           'Sandbox — worktree location policy.'
@@ -1166,7 +1167,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Step-by-step first Coding session: (1) switch to Coding, (2) add the git repo, (3) click to focus, (4) + / New chat, (5) /init if AGENTS.md is missing, (6) set permission mode, (7) @ key files and describe the change, (8) open Source Control to confirm the branch and working tree.',
+        text: 'Step-by-step first Coding session: (1) switch to Coding, (2) open the git repo as a project, (3) + / New chat, (4) /init if AGENTS.md is missing, (5) set permission mode, (6) @ key files and describe the change, (7) open Source Control to confirm the branch and working tree.',
       },
       {
         type: 'p',
@@ -1174,15 +1175,15 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Common mistakes: clicking a repo and waiting for a chat that never starts; putting uncommitted work only in the source tree then opening a worktree that lacks it; skipping /init then wondering why agents ignore repo conventions; creating a multi-repo project when a single submodule path would do; leaving worktree location on a slow network drive via user_data without intending to.',
+        text: 'Common mistakes: picking a project and waiting for a chat that never starts; putting uncommitted work only in the source tree then opening a worktree that lacks it; skipping /init then wondering why agents ignore repo conventions; adding repositories to a project when a single submodule path would do; leaving worktree location on a slow network drive via user_data without intending to.',
       },
       {
         type: 'tips',
         items: [
-          'When to project — cross-repo types, shared contracts, multi-service changes.',
-          'When not to project — one app repo with vendored code you rarely touch.',
-          'Cross-feature: source search cross-repo resolution needs a project_id.',
-          'Cross-feature: Source Control attaches to the focused workspace.'
+          'When to add repos — cross-repo types, shared contracts, multi-service changes.',
+          'When not to — one app repo with vendored code you rarely touch.',
+          'Cross-feature: source search resolves links across the project’s repos.',
+          'Cross-feature: Source Control attaches to the focused project’s repositories.'
 ],
       }
 ],

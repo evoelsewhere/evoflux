@@ -7,7 +7,7 @@ import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { queryKeys } from '@/queries'
 import { formatBytes } from '@/utils/format'
 import { workspaceLabel } from '@/utils/workspace'
-import { useProjectQuery } from '@/queries/useProjectsQuery'
+import { useSessionProjectQuery } from '@/queries/useProjectsQuery'
 import { SidePanel } from './shell/SidePanel'
 import { CodingFileViewerPanel } from './CodingFileViewerPanel'
 import { FileTypeIcon, FolderTypeIcon } from './FileTypeIcon'
@@ -26,8 +26,10 @@ import { useToastStore } from '@/stores/useToastStore'
 import { errorMessage } from '@/utils/errors'
 import {
   buildTree,
+  changedFileStatuses,
   collectChangedFiles,
   sortTreeNodeChildren,
+  type ChangedFileStatus,
   type TreeNode,
 } from '@/utils/workspaceFileTree'
 
@@ -60,12 +62,24 @@ function readStoredBoolean(key: string, fallback: boolean): boolean {
   }
 }
 
-function pathHasChangedDescendant(path: string, changedPaths: Set<string>): boolean {
+function pathHasChangedDescendant(
+  path: string,
+  changedStatuses: ReadonlyMap<string, ChangedFileStatus>,
+): boolean {
   const prefix = `${path}/`
-  for (const changedPath of changedPaths) {
+  for (const changedPath of changedStatuses.keys()) {
     if (changedPath === path || changedPath.startsWith(prefix)) return true
   }
   return false
+}
+
+// The badge says what git says: a new file the agent just wrote is
+// untracked, not "M" — every change used to read as a modification.
+const CHANGE_BADGES: Record<ChangedFileStatus, { label: string; className: string }> = {
+  M: { label: 'Modified', className: 'text-(--accent-orange-text)' },
+  A: { label: 'Added', className: 'text-(--color-success)' },
+  U: { label: 'Untracked', className: 'text-(--color-success)' },
+  D: { label: 'Deleted', className: 'text-(--color-error)' },
 }
 
 export function TreeNodeView({
@@ -76,7 +90,7 @@ export function TreeNodeView({
   onFileSelect,
   onFileOpen,
   menuActions,
-  changedPaths,
+  changedStatuses,
   forceOpen = false,
 }: {
   node: TreeNode
@@ -86,7 +100,8 @@ export function TreeNodeView({
   onFileSelect?: (file: WorkspaceFileInfo | null) => void
   onFileOpen?: (file: WorkspaceFileInfo) => void
   menuActions?: FileExplorerMenuActions
-  changedPaths: Set<string>
+  /** Git status of each changed path in this tree's repository. */
+  changedStatuses: ReadonlyMap<string, ChangedFileStatus>
   forceOpen?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -97,7 +112,8 @@ export function TreeNodeView({
     const file = node.file
     const isSelected = file.path === selectedPath
       && (!selectedSourceWorkspace || file.sourceWorkspace === selectedSourceWorkspace)
-    const isChanged = changedPaths.has(file.path)
+    const changeStatus = changedStatuses.get(file.path)
+    const isChanged = changeStatus !== undefined
     const row = (
       <button
         type="button"
@@ -116,9 +132,13 @@ export function TreeNodeView({
       >
         <FileTypeIcon name={file.name} mime={file.mime} size={16} />
         <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
-        {isChanged && (
-          <span className="shrink-0 font-mono text-xs font-semibold text-(--accent-orange-text)">
-            M
+        {changeStatus && (
+          <span
+            className={cn('shrink-0 font-mono text-xs font-semibold', CHANGE_BADGES[changeStatus].className)}
+            title={CHANGE_BADGES[changeStatus].label}
+            aria-label={CHANGE_BADGES[changeStatus].label}
+          >
+            {changeStatus}
           </span>
         )}
         <span className="shrink-0 text-xs text-(--color-text-subtle)">{formatBytes(file.size)}</span>
@@ -133,7 +153,7 @@ export function TreeNodeView({
     )
   }
 
-  const hasChangedDescendant = node.path ? pathHasChangedDescendant(node.path, changedPaths) : false
+  const hasChangedDescendant = node.path ? pathHasChangedDescendant(node.path, changedStatuses) : false
   const folderRow = node.path
     ? (
         <button
@@ -179,7 +199,7 @@ export function TreeNodeView({
                 onFileSelect={onFileSelect}
                 onFileOpen={onFileOpen}
                 menuActions={menuActions}
-                changedPaths={changedPaths}
+                changedStatuses={changedStatuses}
                 forceOpen={forceOpen}
               />
             ))}
@@ -223,7 +243,7 @@ export function CodingWorkspacePanel({
 }) {
   const queryClient = useQueryClient()
   const pushToast = useToastStore((state) => state.push)
-  const projectQuery = useProjectQuery(projectId)
+  const projectQuery = useSessionProjectQuery(projectId, workspace)
   const project = projectQuery.data ?? null
   // Drive multi/single-repo mode off the *primed* projectId, not the async
   // project fetch — otherwise the single-workspace diff flashes while the
@@ -244,7 +264,7 @@ export function CodingWorkspacePanel({
     staleTime: 5_000,
   })
   const changedFiles = collectChangedFiles(diff.data)
-  const changedPaths = new Set(changedFiles.map((file) => file.path))
+  const changedStatuses = changedFileStatuses(changedFiles)
   const [treeVisible, setTreeVisible] = useState(() =>
     readStoredBoolean(CODING_TREE_VISIBILITY_KEY, true),
   )
@@ -672,7 +692,7 @@ export function CodingWorkspacePanel({
                                 selectedSourceWorkspace={selectedFile?.sourceWorkspace}
                                 onFileSelect={handleFileSelect}
                                 onFileOpen={(file) => void handleOpenFile(file)}
-                                changedPaths={changedPaths}
+                                changedStatuses={changedStatuses}
                                 forceOpen={Boolean(searchQuery.trim())}
                               />
                             ))

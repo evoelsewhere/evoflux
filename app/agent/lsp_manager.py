@@ -12,12 +12,15 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from loguru import logger
 
@@ -283,7 +286,7 @@ class LanguageServerClient:
             raise LanguageServerUnavailable(
                 f"Source file is outside the LSP repository root: {resolved}"
             ) from exc
-        uri = resolved.as_uri()
+        uri = _canonical_uri(resolved.as_uri())
         if content is None:
             content = resolved.read_text(encoding="utf-8", errors="replace")
         fingerprint = hashlib.sha1(content.encode("utf-8")).hexdigest()
@@ -323,7 +326,7 @@ class LanguageServerClient:
 
     async def close_document(self, path: Path) -> None:
         """Close one previously synchronized document."""
-        uri = path.resolve().as_uri()
+        uri = _canonical_uri(path.resolve().as_uri())
         if uri not in self._versions:
             return
         await self.notify("textDocument/didClose", {"textDocument": {"uri": uri}})
@@ -340,7 +343,7 @@ class LanguageServerClient:
         *,
         require_current_version: bool = False,
     ) -> list[dict[str, Any]]:
-        resolved_uri = path.resolve().as_uri()
+        resolved_uri = _canonical_uri(path.resolve().as_uri())
         prior_generation = self._diagnostic_generations.get(resolved_uri, 0)
         uri, changed = await self.sync_document(path, content)
         event = self._diagnostic_events.setdefault(uri, asyncio.Event())
@@ -611,7 +614,7 @@ class LanguageServerClient:
                     continue
                 if message.get("method") == "textDocument/publishDiagnostics":
                     params = message.get("params") or {}
-                    uri = str(params.get("uri") or "")
+                    uri = _canonical_uri(str(params.get("uri") or ""))
                     diagnostics = params.get("diagnostics") or []
                     self._diagnostics[uri] = (
                         diagnostics if isinstance(diagnostics, list) else []
@@ -804,6 +807,37 @@ def _content_length(header: bytes) -> int:
         if separator and name.casefold() == "content-length":
             return int(value.strip())
     raise ValueError("LSP frame is missing Content-Length.")
+
+
+_ENCODED_DRIVE_RE = re.compile(r"^/([A-Za-z])%3[Aa]")
+
+
+def _canonical_uri(uri: str) -> str:
+    """*uri* spelled as ``Path.as_uri()`` spells the same file.
+
+    Servers normalise ``file:`` URIs their own way: typescript-language-server
+    publishes ``file:///c%3A/repo/app.ts`` for the document opened as
+    ``file:///C:/repo/app.ts``. Diagnostics are looked up by the URI the
+    client opened, so a publication keyed by the server's spelling was never
+    found and every Windows TypeScript file looked clean.
+    """
+    if not uri.startswith("file:"):
+        return uri
+    # ``url2pathname`` already percent-decodes, but only understands a drive
+    # spelled ``/c:/``. Decode just the drive colon: unquoting the whole path
+    # first would decode it twice and turn ``a%2541.ts`` into ``aA.ts``.
+    raw = _ENCODED_DRIVE_RE.sub(r"/\1:", urlparse(uri).path)
+    try:
+        path = Path(url2pathname(raw))
+    except (ValueError, OSError):
+        # A malformed URI from the server (``OSError: Bad URL`` on Windows)
+        # must not take down the message reader.
+        return uri
+    if not path.is_absolute():
+        return uri
+    if path.drive.endswith(":"):
+        path = Path(path.drive.upper() + str(path)[len(path.drive) :])
+    return path.as_uri()
 
 
 def _locations(result: Any) -> list[dict[str, Any]]:

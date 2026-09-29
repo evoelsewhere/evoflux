@@ -96,6 +96,7 @@ export function SuggestedTaskCard({ task, className }: SuggestedTaskCardProps) {
         store.beginResolvedSession(result.session_id, {
           mode: 'coding',
           workspace: result.workspace,
+          projectId: result.project_id,
         })
       }
       // Sent from here rather than server-side so the target session starts

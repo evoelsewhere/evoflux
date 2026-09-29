@@ -148,27 +148,7 @@ it('opens the session that owns a matched message', async () => {
 })
 
 describe('a session opens under the shell that owns it', () => {
-  it('sends a Coding session anchored to a repository to its focus route', async () => {
-    searchApp.mockResolvedValue({
-      items: [appItem({
-        kind: 'session',
-        id: 'session:7',
-        session_id: '7',
-        metadata: { mode: 'coding', workspace: '/repos/atlas', project_id: null },
-      })],
-    })
-    const { run, navigate } = search()
-
-    const [command] = await run('atlas', new AbortController().signal)
-    command.action()
-
-    expect(navigate).toHaveBeenCalledWith({
-      to: '/coding/$focusId/$sessionId',
-      params: { focusId: '/repos/atlas', sessionId: '7' },
-    })
-  })
-
-  it('prefers the project over the repository for a project session', async () => {
+  it('anchors a Coding session on its project, not its repository', async () => {
     searchApp.mockResolvedValue({
       items: [appItem({
         kind: 'message',
@@ -188,13 +168,13 @@ describe('a session opens under the shell that owns it', () => {
     })
   })
 
-  it('keeps a Coding session with no workspace on the Work route', async () => {
+  it('sends a Coding session with no project to the Coding home, not Work', async () => {
     searchApp.mockResolvedValue({
       items: [appItem({
         kind: 'session',
         id: 'session:8',
         session_id: '8',
-        metadata: { mode: 'coding', workspace: null, project_id: null },
+        metadata: { mode: 'coding', workspace: '/repos/atlas', project_id: null },
       })],
     })
     const { run, navigate } = search()
@@ -202,7 +182,7 @@ describe('a session opens under the shell that owns it', () => {
     const [command] = await run('atlas', new AbortController().signal)
     command.action()
 
-    expect(navigate).toHaveBeenCalledWith({ to: '/$sessionId', params: { sessionId: '8' } })
+    expect(navigate).toHaveBeenCalledWith({ to: '/coding' })
   })
 })
 
@@ -219,20 +199,25 @@ describe('application rows route to the surface that owns them', () => {
     expect(useUIStore.getState().wikiFileRequest?.path).toBe('topics/atlas.md')
   })
 
-  it('scopes the Coding sidebar to a matched repository', async () => {
+  it('opens the project that owns a matched repository', async () => {
     searchApp.mockResolvedValue({
-      items: [appItem({ kind: 'workspace', id: 'workspace:1', path: '/repos/atlas' })],
+      items: [appItem({
+        kind: 'workspace',
+        id: 'workspace:1',
+        path: '/repos/atlas',
+        metadata: { workspace: '/repos/atlas', kind: 'repo', project_id: 'proj-1' },
+      })],
     })
     const { run, navigate } = search()
 
     const [command] = await run('atlas', new AbortController().signal)
     command.action()
 
-    expect(useUIStore.getState().codingScopeRequest?.workspace).toBe('/repos/atlas')
-    // Same anchor the sidebar's own repository row navigates to.
+    expect(useUIStore.getState().codingScopeRequest?.projectId).toBe('proj-1')
+    // Same anchor the sidebar's own project picker navigates to.
     expect(navigate).toHaveBeenCalledWith({
       to: '/coding/$focusId',
-      params: { focusId: '/repos/atlas' },
+      params: { focusId: 'proj-1' },
     })
   })
 

@@ -266,6 +266,58 @@ async def test_typescript_edit_receives_current_version_lsp_delta(sandbox):
 
 
 @pytest.mark.asyncio
+async def test_sibling_repository_edit_is_diagnosed_in_that_repository(tmp_path):
+    """A project's other repository gets its own language server and list."""
+    from app.agent.sandbox import _sandbox_ctx
+    from app.services.problems_service import clear_problems, list_problems
+
+    primary = tmp_path / "api"
+    sibling = tmp_path / "web"
+    primary.mkdir()
+    sibling.mkdir()
+    target = sibling / "src" / "mod.ts"
+    target.parent.mkdir()
+    target.write_text("const value = 1\n", encoding="utf-8")
+    clear_problems()
+    token = set_sandbox(
+        SandboxConfig(workspace=str(primary), extra_workspace_paths=[str(sibling)])
+    )
+    lsp_client = AsyncMock()
+    lsp_client.diagnostics.side_effect = [
+        [],
+        [
+            {
+                "severity": 1,
+                "code": "TS2322",
+                "message": "Type 'string' is not assignable to type 'number'.",
+                "range": {"start": {"line": 0, "character": 6}},
+            }
+        ],
+    ]
+    try:
+        with patch(
+            "app.agent.hooks.post_edit_diagnostics.get_language_server",
+            new_callable=AsyncMock,
+            return_value=lsp_client,
+        ) as server:
+            result = await PostEditDiagnosticsHook().wrap_tool_call(
+                None,
+                None,
+                _tool_call("edit", str(target)),
+                _handler_writing(target, 'const value: number = "bad"\n'),
+            )
+    finally:
+        _sandbox_ctx.reset(token)
+
+    assert "TS2322" in result
+    assert {call.args[0] for call in server.await_args_list} == {sibling.resolve()}
+    assert list_problems(primary) == []
+    problems = list_problems(sibling)
+    assert [problem.path for problem in problems] == ["src/mod.ts"]
+    clear_problems()
+
+
+@pytest.mark.asyncio
 async def test_stale_lsp_result_is_never_injected(sandbox):
     _, tmp_path = sandbox
     target = tmp_path / "mod.ts"

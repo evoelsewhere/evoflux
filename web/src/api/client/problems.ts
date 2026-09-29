@@ -11,11 +11,17 @@ function problemsUrl(workspace: string, suffix = '', includeResolved = false): s
   return apiUrl(`/team/workspace/problems${suffix}?${params}`)
 }
 
+/**
+ * Problems of every repository in *workspaces*, merged. Each row names its
+ * repository in `workspace` — the one its decisions must be sent to.
+ */
 export async function getProblems(
-  workspace: string,
+  workspaces: readonly string[],
   includeResolved = false,
 ): Promise<ProblemsResponse> {
-  const res = await fetch(problemsUrl(workspace, '', includeResolved), {
+  const params = new URLSearchParams({ include_resolved: String(includeResolved) })
+  for (const workspace of workspaces) params.append('workspace', stripExtendedPathPrefix(workspace))
+  const res = await fetch(apiUrl(`/team/workspace/problems?${params}`), {
     headers: { Accept: 'application/json' },
   })
   if (!res.ok) await parseDetailOrThrow(res, 'getProblems')

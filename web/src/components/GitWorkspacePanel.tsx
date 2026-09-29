@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { GitBranch } from 'lucide-react'
 
 import type {
@@ -10,7 +10,8 @@ import {
   useCodeReviewsQuery,
   useGitServerConnectionsQuery,
 } from '@/queries'
-import { useProjectQuery } from '@/queries/useProjectsQuery'
+import { useSessionProjectQuery } from '@/queries/useProjectsQuery'
+import { worktreeSourceRepository } from '@/utils/repository-paths'
 import { cn } from '@/lib/utils'
 import {
   type GitWorkspaceView,
@@ -58,7 +59,22 @@ export function GitWorkspacePanel({
   const setView = useUIStore((state) => state.setGitWorkspaceView)
   const scope: PullRequestsScope = view === 'reviews' ? reviewsScope : 'session'
   const [selectedGitWorkspace, setSelectedGitWorkspace] = useState<string | null>(null)
-  const project = useProjectQuery(projectId).data ?? null
+  // "Review" on a change in another project repository switches to it.
+  // The click that sets the request usually mounts this panel too, so it is
+  // applied on first render, then cleared so a later remount starts afresh.
+  const gitChangesRequest = useUIStore((state) => state.gitChangesRequest)
+  const [handledRequestId, setHandledRequestId] = useState(0)
+  if (gitChangesRequest && gitChangesRequest.id !== handledRequestId) {
+    setHandledRequestId(gitChangesRequest.id)
+    setSelectedGitWorkspace(gitChangesRequest.workspace)
+  }
+  useEffect(() => {
+    if (gitChangesRequest) useUIStore.setState({ gitChangesRequest: null })
+  }, [gitChangesRequest])
+  // A worktree session lists (and defaults to) its worktree in place of the
+  // repository it was made from, so a commit never lands in the checkout
+  // other chats share.
+  const project = useSessionProjectQuery(projectId, workspace).data ?? null
   const gitWorkspace =
     selectedGitWorkspace
     && (
@@ -76,12 +92,15 @@ export function GitWorkspacePanel({
   const repositories = useCodeReviewsQuery(open, reviewScope)
   const connections = useGitServerConnectionsQuery(open)
 
-  const activeRepository = useMemo(
-    () => repositories.data?.repositories.find(
-      (repository) => repository.workspace === gitWorkspace,
-    ) ?? null,
-    [gitWorkspace, repositories.data?.repositories],
-  )
+  const activeRepository = useMemo(() => {
+    const listed = repositories.data?.repositories ?? []
+    // Code-review repositories are the project's checkouts; a worktree
+    // shares its source repository's remote and credential.
+    const source = listed.some((repository) => repository.workspace === gitWorkspace)
+      ? gitWorkspace
+      : worktreeSourceRepository(gitWorkspace, listed.map((repository) => repository.workspace))
+    return listed.find((repository) => repository.workspace === source) ?? null
+  }, [gitWorkspace, repositories.data?.repositories])
   const activeConnection = useMemo(
     () => connections.data?.find(
       (connection) => connection.id === activeRepository?.connection_id,
@@ -144,9 +163,9 @@ export function GitWorkspacePanel({
           ) : (
             <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 px-6 text-center">
               <GitBranch size={18} className="text-(--color-text-muted)" aria-hidden />
-              <p className="text-sm font-medium text-(--color-text)">No workspace open</p>
+              <p className="text-sm font-medium text-(--color-text)">No project open</p>
               <p className="max-w-xs text-xs text-(--color-text-muted)">
-                Open a coding workspace to review and commit local changes.
+                Open a coding project to review and commit local changes.
               </p>
               {onOpenWorkspace && (
                 <button
@@ -154,7 +173,7 @@ export function GitWorkspacePanel({
                   onClick={onOpenWorkspace}
                   className="focus-ring-control mt-1 rounded-lg border border-(--color-border) bg-(--bg-key) px-3 py-1.5 text-xs font-medium text-(--color-text) transition-colors hover:border-(--color-border-strong)"
                 >
-                  Open workspace
+                  Open folder as project
                 </button>
               )}
             </div>

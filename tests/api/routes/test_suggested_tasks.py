@@ -56,12 +56,30 @@ def app_with_team():
     set_team(None)
 
 
+async def _project_owning(*repos, name="Owner"):
+    """A live Coding project with *repos* as its members; returns its id."""
+    import app.core.db as _db
+    from app.services.coding_project_service import create_project
+
+    async with _db.async_session_factory() as db:
+        project = await create_project(
+            db, name=name, workspace_paths=[str(repo) for repo in repos]
+        )
+        await db.commit()
+        return project.id
+
+
 async def _seed(tmp_path, *, title="Fix swallowed retry exception", cwd=None):
-    """Create a coding session with one pending suggestion; return both ids."""
+    """Create a project coding session with one pending suggestion.
+
+    Returns the session id, the suggestion id and the session's workspace;
+    ``_project_of`` reads back the project that owns it.
+    """
     import app.core.db as _db
 
     workspace = tmp_path / "repo"
     workspace.mkdir(parents=True, exist_ok=True)
+    project_id = await _project_owning(workspace)
     session_id = uuid.uuid7()
     async with _db.async_session_factory() as db:
         async with db.begin():
@@ -71,6 +89,7 @@ async def _seed(tmp_path, *, title="Fix swallowed retry exception", cwd=None):
                     agent_name="lead",
                     mode="coding",
                     workspace=str(workspace),
+                    project_id=project_id,
                 )
             )
         async with db.begin():
@@ -84,6 +103,15 @@ async def _seed(tmp_path, *, title="Fix swallowed retry exception", cwd=None):
             )
             task_id = task.id
     return session_id, task_id, str(workspace)
+
+
+async def _project_of(session_id):
+    import app.core.db as _db
+
+    async with _db.async_session_factory() as db:
+        session = await db.get(ChatSession, session_id)
+        assert session is not None
+        return session.project_id
 
 
 @pytest.mark.asyncio
@@ -107,6 +135,7 @@ async def test_start_creates_a_top_level_session_and_returns_the_prompt(
     import app.core.db as _db
 
     session_id, task_id, workspace = await _seed(tmp_path)
+    project_id = await _project_of(session_id)
 
     response = TestClient(app_with_team).post(
         f"/api/team/suggested-tasks/{task_id}/start", json={"isolated": False}
@@ -115,6 +144,8 @@ async def test_start_creates_a_top_level_session_and_returns_the_prompt(
     assert response.status_code == 200
     body = response.json()
     assert body["workspace"] == workspace
+    # The client routes the new session under its project.
+    assert body["project_id"] == str(project_id)
     assert body["worktree_path"] is None
     # The client posts this itself; the route must not have sent it.
     assert body["prompt"] == PROMPT
@@ -127,11 +158,63 @@ async def test_start_creates_a_top_level_session_and_returns_the_prompt(
         assert spawned.parent_session_id is None
         assert spawned.mode == "coding"
         assert spawned.workspace == workspace
+        assert spawned.project_id == project_id
         task = await svc.get(db, task_id)
         assert task is not None
         assert task.spawned_session_id == spawned.id
 
-    assert session_id is not None
+
+@pytest.mark.asyncio
+async def test_start_on_a_repo_of_another_project_uses_that_project(
+    app_with_team, tmp_path
+):
+    import app.core.db as _db
+
+    other = tmp_path / "other"
+    other.mkdir()
+    other_project_id = await _project_owning(other, name="Other")
+    session_id, task_id, _ = await _seed(tmp_path, cwd=str(other))
+    assert await _project_of(session_id) != other_project_id
+
+    response = TestClient(app_with_team).post(
+        f"/api/team/suggested-tasks/{task_id}/start", json={"isolated": False}
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["project_id"] == str(other_project_id)
+    async with _db.async_session_factory() as db:
+        spawned = await db.get(ChatSession, uuid.UUID(body["session_id"]))
+        assert spawned is not None
+        assert spawned.project_id == other_project_id
+
+
+@pytest.mark.asyncio
+async def test_start_on_a_repo_in_no_project_is_refused(app_with_team, tmp_path):
+    import sqlalchemy as sa
+
+    import app.core.db as _db
+
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    _session_id, task_id, _ = await _seed(tmp_path, cwd=str(loose))
+
+    response = TestClient(app_with_team).post(
+        f"/api/team/suggested-tasks/{task_id}/start", json={"isolated": False}
+    )
+
+    assert response.status_code == 422
+    assert "not in exactly one project" in response.json()["detail"]
+    async with _db.async_session_factory() as db:
+        task = await svc.get(db, task_id)
+        assert task is not None
+        assert task.status == "pending"
+        spawned = await db.scalar(
+            sa.select(ChatSession).where(
+                ChatSession.title == "Fix swallowed retry exception"
+            )
+        )
+        assert spawned is None
 
 
 @pytest.mark.asyncio
@@ -153,6 +236,7 @@ async def test_start_in_current_session_reuses_the_originating_session(
     body = response.json()
     assert body["session_id"] == str(session_id)
     assert body["workspace"] == workspace
+    assert body["project_id"] == str(await _project_of(session_id))
     assert body["prompt"] == PROMPT
     assert body["task"]["status"] == "started"
 

@@ -49,6 +49,7 @@ class TurnChangesSnapshot:
 
 _active: dict[str, dict[str, ChangedFile]] = {}
 _latest: dict[str, TurnChangesSnapshot] = {}
+_anchors: dict[str, str] = {}
 
 
 def _norm_path(raw: str) -> str:
@@ -179,9 +180,23 @@ def _merge_status(existing: ChangeStatus, incoming: ChangeStatus) -> ChangeStatu
     return incoming
 
 
-def begin_turn(session_id: str) -> None:
-    """Clear in-flight accumulator for a new turn (idempotent)."""
+def begin_turn(session_id: str, anchor_message_id: str | None = None) -> None:
+    """Clear in-flight accumulator for a new turn (idempotent).
+
+    *anchor_message_id* is the user message that started the turn; the
+    finished snapshot is saved on it so the summary survives a reload and
+    disappears with the turn when that message is reverted.
+    """
     _active[session_id] = {}
+    if anchor_message_id:
+        _anchors[session_id] = anchor_message_id
+    else:
+        _anchors.pop(session_id, None)
+
+
+def take_anchor(session_id: str) -> str | None:
+    """The user message the finished turn started from, consumed once."""
+    return _anchors.pop(session_id, None)
 
 
 def _upsert(
@@ -295,3 +310,34 @@ def get_latest(session_id: str) -> TurnChangesSnapshot | None:
 def clear_session(session_id: str) -> None:
     _active.pop(session_id, None)
     _latest.pop(session_id, None)
+    _anchors.pop(session_id, None)
+
+
+#: Key of the saved snapshot in the turn's user-message ``extra``.
+MESSAGE_EXTRA_KEY = "turn_changes"
+
+
+async def persist_snapshot(
+    db: Any, anchor_message_id: str, snapshot: TurnChangesSnapshot
+) -> bool:
+    """Save *snapshot* on the user message that started its turn.
+
+    The summary card is otherwise live-only: a reload, or a backend restart,
+    lost it. Returns ``False`` when the message no longer exists.
+    """
+    from uuid import UUID
+
+    from app.models.chat import SessionMessage
+
+    try:
+        message_id = UUID(anchor_message_id)
+    except ValueError:
+        return False
+    row = await db.get(SessionMessage, message_id)
+    if row is None:
+        return False
+    # A new dict, not an in-place edit: JSON columns track assignment only.
+    row.extra = {**(row.extra or {}), MESSAGE_EXTRA_KEY: snapshot.to_dict()}
+    db.add(row)
+    await db.commit()
+    return True

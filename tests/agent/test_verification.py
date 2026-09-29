@@ -148,6 +148,36 @@ def test_changed_files_are_grouped_by_authorized_repository(
     }
 
 
+def test_relative_path_into_sibling_repository_is_checked_from_that_repository(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    backend = tmp_path / "backend"
+    frontend = tmp_path / "frontend"
+    backend.mkdir()
+    frontend.mkdir()
+    sandbox = SimpleNamespace(allowed_workspace_roots=[backend, frontend])
+    monkeypatch.setattr(verification_module, "get_sandbox", lambda: sandbox)
+
+    grouped = verification_module._changed_files_by_repository(
+        backend, ("../frontend/src/App.tsx", "./app/service.py")
+    )
+    paths, targets = verification_module._scope_changes(
+        sandbox,
+        ("../frontend/src/App.tsx",),
+        [
+            {"repository": "Backend", "path": str(backend)},
+            {"repository": "Frontend", "path": str(frontend)},
+        ],
+    )
+
+    assert grouped == {
+        frontend.resolve(): [Path("src/App.tsx")],
+        backend.resolve(): [Path("app/service.py")],
+    }
+    assert paths == ("src/App.tsx",)
+    assert targets == ({"repository": "Frontend", "path": "src/App.tsx"},)
+
+
 async def test_changed_file_requires_and_persists_passing_evidence(
     sandbox: Path,
     monkeypatch: pytest.MonkeyPatch,

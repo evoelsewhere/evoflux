@@ -83,7 +83,14 @@ export function useTeamSse({
     // session's stale messages kept showing with no loading feedback while
     // `loadSession` fetched the new one in the background.
     if (!isSameSession) {
-      beginResolvedSession(sessionId, { mode, workspace: agentWorkspace })
+      // Keep the project the route layout already primed for this session:
+      // resetting it to null until history loads left the Coding view with
+      // no project (and "New chat" opening a project-less draft) meanwhile.
+      beginResolvedSession(sessionId, {
+        mode,
+        workspace: agentWorkspace,
+        projectId: mode === 'coding' ? store.projectId : null,
+      })
       // Composer drafts are owned by InputBar (per-session Map). Do not
       // clear here — racing setValue('') after InputBar restores would
       // wipe the restored draft (or save '' over the previous session).

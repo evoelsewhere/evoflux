@@ -11,7 +11,12 @@ from httpx import ASGITransport, AsyncClient
 
 import app.core.db as _db_module
 from app.api.routes.scheduler import get_scheduler, router
-from app.models.chat import ChatSession
+from app.models.chat import (
+    ChatSession,
+    CodingProject,
+    CodingProjectWorkspace,
+    CodingWorkspace,
+)
 from app.scheduler.models import ScheduledTask
 from app.scheduler.scheduler import TaskScheduler
 
@@ -55,6 +60,38 @@ def _create_payload(**overrides) -> dict:
     return payload
 
 
+async def _seed_project(*repos, worktrees: dict | None = None) -> str:
+    """A live Coding project owning *repos* (each registered as a repo).
+
+    ``worktrees`` maps a worktree path to the repo it was made from; those
+    are registered as worktrees, not project members, like the real flow.
+    """
+    async with _db_module.async_session_factory() as db:
+        project = CodingProject(name="proj")
+        db.add(project)
+        await db.flush()
+        for index, repo in enumerate(repos):
+            row = CodingWorkspace(path=str(repo.resolve()), name=repo.name)
+            db.add(row)
+            await db.flush()
+            db.add(
+                CodingProjectWorkspace(
+                    project_id=project.id, workspace_id=row.id, sort_order=index
+                )
+            )
+        for worktree, source in (worktrees or {}).items():
+            db.add(
+                CodingWorkspace(
+                    path=str(worktree.resolve()),
+                    name=worktree.name,
+                    kind="worktree",
+                    source_path=str(source.resolve()),
+                )
+            )
+        await db.commit()
+        return str(project.id)
+
+
 # ---------------------------------------------------------------------------
 # POST /tasks
 # ---------------------------------------------------------------------------
@@ -81,12 +118,26 @@ class TestCreate:
         assert resp.status_code == 422
         assert "workspace is required" in resp.text
 
+    async def test_coding_mode_requires_project(self, client, tmp_path):
+        # Coding is project-only: a real repo in no project is refused.
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        resp = await client.post(
+            "/api/scheduler/tasks",
+            json=_create_payload(mode="coding", workspace=str(ws)),
+        )
+        assert resp.status_code == 422
+        assert "project_id is required" in resp.text
+
     async def test_coding_mode_invalid_workspace_422(self, client, tmp_path):
         # Workspace must exist on disk.
         ghost = tmp_path / "does-not-exist"
+        project_id = await _seed_project()
         resp = await client.post(
             "/api/scheduler/tasks",
-            json=_create_payload(mode="coding", workspace=str(ghost)),
+            json=_create_payload(
+                mode="coding", workspace=str(ghost), project_id=project_id
+            ),
         )
         assert resp.status_code == 422
         assert "Workspace does not exist" in resp.json()["detail"]
@@ -94,16 +145,56 @@ class TestCreate:
     async def test_coding_mode_with_valid_workspace_201(self, client, tmp_path):
         ws = tmp_path / "ws"
         ws.mkdir()
+        project_id = await _seed_project(ws)
         resp = await client.post(
             "/api/scheduler/tasks",
-            json=_create_payload(name="c1", mode="coding", workspace=str(ws)),
+            json=_create_payload(
+                name="c1", mode="coding", workspace=str(ws), project_id=project_id
+            ),
         )
         assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body["mode"] == "coding"
+        assert body["project_id"] == project_id
         # Server normalises the workspace path (resolves symlinks, etc.) so
         # compare loosely.
         assert body["workspace"].endswith("ws")
+
+    async def test_coding_mode_accepts_worktree_of_project_repo(self, client, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        worktree = tmp_path / "repo-wt"
+        worktree.mkdir()
+        project_id = await _seed_project(repo, worktrees={worktree: repo})
+        resp = await client.post(
+            "/api/scheduler/tasks",
+            json=_create_payload(
+                name="wt",
+                mode="coding",
+                workspace=str(worktree),
+                project_id=project_id,
+            ),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["project_id"] == project_id
+
+    async def test_coding_mode_rejects_repo_outside_project(self, client, tmp_path):
+        member = tmp_path / "member"
+        member.mkdir()
+        outsider = tmp_path / "outsider"
+        outsider.mkdir()
+        project_id = await _seed_project(member)
+        resp = await client.post(
+            "/api/scheduler/tasks",
+            json=_create_payload(
+                name="out",
+                mode="coding",
+                workspace=str(outsider),
+                project_id=project_id,
+            ),
+        )
+        assert resp.status_code == 422
+        assert "not part of the selected coding project" in resp.json()["detail"]
 
     async def test_duplicate_name_returns_409(self, client):
         first = await client.post(
@@ -210,6 +301,7 @@ class TestUpdate:
     async def test_update_to_coding_with_workspace(self, client, tmp_path):
         ws = tmp_path / "ws"
         ws.mkdir()
+        project_id = await _seed_project(ws)
         created = await client.post(
             "/api/scheduler/tasks", json=_create_payload(name="upd3")
         )
@@ -217,18 +309,43 @@ class TestUpdate:
 
         resp = await client.put(
             f"/api/scheduler/tasks/{task_id}",
+            json={"mode": "coding", "workspace": str(ws), "project_id": project_id},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["mode"] == "coding"
+        assert resp.json()["project_id"] == project_id
+
+    async def test_update_to_coding_without_project_422(self, client, tmp_path):
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        created = await client.post(
+            "/api/scheduler/tasks", json=_create_payload(name="upd4")
+        )
+        task_id = created.json()["id"]
+
+        resp = await client.put(
+            f"/api/scheduler/tasks/{task_id}",
             json={"mode": "coding", "workspace": str(ws)},
         )
-        assert resp.status_code == 200
-        assert resp.json()["mode"] == "coding"
+        assert resp.status_code == 422
+        assert "project_id is required" in resp.json()["detail"]
+        current = await client.get(f"/api/scheduler/tasks/{task_id}")
+        assert current.json()["mode"] == "work"
 
     async def test_update_from_coding_to_work_clears_workspace(self, client, tmp_path):
         ws = tmp_path / "ws-to-clear"
         ws.mkdir()
+        project_id = await _seed_project(ws)
         created = await client.post(
             "/api/scheduler/tasks",
-            json=_create_payload(name="clear-ws", mode="coding", workspace=str(ws)),
+            json=_create_payload(
+                name="clear-ws",
+                mode="coding",
+                workspace=str(ws),
+                project_id=project_id,
+            ),
         )
+        assert created.status_code == 201, created.text
         task_id = created.json()["id"]
 
         resp = await client.put(
@@ -238,6 +355,7 @@ class TestUpdate:
         assert resp.status_code == 200, resp.text
         assert resp.json()["mode"] == "work"
         assert resp.json()["workspace"] is None
+        assert resp.json()["project_id"] is None
 
     async def test_schedule_type_transition_requires_new_type_fields(self, client):
         created = await client.post(
@@ -530,19 +648,31 @@ class TestCronTask:
 
 
 async def _seed_session(
-    sid: UUID, *, mode: str = "work", workspace: str | None = None
+    sid: UUID,
+    *,
+    mode: str = "work",
+    workspace: str | None = None,
+    project_id: str | None = None,
 ) -> None:
     async with _db_module.async_session_factory() as db:
-        db.add(ChatSession(id=sid, mode=mode, workspace=workspace))
+        db.add(
+            ChatSession(
+                id=sid,
+                mode=mode,
+                workspace=workspace,
+                project_id=UUID(project_id) if project_id else None,
+            )
+        )
         await db.commit()
 
 
 class TestSessionCompat:
     async def test_create_rejects_mismatched_session_mode(self, client, tmp_path):
-        # Session is 'work'; task asks for 'coding' on a real workspace.
+        # Session is 'work'; task asks for 'coding' on a real project repo.
         # Target validation passes, session-compat validation must reject.
         ws = tmp_path / "ws"
         ws.mkdir()
+        project_id = await _seed_project(ws)
         sid = uuid4()
         await _seed_session(sid, mode="work")
         resp = await client.post(
@@ -551,6 +681,7 @@ class TestSessionCompat:
                 name="mismatch1",
                 mode="coding",
                 workspace=str(ws),
+                project_id=project_id,
                 session_id=str(sid),
             ),
         )
@@ -562,8 +693,14 @@ class TestSessionCompat:
         ws_a.mkdir()
         ws_b = tmp_path / "b"
         ws_b.mkdir()
+        project_id = await _seed_project(ws_a, ws_b)
         sid = uuid4()
-        await _seed_session(sid, mode="coding", workspace=str(ws_a.resolve()))
+        await _seed_session(
+            sid,
+            mode="coding",
+            workspace=str(ws_a.resolve()),
+            project_id=project_id,
+        )
 
         resp = await client.post(
             "/api/scheduler/tasks",
@@ -571,6 +708,7 @@ class TestSessionCompat:
                 name="ws_mismatch",
                 mode="coding",
                 workspace=str(ws_b),
+                project_id=project_id,
                 session_id=str(sid),
             ),
         )
@@ -581,8 +719,11 @@ class TestSessionCompat:
         ws = tmp_path / "ws"
         ws.mkdir()
         ws_resolved = str(ws.resolve())
+        project_id = await _seed_project(ws)
         sid = uuid4()
-        await _seed_session(sid, mode="coding", workspace=ws_resolved)
+        await _seed_session(
+            sid, mode="coding", workspace=ws_resolved, project_id=project_id
+        )
 
         resp = await client.post(
             "/api/scheduler/tasks",
@@ -590,6 +731,7 @@ class TestSessionCompat:
                 name="ok_match",
                 mode="coding",
                 workspace=ws_resolved,
+                project_id=project_id,
                 session_id=str(sid),
             ),
         )
@@ -624,6 +766,7 @@ class TestSessionCompat:
         await _seed_session(sid, mode="work")
         ws = tmp_path / "ws"
         ws.mkdir()
+        project_id = await _seed_project(ws)
 
         created = await client.post(
             "/api/scheduler/tasks",
@@ -634,7 +777,7 @@ class TestSessionCompat:
 
         resp = await client.put(
             f"/api/scheduler/tasks/{task_id}",
-            json={"mode": "coding", "workspace": str(ws)},
+            json={"mode": "coding", "workspace": str(ws), "project_id": project_id},
         )
         assert resp.status_code == 422
-        assert "mode" in resp.json()["detail"]
+        assert "has mode='work'" in resp.json()["detail"]

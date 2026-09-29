@@ -14,8 +14,10 @@ import { SidePanel } from '@/components/shell/SidePanel'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { cn } from '@/lib/utils'
+import { useSessionProjectQuery } from '@/queries/useProjectsQuery'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useUIStore } from '@/stores/useUIStore'
+import { resolveRepositoryPath } from '@/utils/repository-paths'
 import type { TurnChangedFile } from '@/api/types'
 
 function StatusIcon({ status }: { status: TurnChangedFile['status'] }) {
@@ -40,6 +42,15 @@ export function ChangesReviewPanel({
   const dismissTurnChanges = useTeamStore((s) => s.dismissTurnChanges)
   const openWorkbenchTool = useUIStore((s) => s.openWorkbenchTool)
   const openGitChanges = useUIStore((s) => s.openGitChanges)
+  const projectId = useTeamStore((s) => s.projectId)
+  const project = useSessionProjectQuery(mode === 'coding' ? projectId : null, workspace).data
+  // Source Control opens on the repository that owns the file, which may be
+  // another repository of the project than the session's primary.
+  const repositoryOf = (path: string) => {
+    if (!workspace) return undefined
+    const repositories = project?.workspaces.map((item) => item.path) ?? []
+    return resolveRepositoryPath(workspace, repositories, path)?.workspace
+  }
   const isMobile = useIsMobile()
   const [selected, setSelected] = useState<string | null>(null)
 
@@ -99,7 +110,7 @@ export function ChangesReviewPanel({
                         setSelected(file.path)
                         onOpenFile?.(file.path)
                         if (mode === 'coding' && workspace) {
-                          openGitChanges()
+                          openGitChanges(repositoryOf(file.path))
                         } else {
                           openWorkbenchTool('files')
                         }
@@ -133,7 +144,7 @@ export function ChangesReviewPanel({
               <footer className="shrink-0 border-t border-(--color-border) px-3 py-2">
                 <button
                   type="button"
-                  onClick={openGitChanges}
+                  onClick={() => openGitChanges(repositoryOf(files[0]?.path ?? ''))}
                   className="focus-ring-control w-full rounded-md border border-(--color-border) bg-(--bg-card) px-3 py-2 text-xs font-medium text-(--color-text) transition-colors hover:bg-(--bg-key)"
                 >
                   Open Git changes

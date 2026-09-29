@@ -32,6 +32,13 @@ project is wrong.
 The Source Control tab — both its Changes and Review views — therefore carries its own
 repository selection. Terminal and the file tree stay rooted at the
 session's own repository, which is where the agent actually runs.
+**Problems** lists every repository of the session, and the top bar's
+**Open in** menu asks which repository to open when there is more than one.
+
+A repository's file list skips `.git` — a worktree's `.git` file as well as the
+directory — and does not descend into a linked worktree nested inside it (such
+as `.evoflux/worktrees/<name>`), which is listed as its own checkout. A
+submodule's files stay in the enclosing repository's list.
 
 ## Files and uploads
 

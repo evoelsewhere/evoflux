@@ -556,19 +556,17 @@ async def get_messages_for_llm(db: AsyncSession, session_id: UUID) -> list[ChatM
         raise
 
 
-def _message_snapshot(row: SessionMessage | None) -> str | None:
+def _message_snapshot(row: SessionMessage | None) -> snapshot_service.Snapshot | None:
     if row is None or not row.extra:
         return None
-    value = row.extra.get("snapshot")
-    return value if isinstance(value, str) and value else None
+    return snapshot_service.parse_snapshot(row.extra.get("snapshot"))
 
 
-def _redo_anchor(session: ChatSession | None) -> str | None:
+def _redo_anchor(session: ChatSession | None) -> snapshot_service.Snapshot | None:
     value = session.revert if session else None
     if not isinstance(value, dict):
         return None
-    raw = value.get("snapshot")
-    return raw if isinstance(raw, str) and raw else None
+    return snapshot_service.parse_snapshot(value.get("snapshot"))
 
 
 async def undo_session_messages(db: AsyncSession, session_id: UUID) -> BoundaryShift:
@@ -594,18 +592,24 @@ async def undo_session_messages(db: AsyncSession, session_id: UUID) -> BoundaryS
         return BoundaryShift(applied=False)
 
     workspace = session_workspace_dir(str(session_id), session.workspace)
+    target_snapshot = _message_snapshot(target)
     redo_anchor = _redo_anchor(session)
     just_tracked = False
     if redo_anchor is None:
-        redo_anchor = await snapshot_service.track(str(session_id), workspace)
+        # Anchor every repository the undo is about to rewind, so redo can
+        # bring each one back — not only the primary workspace.
+        redo_anchor = await snapshot_service.track_repositories(
+            str(session_id),
+            workspace,
+            snapshot_service.snapshot_repositories(target_snapshot),
+        )
         just_tracked = redo_anchor is not None
 
     added: list[str] = []
     modified: list[str] = []
     removed: list[str] = []
-    target_snapshot = _message_snapshot(target)
     if target_snapshot:
-        result = await snapshot_service.restore(
+        result = await snapshot_service.restore_repositories(
             str(session_id),
             workspace,
             target_snapshot,
@@ -657,7 +661,7 @@ async def redo_session_messages(db: AsyncSession, session_id: UUID) -> BoundaryS
     removed: list[str] = []
     if next_user is None:
         if redo_anchor:
-            result = await snapshot_service.restore(
+            result = await snapshot_service.restore_repositories(
                 str(session_id), workspace, redo_anchor
             )
             added, modified, removed = result.added, result.modified, result.removed
@@ -665,7 +669,7 @@ async def redo_session_messages(db: AsyncSession, session_id: UUID) -> BoundaryS
     else:
         next_snapshot = _message_snapshot(next_user)
         if next_snapshot:
-            result = await snapshot_service.restore(
+            result = await snapshot_service.restore_repositories(
                 str(session_id), workspace, next_snapshot
             )
             added, modified, removed = result.added, result.modified, result.removed

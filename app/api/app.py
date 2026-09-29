@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from time import perf_counter
 
 from fastapi import FastAPI
@@ -68,6 +69,10 @@ def _log_startup_timing(
 
 async def _start_optional_services(app: FastAPI, process_started: float) -> None:
     """Start non-critical services after the HTTP server becomes available."""
+
+    # Taken before the server takes requests: the standalone-session purge
+    # below only touches rows older than this.
+    optional_services_started_at = datetime.now(timezone.utc)
 
     # Let Uvicorn finish lifespan startup, flip ``server.started``, and let the
     # desktop handshake escape before any synchronous config/file scanning.
@@ -135,6 +140,28 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
             "optional_service_start_failed service=agents_validation error={}", exc
         )
     _log_startup_timing("agents_validation", phase_started, process_started)
+
+    # Coding is project-only. Sessions and scheduled tasks left over from
+    # standalone workspaces can no longer be opened; clear them before the
+    # scheduler could fire one.
+    phase_started = perf_counter()
+    try:
+        from app.core.db import async_session_factory
+        from app.services.coding_purge_service import (
+            purge_standalone_coding_sessions,
+        )
+
+        async with async_session_factory() as db:
+            # Rows a request created after startup may still be half-built.
+            await purge_standalone_coding_sessions(
+                db, created_before=optional_services_started_at
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "optional_service_start_failed service=standalone_coding_purge error={}",
+            exc,
+        )
+    _log_startup_timing("standalone_coding_purge", phase_started, process_started)
 
     phase_started = perf_counter()
     try:

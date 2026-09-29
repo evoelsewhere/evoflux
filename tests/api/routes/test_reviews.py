@@ -188,14 +188,21 @@ async def test_project_scope_returns_only_project_repositories(tmp_path):
                 )
             )
 
-    response = TestClient(create_app()).get(
+    client = TestClient(create_app())
+    response = client.get(
         "/api/team/reviews",
         params={"project_id": str(project.id)},
     )
+    # Unscoped: Coding is project-only, so a repo in no project is left out.
+    unscoped = client.get("/api/team/reviews")
 
     assert response.status_code == 200
     assert {
         repository["workspace_id"] for repository in response.json()["repositories"]
+    } == {str(first.id), str(second.id)}
+    assert unscoped.status_code == 200
+    assert {
+        repository["workspace_id"] for repository in unscoped.json()["repositories"]
     } == {str(first.id), str(second.id)}
 
 

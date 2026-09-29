@@ -1077,9 +1077,9 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
   {
     id: 'coding-workspaces',
     category: 'coding',
-    title: 'Coding ワークスペース、プロジェクト、worktree',
+    title: 'Coding プロジェクトと worktree',
     summary:
-      'リポジトリを開き、マルチレポプロジェクトにまとめ、管理 worktree を作り、AGENTS.md に /init を使います。リポジトリクリックはフォーカスであり、チャット開始ではありません — トランスクリプトが欲しければ + / New chat。',
+      'Coding のチャットはすべてプロジェクトに属します。フォルダーを開いて単一レポのプロジェクトを作り、後からリポジトリを追加し、管理 worktree を作り、AGENTS.md に /init を使います。プロジェクトの選択はフォーカスです — トランスクリプトが欲しければ + / New chat。',
     keywords: [
       'workspace',
       'project',
@@ -1096,22 +1096,23 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'リポジトリ'
 ],
     setup:
-      'Coding（`/coding`）に切り替え、リポジトリを追加するかプロジェクトを作成。worktree 配置は Settings → Sandbox（repository vs user_data）。慣例を AGENTS.md に置くタイミングでセッション内 /init。',
+      'Coding（`/coding`）に切り替え、Projects のフォルダー + でリポジトリをプロジェクトとして開く（またはマルチレポプロジェクトを設定）。worktree 配置は Settings → Sandbox（repository vs user_data）。慣例を AGENTS.md に置くタイミングでセッション内 /init。',
     tricks: [
-      'リポジトリクリックはフォーカス — チャットは始まらない。Repos の +（または New chat）でセッション作成。',
-      'プロジェクトは複数リポジトリを 1 つの project_id 下に束ね; source search ツールはクロスレポリンクを自動解決。',
+      'フォルダーを開くとその名前のプロジェクトが作られ、新しいチャットが始まります; すでにプロジェクトにあるフォルダーはそのプロジェクトを開くだけ。',
+      'プロジェクトの選択はフォーカス — プロジェクトの +（または New chat）でセッション作成。',
+      'プロジェクトのフォルダー + でリポジトリを追加; プロジェクトはそれらを 1 つの project_id 下に束ね、source search ツールはクロスレポリンクを自動解決。',
+      'マルチレポのプロジェクトでは、Problems はすべてのリポジトリの問題をリポジトリ名付きで表示し、Open in はどのリポジトリを開くかを尋ねます。',
       'Worktree 配置は Settings → Sandbox（repository vs user_data）で制御。',
       '未コミットのソース変更は新しい worktree にコピーされません。',
-      '管理 worktree はサイドバーツリーでソースレポの下にネスト。',
-      'スタンドアロンレポはプロジェクトなしの有効な単一ワークスペースセッションのまま。',
+      'worktree はプロジェクトの Repositories 一覧のリポジトリから作成; そのチャットはプロジェクトに残ります。',
       'Coding セッションで /init を実行し、エージェント慣例用 AGENTS.md を作成または更新。',
       '汚れた変更が別の場所でも必要なら worktree 作成前に commit または stash — 新しいツリーには現れません。',
-      'サービスがレポ横断で API を共有するならプロジェクト; 変更セットがローカルなら単一レポを優先。'
+      '単一レポのプロジェクトが普通; サービスがレポ横断で API を共有するならリポジトリを追加。'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Coding モードは git リポジトリ、任意のマルチレポプロジェクト、管理 worktree を扱います。エージェントは Files、Terminal、Source Control をチャット横で使い実ツリーを編集します。永続エンジニアリング作業向けのモードです。',
+        text: 'Coding モードはプロジェクト単位で動きます: 各プロジェクトは 1 つ以上の git リポジトリを持ち、Coding のチャット、スケジュールタスク、worktree はすべてプロジェクトに属します。エージェントは Files、Terminal、Source Control をチャット横で使い実ツリーを編集します。永続エンジニアリング作業向けのモードです。',
       },
       {
         type: 'p',
@@ -1119,13 +1120,13 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Coding サイドバーからレポを追加。クリックでフォーカス; + / New chat でセッション。Project を作り複数レポをバインド。レポメニューから worktree を生成; Settings → Sandbox で repository-local vs user_data。/init で AGENTS.md を足場または更新。ワークスペースがアクティブになると Files が有効。',
+        text: 'Projects セクションからフォルダーを開く（またはリポジトリをクローンする）とプロジェクトが作られます。プロジェクトを選んでフォーカス; + / New chat でセッション。リポジトリを追加して複数レポを 1 つのプロジェクトに。リポジトリのメニューから worktree を生成; Settings → Sandbox で repository-local vs user_data。/init で AGENTS.md を足場または更新。プロジェクトがアクティブになると Files が有効。',
       },
       {
         type: 'tips',
         items: [
-          'Focus ≠ chat — クリックは選択; + が作成。',
-          'Projects — 1 つの project_id 下のマルチレポ。',
+          'Focus ≠ chat — 選択はフォーカス; + が作成。',
+          'Projects — 1 つの project_id 下の 1 つ以上のレポ。',
           'Worktrees — クリーンツリー; 未コミットソースはコピーされない。',
           '/init — Coding 慣例用 AGENTS.md。',
           'Sandbox — worktree 配置ポリシー。'
@@ -1133,7 +1134,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: '最初の Coding セッション手順: (1) Coding へ切り替え、(2) git レポを追加、(3) クリックでフォーカス、(4) + / New chat、(5) AGENTS.md がなければ /init、(6) 権限モード設定、(7) 主要ファイルを @ して変更を記述、(8) Source Control でブランチと作業ツリーを確認。',
+        text: '最初の Coding セッション手順: (1) Coding へ切り替え、(2) git レポをプロジェクトとして開く、(3) + / New chat、(4) AGENTS.md がなければ /init、(5) 権限モード設定、(6) 主要ファイルを @ して変更を記述、(7) Source Control でブランチと作業ツリーを確認。',
       },
       {
         type: 'p',
@@ -1141,15 +1142,15 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'よくある失敗: レポをクリックして始まらないチャットを待つ; 汚れた作業をソースツリーだけに置き、それを欠く worktree を開く; /init を飛ばしてエージェントがレポ慣例を無視すると不思議がる; 単一サブモジュールパスで足りるのにマルチレポプロジェクトを作る; 意図せず user_data 経由で遅いネットワークドライブに worktree を置く。',
+        text: 'よくある失敗: プロジェクトを選んで始まらないチャットを待つ; 汚れた作業をソースツリーだけに置き、それを欠く worktree を開く; /init を飛ばしてエージェントがレポ慣例を無視すると不思議がる; 単一サブモジュールパスで足りるのにプロジェクトにリポジトリを追加する; 意図せず user_data 経由で遅いネットワークドライブに worktree を置く。',
       },
       {
         type: 'tips',
         items: [
-          'プロジェクトするとき — クロスレポ型、共有契約、マルチサービス変更。',
-          'プロジェクトしないとき — めったに触らない vendored 付きの 1 アプリレポ。',
-          '横断: source search のクロスレポ解決には project_id が必要。',
-          '横断: Source Control はフォーカスされたワークスペースに付く。'
+          'リポジトリを追加するとき — クロスレポ型、共有契約、マルチサービス変更。',
+          '追加しないとき — めったに触らない vendored 付きの 1 アプリレポ。',
+          '横断: source search はプロジェクトのレポ間のリンクを解決。',
+          '横断: Source Control はフォーカスされたプロジェクトのリポジトリに付く。'
 ],
       }
 ],

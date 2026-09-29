@@ -1,13 +1,35 @@
 import type { InfiniteData, QueryClient } from '@tanstack/react-query'
 import type { CacheInvalidation } from '@/stores/useTeamStore'
-import type { SessionPageResponse, SessionResponse, WorkspaceGitDiffResponse } from '@/api/types'
+import type {
+  CodingProject,
+  CodingWorkspaceTreeResponse,
+  SessionPageResponse,
+  SessionResponse,
+  WorkspaceGitDiffResponse,
+} from '@/api/types'
 import { getCodingWorkspaceGitDiff } from '@/api/client'
 import { queryKeys } from '@/queries'
+import { resolveRepositoryPath, sessionProject } from '@/utils/repository-paths'
 
 type BridgeQueryClient = Pick<
   QueryClient,
   'invalidateQueries' | 'getQueryData' | 'setQueryData'
 >
+
+/** The repositories a session on *workspace* in *projectId* may touch. */
+function sessionRepositories(
+  queryClient: BridgeQueryClient,
+  workspace: string,
+  projectId: string | null | undefined,
+): string[] {
+  if (!projectId) return []
+  const overview = queryClient.getQueryData<CodingWorkspaceTreeResponse>(queryKeys.codingOverview())
+  const project =
+    queryClient.getQueryData<CodingProject>(queryKeys.projects.detail(projectId))
+    ?? overview?.projects.find((item) => item.id === projectId)
+  if (!project) return []
+  return sessionProject(project, workspace, overview).workspaces.map((item) => item.path)
+}
 
 let pendingEvents: CacheInvalidation[] = []
 let pendingClient: BridgeQueryClient | null = null
@@ -52,16 +74,32 @@ export function applyCacheInvalidations(
         invalidate(queryKeys.team.files(event.sessionId))
         break
       case 'coding_workspace':
-        invalidate(queryKeys.coding.files(event.workspace))
-        invalidate(queryKeys.coding.diff(event.workspace))
-        invalidate(queryKeys.coding.status(event.workspace))
+        // No paths (a shell command, say): any of the session's
+        // repositories may have changed.
+        for (const workspace of [
+          event.workspace,
+          ...sessionRepositories(queryClient, event.workspace, event.projectId),
+        ]) {
+          invalidate(queryKeys.coding.files(workspace))
+          invalidate(queryKeys.coding.diff(workspace))
+          invalidate(queryKeys.coding.status(workspace))
+        }
         break
-      case 'coding_workspace_paths':
-        invalidate(queryKeys.coding.files(event.workspace))
-        invalidate(queryKeys.coding.status(event.workspace))
-        if (!pathUpdates.has(event.workspace)) pathUpdates.set(event.workspace, new Set())
-        for (const path of event.paths) pathUpdates.get(event.workspace)?.add(path)
+      case 'coding_workspace_paths': {
+        // A tool may have written into another repository of the project
+        // (`../web/src/app.ts`, or an absolute path): refresh the repository
+        // that owns each path, with the path relative to it.
+        const repositories = sessionRepositories(queryClient, event.workspace, event.projectId)
+        for (const raw of event.paths) {
+          const owned = resolveRepositoryPath(event.workspace, repositories, raw)
+          if (!owned) continue
+          invalidate(queryKeys.coding.files(owned.workspace))
+          invalidate(queryKeys.coding.status(owned.workspace))
+          if (!pathUpdates.has(owned.workspace)) pathUpdates.set(owned.workspace, new Set())
+          pathUpdates.get(owned.workspace)?.add(owned.path)
+        }
         break
+      }
       case 'scheduler':
         invalidate(queryKeys.scheduler.list())
         break
@@ -215,17 +253,6 @@ export function prependSession(
   const mode: 'work' | 'coding' = raw === 'coding' ? 'coding' : 'work'
   queryClient.setQueryData<InfiniteData<SessionPageResponse>>(
     queryKeys.team.sessions.infinite(mode),
-    (old) => prependSessionToInfiniteData(old, session),
-  )
-}
-
-export function prependWorkspaceSession(
-  queryClient: Pick<QueryClient, 'setQueryData'>,
-  workspace: string,
-  session: SessionResponse,
-): void {
-  queryClient.setQueryData<InfiniteData<SessionPageResponse>>(
-    queryKeys.team.sessions.workspace(workspace),
     (old) => prependSessionToInfiniteData(old, session),
   )
 }

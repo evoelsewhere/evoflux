@@ -1,18 +1,17 @@
 /**
  * CodingSidebar — selector-driven navigator for coding mode.
  *
- * PROJECTS section (top):
+ * PROJECTS is the only section: Coding is project-only.
  *   Sessions belong to the PROJECT, not to individual repos. A project
  *   session spans all repos in the project — the agent gets access to every
  *   workspace path via project_id. A select chooses one project; only that
  *   project's sessions render below it. Repository management stays in a
  *   compact, optional details row and never starts per-repository sessions.
  *
- * WORKSPACES section (bottom):
- *   Standalone repos only — any workspace NOT linked to a project. This is
- *   the legacy single-workspace flow. A select chooses one repository and its
- *   sessions render below; open/new/actions operate on that selection. A repo
- *   disappears from this select when it becomes project-owned.
+ *   Opening (or cloning) a folder creates a single-repo project named after
+ *   it and starts a session there; a folder that already belongs to a
+ *   project just opens that project. Multi-repo projects are set up in
+ *   ProjectSetupModal, and repos can be added to any project later.
  *
  * The desktop chrome (resizable width, collapse-to-zero, search trigger,
  * footer, section headers, session rows, session action surfaces) comes
@@ -22,7 +21,6 @@
  * workspace/worktree dialogs in-file.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
@@ -32,9 +30,9 @@ import { usePlatform } from "@/hooks/use-platform";
 import { useMotionPreset, useListEnterIndex } from "@/lib/motion";
 import { STORAGE_KEYS } from "@/lib/storage-keys";
 import {
+  AlertTriangle,
   Blocks,
   CalendarClock,
-  ChevronDown,
   ChevronRight,
   Download,
   Folder,
@@ -49,9 +47,8 @@ import {
   X,
 } from "lucide-react";
 import { ModeSwitchTabs } from "@/components/ModeSwitchTabs";
-import { queryKeys } from "@/queries";
+import { queryKeys, useSandboxSettingsQuery } from "@/queries";
 import {
-  useCodingWorkspaceSessionsQuery,
   useDeleteTeamSessionMutation,
   useDuplicateTeamSessionMutation,
   useProjectSessionsQuery,
@@ -61,12 +58,11 @@ import {
 import { apiBaseUrl } from "@/api/base-url";
 import {
   browseWorkspaces,
-  findTeamSession,
+  getCodingWorkspaceTree,
   gitClone,
   listWorktrees,
   removeWorktree,
   resolveTeamSession,
-  setCodingWorkspaceVisibility,
   validateWorkspace,
 } from "@/api/client";
 import { getAppBackendStatus } from "@/lib/app-backend";
@@ -74,16 +70,10 @@ import { useTeamStore } from "@/stores/useTeamStore";
 import { useToastStore } from "@/stores/useToastStore";
 import { useUIStore } from "@/stores/useUIStore";
 import { usePinnedSessions } from "@/stores/usePinnedSessions";
-import {
-  prependSession,
-  prependWorkspaceSession,
-} from "@/stores/cache-invalidation-bridge";
+import { prependSession } from "@/stores/cache-invalidation-bridge";
 import {
   clearLastCodingFocus,
-  codingFocusId,
-  isProjectFocusId,
   saveLastCodingFocus,
-  saveLastCodingWorkspace,
   workspaceLabel,
 } from "@/utils/workspace";
 import { isTransientNetworkError } from "@/utils/errors";
@@ -96,7 +86,6 @@ import {
   SidebarModeSlot,
 } from "@/components/shell/SidebarShell";
 import { SidebarItem } from "@/components/ui/sidebar-item";
-import { SidePanel } from "@/components/shell/SidePanel";
 import { SessionRow } from "@/components/shell/SessionRow";
 import {
   SessionContextMenu,
@@ -105,9 +94,15 @@ import {
 } from "@/components/shell/SessionContextMenu";
 import { EditSessionTitleDialog } from "@/components/shell/EditSessionTitleDialog";
 import { MobileDrawerBackdrop } from "@/components/shell/MobileDrawerBackdrop";
-import { CollapsibleSection } from "@/components/shell/CollapsibleSection";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -119,12 +114,14 @@ import {
 } from "@/components/ui/dialog";
 import type {
   CodingProject,
+  CodingWorkspaceTreeResponse,
   SessionResponse,
   WorktreeInfo,
 } from "@/api/types";
 import {
   useAddWorkspaceMutation,
   useCodingOverviewQuery,
+  useCreateProjectMutation,
   useDeleteProjectMutation,
   useRemoveWorkspaceMutation,
 } from "@/queries/useProjectsQuery";
@@ -167,6 +164,29 @@ function worktreeNameSlug(value: string): string {
   );
 }
 
+/**
+ * Projects that already own *path*: those listing it as a repository, or else
+ * the project of the repository it is a worktree of. Opening the folder opens
+ * the first of them instead of creating a project.
+ */
+function projectsOwningFolder(
+  overview: CodingWorkspaceTreeResponse | undefined,
+  path: string,
+): CodingProject[] {
+  if (!overview) return [];
+  const direct = overview.projects.filter((project) =>
+    (project.workspaces ?? []).some((repository) => repository.path === path),
+  );
+  if (direct.length > 0) return direct;
+  const worktreeOwnerId = overview.repositories.find((repository) =>
+    repository.worktrees.some((worktree) => worktree.path === path),
+  )?.project_id;
+  const owner = worktreeOwnerId
+    ? overview.projects.find((project) => project.id === worktreeOwnerId)
+    : undefined;
+  return owner ? [owner] : [];
+}
+
 /** Keep floating context menus inside the viewport. */
 function clampMenuPosition(
   x: number,
@@ -197,14 +217,11 @@ function isLocalBackendUrl(value: string): boolean {
 
 interface CodingSidebarProps {
   currentSessionId?: string;
-  workspace?: string | null;
-  /** Bump this counter to programmatically open the workspace dialog
-   *  (e.g. from a "no workspace attached" CTA). */
+  /** Bump this counter to programmatically open the folder picker that
+   *  creates a project (e.g. from the empty Coding page's CTA). */
   openWorkspaceDialogKey?: number;
   /** Open the command palette (search input + footer help). */
   onCommandPalette?: () => void;
-  /** Body-row mount point so the picker occupies Work's trailing-panel slot. */
-  workspacePickerPortal?: HTMLElement | null;
   /** Whether the mobile/responsive overlay drawer is open. */
   mobileOpen?: boolean;
   /** Called when the drawer should close (backdrop tap, Escape, navigation). */
@@ -248,7 +265,7 @@ function ScopeCardSkeleton({ label }: { label: string }) {
     <div
       role="status"
       aria-label={label}
-      className="mx-1 overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page)/45"
+      className="overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-page)/45"
     >
       <div className="flex min-h-9 items-center gap-2 px-2">
         <Skeleton className="size-3.5 shrink-0 rounded-sm" />
@@ -321,7 +338,7 @@ function SessionListPanel({
 
   return (
     <div className="space-y-0.5 pb-1">
-      <div className="flex h-6 items-center gap-1.5 px-2 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
+      <div className="sticky top-0 z-1 flex h-7 items-center gap-1.5 bg-(--bg-sidebar) px-2 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
         <span>Chats</span>
         {!sessions.isLoading && projectSessions.length > 0 && (
           <span className="ml-auto font-normal normal-case tracking-normal tabular-nums">
@@ -378,20 +395,10 @@ function ProjectSessionList({
   return <SessionListPanel sessions={sessions} {...actions} />;
 }
 
-function WorkspaceSessionList({
-  workspace,
-  ...actions
-}: SessionListActionProps & { workspace: string }) {
-  const sessions = useCodingWorkspaceSessionsQuery(workspace);
-  return <SessionListPanel sessions={sessions} {...actions} />;
-}
-
 export function CodingSidebar({
   currentSessionId,
-  workspace,
   openWorkspaceDialogKey = 0,
   onCommandPalette,
-  workspacePickerPortal = null,
   mobileOpen = false,
   onMobileClose,
   drawerMode = false,
@@ -423,11 +430,11 @@ export function CodingSidebar({
   const deleteSession = useDeleteTeamSessionMutation();
   const duplicateSession = useDuplicateTeamSessionMutation();
   const updateSessionTitle = useUpdateTeamSessionTitleMutation();
-  // One merged query for both Projects and standalone Workspaces — see
-  // useCodingOverviewQuery's doc comment for why this replaced two
-  // independently-fetched lists reconciled by path-string matching.
+  // One merged query for projects and their repos' worktrees — see
+  // useCodingOverviewQuery's doc comment.
   const overviewQuery = useCodingOverviewQuery();
   const projects = overviewQuery.data?.projects ?? [];
+  const createProjectMutation = useCreateProjectMutation();
   const addWorkspaceMutation = useAddWorkspaceMutation();
   const deleteProjectMutation = useDeleteProjectMutation();
   const removeWorkspaceMutation = useRemoveWorkspaceMutation();
@@ -439,12 +446,12 @@ export function CodingSidebar({
   );
   // Seed from the last project this browser had open. Without it a reload
   // resolves to options[0], silently dropping the user onto another project.
+  // The project switcher popup lines up with the whole header row, not just
+  // the name inside it.
+  const projectRowRef = useRef<HTMLDivElement>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
     () => readLastCodingProject(),
   );
-  const [selectedWorkspacePath, setSelectedWorkspacePath] = useState<string | null>(null);
-  const [projectsSectionCollapsed, setProjectsSectionCollapsed] = useState(false);
-  const [workspacesSectionCollapsed, setWorkspacesSectionCollapsed] = useState(false);
   // Actions menu for a project's own repo row (create worktree / remove from
   // project) — never offers "new session", since sessions are project-scoped.
   const [projectRepoActions, setProjectRepoActions] = useState<{
@@ -460,9 +467,8 @@ export function CodingSidebar({
       workspaceId: string;
       path: string;
     } | null>(null);
-  // When set, the workspace-open dialog (folder picker) is in "add repo to
-  // project" mode: confirming adds the folder to this project instead of
-  // starting a standalone session.
+  // When set, the folder picker is in "add repo to project" mode: confirming
+  // adds the folder to this project instead of creating a new project.
   const [addRepoDialogProjectId, setAddRepoDialogProjectId] = useState<
     string | null
   >(null);
@@ -483,13 +489,6 @@ export function CodingSidebar({
     null;
 
   const workspaceTree = overviewQuery.data?.repositories ?? [];
-  // When a workspace has been moved, /coding/$focusId fails before a session
-  // exists and ``workspace`` is still null. The route parameter is enough to
-  // identify the stale workspace and let its removal return the user to a
-  // safe empty Coding page.
-  const routeWorkspace =
-    params.focusId && !isProjectFocusId(params.focusId) ? params.focusId : null;
-  const activeWorkspace = workspace ?? routeWorkspace;
   const worktreeSourceByDirectory = new Map<string, string>();
   for (const repo of workspaceTree) {
     for (const item of repo.worktrees)
@@ -517,42 +516,32 @@ export function CodingSidebar({
   const [dirs, setDirs] = useState<Array<{ name: string; path: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [pendingWorkspace, setPendingWorkspace] = useState<string | null>(null);
   const [trustWorkspace, setTrustWorkspace] = useState<string | null>(null);
+  // Set while a trusted folder is being turned into (or matched to) a
+  // project; the ref blocks re-entry before React re-renders the button.
+  const [openingFolder, setOpeningFolder] = useState(false);
+  const openingFolderRef = useRef(false);
   const [cloneUrl, setCloneUrl] = useState("");
   const [cloneDirectory, setCloneDirectory] = useState("");
   const [cloneBranch, setCloneBranch] = useState("");
   const [cloneParent, setCloneParent] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<SessionResponse | null>(null);
   const [editTitle, setEditTitle] = useState("");
-  // Keep the full session — project/workspace lists are separate queries and
-  // the deleted row may not be on a loaded page of the global coding list.
+  // Keep the full session — project lists are separate queries and the
+  // deleted row may not be on a loaded page of the global coding list.
   const [pendingDeleteSession, setPendingDeleteSession] =
     useState<SessionResponse | null>(null);
   const [mobileSessionActions, setMobileSessionActions] =
     useState<SessionResponse | null>(null);
   const [desktopSessionActions, setDesktopSessionActions] =
     useState<SessionMenuAnchor | null>(null);
-  const [desktopWorkspaceActions, setDesktopWorkspaceActions] = useState<{
-    path: string;
-    kind: "main" | "worktree";
-    source?: string;
-    worktree?: WorktreeInfo;
-    x: number;
-    y: number;
-  } | null>(null);
-  const [mobileWorkspaceActions, setMobileWorkspaceActions] = useState<{
-    path: string;
-    kind: "main" | "worktree";
-    source?: string;
-    worktree?: WorktreeInfo;
-  } | null>(null);
-  // Workspace pending removal — null when no confirmation is open. The
-  // confirmation dialog reads this; ``confirmRemoveWorkspace`` commits.
-  const [removeWorkspaceTarget, setRemoveWorkspaceTarget] = useState<
-    string | null
-  >(null);
   const [worktreeTarget, setWorktreeTarget] = useState<string | null>(null);
+  // Where Create worktree puts the checkout (Settings → Sandbox); the
+  // dialog used to say "outside the source repo" whatever it was set to.
+  const worktreeLocation = useSandboxSettingsQuery().data?.worktree_location;
+  // The project the worktree was asked for from — a repository can belong to
+  // several, and the new session must land in the one the user was in.
+  const [worktreeProjectId, setWorktreeProjectId] = useState<string | null>(null);
   const [worktreeName, setWorktreeName] = useState("");
   const [worktreeBranch, setWorktreeBranch] = useState("");
   const [worktreeLoading, setWorktreeLoading] = useState(false);
@@ -561,9 +550,6 @@ export function CodingSidebar({
   const [worktreesBySource, setWorktreesBySource] = useState<
     Record<string, WorktreeInfo[]>
   >({});
-  const [removedWorktreePaths, setRemovedWorktreePaths] = useState<Set<string>>(
-    () => new Set(),
-  );
   // Tracks the last folder chosen via the native picker so the next dialog
   // open can start at its parent directory rather than inside it.
   const [lastPickPath, setLastPickPath] = useState<string | null>(null);
@@ -593,7 +579,7 @@ export function CodingSidebar({
   }, [loadBrowser, parentPath]);
 
   // Closes the folder-picker dialog and clears every mode flag it can be in
-  // (plain "open a standalone workspace" vs. "add a repo to project X") so a
+  // ("create a project from a folder" vs. "add a repo to project X") so a
   // cancelled dialog never leaves stale state for the next open.
   const closeWorkspaceDialog = useCallback(() => {
     setDialogOpen(false);
@@ -649,7 +635,7 @@ export function CodingSidebar({
           ? "Choose clone destination"
           : wantMultiple
             ? "Add repositories"
-            : "Open workspace",
+            : "Open folder as project",
       });
       if (purpose === "clone") {
         if (typeof selected !== "string") return;
@@ -684,7 +670,7 @@ export function CodingSidebar({
         setLastPickPath(selected[selected.length - 1]);
         return;
       }
-      // Single-select (standalone or non-array result).
+      // Single-select: a folder to create a project from.
       if (typeof selected !== "string") return;
       setSelectedWorkspace(selected);
       setLastPickPath(selected);
@@ -698,7 +684,7 @@ export function CodingSidebar({
   }, [addRepoDialogProjectId, addWorkspaceMutation, lastPickPath, setExpandedProjects]);
 
   const refreshWorkspaceTree = useCallback(async () => {
-    // Force the merged Projects + Workspaces snapshot to be fetched even if
+    // Force the projects snapshot to be fetched even if
     // route navigation briefly made the sidebar query inactive. This prevents
     // an old empty snapshot from remaining visible until a later mount.
     await queryClient.refetchQueries({
@@ -728,134 +714,6 @@ export function CodingSidebar({
     void openWorkspaceDialog();
   }, [openWorkspaceDialogKey, openWorkspaceDialog]);
 
-  useEffect(() => {
-    if (pendingWorkspace && workspace === pendingWorkspace)
-      setPendingWorkspace(null);
-  }, [pendingWorkspace, workspace]);
-
-  // Put a repository the user just opened into the sidebar registry.
-  //
-  // The chat stays a draft until the first message, but the repository is not
-  // a draft: opening (or cloning) one is the user's explicit act, and the
-  // sidebar renders the server-side registry only. Without this a freshly
-  // picked folder is missing from Workspaces — and gone entirely on the next
-  // launch — for as long as the chat goes unsent.
-  const registerOpenedWorkspace = useCallback(
-    async (path: string) => {
-      try {
-        await setCodingWorkspaceVisibility(path, false);
-        await refreshWorkspaceTree();
-      } catch (err) {
-        useToastStore.getState().push({
-          tone: "error",
-          title: "Couldn't add this repository to the sidebar",
-          description: err instanceof Error ? err.message : String(err),
-        });
-      }
-    },
-    [refreshWorkspaceTree],
-  );
-
-  const selectWorkspace = async (
-    path: string,
-    opts: { create?: boolean } = {},
-  ) => {
-    const shouldCreate = opts.create === true;
-    const state = useTeamStore.getState();
-    // "New session in this repo" is a draft: no round-trip, nothing written
-    // until the first message. Already sitting in an empty chat on this repo?
-    // Then it is already the new session being asked for.
-    if (shouldCreate) {
-      setPendingWorkspace(null);
-      if (state.isEmptyIdleSession() && state._workspace === path) return;
-      state.beginResolvedSession(null, {
-        mode: "coding",
-        workspace: path,
-        model: state.sessionId ? state.sessionModel : null,
-        thinkingLevel: state.sessionId ? state.sessionThinkingLevel : null,
-      });
-      saveLastCodingWorkspace(path);
-      navigate({ to: "/coding/$focusId", params: { focusId: path } });
-      onMobileClose?.();
-      return;
-    }
-    setPendingWorkspace(path);
-    try {
-      // Only carry the current model/thinking-level over when there's an
-      // existing session to carry them FROM — otherwise a stale value left
-      // over from a different mode's session gets sent here and can be
-      // rejected as "Choose a model from the registry." (see work.tsx).
-      const carryModel = state.sessionId ? state.sessionModel : null;
-      const carryThinkingLevel = state.sessionId ? state.sessionThinkingLevel : null;
-      state.beginResolvedSession(null, {
-        mode: "coding",
-        workspace: path,
-        model: carryModel,
-        thinkingLevel: carryThinkingLevel,
-      });
-      const session = await findTeamSession({ mode: "coding", workspace: path });
-      if (!session) {
-        // First time in this repo — stay on the draft opened above and let
-        // the first message create the session, but register the repository
-        // itself right away so it shows up under Workspaces either way.
-        void registerOpenedWorkspace(path);
-        setPendingWorkspace(null);
-        saveLastCodingWorkspace(path);
-        navigate({ to: "/coding/$focusId", params: { focusId: path } });
-        onMobileClose?.();
-        return;
-      }
-      state.beginResolvedSession(session.id, {
-        mode: "coding",
-        workspace: session.workspace ?? path,
-        model: session.model ?? carryModel,
-        thinkingLevel: session.thinking_level ?? carryThinkingLevel,
-        skipInitialRestore: session.created,
-      });
-      // A repo already owned by a project is canonicalised server-side to a
-      // project session. Keep the store and last-focus pointer aligned so it
-      // appears under that Project instead of becoming an invisible
-      // standalone session.
-      useTeamStore.setState({ projectId: session.project_id ?? null });
-      saveLastCodingFocus({
-        project_id: session.project_id,
-        workspace: session.workspace ?? path,
-      });
-      if (session.created) {
-        prependSession(queryClient, session);
-        if (session.project_id) {
-          void queryClient.invalidateQueries({
-            queryKey: queryKeys.team.sessions.project(session.project_id),
-          });
-        } else {
-          prependWorkspaceSession(queryClient, path, session);
-        }
-      }
-      await refreshWorkspaceTree();
-      if (session.project_id) {
-        const owner = projects.find((project) => project.id === session.project_id);
-        useToastStore.getState().push({
-          tone: "info",
-          title: owner ? `Opened in ${owner.name}` : "Opened in project",
-          description:
-            "This repository belongs to a project, so its sessions are shown there instead of under standalone Workspaces.",
-        });
-      }
-      const focusId = codingFocusId({
-        project_id: session.project_id,
-        workspace: session.workspace ?? path,
-      });
-      navigate(
-        focusId
-          ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: session.id } }
-          : { to: "/coding" },
-      );
-    } catch (err) {
-      setPendingWorkspace(null);
-      setError(err instanceof Error ? err.message : "Unable to create session");
-    }
-  };
-
   // Project "+": a draft bound to the project. Its primary repo is the
   // project's to derive, so the draft names only the project and the first
   // message resolves the rest server-side.
@@ -864,7 +722,9 @@ export function CodingSidebar({
     const state = useTeamStore.getState();
     if (state.isEmptyIdleSession() && state.projectId === project.id) return;
     // Only carry the current model/thinking-level over when there's an
-    // existing session to carry them FROM — see selectWorkspace above.
+    // existing session to carry them FROM — otherwise a stale value left
+    // over from a different mode's session gets sent here and can be
+    // rejected as "Choose a model from the registry." (see work.tsx).
     state.beginResolvedSession(null, {
       mode: "coding",
       // The project's primary repo, same first entry the backend derives.
@@ -873,49 +733,52 @@ export function CodingSidebar({
       model: state.sessionId ? state.sessionModel : null,
       thinkingLevel: state.sessionId ? state.sessionThinkingLevel : null,
     });
-    // A project session spans all repos — do NOT persist paths[0] as the
-    // "last coding workspace" (a later restore would reopen it as a single
-    // repo). projectId is what drives multi-repo context.
+    setSelectedProjectId(project.id);
+    writeLastCodingProject(project.id);
+    saveLastCodingFocus({ project_id: project.id });
     navigate({ to: "/coding/$focusId", params: { focusId: project.id } });
     onMobileClose?.();
   };
 
-  // Purge a standalone workspace's app-owned sessions and indexes. The source
-  // repository remains on disk and can later be opened as a clean workspace.
-  const confirmRemoveWorkspace = () => {
-    const path = removeWorkspaceTarget;
-    if (!path) return;
-
-    const isRemovingActiveWorkspace =
-      path === activeWorkspace || params.focusId === path;
-
-    // Do this before navigating: otherwise bare /coding immediately restores
-    // the old local "last workspace" pointer and retries the missing folder.
-    clearLastCodingFocus(path);
-    setSelectedWorkspacePath((current) => (current === path ? null : current));
-    void setCodingWorkspaceVisibility(path, true)
-      .then(() => {
-        queryClient.removeQueries({ queryKey: queryKeys.coding.all(path) });
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.team.sessions.all(),
-        });
-        void refreshWorkspaceTree();
-      })
-      .catch((err) => {
-        useToastStore.getState().push({
-          tone: "error",
-          title: "Couldn't remove workspace",
-          description: err instanceof Error ? err.message : String(err),
-        });
+  // "Open folder" / clone: Coding is project-only, so a folder becomes a
+  // single-repo project named after it, and a new chat opens there. A folder
+  // some project already has just opens that project instead of making a
+  // second one around the same repository.
+  //
+  // Ownership is read from a fresh overview, never the rendered one: a list
+  // that is still loading, failed, or predates a project created a moment ago
+  // would otherwise make a second project around the same repository — and a
+  // repo with two owners can no longer be opened by path at all. A managed
+  // worktree folder belongs to its source repository's project.
+  //
+  // Returns whether the folder is now open, so the caller can keep the
+  // dialog up (and the folder picked) when it is not.
+  const openFolderAsProject = async (path: string): Promise<boolean> => {
+    try {
+      const overview = await queryClient.fetchQuery({
+        queryKey: queryKeys.codingOverview(),
+        queryFn: getCodingWorkspaceTree,
+        staleTime: 0,
       });
-    if (isRemovingActiveWorkspace) {
-      // /coding is an empty/default view, but this layout stays mounted while
-      // navigating between coding routes. Reset the store explicitly so the
-      // deleted workspace's chat cannot remain visible under the empty URL.
-      useTeamStore.getState().newSession();
-      navigate({ to: "/coding", replace: true });
+      const owner = projectsOwningFolder(overview, path)[0];
+      if (owner) {
+        openProjectSession(owner);
+        return true;
+      }
+      const created = await createProjectMutation.mutateAsync({
+        name: workspaceLabel(path),
+        workspace_paths: [path],
+      });
+      openProjectSession(created);
+      return true;
+    } catch (err) {
+      useToastStore.getState().push({
+        tone: "error",
+        title: "Couldn't create a project for this folder",
+        description: err instanceof Error ? err.message : String(err),
+      });
+      return false;
     }
-    setRemoveWorkspaceTarget(null);
   };
 
   const loadWorktreesForTarget = useCallback(
@@ -934,8 +797,9 @@ export function CodingSidebar({
     [worktreeTarget],
   );
 
-  const openWorktreeDialog = async (path: string) => {
+  const openWorktreeDialog = async (path: string, projectId: string) => {
     setWorktreeTarget(path);
+    setWorktreeProjectId(projectId);
     setWorktreeName("");
     setWorktreeBranch("");
     setWorktreeOptions(worktreesBySource[path] ?? []);
@@ -954,7 +818,6 @@ export function CodingSidebar({
       const source = worktreeSourceByDirectory.get(directory) ?? worktreeTarget;
       if (!source) return;
       await removeWorktree(source, directory);
-      setRemovedWorktreePaths((current) => new Set(current).add(directory));
       setWorktreesBySource((current) => {
         const next = { ...current };
         delete next[directory];
@@ -982,11 +845,12 @@ export function CodingSidebar({
     try {
       const state = useTeamStore.getState();
       // Only carry the current model/thinking-level over when there's an
-      // existing session to carry them FROM — see selectWorkspace above.
+      // existing session to carry them FROM — see openProjectSession above.
       const carryModel = state.sessionId ? state.sessionModel : null;
       const carryThinkingLevel = state.sessionId ? state.sessionThinkingLevel : null;
       const session = await resolveTeamSession({
         mode: "coding",
+        project_id: worktreeProjectId,
         worktreeFrom: worktreeTarget,
         worktreeName: worktreeName || "session",
         worktreeBranch: worktreeBranch || null,
@@ -995,33 +859,29 @@ export function CodingSidebar({
       });
       const path = session.workspace;
       if (!path) throw new Error("Worktree session did not return a workspace");
+      // The server files a worktree session under its source repo's project.
+      const projectId = session.project_id;
+      if (!projectId) throw new Error("Worktree session did not return a project");
       setWorktreeTarget(null);
-      saveLastCodingWorkspace(path);
       const nextState = useTeamStore.getState();
       nextState.beginResolvedSession(session.id, {
         mode: "coding",
         workspace: path,
+        projectId,
         model: session.model ?? carryModel,
         thinkingLevel: session.thinking_level ?? carryThinkingLevel,
         skipInitialRestore: session.created,
       });
-      useTeamStore.setState({ projectId: session.project_id ?? null });
-      saveLastCodingFocus({ project_id: session.project_id, workspace: path });
+      saveLastCodingFocus({ project_id: projectId });
       prependSession(queryClient, session);
-      if (session.project_id) {
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.team.sessions.project(session.project_id),
-        });
-      } else {
-        prependWorkspaceSession(queryClient, path, session);
-      }
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.team.sessions.project(projectId),
+      });
       await refreshWorkspaceTree();
-      const focusId = codingFocusId({ project_id: session.project_id, workspace: path });
-      navigate(
-        focusId
-          ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: session.id } }
-          : { to: "/coding" },
-      );
+      navigate({
+        to: "/coding/$focusId/$sessionId",
+        params: { focusId: projectId, sessionId: session.id },
+      });
       onMobileClose?.();
     } catch (err) {
       if (isTransientNetworkError(err) && worktreeTarget) {
@@ -1031,7 +891,6 @@ export function CodingSidebar({
         const created = items.find((item) => item.name === expectedName);
         if (created) {
           setWorktreeTarget(null);
-          saveLastCodingWorkspace(created.directory);
           setError(null);
           await refreshWorkspaceTree();
           navigate({ to: "/coding" });
@@ -1047,23 +906,7 @@ export function CodingSidebar({
     }
   };
 
-  const deletedWorktreeSet = removedWorktreePaths;
-  // A repo that belongs to ANY project is managed from within that project's
-  // "Repos" list, not here — Workspaces is standalone-only (business rule:
-  // sessions on a project's repo must go through the project, never per-repo).
-  // project_id comes straight off the repo (a real FK lookup server-side),
-  // so this is never at risk of drifting from a separately-fetched /projects
-  // list the way path-string matching against it would be.
-  const standaloneWorkspaces = workspaceTree
-    .filter((repo) => repo.project_id === null && !deletedWorktreeSet.has(repo.path))
-    .map((repo) => repo.path);
   const projectIdsKey = projects.map((project) => project.id).join("\0");
-  const standaloneWorkspacesKey = standaloneWorkspaces.join("\0");
-  const activeStandaloneWorkspace = activeWorkspace
-    ? standaloneWorkspaces.includes(activeWorkspace)
-      ? activeWorkspace
-      : worktreeSourceByDirectory.get(activeWorkspace) ?? null
-    : null;
 
   useEffect(() => {
     const options = projectIdsKey ? projectIdsKey.split("\0") : [];
@@ -1076,16 +919,6 @@ export function CodingSidebar({
     );
   }, [currentProjectId, projectIdsKey]);
 
-
-  useEffect(() => {
-    const options = standaloneWorkspacesKey
-      ? standaloneWorkspacesKey.split("\0")
-      : [];
-    setSelectedWorkspacePath((selected) =>
-      resolveCodingSidebarSelection(options, activeStandaloneWorkspace, selected),
-    );
-  }, [activeStandaloneWorkspace, standaloneWorkspacesKey]);
-
   // A project or repository hit in the command palette asks the sidebar to
   // scope itself the way clicking that row would.
   const codingScopeRequest = useUIStore((s) => s.codingScopeRequest);
@@ -1095,21 +928,25 @@ export function CodingSidebar({
       setSelectedProjectId(codingScopeRequest.projectId);
       writeLastCodingProject(codingScopeRequest.projectId);
     }
-    if (codingScopeRequest.workspace) {
-      setSelectedWorkspacePath(codingScopeRequest.workspace);
-    }
     useUIStore.getState().clearCodingScopeRequest(codingScopeRequest.id);
   }, [codingScopeRequest]);
 
   const selectedProject =
     projects.find((project) => project.id === selectedProjectId) ?? null;
-  const selectedWorkspaceScope =
-    selectedWorkspacePath && standaloneWorkspaces.includes(selectedWorkspacePath)
-      ? selectedWorkspacePath
-      : null;
+  // The Coding home page offers "New chat in <project>": it must name the
+  // project shown here, which the remembered last project could lag behind.
+  const selectedProjectIdForHome = selectedProject?.id ?? null;
+  useEffect(() => {
+    useUIStore.getState().setCodingSelectedProjectId(selectedProjectIdForHome);
+  }, [selectedProjectIdForHome]);
   const addRepoProject = addRepoDialogProjectId
     ? projects.find((p) => p.id === addRepoDialogProjectId) ?? null
     : null;
+  // Trusting a folder some project already owns opens that project rather
+  // than creating one; the dialog says so before the user confirms.
+  const trustOwners = trustWorkspace
+    ? projectsOwningFolder(overviewQuery.data, trustWorkspace)
+    : [];
 
   const openSelectedFolder = async () => {
     if (!browserPath) return;
@@ -1145,65 +982,68 @@ export function CodingSidebar({
     }
   };
 
-  const confirmTrustedWorkspace = () => {
-    if (!trustWorkspace) return;
+  const confirmTrustedWorkspace = async () => {
+    if (!trustWorkspace || openingFolderRef.current) return;
     const workspaceToOpen = trustWorkspace;
-    setTrustWorkspace(null);
-    setDialogOpen(false);
-    if (addRepoDialogProjectId) {
-      const projectId = addRepoDialogProjectId;
-      setAddRepoDialogProjectId(null);
-      addWorkspaceMutation.mutate(
-        { projectId, body: { workspace_path: workspaceToOpen } },
-        {
-          onSuccess: () => {
-            setExpandedProjects((current) => {
-              if (current.has(projectId)) return current;
-              const next = new Set(current);
-              next.add(projectId);
-              return next;
-            });
-          },
-          onError: (err) => {
-            useToastStore.getState().push({
-              tone: "error",
-              title: "Couldn't add repository",
-              description: err instanceof Error ? err.message : String(err),
-            });
-          },
-        },
-      );
+    if (!addRepoDialogProjectId) {
+      // Stay on the trust dialog, busy, until the project exists: closing it
+      // first gave no feedback, and a second pick of the same folder in the
+      // meantime made a duplicate project.
+      openingFolderRef.current = true;
+      setOpeningFolder(true);
+      try {
+        if (!(await openFolderAsProject(workspaceToOpen))) return;
+      } finally {
+        openingFolderRef.current = false;
+        setOpeningFolder(false);
+      }
+      setTrustWorkspace(null);
+      setDialogOpen(false);
       return;
     }
-    void selectWorkspace(workspaceToOpen);
+    setTrustWorkspace(null);
+    setDialogOpen(false);
+    const projectId = addRepoDialogProjectId;
+    setAddRepoDialogProjectId(null);
+    addWorkspaceMutation.mutate(
+      { projectId, body: { workspace_path: workspaceToOpen } },
+      {
+        onSuccess: () => {
+          setExpandedProjects((current) => {
+            if (current.has(projectId)) return current;
+            const next = new Set(current);
+            next.add(projectId);
+            return next;
+          });
+        },
+        onError: (err) => {
+          useToastStore.getState().push({
+            tone: "error",
+            title: "Couldn't add repository",
+            description: err instanceof Error ? err.message : String(err),
+          });
+        },
+      },
+    );
   };
 
-  // Opens the same folder-picker dialog used for standalone workspaces, but
-  // tags it so the confirmation adds the chosen folder to this project
-  // instead of starting a session.
+  // Opens the same folder-picker dialog used to create a project, but tags
+  // it so the confirmation adds the chosen folder to this project instead.
   const openAddRepoDialog = (projectId: string) => {
     setAddRepoDialogProjectId(projectId);
     void openWorkspaceDialog();
   };
 
-  const handleSessionSelect = (
-    session: SessionResponse,
-    workspacePath: string,
-  ) => {
-    // Only remember a single-repo workspace for non-project sessions — a
-    // project session spans all repos and must not be pinned to one (rule 1/3).
-    if (!session.project_id && (session.workspace ?? workspacePath))
-      saveLastCodingWorkspace(session.workspace ?? workspacePath);
+  const handleSessionSelect = (session: SessionResponse) => {
     // Prime projectId immediately so CodingWorkspacePanel shows multi-repo context
     // without waiting for the async history load.
     useTeamStore.setState({ projectId: session.project_id ?? null });
-    const focusId = codingFocusId({
-      project_id: session.project_id,
-      workspace: session.workspace ?? workspacePath,
-    });
     navigate(
-      focusId
-        ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: session.id } }
+      session.project_id
+        ? {
+            to: "/coding/$focusId/$sessionId",
+            params: { focusId: session.project_id, sessionId: session.id },
+          }
         : { to: "/coding" },
     );
     onMobileClose?.();
@@ -1211,12 +1051,9 @@ export function CodingSidebar({
 
   // Session-row side-chat icon: open the session (no-op when already active)
   // and ask TeamChatView to open its side chat panel.
-  const handleSessionSideChat = (
-    session: SessionResponse,
-    workspacePath: string,
-  ) => {
+  const handleSessionSideChat = (session: SessionResponse) => {
     useUIStore.getState().requestSideChat(session.id);
-    handleSessionSelect(session, workspacePath);
+    handleSessionSelect(session);
   };
 
   const handleSessionDelete = (session: SessionResponse) => {
@@ -1231,7 +1068,7 @@ export function CodingSidebar({
   const handleSessionDuplicate = (session: SessionResponse) => {
     duplicateSession.mutate(session.id, {
       onSuccess: (copy) => {
-        handleSessionSelect(copy, copy.workspace ?? "");
+        handleSessionSelect(copy);
       },
       onError: (err) =>
         useToastStore.getState().push({
@@ -1247,35 +1084,26 @@ export function CodingSidebar({
     const target = pendingDeleteSession;
     const fallbackSession =
       target.id === currentSessionId
-        ? ((target.project_id
-            ? codingSessions.find(
-                (session) =>
-                  session.id !== target.id &&
-                  session.project_id === target.project_id,
-              )
-            : undefined) ??
-          codingSessions.find(
+        ? (codingSessions.find(
             (session) =>
               session.id !== target.id &&
-              session.workspace === target.workspace,
+              session.project_id === target.project_id,
           ) ??
-          codingSessions.find((session) => session.id !== target.id))
+          codingSessions.find(
+            (session) => session.id !== target.id && session.project_id,
+          ))
         : null;
     deleteSession.mutate(target.id);
     if (target.id === currentSessionId) {
-      if (fallbackSession) {
-        // Don't pin a project session to a single repo's last-workspace marker.
-        if (fallbackSession.workspace && !fallbackSession.project_id)
-          saveLastCodingWorkspace(fallbackSession.workspace);
-        const focusId = codingFocusId({
-          project_id: fallbackSession.project_id,
-          workspace: fallbackSession.workspace,
+      if (fallbackSession?.project_id) {
+        navigate({
+          to: "/coding/$focusId/$sessionId",
+          params: {
+            focusId: fallbackSession.project_id,
+            sessionId: fallbackSession.id,
+          },
+          replace: true,
         });
-        navigate(
-          focusId
-            ? { to: "/coding/$focusId/$sessionId", params: { focusId, sessionId: fallbackSession.id }, replace: true }
-            : { to: "/coding", replace: true },
-        );
       } else {
         navigate({ to: "/coding", replace: true });
       }
@@ -1283,41 +1111,25 @@ export function CodingSidebar({
     setPendingDeleteSession(null);
   };
 
-  // The PROJECTS + WORKSPACES navigator — one copy shared by the desktop
-  // floating card and the mobile drawer.
+  // The PROJECTS navigator — one copy shared by the desktop floating card and
+  // the mobile drawer.
   const navigatorContent = (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {/* PROJECTS */}
-      {/* Open sections split the height evenly (basis 0, grow 1) but never
-          past their own content (max-height: max-content), so a short list
-          ends where its rows do and hands the rest to the other section. A
-          content-sized split let one lazy-loading list grow until it squeezed
-          the other to a couple of rows. */}
+      {/* No "Projects" section header: the project picker below is the
+          header, and opening or setting up projects lives in its footer. */}
       <div
         className={cn(
-          "flex min-h-0 flex-col px-2 pb-1",
-          isDrawer ? "pt-2" : "pt-0",
-          projectsSectionCollapsed ? "shrink-0" : "max-h-max flex-1 basis-0",
+          "flex min-h-0 flex-1 flex-col px-1.5 pb-2",
+          isDrawer ? "pt-2" : "pt-1",
         )}
       >
-        <CollapsibleSection
-          label="Projects"
-          collapsed={projectsSectionCollapsed}
-          onToggle={() => setProjectsSectionCollapsed((v) => !v)}
-          count={projects.length || undefined}
-          onAdd={() => setShowProjectModal(true)}
-          addLabel="New multi-repo project"
-          size="large"
-          className="px-1 pb-1"
-        />
-
-        {!projectsSectionCollapsed && overviewQuery.isLoading && (
+        {overviewQuery.isLoading && (
           <ScopeCardSkeleton label="Loading projects" />
         )}
 
-        {!projectsSectionCollapsed && overviewQuery.isError && (
+        {overviewQuery.isError && (
           <div className="mx-2 my-1 rounded-md border border-(--color-error)/30 bg-(--color-error-subtle) px-2 py-2 text-xs text-(--color-error)">
-            <p>Couldn&apos;t load projects and workspaces.</p>
+            <p>Couldn&apos;t load projects.</p>
             <button
               type="button"
               onClick={() => void overviewQuery.refetch()}
@@ -1328,45 +1140,57 @@ export function CodingSidebar({
           </div>
         )}
 
-        {!projectsSectionCollapsed && !overviewQuery.isLoading && !overviewQuery.isError && projects.length === 0 && (
+        {!overviewQuery.isLoading && !overviewQuery.isError && projects.length === 0 && (
           <p className="px-2 py-1.5 text-xs text-(--color-text-subtle)">
             No projects yet.{" "}
+            <button
+              type="button"
+              onClick={() => void openWorkspaceDialog()}
+              className="text-(--color-accent) hover:underline"
+            >
+              Open a folder
+            </button>{" "}
+            to start one, or{" "}
             <button
               type="button"
               onClick={() => setShowProjectModal(true)}
               className="text-(--color-accent) hover:underline"
             >
-              Create one
-            </button>{" "}
-            to work across multiple repos.
+              set up a multi-repo project
+            </button>
+            .
           </p>
         )}
 
-        {!projectsSectionCollapsed && selectedProject && (
-          <div className="flex min-h-0 flex-col">
+        {selectedProject && (
+          <div className="flex min-h-0 flex-1 flex-col">
             {(() => {
               const project = selectedProject;
-              const isActive = currentProjectId === project.id;
+              const repositories = project.workspaces ?? [];
               const repositoriesExpanded = expandedProjects.has(project.id);
-              const canCreateSession = (project.workspaces?.length ?? 0) > 0;
+              const canCreateSession = repositories.length > 0;
               const projectHasRunning = codingSessions.some(
                 (session) => session.project_id === project.id && session.running === true,
               );
               return (
-                <div
-                  className={cn(
-                    "mx-1 flex min-h-0 flex-col overflow-hidden rounded-lg border bg-(--bg-page)/45",
-                    isActive
-                      ? "border-(--color-border-strong)"
-                      : "border-(--color-border)",
-                  )}
-                >
-                  <div className="group flex min-h-9 items-center gap-1 px-2">
+                <>
+                  {/* Project switcher — the project is the scope, so it reads
+                      as the header of everything below rather than a card. */}
+                  {/* Insets are balanced by eye-line, not by box: the picker's
+                      own 10px trigger padding + pl-1 puts the project icon
+                      14px in, and pr-[7px] + the ⋯ button's 7px centring puts
+                      the last icon 14px from the right edge. Everything below
+                      (repositories chevron, Chats label, chat titles) starts
+                      on that same 14px line. */}
+                  <div
+                    ref={projectRowRef}
+                    className="flex h-9 shrink-0 items-center gap-1 rounded-lg bg-(--bg-key)/50 pl-1 pr-[7px]"
+                  >
                     <Combobox
                       items={projects.map((option) => ({
                         value: option.id,
                         label: option.name,
-                        meta: `${option.workspaces?.length ?? 0} repos`,
+                        meta: `${option.workspaces?.length ?? 0} ${option.workspaces?.length === 1 ? "repo" : "repos"}`,
                         keywords: option.workspaces
                           ?.map((workspace) => `${workspace.name ?? ""} ${workspace.display_name ?? ""} ${workspace.path}`)
                           .join(" "),
@@ -1385,8 +1209,28 @@ export function CodingSidebar({
                       emptyText="No matching projects."
                       size="sm"
                       clearable={false}
-                      className="min-w-0 flex-1 border-0 bg-transparent shadow-none hover:bg-(--bg-key)/70 focus-within:ring-0"
-                      popupClassName="max-w-[calc(100vw-1rem)]"
+                      className="min-w-0 flex-1 border-0 bg-transparent font-medium shadow-none hover:bg-(--bg-key) focus-within:ring-0"
+                      anchor={projectRowRef}
+                      footer={(close) => (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => { close(); void openWorkspaceDialog(); }}
+                            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-(--color-text-2) outline-none hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:bg-(--bg-key)"
+                          >
+                            <FolderPlus size={13} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+                            Open folder as project…
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { close(); setShowProjectModal(true); }}
+                            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs text-(--color-text-2) outline-none hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:bg-(--bg-key)"
+                          >
+                            <Layers3 size={13} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+                            Set up a multi-repo project…
+                          </button>
+                        </>
+                      )}
                       renderLeadingIcon={(option) => (
                         <Layers3
                           size={13}
@@ -1400,61 +1244,72 @@ export function CodingSidebar({
                       )}
                     />
                     {projectHasRunning && (
-                      <span className="h-1.5 w-1.5 rounded-full bg-(--color-accent)" aria-label="Project has running session" />
+                      <span className="size-1.5 shrink-0 rounded-full bg-(--color-accent)" aria-label="Project has running session" />
                     )}
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => openAddRepoDialog(project.id)}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
-                        aria-label={`Add repository to ${project.name}`}
-                        title={`Add repository to ${project.name}`}
+                    <button
+                      type="button"
+                      onClick={() => openProjectSession(project)}
+                      disabled={!canCreateSession}
+                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) outline-none hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-1 focus-visible:ring-(--color-border-strong) disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={canCreateSession ? `New session in ${project.name}` : `${project.name} has no repositories yet`}
+                      title={canCreateSession ? `New chat in ${project.name}` : "Add a repository first"}
+                    >
+                      <Plus size={14} aria-hidden="true" />
+                    </button>
+                    {/* Rare and destructive project actions live behind one
+                        menu instead of a row of 12px icons beside the name. */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) outline-none hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-1 focus-visible:ring-(--color-border-strong) data-popup-open:bg-(--bg-key)"
+                        aria-label={`Project actions for ${project.name}`}
+                        title="Project actions"
                       >
-                        <FolderPlus size={12} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openProjectSession(project)}
-                        disabled={!canCreateSession}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text) disabled:cursor-not-allowed disabled:opacity-40"
-                        aria-label={canCreateSession ? `New session in ${project.name}` : `${project.name} has no repositories yet`}
-                        title={canCreateSession ? `New session in ${project.name}` : "Add a repository first"}
-                      >
-                        <Plus size={12} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeleteProjectTarget(project)}
-                        disabled={deleteProjectMutation.isPending}
-                        className="flex h-6 w-6 items-center justify-center rounded-md text-(--color-text-subtle) hover:bg-(--color-error-subtle) hover:text-(--color-error) disabled:opacity-40"
-                        aria-label={`Delete project ${project.name}`}
-                        title={`Delete project ${project.name}`}
-                      >
-                        <Trash2 size={12} aria-hidden="true" />
-                      </button>
-                    </div>
+                        <MoreHorizontal size={14} aria-hidden="true" />
+                      </DropdownMenuTrigger>
+                      {/* Only actions on *this* project; creating projects
+                          lives in the switcher's footer. */}
+                      <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuItem onClick={() => openAddRepoDialog(project.id)}>
+                          <GitBranch aria-hidden="true" />
+                          Add repository…
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          variant="destructive"
+                          disabled={deleteProjectMutation.isPending}
+                          onClick={() => setDeleteProjectTarget(project)}
+                        >
+                          <Trash2 aria-hidden="true" />
+                          Delete project
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => toggleProjectExpanded(project.id)}
-                    className="flex h-7 w-full items-center gap-1 border-t border-(--color-border)/60 px-2 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle) hover:bg-(--bg-key)/60"
+                    className="mt-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-3.5 text-xs text-(--color-text-muted) outline-none hover:bg-(--bg-key)/60 hover:text-(--color-text) focus-visible:ring-1 focus-visible:ring-(--color-border-strong)"
                     aria-expanded={repositoriesExpanded}
                     aria-label={`${repositoriesExpanded ? "Hide" : "Show"} repositories in ${project.name}`}
                   >
-                    {repositoriesExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                    <span>Repositories</span>
-                    <span className="ml-auto font-normal normal-case tracking-normal tabular-nums">
-                      {project.workspaces?.length ?? 0}
+                    <ChevronRight
+                      size={12}
+                      aria-hidden="true"
+                      className={cn("shrink-0 transition-transform duration-(--motion-fast)", repositoriesExpanded && "rotate-90")}
+                    />
+                    <Folder size={12} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
+                    <span className="tabular-nums">
+                      {repositories.length} {repositories.length === 1 ? "repository" : "repositories"}
                     </span>
                   </button>
 
                   {repositoriesExpanded && (
-                    <div className="max-h-28 shrink-0 overflow-y-auto border-t border-(--color-border)/50 px-2 py-1">
-                      {(project.workspaces ?? []).length === 0 && (
-                        <p className="px-1 py-1 text-[11px] text-(--color-text-subtle)">No repositories yet.</p>
+                    <div className="max-h-32 shrink-0 overflow-y-auto pb-1 pl-6">
+                      {repositories.length === 0 && (
+                        <p className="px-2 py-1 text-[11px] text-(--color-text-subtle)">No repositories yet.</p>
                       )}
-                      {(project.workspaces ?? []).map((repository) => (
+                      {repositories.map((repository) => (
                         <button
                           key={repository.workspace_id}
                           type="button"
@@ -1479,27 +1334,29 @@ export function CodingSidebar({
                               y: pos.y,
                             });
                           }}
-                          className="flex w-full min-w-0 items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-[11px] text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)"
+                          className="group/repo flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)"
                           aria-label={`Actions for repository ${repository.display_name || repository.name || workspaceLabel(repository.path)}`}
                           title={repository.path}
                         >
-                          <Folder size={11} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
+                          <GitBranch size={12} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
                           <span className="min-w-0 flex-1 truncate">
                             {repository.display_name || repository.name || workspaceLabel(repository.path)}
                           </span>
-                          <MoreHorizontal size={11} className="shrink-0 text-(--color-text-subtle)" aria-hidden="true" />
+                          <MoreHorizontal size={12} className="shrink-0 text-(--color-text-subtle) opacity-0 transition-opacity group-hover/repo:opacity-100" aria-hidden="true" />
                         </button>
                       ))}
                     </div>
                   )}
 
-                  <div data-session-scroll className="min-h-0 flex-auto overflow-y-auto overscroll-contain border-t border-(--color-border)/60 px-1 py-1">
+                  {/* Chats take the rest of the height and scroll on their own;
+                      the list's header is sticky so no row slides under it. */}
+                  <div data-session-scroll className="mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-(--color-border-subtle) px-1.5">
                     <ProjectSessionList
                       projectId={project.id}
                       currentSessionId={currentSessionId}
                       mobileLongPressActions={mobileLongPressActions}
-                      onSessionSelect={(session) => handleSessionSelect(session, session.workspace ?? "")}
-                      onSessionSideChat={(session) => handleSessionSideChat(session, session.workspace ?? "")}
+                      onSessionSelect={handleSessionSelect}
+                      onSessionSideChat={handleSessionSideChat}
                       onSessionDelete={handleSessionDelete}
                       pendingDeleteId={pendingDeleteSession?.id ?? null}
                       onCancelDelete={() => setPendingDeleteSession(null)}
@@ -1511,152 +1368,11 @@ export function CodingSidebar({
                       }}
                     />
                   </div>
-                </div>
+                </>
               );
             })()}
           </div>
         )}
-      </div>
-
-      {/* WORKSPACES section header — standalone repos only. A repo that
-          belongs to a project lives in that project's own "Repos" list
-          above, not here (a project's repo has no standalone session). */}
-      <div
-        className={cn(
-          "flex min-h-0 flex-col px-2 pb-2 pt-2",
-          workspacesSectionCollapsed ? "shrink-0" : "max-h-max flex-1 basis-0",
-        )}
-      >
-        <CollapsibleSection
-          label="Workspaces"
-          collapsed={workspacesSectionCollapsed}
-          onToggle={() => setWorkspacesSectionCollapsed((v) => !v)}
-          count={standaloneWorkspaces.length || undefined}
-          onAdd={() => void openWorkspaceDialog()}
-          addLabel="Open a standalone folder (not part of a project)"
-          AddIcon={FolderPlus}
-          size="large"
-          className="px-1 pb-1"
-        />
-
-      {!workspacesSectionCollapsed && overviewQuery.isLoading && (
-        <ScopeCardSkeleton label="Loading workspaces" />
-      )}
-
-      {!workspacesSectionCollapsed && !overviewQuery.isLoading && !overviewQuery.isError && standaloneWorkspaces.length === 0 && (
-        <p className="px-2 py-3 text-xs text-(--color-text-subtle)">
-          No standalone workspaces. Use the + above to open a folder
-          outside any project.
-        </p>
-      )}
-
-      {!workspacesSectionCollapsed && selectedWorkspaceScope && (
-        <div className="flex min-h-0 flex-col">
-          {(() => {
-            const path = selectedWorkspaceScope;
-            const sourceIsActive = path === activeStandaloneWorkspace;
-            const sourceIsPending = pendingWorkspace === path;
-            const sourceHasRunningSession = codingSessions.some(
-              (session) => session.workspace === path && session.running === true,
-            );
-            return (
-              <div
-                className={cn(
-                  "mx-1 flex min-h-0 flex-col overflow-hidden rounded-lg border bg-(--bg-page)/45",
-                  sourceIsActive
-                    ? "border-(--color-border-strong)"
-                    : "border-(--color-border)",
-                )}
-              >
-                <div className="group flex min-h-9 items-center gap-1 px-2">
-                  <Combobox
-                    items={standaloneWorkspaces.map((option) => ({
-                      value: option,
-                      label: workspaceLabel(option),
-                      description: option,
-                    }))}
-                    value={path}
-                    onValueChange={(value) => {
-                      if (value) setSelectedWorkspacePath(value);
-                    }}
-                    ariaLabel="Select workspace"
-                    searchPlaceholder="Search workspaces or paths…"
-                    emptyText="No matching workspaces."
-                    size="sm"
-                    clearable={false}
-                    className="min-w-0 flex-1 border-0 bg-transparent shadow-none hover:bg-(--bg-key)/70 focus-within:ring-0"
-                    popupClassName="max-w-[calc(100vw-1rem)]"
-                    renderLeadingIcon={(option) => (
-                      <Folder
-                        size={13}
-                        className={
-                          option.value === activeStandaloneWorkspace
-                            ? "text-(--color-accent)"
-                            : "text-(--color-text-muted)"
-                        }
-                        aria-hidden="true"
-                      />
-                    )}
-                  />
-                  {(sourceIsPending || sourceHasRunningSession) && (
-                    <Loader2
-                      size={11}
-                      className="animate-spin text-(--color-text-muted)"
-                      aria-label={sourceHasRunningSession ? "Repository has running session" : undefined}
-                    />
-                  )}
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => void selectWorkspace(path, { create: true })}
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-(--color-text-muted) hover:bg-(--bg-key) hover:text-(--color-text)"
-                      aria-label={`New session in ${workspaceLabel(path)}`}
-                      title={`New session in ${workspaceLabel(path)}`}
-                    >
-                      <Plus size={12} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        if (isMobile) {
-                          setMobileWorkspaceActions({ path, kind: "main" });
-                          return;
-                        }
-                        const rect = event.currentTarget.getBoundingClientRect();
-                        const pos = clampMenuPosition(rect.right, rect.bottom + 4);
-                        setDesktopWorkspaceActions({ path, kind: "main", x: pos.x, y: pos.y });
-                      }}
-                      className="flex h-6 w-6 items-center justify-center rounded-md text-(--color-text-subtle) hover:bg-(--bg-key) hover:text-(--color-text)"
-                      aria-label={`More actions for ${workspaceLabel(path)}`}
-                      title="More actions"
-                    >
-                      <MoreHorizontal size={13} aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-                <div data-session-scroll className="min-h-0 flex-auto overflow-y-auto overscroll-contain border-t border-(--color-border)/60 px-1 py-1">
-                  <WorkspaceSessionList
-                    workspace={path}
-                    currentSessionId={currentSessionId}
-                    mobileLongPressActions={mobileLongPressActions}
-                    onSessionSelect={(session) => handleSessionSelect(session, session.workspace ?? path)}
-                    onSessionSideChat={(session) => handleSessionSideChat(session, session.workspace ?? path)}
-                    onSessionDelete={handleSessionDelete}
-                    pendingDeleteId={pendingDeleteSession?.id ?? null}
-                    onCancelDelete={() => setPendingDeleteSession(null)}
-                    onConfirmDelete={confirmSessionDelete}
-                    onSessionEdit={handleSessionEdit}
-                    onSessionLongPress={setMobileSessionActions}
-                    onSessionContextActions={(session, event) => {
-                      setDesktopSessionActions({ session, x: event.clientX, y: event.clientY });
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
       </div>
     </div>
   );
@@ -1830,32 +1546,45 @@ export function CodingSidebar({
         }}
       />
 
-      {workspacePickerPortal && createPortal(<AnimatePresence>
-        {dialogOpen && !trustWorkspace && (
-          <SidePanel
-            storageKey={STORAGE_KEYS.panels.codingWorkspacePicker}
-            defaultWidth={480}
-            minWidth={400}
-            maxWidth={720}
-            mobileOverlay
-            mobile={isMobile}
-            title={workspacePickerMode === "clone"
-              ? addRepoProject
-                ? `Clone repository into ${addRepoProject.name}`
-                : "Clone repository"
-              : addRepoProject
-                ? `Add repository to ${addRepoProject.name}`
-                : "Open workspace"}
-            onClose={closeWorkspaceDialog}
-            closeLabel="Close workspace picker"
-            resizeLabel="Resize workspace picker"
-            ariaLabel={workspacePickerMode === "clone" ? "Clone repository" : "Open workspace"}
-            className="bg-(--bg-card)"
-          >
-            <div className="flex min-h-0 flex-1 flex-col gap-4 p-4">
-              <p className="text-sm text-(--color-text-subtle)">
-                Open an existing folder or clone a remote repository without leaving EvoFlux.
-              </p>
+      {/* A centred modal: picking a folder is a one-off decision, not a
+          panel to keep beside the chat. It closes while the trust dialog
+          asks about the chosen folder, and Back reopens it. */}
+      <Dialog
+        open={dialogOpen && !trustWorkspace}
+        onOpenChange={(open) => {
+          if (!open) closeWorkspaceDialog();
+        }}
+      >
+        <DialogContent className="flex max-h-[min(90dvh,720px)] w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+          <DialogHeader className="shrink-0 border-b border-(--color-border) px-4 py-3 pr-10">
+            <DialogTitle className="text-sm font-semibold">
+              {workspacePickerMode === "clone"
+                ? addRepoProject
+                  ? `Clone repository into ${addRepoProject.name}`
+                  : "Clone repository"
+                : addRepoProject
+                  ? `Add repository to ${addRepoProject.name}`
+                  : "Open folder as project"}
+            </DialogTitle>
+            <DialogDescription className="text-xs leading-4">
+              {addRepoProject
+                ? `Add an existing folder or clone a remote repository into ${addRepoProject.name}.`
+                : "Open an existing folder or clone a remote repository. It becomes a project named after the folder; you can add more repositories to it later."}
+            </DialogDescription>
+          </DialogHeader>
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+              {!addRepoProject && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeWorkspaceDialog();
+                    setShowProjectModal(true);
+                  }}
+                  className="self-start text-xs text-(--color-accent) hover:underline"
+                >
+                  Set up a multi-repo project instead
+                </button>
+              )}
               <div className="grid grid-cols-2 gap-1 rounded-lg border border-(--color-border) bg-(--bg-key)/60 p-1">
                 <button
                   type="button"
@@ -1883,7 +1612,7 @@ export function CodingSidebar({
                 </button>
               </div>
               {workspacePickerMode === "clone" ? (
-                <div className="flex min-h-0 flex-1 flex-col gap-3">
+                <div className="flex shrink-0 flex-col gap-3">
                   <label className="space-y-1.5 text-xs text-(--color-text-muted)">
                     <span>Repository URL</span>
                     <input
@@ -1914,7 +1643,7 @@ export function CodingSidebar({
                       />
                     </label>
                   </div>
-                  <div className="min-h-0 flex-1 space-y-2">
+                  <div className="space-y-2">
                     <span className="text-xs text-(--color-text-muted)">Clone into</span>
                     <div className="rounded-lg border border-(--color-border) bg-(--bg-page) px-3 py-2 font-mono text-xs text-(--color-text-muted) [overflow-wrap:anywhere]">
                       {(nativeFolderPickerEnabled && !isTauriMobile ? cloneParent : browserPath) ?? "Choose a destination folder"}
@@ -2061,116 +1790,69 @@ export function CodingSidebar({
             </>
           )}
             </div>
-          </SidePanel>
-        )}
-      </AnimatePresence>, workspacePickerPortal)}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={trustWorkspace !== null} onOpenChange={(open) => {
-        if (!open) setTrustWorkspace(null);
+        if (!open && !openingFolder) setTrustWorkspace(null);
       }}>
         <DialogContent showCloseButton={false} className="min-w-0">
           <DialogHeader>
-            <DialogTitle>Trust this workspace?</DialogTitle>
+            <DialogTitle>Trust this folder?</DialogTitle>
             <DialogDescription>
               {addRepoProject
-                ? `Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories). Trusting adds this folder to ${addRepoProject.name}.`
-                : "Coding mode grants agents filesystem and shell access. The workspace directory is the primary working area, but agents may access other paths outside it (excluding system directories)."}
+                ? `Coding mode grants agents filesystem and shell access. The project's repositories are the primary working area, but agents may access other paths outside them (excluding system directories). Trusting adds this folder to ${addRepoProject.name}.`
+                : trustOwners.length > 0
+                  // The notice below says which project opens instead.
+                  ? "Coding mode grants agents filesystem and shell access. The project's repositories are the primary working area, but agents may access other paths outside them (excluding system directories)."
+                  : "Coding mode grants agents filesystem and shell access. The project's repositories are the primary working area, but agents may access other paths outside them (excluding system directories). Trusting creates a project for this folder."}
             </DialogDescription>
           </DialogHeader>
+          {!addRepoProject && trustOwners.length > 0 && (
+            <div
+              role="status"
+              className="flex gap-2 rounded-lg border border-(--color-warning)/40 bg-(--color-warning)/10 px-3 py-2 text-xs leading-4 text-(--color-text)"
+            >
+              <AlertTriangle
+                size={14}
+                className="mt-px shrink-0 text-(--color-warning)"
+                aria-hidden="true"
+              />
+              <p>
+                {trustOwners.length === 1
+                  ? `This folder is already in the project ${trustOwners[0].name}. Trusting opens that project; no new project is created.`
+                  : `This folder is already in ${trustOwners.length} projects (${trustOwners.map((project) => project.name).join(", ")}). Trusting opens ${trustOwners[0].name}; no new project is created.`}
+              </p>
+            </div>
+          )}
           <div className="rounded-lg border border-(--color-border) bg-(--bg-page) px-3 py-2">
             <p className="break-all font-mono text-xs text-(--color-text-muted)">
               {trustWorkspace}
             </p>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setTrustWorkspace(null)}>
-              Back
-            </Button>
-            <Button type="button" onClick={confirmTrustedWorkspace}>
-              {addRepoProject ? "Trust and add" : "Trust and open"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={mobileWorkspaceActions !== null}
-        onOpenChange={(open) => {
-          if (!open) setMobileWorkspaceActions(null);
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {mobileWorkspaceActions
-                ? workspaceLabel(mobileWorkspaceActions.path)
-                : "Workspace actions"}
-            </DialogTitle>
-            <DialogDescription>
-              {mobileWorkspaceActions?.kind === "worktree"
-                ? "Choose a worktree action."
-                : "Choose a main workspace action."}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-col items-stretch gap-2 p-3 sm:flex-col">
             <Button
               type="button"
               variant="outline"
-              className="justify-start"
-              onClick={() => {
-                const action = mobileWorkspaceActions;
-                setMobileWorkspaceActions(null);
-                if (action)
-                  void selectWorkspace(action.path, { create: true });
-              }}
+              disabled={openingFolder}
+              onClick={() => setTrustWorkspace(null)}
             >
-              <Plus size={14} aria-hidden="true" />
-              New session
+              Back
             </Button>
-            {mobileWorkspaceActions?.kind === "main" ? (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="justify-start"
-                  onClick={() => {
-                    const action = mobileWorkspaceActions;
-                    setMobileWorkspaceActions(null);
-                    if (action) void openWorktreeDialog(action.path);
-                  }}
-                >
-                  <GitBranch size={14} aria-hidden="true" />
-                  Create worktree
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="justify-start text-(--color-error)"
-                  onClick={() => {
-                    const action = mobileWorkspaceActions;
-                    setMobileWorkspaceActions(null);
-                    if (action) setRemoveWorkspaceTarget(action.path);
-                  }}
-                >
-                  <Trash2 size={14} aria-hidden="true" />
-                  Remove from sidebar
-                </Button>
-              </>
-            ) : mobileWorkspaceActions?.worktree?.managed ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="justify-start text-(--color-error)"
-                onClick={() => {
-                  const item = mobileWorkspaceActions.worktree;
-                  setMobileWorkspaceActions(null);
-                  if (item) void handleRemoveWorktree(item);
-                }}
-              >
-                <Trash2 size={14} aria-hidden="true" />
-                Remove worktree
-              </Button>
-            ) : null}
+            <Button
+              type="button"
+              onClick={() => void confirmTrustedWorkspace()}
+              disabled={openingFolder}
+            >
+              {openingFolder && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
+              {addRepoProject
+                ? "Trust and add"
+                : openingFolder
+                  ? "Opening project…"
+                  : trustOwners.length > 0
+                    ? "Trust and open project"
+                    : "Trust and create project"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2266,8 +1948,9 @@ export function CodingSidebar({
                     aria-hidden="true"
                   />
                   <p>
-                    Stored in EvoFlux data, outside the source repo.
-                    Uncommitted source changes are not copied.
+                    {worktreeLocation === "user_data"
+                      ? "Stored in EvoFlux data, outside the source repo. Uncommitted source changes are not copied."
+                      : "Stored in the source repo under .evoflux/worktrees. Uncommitted source changes are not copied."}
                   </p>
                 </div>
                 <div className="rounded-md border border-(--color-border) bg-(--bg-page) px-3 py-2 text-xs text-(--color-text-muted)">
@@ -2365,86 +2048,6 @@ export function CodingSidebar({
         </DialogContent>
       </Dialog>
 
-      {desktopWorkspaceActions && (
-        <div
-          className="fixed inset-0 z-(--z-modal)"
-          onClick={() => setDesktopWorkspaceActions(null)}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            setDesktopWorkspaceActions(null);
-          }}
-        >
-          <div
-            role="menu"
-            aria-label={`Actions for ${workspaceLabel(desktopWorkspaceActions.path)}`}
-            className="fixed min-w-48 rounded-lg border border-(--color-border) bg-(--bg-card) p-1 text-sm text-(--color-text) shadow-xl"
-            style={{
-              left: desktopWorkspaceActions.x,
-              top: desktopWorkspaceActions.y,
-            }}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-              onClick={() => {
-                const action = desktopWorkspaceActions;
-                setDesktopWorkspaceActions(null);
-                void selectWorkspace(action.path, { create: true });
-              }}
-            >
-              <Plus size={14} aria-hidden="true" />
-              New session
-            </button>
-            {desktopWorkspaceActions.kind === "main" ? (
-              <>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-(--bg-key) focus-visible:bg-(--bg-key) focus-visible:outline-none"
-                  onClick={() => {
-                    const action = desktopWorkspaceActions;
-                    setDesktopWorkspaceActions(null);
-                    void openWorktreeDialog(action.path);
-                  }}
-                >
-                  <GitBranch size={14} aria-hidden="true" />
-                  Create worktree
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-(--color-error) hover:bg-(--color-error-subtle) focus-visible:bg-(--color-error-subtle) focus-visible:outline-none"
-                  onClick={() => {
-                    const action = desktopWorkspaceActions;
-                    setDesktopWorkspaceActions(null);
-                    setRemoveWorkspaceTarget(action.path);
-                  }}
-                >
-                  <Trash2 size={14} aria-hidden="true" />
-                  Remove from sidebar
-                </button>
-              </>
-            ) : desktopWorkspaceActions.worktree?.managed ? (
-              <button
-                type="button"
-                role="menuitem"
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-(--color-error) hover:bg-(--color-error-subtle) focus-visible:bg-(--color-error-subtle) focus-visible:outline-none"
-                onClick={() => {
-                  const item = desktopWorkspaceActions.worktree;
-                  setDesktopWorkspaceActions(null);
-                  if (item) void handleRemoveWorktree(item);
-                }}
-              >
-                <Trash2 size={14} aria-hidden="true" />
-                Remove worktree
-              </button>
-            ) : null}
-          </div>
-        </div>
-      )}
-
       {/* Actions menu for a project's own repo row — desktop floating menu.
           Never offers "new session": a project's repos are managed here,
           sessions live at the project level. */}
@@ -2471,7 +2074,7 @@ export function CodingSidebar({
               onClick={() => {
                 const action = projectRepoActions;
                 setProjectRepoActions(null);
-                void openWorktreeDialog(action.path);
+                void openWorktreeDialog(action.path, action.project.id);
               }}
             >
               <GitBranch size={14} aria-hidden="true" />
@@ -2516,7 +2119,7 @@ export function CodingSidebar({
               onClick={() => {
                 const action = projectRepoActions;
                 setProjectRepoActions(null);
-                if (action) void openWorktreeDialog(action.path);
+                if (action) void openWorktreeDialog(action.path, action.project.id);
               }}
             >
               <GitBranch size={14} aria-hidden="true" />
@@ -2586,44 +2189,6 @@ export function CodingSidebar({
       />
 
       <Dialog
-        open={removeWorkspaceTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setRemoveWorkspaceTarget(null);
-        }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Remove workspace from sidebar</DialogTitle>
-            <DialogDescription>
-              &ldquo;
-              {removeWorkspaceTarget
-                ? workspaceLabel(removeWorkspaceTarget)
-                : ""}
-              &rdquo; will be removed from EvoFlux. All chat sessions, uploads,
-              snapshots and managed worktrees for it
-              will be permanently deleted. The source repository stays on disk.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="p-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRemoveWorkspaceTarget(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={confirmRemoveWorkspace}
-            >
-              Remove and delete data
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
         open={removeProjectWorkspaceTarget !== null}
         onOpenChange={(open) => {
           if (!open) setRemoveProjectWorkspaceTarget(null);
@@ -2667,10 +2232,13 @@ export function CodingSidebar({
                   },
                   {
                     onSuccess: () => {
+                      // Drop only the removed repository's cached tree/diff/
+                      // status; an empty filter wiped every query in the app.
                       queryClient.removeQueries({
+                        queryKey: queryKeys.coding.all(target.path),
                       });
-                      clearLastCodingFocus(target.project.id);
                       if (isRemovingFromActiveProject) {
+                        clearLastCodingFocus(target.project.id);
                         useTeamStore.getState().newSession();
                         navigate({ to: "/coding", replace: true });
                       }
@@ -2707,7 +2275,7 @@ export function CodingSidebar({
             <DialogTitle>Delete project</DialogTitle>
             <DialogDescription>
               {deleteProjectTarget
-                ? `Delete ${deleteProjectTarget.name}? All project chat sessions, scheduled tasks, generated session data, and managed worktrees will be permanently deleted. Source repositories stay on disk and remain available in Workspaces.`
+                ? `Delete ${deleteProjectTarget.name}? All project chat sessions, scheduled tasks, generated session data, and managed worktrees will be permanently deleted. Source repositories stay on disk and can be opened as a project again.`
                 : "Delete this project?"}
             </DialogDescription>
           </DialogHeader>

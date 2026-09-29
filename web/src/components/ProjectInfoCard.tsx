@@ -1,10 +1,9 @@
 /**
- * ProjectInfoCard — coding-mode empty-state placeholder for PROJECT sessions.
+ * ProjectInfoCard — coding-mode empty-state placeholder.
  *
- * Project counterpart to WorkspaceInfoCard: a project session isn't "in" any
- * one repo, so this shows the project identity (name, repo count) and a
- * compact per-repo status line for each member repo, instead of one repo's
- * branch/dirty/last-commit.
+ * Every Coding session belongs to a project, which isn't "in" any one repo,
+ * so this shows the project identity (name, repo count) and a compact
+ * per-repo status line for each member repo.
  */
 
 import { useQueries } from '@tanstack/react-query'
@@ -29,6 +28,15 @@ const PROJECT_SUGGESTIONS = [
   'Plan a coordinated implementation',
 ]
 
+// A folder opened from the sidebar becomes a one-repository project, which
+// has no "across repositories" to speak of.
+const REPOSITORY_SUGGESTIONS = [
+  'Explain this repository structure',
+  'Find the highest-priority TODOs',
+  'Review the latest changes',
+  'Add tests for the risky paths',
+]
+
 function repoLabel(path: string): string {
   return path.split(/[\\/]/).pop() || path
 }
@@ -36,6 +44,9 @@ function repoLabel(path: string): string {
 export function ProjectInfoCard({ project, onSuggestion }: Props) {
   const preset = useMotionPreset()
   const enter = fadeRise(preset, 10)
+  const multiRepo = project.workspaces.length > 1
+  const description = project.description?.trim() ||
+    (multiRepo ? `Shared coding context across ${project.workspaces.length} repositories.` : null)
   const statusQueries = useQueries({
     queries: project.workspaces.map((w) => ({
       queryKey: queryKeys.coding.status(w.path),
@@ -61,13 +72,12 @@ export function ProjectInfoCard({ project, onSuggestion }: Props) {
         </span>
       </div>
 
-      <p className="mt-1 text-xs text-(--color-text-subtle)">
-        {project.description?.trim() ||
-          `Shared coding context across ${project.workspaces.length} ${project.workspaces.length === 1 ? 'repository' : 'repositories'}.`}
-      </p>
+      {description && (
+        <p className="mt-1 text-xs text-(--color-text-subtle)">{description}</p>
+      )}
 
       <CodingPromptSuggestions
-        suggestions={PROJECT_SUGGESTIONS}
+        suggestions={multiRepo ? PROJECT_SUGGESTIONS : REPOSITORY_SUGGESTIONS}
         onSuggestion={onSuggestion}
       />
 

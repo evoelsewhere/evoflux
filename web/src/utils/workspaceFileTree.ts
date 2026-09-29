@@ -15,7 +15,8 @@ export interface TreeNode {
   file?: WorkspaceFileInfo
 }
 
-export type ChangedFileStatus = 'A' | 'M' | 'D'
+/** Git's letters: Added (staged new), Modified, Deleted, Untracked. */
+export type ChangedFileStatus = 'A' | 'M' | 'D' | 'U'
 
 const treeNodeNameCollator = new Intl.Collator(undefined, {
   numeric: true,
@@ -77,10 +78,15 @@ export function collectChangedFiles(diff?: WorkspaceGitDiffResponse): ChangedFil
 
   for (const path of diff.untracked ?? []) {
     const existing = files.get(path)
-    if (existing) existing.status = 'A'
-    else files.set(path, { path, status: 'A', additions: 0, deletions: 0 })
+    if (existing) existing.status = 'U'
+    else files.set(path, { path, status: 'U', additions: 0, deletions: 0 })
   }
   return Array.from(files.values()).sort((a, b) => a.path.localeCompare(b.path))
+}
+
+/** Each changed path's git status letter, for the file tree's badges. */
+export function changedFileStatuses(files: readonly ChangedFileInfo[]): Map<string, ChangedFileStatus> {
+  return new Map(files.map((file) => [file.path, file.status]))
 }
 
 export function buildTree(files: WorkspaceFileInfo[]): TreeNode {

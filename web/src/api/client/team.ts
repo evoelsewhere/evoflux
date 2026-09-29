@@ -542,16 +542,6 @@ export async function setSessionFolder(
   return res.json()
 }
 
-export async function setCodingWorkspaceVisibility(workspace: string, hidden: boolean): Promise<{ workspace: string; hidden: boolean; updated: number }> {
-  const res = await fetch(`${apiBaseUrl()}/team/workspace/visibility`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ workspace, hidden }),
-  })
-  if (!res.ok) await parseDetailOrThrow(res, 'setCodingWorkspaceVisibility')
-  return res.json()
-}
-
 export async function getTeamSession(id: string, signal?: AbortSignal): Promise<SessionDetailResponse> {
   const res = await fetchWithTimeout(`${apiBaseUrl()}/team/sessions/${id}`, { signal })
   if (!res.ok) await parseDetailOrThrow(res, 'getTeamSession')

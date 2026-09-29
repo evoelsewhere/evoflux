@@ -32,45 +32,99 @@ def _redirect_storage(monkeypatch: pytest.MonkeyPatch, root: Path) -> None:
     monkeypatch.setattr(purge, "SESSION_LOG_DIR", root / "state" / "logs" / "sessions")
 
 
+def _every_hour_task(name: str, mode: str, **fields) -> ScheduledTask:
+    return ScheduledTask(
+        name=name,
+        mode=mode,
+        schedule_type="every",
+        every_seconds=3600,
+        prompt="test",
+        **fields,
+    )
+
+
 @pytest.mark.asyncio
-async def test_purge_workspace_removes_session_graph_and_generated_data(
+async def test_purge_standalone_coding_sessions_removes_only_projectless_coding_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import app.core.db as db_module
 
     _redirect_storage(monkeypatch, tmp_path)
-    repository = tmp_path / "repository"
-    repository.mkdir()
+    standalone = tmp_path / "standalone"
+    in_project = tmp_path / "in-project"
+    standalone.mkdir()
+    in_project.mkdir()
     lead_id = uuid.uuid7()
     child_id = uuid.uuid7()
     side_id = uuid.uuid7()
+    project_lead_id = uuid.uuid7()
+    project_member_id = uuid.uuid7()
+    project_side_id = uuid.uuid7()
+    work_id = uuid.uuid7()
 
     async with db_module.async_session_factory() as db:
-        async with db.begin():
-            db.add(CodingWorkspace(path=str(repository), kind="repo"))
-            db.add(
-                ChatSession(
-                    id=lead_id, mode="coding", workspace=str(repository), title="lead"
-                )
+        project = await create_project(
+            db, name="Kept", workspace_paths=[str(in_project)]
+        )
+        project_id = project.id
+        db.add(CodingWorkspace(path=str(standalone), kind="repo"))
+        # A standalone Coding chat with a sub-agent session and a side chat.
+        db.add(
+            ChatSession(
+                id=lead_id, mode="coding", workspace=str(standalone), title="lead"
             )
-            db.add(ChatSession(id=child_id, parent_session_id=lead_id))
-            db.add(
-                ChatSession(
-                    id=side_id,
-                    mode="coding",
-                    workspace=str(repository),
-                    session_type="side_chat",
-                    source_session_id=lead_id,
-                    source_session_ref=lead_id,
-                )
+        )
+        db.add(ChatSession(id=child_id, parent_session_id=lead_id))
+        db.add(
+            ChatSession(
+                id=side_id,
+                mode="coding",
+                workspace=str(standalone),
+                session_type="side_chat",
+                source_session_id=lead_id,
+                source_session_ref=lead_id,
             )
-            db.add(SessionMessage(session_id=lead_id, role="user", content="gone"))
-            db.add(
-                DreamLog(
-                    session_id=lead_id,
-                    processed_at=datetime.now(timezone.utc),
-                )
+        )
+        db.add(SessionMessage(session_id=lead_id, role="user", content="gone"))
+        db.add(DreamLog(session_id=lead_id, processed_at=datetime.now(timezone.utc)))
+        # A project chat whose member and side chat carry no project_id of
+        # their own; none of it is standalone.
+        db.add(
+            ChatSession(
+                id=project_lead_id,
+                mode="coding",
+                workspace=str(in_project),
+                project_id=project_id,
             )
+        )
+        db.add(
+            ChatSession(
+                id=project_member_id,
+                mode="coding",
+                workspace=str(in_project),
+                parent_session_id=project_lead_id,
+            )
+        )
+        db.add(
+            ChatSession(
+                id=project_side_id,
+                mode="coding",
+                workspace=str(in_project),
+                session_type="side_chat",
+                source_session_id=project_lead_id,
+                source_session_ref=project_lead_id,
+            )
+        )
+        db.add(SessionMessage(session_id=project_lead_id, role="user", content="kept"))
+        db.add(ChatSession(id=work_id, mode="work"))
+        db.add(_every_hour_task("standalone", "coding", workspace=str(standalone)))
+        db.add(
+            _every_hour_task(
+                "project", "coding", workspace=str(in_project), project_id=project_id
+            )
+        )
+        db.add(_every_hour_task("work", "work", session_id=str(work_id)))
+        await db.commit()
 
     generated_paths = (
         workspace_dir(str(lead_id)),
@@ -78,20 +132,119 @@ async def test_purge_workspace_removes_session_graph_and_generated_data(
         snapshot_dir(str(lead_id)),
         purge.SESSION_LOG_DIR / str(lead_id),
     )
-    for path in generated_paths:
+    kept_path = workspace_dir(str(project_lead_id))
+    for path in (*generated_paths, kept_path):
         path.mkdir(parents=True, exist_ok=True)
-        (path / "owned.txt").write_text("delete", encoding="utf-8")
+        (path / "owned.txt").write_text("data", encoding="utf-8")
+
     async with db_module.async_session_factory() as db:
-        result = await purge.purge_workspace(db, str(repository))
+        result = await purge.purge_standalone_coding_sessions(db)
 
     assert result.session_count == 3
-    assert repository.is_dir()
+    assert result.repository_paths == (str(standalone),)
+    assert standalone.is_dir() and in_project.is_dir()
     assert all(not path.exists() for path in generated_paths)
+    assert (kept_path / "owned.txt").is_file()
     async with db_module.async_session_factory() as db:
-        assert (await db.exec(select(ChatSession))).all() == []
-        assert (await db.exec(select(SessionMessage))).all() == []
+        remaining = {row.id for row in (await db.exec(select(ChatSession))).all()}
+        assert remaining == {
+            project_lead_id,
+            project_member_id,
+            project_side_id,
+            work_id,
+        }
+        messages = (await db.exec(select(SessionMessage))).all()
+        assert [m.session_id for m in messages] == [project_lead_id]
         assert (await db.exec(select(DreamLog))).all() == []
-        assert (await db.exec(select(CodingWorkspace))).all() == []
+        tasks = (await db.exec(select(ScheduledTask))).all()
+        assert sorted(task.name for task in tasks) == ["project", "work"]
+        # The repository registry is left alone so the folder can still be
+        # added to a project.
+        registered = (await db.exec(select(CodingWorkspace.path))).all()
+        assert str(standalone) in registered
+
+    async with db_module.async_session_factory() as db:
+        again = await purge.purge_standalone_coding_sessions(db)
+    assert again == purge.PurgeResult(0, ())
+
+
+@pytest.mark.asyncio
+async def test_purge_files_projectless_chats_under_the_repos_sole_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A repo that joined a project later keeps its older chats, in the project."""
+    import app.core.db as db_module
+
+    _redirect_storage(monkeypatch, tmp_path)
+    repository = tmp_path / "repository"
+    worktree = tmp_path / "worktree"
+    repository.mkdir()
+    worktree.mkdir()
+    lead_id = uuid.uuid7()
+    side_id = uuid.uuid7()
+    worktree_lead_id = uuid.uuid7()
+    async with db_module.async_session_factory() as db:
+        project = await create_project(
+            db, name="Later", workspace_paths=[str(repository)]
+        )
+        project_id = project.id
+        db.add(
+            CodingWorkspace(
+                path=str(worktree),
+                kind="worktree",
+                source_path=str(repository),
+                managed=True,
+            )
+        )
+        db.add(ChatSession(id=lead_id, mode="coding", workspace=str(repository)))
+        db.add(
+            ChatSession(
+                id=side_id,
+                mode="coding",
+                workspace=str(repository),
+                session_type="side_chat",
+                source_session_id=lead_id,
+                source_session_ref=lead_id,
+            )
+        )
+        db.add(ChatSession(id=worktree_lead_id, mode="coding", workspace=str(worktree)))
+        db.add(_every_hour_task("older", "coding", workspace=str(repository)))
+        await db.commit()
+
+    async with db_module.async_session_factory() as db:
+        result = await purge.purge_standalone_coding_sessions(db)
+
+    assert result == purge.PurgeResult(0, ())
+    async with db_module.async_session_factory() as db:
+        rows = {row.id: row for row in (await db.exec(select(ChatSession))).all()}
+        assert set(rows) == {lead_id, side_id, worktree_lead_id}
+        assert {row.project_id for row in rows.values()} == {project_id}
+        task = (await db.exec(select(ScheduledTask))).one()
+        assert task.project_id == project_id
+
+
+@pytest.mark.asyncio
+async def test_purge_leaves_rows_created_after_startup_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.core.db as db_module
+
+    _redirect_storage(monkeypatch, tmp_path)
+    started_at = datetime.now(timezone.utc)
+    session_id = uuid.uuid7()
+    async with db_module.async_session_factory() as db:
+        # A member row a live request wrote before linking it to its lead.
+        db.add(ChatSession(id=session_id, mode="coding", workspace=str(tmp_path)))
+        await db.commit()
+
+    async with db_module.async_session_factory() as db:
+        result = await purge.purge_standalone_coding_sessions(
+            db, created_before=started_at
+        )
+
+    assert result == purge.PurgeResult(0, ())
+    async with db_module.async_session_factory() as db:
+        assert await db.get(ChatSession, session_id) is not None
 
 
 @pytest.mark.asyncio

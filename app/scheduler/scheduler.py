@@ -129,15 +129,17 @@ async def _validate_project_compat(
     project_id: UUID | None,
 ) -> None:
     if project_id is None:
+        # Coding is project-only: a task in no project could never be shown
+        # or opened next to the sessions it creates.
+        if mode == "coding":
+            raise InvalidTaskTargetError("project_id is required when mode='coding'")
         return
     from app.models.chat import CodingProject
-    from app.services.coding_project_service import get_project_workspace_paths
+    from app.services.coding_project_service import (
+        get_project_workspace_paths,
+        get_visible_project_ids_for_workspace_path,
+    )
 
-    async with db_factory() as db:
-        project = await db.get(CodingProject, project_id)
-        if project is None or project.deleted_at is not None or project.hidden:
-            raise InvalidTaskTargetError(f"Coding project {project_id} was not found")
-        paths = await get_project_workspace_paths(db, project_id)
     if mode != "coding":
         raise InvalidTaskTargetError("project_id is only valid when mode='coding'")
     if workspace is None:
@@ -148,7 +150,20 @@ async def _validate_project_compat(
         resolved_workspace = validate_workspace(workspace)
     except ValueError as exc:
         raise InvalidTaskTargetError(str(exc)) from exc
-    if resolved_workspace not in paths:
+    async with db_factory() as db:
+        project = await db.get(CodingProject, project_id)
+        if project is None or project.deleted_at is not None or project.hidden:
+            raise InvalidTaskTargetError(f"Coding project {project_id} was not found")
+        paths = await get_project_workspace_paths(db, project_id)
+        # A worktree of a project repo belongs to the project too.
+        owners = (
+            []
+            if resolved_workspace in paths
+            else await get_visible_project_ids_for_workspace_path(
+                db, resolved_workspace
+            )
+        )
+    if resolved_workspace not in paths and project_id not in owners:
         raise InvalidTaskTargetError(
             "workspace is not part of the selected coding project"
         )
@@ -726,8 +741,8 @@ class TaskScheduler:
         session_id: str | None,
         primary_workspace: str,
         project_id: UUID | None = None,
-    ) -> list[str] | None:
-        """Return a project session's non-primary repo paths, or ``None``.
+    ) -> tuple[list[str], list[str]] | None:
+        """Return a project session's ``(extra, read_only)`` repo paths, or ``None``.
 
         Best-effort: only resolves when the session row already exists and
         carries a ``project_id``. On the very first firing of a fresh project
@@ -742,7 +757,10 @@ class TaskScheduler:
             return None
 
         from app.models.chat import ChatSession
-        from app.services.coding_project_service import get_project_workspace_paths
+        from app.services.coding_project_service import (
+            get_project_workspace_paths,
+            split_project_paths_for_workspace,
+        )
 
         async with self._read_db() as db:
             if project_id is None:
@@ -757,8 +775,7 @@ class TaskScheduler:
             resolved_primary = validate_workspace(primary_workspace)
         except ValueError:
             resolved_primary = primary_workspace
-        extras = [p for p in all_paths if p != resolved_primary]
-        return extras or None
+        return split_project_paths_for_workspace(all_paths, resolved_primary)
 
     async def _fire_task(
         self,
@@ -834,16 +851,24 @@ class TaskScheduler:
                     raise NoTeamConfigured(
                         "Task has mode='coding' but no workspace configured."
                     )
+                # Coding is project-only; a leftover task in no project would
+                # create a session nothing can show (and startup purges).
+                if task.project_id is None:
+                    raise NoTeamConfigured(
+                        "Task has mode='coding' but belongs to no project."
+                    )
                 # If this scheduled session belongs to a multi-repo project,
                 # pass the project's other repos so the agent gets full
                 # multi-repo context, mirroring POST /team/chat.
-                extra_ws_paths = await self._project_extra_paths(
+                project_paths = await self._project_extra_paths(
                     resolved_sid, task.workspace, task.project_id
                 )
+                extra_ws_paths, read_only_paths = project_paths or ([], [])
                 team = await team_manager.get_or_start_coding_team(
                     task.workspace,
                     f"scheduler:{task.id}",
-                    extra_workspace_paths=extra_ws_paths,
+                    extra_workspace_paths=extra_ws_paths or None,
+                    read_only_paths=read_only_paths or None,
                 )
             else:
                 if task.workspace:

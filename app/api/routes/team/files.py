@@ -304,6 +304,8 @@ async def get_workspace_document_preview(
 _MAX_FILES_LISTED = 10_000
 _MAX_GIT_DIFF_CHARS = 512 * 1024
 _MAX_UNTRACKED_DIFF_BYTES = 256 * 1024
+# Git's well-known empty tree: the diff base of a repository with no commit.
+_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
 def _load_gitignore_rules(root: Path) -> list[tuple[str, bool]]:
@@ -796,6 +798,8 @@ def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse
     #     This matches what users see in their editor and honours the project's
     #     ``!`` re-include rules (e.g. ``.evoflux/commands/`` is tracked even
     #     though ``.evoflux/*`` is ignored).
+    #   - Skip a linked worktree nested inside the listed repository: it is a
+    #     checkout of its own, listed as its own repository.
     for dirpath, dirnames, filenames in os.walk(root):
         current = Path(dirpath)
         dirnames[:] = sorted(
@@ -808,12 +812,17 @@ def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse
                 is_dir=True,
                 rules=gitignore_rules,
             )
+            and not _is_linked_worktree(current / name)
         )
 
         for filename in sorted(filenames):
             if len(files) >= _MAX_FILES_LISTED:
                 truncated = True
                 break
+            # A worktree's (or submodule's) ``.git`` is a file pointing at
+            # its Git directory — as much VCS internals as the directory is.
+            if filename == ".git":
+                continue
             entry = current / filename
             rel = entry.relative_to(root).as_posix()
             if _is_gitignored(rel, is_dir=False, rules=gitignore_rules):
@@ -848,6 +857,27 @@ def _list_workspace_files(root: Path, session_id: str) -> WorkspaceFilesResponse
         truncated=truncated,
         workspace_root=workspace_root,
     )
+
+
+def _is_linked_worktree(directory: Path) -> bool:
+    """True when *directory* is the root of a linked Git worktree.
+
+    A linked worktree's ``.git`` is a file naming ``<git-dir>/worktrees/<name>``.
+    A submodule's ``.git`` file names ``<git-dir>/modules/<name>`` instead; its
+    files belong to the enclosing repository and stay listed.
+    """
+    marker = directory / ".git"
+    try:
+        if not marker.is_file():
+            return False
+        with marker.open(encoding="utf-8", errors="replace") as handle:
+            first_line = handle.readline(4096).strip()
+    except OSError:
+        return False
+    if not first_line.startswith("gitdir:"):
+        return False
+    gitdir = Path(first_line.removeprefix("gitdir:").strip())
+    return gitdir.parent.name == "worktrees"
 
 
 @router.get("/workspace/files/read")
@@ -1210,7 +1240,8 @@ async def get_coding_workspace_git_diff(
 ) -> dict:
     """Return the workspace's git diff, optionally scoped to ``paths``.
 
-    Without ``paths`` the diff covers the entire repo (``git diff -- .``) —
+    The diff is against ``HEAD``, so it covers staged as well as unstaged
+    changes. Without ``paths`` it covers the entire repo (``git diff -- .``) —
     the legacy whole-repo behaviour. With ``paths`` we run
     ``git diff -- a b c`` and filter the untracked scan to those entries
     too, yielding the diff hunks for just those files. Per-file scoped
@@ -1245,6 +1276,11 @@ async def get_coding_workspace_git_diff(
     # ``git diff -- .`` covers the whole tree; ``git diff -- a b c``
     # restricts to those pathspecs (which can be files or directories).
     diff_paths = scoped if scoped else ["."]
+    # Against HEAD, not the index: a staged change (a new file after
+    # ``git add``) is still a local change, and plain ``git diff`` hid it.
+    # A repository with no commit yet diffs against the empty tree.
+    head = await _run_git(resolved, "rev-parse", "--verify", "--quiet", "HEAD")
+    base = head.strip() if head and head.strip() else _EMPTY_TREE
 
     try:
         result = await asyncio.to_thread(
@@ -1256,6 +1292,7 @@ async def get_coding_workspace_git_diff(
                 "-c",
                 "core.quotepath=false",
                 "diff",
+                base,
                 "--",
                 *diff_paths,
             ],

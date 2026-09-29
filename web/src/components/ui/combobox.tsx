@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react"
+import { type ReactNode, type RefObject, useState } from "react"
 import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox"
 import { Check, ChevronDown, Search, X } from "lucide-react"
 
@@ -36,6 +36,8 @@ export function Combobox({
   searchPlaceholder = "Search…",
   clearable = true,
   renderLeadingIcon,
+  anchor,
+  footer,
 }: {
   items: ComboboxItem[]
   value: string | null
@@ -50,11 +52,22 @@ export function Combobox({
   searchPlaceholder?: string
   clearable?: boolean
   renderLeadingIcon?: (item: ComboboxItem) => ReactNode
+  /**
+   * Element the popup positions against and takes its width from
+   * (``--anchor-width``). Defaults to the trigger. Use it when the trigger
+   * sits inside a larger row the popup should line up with.
+   */
+  anchor?: RefObject<Element | null>
+  /** Actions pinned under the list, e.g. "Create …". ``close`` dismisses the popup. */
+  footer?: (close: () => void) => ReactNode
 }) {
   const selected = items.find((item) => item.value === value) ?? null
   const rich = items.some((item) => item.description || item.meta)
+  const twoLine = items.some((item) => item.description)
   const [query, setQuery] = useState("")
+  const [open, setOpen] = useState(false)
   const canClear = clearable && selected && !disabled
+  const small = size === "sm"
 
   return (
     <ComboboxPrimitive.Root<ComboboxItem>
@@ -62,12 +75,17 @@ export function Combobox({
       value={selected}
       inputValue={query}
       onInputValueChange={setQuery}
-      onOpenChange={(open) => {
-        if (!open) setQuery("")
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (!next) setQuery("")
       }}
       onValueChange={(item) => {
         onValueChange(item?.value ?? null)
+        // Clearing the query counts as input and would otherwise keep the
+        // popup open after a pick.
         setQuery("")
+        setOpen(false)
       }}
       itemToStringLabel={(item) => item.label}
       filter={(item, query) => {
@@ -137,20 +155,21 @@ export function Combobox({
       </div>
 
       <ComboboxPrimitive.Portal>
-        <ComboboxPrimitive.Positioner side="bottom" align="start" sideOffset={4} className="z-(--z-modal)">
+        <ComboboxPrimitive.Positioner
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          anchor={anchor}
+          className="z-(--z-modal)"
+        >
           <ComboboxPrimitive.Popup
             data-no-drag
-            style={
-              rich
-                ? {
-                    width: "min(320px, calc(100vw - 16px))",
-                    maxWidth: "calc(100vw - 16px)",
-                  }
-                : undefined
-            }
             className={cn(
-              "flex max-h-64 w-(--anchor-width) min-w-40 flex-col overflow-hidden rounded-lg border border-(--color-border-strong) bg-(--bg-page) text-(--color-text) shadow-(--shadow-popover)",
+              "flex max-h-72 w-(--anchor-width) max-w-[calc(100vw-16px)] min-w-40 flex-col overflow-hidden rounded-lg border border-(--color-border-strong) bg-(--bg-page) text-(--color-text) shadow-(--shadow-popover)",
               "data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+              // Rich rows need room for their meta/description — unless the
+              // caller anchors the popup to a row whose width it should match.
+              rich && !anchor && "w-[min(320px,calc(100vw-16px))]",
               popupClassName,
             )}
           >
@@ -173,17 +192,21 @@ export function Combobox({
                 </button>
               )}
             </ComboboxPrimitive.InputGroup>
-            <ComboboxPrimitive.Empty className="px-3 py-2 text-xs text-(--color-text-subtle)">
+            {/* Base UI keeps this element mounted and only drops its text
+                while there are matches; without ``empty:hidden`` its padding
+                left a blank band between the search field and the list. */}
+            <ComboboxPrimitive.Empty className="px-3 py-2 text-xs text-(--color-text-subtle) empty:hidden">
               {emptyText}
             </ComboboxPrimitive.Empty>
-            <ComboboxPrimitive.List className="min-h-0 overflow-y-auto p-1.5 pt-0">
+            <ComboboxPrimitive.List className="min-h-0 overflow-y-auto p-1 pt-0">
               {(item: ComboboxItem) => (
                 <ComboboxPrimitive.Item
                   key={item.value}
                   value={item}
                   className={cn(
-                    "relative flex w-full cursor-default items-center gap-2 rounded-sm pr-7 pl-2 text-sm text-(--color-text) outline-hidden select-none data-highlighted:bg-(--bg-key)",
-                    rich ? "min-h-10 py-1" : "h-8 py-1",
+                    "relative flex w-full cursor-default items-center gap-2 rounded-md pr-7 pl-2 text-(--color-text) outline-hidden select-none data-highlighted:bg-(--bg-key) data-selected:bg-(--bg-key)/60",
+                    small ? "text-xs" : "text-sm",
+                    twoLine ? "min-h-10 py-1" : small ? "h-8" : "h-9",
                   )}
                 >
                   {renderLeadingIcon?.(item)}
@@ -208,6 +231,11 @@ export function Combobox({
                 </ComboboxPrimitive.Item>
               )}
             </ComboboxPrimitive.List>
+            {footer && (
+              <div className="shrink-0 border-t border-(--color-border-subtle) p-1">
+                {footer(() => setOpen(false))}
+              </div>
+            )}
           </ComboboxPrimitive.Popup>
         </ComboboxPrimitive.Positioner>
       </ComboboxPrimitive.Portal>

@@ -103,6 +103,18 @@ async def _create_member_session(db, session_id, parent_id, agent_name="worker")
     return session
 
 
+async def _project_owning(db, *workspaces, name="Project"):
+    """A live Coding project with *workspaces* (repo rows) as its members."""
+    project = CodingProject(name=name)
+    db.add(project)
+    for workspace in workspaces:
+        db.add(workspace)
+    await db.flush()
+    for workspace in workspaces:
+        db.add(CodingProjectWorkspace(project_id=project.id, workspace_id=workspace.id))
+    return project
+
+
 async def _add_message(db, session_id, role="user", content="test", **kwargs):
     msg = SessionMessage(
         session_id=session_id,
@@ -313,7 +325,17 @@ class TestResolveTeamSession:
         assert data["created"] is True
         assert data["id"] != str(lead_id)
 
-    def test_resolve_creates_coding_session(self, app_with_team, tmp_path):
+    @pytest.mark.asyncio
+    async def test_resolve_creates_coding_session(self, app_with_team, tmp_path):
+        import app.core.db as _db
+        from app.services.coding_project_service import create_project
+
+        async with _db.async_session_factory() as db:
+            project = await create_project(
+                db, name="Owner", workspace_paths=[str(tmp_path)]
+            )
+            await db.commit()
+            project_id = project.id
         client = TestClient(app_with_team)
 
         resp = client.post(
@@ -326,12 +348,110 @@ class TestResolveTeamSession:
         assert data["created"] is True
         assert data["mode"] == "coding"
         assert data["workspace"] == str(tmp_path.resolve())
+        assert data["project_id"] == str(project_id)
 
         tree = client.get("/api/team/workspace/tree")
         assert tree.status_code == 200
-        assert [repo["path"] for repo in tree.json()["repositories"]] == [
-            str(tmp_path.resolve())
-        ]
+        assert [
+            (repo["path"], repo["project_id"]) for repo in tree.json()["repositories"]
+        ] == [(str(tmp_path.resolve()), str(project_id))]
+
+    @pytest.mark.asyncio
+    async def test_resolve_workspace_in_no_project_is_refused(
+        self, app_with_team, tmp_path
+    ):
+        """Coding is project-only: a bare folder no project owns opens nothing
+        and leaves neither a session nor a registry row behind."""
+        import app.core.db as _db
+
+        repo = tmp_path / "loose"
+        repo.mkdir()
+        client = TestClient(app_with_team)
+
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "coding", "workspace": str(repo), "create": True},
+        )
+
+        assert resp.status_code == 422
+        assert "belong to a project" in resp.json()["detail"]
+        async with _db.async_session_factory() as db:
+            sessions = (
+                await db.exec(select(ChatSession).where(ChatSession.mode == "coding"))
+            ).all()
+            registered = (await db.exec(select(CodingWorkspace))).all()
+        assert sessions == []
+        assert registered == []
+        assert client.get("/api/team/workspace/tree").json()["repositories"] == []
+
+    @pytest.mark.asyncio
+    async def test_resolve_deleted_project_says_it_was_deleted(
+        self, app_with_team, tmp_path
+    ):
+        """A link to a deleted project is not one with no repositories left."""
+        import app.core.db as _db
+        from app.services.coding_project_service import create_project
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        async with _db.async_session_factory() as db:
+            project = await create_project(
+                db, name="Soon gone", workspace_paths=[str(repo)]
+            )
+            await db.commit()
+            project_id = project.id
+        client = TestClient(app_with_team)
+        assert client.delete(f"/api/team/projects/{project_id}").status_code == 204
+
+        resp = client.post(
+            "/api/team/sessions/resolve",
+            json={"mode": "coding", "project_id": str(project_id)},
+        )
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "This project was deleted."
+
+    @pytest.mark.asyncio
+    async def test_resolve_project_with_a_foreign_workspace_is_refused(
+        self, app_with_team, tmp_path
+    ):
+        """A workspace named with a project must be one of its repositories."""
+        import app.core.db as _db
+        from app.services.coding_project_service import create_project
+
+        member = tmp_path / "member"
+        stranger = tmp_path / "stranger"
+        member.mkdir()
+        stranger.mkdir()
+        async with _db.async_session_factory() as db:
+            project = await create_project(
+                db, name="Owner", workspace_paths=[str(member)]
+            )
+            await db.commit()
+            project_id = project.id
+        client = TestClient(app_with_team)
+
+        refused = client.post(
+            "/api/team/sessions/resolve",
+            json={
+                "mode": "coding",
+                "project_id": str(project_id),
+                "workspace": str(stranger),
+            },
+        )
+        accepted = client.post(
+            "/api/team/sessions/resolve",
+            json={
+                "mode": "coding",
+                "project_id": str(project_id),
+                "workspace": str(member),
+            },
+        )
+
+        assert refused.status_code == 422
+        assert "not a repository of this project" in refused.json()["detail"]
+        assert accepted.status_code == 200
+        assert accepted.json()["project_id"] == str(project_id)
 
     @pytest.mark.asyncio
     async def test_resolve_project_owned_workspace_canonicalizes_to_project(
@@ -534,7 +654,10 @@ class TestResolveTeamSession:
         worktree.mkdir(parents=True)
         async with _db.async_session_factory() as db:
             async with db.begin():
-                db.add(CodingWorkspace(path=str(repo), kind="repo", name="repo"))
+                project = await _project_owning(
+                    db, CodingWorkspace(path=str(repo), kind="repo", name="repo")
+                )
+                project_id = project.id
                 db.add(
                     CodingWorkspace(
                         path=str(worktree),
@@ -551,6 +674,8 @@ class TestResolveTeamSession:
             json={"mode": "coding", "workspace": str(worktree)},
         )
         assert resp.status_code == 200
+        # A worktree inherits its source repo's project.
+        assert resp.json()["project_id"] == str(project_id)
 
         tree = client.get("/api/team/workspace/tree")
         assert tree.status_code == 200
@@ -560,7 +685,7 @@ class TestResolveTeamSession:
             "path": str(repo),
             "name": "repo",
             "worktrees": [{"path": str(worktree), "name": "task-a", "managed": True}],
-            "project_id": None,
+            "project_id": str(project_id),
         }
 
     @pytest.mark.asyncio
@@ -577,7 +702,10 @@ class TestResolveTeamSession:
         deleted.mkdir(parents=True)
         async with _db.async_session_factory() as db:
             async with db.begin():
-                db.add(CodingWorkspace(path=str(repo), kind="repo", name="repo"))
+                project = await _project_owning(
+                    db, CodingWorkspace(path=str(repo), kind="repo", name="repo")
+                )
+                project_id = project.id
                 db.add(
                     CodingWorkspace(
                         path=str(hidden),
@@ -608,32 +736,50 @@ class TestResolveTeamSession:
             "path": str(repo),
             "name": "repo",
             "worktrees": [],
-            "project_id": None,
+            "project_id": str(project_id),
         }
 
     @pytest.mark.asyncio
-    async def test_workspace_tree_keeps_visible_worktree_under_hidden_source(
+    async def test_workspace_tree_omits_repos_and_worktrees_in_no_project(
         self, app_with_team, tmp_path
     ):
+        """Coding opens repos only through a project: a repo in none — and a
+        worktree whose source repo is hidden or in none — is not listed, and
+        no entry is synthesized for such a source."""
         import app.core.db as _db
 
-        repo = tmp_path / "repo"
-        worktree = tmp_path / "worktrees" / "task-a"
-        repo.mkdir()
-        worktree.mkdir(parents=True)
+        loose = tmp_path / "loose"
+        loose_worktree = tmp_path / "worktrees" / "loose-task"
+        hidden_repo = tmp_path / "hidden-repo"
+        hidden_worktree = tmp_path / "worktrees" / "hidden-task"
+        for path in (loose, loose_worktree, hidden_repo, hidden_worktree):
+            path.mkdir(parents=True)
         async with _db.async_session_factory() as db:
             async with db.begin():
+                db.add(CodingWorkspace(path=str(loose), kind="repo", name="loose"))
                 db.add(
                     CodingWorkspace(
-                        path=str(repo), kind="repo", name="repo", hidden=True
+                        path=str(loose_worktree),
+                        kind="worktree",
+                        source_path=str(loose),
+                        name="loose-task",
+                        managed=True,
                     )
                 )
                 db.add(
                     CodingWorkspace(
-                        path=str(worktree),
+                        path=str(hidden_repo),
+                        kind="repo",
+                        name="hidden-repo",
+                        hidden=True,
+                    )
+                )
+                db.add(
+                    CodingWorkspace(
+                        path=str(hidden_worktree),
                         kind="worktree",
-                        source_path=str(repo),
-                        name="task-a",
+                        source_path=str(hidden_repo),
+                        name="hidden-task",
                         managed=True,
                     )
                 )
@@ -641,20 +787,7 @@ class TestResolveTeamSession:
         client = TestClient(app_with_team)
         tree = client.get("/api/team/workspace/tree")
         assert tree.status_code == 200
-        # The source repo itself is hidden, so it has no row in `rows` to
-        # source a real workspace_id from — the synthesized fallback entry
-        # leaves it None (see list_coding_workspace_tree).
-        assert tree.json()["repositories"] == [
-            {
-                "workspace_id": None,
-                "path": str(repo),
-                "name": "repo",
-                "worktrees": [
-                    {"path": str(worktree), "name": "task-a", "managed": True}
-                ],
-                "project_id": None,
-            }
-        ]
+        assert tree.json()["repositories"] == []
 
     @pytest.mark.asyncio
     async def test_workspace_tree_marks_project_membership_via_real_fk(
@@ -690,15 +823,16 @@ class TestResolveTeamSession:
         body = tree.json()
         by_path = {repo["path"]: repo for repo in body["repositories"]}
         assert by_path[str(in_project)]["project_id"] == str(project_id)
-        assert by_path[str(standalone)]["project_id"] is None
+        # A registered repo in no project is not part of the Coding tree.
+        assert str(standalone) not in by_path
         assert [p["id"] for p in body["projects"]] == [str(project_id)]
 
     @pytest.mark.asyncio
     async def test_workspace_tree_ignores_memberships_to_invisible_projects(
         self, app_with_team, tmp_path
     ):
-        """A stale membership must not hide a reopened repository from both
-        sidebar sections when its former project is no longer visible."""
+        """Only live Coding projects own tree placement: a repository whose
+        only project is hidden or soft-deleted is not listed at all."""
         import app.core.db as _db
 
         hidden_repo = tmp_path / "hidden-owner-repo"
@@ -740,148 +874,26 @@ class TestResolveTeamSession:
         assert tree.status_code == 200
         body = tree.json()
         assert body["projects"] == []
-        by_path = {repo["path"]: repo for repo in body["repositories"]}
-        assert by_path[str(hidden_repo)]["project_id"] is None
-        assert by_path[str(deleted_repo)]["project_id"] is None
+        assert body["repositories"] == []
 
-    @pytest.mark.asyncio
-    async def test_workspace_visibility_hides_all_workspace_sessions(
-        self, app_with_team, tmp_path
-    ):
-        import app.core.db as _db
-
-        workspace = str(tmp_path.resolve())
-        first_id = uuid.uuid7()
-        second_id = uuid.uuid7()
-        async with _db.async_session_factory() as db:
-            async with db.begin():
-                await _create_team_session(
-                    db, first_id, mode="coding", workspace=workspace
-                )
-                await _create_team_session(
-                    db, second_id, mode="coding", workspace=workspace
-                )
-
-        client = TestClient(app_with_team)
-        resp = client.patch(
+    def test_workspace_visibility_endpoint_is_gone(self, app_with_team, tmp_path):
+        """Standalone workspaces no longer exist, so neither does their
+        hide/reopen endpoint."""
+        resp = TestClient(app_with_team).patch(
             "/api/team/workspace/visibility",
-            json={"workspace": workspace, "hidden": True},
+            json={"workspace": str(tmp_path), "hidden": True},
         )
-        assert resp.status_code == 200
-        assert resp.json() == {"workspace": workspace, "hidden": True}
-
-        tree = client.get("/api/team/workspace/tree")
-        assert tree.status_code == 200
-        assert tree.json()["repositories"] == []
-
-    @pytest.mark.asyncio
-    async def test_removed_workspace_can_be_reopened_as_standalone(
-        self, app_with_team, tmp_path
-    ):
-        import app.core.db as _db
-
-        repository = tmp_path / "reopen-repo"
-        repository.mkdir()
-        async with _db.async_session_factory() as db:
-            async with db.begin():
-                db.add(
-                    CodingWorkspace(
-                        path=str(repository), kind="repo", name=repository.name
-                    )
-                )
-
-        client = TestClient(app_with_team)
-        removed = client.patch(
-            "/api/team/workspace/visibility",
-            json={"workspace": str(repository), "hidden": True},
-        )
-        assert removed.status_code == 200
-        assert client.get("/api/team/workspace/tree").json()["repositories"] == []
-
-        reopened = client.patch(
-            "/api/team/workspace/visibility",
-            json={"workspace": str(repository), "hidden": False},
-        )
-
-        assert reopened.status_code == 200
-        tree = client.get("/api/team/workspace/tree").json()
-        assert len(tree["repositories"]) == 1
-        item = tree["repositories"][0]
-        assert item["path"] == str(repository)
-        assert item["name"] == repository.name
-        assert item["worktrees"] == []
-        assert item["project_id"] is None
-
-    @pytest.mark.asyncio
-    async def test_workspace_visibility_can_hide_missing_workspace(
-        self, app_with_team, tmp_path
-    ):
-        import app.core.db as _db
-
-        workspace = str((tmp_path / "missing-worktree").resolve())
-        lead_id = uuid.uuid7()
-        async with _db.async_session_factory() as db:
-            async with db.begin():
-                await _create_team_session(
-                    db, lead_id, mode="coding", workspace=workspace
-                )
-
-        client = TestClient(app_with_team)
-        resp = client.patch(
-            "/api/team/workspace/visibility",
-            json={"workspace": workspace, "hidden": True},
-        )
-        assert resp.status_code == 200
-        assert resp.json() == {"workspace": workspace, "hidden": True}
-
-        tree = client.get("/api/team/workspace/tree")
-        assert tree.status_code == 200
-        assert tree.json()["repositories"] == []
-
-    @pytest.mark.asyncio
-    async def test_workspace_visibility_hides_owned_worktrees(
-        self, app_with_team, tmp_path
-    ):
-        """Removing a repo must not leave a synthesized row for its worktrees."""
-        import app.core.db as _db
-
-        repo = tmp_path / "repo"
-        worktree = tmp_path / "worktrees" / "task-a"
-        repo.mkdir()
-        worktree.mkdir(parents=True)
-        async with _db.async_session_factory() as db:
-            async with db.begin():
-                db.add(CodingWorkspace(path=str(repo), kind="repo", name="repo"))
-                db.add(
-                    CodingWorkspace(
-                        path=str(worktree),
-                        kind="worktree",
-                        source_path=str(repo),
-                        name="task-a",
-                        managed=True,
-                    )
-                )
-
-        client = TestClient(app_with_team)
-        resp = client.patch(
-            "/api/team/workspace/visibility",
-            json={"workspace": str(repo), "hidden": True},
-        )
-        assert resp.status_code == 200
-
-        tree = client.get("/api/team/workspace/tree")
-        assert tree.status_code == 200
-        assert tree.json()["repositories"] == []
+        assert resp.status_code in (404, 405)
 
 
-class TestChatRegistersItsWorkspace:
-    """A Coding chat started from a draft must register its repository.
+class TestChatBindsNewCodingSessionToProject:
+    """A Coding chat started from a draft is created by its first message.
 
-    The sidebar looks a freshly picked (or freshly cloned) folder up with
-    ``existing_only``, which finds no session and creates no registry row, so
-    ``POST /team/chat`` is the call that brings both into being. When it
-    skipped the registry the repository was invisible in the sidebar — across
-    restarts too — until the user opened the same folder a second time.
+    The sidebar looks the draft up with ``existing_only``, which finds no
+    session, so ``POST /team/chat`` is the call that brings the session into
+    being. Coding is project-only: that session belongs to the project owning
+    the repository, and a folder no project owns is refused before anything
+    is created or registered.
     """
 
     @pytest.fixture
@@ -901,11 +913,25 @@ class TestChatRegistersItsWorkspace:
         )
         return dispatch
 
-    def test_first_message_registers_the_workspace(
+    @staticmethod
+    async def _project_with(*repos):
+        import app.core.db as _db
+        from app.services.coding_project_service import create_project
+
+        async with _db.async_session_factory() as db:
+            project = await create_project(
+                db, name="Owner", workspace_paths=[str(repo) for repo in repos]
+            )
+            await db.commit()
+            return project.id
+
+    @pytest.mark.asyncio
+    async def test_first_message_creates_the_session_under_the_owning_project(
         self, app_with_team, dispatched, tmp_path
     ):
         repo = tmp_path / "cloned-repo"
         repo.mkdir()
+        project_id = await self._project_with(repo)
         client = TestClient(app_with_team)
 
         resp = client.post(
@@ -914,16 +940,45 @@ class TestChatRegistersItsWorkspace:
         )
 
         assert resp.status_code == 202, resp.text
+        assert dispatched.await_args.kwargs["project_id"] == project_id
         tree = client.get("/api/team/workspace/tree")
-        assert [r["path"] for r in tree.json()["repositories"]] == [str(repo.resolve())]
-        assert [r["name"] for r in tree.json()["repositories"]] == ["cloned-repo"]
+        assert [(r["path"], r["project_id"]) for r in tree.json()["repositories"]] == [
+            (str(repo.resolve()), str(project_id))
+        ]
 
-    def test_rejected_message_registers_nothing(
+    @pytest.mark.asyncio
+    async def test_explicit_project_must_own_the_workspace(
         self, app_with_team, dispatched, tmp_path
     ):
-        """A request that never creates a session leaves the sidebar alone."""
+        member = tmp_path / "member"
+        outsider = tmp_path / "outsider"
+        member.mkdir()
+        outsider.mkdir()
+        project_id = await self._project_with(member)
+        client = TestClient(app_with_team)
+
+        resp = client.post(
+            "/api/team/chat",
+            data={
+                "message": "hello",
+                "mode": "coding",
+                "workspace": str(outsider),
+                "project_id": str(project_id),
+            },
+        )
+
+        assert resp.status_code == 422, resp.text
+        assert "not a repository of this project" in resp.json()["detail"]
+        dispatched.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_rejected_message_creates_nothing(
+        self, app_with_team, dispatched, tmp_path
+    ):
+        """A request that never creates a session dispatches nothing."""
         repo = tmp_path / "untouched"
         repo.mkdir()
+        await self._project_with(repo)
         client = TestClient(app_with_team)
 
         resp = client.post(
@@ -932,40 +987,49 @@ class TestChatRegistersItsWorkspace:
         )
 
         assert resp.status_code == 410, resp.text
-        assert client.get("/api/team/workspace/tree").json()["repositories"] == []
+        dispatched.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_chatting_in_a_hidden_workspace_reopens_it(
+    async def test_first_message_on_a_folder_in_no_project_is_refused(
         self, app_with_team, dispatched, tmp_path
     ):
-        """Same rule ``/sessions/resolve`` applies: opening a repository makes
-        it visible, so both ways into a session agree on what the sidebar shows.
-        """
+        """No standalone workspace: nothing is dispatched or registered."""
         import app.core.db as _db
 
-        repo = tmp_path / "hidden"
+        repo = tmp_path / "loose"
         repo.mkdir()
-        async with _db.async_session_factory() as db:
-            async with db.begin():
-                db.add(
-                    CodingWorkspace(
-                        path=str(repo.resolve()),
-                        kind="repo",
-                        name="hidden",
-                        hidden=True,
-                    )
-                )
         client = TestClient(app_with_team)
-        assert client.get("/api/team/workspace/tree").json()["repositories"] == []
 
         resp = client.post(
             "/api/team/chat",
             data={"message": "hello", "mode": "coding", "workspace": str(repo)},
         )
 
-        assert resp.status_code == 202, resp.text
-        tree = client.get("/api/team/workspace/tree").json()
-        assert [r["path"] for r in tree["repositories"]] == [str(repo.resolve())]
+        assert resp.status_code == 422, resp.text
+        assert "belong to a project" in resp.json()["detail"]
+        dispatched.assert_not_awaited()
+        async with _db.async_session_factory() as db:
+            assert (await db.exec(select(CodingWorkspace))).all() == []
+        assert client.get("/api/team/workspace/tree").json()["repositories"] == []
+
+    @pytest.mark.asyncio
+    async def test_first_message_on_a_repo_shared_by_projects_conflicts(
+        self, app_with_team, dispatched, tmp_path
+    ):
+        repo = tmp_path / "shared"
+        repo.mkdir()
+        await self._project_with(repo)
+        await self._project_with(repo)
+        client = TestClient(app_with_team)
+
+        resp = client.post(
+            "/api/team/chat",
+            data={"message": "hello", "mode": "coding", "workspace": str(repo)},
+        )
+
+        assert resp.status_code == 409, resp.text
+        assert "multiple projects" in resp.json()["detail"]
+        dispatched.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -1781,9 +1845,7 @@ class TestPermissionModeEndpoint:
         assert metadata["permission_mode"] == "ask"
 
     @pytest.mark.asyncio
-    async def test_patch_refuses_a_mode_the_server_does_not_have(
-        self, app_with_team
-    ):
+    async def test_patch_refuses_a_mode_the_server_does_not_have(self, app_with_team):
         """422, not a silent downgrade to the permissive default."""
         import app.core.db as _db
 

@@ -32,6 +32,7 @@ import type { TeamLeadOption } from '@/api/types'
 import { useRegistryQuery, useWebBridgeSettingsQuery } from '@/queries'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { WebBridgeStatusPopover } from '@/components/shell/WebBridgeStatusDialog'
+import { SuggestedTaskDock } from '@/components/SuggestedTaskDock'
 
 interface WorkbenchBarProps {
   activeAgent: string | null
@@ -50,7 +51,9 @@ interface WorkbenchBarProps {
   mode: 'work' | 'coding'
   /** Absolute workspace root for the "Open in" menu. */
   workspace?: string | null
-  /** Opens the workspace picker when no workspace is active. */
+  /** Every repository the session works in, `workspace` first. */
+  repositories?: readonly string[]
+  /** Opens the folder picker (which creates a project) when no project is active. */
   onChooseWorkspace?: () => void
   reviewContext?: CodeReviewSessionContext | null
   onOpenReviewContext?: () => void
@@ -207,10 +210,12 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
         className="flex shrink-0 items-center rounded-xl border border-(--color-border) bg-(--bg-card)/55 p-0.5 shadow-sm"
         data-no-drag
       >
+        <SuggestedTaskDock />
         {showOpenWith && (
           <>
             <OpenWithMenu
               workspace={props.workspace ?? null}
+              repositories={props.repositories}
               onChooseWorkspace={props.onChooseWorkspace}
             />
             <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />

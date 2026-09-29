@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid7
 
@@ -49,8 +50,48 @@ def sample_task():
 _NORMAL_INJECTED = {"_mode": "work", "_workspace": None}
 
 
-def _coding_injected(workspace: str) -> dict[str, object]:
-    return {"_mode": "coding", "_workspace": workspace}
+def _coding_injected(workspace: str, session_id=None) -> dict[str, object]:
+    injected: dict[str, object] = {"_mode": "coding", "_workspace": workspace}
+    if session_id is not None:
+        injected["_state"] = SimpleNamespace(metadata={"session_id": str(session_id)})
+    return injected
+
+
+async def _seed_coding_sessions(*, with_project: bool = True):
+    """A Coding lead session (in a project unless told otherwise) and one
+    member session hanging off it; returns ``(project_id, lead_id, member_id)``.
+    """
+    import app.core.db as _db
+    from app.models.chat import ChatSession, CodingProject
+
+    project_id = None
+    lead_id = uuid7()
+    member_id = uuid7()
+    async with _db.async_session_factory() as db:
+        if with_project:
+            project = CodingProject(name="proj")
+            db.add(project)
+            await db.flush()
+            project_id = project.id
+        db.add(
+            ChatSession(
+                id=lead_id,
+                mode="coding",
+                workspace="/tmp/project",
+                project_id=project_id,
+            )
+        )
+        await db.flush()
+        db.add(
+            ChatSession(
+                id=member_id,
+                mode="coding",
+                workspace="/tmp/project",
+                parent_session_id=lead_id,
+            )
+        )
+        await db.commit()
+    return project_id, lead_id, member_id
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +315,9 @@ async def test_create_in_coding_context_auto_injects_workspace(
     mock_task_scheduler, sample_task, clean_db
 ):
     """When the calling agent runs in a coding team, the task inherits
-    ``mode='coding'`` and the team's workspace — no LLM-supplied value."""
+    ``mode='coding'``, the team's workspace and the calling session's
+    project — no LLM-supplied value."""
+    project_id, lead_id, _member_id = await _seed_coding_sessions()
     sample_task.mode = "coding"
     sample_task.workspace = "/tmp/project"
     mock_task_scheduler.create.return_value = sample_task
@@ -286,7 +329,7 @@ async def test_create_in_coding_context_auto_injects_workspace(
             schedule_type="every",
             every_seconds=3600,
             prompt="Check email",
-            _injected=_coding_injected("/tmp/project"),
+            _injected=_coding_injected("/tmp/project", lead_id),
         )
 
     assert "Scheduled task created." in result
@@ -295,6 +338,64 @@ async def test_create_in_coding_context_auto_injects_workspace(
     payload = mock_task_scheduler.create.call_args[0][0]
     assert payload.mode == "coding"
     assert payload.workspace == "/tmp/project"
+    assert payload.project_id == project_id
+
+
+@pytest.mark.asyncio
+async def test_create_from_member_session_uses_the_leads_project(
+    mock_task_scheduler, sample_task, clean_db
+):
+    """Member sessions carry no project of their own; the tool walks up
+    ``parent_session_id`` to the lead's."""
+    project_id, _lead_id, member_id = await _seed_coding_sessions()
+    sample_task.mode = "coding"
+    sample_task.workspace = "/tmp/project"
+    mock_task_scheduler.create.return_value = sample_task
+
+    with patch("app.scheduler.scheduler.task_scheduler", mock_task_scheduler):
+        result = await schedule_task.arun(
+            action="create",
+            name="test-task",
+            schedule_type="every",
+            every_seconds=3600,
+            prompt="Check email",
+            _injected=_coding_injected("/tmp/project", member_id),
+        )
+
+    assert "Scheduled task created." in result
+    payload = mock_task_scheduler.create.call_args[0][0]
+    assert payload.project_id == project_id
+
+
+@pytest.mark.asyncio
+async def test_create_in_coding_session_without_project_is_refused(
+    mock_task_scheduler, clean_db
+):
+    """Coding is project-only: a Coding session in no project (or with no
+    session at all) cannot schedule a task, and the scheduler is not called."""
+    _project_id, _lead_id, member_id = await _seed_coding_sessions(with_project=False)
+
+    with patch("app.scheduler.scheduler.task_scheduler", mock_task_scheduler):
+        in_no_project = await schedule_task.arun(
+            action="create",
+            name="test-task",
+            schedule_type="every",
+            every_seconds=3600,
+            prompt="Check email",
+            _injected=_coding_injected("/tmp/project", member_id),
+        )
+        without_session = await schedule_task.arun(
+            action="create",
+            name="test-task",
+            schedule_type="every",
+            every_seconds=3600,
+            prompt="Check email",
+            _injected=_coding_injected("/tmp/project"),
+        )
+
+    assert in_no_project == "Error: this Coding session belongs to no project."
+    assert without_session == "Error: this Coding session belongs to no project."
+    mock_task_scheduler.create.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -602,7 +602,7 @@ class TestTeamChatRoute:
         "command", ["/loop old objective", "/loop:set 5", "/loop:pause"]
     )
     def test_team_chat_rejects_removed_loop_namespace(
-        self, app_with_team, test_team, command
+        self, app_with_team, test_team, command, monkeypatch
     ):
         """Old commands must not leak through as ordinary user prompts."""
         session_id = str(uuid.uuid7())
@@ -610,6 +610,13 @@ class TestTeamChatRoute:
         test_team._has_active_turn = True
         test_team.handle_user_message = AsyncMock(return_value=session_id)
         workspace = Path.cwd()
+        # Coding is project-only; file the new session under a project so the
+        # request reaches the command check this test is about.
+        monkeypatch.setattr(
+            chat_routes,
+            "_owning_project_for_coding_session",
+            AsyncMock(return_value=uuid.uuid7()),
+        )
 
         client = TestClient(app_with_team)
         try:

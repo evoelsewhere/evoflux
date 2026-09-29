@@ -1692,9 +1692,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               // For a top-level entry (no slash) the whole path is the
               // basename, so there's nothing to dim — display falls back
               // to a single span.
-              const slash = ref.path.lastIndexOf('/')
-              const parent = slash === -1 ? '' : ref.path.slice(0, slash + 1)
-              const basename = slash === -1 ? ref.path : ref.path.slice(slash + 1)
+              // Another repository's file shows as `<repository>/<path>`
+              // while inserting its absolute path.
+              const shown = ref.label ?? ref.path
+              const slash = shown.lastIndexOf('/')
+              const parent = slash === -1 ? '' : shown.slice(0, slash + 1)
+              const basename = slash === -1 ? shown : shown.slice(slash + 1)
               return (
                 <button
                   key={`${ref.type}:${ref.path}`}

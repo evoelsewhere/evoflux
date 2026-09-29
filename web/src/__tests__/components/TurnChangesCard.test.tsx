@@ -1,8 +1,17 @@
 import { fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TurnChangesCard } from '@/components/TurnChangesCard'
-import type { TurnChangesPending } from '@/api/types'
+import type { CodingProject, TurnChangesPending } from '@/api/types'
+import { queryKeys } from '@/queries/keys'
+import { useTeamStore } from '@/stores/useTeamStore'
+import { useUIStore } from '@/stores/useUIStore'
+
+function renderWithQueries(ui: ReactElement, queryClient = new QueryClient()) {
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+}
 
 const changes: TurnChangesPending = {
   sessionId: 'session-1',
@@ -29,7 +38,7 @@ beforeEach(() => {
 
 describe('TurnChangesCard', () => {
   it('shows totals and expands the remaining file list', () => {
-    render(<TurnChangesCard changes={changes} />)
+    renderWithQueries(<TurnChangesCard changes={changes} />)
 
     expect(screen.getByText('Edited 4 files')).toBeInTheDocument()
     expect(screen.getByText('+503')).toBeInTheDocument()
@@ -44,5 +53,42 @@ describe('TurnChangesCard', () => {
       'aria-expanded',
       'true',
     )
+  })
+
+  it('reviews a change in the repository of the project that owns it', () => {
+    const project: CodingProject = {
+      id: 'project-1',
+      name: 'MR',
+      description: null,
+      kind: 'coding',
+      settings: {},
+      workspaces: [
+        { workspace_id: 'a', path: '/repos/api', name: 'api', display_name: null, sort_order: 0, kind: 'repo' },
+        { workspace_id: 'w', path: '/repos/web', name: 'web', display_name: null, sort_order: 1, kind: 'repo' },
+      ],
+      created_at: '',
+      updated_at: '',
+    }
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    queryClient.setQueryData(queryKeys.projects.detail('project-1'), project)
+    queryClient.setQueryData(queryKeys.codingOverview(), { projects: [project], repositories: [] })
+    useTeamStore.setState({ _workspace: '/repos/api', projectId: 'project-1' })
+    const openGitChanges = vi.fn()
+    useUIStore.setState({ openGitChanges })
+
+    renderWithQueries(
+      <TurnChangesCard
+        changes={{
+          sessionId: 'session-1',
+          additions: 1,
+          deletions: 0,
+          files: [{ path: '../web/src/users.ts', status: 'modified', additions: 1, deletions: 0 }],
+        }}
+      />,
+      queryClient,
+    )
+    fireEvent.click(screen.getByTitle('Review ../web/src/users.ts'))
+
+    expect(openGitChanges).toHaveBeenCalledWith('/repos/web')
   })
 })

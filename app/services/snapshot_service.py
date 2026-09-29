@@ -1,11 +1,21 @@
-"""Out-of-tree Git-based workspace snapshots for session undo/redo."""
+"""Out-of-tree Git-based workspace snapshots for session undo/redo.
+
+A session's primary workspace is snapshotted into ``snapshot_dir(session)``.
+A multi-repository Coding project also snapshots every other repository the
+session may write to, each into its own out-of-tree repo under
+``snapshot_dir(session)/repos/`` (one index per work tree), and records the
+turn as a ``{repository path: tree hash}`` map. A single-repository session
+keeps recording the bare primary tree hash.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import shutil
 import subprocess
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -59,6 +69,16 @@ def _lock(session_id: str) -> asyncio.Lock:
 def snapshot_dir(session_id: str) -> Path:
     """Return the on-disk ``GIT_DIR`` for this session's snapshot repo."""
     return Path(settings.EVOFLUX_STATE_DIR) / "snapshot" / session_id
+
+
+def _repository_gitdir(session_id: str, workspace: Path, primary: Path) -> Path:
+    """``GIT_DIR`` snapshotting *workspace*: the session's own for the primary."""
+    base = snapshot_dir(session_id)
+    resolved = workspace.resolve()
+    if resolved == primary.resolve():
+        return base
+    digest = hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()[:16]
+    return base / "repos" / digest
 
 
 def is_available() -> bool:
@@ -246,12 +266,15 @@ async def track(session_id: str, workspace: Path) -> str | None:
     or any git invocation fails. Safe to call concurrently — locked
     per-session.
     """
+    return await _track(session_id, workspace, snapshot_dir(session_id))
+
+
+async def _track(session_id: str, workspace: Path, gitdir: Path) -> str | None:
     if not is_available():
         return None
     if not workspace.exists() or not workspace.is_dir():
         return None
 
-    gitdir = snapshot_dir(session_id)
     async with _lock(session_id):
         if not await _init_repo(gitdir, workspace):
             return None
@@ -292,12 +315,24 @@ async def restore(
     skip_stage: bool = False,
 ) -> RestoreResult:
     """Restore the workspace to the given snapshot tree hash."""
+    return await _restore(
+        session_id, workspace, snapshot, snapshot_dir(session_id), skip_stage=skip_stage
+    )
+
+
+async def _restore(
+    session_id: str,
+    workspace: Path,
+    snapshot: str,
+    gitdir: Path,
+    *,
+    skip_stage: bool = False,
+) -> RestoreResult:
     if not is_available():
         return RestoreResult(ok=False)
     if not snapshot:
         return RestoreResult(ok=False)
 
-    gitdir = snapshot_dir(session_id)
     if not (gitdir / "HEAD").exists():
         logger.warning(
             "snapshot_restore_no_repo session_id={} hash={}", session_id, snapshot
@@ -417,6 +452,100 @@ async def restore(
         )
 
 
+Snapshot = str | dict[str, str]
+"""A turn's snapshot: the bare primary tree hash, or a per-repository map."""
+
+
+def parse_snapshot(value: object) -> Snapshot | None:
+    """Read a stored snapshot back, or ``None`` when there is none."""
+    if isinstance(value, str):
+        return value or None
+    if isinstance(value, Mapping):
+        repositories = {
+            str(path): tree
+            for path, tree in value.items()
+            if isinstance(tree, str) and tree
+        }
+        return repositories or None
+    return None
+
+
+def snapshot_repositories(snapshot: Snapshot | None) -> list[Path]:
+    """Repositories a snapshot covers besides the primary workspace's own."""
+    if not isinstance(snapshot, dict):
+        return []
+    return [Path(path) for path in snapshot]
+
+
+async def track_repositories(
+    session_id: str, primary: Path, others: Sequence[Path] = ()
+) -> Snapshot | None:
+    """Snapshot *primary* and every other repository in *others*.
+
+    With no other repository this is :func:`track`. Otherwise it returns a
+    ``{repository path: tree hash}`` map covering each repository that could
+    be snapshotted, so undo/redo can restore them all.
+    """
+    resolved_primary = primary.resolve()
+    siblings = list(
+        dict.fromkeys(
+            path.resolve() for path in others if path.resolve() != resolved_primary
+        )
+    )
+    if not siblings:
+        return await track(session_id, primary)
+    snapshot: dict[str, str] = {}
+    for workspace in (primary, *siblings):
+        tree = await _track(
+            session_id,
+            workspace,
+            _repository_gitdir(session_id, workspace, primary),
+        )
+        if tree:
+            snapshot[str(workspace.resolve())] = tree
+    return snapshot or None
+
+
+async def restore_repositories(
+    session_id: str,
+    primary: Path,
+    snapshot: Snapshot,
+    *,
+    skip_stage: bool = False,
+) -> RestoreResult:
+    """Restore every repository *snapshot* covers.
+
+    Paths in the result are relative to the primary workspace for its own
+    files and absolute for files in the project's other repositories.
+    """
+    if isinstance(snapshot, str):
+        return await restore(session_id, primary, snapshot, skip_stage=skip_stage)
+    merged = RestoreResult(ok=True)
+    resolved_primary = primary.resolve()
+    for path, tree in snapshot.items():
+        workspace = Path(path)
+        result = await _restore(
+            session_id,
+            workspace,
+            tree,
+            _repository_gitdir(session_id, workspace, primary),
+            skip_stage=skip_stage,
+        )
+        merged.ok = merged.ok and result.ok
+        prefix = None if workspace.resolve() == resolved_primary else workspace
+        for into, paths in (
+            (merged.added, result.added),
+            (merged.modified, result.modified),
+            (merged.removed, result.removed),
+        ):
+            into.extend(
+                paths
+                if prefix is None
+                else [(prefix / rel).as_posix() for rel in paths]
+            )
+    return merged
+
+
 def _delete_extras(workspace: Path, extras: set[str]) -> None:
     """Unlink files in ``extras`` and drop any now-empty directories."""
     for rel in extras:
@@ -452,15 +581,27 @@ async def cleanup(session_id: str) -> None:
     gitdir = snapshot_dir(session_id)
     if not (gitdir / "HEAD").exists():
         return
+    repositories_dir = gitdir / "repos"
+    gitdirs = [
+        gitdir,
+        *(
+            sorted(
+                path for path in repositories_dir.iterdir() if (path / "HEAD").exists()
+            )
+            if repositories_dir.is_dir()
+            else ()
+        ),
+    ]
     async with _lock(session_id):
-        await _git(
-            *_CORE_FLAGS,
-            "--git-dir",
-            str(gitdir),
-            "gc",
-            "--prune=now",
-            "--quiet",
-        )
+        for repository_gitdir in gitdirs:
+            await _git(
+                *_CORE_FLAGS,
+                "--git-dir",
+                str(repository_gitdir),
+                "gc",
+                "--prune=now",
+                "--quiet",
+            )
 
 
 async def remove(session_id: str) -> None:

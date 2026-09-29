@@ -27,7 +27,7 @@ import {
 import type { ScheduledTaskResponse, ScheduledTaskCreate, ScheduledTaskMode } from '@/api/types'
 import { formatRelativeDate, formatInTimezone, wallClockToISO, isoToWallClock } from '@/utils/format'
 import { useModalFocus } from '@/hooks/useModalFocus'
-import { loadCodingWorkspaceEntries, workspaceLabel } from '@/utils/workspace'
+import { workspaceLabel } from '@/utils/workspace'
 import { useCodingOverviewQuery } from '@/queries/useProjectsQuery'
 import { WorkspaceFolderPicker } from '@/components/WorkspaceFolderPicker'
 import { useReducedMotion } from '@/hooks/useReducedMotion'
@@ -39,11 +39,12 @@ interface SchedulerPanelProps {
   onClose: () => void
   embedded?: boolean
   /** Routing target inherited from the surrounding chat view. When the
-   *  scheduler is opened inside a coding workspace, the Create form
-   *  pre-fills mode='coding' + that workspace. Edit forms always start
-   *  from the task's own stored mode/workspace. */
+   *  scheduler is opened inside a coding project, the Create form
+   *  pre-fills mode='coding' + that project and its workspace. Edit forms
+   *  always start from the task's own stored mode/workspace. */
   contextMode?: ScheduledTaskMode
   contextWorkspace?: string | null
+  contextProjectId?: string | null
 }
 
 // ── Shared utility ──────────────────────────────────────────────────────────
@@ -172,14 +173,10 @@ function ModeBadge({ task }: { task: Pick<ScheduledTaskResponse, 'mode' | 'works
 }
 
 /**
- * Mode toggle + workspace input — shared between Create and Edit forms.
+ * Mode toggle + target input — shared between Create and Edit forms.
  *
- * Workspace control:
- *   - When the caller has a context workspace (scheduler opened inside a
- *     coding chat), the input pre-fills with that path. The user can still
- *     edit it or switch modes.
- *   - Saved coding workspaces from localStorage are surfaced as quick-pick
- *     suggestions via a small `<Select>` next to the path input.
+ * Coding tasks pick a project (Coding is project-only) and run in its
+ * primary repository; Work tasks pick an optional workspace folder.
  */
 /**
  * Internal subcomponent — exported solely for unit testing the mode/workspace
@@ -197,79 +194,36 @@ export function ModeWorkspaceFields({
   projectId: string | null
   onChange: (next: { mode: ScheduledTaskMode; workspace: string | null; projectId: string | null }) => void
 }) {
-  const savedWorkspaces = useMemo(() => {
-    const paths = loadCodingWorkspaceEntries().map((entry) => entry.path)
-    if (workspace && !paths.includes(workspace)) paths.push(workspace)
-    return paths.sort()
-  }, [workspace])
   const overviewQuery = useCodingOverviewQuery()
-  const projects = overviewQuery.data?.projects ?? []
+  const projects = overviewQuery.data?.projects
 
-  // Build unified workspace options: projects (grouped) and standalone workspaces
+  // Coding tasks target a project (Coding is project-only); each project
+  // appears once and runs in its primary repository.
   type WorkspaceOption = {
     value: string
     label: string
-    projectId: string | null
+    projectId: string
     path: string
-    isProject: boolean
   }
 
-  const workspaceOptions: WorkspaceOption[] = useMemo(() => {
-    const options: WorkspaceOption[] = []
-    // Projects first - each project appears once with its primary workspace
-    for (const project of projects) {
-      if (project.workspaces.length > 0) {
-        const primaryWs = project.workspaces[0]
-        options.push({
+  const workspaceOptions: WorkspaceOption[] = useMemo(
+    () =>
+      (projects ?? [])
+        .filter((project) => project.workspaces.length > 0)
+        .map((project) => ({
           value: `project:${project.id}`,
           label: project.name,
           projectId: project.id,
-          path: primaryWs.path,
-          isProject: true,
-        })
-      }
-    }
-    // Standalone workspaces (not in any project)
-    const projectPaths = new Set(projects.flatMap(p => p.workspaces.map(w => w.path)))
-    for (const path of savedWorkspaces) {
-      if (!projectPaths.has(path)) {
-        options.push({
-          value: `ws:${path}`,
-          label: workspaceLabel(path),
-          projectId: null,
-          path,
-          isProject: false,
-        })
-      }
-    }
-    // If current workspace is set but not in options, add it
-    if (workspace && !options.some(o => o.path === workspace)) {
-      const isProjectWs = projects.some(p => p.workspaces.some(w => w.path === workspace))
-      if (!isProjectWs) {
-        options.push({
-          value: `ws:${workspace}`,
-          label: workspaceLabel(workspace),
-          projectId: null,
-          path: workspace,
-          isProject: false,
-        })
-      }
-    }
-    return options
-  }, [workspace, projects, savedWorkspaces])
+          path: project.workspaces[0].path,
+        })),
+    [projects],
+  )
 
   // Current selected value
-  const selectedValue = useMemo(() => {
-    if (projectId) {
-      const projectOpt = workspaceOptions.find(o => o.projectId === projectId)
-      if (projectOpt) return projectOpt.value
-    }
-    if (workspace) {
-      const wsOpt = workspaceOptions.find(o => o.path === workspace && !o.isProject)
-      if (wsOpt) return wsOpt.value
-    }
-    return ''
-  }, [projectId, workspace, workspaceOptions])
+  const selectedValue = useMemo(
+    () => workspaceOptions.find((o) => o.projectId === projectId)?.value ?? '',
+    [projectId, workspaceOptions],
+  )
 
   const handleWorkspaceChange = (value: string) => {
     if (!value) {
@@ -325,40 +279,40 @@ export function ModeWorkspaceFields({
       <p className="mt-1 text-xs text-(--color-text-muted)">
         {mode === 'work'
           ? 'Delivers to the default team lead.'
-          : 'Delivers to the lead of the coding team for the selected workspace.'}
+          : 'Delivers to the lead of the coding team for the selected project.'}
       </p>
 
       {mode === 'coding' && (
         <div className="mt-3">
-          <label className="block text-sm font-medium text-(--color-text)">Workspace</label>
+          <label className="block text-sm font-medium text-(--color-text)">Project</label>
           <Select
             value={selectedValue}
             onValueChange={(v) => handleWorkspaceChange(v ?? '')}
           >
             <SelectTrigger
               className={`mt-1 w-full ${FIELD_CLASS}`}
-              aria-label="Select workspace"
+              aria-label="Select project"
             >
               <SelectValue>
                 {selectedValue
                   ? workspaceOptions.find(o => o.value === selectedValue)?.label ?? 'Select…'
-                  : 'Select a workspace…'}
+                  : 'Select a project…'}
               </SelectValue>
             </SelectTrigger>
             <SelectContent className={SELECT_CONTENT_CLASS}>
               {workspaceOptions.length === 0 ? (
-                <SelectItem value="__none__" disabled>No saved workspaces</SelectItem>
+                <SelectItem value="__none__" disabled>No projects yet</SelectItem>
               ) : (
                 workspaceOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
-                    {option.isProject ? `📁 ${option.label}` : option.label}
+                    {option.label}
                   </SelectItem>
                 ))
               )}
             </SelectContent>
           </Select>
           <p className="mt-1 text-xs text-(--color-text-muted)">
-            Projects and standalone workspaces from your saved coding workspaces.
+            The task runs in the project&apos;s primary repository.
           </p>
         </div>
       )}
@@ -409,6 +363,7 @@ export function SchedulerPanel({
   embedded = false,
   contextMode = 'work',
   contextWorkspace = null,
+  contextProjectId = null,
 }: SchedulerPanelProps) {
   const prefersReducedMotion = useReducedMotion()
   const preset = useMotionPreset()
@@ -614,6 +569,7 @@ export function SchedulerPanel({
                   <CreateTaskForm
                     contextMode={contextMode}
                     contextWorkspace={contextWorkspace}
+                    contextProjectId={contextProjectId}
                     onSuccess={handleBackToList}
                   />
                 </motion.div>
@@ -688,10 +644,12 @@ function TaskRow({
 function CreateTaskForm({
   contextMode,
   contextWorkspace,
+  contextProjectId,
   onSuccess,
 }: {
   contextMode: ScheduledTaskMode
   contextWorkspace: string | null
+  contextProjectId: string | null
   onSuccess: () => void
 }) {
   const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -702,7 +660,7 @@ function CreateTaskForm({
     name: '',
     mode: initialMode,
     workspace: initialWorkspace,
-    project_id: null,
+    project_id: contextMode === 'coding' ? contextProjectId : null,
     schedule_type: 'every',
     every_seconds: 3600,
     timezone: localTz,
@@ -721,8 +679,8 @@ function CreateTaskForm({
     const workspace = formData.workspace ?? null
 
     if (!formData.name.trim()) { setError('Task name is required'); return }
-    if (mode === 'coding' && !workspace?.trim()) {
-      setError('Workspace is required for coding mode'); return
+    if (mode === 'coding' && (!formData.project_id || !workspace?.trim())) {
+      setError('Choose a project for coding mode'); return
     }
     if (!formData.prompt.trim()) { setError('Prompt is required'); return }
     if (formData.schedule_type === 'at' && !formData.at_datetime) {
@@ -1230,8 +1188,8 @@ function EditTaskForm({
     const mode: ScheduledTaskMode = formData.mode ?? 'work'
     const workspace = formData.workspace ?? null
 
-    if (mode === 'coding' && !workspace?.trim()) {
-      setError('Workspace is required for coding mode'); return
+    if (mode === 'coding' && (!formData.project_id || !workspace?.trim())) {
+      setError('Choose a project for coding mode'); return
     }
     if (!formData.prompt.trim()) { setError('Prompt is required'); return }
     if (formData.schedule_type === 'at' && !formData.at_datetime) {

@@ -109,7 +109,6 @@ export interface WikiFileRequest {
 export interface CodingScopeRequest {
   id: number
   projectId: string | null
-  workspace: string | null
 }
 interface WorkbenchState {
   workbenchTabs: WorkbenchTab[]
@@ -127,6 +126,9 @@ interface WorkbenchState {
   computerPipSessionIds: string[]
   pullRequestsScope: PullRequestsScope
   gitWorkspaceView: GitWorkspaceView
+  /** The repository Source Control should switch to, for a change made in
+   * another repository of the project than the session's primary. */
+  gitChangesRequest: { id: number; workspace: string } | null
 }
 
 const MULTI_INSTANCE_TOOLS = new Set<WorkbenchTool>(['terminal', 'browser'])
@@ -376,6 +378,11 @@ interface UIStore extends WorkbenchState {
   wikiFileRequest: WikiFileRequest | null
   /** One-shot request to select a Coding project or repository in the sidebar. */
   codingScopeRequest: CodingScopeRequest | null
+  /**
+   * The project the Coding sidebar has selected, so the Coding home page
+   * offers a chat in the same one. ``null`` before the sidebar settles.
+   */
+  codingSelectedProjectId: string | null
   createWorkbenchTab: (tool: WorkbenchTool, options?: WorkbenchTabOptions) => void
   restoreWorkbenchTabs: (
     tool: WorkbenchTool,
@@ -403,7 +410,9 @@ interface UIStore extends WorkbenchState {
   closeComputerPip: (sessionId?: string) => void
   toggleWiki: () => void
   toggleScheduler: () => void
-  openGitChanges: () => void
+  /** Open Source Control's changes, on *workspace* when given (a project
+   * repository other than the session's primary). */
+  openGitChanges: (workspace?: string) => void
   openGitReviews: () => void
   setGitWorkspaceView: (view: GitWorkspaceView) => void
   toggleBrowser: () => void
@@ -429,8 +438,9 @@ interface UIStore extends WorkbenchState {
   clearWorkspaceFileRequest: (requestId?: number) => void
   requestWikiFile: (path: string) => void
   clearWikiFileRequest: (requestId?: number) => void
-  requestCodingScope: (scope: { projectId?: string | null; workspace?: string | null }) => void
+  requestCodingScope: (scope: { projectId?: string | null }) => void
   clearCodingScopeRequest: (requestId?: number) => void
+  setCodingSelectedProjectId: (projectId: string | null) => void
 }
 
 export const useUIStore = create<UIStore>()(
@@ -448,6 +458,7 @@ export const useUIStore = create<UIStore>()(
     computerPipSessionIds: [],
     pullRequestsScope: 'session',
     gitWorkspaceView: 'changes',
+    gitChangesRequest: null,
     createWorkbenchTab: (tool, options = {}) => set((state) => {
       if (tool === 'source-control') {
         state.gitWorkspaceView = 'changes'
@@ -598,9 +609,13 @@ export const useUIStore = create<UIStore>()(
     // and streamed tool calls. They now all target the shared workbench.
     toggleWiki: () => set((state) => { toggleTool(state, 'wiki') }),
     toggleScheduler: () => set((state) => { toggleTool(state, 'scheduler') }),
-    openGitChanges: () => set((state) => {
+    openGitChanges: (workspace) => set((state) => {
       state.pullRequestsScope = 'session'
       state.gitWorkspaceView = 'changes'
+      // Also bound straight to onClick handlers, which pass an event.
+      if (typeof workspace === 'string' && workspace) {
+        state.gitChangesRequest = { id: (state.gitChangesRequest?.id ?? 0) + 1, workspace }
+      }
       addOrActivateTool(state, 'source-control')
     }),
     openGitReviews: () => set((state) => {
@@ -688,17 +703,20 @@ export const useUIStore = create<UIStore>()(
       state.wikiFileRequest = null
     }),
     codingScopeRequest: null,
-    requestCodingScope: ({ projectId = null, workspace = null }) => set((state) => {
+    requestCodingScope: ({ projectId = null }) => set((state) => {
       codingScopeRequestSequence += 1
       state.codingScopeRequest = {
         id: codingScopeRequestSequence,
         projectId,
-        workspace,
       }
     }),
     clearCodingScopeRequest: (requestId) => set((state) => {
       if (requestId !== undefined && state.codingScopeRequest?.id !== requestId) return
       state.codingScopeRequest = null
+    }),
+    codingSelectedProjectId: null,
+    setCodingSelectedProjectId: (projectId) => set((state) => {
+      state.codingSelectedProjectId = projectId
     }),
   }))
 )

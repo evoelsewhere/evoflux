@@ -222,6 +222,9 @@ function isFailedResult(result: string | undefined): boolean {
   return (
     firstLine.startsWith('[failed') ||
     firstLine.startsWith('[error') ||
+    // The tool executor reports a raised tool error as ``Error: <reason>`` —
+    // a sandbox-refused write among them, which otherwise read as "Wrote".
+    firstLine.startsWith('error:') ||
     firstLine.includes('exit code 1') ||
     firstLine.includes('exit 1')
   )
@@ -250,6 +253,9 @@ function formatToolLabel(name: string): string {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
 }
+
+/** Tools whose completed label ("Wrote", "Edited") claims a change was made. */
+const FILE_MUTATION_TOOLS = new Set(['write', 'write_file', 'edit', 'edit_file', 'patch', 'rm'])
 
 function completedToolLabel(name: string): string {
   switch (name) {
@@ -363,15 +369,16 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
     activityLabel: customActivityLabel,
   } =
     useMemo(() => getToolDisplay(name, args), [name, args])
-  const usesDiffView = name === 'edit' || name === 'patch' || name === 'write'
+  // A failed mutation changed nothing: show its error, not the diff it meant.
+  const usesDiffView = (name === 'edit' || name === 'patch' || name === 'write') && state !== 'failed'
   const usesReadView = name === 'read'
   const isSkillActivation = useMemo(
     () => getSkillActivationName(name, args ?? undefined) !== null,
     [name, args],
   )
   const diffStats = useMemo(
-    () => ((usesDiffView || name === 'rm') && args ? getDiffStats(name, args, result) : null),
-    [name, args, result, usesDiffView],
+    () => ((usesDiffView || (name === 'rm' && state !== 'failed')) && args ? getDiffStats(name, args, result) : null),
+    [name, args, result, usesDiffView, state],
   )
   // Pending-state header comes from getToolDisplay's no-args branch
   // (e.g. ``recall`` → "Checking memory…", ``team_message`` →
@@ -424,9 +431,11 @@ export const ToolCall = memo(function ToolCall({ name, args, done, liveOutput, r
   // collapse remains authoritative for the rest of that invocation.
   const expanded = manualExpanded ?? Boolean(isRunning && shownLiveOutput)
   const displayName = name || 'tool'
-  const toolLabel = state === 'success' || state === 'failed'
-    ? completedLabel ?? completedToolLabel(displayName)
-    : formatToolLabel(displayName)
+  const toolLabel = state === 'failed' && FILE_MUTATION_TOOLS.has(displayName)
+    ? `${formatToolLabel(displayName)} failed`
+    : state === 'success' || state === 'failed'
+      ? completedLabel ?? completedToolLabel(displayName)
+      : formatToolLabel(displayName)
   const title = headerTitle ? `${toolLabel}: ${headerTitle}` : toolLabel
   const elapsedMs = durationMs ?? (!done && startedAt ? now - startedAt : undefined)
   const activityLabel = state === 'start' || state === 'running'

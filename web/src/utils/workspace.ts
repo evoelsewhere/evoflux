@@ -24,54 +24,8 @@ export function workspaceLabel(workspace: string): string {
   return trimmed.split(/[\\/]/).pop() || workspace
 }
 
-const CODING_WORKSPACES_KEY = STORAGE_KEYS.coding.workspaces
-const LAST_CODING_WORKSPACE_KEY = STORAGE_KEYS.coding.lastWorkspace
-
-export interface CodingWorkspaceEntry {
-  id: string
-  path: string
-  createdAt: string
-}
-
-function workspaceId(workspace: string): string {
-  let hash = 0
-  for (let i = 0; i < workspace.length; i += 1) {
-    hash = Math.imul(31, hash) + workspace.charCodeAt(i) | 0
-  }
-  return `w${(hash >>> 0).toString(36)}`
-}
-
-function parseEntries(raw: unknown): CodingWorkspaceEntry[] {
-  if (!Array.isArray(raw)) return []
-  return raw
-    .map((item, index) => {
-      const fallbackCreatedAt = new Date(index).toISOString()
-      if (typeof item === 'string') return { id: workspaceId(item), path: item, createdAt: fallbackCreatedAt }
-      if (item && typeof item === 'object' && 'path' in item && typeof item.path === 'string') {
-        const id = 'id' in item && typeof item.id === 'string' ? item.id : workspaceId(item.path)
-        const createdAt = 'createdAt' in item && typeof item.createdAt === 'string' ? item.createdAt : fallbackCreatedAt
-        return { id, path: item.path, createdAt }
-      }
-      return null
-    })
-    .filter((item): item is CodingWorkspaceEntry => item !== null)
-}
-
-export function loadCodingWorkspaces(): string[] {
-  return loadCodingWorkspaceEntries().map((entry) => entry.path)
-}
-
-export function loadCodingWorkspaceEntries(): CodingWorkspaceEntry[] {
-  try {
-    const raw = localStorage.getItem(CODING_WORKSPACES_KEY)
-    return parseEntries(raw ? JSON.parse(raw) : [])
-  } catch {
-    return []
-  }
-}
-
 /**
- * Ask the coding sidebar to re-read its Projects + Workspaces snapshot.
+ * Ask the coding sidebar to re-read its projects snapshot.
  *
  * The sidebar listens for this instead of being invalidated directly so a
  * caller does not need a QueryClient, and so the refresh still happens while
@@ -81,121 +35,40 @@ export function notifyCodingWorkspacesChanged(): void {
   window.dispatchEvent(new CustomEvent('coding-workspaces-changed'))
 }
 
-export function saveCodingWorkspace(workspace: string): CodingWorkspaceEntry {
-  const entries = loadCodingWorkspaceEntries()
-  const existing = entries.find((item) => item.path === workspace)
-  const entry = existing ?? { id: workspaceId(workspace), path: workspace, createdAt: new Date().toISOString() }
-  const next = existing ? entries : [...entries, entry]
-    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
-  try {
-    localStorage.setItem(CODING_WORKSPACES_KEY, JSON.stringify(next))
-    notifyCodingWorkspacesChanged()
-  } catch {
-    // ignore storage failures
-  }
-  return entry
-}
-
-/**
- * Removes a workspace from the saved list. Sessions belonging to it are
- * left untouched in the backend — reopening the same path later will
- * resurface them. Also clears the "last opened" pointer if it was this
- * workspace, so a stale id doesn't get auto-restored on next launch.
- */
-export function removeCodingWorkspace(workspace: string): void {
-  try {
-    const entries = loadCodingWorkspaceEntries().filter((entry) => entry.path !== workspace)
-    localStorage.setItem(CODING_WORKSPACES_KEY, JSON.stringify(entries))
-    const lastId = localStorage.getItem(LAST_CODING_WORKSPACE_KEY)
-    if (lastId && !entries.some((entry) => entry.id === lastId)) {
-      localStorage.removeItem(LAST_CODING_WORKSPACE_KEY)
-    }
-    notifyCodingWorkspacesChanged()
-  } catch {
-    // ignore storage failures
-  }
-}
-
-export function saveLastCodingWorkspace(workspace: string): CodingWorkspaceEntry {
-  const entry = saveCodingWorkspace(workspace)
-  try {
-    localStorage.setItem(LAST_CODING_WORKSPACE_KEY, entry.id)
-  } catch {
-    // ignore storage failures
-  }
-  return entry
-}
-
-export function loadLastCodingWorkspace(): CodingWorkspaceEntry | null {
-  try {
-    const id = localStorage.getItem(LAST_CODING_WORKSPACE_KEY)
-    if (!id) return null
-    return loadCodingWorkspaceEntries().find((entry) => entry.id === id) ?? null
-  } catch {
-    return null
-  }
-}
-
 const LAST_CODING_FOCUS_KEY = STORAGE_KEYS.coding.lastFocus
 
 /**
- * Like saveLastCodingWorkspace, but project-aware: a project session spans
- * every member repo, so persisting its representative repo's path (like
- * saveLastCodingWorkspace alone would) silently drops back to a single-repo
- * session next time bare /coding restores. Call this from the one place
- * that observes every coding session generically (TeamLayoutBase) instead
- * of saveLastCodingWorkspace directly.
+ * Remember the project the user was last in, so bare /coding can reopen it.
+ * Coding is project-only: a session without a project is never remembered.
  */
-export function saveLastCodingFocus(session: {
-  project_id?: string | null
-  workspace?: string | null
-}): void {
-  if (session.project_id) {
-    try {
-      localStorage.setItem(LAST_CODING_FOCUS_KEY, session.project_id)
-    } catch {
-      // ignore storage failures
-    }
-    return
-  }
-  if (session.workspace) {
-    // Keeps the existing entries-list bookkeeping (recently opened
-    // workspaces, used by e.g. the scheduler's workspace picker) working
-    // exactly as before, since only the *last-focus* pointer is new here.
-    saveLastCodingWorkspace(session.workspace)
-    try {
-      localStorage.setItem(LAST_CODING_FOCUS_KEY, session.workspace)
-    } catch {
-      // ignore storage failures
-    }
+export function saveLastCodingFocus(session: { project_id?: string | null }): void {
+  if (!session.project_id) return
+  try {
+    localStorage.setItem(LAST_CODING_FOCUS_KEY, session.project_id)
+  } catch {
+    // ignore storage failures
   }
 }
 
-/** The last-visited coding focus, as a /coding/$focusId-shaped string —
- * either a project id or a workspace path. Falls back to the legacy
- * workspace-only pointer for sessions saved before this key existed. */
+/** The last-visited coding project id, as a /coding/$focusId segment. A
+ * folder path left behind by the standalone workspaces EvoFlux used to have
+ * is dropped rather than restored. */
 export function loadLastCodingFocusId(): string | null {
   try {
     const focus = localStorage.getItem(LAST_CODING_FOCUS_KEY)
-    if (focus) return focus
-    return loadLastCodingWorkspace()?.path ?? null
+    if (!focus) return null
+    if (isProjectFocusId(focus)) return focus
+    localStorage.removeItem(LAST_CODING_FOCUS_KEY)
+    return null
   } catch {
     return null
   }
 }
 
-export function clearLastCodingFocus(focusId: string): void {
-  if (!isProjectFocusId(focusId)) removeCodingWorkspace(focusId)
+export function clearLastCodingFocus(projectId: string): void {
   try {
-    if (localStorage.getItem(LAST_CODING_FOCUS_KEY) === focusId) {
+    if (localStorage.getItem(LAST_CODING_FOCUS_KEY) === projectId) {
       localStorage.removeItem(LAST_CODING_FOCUS_KEY)
-      // Once an explicit focus has been saved, the legacy workspace pointer
-      // is only a compatibility fallback. Clear it as well when removing the
-      // active project; otherwise bare /coding would immediately restore an
-      // older workspace instead of showing the default page.
-      if (isProjectFocusId(focusId)) {
-        localStorage.removeItem(LAST_CODING_WORKSPACE_KEY)
-      }
     }
   } catch {
     // ignore storage failures
@@ -214,24 +87,16 @@ export function workspaceFromSession(
 const PROJECT_FOCUS_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
- * The /coding/$focusId route segment identifying which repo/project a
- * session URL points at: a project's UUID takes priority (a project session
- * spans repos, so its own id is the only stable anchor), otherwise the
- * standalone workspace's filesystem path. Returned RAW (not URI-encoded) —
- * the router's own param serialization already percent-encodes path params
- * (including '/' and ':'), so encoding it here too would double-encode.
- * Project ids are real UUIDs and a filesystem path never is, so
- * isProjectFocusId can tell them apart on the way back in.
+ * The /coding/$focusId route segment for a session: its project's id. Every
+ * Coding session belongs to a project, whose id is the only stable anchor —
+ * a project session spans all of its repos.
  */
-export function codingFocusId(session: {
-  project_id?: string | null
-  workspace?: string | null
-}): string | null {
-  if (session.project_id) return session.project_id
-  if (session.workspace) return session.workspace
-  return null
+export function codingFocusId(session: { project_id?: string | null }): string | null {
+  return session.project_id ?? null
 }
 
+/** Whether a /coding/$focusId segment is a project id (and not, say, a
+ * folder path from an old bookmark). */
 export function isProjectFocusId(focusId: string): boolean {
   return PROJECT_FOCUS_ID_RE.test(focusId)
 }

@@ -13,11 +13,13 @@
  * workspace on every chat-view mount — the picker only fetches when the user
  * actually opens the composer or types ``@``.
  */
-import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useCallback, useMemo } from 'react'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { listCodingWorkspaceFiles, listWorkspaceFiles } from '@/api/client'
 import type { WorkspaceFileInfo } from '@/api/types'
 import type { FileRef } from '@/components/InputBar.mentions'
+import { agentPath } from '@/utils/repository-paths'
+import { workspaceLabel } from '@/utils/workspace'
 import { queryKeys } from './keys'
 
 // Both endpoints share the same row shape but differ on the envelope. We only
@@ -28,6 +30,8 @@ interface UseFileRefsQueryArgs {
   mode: 'work' | 'coding'
   sessionId?: string | null
   workspace?: string | null
+  /** Coding: every repository of the session's project, primary included. */
+  repositories?: readonly string[]
   /** Only fetch when the input bar wants the list (focus / @ keystroke). */
   enabled?: boolean
 }
@@ -55,6 +59,7 @@ export function useFileRefsQuery({
   mode,
   sessionId,
   workspace,
+  repositories,
   enabled = true,
 }: UseFileRefsQueryArgs) {
   const isCoding = mode === 'coding'
@@ -77,22 +82,70 @@ export function useFileRefsQuery({
     staleTime: 30_000,
   })
 
+  // The project's other repositories. Their files are referenced by absolute
+  // path, which the agent can open from its primary repository.
+  const siblingsKey = isCoding && workspace
+    ? (repositories ?? []).filter((repository) => repository !== workspace).join('\0')
+    : ''
+  const siblings = useMemo(() => (siblingsKey ? siblingsKey.split('\0') : []), [siblingsKey])
+  // Stable, so TanStack Query only re-combines when a listing changes — the
+  // chat view re-renders on every streamed token.
+  const combine = useCallback(
+    (results: Array<{ data?: FileListing }>) =>
+      results.map((result, index) => ({
+        root: siblings[index] ?? '',
+        files: result.data?.files ?? [],
+      })),
+    [siblings],
+  )
+  const siblingListings = useQueries({
+    queries: siblings.map((repository) => ({
+      queryKey: queryKeys.fileRefs.coding(repository),
+      queryFn: async (): Promise<FileListing> => {
+        const res = await listCodingWorkspaceFiles(repository)
+        return { files: res.files }
+      },
+      enabled,
+      staleTime: 30_000,
+    })),
+    combine,
+  })
+
   // Build the combined files+dirs list once per query response. Files appear
   // first so the most common case (referencing a file) is at the top.
   const refs = useMemo<FileRef[]>(() => {
-    const files = query.data?.files ?? []
-    const fileRefs: FileRef[] = files.map((f) => ({
-      path: f.path,
-      name: f.name,
-      type: 'file',
+    const listings: Array<{ root: string | null; files: readonly WorkspaceFileInfo[] }> = [
+      { root: null, files: query.data?.files ?? [] },
+      ...siblingListings,
+    ]
+    // Another repository's entries insert their absolute path but show (and
+    // match) as `<repository>/<path>`.
+    const located = (root: string | null, path: string): Pick<FileRef, 'path' | 'label'> =>
+      root && workspace
+        ? { path: agentPath(workspace, root, path), label: `${workspaceLabel(root)}/${path}` }
+        : { path }
+    const fileRefs: FileRef[] = listings.flatMap(({ root, files }) =>
+      files.map((f) => ({
+        ...located(root, f.path),
+        name: f.name,
+        type: 'file' as const,
+      })),
+    )
+    const rootRefs: FileRef[] = siblingListings.map(({ root }) => ({
+      path: root.replace(/\\/g, '/'),
+      label: workspaceLabel(root),
+      name: workspaceLabel(root),
+      type: 'directory' as const,
     }))
-    const dirRefs: FileRef[] = deriveDirs(files).map((p) => ({
-      path: p,
-      name: basename(p),
-      type: 'directory',
-    }))
-    return [...fileRefs, ...dirRefs]
-  }, [query.data])
+    const dirRefs: FileRef[] = listings.flatMap(({ root, files }) =>
+      deriveDirs(files).map((p) => ({
+        ...located(root, p),
+        name: basename(p),
+        type: 'directory' as const,
+      })),
+    )
+    return [...fileRefs, ...rootRefs, ...dirRefs]
+  }, [query.data, siblingListings, workspace])
 
   return { refs, isLoading: query.isLoading, error: query.error }
 }

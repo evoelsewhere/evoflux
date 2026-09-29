@@ -4,18 +4,23 @@
  * Lives outside the transcript on purpose: a chip rendered only at the point
  * the agent raised it scrolls away within a few turns, which is exactly when
  * the user is least likely to have decided about it yet.
+ *
+ * Rendered as a control in the workbench bar's right-hand cluster: floating
+ * over the transcript's top-left corner covered the first lines of the chat.
+ * It renders nothing (not even its divider) while there are no suggestions.
  */
 import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronUp, Lightbulb } from 'lucide-react'
+import { ChevronDown, Lightbulb } from 'lucide-react'
 
 import { getSuggestedTasks } from '@/api/client'
 import { SuggestedTaskCard } from '@/components/SuggestedTaskCard'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useTeamStore } from '@/stores/useTeamStore'
 
 export function SuggestedTaskDock() {
   const sessionId = useTeamStore((state) => state.sessionId)
   const tasks = useTeamStore((state) => state.suggestedTasks)
-  const [collapsed, setCollapsed] = useState(false)
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     if (!sessionId) {
@@ -38,33 +43,56 @@ export function SuggestedTaskDock() {
     }
   }, [sessionId])
 
+  // Close once the last chip is dealt with, so the next suggestion doesn't pop
+  // the list open by itself. Adjusted during render rather than in an effect.
+  const [hadTasks, setHadTasks] = useState(tasks.length > 0)
+  if (hadTasks !== tasks.length > 0) {
+    setHadTasks(tasks.length > 0)
+    if (tasks.length === 0) setOpen(false)
+  }
+
   if (tasks.length === 0) return null
 
-  // Floats in the main column's top-left corner, beside the centred
-  // transcript, so it neither pushes the composer up nor reads as part of
-  // the latest turn.
+  const label = tasks.length === 1 ? '1 suggested task' : `${tasks.length} suggested tasks`
+
   return (
-    <section
-      aria-label="Suggested tasks"
-      className="pointer-events-none absolute top-2 left-2 z-(--z-panel) flex w-[min(20rem,calc(100%-1rem))] flex-col items-start"
-    >
-      <button
-        type="button"
-        onClick={() => setCollapsed((value) => !value)}
-        aria-expanded={!collapsed}
-        className="pointer-events-auto inline-flex items-center gap-1.5 rounded-md border border-(--color-border-subtle) bg-(--bg-card) px-2 py-1 text-[11px] font-medium text-(--color-text-muted) shadow-sm transition-colors hover:text-(--color-text)"
-      >
-        <Lightbulb className="size-3 text-(--color-warning)" />
-        {tasks.length === 1 ? '1 suggested task' : `${tasks.length} suggested tasks`}
-        {collapsed ? <ChevronDown className="size-3" /> : <ChevronUp className="size-3" />}
-      </button>
-      {!collapsed && (
-        <div className="pointer-events-auto mt-1.5 flex max-h-[min(60vh,32rem)] w-full flex-col gap-1.5 overflow-y-auto">
-          {tasks.map((task) => (
-            <SuggestedTaskCard key={task.id} task={task} className="bg-(--bg-card) shadow-md" />
-          ))}
-        </div>
-      )}
-    </section>
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              aria-label={label}
+              title={label}
+              className="group flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text) data-[popup-open]:bg-(--bg-key) data-[popup-open]:text-(--color-text)"
+            />
+          }
+        >
+          <Lightbulb size={14} className="shrink-0 text-(--color-warning)" aria-hidden="true" />
+          <span className="tabular-nums">{tasks.length}</span>
+          <ChevronDown
+            size={11}
+            className="text-(--color-text-subtle) transition-transform group-data-[popup-open]:rotate-180"
+            aria-hidden="true"
+          />
+        </PopoverTrigger>
+        <PopoverContent
+          align="end"
+          className="w-[min(22rem,calc(100vw-1rem))] gap-0 overflow-hidden border-(--color-border) bg-(--color-surface) p-0 shadow-xl"
+        >
+          <section aria-label="Suggested tasks" className="flex flex-col">
+            <p className="border-b border-(--color-border-subtle) px-3 py-2 text-xs font-medium text-(--color-text-muted)">
+              {label}
+            </p>
+            <div className="flex max-h-[min(60vh,32rem)] flex-col gap-1.5 overflow-y-auto p-2">
+              {tasks.map((task) => (
+                <SuggestedTaskCard key={task.id} task={task} className="bg-(--bg-card)" />
+              ))}
+            </div>
+          </section>
+        </PopoverContent>
+      </Popover>
+      <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
+    </>
   )
 }

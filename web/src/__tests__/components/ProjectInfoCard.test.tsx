@@ -79,4 +79,28 @@ describe('ProjectInfoCard', () => {
     expect(onSuggestion).toHaveBeenCalledWith('Map how these repositories work together')
     expect(await screen.findAllByText('main')).toHaveLength(2)
   })
+
+  it('offers repository suggestions, not cross-repository ones, for a one-repo project', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const single: CodingProject = {
+      ...project,
+      name: 'evoflux',
+      workspaces: [project.workspaces[1]!],
+    }
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ProjectInfoCard project={single} />
+      </QueryClientProvider>,
+    )
+
+    expect(screen.queryByText(/Shared coding context/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Explain this repository structure' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Find cross-repository integration risks' }),
+    ).not.toBeInTheDocument()
+    expect(await screen.findByText('main')).toBeInTheDocument()
+  })
 })

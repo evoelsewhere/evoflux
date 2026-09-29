@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated, Any, Literal
+from uuid import UUID
 
 from loguru import logger
 from pydantic import Field
@@ -30,6 +31,33 @@ from app.agent.tools.registry import InjectedArg, Tool
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+async def _calling_project_id(state: Any) -> UUID | None:
+    """Coding project of the session this tool call runs in.
+
+    Member sessions hang off their lead through ``parent_session_id``, so the
+    chain is walked up to the first session that names a project.
+    """
+    raw = getattr(state, "metadata", {}).get("session_id") if state else None
+    try:
+        session_uuid: UUID | None = UUID(str(raw)) if raw else None
+    except ValueError:
+        return None
+    from app.core import db as db_module
+    from app.models.chat import ChatSession
+
+    async with db_module.async_session_factory() as db:
+        seen: set[UUID] = set()
+        while session_uuid is not None and session_uuid not in seen:
+            seen.add(session_uuid)
+            row = await db.get(ChatSession, session_uuid)
+            if row is None:
+                return None
+            if row.project_id is not None:
+                return row.project_id
+            session_uuid = row.parent_session_id
+    return None
 
 
 def _fmt_task(task: Any) -> str:
@@ -338,11 +366,18 @@ async def _schedule_task(
                 except ZoneInfoNotFoundError:
                     return f"Error: unknown timezone '{timezone}'."
 
+        # A Coding reminder belongs to the caller's project, like the session
+        # it was set from; the scheduler refuses Coding tasks without one.
+        project_id = await _calling_project_id(_state) if _mode == "coding" else None
+        if _mode == "coding" and project_id is None:
+            return "Error: this Coding session belongs to no project."
+
         try:
             payload = ScheduledTaskCreate(
                 name=name,
                 mode=_mode,
                 workspace=_workspace,
+                project_id=project_id,
                 schedule_type=schedule_type,
                 at_datetime=at_dt,
                 every_seconds=every_seconds,

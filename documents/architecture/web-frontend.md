@@ -11,13 +11,14 @@ packages `web/dist` into the desktop application.
 | Route | Surface |
 |---|---|
 | `/` and `/:sessionId` | Work mode and an optional active session |
-| `/coding/:focusId?/:sessionId?` | Coding workspace/project focus and session |
+| `/coding/:focusId?/:sessionId?` | Coding project focus and session |
 | `/telemetry` | Standalone observability explorer |
 | `/scheduler` | Standalone scheduled-task manager |
 
 Settings and Help are application overlays owned by `routes/__root.tsx`, not
-URL routes. `focusId` is either a URL-encoded workspace path or a project UUID;
-the resolver retains compatibility with legacy Coding session URLs.
+URL routes. `focusId` is a project UUID (Coding is project-only); the resolver
+retains compatibility with legacy Coding session URLs and sends a folder path
+from an old bookmark back to `/coding`.
 
 ## State boundaries
 

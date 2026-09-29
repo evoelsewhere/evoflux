@@ -206,7 +206,7 @@ class PostEditDiagnosticsHook(BaseAgentHook):
                 from app.agent.sandbox import get_sandbox
 
                 client = await asyncio.wait_for(
-                    get_language_server(get_sandbox().workspace_root, path),
+                    get_language_server(get_sandbox().repository_root(path), path),
                     timeout=_DIAGNOSTIC_TIMEOUT_S,
                 )
                 issues = await asyncio.wait_for(
@@ -333,7 +333,14 @@ class PostEditDiagnosticsHook(BaseAgentHook):
             3: "info",
             4: "hint",
         }
-        relative = sandbox.display_path(path)
+        # Findings belong to the repository that owns the file, so a sibling
+        # repository's Problems list shows them under its own relative path.
+        repository = sandbox.repository_root(path)
+        try:
+            relative = path.relative_to(repository).as_posix()
+        except ValueError:
+            # Outside every repository (a session artifact): no Problems list.
+            return
         inputs: list[ProblemInput] = []
         for issue in scan.issues[:200]:
             location = issue.get("location") or {}
@@ -362,7 +369,7 @@ class PostEditDiagnosticsHook(BaseAgentHook):
                 )
             )
         publish_problems(
-            sandbox.workspace_root,
+            repository,
             source="lsp" if scan.source == "lsp" else "static",
             scope=f"{scan.source}:{relative}",
             problems=inputs,

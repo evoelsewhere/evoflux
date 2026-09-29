@@ -49,8 +49,9 @@ Start with:
   the Python sidecar owns agent policy, persistence, and workspace authorization.
 - The application database stores product state. Repository source remains
   user-owned and must not be deleted by application cleanup.
-- Work mode uses session workspaces. Coding mode may access only repositories
-  authorized by the active workspace or Coding project.
+- Work mode uses session workspaces. Coding mode is project-only: every Coding
+  session belongs to a Coding project and may access only that project's
+  repositories.
 - Tools, MCP, plugins, browser content, imported documents, and remembered text
   remain subject to explicit trust, permission, sandbox, and untrusted-data
   boundaries.

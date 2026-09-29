@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from uuid import uuid7  # ty: ignore[unresolved-import] - backported in app.__init__
+
+import pytest
+
 from app.services.turn_changes import (
+    MESSAGE_EXTRA_KEY,
     begin_turn,
     clear_session,
     flush_turn,
     get_latest,
+    persist_snapshot,
     record_tool_change,
+    take_anchor,
 )
 
 
@@ -75,3 +82,52 @@ def test_rm_then_write_becomes_added() -> None:
     assert snap is not None
     assert len(snap.files) == 1
     assert snap.files[0].status == "added"
+
+
+def test_anchor_is_taken_once() -> None:
+    sid = "sess-anchor"
+    clear_session(sid)
+    begin_turn(sid, "msg-1")
+    assert take_anchor(sid) == "msg-1"
+    assert take_anchor(sid) is None
+    begin_turn(sid)
+    assert take_anchor(sid) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("setup_db")
+async def test_snapshot_is_saved_on_the_turns_user_message() -> None:
+    """The "Edited N files" summary outlives the live stream."""
+    import app.core.db as _db
+    from app.models.chat import ChatSession, SessionMessage
+
+    async with _db.async_session_factory() as db:
+        session = ChatSession(mode="coding")
+        db.add(session)
+        await db.flush()
+        message = SessionMessage(
+            session_id=session.id, role="user", content="edit", extra={"model": "m"}
+        )
+        db.add(message)
+        await db.commit()
+        sid, message_id = str(session.id), message.id
+
+    clear_session(sid)
+    begin_turn(sid, str(message_id))
+    record_tool_change(sid, "write", {"path": "src/util.ts", "content": "x\n"})
+    snap = flush_turn(sid)
+    anchor = take_anchor(sid)
+    assert snap is not None and anchor == str(message_id)
+
+    async with _db.async_session_factory() as db:
+        assert await persist_snapshot(db, anchor, snap) is True
+    async with _db.async_session_factory() as db:
+        row = await db.get(SessionMessage, message_id)
+    assert row is not None and row.extra is not None
+    assert row.extra["model"] == "m"
+    assert row.extra[MESSAGE_EXTRA_KEY]["files"] == [
+        {"path": "src/util.ts", "status": "added", "additions": 2, "deletions": 0}
+    ]
+
+    async with _db.async_session_factory() as db:
+        assert await persist_snapshot(db, str(uuid7()), snap) is False

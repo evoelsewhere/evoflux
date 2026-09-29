@@ -25,7 +25,13 @@ from loguru import logger
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.chat import ChatSession, CodingProject, CodingWorkspace, SessionMessage
+from app.models.chat import (
+    ChatSession,
+    CodingProject,
+    CodingProjectWorkspace,
+    CodingWorkspace,
+    SessionMessage,
+)
 from app.scheduler.models import ScheduledTask
 
 AppSearchKind = Literal[
@@ -224,7 +230,7 @@ def _session_label(session: ChatSession) -> str:
 def _session_route(session: ChatSession) -> dict[str, Any]:
     """Everything the UI needs to open *session* under the right shell.
 
-    A Coding session lives at ``/coding/{project_id|workspace}/{id}`` and a
+    A Coding session lives at ``/coding/{project_id}/{id}`` and a
     Work session at ``/{id}``; opening a Coding one on the Work route loads it
     under the wrong chrome, with no workspace and no repository tools.
     """
@@ -404,25 +410,64 @@ async def _project_items(
 async def _workspace_items(
     db: AsyncSession, query: str, limit: int
 ) -> list[AppSearchItem]:
+    """Repositories (and their worktrees) of live Coding projects.
+
+    Coding opens a repository only through its project, so each result names
+    the (oldest) owning project and repos in no project are left out.
+    """
     needle = query.casefold()
     stmt = select(CodingWorkspace).where(
         ~col(CodingWorkspace.hidden),
         col(CodingWorkspace.deleted_at).is_(None),
     )
     rows = (await db.exec(stmt)).all()
-    items = [
-        AppSearchItem(
-            id=f"workspace:{workspace.id}",
-            kind="workspace",
-            label=workspace.name
-            or workspace.path.replace("\\", "/").rsplit("/", 1)[-1],
-            description=workspace.path,
-            path=workspace.path,
-            metadata={"workspace": workspace.path, "kind": workspace.kind},
+    membership_rows = (
+        await db.exec(
+            select(CodingWorkspace.path, CodingProjectWorkspace.project_id)
+            .join(
+                CodingProjectWorkspace,
+                col(CodingProjectWorkspace.workspace_id) == col(CodingWorkspace.id),
+            )
+            .join(
+                CodingProject,
+                col(CodingProject.id) == col(CodingProjectWorkspace.project_id),
+            )
+            .where(
+                ~col(CodingProject.hidden),
+                col(CodingProject.deleted_at).is_(None),
+                CodingProject.kind == "coding",
+            )
+            .order_by(col(CodingProject.created_at).asc())
         )
-        for workspace in rows
-        if _matches(needle, workspace.name, workspace.path)
-    ]
+    ).all()
+    owner_by_path: dict[str, str] = {}
+    for path, project_id in membership_rows:
+        owner_by_path.setdefault(path, str(project_id))
+    items: list[AppSearchItem] = []
+    for workspace in rows:
+        owner_path = (
+            workspace.source_path
+            if workspace.kind == "worktree" and workspace.source_path
+            else workspace.path
+        )
+        project_id = owner_by_path.get(owner_path)
+        if project_id is None or not _matches(needle, workspace.name, workspace.path):
+            continue
+        items.append(
+            AppSearchItem(
+                id=f"workspace:{workspace.id}",
+                kind="workspace",
+                label=workspace.name
+                or workspace.path.replace("\\", "/").rsplit("/", 1)[-1],
+                description=workspace.path,
+                path=workspace.path,
+                metadata={
+                    "workspace": workspace.path,
+                    "kind": workspace.kind,
+                    "project_id": project_id,
+                },
+            )
+        )
     return items[:limit]
 
 

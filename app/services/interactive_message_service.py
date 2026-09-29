@@ -59,17 +59,17 @@ async def find_interactive_message_by_source(
 async def _project_paths_for_session(
     db: AsyncSession, session: ChatSession, workspace: str
 ) -> tuple[list[str], list[str]]:
-    extra_workspace_paths: list[str] = []
-    read_only_paths: list[str] = []
     if session.project_id is None:
-        return extra_workspace_paths, read_only_paths
+        return [], []
 
-    from app.services.coding_project_service import get_project_workspace_paths
+    from app.services.coding_project_service import (
+        get_project_workspace_paths,
+        split_project_paths_for_workspace,
+    )
 
     async with db.begin():
         all_paths = await get_project_workspace_paths(db, session.project_id)
-    extra_workspace_paths = [path for path in all_paths if path != workspace]
-    return extra_workspace_paths, read_only_paths
+    return split_project_paths_for_workspace(all_paths, workspace)
 
 
 async def resolve_team_for_session(

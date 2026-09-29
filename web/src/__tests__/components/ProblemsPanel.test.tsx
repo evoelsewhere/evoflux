@@ -91,19 +91,19 @@ beforeEach(() => {
 describe('ProblemsPanel', () => {
   it('unifies sources and exposes finding actions', () => {
     const send = vi.fn()
-    render(<ProblemsPanel workspace="/repo" active onSendToAgent={send} />)
+    render(<ProblemsPanel workspaces={['/repo']} active onSendToAgent={send} />)
 
     expect(screen.getByText('1 error · 1 warning')).toBeInTheDocument()
     expect(screen.getByText('Argument has the wrong type')).toBeInTheDocument()
     expect(screen.getByText('Plugin manifest')).toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: 'Dismiss' })[0]!)
-    expect(mocks.mutate).toHaveBeenCalledWith({ id: 'lsp-1', action: 'dismiss' })
+    expect(mocks.mutate).toHaveBeenCalledWith({ id: 'lsp-1', action: 'dismiss', workspace: '/repo' })
     fireEvent.click(screen.getAllByRole('button', { name: /Send to agent/ })[0]!)
     expect(send).toHaveBeenCalledWith(expect.stringContaining('Investigate and fix'))
   })
 
   it('asks before suppressing a rule that hides other rows', () => {
-    render(<ProblemsPanel workspace="/repo" active />)
+    render(<ProblemsPanel workspaces={['/repo']} active />)
 
     // The plugin row's key covers three rows, so the first click warns.
     const suppress = screen.getAllByRole('button', { name: /Suppress/ })[1]!
@@ -112,14 +112,14 @@ describe('ProblemsPanel', () => {
     expect(screen.getByRole('button', { name: /Hide all 3\?/ })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Hide all 3\?/ }))
-    expect(mocks.mutate).toHaveBeenCalledWith({ id: 'plugin-1', action: 'suppress' })
+    expect(mocks.mutate).toHaveBeenCalledWith({ id: 'plugin-1', action: 'suppress', workspace: '/repo' })
   })
 
   it('suppresses a rule that covers only its own row at once', () => {
-    render(<ProblemsPanel workspace="/repo" active />)
+    render(<ProblemsPanel workspaces={['/repo']} active />)
 
     fireEvent.click(screen.getAllByRole('button', { name: /Suppress/ })[0]!)
-    expect(mocks.mutate).toHaveBeenCalledWith({ id: 'lsp-1', action: 'suppress' })
+    expect(mocks.mutate).toHaveBeenCalledWith({ id: 'lsp-1', action: 'suppress', workspace: '/repo' })
   })
 
   it('separates drafting a message from sending one', () => {
@@ -127,7 +127,7 @@ describe('ProblemsPanel', () => {
     const draft = vi.fn()
     render(
       <ProblemsPanel
-        workspace="/repo"
+        workspaces={['/repo']}
         active
         onSendToAgent={send}
         onAddToComposer={draft}
@@ -159,12 +159,44 @@ describe('ProblemsPanel', () => {
       files: [],
     } satisfies ChangeSetResponse
     mocks.createChangeSet.mockResolvedValue(staged)
-    render(<ProblemsPanel workspace="/repo" active />)
+    render(<ProblemsPanel workspaces={['/repo']} active />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Fix' }))
 
-    await waitFor(() => expect(mocks.createChangeSet).toHaveBeenCalled())
+    await waitFor(() => expect(mocks.createChangeSet).toHaveBeenCalledWith('/repo', expect.anything()))
     expect(useChangeSetStore.getState().active?.id).toBe('change-1')
+  })
+
+  it('routes a sibling repository problem to that repository', async () => {
+    const sibling = {
+      ...problems.problems[0]!,
+      id: 'web-1',
+      workspace: '/web',
+      path: 'src/app.ts',
+      fix: null,
+    }
+    mocks.query.mockReturnValue({
+      data: { counts: { error: 1, warning: 0, info: 0, hint: 0, total: 1 }, problems: [sibling] },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+      error: null,
+      refetch: mocks.refetch,
+    })
+    const open = vi.fn()
+    const send = vi.fn()
+    render(<ProblemsPanel workspaces={['/repo', '/web']} active onOpenFile={open} onSendToAgent={send} />)
+
+    // The location names the repository: `src/app.ts` alone is ambiguous.
+    expect(screen.getByText(/web\/src\/app\.ts:4:2/)).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Argument has the wrong type'))
+    expect(open).toHaveBeenCalledWith('/web', 'src/app.ts', 4)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(mocks.mutate).toHaveBeenCalledWith({ id: 'web-1', action: 'dismiss', workspace: '/web' })
+    // The agent's relative paths start at the primary, so a sibling's file
+    // is named absolutely.
+    fireEvent.click(screen.getByRole('button', { name: /Send to agent/ }))
+    expect(send).toHaveBeenCalledWith(expect.stringContaining('`/web/src/app.ts#L4`'))
   })
 
   it('does not present an API failure as a clean repository', () => {
@@ -177,7 +209,7 @@ describe('ProblemsPanel', () => {
       refetch: mocks.refetch,
     })
 
-    render(<ProblemsPanel workspace="/repo" active />)
+    render(<ProblemsPanel workspaces={['/repo']} active />)
 
     expect(screen.getByText('Could not load Problems')).toBeInTheDocument()
     expect(screen.queryByText('No open problems')).not.toBeInTheDocument()

@@ -204,3 +204,40 @@ async def test_track_skips_oversized_untracked_files(
     await snapshot_service.restore("sess-big", workspace, snapshot)
     assert small.read_text() == "ok"
     assert big.exists()
+
+
+@pytest.mark.asyncio
+async def test_track_repositories_without_siblings_keeps_the_bare_hash(
+    state_dir: Path, workspace: Path
+) -> None:
+    (workspace / "a.txt").write_text("hello")
+
+    snapshot = await snapshot_service.track_repositories("sess-single", workspace)
+
+    assert isinstance(snapshot, str) and len(snapshot) == 40
+
+
+@pytest.mark.asyncio
+async def test_each_repository_is_snapshotted_in_its_own_index(
+    state_dir: Path, tmp_path: Path
+) -> None:
+    api = tmp_path / "api"
+    web = tmp_path / "web"
+    api.mkdir()
+    web.mkdir()
+    (api / "same.txt").write_text("api-v1")
+    (web / "same.txt").write_text("web-v1")
+
+    snapshot = await snapshot_service.track_repositories("sess-multi", api, [web, api])
+    assert isinstance(snapshot, dict) and len(snapshot) == 2
+    (api / "same.txt").write_text("api-v2")
+    (web / "same.txt").write_text("web-v2")
+
+    result = await snapshot_service.restore_repositories("sess-multi", api, snapshot)
+
+    assert result.ok is True
+    assert (api / "same.txt").read_text() == "api-v1"
+    assert (web / "same.txt").read_text() == "web-v1"
+    assert result.modified == ["same.txt", (web.resolve() / "same.txt").as_posix()]
+    assert snapshot_service.parse_snapshot(snapshot) == snapshot
+    assert snapshot_service.parse_snapshot("") is None

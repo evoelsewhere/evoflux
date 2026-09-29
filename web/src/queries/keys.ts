@@ -16,7 +16,6 @@ export const queryKeys = {
         mode
           ? (['team', 'sessions', 'infinite', mode] as const)
           : (['team', 'sessions', 'infinite'] as const),
-      workspace: (workspace: string) => ['team', 'sessions', 'workspace', workspace] as const,
       project: (projectId: string) => ['team', 'sessions', 'project', projectId] as const,
       list: (offset: number, limit: number) =>
         ['team', 'sessions', 'list', offset, limit] as const,
@@ -49,8 +48,8 @@ export const queryKeys = {
       ['coding-workspace-diff', workspace] as const,
     status: (workspace: string) =>
       ['coding-workspace-status', workspace] as const,
-    problems: (workspace: string, includeResolved = false) =>
-      ['coding-workspace-problems', workspace, includeResolved] as const,
+    problems: (workspaces: readonly string[], includeResolved = false) =>
+      ['coding-workspace-problems', workspaces.join('\n'), includeResolved] as const,
     // Dev servers from launch.json, joined with live port state.
     preview: (workspace: string) =>
       ['coding-workspace-preview', workspace] as const,
@@ -113,9 +112,9 @@ export const queryKeys = {
     sessionList: (sessionId: string) => ['scheduler', 'list', 'session', sessionId] as const,
   },
   todos: (sessionId: string) => ['todos', sessionId] as const,
-  // Merged workspace-tree + projects overview powering the coding sidebar —
-  // one query, one cache entry, so "which repos are standalone vs
-  // project-owned" never has to be reconciled client-side from two
+  // Merged projects + repository/worktree overview powering the coding
+  // sidebar — one query, one cache entry, so a repo's owning project and its
+  // worktrees never have to be reconciled client-side from two
   // independently-fetched lists. See GET /team/workspace/tree.
   codingOverview: () => ['coding-overview'] as const,
   projects: {

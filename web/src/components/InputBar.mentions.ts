@@ -11,9 +11,18 @@ import fuzzysort from 'fuzzysort'
  * Paths are POSIX-separated and relative to the workspace root.
  */
 export interface FileRef {
+  /** What the mention inserts. */
   path: string
   name: string
   type: 'file' | 'directory'
+  /** What the picker shows and matches, when that differs from ``path`` —
+   * a file in another repository of the project is inserted by absolute
+   * path but listed as ``<repository>/<path>``. */
+  label?: string
+}
+
+function refLabel(ref: FileRef): string {
+  return ref.label ?? ref.path
 }
 
 /**
@@ -185,7 +194,7 @@ export function rankFileRefs(
     const topDirs: FileRef[] = []
     const rest: FileRef[] = []
     for (const ref of refs) {
-      if (ref.type === 'directory' && !ref.path.includes('/')) topDirs.push(ref)
+      if (ref.type === 'directory' && !refLabel(ref).includes('/')) topDirs.push(ref)
       else rest.push(ref)
     }
     topDirs.sort((a, b) => a.name.localeCompare(b.name))
@@ -202,8 +211,10 @@ export function rankFileRefs(
   // fuzzy match elsewhere (e.g. typing ``api`` still surfaces ``api.ts``
   // above an unrelated ``apidocs/`` dir).
   const lowerQuery = query.toLowerCase()
+  // Match what the picker shows: an absolute path would match its own
+  // drive and parent folders (`@users` against `C:/Users/...`).
   const results = fuzzysort.go(query, refs, {
-    key: 'path',
+    key: (ref: FileRef) => refLabel(ref),
     // Over-fetch a little so the dir bonus can reshuffle the head.
     limit: limit * 2,
     threshold: 0.2, // drop very weak matches; tuned to feel snappy

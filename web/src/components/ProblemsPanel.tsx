@@ -21,6 +21,7 @@ import { useProblemDecisionMutation, useProblemsQuery } from '@/queries'
 import { useChangeSetStore } from '@/stores/useChangeSetStore'
 import { useToastStore } from '@/stores/useToastStore'
 import { cn } from '@/lib/utils'
+import { agentPath } from '@/utils/repository-paths'
 
 const SOURCE_LABELS: Record<ProblemSource, string> = {
   lsp: 'LSP',
@@ -67,24 +68,33 @@ function countLabel(rows: CodingProblem[]): string {
     .join(' · ')
 }
 
-function problemPrompt(problem: CodingProblem, verb: string): string {
+/** *primary* is the repository the agent's relative paths start from. */
+function problemPrompt(problem: CodingProblem, verb: string, primary: string): string {
   const location = problem.path
-    ? `${problem.path}${problem.line ? `#L${problem.line}` : ''}`
+    ? `${agentPath(primary, problem.workspace, problem.path)}${problem.line ? `#L${problem.line}` : ''}`
     : problem.scope
   return `${verb} this ${problem.source} problem at \`${location}\`:\n\n${problem.message}`
 }
 
+function repositoryName(workspace: string): string {
+  return workspace.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || workspace
+}
+
 export function ProblemsPanel({
-  workspace,
+  workspaces,
   active,
   onOpenFile,
   onAddToComposer,
   onSendToAgent,
 }: {
-  workspace: string
+  /** Every repository the session works in, primary first. */
+  workspaces: readonly string[]
   active: boolean
-  /** A problem knows where it is; opening its file should land there. */
-  onOpenFile?: (path: string, line?: number) => void
+  /**
+   * A problem knows where it is; opening its file should land there.
+   * *workspace* is the repository the path is relative to.
+   */
+  onOpenFile?: (workspace: string, path: string, line?: number) => void
   /** Put a prompt in the composer for the user to review and send. */
   onAddToComposer?: (prompt: string) => void
   /** Send a prompt to the agent now. */
@@ -97,8 +107,11 @@ export function ProblemsPanel({
   const [showResolved, setShowResolved] = useState(false)
   /** Row whose Suppress button is waiting for a second, informed click. */
   const [confirmSuppress, setConfirmSuppress] = useState<string | null>(null)
-  const query = useProblemsQuery(workspace, active, showResolved)
-  const decision = useProblemDecisionMutation(workspace)
+  const query = useProblemsQuery(workspaces, active, showResolved)
+  const decision = useProblemDecisionMutation()
+  // With several repositories a bare `src/app.ts` is ambiguous; name the
+  // repository in each row's location.
+  const multiRepository = workspaces.length > 1
   const setChangeSet = useChangeSetStore((state) => state.setActive)
   const pushToast = useToastStore((state) => state.push)
   const all = useMemo(() => query.data?.problems ?? [], [query.data?.problems])
@@ -116,7 +129,7 @@ export function ProblemsPanel({
         workspace_edit?: Record<string, unknown>
         files?: Array<{ path: string; proposed_content: string; base_hash?: string; document_version?: number }>
       }
-      const changeSet = await createChangeSet(workspace, {
+      const changeSet = await createChangeSet(problem.workspace, {
         origin: problem.source === 'ai_review' ? 'review' : 'lsp',
         title: problem.title ?? `Fix ${problem.code ?? problem.source} problem`,
         description: problem.message,
@@ -235,12 +248,13 @@ export function ProblemsPanel({
                   <button
                     type="button"
                     disabled={!problem.path}
-                    onClick={() => problem.path && onOpenFile?.(problem.path, problem.line ?? undefined)}
+                    onClick={() => problem.path && onOpenFile?.(problem.workspace, problem.path, problem.line ?? undefined)}
                     className="min-w-0 flex-1 text-left disabled:cursor-default"
                   >
                     <span className="block text-xs leading-5 text-(--color-text)">{problem.title ?? problem.message}</span>
                     {problem.title && <span className="mt-0.5 block text-[11px] leading-4 text-(--color-text-muted)">{problem.message}</span>}
                     <span className="mt-1 block truncate font-mono text-[10px] text-(--color-text-subtle)">
+                      {multiRepository && problem.path ? `${repositoryName(problem.workspace)}/` : ''}
                       {problem.path ?? problem.scope}{problem.line ? `:${problem.line}:${problem.column ?? 1}` : ''}
                       {' · '}{SOURCE_LABELS[problem.source]}{problem.code ? ` · ${problem.code}` : ''}
                       {problem.status !== 'open' ? ` · ${problem.status}` : ''}
@@ -252,17 +266,17 @@ export function ProblemsPanel({
                     <button type="button" onClick={() => { void stageFix(problem) }} className="rounded-md px-2 py-1 text-[10px] text-(--color-accent) hover:bg-(--bg-key)">Fix</button>
                   )}
                   {onAddToComposer && (
-                    <button type="button" title="Draft a message asking the agent to plan this — you send it" onClick={() => onAddToComposer(problemPrompt(problem, 'Add to the implementation plan and address'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><MessageSquarePlus size={10} /> Add to plan</button>
+                    <button type="button" title="Draft a message asking the agent to plan this — you send it" onClick={() => onAddToComposer(problemPrompt(problem, 'Add to the implementation plan and address', workspaces[0] ?? problem.workspace))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><MessageSquarePlus size={10} /> Add to plan</button>
                   )}
                   {onSendToAgent && (
-                    <button type="button" title="Send this to the agent now" onClick={() => onSendToAgent(problemPrompt(problem, 'Investigate and fix'))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><Send size={10} /> Send to agent</button>
+                    <button type="button" title="Send this to the agent now" onClick={() => onSendToAgent(problemPrompt(problem, 'Investigate and fix', workspaces[0] ?? problem.workspace))} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key)"><Send size={10} /> Send to agent</button>
                   )}
                   {/* One decision at a time: the row stays on screen until
                       the refetch lands, so an eager second click used to
                       fire a second request against it. */}
                   {problem.status === 'open' ? (
                     <>
-                      <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'dismiss' })} className="rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50">Dismiss</button>
+                      <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'dismiss', workspace: problem.workspace })} className="rounded-md px-2 py-1 text-[10px] text-(--color-text-muted) hover:bg-(--bg-key) disabled:opacity-50">Dismiss</button>
                       {/* Suppression is keyed by rule, not by row, so one
                           click can silence a code across the whole
                           repository. Say the number, then ask again. */}
@@ -276,7 +290,7 @@ export function ProblemsPanel({
                             return
                           }
                           setConfirmSuppress(null)
-                          decision.mutate({ id: problem.id, action: 'suppress' })
+                          decision.mutate({ id: problem.id, action: 'suppress', workspace: problem.workspace })
                         }}
                         className={cn(
                           'flex items-center gap-1 rounded-md px-2 py-1 text-[10px] hover:bg-(--bg-key) disabled:opacity-50',
@@ -292,7 +306,7 @@ export function ProblemsPanel({
                       </button>
                     </>
                   ) : (
-                    <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'restore' })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-accent) hover:bg-(--bg-key) disabled:opacity-50"><Undo2 size={10} /> Restore</button>
+                    <button type="button" disabled={decision.isPending} onClick={() => decision.mutate({ id: problem.id, action: 'restore', workspace: problem.workspace })} className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-(--color-accent) hover:bg-(--bg-key) disabled:opacity-50"><Undo2 size={10} /> Restore</button>
                   )}
                 </div>
               </li>

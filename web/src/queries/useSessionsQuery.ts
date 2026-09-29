@@ -48,20 +48,6 @@ export function useTeamSessionsQuery(mode: 'work' | 'coding' = 'work') {
   })
 }
 
-export function useCodingWorkspaceSessionsQuery(workspace: string, enabled = true) {
-  return useInfiniteQuery({
-    queryKey: queryKeys.team.sessions.workspace(workspace),
-    queryFn: ({ pageParam, signal }: { pageParam: string | null; signal: AbortSignal }) =>
-      listTeamSessions(pageParam, CODING_WORKSPACE_PAGE_SIZE, { mode: 'coding', workspace }, signal),
-    initialPageParam: null as string | null,
-    getNextPageParam: (lastPage: SessionPageResponse) =>
-      lastPage.has_more ? lastPage.next_cursor : undefined,
-    enabled,
-    staleTime: CODING_WORKSPACE_SMOOTHING_MS,
-    refetchInterval: pollWhileAnySessionRuns,
-  })
-}
-
 export function useProjectSessionsQuery(projectId: string, enabled = true) {
   return useInfiniteQuery({
     queryKey: queryKeys.team.sessions.project(projectId),

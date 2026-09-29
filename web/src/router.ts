@@ -56,13 +56,14 @@ const codingIndexRoute = createRoute({
   component: () => null,
 })
 // /coding/$focusId[/$sessionId] — $focusId anchors the sidebar/panel to a
-// specific workspace (URL-encoded path) or project (UUID) even before a
-// session is picked; see utils/workspace.ts's codingFocusId/isProjectFocusId.
+// project (UUID) even before a session is picked; see utils/workspace.ts's
+// codingFocusId/isProjectFocusId. A folder path left over from the
+// standalone workspaces EvoFlux used to have is sent back to /coding.
 // NOTE: there is deliberately no separate /coding/$sessionId route anymore —
 // a single dynamic segment can't be split between two sibling routes (one
 // wins arbitrarily), so a bare old-style /coding/{sessionId} link is parsed
 // as $focusId too. TeamLayoutBase's resolve effect falls back to treating it
-// as a legacy session id when it doesn't resolve as a project/workspace.
+// as a legacy session id when it doesn't resolve as a project.
 const codingFocusRoute = createRoute({
   getParentRoute: () => codingLayoutRoute,
   path: '$focusId',

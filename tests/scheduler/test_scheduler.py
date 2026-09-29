@@ -522,6 +522,31 @@ class TestFireTaskErrors:
         assert row.last_error == "No team configured."
         assert row.run_count == 1
 
+    async def test_coding_task_in_no_project_does_not_fire(
+        self, scheduler, db_factory, tmp_path
+    ):
+        """A leftover standalone-workspace task never starts a session."""
+        task = _make_task(name="leftover")
+        task.mode = "coding"
+        task.workspace = str(tmp_path)
+        await scheduler.add(task)
+        await scheduler.stop()
+
+        with patch(
+            "app.services.team_manager.get_or_start_coding_team"
+        ) as start_coding_team:
+            await scheduler._fire_task(task)
+
+        start_coding_team.assert_not_called()
+        async with db_factory() as session:
+            row = (
+                await session.exec(
+                    select(ScheduledTask).where(ScheduledTask.id == task.id)
+                )
+            ).one()
+        assert row.status == "failed"
+        assert row.last_error == "Task has mode='coding' but belongs to no project."
+
     async def test_dispatch_exception_marks_failed(self, scheduler, db_factory):
         task = _make_task(name="boom")
         await scheduler.add(task)

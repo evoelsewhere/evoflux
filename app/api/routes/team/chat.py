@@ -46,7 +46,6 @@ from app.api.schemas.sessions import (
     TeamLeadMemberResponse,
     TeamLeadResponse,
     TeamSessionUpdateRequest,
-    TeamWorkspaceVisibilityRequest,
 )
 from app.api.schemas.team import GoalResponse, TeamHistoryMember, TeamHistoryResponse
 from app.api.routes.team.worktrees import (
@@ -71,7 +70,6 @@ from app.services.coding_workspace_service import (
     list_visible_coding_workspaces,
     upsert_coding_workspace,
 )
-from app.services.coding_purge_service import PurgeConflictError, purge_workspace
 from app.services.coding_project_service import (
     get_visible_project_ids_for_workspace_path,
 )
@@ -313,40 +311,57 @@ async def _project_paths_for_session(
     db: DbSession, project_id: UUID | None, workspace: str
 ) -> tuple[list[str], list[str]]:
     """(extra_workspace_paths, read_only_paths) for a project-bound session."""
-    extra_ws_paths: list[str] = []
-    read_only_paths: list[str] = []
-    if project_id is not None:
-        from app.services.coding_project_service import get_project_workspace_paths
+    if project_id is None:
+        return [], []
+    from app.services.coding_project_service import (
+        get_project_workspace_paths,
+        split_project_paths_for_workspace,
+    )
 
-        async with db.begin():
-            all_paths = await get_project_workspace_paths(db, project_id)
-        extra_ws_paths = [p for p in all_paths if p != workspace]
-    return extra_ws_paths, read_only_paths
-
-
-async def _project_for_new_coding_session(
-    db: DbSession, project_id: UUID | None, workspace: str
-) -> UUID | None:
-    """Owning project for a Coding session about to be created by a message.
-
-    Mirrors the canonicalisation ``/sessions/resolve`` applies: an explicit
-    project wins, otherwise the workspace's own membership decides, and a repo
-    shared by several projects refuses rather than picking one — a session
-    filed under an arbitrary project is one the sidebar can never show back.
-    """
-    if project_id is not None:
-        return project_id
     async with db.begin():
-        inferred = await get_visible_project_ids_for_workspace_path(db, workspace)
-    if len(inferred) > 1:
+        all_paths = await get_project_workspace_paths(db, project_id)
+    return split_project_paths_for_workspace(all_paths, workspace)
+
+
+async def _owning_project_for_coding_session(
+    db: DbSession, project_id: UUID | None, workspace: str
+) -> UUID:
+    """Project a new Coding session on *workspace* belongs to.
+
+    Every Coding session belongs to a project. An explicit project must own
+    the repository (or the repository a worktree was made from); without one,
+    the repository's own membership decides, and a repo shared by several
+    projects refuses rather than picking one — a session filed under an
+    arbitrary project is one the sidebar can never show back.
+
+    Caller must not hold an open transaction on *db*.
+    """
+    async with db.begin():
+        owners = await get_visible_project_ids_for_workspace_path(db, workspace)
+    if project_id is not None:
+        if project_id not in owners:
+            raise HTTPException(
+                status_code=422,
+                detail="Workspace is not a repository of this project.",
+            )
+        return project_id
+    if len(owners) > 1:
         raise HTTPException(
             status_code=409,
             detail=(
                 "Workspace belongs to multiple projects. Open one of those "
-                "projects explicitly instead of opening it as standalone."
+                "projects explicitly."
             ),
         )
-    return inferred[0] if inferred else None
+    if not owners:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Coding sessions belong to a project. Add this folder to a "
+                "project first."
+            ),
+        )
+    return owners[0]
 
 
 async def _team_for_session_mode(db: DbSession, session_id: str):
@@ -514,7 +529,7 @@ async def team_chat(
         assert workspace is not None
         workspace = _validate_workspace_or_422(workspace)
         if existing is None:
-            new_project_id = await _project_for_new_coding_session(
+            new_project_id = await _owning_project_for_coding_session(
                 db, new_project_id, workspace
             )
         project_id_for_team = (
@@ -1313,22 +1328,6 @@ async def resolve_team_session(
             raise HTTPException(
                 status_code=422, detail="worktree options require mode='coding'."
             )
-    elif project_id is not None:
-        # Project-mode: derive the primary workspace from the project. A
-        # project session spans all repos; it is matched/reused by
-        # project_id, never by this derived path (see
-        # get_latest_top_level_session).
-        from app.services.coding_project_service import get_project_workspace_paths
-
-        async with db.begin():
-            paths = await get_project_workspace_paths(db, project_id)
-        if not paths:
-            raise HTTPException(
-                status_code=422,
-                detail="Project has no workspaces configured.",
-            )
-        # Fail fast with a clear 422 if the primary repo path is stale/missing.
-        workspace = _validate_workspace_or_422(paths[0])
     elif body.worktree_from or body.worktree_name or body.worktree_branch:
         if not body.worktree_from or not body.worktree_name:
             raise HTTPException(
@@ -1336,23 +1335,13 @@ async def resolve_team_session(
                 detail="worktree_from and worktree_name are required for worktree sessions.",
             )
         source_workspace = _validate_workspace_or_422(body.worktree_from)
-        # Fail before creating a worktree when its source repo belongs to more
-        # than one project. Picking one here would make the resulting session
-        # disappear into an arbitrary project in the sidebar.
-        async with db.begin():
-            source_project_ids = await get_visible_project_ids_for_workspace_path(
-                db, source_workspace
-            )
-        if len(source_project_ids) > 1:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Workspace belongs to multiple projects. Open the target "
-                    "project first, then create the worktree from there."
-                ),
-            )
-        if source_project_ids:
-            project_id = source_project_ids[0]
+        # Settle the owning project before creating a worktree: one made from
+        # a repo in no project (or, unnamed, in several) would back a session
+        # the sidebar can never show. A named project must own the repo — a
+        # repo shared by several projects is otherwise unusable here.
+        project_id = await _owning_project_for_coding_session(
+            db, project_id, source_workspace
+        )
         created_worktree = await create_coding_workspace_worktree(
             WorktreeCreateRequest(
                 source_workspace=source_workspace,
@@ -1364,33 +1353,53 @@ async def resolve_team_session(
         # A worktree request always represents a new coding workspace/session,
         # even if the caller omitted create=true.
         body.create = True
+    elif project_id is not None:
+        # Project-mode: derive the primary workspace from the project. A
+        # project session spans all repos; it is matched/reused by
+        # project_id, never by this derived path (see
+        # get_latest_top_level_session).
+        from app.services.coding_project_service import (
+            get_project,
+            get_project_workspace_paths,
+        )
+
+        async with db.begin():
+            project = await get_project(db, project_id)
+            paths = (
+                await get_project_workspace_paths(db, project_id)
+                if project is not None
+                else []
+            )
+        # A deleted project and one with no repositories left are different
+        # answers: a link to a deleted project used to report the latter.
+        if project is None:
+            raise HTTPException(status_code=404, detail="This project was deleted.")
+        if not paths:
+            raise HTTPException(
+                status_code=422,
+                detail="Project has no workspaces configured.",
+            )
+        # A workspace sent alongside the project must be one of its
+        # repositories (or a worktree of one). It used to be ignored in
+        # silence, so a caller naming the wrong pair got a session in the
+        # project's primary repository and never learned why.
+        if body.workspace:
+            await _owning_project_for_coding_session(
+                db, project_id, _validate_workspace_or_422(body.workspace)
+            )
+        # Fail fast with a clear 422 if the primary repo path is stale/missing.
+        workspace = _validate_workspace_or_422(paths[0])
     elif not workspace:
         raise HTTPException(
             status_code=422,
             detail=f"workspace is required when mode='{body.mode}'.",
         )
     else:
+        # A bare repository path still resolves when exactly one project owns
+        # it (links and search results carry paths); Coding sessions are only
+        # ever looked up and created under that project.
         workspace = _validate_workspace_or_422(workspace)
-
-    # Keep session ownership aligned with the sidebar's project-only rule.
-    # Before this canonicalisation, opening a project-owned repo through the
-    # standalone "+" succeeded but produced a session the Workspaces filter
-    # could never render. Worktrees inherit ownership from their source repo.
-    if body.mode == "coding" and workspace and project_id is None:
-        async with db.begin():
-            inferred_project_ids = await get_visible_project_ids_for_workspace_path(
-                db, workspace
-            )
-        if len(inferred_project_ids) > 1:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "Workspace belongs to multiple projects. Open one of those "
-                    "projects explicitly instead of opening it as standalone."
-                ),
-            )
-        if inferred_project_ids:
-            project_id = inferred_project_ids[0]
+        project_id = await _owning_project_for_coding_session(db, None, workspace)
 
     # Normalise to a sorted unique list so tag-set equality is a plain array
     # comparison (see get_latest_top_level_session); empty stays NULL on write.
@@ -1453,37 +1462,17 @@ async def resolve_team_session(
     return TeamSessionResolveResponse(**data, created=created)
 
 
-@router.patch("/workspace/visibility")
-async def update_coding_workspace_visibility(
-    body: TeamWorkspaceVisibilityRequest, db: DbSession
-) -> dict:
-    workspace = (
-        str(Path(body.workspace).expanduser().resolve())
-        if body.hidden
-        else _validate_workspace_or_422(body.workspace)
-    )
-    if body.hidden:
-        try:
-            await purge_workspace(db, workspace)
-        except PurgeConflictError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-    else:
-        async with db.begin():
-            await upsert_coding_workspace(db, path=workspace, kind="repo", hidden=False)
-    return {"workspace": workspace, "hidden": body.hidden}
-
-
 @router.get("/workspace/tree", response_model=CodingWorkspaceTreeResponse)
 async def list_coding_workspace_tree(db: DbSession) -> CodingWorkspaceTreeResponse:
-    """Every visible repo (standalone or project-owned) plus the full
-    projects list, in one response — the sidebar renders both the Projects
-    and Workspaces sections from this alone. project_id per repo comes from
-    a real CodingProjectWorkspace lookup, not path-string matching against
-    a separately-fetched projects list."""
+    """Every project-owned repo (with its worktrees) plus the full projects
+    list, in one response — the Coding sidebar renders from this alone.
+    project_id per repo comes from a real CodingProjectWorkspace lookup, not
+    path-string matching against a separately-fetched projects list.
+    Repositories in no live project are left out: Coding only opens repos
+    through a project."""
     rows = await list_visible_coding_workspaces(db)
-    # Only live Coding projects own sidebar placement. A stale link to a
-    # hidden/soft-deleted project must not suppress the repository from the
-    # standalone Workspaces section when that project is absent from Projects.
+    # Only live Coding projects own sidebar placement; a stale link to a
+    # hidden/soft-deleted project does not keep its repository listed.
     membership_rows = (
         await db.exec(
             select(
@@ -1511,26 +1500,25 @@ async def list_coding_workspace_tree(db: DbSession) -> CodingWorkspaceTreeRespon
     repositories: dict[str, CodingWorkspaceTreeRepository] = {}
     pending_worktrees = []
     for row in rows:
-        if row.kind == "worktree":
+        owner = membership.get(row.id)
+        # A worktree directory a project lists as one of its own repositories
+        # is that project's repository here, not a child of its source.
+        if row.kind == "worktree" and owner is None:
             pending_worktrees.append(row)
+            continue
+        if owner is None:
             continue
         repositories[row.path] = CodingWorkspaceTreeRepository(
             workspace_id=row.id,
             path=row.path,
             name=row.name or Path(row.path).name,
             worktrees=[],
-            project_id=membership.get(row.id),
+            project_id=owner,
         )
     for row in pending_worktrees:
         source = row.source_path
-        if not source:
+        if not source or source not in repositories:
             continue
-        if source not in repositories:
-            repositories[source] = CodingWorkspaceTreeRepository(
-                path=source,
-                name=Path(source).name,
-                worktrees=[],
-            )
         repositories[source].worktrees.append(
             CodingWorkspaceTreeWorktree(
                 path=row.path,

@@ -146,6 +146,35 @@ class TestWorkspaceFilesListing:
         # POSIX separators — safe to concat into ``/media/{path}``.
         assert paths == ["output/chart.png", "output/nested/data.json"]
 
+    def test_skips_git_links_and_nested_worktrees(
+        self, client, session_id, tmp_path, monkeypatch
+    ):
+        """A worktree's ``.git`` file is VCS internals; a linked worktree
+        inside the repository is its own checkout. A submodule's files stay."""
+        fake_root = tmp_path / "ws"
+        (fake_root / "src").mkdir(parents=True)
+        (fake_root / "src" / "app.py").write_text("x = 1\n")
+        (fake_root / ".git").write_text("gitdir: /repos/main/.git/worktrees/ws\n")
+        tree = fake_root / ".evoflux" / "worktrees" / "feature"
+        tree.mkdir(parents=True)
+        (tree / ".git").write_text(
+            f"gitdir: {fake_root.as_posix()}/.git/worktrees/feature\n"
+        )
+        (tree / "app.py").write_text("x = 2\n")
+        module = fake_root / "vendor" / "lib"
+        module.mkdir(parents=True)
+        (module / ".git").write_text("gitdir: ../../.git/modules/lib\n")
+        (module / "lib.py").write_text("y = 1\n")
+
+        from app.api.routes.team import files as team_routes
+
+        monkeypatch.setattr(team_routes, "workspace_dir", lambda sid: fake_root)
+
+        resp = client.get(f"/api/team/{session_id}/files")
+        assert resp.status_code == 200
+        paths = sorted(f["path"] for f in resp.json()["files"])
+        assert paths == ["src/app.py", "vendor/lib/lib.py"]
+
     def test_mime_guessed_from_extension(
         self, client, session_id, tmp_path, monkeypatch
     ):

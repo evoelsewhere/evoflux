@@ -2,7 +2,7 @@ import { useRef, useEffect, useLayoutEffect, useState } from 'react'
 import { Outlet, useParams, useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { TeamChatView } from '@/components/TeamChatView'
-import { findTeamSession, getProject, getTeamSessionMetadata } from '@/api/client'
+import { ApiValidationError, findTeamSession, getProject, getTeamSessionMetadata } from '@/api/client'
 import type { CodingWorkspaceTreeResponse } from '@/api/types'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
@@ -10,6 +10,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { patchSessionTitle, scheduleCacheInvalidations } from '@/stores/cache-invalidation-bridge'
 import { queryKeys } from '@/queries'
 import { clearLastCodingFocus, codingFocusId, isProjectFocusId, isWorkspaceUnavailableError, saveLastCodingFocus, workspaceFromSession } from '@/utils/workspace'
+import { isTransientNetworkError } from '@/utils/errors'
 
 /**
  * A project's primary repo — the same first entry the backend derives when a
@@ -37,6 +38,10 @@ async function projectPrimaryWorkspace(
   }
 }
 
+function isNotFoundError(error: unknown): boolean {
+  return error instanceof ApiValidationError && error.status === 404
+}
+
 /**
  * Layout route for /, /coding, and their session routes.
  * Stays mounted across URL changes — handles navigation when a new
@@ -49,7 +54,6 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
   const mode = forcedMode ?? 'work'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const workspaceRef = useRef<string | null>(null)
   const cachedSessionPages = queryClient.getQueryData<{
     pages: Array<{ data: Array<{ id: string; workspace?: string | null; project_id?: string | null }> }>
   }>(queryKeys.team.sessions.infinite(mode === 'coding' ? 'coding' : 'work'))
@@ -63,7 +67,14 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
     queryFn: ({ signal }) => getTeamSessionMetadata(sessionId as string, signal),
     enabled: mode === 'coding' && Boolean(sessionId) && !cachedSession?.workspace,
     staleTime: 30_000,
+    // A missing chat stays missing; retrying only delays the way back home.
+    retry: (failureCount, error) => !isNotFoundError(error) && failureCount < 3,
   })
+  // A link to a Coding chat that no longer exists — deleted, removed with
+  // its project, or a standalone workspace chat purged on upgrade. It is
+  // sent back to /coding below; until then nothing may try to load it.
+  const codingSessionMissing =
+    mode === 'coding' && Boolean(sessionId) && isNotFoundError(sessionQuery.error)
   // A Coding draft has no session row to read a workspace from, but it does
   // know the repo (and project) it was opened on. Without this fallback the
   // chat view sees a null workspace and renders the "open a repository" empty
@@ -100,63 +111,62 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
     : null
 
   useEffect(() => {
-    // project_id (when set) always wins inside saveLastCodingFocus — safe to
-    // call unconditionally once workspace is known, project or not. Doing
-    // this generically here (rather than at each call site that starts a
-    // session) is exactly why this needs to be project-aware: a project
-    // session's `workspace` is only its representative repo, and persisting
-    // that alone would silently drop the project context on restore.
-    if (mode === 'coding' && workspace) saveLastCodingFocus({ project_id: projectId, workspace })
-  }, [mode, workspace, projectId])
+    // Remembered generically here rather than at each call site that starts
+    // a session: the project is what bare /coding reopens, never the
+    // representative repo a project session happens to run in.
+    if (mode === 'coding' && projectId) saveLastCodingFocus({ project_id: projectId })
+  }, [mode, projectId])
 
-  // /coding/$focusId (no sessionId yet) — the URL already names a workspace
-  // or project directly; resolve/create its session and append it to the URL.
-  // A bare old-style /coding/{sessionId} link (from before this route
-  // existed) also lands here, since it's structurally the same single
-  // segment — project ids and session ids are both plain UUIDs, so there's
-  // no way to tell them apart without asking the backend. If focusId
-  // doesn't resolve as a project/workspace, fall back to treating it as a
-  // legacy session id and upgrade the URL to the real focus once known.
+  // /coding/$focusId (no sessionId yet) — the URL already names a project;
+  // resolve its session and append it to the URL. A bare old-style
+  // /coding/{sessionId} link (from before this route existed) also lands
+  // here, since it's structurally the same single segment — project ids and
+  // session ids are both plain UUIDs, so there's no way to tell them apart
+  // without asking the backend. If focusId doesn't resolve as a project,
+  // fall back to treating it as a legacy session id and upgrade the URL to
+  // the real focus once known.
   useEffect(() => {
     if (mode !== 'coding' || sessionId || !focusId) return
-    // A "+" already put us in a fresh draft on this very focus — leave it
+    // A folder path from the standalone workspaces EvoFlux used to have.
+    // Coding opens folders through projects now; there is nothing to resolve.
+    if (!isProjectFocusId(focusId)) {
+      clearLastCodingFocus(focusId)
+      useToastStore.getState().push({
+        tone: 'info',
+        title: 'Folders open as projects now',
+        description: 'Open this folder from the Projects section to keep working in it.',
+      }, 7000)
+      navigate({ to: '/coding', replace: true })
+      return
+    }
+    // A "+" already put us in a fresh draft on this very project — leave it
     // alone rather than pulling the user back into an older session.
     const drafting = useTeamStore.getState()
     if (
       !drafting.sessionId &&
       drafting.newChatDraft &&
-      (isProjectFocusId(focusId)
-        ? drafting.projectId === focusId
-        : drafting._workspace === focusId)
+      drafting.projectId === focusId
     ) return
     let cancelled = false
     const controller = new AbortController()
     ;(async () => {
       const current = useTeamStore.getState()
       try {
-        const session = await findTeamSession({
-          mode: 'coding',
-          ...(isProjectFocusId(focusId)
-            ? { project_id: focusId }
-            : { workspace: focusId }),
-        })
+        const session = await findTeamSession({ mode: 'coding', project_id: focusId })
         if (cancelled || sessionIdRef.current) return
         if (!session) {
-          // Nothing has been said in this repo/project yet. Open a draft on
-          // it and let the first message create the session — no empty row
-          // for a chat the user may never write in.
-          const isProject = isProjectFocusId(focusId)
-          // A project draft still needs its primary repo: the panels read it,
-          // and letting it arrive later would look like a workspace switch
-          // mid-turn and reset the chat the first message just started.
-          const draftWorkspace = isProject
-            ? (await projectPrimaryWorkspace(queryClient, focusId))
-            : focusId
+          // Nothing has been said in this project yet. Open a draft on it and
+          // let the first message create the session — no empty row for a
+          // chat the user may never write in. The draft still needs the
+          // project's primary repo: the panels read it, and letting it arrive
+          // later would look like a workspace switch mid-turn and reset the
+          // chat the first message just started.
+          const draftWorkspace = await projectPrimaryWorkspace(queryClient, focusId)
           if (cancelled || sessionIdRef.current) return
           current.beginResolvedSession(null, {
             mode: 'coding',
             workspace: draftWorkspace,
-            projectId: isProject ? focusId : null,
+            projectId: focusId,
             model: current.sessionId ? current.sessionModel : null,
             thinkingLevel: current.sessionId ? current.sessionThinkingLevel : null,
           })
@@ -164,7 +174,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
         }
         current.beginResolvedSession(session.id, {
           mode: 'coding',
-          workspace: session.workspace ?? (isProjectFocusId(focusId) ? null : focusId),
+          workspace: session.workspace ?? null,
           projectId: session.project_id ?? null,
           model: session.model ?? current.sessionModel,
           thinkingLevel: session.thinking_level ?? current.sessionThinkingLevel,
@@ -180,10 +190,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
         try {
           const legacySession = await getTeamSessionMetadata(focusId, controller.signal)
           if (cancelled || sessionIdRef.current) return
-          const realFocusId = codingFocusId({
-            project_id: legacySession.project_id,
-            workspace: legacySession.workspace,
-          })
+          const realFocusId = codingFocusId(legacySession)
           if (!realFocusId) throw err
           navigate({
             to: '/coding/$focusId/$sessionId',
@@ -199,14 +206,30 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
             })
             useToastStore.getState().push({
               tone: 'info',
-              title: 'Workspace moved or unavailable',
-              description: 'The saved folder no longer exists. Open the repository from its new location to continue.',
+              title: 'Repository moved or unavailable',
+              description: "This project's main repository no longer exists at its saved path. Add it to the project again from its new location to continue.",
+            }, 7000)
+            navigate({ to: '/coding', replace: true })
+            return
+          }
+          // Only an unreachable backend earns the blocking "Backend connection
+          // failed" overlay. A project that was deleted, has no repositories
+          // left, or a link to a chat that no longer exists (a standalone
+          // workspace chat purged on upgrade) is a routine answer.
+          if (!isTransientNetworkError(err)) {
+            useTeamStore.setState((state) => {
+              state.error = null
+            })
+            useToastStore.getState().push({
+              tone: 'info',
+              title: 'Project unavailable',
+              description: err instanceof Error ? err.message : String(err),
             }, 7000)
             navigate({ to: '/coding', replace: true })
             return
           }
           useTeamStore.setState((state) => {
-            state.error = err instanceof Error ? err.message : 'Failed to open workspace'
+            state.error = err instanceof Error ? err.message : 'Failed to open project'
           })
         }
       }
@@ -216,6 +239,43 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
       controller.abort()
     }
   }, [mode, navigate, queryClient, sessionId, focusId])
+
+  // /coding/$focusId/$sessionId whose chat is gone, or whose focus is a
+  // folder path from the standalone workspaces EvoFlux used to have. A chat
+  // that survived the upgrade (filed under its repository's project) moves to
+  // its project URL; anything else goes back to the Coding home page.
+  const legacyFolderFocus = mode === 'coding' && Boolean(sessionId) && Boolean(focusId) && !isProjectFocusId(focusId ?? '')
+  const knownSessionProjectId = cachedSession?.project_id ?? sessionQuery.data?.project_id ?? null
+  const legacySessionSettled = Boolean(cachedSession) || sessionQuery.isSuccess
+  useEffect(() => {
+    if (mode !== 'coding' || !sessionId) return
+    if (legacyFolderFocus && legacySessionSettled && knownSessionProjectId) {
+      clearLastCodingFocus(focusId ?? '')
+      navigate({
+        to: '/coding/$focusId/$sessionId',
+        params: { focusId: knownSessionProjectId, sessionId },
+        replace: true,
+      })
+      return
+    }
+    if (!codingSessionMissing && !(legacyFolderFocus && legacySessionSettled)) return
+    if (focusId) clearLastCodingFocus(focusId)
+    useTeamStore.setState((state) => {
+      state.error = null
+    })
+    useToastStore.getState().push(legacyFolderFocus
+      ? {
+          tone: 'info',
+          title: 'Folders open as projects now',
+          description: 'Open this folder from the Projects section to keep working in it.',
+        }
+      : {
+          tone: 'info',
+          title: 'Chat unavailable',
+          description: 'This chat was deleted or removed with its project.',
+        }, 7000)
+    navigate({ to: '/coding', replace: true })
+  }, [mode, navigate, sessionId, focusId, codingSessionMissing, legacyFolderFocus, legacySessionSettled, knownSessionProjectId])
 
   const storeError = useTeamStore((s) => s.error)
   const [retryKey, setRetryKey] = useState(0)
@@ -231,8 +291,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
     navigateRef.current = navigate
     sessionIdRef.current = sessionId
     modeRef.current = mode
-    workspaceRef.current = workspace
-  }, [navigate, sessionId, mode, workspace])
+  }, [navigate, sessionId, mode])
 
   // Keep ``useTeamStore._workspace`` and ``projectId`` in sync with the
   // URL-derived session the moment we render the layout — before the async
@@ -330,9 +389,8 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
         // counts, so they need the same nudge.
         void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessionFoldersAll() })
         if (modeRef.current === 'coding') {
-          const workspace = workspaceRef.current
-          if (workspace) saveLastCodingFocus({ project_id: state.projectId, workspace })
-          const newFocusId = codingFocusId({ project_id: state.projectId, workspace })
+          saveLastCodingFocus({ project_id: state.projectId })
+          const newFocusId = codingFocusId({ project_id: state.projectId })
           navigateRef.current(
             newFocusId
               ? { to: '/coding/$focusId/$sessionId', params: { focusId: newFocusId, sessionId: state.sessionId }, replace: true }
@@ -375,7 +433,11 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
         codingSessionLoading={
           mode === 'coding' &&
           ((Boolean(sessionId) && !workspace && sessionQuery.isLoading) ||
-            (Boolean(focusId) && !sessionId && !isDraftSession))
+            (Boolean(focusId) && !sessionId && !isDraftSession) ||
+            // On its way elsewhere (see the redirect above): loading it here
+            // would only raise "Lead session not found".
+            codingSessionMissing ||
+            legacyFolderFocus)
         }
       />
       <Outlet />

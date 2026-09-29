@@ -231,3 +231,18 @@ async def test_lsp_semantic_code_actions_include_live_diagnostics(tmp_path: Path
         end_column=6,
         diagnostics=[{"message": "Type mismatch"}],
     )
+
+
+def test_ruff_parse_failures_are_errors_and_lints_are_warnings():
+    from app.agent.tools.builtin.lsp import _ruff_severity
+
+    assert (
+        _ruff_severity({"code": "invalid-syntax", "message": "Expected `)`"}) == "error"
+    )
+    assert (
+        _ruff_severity({"code": None, "message": "SyntaxError: bad input"}) == "error"
+    )
+    assert (
+        _ruff_severity({"code": "F401", "message": "`os` imported but unused"})
+        == "warning"
+    )

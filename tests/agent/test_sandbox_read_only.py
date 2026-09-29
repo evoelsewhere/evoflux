@@ -154,3 +154,25 @@ def test_check_command_ignores_redirect_outside_read_only_path(tmp_path):
 
     hit = sandbox.check_command("echo ok > output.txt")
     assert hit is None
+
+
+def test_worktree_nested_in_read_only_source_stays_writable(tmp_path):
+    source = tmp_path / "source-repo"
+    worktree = source / ".evoflux" / "worktrees" / "task"
+    worktree.mkdir(parents=True)
+    sandbox = SandboxConfig(
+        workspace=str(worktree),
+        denied_roots=[],
+        denied_patterns=[],
+        read_only_paths=[str(source)],
+    )
+
+    assert (
+        sandbox.validate_path("app.py", is_write=True)
+        == (worktree / "app.py").resolve()
+    )
+    with pytest.raises(PermissionError, match="read-only"):
+        sandbox.validate_path(str(source / "app.py"), is_write=True)
+    assert (
+        sandbox.validate_path(str(source / "app.py")) == (source / "app.py").resolve()
+    )

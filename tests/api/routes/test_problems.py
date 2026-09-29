@@ -58,6 +58,49 @@ def test_lists_counts_and_dismisses_problem(client, tmp_path, monkeypatch):
     assert dismissed.json()["status"] == "dismissed"
 
 
+def test_lists_every_repository_of_a_session(client, tmp_path, monkeypatch):
+    from app.api.routes.team import problems as problem_routes
+
+    monkeypatch.setattr(problem_routes, "list_effective_installations", lambda: [])
+    primary = tmp_path / "api"
+    sibling = tmp_path / "web"
+    primary.mkdir()
+    sibling.mkdir()
+    publish_problems(
+        primary,
+        source="lsp",
+        scope="lsp:app.py",
+        problems=[ProblemInput(message="Unused import", path="app.py")],
+    )
+    publish_problems(
+        sibling,
+        source="lsp",
+        scope="lsp:src/app.ts",
+        problems=[
+            ProblemInput(message="Type mismatch", severity="error", path="src/app.ts")
+        ],
+    )
+
+    response = client.get(
+        "/api/team/workspace/problems",
+        params=[("workspace", str(primary)), ("workspace", str(sibling))],
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["counts"]["total"] == 2
+    # Errors lead across repositories, and each row names its repository.
+    assert [(row["workspace"], row["path"]) for row in body["problems"]] == [
+        (str(sibling.resolve()), "src/app.ts"),
+        (str(primary.resolve()), "app.py"),
+    ]
+    dismissed = client.post(
+        f"/api/team/workspace/problems/{body['problems'][0]['id']}/dismiss",
+        params={"workspace": str(sibling)},
+    )
+    assert dismissed.status_code == 200
+
+
 def test_plugin_diagnostics_are_unified(client, tmp_path, monkeypatch):
     from app.api.routes.team import problems as problem_routes
 

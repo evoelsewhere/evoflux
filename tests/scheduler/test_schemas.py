@@ -365,17 +365,30 @@ class TestModeWorkspace:
                 prompt="hi",
             )
 
-    def test_coding_mode_with_workspace_accepted(self):
+    def test_coding_mode_requires_project_id(self):
+        with pytest.raises(ValidationError, match="project_id is required"):
+            ScheduledTaskCreate(
+                name="c",
+                mode="coding",
+                workspace="/tmp/foo",
+                schedule_type="every",
+                every_seconds=60,
+                prompt="hi",
+            )
+
+    def test_coding_mode_with_workspace_and_project_accepted(self):
         body = ScheduledTaskCreate(
             name="c",
             mode="coding",
             workspace="/tmp/foo",
+            project_id=UUID(int=1),
             schedule_type="every",
             every_seconds=60,
             prompt="hi",
         )
         assert body.mode == "coding"
         assert body.workspace == "/tmp/foo"
+        assert body.project_id == UUID(int=1)
 
     def test_update_work_mode_accepts_workspace(self):
         body = ScheduledTaskUpdate(mode="work", workspace="/tmp/foo")

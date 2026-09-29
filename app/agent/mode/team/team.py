@@ -1385,6 +1385,20 @@ class AgentTeam:
             from app.services import turn_changes as turn_changes_svc
 
             snap = turn_changes_svc.flush_turn(session_id)
+            anchor = turn_changes_svc.take_anchor(session_id)
+            if snap is not None and anchor is not None:
+                try:
+                    db_factory = resolve_db_factory(
+                        self._db_factory or self.lead.db_factory
+                    )
+                    async with db_factory() as db:
+                        await turn_changes_svc.persist_snapshot(db, anchor, snap)
+                except Exception as exc:  # noqa: BLE001 - the live event still goes out
+                    logger.warning(
+                        "team_persist_turn_changes_failed session_id={} error={}",
+                        session_id,
+                        exc,
+                    )
             await stream_store.push_event(
                 session_id,
                 StreamEnvelope.from_event(
@@ -1835,8 +1849,14 @@ class AgentTeam:
             # Snapshot before opening the DB session: track() runs git
             # subprocesses over the whole workspace and must not hold a
             # SQLite write transaction open while it does.
+            # A multi-repository project snapshots every repository the turn
+            # may write to, so undo reverts the whole change, not one repo.
             workspace_path = session_workspace_dir(str(lead_uuid), self.workspace)
-            snapshot_hash = await snapshot_service.track(str(lead_uuid), workspace_path)
+            snapshot_hash = await snapshot_service.track_repositories(
+                str(lead_uuid),
+                workspace_path,
+                [Path(path) for path in self.extra_workspace_paths],
+            )
             current_task = asyncio.current_task()
             if current_task is not None and current_task.cancelling():
                 raise asyncio.CancelledError
@@ -1927,7 +1947,10 @@ class AgentTeam:
             await stream_store.init_turn(session_id, keep_subscribers=True)
             from app.services import turn_changes as turn_changes_svc
 
-            turn_changes_svc.begin_turn(session_id)
+            turn_changes_svc.begin_turn(
+                session_id,
+                str(saved_user_message_id) if saved_user_message_id else None,
+            )
         except Exception as exc:
             logger.warning("team_init_turn_failed error={}", exc)
 

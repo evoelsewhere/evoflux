@@ -57,6 +57,7 @@ class SuggestedTaskStartRequest(BaseModel):
 class SuggestedTaskStartResponse(BaseModel):
     session_id: UUID
     workspace: str
+    project_id: UUID | None = None
     #: The client posts this as the new session's first message.
     prompt: str
     worktree_path: str | None = None
@@ -115,6 +116,7 @@ async def start_suggested_task(
                 status_code=404, detail="Originating session no longer exists."
             )
         workspace = task.cwd or parent.workspace
+        parent_project_id = parent.project_id
         agent_name = parent.agent_name
         model = parent.model
         thinking_level = parent.thinking_level
@@ -139,6 +141,7 @@ async def start_suggested_task(
             current = SuggestedTaskStartResponse(
                 session_id=parent.id,
                 workspace=parent.workspace or "",
+                project_id=parent.project_id,
                 prompt=task.prompt,
                 task=suggested_task_service.snapshot(task),
             )
@@ -158,6 +161,24 @@ async def start_suggested_task(
             ),
         )
 
+    # Every Coding session belongs to a project: the suggesting session's
+    # when it owns the target repo, otherwise the one project that does.
+    # Settled before any worktree exists so a refusal leaves nothing behind.
+    async with db.begin():
+        owners = await get_visible_project_ids_for_workspace_path(db, workspace)
+    if parent_project_id is not None and parent_project_id in owners:
+        project_id = parent_project_id
+    elif len(owners) == 1:
+        project_id = owners[0]
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "This task targets a folder that is not in exactly one project. "
+                "Add it to a project first."
+            ),
+        )
+
     worktree_path: str | None = None
     if body.isolated:
         created = await create_coding_workspace_worktree(
@@ -168,7 +189,6 @@ async def start_suggested_task(
 
     async with db.begin():
         task = await suggested_task_service.require(db, task_id)
-        project_ids = await get_visible_project_ids_for_workspace_path(db, workspace)
         session = ChatSession(
             mode="coding",
             # Top-level: the spawned task is its own entry in the sidebar, not
@@ -178,7 +198,7 @@ async def start_suggested_task(
             agent_name=agent_name,
             title=task.title,
             workspace=workspace,
-            project_id=project_ids[0] if len(project_ids) == 1 else None,
+            project_id=project_id,
             model=model,
             thinking_level=thinking_level,
         )
@@ -210,6 +230,7 @@ async def start_suggested_task(
     return SuggestedTaskStartResponse(
         session_id=session.id,
         workspace=workspace,
+        project_id=project_id,
         prompt=prompt,
         worktree_path=worktree_path,
         task=snapshot,

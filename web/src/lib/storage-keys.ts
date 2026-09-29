@@ -42,7 +42,6 @@ export const STORAGE_KEYS = {
     changeSet: 'oa.changeSetPanel.width',
     terminal: 'oa.terminalPanel.width',
     codingWorkspace: 'oa.codingWorkspacePanel.width',
-    codingWorkspacePicker: 'oa.codingWorkspacePicker.width',
     codingFileViewer: 'oa.codingFileViewer.width',
     workspace: 'workspace-panel-width',
     workspaceTree: 'workspace-tree-width',
@@ -57,10 +56,8 @@ export const STORAGE_KEYS = {
     codingTreeVisible: 'oa.codingWorkspace.treeVisible',
   },
 
-  /** Coding workspace list + last-used pointers (utils/workspace.ts). */
+  /** Last-used coding project pointers (utils/workspace.ts, CodingSidebar). */
   coding: {
-    workspaces: 'oa-coding-workspaces',
-    lastWorkspace: 'oa-last-coding-workspace',
     lastProject: 'oa-last-coding-project',
     lastFocus: 'oa-last-coding-focus',
     expanded: 'oa.codingSidebar.expanded',

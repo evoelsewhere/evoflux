@@ -66,6 +66,11 @@ observation. The hook:
 5. reports newly introduced and resolved diagnostics;
 6. publishes the complete current snapshot into Problems.
 
+The hook and the agent's `lsp`/`static_diagnostics` tools use the language
+server of the repository that owns the file — the deepest session root
+containing it, so a managed worktree wins over its source — and publish into
+that repository's Problems with paths relative to it.
+
 Because `publishDiagnostics.version` is optional in LSP, a server that omits it
 is accepted only after a new publication generation arrives following the
 corresponding `didOpen`/`didChange`; cached pre-edit diagnostics are not reused.
@@ -115,6 +120,13 @@ provenance, optional structured fix, and suppression identity. Users can stage
 a fix, add it to a plan, dismiss it, suppress its rule, or send it to the
 agent. Re-publishing one producer scope replaces stale findings without
 removing unrelated sources.
+
+Findings are stored per repository. `GET /api/team/workspace/problems` takes
+`workspace` once per repository and merges them, errors first; the panel asks
+for every repository of the session and names each row's repository when there
+is more than one. Every row carries its `workspace`, and dismiss, suppress,
+restore and staged fixes go to that repository. Plugin findings are not about
+a repository and are refreshed only into the first one requested.
 
 ## Explicit AI editor boundary
 

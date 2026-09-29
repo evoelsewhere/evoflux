@@ -27,7 +27,8 @@ Scheduled tasks support:
 - fixed `every` intervals;
 - five-field cron expressions;
 - explicit IANA timezones;
-- Work targets, Coding workspace targets, or compatible Coding projects;
+- Work targets, or Coding projects (a Coding task must name its project and a
+  repository of it, or a worktree of one);
 - pause, resume, manual trigger, update and delete.
 
 Each enabled task owns an asyncio sleeper until `next_fire_at`, then dispatches

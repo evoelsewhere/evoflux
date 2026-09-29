@@ -5,31 +5,34 @@ import type { ProblemDecision } from '@/api/types'
 import { useToastStore } from '@/stores/useToastStore'
 import { queryKeys } from './keys'
 
+/** Problems of every repository the session works in, primary first. */
 export function useProblemsQuery(
-  workspace: string,
+  workspaces: readonly string[],
   enabled: boolean,
   includeResolved = false,
 ) {
   return useQuery({
-    queryKey: queryKeys.coding.problems(workspace, includeResolved),
-    queryFn: () => getProblems(workspace, includeResolved),
-    enabled: enabled && Boolean(workspace),
+    queryKey: queryKeys.coding.problems(workspaces, includeResolved),
+    queryFn: () => getProblems(workspaces, includeResolved),
+    enabled: enabled && workspaces.length > 0,
     staleTime: 1_000,
     refetchInterval: enabled ? 3_000 : false,
   })
 }
 
-export function useProblemDecisionMutation(workspace: string) {
+export function useProblemDecisionMutation() {
   const queryClient = useQueryClient()
   const pushToast = useToastStore((state) => state.push)
   return useMutation({
-    mutationFn: ({ id, action }: { id: string; action: ProblemDecision }) => {
+    // A decision goes to the repository the row came from, which is not the
+    // primary for a finding in one of the project's other repositories.
+    mutationFn: ({ id, action, workspace }: { id: string; action: ProblemDecision; workspace: string }) => {
       if (action === 'dismiss') return dismissProblem(workspace, id)
       if (action === 'suppress') return suppressProblem(workspace, id)
       return restoreProblem(workspace, id)
     },
     onSuccess: () => queryClient.invalidateQueries({
-      queryKey: ['coding-workspace-problems', workspace],
+      queryKey: ['coding-workspace-problems'],
     }),
     // A decision that did not take used to fail in silence: the row stayed,
     // the poll put it back, and the user pressed the button again.

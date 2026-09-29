@@ -258,6 +258,17 @@ async def _tsc_diagnostics(target: Path, *, include_warnings: bool) -> str:
     return "\n".join(result)
 
 
+def _ruff_severity(issue: dict) -> str:
+    """A file that does not parse is broken, not merely untidy."""
+    code = issue.get("code")
+    message = str(issue.get("message") or "")
+    # Ruff reports a parse failure as ``invalid-syntax`` (older releases: no
+    # code and a ``SyntaxError:`` message); every other rule is a lint.
+    if code == "invalid-syntax" or (code is None and message.startswith("SyntaxError")):
+        return "error"
+    return "warning"
+
+
 def _publish_static_ruff(target: Path, issues: list[dict]) -> None:
     from app.services.problems_service import ProblemInput, publish_problems
 
@@ -268,7 +279,7 @@ def _publish_static_ruff(target: Path, issues: list[dict]) -> None:
         inputs.append(
             ProblemInput(
                 message=str(issue.get("message") or "Ruff problem"),
-                severity="warning",
+                severity=_ruff_severity(issue),
                 path=str(issue.get("filename") or target),
                 line=int(location.get("row", 1)),
                 column=int(location.get("column", 1)),
@@ -276,10 +287,11 @@ def _publish_static_ruff(target: Path, issues: list[dict]) -> None:
                 provenance={"producer": "ruff"},
             )
         )
+    repository, relative = _repository_location(target)
     publish_problems(
-        sandbox.workspace_root,
+        repository,
         source="static",
-        scope=f"static:ruff:{sandbox.display_path(target)}",
+        scope=f"static:ruff:{relative}",
         problems=inputs,
         session_id=sandbox.session_id,
     )
@@ -314,13 +326,27 @@ def _publish_static_tsc(
                 provenance={"producer": "tsc"},
             )
         )
+    repository, relative = _repository_location(target)
     publish_problems(
-        sandbox.workspace_root,
+        repository,
         source="static",
-        scope=f"static:tsc:{sandbox.display_path(target)}",
+        scope=f"static:tsc:{relative}",
         problems=inputs,
         session_id=sandbox.session_id,
     )
+
+
+def _repository_location(target: Path) -> tuple[Path, str]:
+    """The repository owning *target*, and *target* relative to it.
+
+    Findings land in the Problems list of the repository that owns the file:
+    a sibling repository of the project has its own list and its own paths.
+    """
+    repository = get_sandbox().repository_root(target)
+    try:
+        return repository, target.relative_to(repository).as_posix()
+    except ValueError:
+        return repository, str(target)
 
 
 # ── Real language-server tools ───────────────────────────────────────────────
@@ -341,7 +367,9 @@ async def _real_lsp_diagnostics(
     if not target.is_file():
         return f"[Error] LSP diagnostics requires an existing source file: {target}"
     try:
-        client = await get_language_server(get_sandbox().workspace_root, target)
+        client = await get_language_server(
+            get_sandbox().repository_root(target), target
+        )
         diagnostics = await client.diagnostics(target)
     except LanguageServerUnavailable as exc:
         return f"[Unavailable] {exc} Use static_diagnostics as a fallback."
@@ -379,7 +407,9 @@ async def _real_lsp_definition(
     if not target.is_file():
         return f"[Error] Source file does not exist: {target}"
     try:
-        client = await get_language_server(get_sandbox().workspace_root, target)
+        client = await get_language_server(
+            get_sandbox().repository_root(target), target
+        )
         locations = await client.definition(target, line, column)
     except LanguageServerUnavailable as exc:
         return f"[Unavailable] {exc} Use the source file and grep for a known symbol."
@@ -404,7 +434,9 @@ async def _real_lsp_references(
     if not target.is_file():
         return f"[Error] Source file does not exist: {target}"
     try:
-        client = await get_language_server(get_sandbox().workspace_root, target)
+        client = await get_language_server(
+            get_sandbox().repository_root(target), target
+        )
         locations = await client.references(
             target,
             line,
@@ -476,7 +508,9 @@ async def _lsp_semantic(
     if not target.is_file():
         return f"[Error] Source file does not exist: {target}"
     try:
-        client = await get_language_server(get_sandbox().workspace_root, target)
+        client = await get_language_server(
+            get_sandbox().repository_root(target), target
+        )
         if action == "hover":
             cursor_line, cursor_column = _require_position(line, column, action)
             result: Any = await client.hover(target, cursor_line, cursor_column)

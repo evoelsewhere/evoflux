@@ -384,7 +384,7 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
   // ── write: file name in header, content as args ───────────────────
   if (name === 'write') {
     const path = str(parsed, 'path')
-    const fileName = path ? path.split('/').pop() ?? path : null
+    const fileName = path ? path.split(/[\\/]/).pop() ?? path : null
     const content = str(parsed, 'content')
     return {
       header: fileName ? <Arg>{fileName}</Arg> : 'file',
@@ -408,7 +408,7 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
       }
     }
     const path = str(parsed, 'path')
-    const fileName = path ? path.split('/').pop() ?? path : null
+    const fileName = path ? path.split(/[\\/]/).pop() ?? path : null
     return {
       header: fileName ? <Arg>{fileName}</Arg> : 'file',
       headerTitle: fileName ? fileName : 'file',
@@ -431,7 +431,7 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
   // ── edit: file name in header, args as-is ─────────────────────────
   if (name === 'edit') {
     const path = str(parsed, 'path')
-    const fileName = path ? path.split('/').pop() ?? path : null
+    const fileName = path ? path.split(/[\\/]/).pop() ?? path : null
     return {
       header: fileName ? <Arg>{fileName}</Arg> : 'file',
       headerTitle: fileName ? fileName : 'file',
@@ -442,7 +442,7 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
   // ── rm: file name in header, hide args ────────────────────────────
   if (name === 'rm') {
     const path = str(parsed, 'path')
-    const fileName = path ? path.split('/').pop() ?? path : null
+    const fileName = path ? path.split(/[\\/]/).pop() ?? path : null
     return {
       header: fileName ? <Arg>{fileName}</Arg> : 'file',
       headerTitle: fileName ? fileName : 'file',

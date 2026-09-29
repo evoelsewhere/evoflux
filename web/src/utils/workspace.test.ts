@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { notifyCodingWorkspacesChanged, removeCodingWorkspace, saveCodingWorkspace } from './workspace'
+import { notifyCodingWorkspacesChanged } from './workspace'
 
 /**
- * The coding sidebar refetches its Projects + Workspaces snapshot when this
- * event fires. It is the only channel callers without a QueryClient have —
- * a renamed event would silently stop the refresh, which is how a freshly
- * opened repository came to stay missing from the sidebar.
+ * The coding sidebar refetches its projects snapshot when this event fires.
+ * It is the only channel callers without a QueryClient have — a renamed
+ * event would silently stop the refresh.
  */
 const EVENT = 'coding-workspaces-changed'
 
@@ -28,25 +27,6 @@ describe('coding workspace change notifications', () => {
     const { handler, stop } = listen()
 
     notifyCodingWorkspacesChanged()
-
-    expect(handler).toHaveBeenCalledTimes(1)
-    stop()
-  })
-
-  it('announces saving a workspace', () => {
-    const { handler, stop } = listen()
-
-    saveCodingWorkspace('/repos/demo')
-
-    expect(handler).toHaveBeenCalledTimes(1)
-    stop()
-  })
-
-  it('announces removing a workspace', () => {
-    saveCodingWorkspace('/repos/demo')
-    const { handler, stop } = listen()
-
-    removeCodingWorkspace('/repos/demo')
 
     expect(handler).toHaveBeenCalledTimes(1)
     stop()

@@ -484,8 +484,14 @@ class TeamMemberBase(abc.ABC):
                         self.name,
                         self.session_id,
                     )
-                elif not existing.title or (
-                    self._role_label == "lead" and existing.agent_name is None
+                elif (
+                    not existing.title
+                    or (self._role_label == "lead" and existing.agent_name is None)
+                    # A lead row born before its first message (a spawn ahead
+                    # of the turn) carries no project. Coding is project-only
+                    # and rows without one are purged, so the first message
+                    # that names the project files the row under it.
+                    or (project_id is not None and existing.project_id is None)
                 ):
                     if not existing.title:
                         existing.title = (
@@ -493,8 +499,8 @@ class TeamMemberBase(abc.ABC):
                         )
                         existing.mode = mode
                         existing.workspace = workspace
-                        if project_id is not None:
-                            existing.project_id = project_id
+                    if project_id is not None and existing.project_id is None:
+                        existing.project_id = project_id
                     if self._role_label == "lead" and existing.agent_name is None:
                         existing.agent_name = self.name
                     db.add(existing)

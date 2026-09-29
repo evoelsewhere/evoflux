@@ -105,7 +105,7 @@ export function useTeamCommands({
         }]
       : []),
     mode === 'coding'
-      ? { id: 'collapse-sidebar', group: 'View', label: 'Toggle Coding Sidebar', description: 'Collapse or expand workspaces and sessions', shortcut: 'Ctrl+B', action: handleCodingSidebarToggle }
+      ? { id: 'collapse-sidebar', group: 'View', label: 'Toggle Coding Sidebar', description: 'Collapse or expand projects and sessions', shortcut: 'Ctrl+B', action: handleCodingSidebarToggle }
       : { id: 'collapse-sidebar', group: 'View', label: 'Toggle Sidebar', description: '', shortcut: 'Ctrl+B', action: () => useUIStore.getState().toggleSidebarCollapsed() },
     { id: 'wiki',             group: 'View',       label: 'Memory',            description: 'Browse curated knowledge and pending notes', shortcut: 'Ctrl+M', icon: Brain, action: () => dispatchPrimaryShortcut('m') },
     { id: 'scheduled-tasks',  group: 'View',       label: 'Scheduled Tasks',   description: 'Manage cron and scheduled agent tasks', shortcut: 'Ctrl+S', icon: CalendarClock, action: () => dispatchPrimaryShortcut('s') },

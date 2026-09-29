@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.chat import ChatSession, CodingProject, CodingWorkspace, SessionMessage
+from app.models.chat import (
+    ChatSession,
+    CodingProject,
+    CodingProjectWorkspace,
+    CodingWorkspace,
+    SessionMessage,
+)
 from app.scheduler.models import ScheduledTask
 from app.services.app_search_service import search_app
 
@@ -255,8 +261,14 @@ async def test_session_rows_carry_what_the_coding_route_needs(session):
 
 @pytest.mark.asyncio
 async def test_covers_projects_workspaces_and_scheduled_tasks(session):
-    session.add(CodingProject(name="Atlas", description="Billing platform"))
-    session.add(CodingWorkspace(path="/repos/atlas-api", name="atlas-api"))
+    project = CodingProject(name="Atlas", description="Billing platform")
+    workspace = CodingWorkspace(path="/repos/atlas-api", name="atlas-api")
+    session.add(project)
+    session.add(workspace)
+    await session.flush()
+    session.add(
+        CodingProjectWorkspace(project_id=project.id, workspace_id=workspace.id)
+    )
     session.add(
         ScheduledTask(
             name="atlas-nightly",
@@ -279,6 +291,38 @@ async def test_hidden_projects_and_workspaces_stay_out(session):
     await session.commit()
 
     assert await search_app(session, "atlas") == []
+
+
+@pytest.mark.asyncio
+async def test_workspaces_are_listed_only_through_a_live_project(session):
+    """Coding opens repos only through a project: each workspace result names
+    its owning project (a worktree inherits its source repo's), and a repo in
+    no live project is left out."""
+    live = CodingProject(name="Live")
+    gone = CodingProject(name="Gone", hidden=True)
+    member = CodingWorkspace(path="/repos/orbit-api", name="orbit-api")
+    worktree = CodingWorkspace(
+        path="/worktrees/orbit-task",
+        name="orbit-task",
+        kind="worktree",
+        source_path="/repos/orbit-api",
+    )
+    loose = CodingWorkspace(path="/repos/orbit-loose", name="orbit-loose")
+    stale = CodingWorkspace(path="/repos/orbit-stale", name="orbit-stale")
+    session.add_all([live, gone, member, worktree, loose, stale])
+    await session.flush()
+    session.add(CodingProjectWorkspace(project_id=live.id, workspace_id=member.id))
+    session.add(CodingProjectWorkspace(project_id=gone.id, workspace_id=stale.id))
+    await session.commit()
+
+    items = [
+        item for item in await search_app(session, "orbit") if item.kind == "workspace"
+    ]
+
+    assert {item.path: item.metadata["project_id"] for item in items} == {
+        "/repos/orbit-api": str(live.id),
+        "/worktrees/orbit-task": str(live.id),
+    }
 
 
 @pytest.mark.asyncio

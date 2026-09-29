@@ -37,18 +37,15 @@ import {
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AgentView } from '../AgentView'
-import { WelcomeHero } from '../ChatWelcome'
 import { AppShell } from '@/components/shell/AppShell'
-import { WorkspaceInfoCard } from '../WorkspaceInfoCard'
 import { WorkFolderSelector } from '../WorkFolderSelector'
 import { ProjectInfoCard } from '../ProjectInfoCard'
-import { useProjectQuery } from '@/queries/useProjectsQuery'
+import { useSessionProjectQuery } from '@/queries/useProjectsQuery'
 import { CodingSidebar } from '../CodingSidebar'
 import { Sidebar } from '../Sidebar'
 import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPanels'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
-import { SuggestedTaskDock } from '../SuggestedTaskDock'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import {
   useFollowUpSettingsQuery,
@@ -63,7 +60,7 @@ import { apiBaseUrl } from '@/api/base-url'
 import { useShallow } from 'zustand/react/shallow'
 import { useTeamStore } from '@/stores/useTeamStore'
 import { useToastStore } from '@/stores/useToastStore'
-import { prependSession, prependWorkspaceSession } from '@/stores/cache-invalidation-bridge'
+import { prependSession } from '@/stores/cache-invalidation-bridge'
 import { sessionHasWorkbenchTool, useUIStore } from '@/stores/useUIStore'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import {
@@ -72,7 +69,7 @@ import {
   useUpdateTeamSessionLeadMutation,
 } from '@/queries/useAgentsQuery'
 import { useFileRefsQuery } from '@/queries/useFileRefsQuery'
-import { AlertCircle, FolderPlus, X } from 'lucide-react'
+import { AlertCircle, X } from 'lucide-react'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
@@ -107,18 +104,14 @@ import { useMobileEdgeSwipes } from './useMobileEdgeSwipes'
 import { VIEW_MODES, type ViewMode } from './types'
 import { shouldStartAutomaticSplit } from './auto-layout'
 import { AutomaticSplitTransition } from './AutomaticSplitTransition'
+import { CodingStartHero } from './CodingStartHero'
 import { useAdaptiveSidebarOverlay } from './useAdaptiveSidebarOverlay'
-import {
-  codingFocusId,
-  notifyCodingWorkspacesChanged,
-  saveLastCodingWorkspace,
-  workspaceLabel,
-} from '@/utils/workspace'
 import {
   shouldClearFilesEditor,
   shouldShowStandaloneEditor,
   type CodingFileViewerHost,
 } from '@/utils/codingFileViewer'
+import { agentPath, resolveRepositoryPath } from '@/utils/repository-paths'
 import { setTraySession } from '@/lib/tray'
 import { queryKeys } from '@/queries/keys'
 import {
@@ -341,7 +334,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   /** Line to reveal when the viewer opens from something that knows one. */
   const [codingFileViewerLine, setCodingFileViewerLine] = useState<number | null>(null)
   const [openWorkspaceDialogKey, setOpenWorkspaceDialogKey] = useState(0)
-  const [codingWorkspacePickerPortal, setCodingWorkspacePickerPortal] = useState<HTMLDivElement | null>(null)
   const [todosOpen, setTodosOpen] = useState(false)
   const [showMobileActions, setShowMobileActions] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
@@ -452,16 +444,41 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   // A project session isn't "in" any one repo — chat-level UI (empty state,
   // composer placeholder) must reflect the project, not the primary repo
   // path (`workspace`) the backend happens to derive for the agent's cwd.
-  const activeProjectQuery = useProjectQuery(projectIdState)
+  const activeProjectQuery = useSessionProjectQuery(projectIdState, workspace)
   const activeProject = activeProjectQuery.data ?? null
+  // The repositories this session works in: the primary (or its worktree)
+  // first, then the project's other repositories.
+  const sessionRepositoryPaths = useMemo(() => {
+    const paths = activeProject?.workspaces.map((item) => item.path) ?? []
+    if (mode !== 'coding' || !workspace) return paths
+    return [workspace, ...paths.filter((path) => path !== workspace)]
+  }, [activeProject, mode, workspace])
+  // A file the agent or a panel names — relative to the primary, climbing
+  // into a sibling (`../web/x.ts`) or absolute — as a viewer entry in the
+  // repository that owns it.
+  const codingFileEntry = useCallback(
+    (rawPath: string, mime = 'text/plain'): WorkspaceFileInfo => {
+      const owned = workspace
+        ? resolveRepositoryPath(workspace, sessionRepositoryPaths, rawPath)
+        : null
+      const path = owned?.path ?? rawPath
+      return {
+        path,
+        name: path.split('/').pop() ?? path,
+        size: 0,
+        mtime: 0,
+        mime,
+        ...(owned && owned.workspace !== workspace ? { sourceWorkspace: owned.workspace } : {}),
+      }
+    },
+    [sessionRepositoryPaths, workspace],
+  )
   // Single source of truth for "what is this coding session about" wherever
   // the UI needs a short identity label (tray, mobile header, action sheet,
-  // composer placeholder) — project name when project-scoped, else the repo.
+  // composer placeholder) — the project's name; Coding is project-only.
   const codingIdentityLabel =
-    mode === 'coding' && workspace
-      ? projectIdState
-        ? activeProject?.name ?? 'Project…'
-        : workspaceLabel(workspace)
+    mode === 'coding' && projectIdState
+      ? activeProject?.name ?? 'Project…'
       : null
   const sessionTitle   = useTeamStore((s) => s.sessionTitle)
   const sessionTags    = useTeamStore((s) => s.sessionTags)
@@ -511,24 +528,17 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       || !sessionIdState
       || workspaceFileRequest?.sessionId !== sessionIdState
     ) return
-    const path = workspaceFileRequest.path
     // These writes are inseparable from `clearWorkspaceFileRequest` below,
     // which updates a *different* component's store. Hoisting the group into
     // render to satisfy the rule would trade a cascading render for the thing
     // React actually forbids: updating another component while this one
     // renders.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- paired with an external store write
-    setCodingFileViewer({
-      path,
-      name: path.split('/').at(-1) ?? path,
-      size: 0,
-      mtime: 0,
-      mime: 'application/octet-stream',
-    })
+    setCodingFileViewer(codingFileEntry(workspaceFileRequest.path, 'application/octet-stream'))
     setCodingFileViewerHost('files')
     setCodingFileViewerMode('file')
     clearWorkspaceFileRequest(workspaceFileRequest.id)
-  }, [clearWorkspaceFileRequest, mode, sessionIdState, workspace, workspaceFileRequest])
+  }, [clearWorkspaceFileRequest, codingFileEntry, mode, sessionIdState, workspace, workspaceFileRequest])
 
   // Switching sessions used to *close* the terminal, browser and side chat,
   // because tabs were one global list and leaving them open showed the
@@ -699,8 +709,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const hasCodingWorkspace = mode !== 'coding' || Boolean(workspace)
   const isCodingSessionLoading = mode === 'coding' && codingSessionLoading
 
-  // Watch workspace for external file changes (other editors, git, etc.)
-  useWorkspaceFileWatcher(agentWorkspace)
+  // Watch every repository for external file changes (other editors, git, etc.)
+  useWorkspaceFileWatcher(sessionRepositoryPaths)
   const { data: teamAgentsData, isLoading: teamAgentsLoading } = useTeamAgentsQuery(
     agentWorkspace,
     hasCodingWorkspace,
@@ -752,6 +762,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     mode: workOrCodingMode,
     sessionId: sessionIdState,
     workspace,
+    repositories: sessionRepositoryPaths,
     enabled: fileRefsEnabled && (mode === 'coding' ? Boolean(workspace) : Boolean(sessionIdState)),
   })
 
@@ -863,8 +874,11 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       thinkingLevel: sessionIdState ? sessionThinkingLevel : null,
     })
     if (mode === 'coding') {
-      const focusId = codingFocusId({ project_id: projectIdState, workspace })
-      navigate(focusId ? { to: '/coding/$focusId', params: { focusId } } : { to: '/coding' })
+      navigate(
+        projectIdState
+          ? { to: '/coding/$focusId', params: { focusId: projectIdState } }
+          : { to: '/coding' },
+      )
     } else {
       navigate({ to: '/' })
     }
@@ -911,24 +925,20 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         fastMode: carryFastMode,
         skipInitialRestore: session.created,
       })
+      // The server files the chat under the repository's project (and
+      // refuses a repository that belongs to none).
+      const focusId = session.project_id ?? repository.project_id ?? null
       useTeamStore.setState({
-        projectId: session.project_id ?? repository.project_id,
+        projectId: focusId,
         sessionTags: session.tags ?? tags,
       })
       prependSession(queryClient, session)
-      if (repository.project_id) {
+      if (focusId) {
         void queryClient.invalidateQueries({
-          queryKey: queryKeys.team.sessions.project(repository.project_id),
+          queryKey: queryKeys.team.sessions.project(focusId),
         })
-      } else {
-        prependWorkspaceSession(queryClient, repository.workspace, session)
-        saveLastCodingWorkspace(repository.workspace)
       }
       const resolvedWorkspace = session.workspace ?? repository.workspace
-      const focusId = codingFocusId({
-        project_id: session.project_id ?? repository.project_id,
-        workspace: resolvedWorkspace,
-      })
       if (session.created) {
         setPendingCodeReviewStart({
           sessionId: session.id,
@@ -1082,14 +1092,24 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
     return () => window.removeEventListener('keydown', handler)
   }, [isCodingSessionLoading, isMobile, mode, showPalette, workspace])
 
-  const handleAddFileComment = useCallback((path: string, startLine: number, endLine: number) => {
+  // The open file's path as the agent addresses it: the viewer lists it
+  // relative to its own repository, which may not be the primary.
+  const viewerSourceWorkspace = codingFileViewer?.sourceWorkspace ?? null
+  const chatFilePath = useCallback(
+    (path: string) => (workspace ? agentPath(workspace, viewerSourceWorkspace, path) : path),
+    [viewerSourceWorkspace, workspace],
+  )
+
+  const handleAddFileComment = useCallback((rawPath: string, startLine: number, endLine: number) => {
+    const path = chatFilePath(rawPath)
     const ref = startLine === endLine ? `@${path}#L${startLine}` : `@${path}#L${startLine}-L${endLine}`
     inputRef.current?.appendValue(`${ref} `)
     inputRef.current?.focus()
-  }, [])
+  }, [chatFilePath])
 
   /** Editor context menu → Chat: user requests an action on selected code */
-  const handleSendToChat = useCallback((action: string, code: string, path: string, startLine: number, endLine: number) => {
+  const handleSendToChat = useCallback((action: string, code: string, rawPath: string, startLine: number, endLine: number) => {
+    const path = chatFilePath(rawPath)
     const lineRef = startLine === endLine ? `L${startLine}` : `L${startLine}-L${endLine}`
     const prefix = action === 'explain'
       ? `Explain this code from \`${path}#${lineRef}\`:\n`
@@ -1100,14 +1120,15 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           : `@${path}#${lineRef}\n`
     inputRef.current?.setValue(`${prefix}\`\`\`\n${code}\n\`\`\`\n`)
     inputRef.current?.focus()
-  }, [])
+  }, [chatFilePath])
 
   /** Editor context menu → Chat: append selected code block to composer */
-  const handleAddCodeToChat = useCallback((code: string, path: string, startLine: number, endLine: number) => {
+  const handleAddCodeToChat = useCallback((code: string, rawPath: string, startLine: number, endLine: number) => {
+    const path = chatFilePath(rawPath)
     const lineRef = startLine === endLine ? `L${startLine}` : `L${startLine}-L${endLine}`
     inputRef.current?.appendValue(`@${path}#${lineRef}\n\`\`\`\n${code}\n\`\`\`\n`)
     inputRef.current?.focus()
-  }, [])
+  }, [chatFilePath])
 
   const handleSendToSideChat = useCallback((selectedText: string) => {
     setSideChatQuote(selectedText)
@@ -1267,6 +1288,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const searchPaletteCommands = useGlobalSearch({
     mode: workOrCodingMode,
     workspace: mode === 'coding' ? workspace : null,
+    repositories: sessionRepositoryPaths,
     turnChanges,
     navigate,
     openFile: openPaletteFile,
@@ -1363,9 +1385,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       ? (
         <CodingSidebar
           currentSessionId={sessionIdState || undefined}
-          workspace={workspace}
           openWorkspaceDialogKey={openWorkspaceDialogKey}
-          workspacePickerPortal={codingWorkspacePickerPortal}
           onCommandPalette={() => setShowPalette(true)}
           mobileOpen={false}
           onMobileClose={() => {}}
@@ -1389,9 +1409,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       ? (
         <CodingSidebar
           currentSessionId={sessionIdState || undefined}
-          workspace={workspace}
           openWorkspaceDialogKey={openWorkspaceDialogKey}
-          workspacePickerPortal={codingWorkspacePickerPortal}
           onCommandPalette={() => setShowPalette(true)}
           mobileOpen={mobileSidebarOpen}
           onMobileClose={() => setMobileSidebarOpen(false)}
@@ -1478,12 +1496,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       ? `!${body.slice(1).trim()}`
       : await expandUserCommand(content)
     const current = useTeamStore.getState()
-    // A Coding draft's first message is what registers its repository with
-    // the backend, so the sidebar's snapshot is stale the moment it lands:
-    // without the refresh below, a freshly picked (or freshly cloned) folder
-    // stays missing from Workspaces until the query happens to go stale.
-    const registersWorkspace =
-      mode === 'coding' && !!workspace && current.sessionId === null
     // The composer clears its draft optimistically, so a rejected send has
     // to say so — returning true regardless dropped the user's text and
     // their attachments on the floor.
@@ -1505,7 +1517,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
       shell,
       delivery,
     })
-    if (sent && registersWorkspace) notifyCodingWorkspacesChanged()
     return sent
   }, [
     expandUserCommand,
@@ -1619,6 +1630,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             onClose={() => closeWorkbenchTool('scheduler')}
             contextMode={workOrCodingMode}
             contextWorkspace={mode === 'coding' ? workspace : null}
+            contextProjectId={mode === 'coding' ? projectIdState : null}
           />
         </WorkbenchSurface>
         <WorkbenchSurface tool="plugins">
@@ -1642,16 +1654,10 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             {workspace && <WorkbenchSurface tool="problems">
               {(_tab, active) => (
                 <ProblemsPanel
-                  workspace={workspace}
+                  workspaces={sessionRepositoryPaths}
                   active={active}
-                  onOpenFile={(path, line) => {
-                    setCodingFileViewer({
-                      path,
-                      name: path.split('/').pop() ?? path,
-                      size: 0,
-                      mtime: 0,
-                      mime: 'text/plain',
-                    })
+                  onOpenFile={(repository, path, line) => {
+                    setCodingFileViewer(codingFileEntry(agentPath(workspace, repository, path)))
                     setCodingFileViewerLine(line ?? null)
                     setCodingFileViewerHost('standalone')
                     setCodingFileViewerMode('file')
@@ -1682,19 +1688,14 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         mode={mode}
         onOpenChangedFile={(path) => {
           if (mode === 'coding' && workspace) {
-            setCodingFileViewer({
-              path,
-              name: path.split('/').pop() ?? path,
-              size: 0,
-              mtime: 0,
-              mime: 'text/plain',
-            })
+            // Turn changes list paths as the agent wrote them; a sibling
+            // repository's file opens against that repository.
+            setCodingFileViewer(codingFileEntry(path))
             setCodingFileViewerHost('standalone')
             setCodingFileViewerMode('diff')
           }
         }}
       />
-      {mode === 'coding' && <div ref={setCodingWorkspacePickerPortal} className="contents" />}
     </>
   )
 
@@ -1719,7 +1720,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         && (
         <Suspense fallback={<PanelLoadingFallback />}>
           <CodingFileViewerPanel
-            key={`${codingFileViewer.path}:${codingFileViewerMode}`}
+            key={`${codingFileViewer.sourceWorkspace ?? ''}:${codingFileViewer.path}:${codingFileViewerMode}`}
             workspace={codingFileViewer.sourceWorkspace ?? workspace}
             file={codingFileViewer}
             mobile={false}
@@ -1784,6 +1785,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           mode={mode}
           workspace={workbenchWorkspace}
+          repositories={mode === 'coding' ? sessionRepositoryPaths : undefined}
           onChooseWorkspace={mode === 'coding' ? handleOpenWorkspaceDialog : undefined}
           reviewContext={mode === 'coding' ? reviewSessionContext : null}
           onOpenReviewContext={openGitReviews}
@@ -1880,16 +1882,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           </div>
         ) : mode === 'coding' && !workspace ? (
           <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8 sm:px-6">
-            <WelcomeHero
-              icon={<FolderPlus size={20} strokeWidth={1.8} aria-hidden="true" />}
-              title="Start with a project folder"
-              description="Open a repository to give your coding team files, source control, and project context."
-            >
-              <Button type="button" size="sm" className="h-8 rounded-lg px-3.5 text-xs" onClick={handleOpenWorkspaceDialog}>
-                <FolderPlus size={14} aria-hidden="true" />
-                Open workspace
-              </Button>
-            </WelcomeHero>
+            <CodingStartHero onOpenFolder={handleOpenWorkspaceDialog} />
           </div>
         ) : agentViewAgent && hasAgentViewStream ? (
           <ActiveAgentTranscript
@@ -1911,16 +1904,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             emptyState={
               mode === 'coding' && workspace ? (
                 <div className="flex flex-col items-center justify-center py-16">
-                  {projectIdState ? (
-                    activeProject && (
-                      <ProjectInfoCard
-                        project={activeProject}
-                        onSuggestion={handleCodingSuggestion}
-                      />
-                    )
-                  ) : (
-                    <WorkspaceInfoCard
-                      workspace={workspace}
+                  {activeProject && (
+                    <ProjectInfoCard
+                      project={activeProject}
                       onSuggestion={handleCodingSuggestion}
                     />
                   )}
@@ -1930,16 +1916,9 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           />
         ) : mode === 'coding' && workspace ? (
           <div className="flex flex-1 flex-col items-center justify-center py-16">
-            {projectIdState ? (
-              activeProject && (
-                <ProjectInfoCard
-                  project={activeProject}
-                  onSuggestion={handleCodingSuggestion}
-                />
-              )
-            ) : (
-              <WorkspaceInfoCard
-                workspace={workspace}
+            {activeProject && (
+              <ProjectInfoCard
+                project={activeProject}
                 onSuggestion={handleCodingSuggestion}
               />
             )}
@@ -1949,7 +1928,6 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
         ) : null
         })()}
 
-        <SuggestedTaskDock />
         <PermissionApprovalModal />
         <AskUserQuestionModal />
         {(mode !== 'coding' || workspace) && (

@@ -38,7 +38,7 @@ class ScheduledTaskCreate(BaseModel):
     )
     project_id: UUID | None = Field(
         default=None,
-        description="Optional coding project id; valid only when mode='coding'.",
+        description="Coding project id. Required when mode='coding'; valid only then.",
     )
 
     schedule_type: str = Field(description='"at" | "every" | "cron"')
@@ -70,6 +70,8 @@ class ScheduledTaskCreate(BaseModel):
 
         if self.mode == "coding" and not self.workspace:
             raise ValueError("workspace is required when mode='coding'")
+        if self.mode == "coding" and self.project_id is None:
+            raise ValueError("project_id is required when mode='coding'")
         if self.project_id is not None and self.mode != "coding":
             raise ValueError("project_id is only valid when mode='coding'")
 

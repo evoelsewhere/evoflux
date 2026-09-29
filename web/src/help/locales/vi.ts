@@ -1071,9 +1071,9 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
   {
     id: 'coding-workspaces',
     category: 'coding',
-    title: 'Coding workspace, project và worktree',
+    title: 'Coding project và worktree',
     summary:
-      'Mở repo, nhóm thành multi-repo project, tạo managed worktree, và dùng /init cho AGENTS.md. Click repo chỉ focus — không mở chat; dùng + / New chat khi cần transcript.',
+      'Mọi chat Coding đều thuộc một project. Mở một thư mục để tạo project một repo, thêm repository khác vào sau, tạo managed worktree, và dùng /init cho AGENTS.md. Chọn project chỉ focus — dùng + / New chat khi cần transcript.',
     keywords: [
       'workspace',
       'project',
@@ -1089,22 +1089,23 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'cây làm việc'
 ],
     setup:
-      'Sang Coding (`/coding`) và thêm repository hoặc tạo project. Cấu hình vị trí worktree trong Settings → Sandbox (repository vs user_data). Chạy /init trong session khi convention nên sống trong AGENTS.md.',
+      'Sang Coding (`/coding`) và bấm nút + thư mục ở mục Projects để mở repository thành project (hoặc thiết lập project nhiều repo). Cấu hình vị trí worktree trong Settings → Sandbox (repository vs user_data). Chạy /init trong session khi convention nên sống trong AGENTS.md.',
     tricks: [
-      'Click repo chỉ focus — không mở chat. Dùng + trên Repos (hoặc New chat) để tạo session.',
-      'Project gom nhiều repository dưới một project_id; source search tool resolve link cross-repo tự động.',
+      'Mở một thư mục sẽ tạo project mang tên thư mục và mở chat mới ở đó; thư mục đã thuộc project thì chỉ mở project đó.',
+      'Chọn project chỉ focus — dùng + trên project (hoặc New chat) để tạo session.',
+      'Thêm repository vào project bằng nút + thư mục của project; project gom chúng dưới một project_id và source search tool resolve link cross-repo tự động.',
+      'Trong project nhiều repo, Problems liệt kê lỗi của mọi repository, mỗi dòng kèm tên repository, và Open in hỏi mở repository nào.',
       'Vị trí worktree điều khiển trong Settings → Sandbox (repository vs user_data).',
       'Thay đổi source chưa commit không được copy vào worktree mới.',
-      'Managed worktree nest dưới source repo trên cây sidebar.',
-      'Repo standalone vẫn là single-workspace session hợp lệ không cần project.',
+      'Tạo worktree từ repository trong danh sách Repositories của project; chat của worktree vẫn thuộc project.',
       'Chạy /init trong Coding session để tạo hoặc cập nhật AGENTS.md cho convention agent.',
       'Commit hoặc stash trước khi spawn worktree nếu cần dirty change ở chỗ khác — chúng không xuất hiện trên cây mới.',
-      'Ưu tiên project khi service chia sẻ API giữa repo; ưu tiên single repo khi changeset local.'
+      'Project một repo là trường hợp bình thường; thêm repository khi service chia sẻ API giữa các repo.'
 ],
     blocks: [
       {
         type: 'p',
-        text: 'Coding mode quản git repository, multi-repo project tùy chọn và managed worktree. Agent sửa cây thật với Files, Terminal và Source Control cạnh chat. Đây là mode cho việc engineering bền.',
+        text: 'Coding mode làm việc theo project: mỗi project chứa một hoặc nhiều git repository, và mọi chat Coding, scheduled task và worktree đều thuộc một project. Agent sửa cây thật với Files, Terminal và Source Control cạnh chat. Đây là mode cho việc engineering bền.',
       },
       {
         type: 'p',
@@ -1112,13 +1113,13 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Thêm repo từ sidebar Coding. Click để focus; + / New chat cho session. Tạo Project để bind nhiều repo. Spawn worktree từ menu repo; chọn repository-local vs user_data trong Settings → Sandbox. Dùng /init để scaffold hoặc refresh AGENTS.md. Files bật khi workspace active.',
+        text: 'Mở thư mục (hoặc clone repository) từ mục Projects để tạo project cho nó. Chọn project để focus; + / New chat cho session. Thêm repository để gom nhiều repo vào một project. Spawn worktree từ menu repository; chọn repository-local vs user_data trong Settings → Sandbox. Dùng /init để scaffold hoặc refresh AGENTS.md. Files bật khi project active.',
       },
       {
         type: 'tips',
         items: [
-          'Focus ≠ chat — click chọn; + tạo.',
-          'Projects — multi-repo dưới một project_id.',
+          'Focus ≠ chat — chọn để focus; + tạo.',
+          'Projects — một hoặc nhiều repo dưới một project_id.',
           'Worktrees — cây sạch; source chưa commit không copy.',
           '/init — AGENTS.md cho convention Coding.',
           'Sandbox — policy vị trí worktree.'
@@ -1126,7 +1127,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Session Coding đầu: (1) sang Coding, (2) thêm git repo, (3) click focus, (4) + / New chat, (5) /init nếu thiếu AGENTS.md, (6) set permission mode, (7) @ file then chốt và mô tả thay đổi, (8) mở Source Control xác nhận branch và working tree.',
+        text: 'Session Coding đầu: (1) sang Coding, (2) mở git repo thành project, (3) + / New chat, (4) /init nếu thiếu AGENTS.md, (5) set permission mode, (6) @ file then chốt và mô tả thay đổi, (7) mở Source Control xác nhận branch và working tree.',
       },
       {
         type: 'p',
@@ -1134,15 +1135,15 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       },
       {
         type: 'p',
-        text: 'Sai thường gặp: click repo rồi chờ chat không bao giờ tới; để dirty work chỉ trên source rồi mở worktree thiếu chúng; bỏ /init rồi thắc mắc agent bỏ qua convention repo; tạo multi-repo project khi một path submodule đủ; để worktree trên mạng chậm qua user_data mà không chủ đích.',
+        text: 'Sai thường gặp: chọn project rồi chờ chat không bao giờ tới; để dirty work chỉ trên source rồi mở worktree thiếu chúng; bỏ /init rồi thắc mắc agent bỏ qua convention repo; thêm repository vào project khi một path submodule đủ; để worktree trên mạng chậm qua user_data mà không chủ đích.',
       },
       {
         type: 'tips',
         items: [
-          'Nên project — type cross-repo, contract dùng chung, đổi multi-service.',
-          'Không nên project — một app repo với vendored code ít đụng.',
-          'Files cross-repo cần project_id.',
-          'Source Control gắn workspace đang focus.'
+          'Nên thêm repo — type cross-repo, contract dùng chung, đổi multi-service.',
+          'Không nên — một app repo với vendored code ít đụng.',
+          'Source search resolve link giữa các repo của project.',
+          'Source Control gắn các repository của project đang focus.'
 ],
       }
 ],

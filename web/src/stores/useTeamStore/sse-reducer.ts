@@ -20,7 +20,8 @@ import {
   touchesWiki,
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
-import type { GoalResponse, SuggestedTask, TurnChangedFile, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
+import type { GoalResponse, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
+import { parseTurnChanges } from '@/utils/turn-changes'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
 
 type Setter = (fn: (draft: TeamStore) => void) => void
@@ -406,14 +407,16 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             const workspacePaths = paths?.filter(
               (p) => !p.startsWith('wiki/') && p !== 'wiki',
             )
+            const projectId = get().projectId
             if (workspacePaths && workspacePaths.length > 0) {
               events.push({
                 kind: 'coding_workspace_paths',
                 workspace,
                 paths: workspacePaths,
+                projectId,
               })
             } else {
-              events.push({ kind: 'coding_workspace', workspace })
+              events.push({ kind: 'coding_workspace', workspace, projectId })
             }
           } else {
             const sid = get().sessionId
@@ -870,40 +873,14 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       }
 
       case 'turn_changes': {
-        const filesRaw = Array.isArray(d.files) ? d.files : []
-        const files: TurnChangedFile[] = []
-        for (const f of filesRaw) {
-          if (!f || typeof f !== 'object') continue
-          const row = f as Record<string, unknown>
-          const path = typeof row.path === 'string' ? row.path : null
-          if (!path) continue
-          const statusRaw = row.status
-          const status: TurnChangedFile['status'] =
-            statusRaw === 'added' ||
-            statusRaw === 'modified' ||
-            statusRaw === 'removed' ||
-            statusRaw === 'changed'
-              ? statusRaw
-              : 'changed'
-          files.push({
-            path,
-            status,
-            additions: typeof row.additions === 'number' ? row.additions : null,
-            deletions: typeof row.deletions === 'number' ? row.deletions : null,
-          })
-        }
         set((draft) => {
-          if (files.length === 0) {
+          const changes = parseTurnChanges(draft.sessionId ?? '', d)
+          if (!changes) {
             draft.turnChanges = null
             draft.turnChangesOpen = false
             return
           }
-          draft.turnChanges = {
-            sessionId: (d.session_id as string) ?? draft.sessionId ?? '',
-            additions: typeof d.additions === 'number' ? d.additions : 0,
-            deletions: typeof d.deletions === 'number' ? d.deletions : 0,
-            files,
-          }
+          draft.turnChanges = changes
           // Coding mode renders the completed-turn summary inline. Keep the
           // larger review panel closed until the user explicitly opens it.
           draft.turnChangesOpen = false

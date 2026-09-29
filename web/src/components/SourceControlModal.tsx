@@ -157,6 +157,13 @@ export function SourceControlPanel({
   const observedRunningJob = useRef(false)
   const [showDiff, setShowDiff] = useState(true)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
+  // A path selected in one repository means nothing in the next: switching
+  // the repository picker kept the old file's header over an empty diff.
+  const [selectionWorkspace, setSelectionWorkspace] = useState(workspace)
+  if (selectionWorkspace !== workspace) {
+    setSelectionWorkspace(workspace)
+    setSelectedPath(null)
+  }
   const [gitAiBusy, setGitAiBusy] = useState(false)
   const sessionId = useTeamStore((state) => state.sessionId)
   const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)

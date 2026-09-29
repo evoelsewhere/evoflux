@@ -292,6 +292,42 @@ def test_diff_views_decode_utf8_regardless_of_locale(
     assert "+tiếng Việt có dấu" in body["diff"]
 
 
+def test_workspace_diff_includes_staged_changes(app_without_team, tmp_path: Path):
+    repo = _repo(tmp_path)
+    (repo / "added.py").write_text("x = 1\n", encoding="utf-8")
+    _git(repo, "add", "added.py")
+    (repo / "README.md").write_text("hello\nstaged\n", encoding="utf-8")
+    _git(repo, "add", "README.md")
+    client = TestClient(app_without_team)
+
+    body = client.get(
+        "/api/team/workspace/git-diff/view", params={"workspace": str(repo)}
+    ).json()
+
+    # A staged new file is a local change the file tree marks A.
+    assert "diff --git a/added.py b/added.py\nnew file mode" in body["diff"]
+    assert "+staged" in body["diff"]
+    assert body["untracked"] == []
+
+
+def test_workspace_diff_of_a_repository_without_commits(
+    app_without_team, tmp_path: Path
+):
+    repo = tmp_path / "fresh"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    (repo / "first.py").write_text("print(1)\n", encoding="utf-8")
+    _git(repo, "add", "first.py")
+    client = TestClient(app_without_team)
+
+    response = client.get(
+        "/api/team/workspace/git-diff/view", params={"workspace": str(repo)}
+    )
+
+    assert response.status_code == 200
+    assert "diff --git a/first.py b/first.py\nnew file mode" in response.json()["diff"]
+
+
 def test_repository_identity_and_revert_commit(app_without_team, tmp_path: Path):
     repo = _repo(tmp_path)
     client = TestClient(app_without_team)

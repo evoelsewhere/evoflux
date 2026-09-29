@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -182,7 +183,11 @@ async def dispatch_shell_command(
     )
 
     msg_extra: dict[str, object] = {}
-    snapshot_hash = await snapshot_service.track(session_id, workspace_path)
+    snapshot_hash = await snapshot_service.track_repositories(
+        session_id,
+        workspace_path,
+        [Path(path) for path in team.extra_workspace_paths],
+    )
     if snapshot_hash:
         msg_extra["snapshot"] = snapshot_hash
     effective_model = model if model_provided else None

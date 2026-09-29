@@ -50,6 +50,24 @@ def _repo(tmp_path):
     return repo
 
 
+def _add_to_project(*repos) -> str:
+    """Put *repos* in a new live Coding project; returns its id."""
+    import asyncio
+
+    from app.core.db import async_session_factory
+    from app.services.coding_project_service import create_project
+
+    async def create() -> str:
+        async with async_session_factory() as db:
+            project = await create_project(
+                db, name="Owner", workspace_paths=[str(repo) for repo in repos]
+            )
+            await db.commit()
+            return str(project.id)
+
+    return asyncio.run(create())
+
+
 def test_create_worktree_returns_directory_and_branch(
     app_without_team, tmp_path, monkeypatch
 ):
@@ -287,6 +305,7 @@ def test_remove_managed_worktree_deletes_registry_entry(
     from app.models.chat import ChatSession
 
     repo = _repo(tmp_path)
+    _add_to_project(repo)
     data_dir = tmp_path / "data"
     monkeypatch.setattr(
         "app.api.routes.team.worktrees.settings.EVOFLUX_DATA_DIR",
@@ -297,6 +316,8 @@ def test_remove_managed_worktree_deletes_registry_entry(
         "/api/team/workspace/worktrees",
         json={"source_workspace": str(repo), "name": "remove-session"},
     ).json()
+    listed = client.get("/api/team/workspace/tree").json()["repositories"]
+    assert [w["path"] for w in listed[0]["worktrees"]] == [created["directory"]]
 
     async def create_session() -> None:
         async with async_session_factory() as db:
@@ -317,6 +338,7 @@ def test_remove_managed_worktree_deletes_registry_entry(
     tree = client.get("/api/team/workspace/tree")
     assert tree.status_code == 200
     repositories = tree.json()["repositories"]
+    assert [repository["path"] for repository in repositories] == [str(repo.resolve())]
     assert all(
         worktree["path"] != created["directory"]
         for repository in repositories
@@ -343,16 +365,11 @@ def test_remove_missing_managed_worktree_cleans_registry(
         str(data_dir),
     )
 
+    project_id = _add_to_project(repo)
+
     async def create_registry_row() -> None:
         async with async_session_factory() as db:
             async with db.begin():
-                db.add(
-                    CodingWorkspace(
-                        path=str(repo.resolve()),
-                        kind="repo",
-                        name="repo",
-                    )
-                )
                 db.add(
                     CodingWorkspace(
                         path=str(directory),
@@ -383,7 +400,7 @@ def test_remove_missing_managed_worktree_cleans_registry(
         "path": str(repo.resolve()),
         "name": "repo",
         "worktrees": [],
-        "project_id": None,
+        "project_id": project_id,
     }
 
 
@@ -465,5 +482,92 @@ def test_resolve_validates_model_before_creating_worktree(
         )
 
     assert resp.status_code == 422
+    assert not (data_dir / "worktrees").exists()
+    assert not (repo / ".evoflux" / "worktrees").exists()
+
+
+def test_resolve_worktree_session_belongs_to_the_source_repos_project(
+    app_without_team, tmp_path, monkeypatch
+):
+    repo = _repo(tmp_path)
+    project_id = _add_to_project(repo)
+    data_dir = tmp_path / "data"
+    monkeypatch.setattr(
+        "app.api.routes.team.worktrees.settings.EVOFLUX_DATA_DIR",
+        str(data_dir),
+    )
+    client = TestClient(app_without_team)
+
+    resp = client.post(
+        "/api/team/sessions/resolve",
+        json={"mode": "coding", "worktree_from": str(repo), "worktree_name": "task"},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["created"] is True
+    assert body["project_id"] == project_id
+    expected = (repo / ".evoflux" / "worktrees" / "task").resolve()
+    assert body["workspace"] == str(expected)
+    tree = client.get("/api/team/workspace/tree").json()["repositories"]
+    assert [(r["path"], r["project_id"]) for r in tree] == [
+        (str(repo.resolve()), project_id)
+    ]
+    assert [w["path"] for w in tree[0]["worktrees"]] == [str(expected)]
+
+
+def test_resolve_worktree_of_a_shared_repo_lands_in_the_named_project(
+    app_without_team, tmp_path, monkeypatch
+):
+    """A repo in two projects gets worktrees from whichever one the user is in."""
+    repo = _repo(tmp_path)
+    _add_to_project(repo)
+    second_project_id = _add_to_project(repo)
+    data_dir = tmp_path / "data"
+    monkeypatch.setattr(
+        "app.api.routes.team.worktrees.settings.EVOFLUX_DATA_DIR",
+        str(data_dir),
+    )
+    client = TestClient(app_without_team)
+
+    unnamed = client.post(
+        "/api/team/sessions/resolve",
+        json={"mode": "coding", "worktree_from": str(repo), "worktree_name": "a"},
+    )
+    named = client.post(
+        "/api/team/sessions/resolve",
+        json={
+            "mode": "coding",
+            "project_id": second_project_id,
+            "worktree_from": str(repo),
+            "worktree_name": "b",
+        },
+    )
+
+    assert unnamed.status_code == 409
+    assert named.status_code == 200, named.text
+    body = named.json()
+    assert body["project_id"] == second_project_id
+    assert body["workspace"] == str((repo / ".evoflux" / "worktrees" / "b").resolve())
+
+
+def test_resolve_worktree_from_repo_in_no_project_creates_no_worktree(
+    app_without_team, tmp_path, monkeypatch
+):
+    repo = _repo(tmp_path)
+    data_dir = tmp_path / "data"
+    monkeypatch.setattr(
+        "app.api.routes.team.worktrees.settings.EVOFLUX_DATA_DIR",
+        str(data_dir),
+    )
+    client = TestClient(app_without_team)
+
+    resp = client.post(
+        "/api/team/sessions/resolve",
+        json={"mode": "coding", "worktree_from": str(repo), "worktree_name": "task"},
+    )
+
+    assert resp.status_code == 422
+    assert "belong to a project" in resp.json()["detail"]
     assert not (data_dir / "worktrees").exists()
     assert not (repo / ".evoflux" / "worktrees").exists()

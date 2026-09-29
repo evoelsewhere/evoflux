@@ -7,16 +7,15 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models.chat import (
-    ChatSession,
     CodingProject,
     CodingProjectWorkspace,
 )
 from app.services.coding_workspace_service import (
-    list_workspace_paths_with_sessions,
     upsert_coding_workspace,
 )
 from app.services.coding_project_service import (
     get_visible_project_ids_for_workspace_path,
+    split_project_paths_for_workspace,
 )
 
 
@@ -48,35 +47,6 @@ async def _add_project_workspace(db: AsyncSession, project_id, workspace_path: s
 
 
 @pytest.mark.asyncio
-async def test_no_sessions_returns_empty(db, tmp_path):
-    await upsert_coding_workspace(db, path=str(tmp_path), kind="repo")
-    await db.commit()
-
-    assert await list_workspace_paths_with_sessions(db) == []
-
-
-@pytest.mark.asyncio
-async def test_standalone_session_workspace_included(db, tmp_path):
-    ws_path = str(tmp_path)
-    await upsert_coding_workspace(db, path=ws_path, kind="repo")
-    db.add(ChatSession(mode="coding", workspace=ws_path))
-    await db.commit()
-
-    paths = await list_workspace_paths_with_sessions(db)
-    assert paths == [ws_path]
-
-
-@pytest.mark.asyncio
-async def test_hidden_workspace_excluded_even_with_session(db, tmp_path):
-    ws_path = str(tmp_path)
-    await upsert_coding_workspace(db, path=ws_path, kind="repo", hidden=True)
-    db.add(ChatSession(mode="coding", workspace=ws_path))
-    await db.commit()
-
-    assert await list_workspace_paths_with_sessions(db) == []
-
-
-@pytest.mark.asyncio
 async def test_reopening_workspace_restores_hidden_and_deleted_registry_row(
     db, tmp_path
 ):
@@ -98,52 +68,40 @@ async def test_reopening_workspace_restores_hidden_and_deleted_registry_row(
 
 
 @pytest.mark.asyncio
-async def test_project_without_session_excludes_its_workspaces(db, tmp_path):
-    """A repo merely added to a project (never opened) shouldn't be watched."""
-    project = CodingProject(name="Unused project")
-    db.add(project)
-    await db.flush()
-    await _add_project_workspace(db, project.id, str(tmp_path / "repo-a"))
+async def test_repo_in_no_project_has_no_owner(db, tmp_path):
+    await upsert_coding_workspace(db, path=str(tmp_path), kind="repo")
     await db.commit()
 
-    assert await list_workspace_paths_with_sessions(db) == []
+    assert await get_visible_project_ids_for_workspace_path(db, str(tmp_path)) == []
 
 
 @pytest.mark.asyncio
-async def test_project_with_session_includes_every_repo(db, tmp_path):
-    """A project session can touch any repo in the project, not just the
-    one it was resolved with — every project workspace should be watched."""
-    project = CodingProject(name="Multi-repo project")
-    db.add(project)
-    await db.flush()
-    repo_a = str(tmp_path / "repo-a")
-    repo_b = str(tmp_path / "repo-b")
-    await _add_project_workspace(db, project.id, repo_a)
-    await _add_project_workspace(db, project.id, repo_b)
-    db.add(ChatSession(mode="coding", project_id=project.id, workspace=repo_a))
-    await db.commit()
-
-    paths = set(await list_workspace_paths_with_sessions(db))
-    assert paths == {repo_a, repo_b}
-
-
-@pytest.mark.asyncio
-async def test_worktree_session_also_watches_source_repo(db, tmp_path):
+async def test_worktree_listed_as_a_project_repo_is_owned_by_that_project(db, tmp_path):
+    """A worktree folder opened as its own project must be chat-able there."""
     source_path = str(tmp_path / "source-repo")
     worktree_path = str(tmp_path / "worktree")
-    await upsert_coding_workspace(db, path=source_path, kind="repo")
-    await upsert_coding_workspace(
+    source_owner = CodingProject(name="Source owner")
+    worktree_owner = CodingProject(name="Worktree as project")
+    db.add(source_owner)
+    db.add(worktree_owner)
+    await db.flush()
+    source = await _add_project_workspace(db, source_owner.id, source_path)
+    worktree = await upsert_coding_workspace(
         db,
         path=worktree_path,
         kind="worktree",
-        source_path=source_path,
+        source_path=source.path,
         managed=True,
     )
-    db.add(ChatSession(mode="coding", workspace=worktree_path))
+    db.add(
+        CodingProjectWorkspace(project_id=worktree_owner.id, workspace_id=worktree.id)
+    )
     await db.commit()
 
-    paths = set(await list_workspace_paths_with_sessions(db))
-    assert paths == {source_path, worktree_path}
+    assert set(await get_visible_project_ids_for_workspace_path(db, worktree_path)) == {
+        source_owner.id,
+        worktree_owner.id,
+    }
 
 
 @pytest.mark.asyncio
@@ -166,3 +124,18 @@ async def test_worktree_inherits_source_project_ownership(db, tmp_path):
     assert await get_visible_project_ids_for_workspace_path(db, worktree_path) == [
         project.id
     ]
+
+
+def test_project_session_on_a_repo_gets_the_other_repos_as_writable_extras(tmp_path):
+    api = str((tmp_path / "api").resolve())
+    web = str((tmp_path / "web").resolve())
+
+    assert split_project_paths_for_workspace([api, web], api) == ([web], [])
+
+
+def test_worktree_session_may_only_read_its_source_checkout(tmp_path):
+    api = str((tmp_path / "api").resolve())
+    web = str((tmp_path / "web").resolve())
+    worktree = str((tmp_path / "web" / ".evoflux" / "worktrees" / "task").resolve())
+
+    assert split_project_paths_for_workspace([api, web], worktree) == ([api], [web])

@@ -8,7 +8,6 @@ export {
 export { useTeamStatusQuery } from './useTeamStatusQuery'
 export {
   useTeamSessionsQuery,
-  useCodingWorkspaceSessionsQuery,
   useProjectSessionsQuery,
   useDeleteTeamSessionMutation,
   useDuplicateTeamSessionMutation,

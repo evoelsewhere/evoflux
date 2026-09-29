@@ -6,7 +6,7 @@ import asyncio
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app.api.schemas.problems import ProblemResponse, ProblemsResponse
 from app.plugin_platform import inspect_plugin, list_effective_installations
@@ -27,6 +27,7 @@ from app.services.problems_service import (
 router = APIRouter(prefix="/workspace/problems")
 _plugin_sync_at: dict[str, float] = {}
 _plugin_scopes: dict[str, set[str]] = {}
+_SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2, "hint": 3}
 
 
 def _workspace(raw: str) -> Path:
@@ -36,36 +37,42 @@ def _workspace(raw: str) -> Path:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-def _response(workspace: Path, *, include_resolved: bool) -> ProblemsResponse:
-    rows = list_problems(workspace, include_resolved=include_resolved)
+def _response(roots: list[Path], *, include_resolved: bool) -> ProblemsResponse:
     counts = {key: 0 for key in ("error", "warning", "info", "hint", "total")}
-    for row in rows:
-        counts[row.severity] += 1
-        counts["total"] += 1
-    return ProblemsResponse(
-        problems=[
-            ProblemResponse.model_validate(
-                {
-                    **serialize_problem(row),
-                    "suppression_count": suppression_blast_radius(workspace, row.id),
-                }
+    problems: list[ProblemResponse] = []
+    for root in roots:
+        for row in list_problems(root, include_resolved=include_resolved):
+            counts[row.severity] += 1
+            counts["total"] += 1
+            problems.append(
+                ProblemResponse.model_validate(
+                    {
+                        **serialize_problem(row),
+                        "suppression_count": suppression_blast_radius(root, row.id),
+                    }
+                )
             )
-            for row in rows
-        ],
-        counts=counts,
-    )
+    # Errors first across repositories; each repository's own order is kept.
+    problems.sort(key=lambda item: _SEVERITY_ORDER[item.severity])
+    return ProblemsResponse(problems=problems, counts=counts)
 
 
 @router.get("", response_model=ProblemsResponse)
 async def list_workspace_problems(
-    workspace: str,
+    workspace: list[str] = Query(...),
     include_resolved: bool = False,
     refresh_plugins: bool = True,
 ) -> ProblemsResponse:
-    root = _workspace(workspace)
+    """Problems of one repository, or of every repository a session works in.
+
+    Each row names its repository in ``workspace``; dismiss, suppress and
+    restore take that repository. Plugin findings are not about any one
+    repository, so only the first one carries them.
+    """
+    roots = list(dict.fromkeys(_workspace(raw) for raw in workspace))
     if refresh_plugins:
-        await _sync_plugin_problems(root)
-    return _response(root, include_resolved=include_resolved)
+        await _sync_plugin_problems(roots[0])
+    return _response(roots, include_resolved=include_resolved)
 
 
 @router.post("/{problem_id}/dismiss", response_model=ProblemResponse)

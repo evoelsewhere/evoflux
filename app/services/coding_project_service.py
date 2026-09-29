@@ -228,13 +228,39 @@ async def get_project_workspace_paths(db: AsyncSession, project_id: UUID) -> lis
     return [ws.path for _, ws in pairs]
 
 
+def split_project_paths_for_workspace(
+    project_paths: list[str], workspace: str
+) -> tuple[list[str], list[str]]:
+    """(extra_workspace_paths, read_only_paths) for a session on *workspace*.
+
+    The project's other repositories are writable extras. When *workspace* is
+    a managed worktree of one of them, that source checkout is read-only
+    instead: the worktree is what isolates the session's edits, so writing to
+    the original would leak them into every other chat on that repository.
+    """
+    from app.agent.sandbox_config import managed_worktree_roots
+
+    resolved = Path(workspace).resolve()
+    extra: list[str] = []
+    read_only: list[str] = []
+    for path in project_paths:
+        if path == workspace:
+            continue
+        roots = managed_worktree_roots(Path(path))
+        if any(root.resolve() in resolved.parents for root in roots):
+            read_only.append(path)
+        else:
+            extra.append(path)
+    return extra, read_only
+
+
 async def get_projects_for_workspace(
     db: AsyncSession, workspace_id: UUID
 ) -> list[UUID]:
     """Reverse lookup: which live project(s) contain this workspace as a member.
 
     Used by repository-scoped services to discover the project's authorized
-    sibling repositories. A standalone workspace has no sibling scope.
+    sibling repositories. A repository in no project has no sibling scope.
     """
     rows = (
         await db.exec(
@@ -254,12 +280,11 @@ async def get_visible_project_ids_for_workspace_path(
 ) -> list[UUID]:
     """Return live Coding projects owning a repo or one of its worktrees.
 
-    The Coding sidebar treats a repository that belongs to a project as
-    project-only: it is intentionally absent from the standalone Workspaces
-    section. Session resolution must use the same ownership rule or it can
-    create a standalone session that the sidebar can never display.
+    Coding is project-only: a session may only be created on a repository
+    through a project that owns it, so session resolution asks this.
 
-    Worktrees inherit ownership from their source repository. Multiple
+    Worktrees inherit ownership from their source repository, on top of any
+    project that lists the worktree directory itself as a repository. Multiple
     project memberships are returned rather than arbitrarily choosing one;
     the caller must require an explicit project in that ambiguous case.
     """
@@ -273,16 +298,17 @@ async def get_visible_project_ids_for_workspace_path(
     if workspace is None or workspace.hidden or workspace.deleted_at is not None:
         return []
 
-    owner_path = (
-        workspace.source_path
-        if workspace.kind == "worktree" and workspace.source_path
-        else workspace.path
-    )
-    owner = (
-        await db.exec(select(CodingWorkspace).where(CodingWorkspace.path == owner_path))
-    ).first()
-    if owner is None or owner.hidden or owner.deleted_at is not None:
-        return []
+    owner_ids = [workspace.id]
+    if workspace.kind == "worktree" and workspace.source_path:
+        source = (
+            await db.exec(
+                select(CodingWorkspace).where(
+                    CodingWorkspace.path == workspace.source_path
+                )
+            )
+        ).first()
+        if source is not None and not source.hidden and source.deleted_at is None:
+            owner_ids.append(source.id)
 
     rows = (
         await db.exec(
@@ -292,7 +318,7 @@ async def get_visible_project_ids_for_workspace_path(
                 CodingProject.id == CodingProjectWorkspace.project_id,
             )
             .where(
-                CodingProjectWorkspace.workspace_id == owner.id,
+                col(CodingProjectWorkspace.workspace_id).in_(owner_ids),
                 ~col(CodingProject.hidden),
                 col(CodingProject.deleted_at).is_(None),
                 CodingProject.kind == "coding",

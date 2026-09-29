@@ -369,14 +369,18 @@ def _changed_files_by_repository(
         path = Path(raw)
         repository = primary
         relative = path
-        if path.is_absolute():
-            resolved = path.resolve(strict=False)
-            matches = [
-                root for root in roots if resolved == root or root in resolved.parents
-            ]
-            if matches:
-                repository = max(matches, key=lambda item: len(item.parts))
-                relative = resolved.relative_to(repository)
+        # A relative path is relative to the primary workspace, but it can
+        # still climb into a sibling repository (``../web/src/app.ts``): run
+        # that repository's checks from its own root, not the primary's.
+        resolved = (path if path.is_absolute() else primary / path).resolve(
+            strict=False
+        )
+        matches = [
+            root for root in roots if resolved == root or root in resolved.parents
+        ]
+        if matches:
+            repository = max(matches, key=lambda item: len(item.parts))
+            relative = resolved.relative_to(repository)
         grouped.setdefault(repository, []).append(relative)
     return grouped
 
@@ -478,6 +482,10 @@ def _scope_changes(
     for raw in changed_files:
         path = Path(raw)
         repository: str | None = None
+        if roots and not path.is_absolute() and ".." in path.parts:
+            # Relative to the primary workspace, but climbing out of it — most
+            # likely into a sibling repository. Scope it as the absolute path.
+            path = roots[0] / path
         if path.is_absolute():
             resolved = path.resolve(strict=False)
             relative = None

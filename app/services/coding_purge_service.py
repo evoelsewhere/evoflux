@@ -1,26 +1,26 @@
-"""Destructive cleanup for removed Coding workspaces and projects.
+"""Destructive cleanup for removed Coding projects and their sessions.
 
 Repository source directories are user-owned and are never deleted. The
-service removes app-owned session state, database records, and managed
-worktrees so reopening starts cleanly.
+service removes app-owned session state and database records so reopening
+starts cleanly.
 """
 
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 import shutil
-import subprocess
+from typing import Any
 from uuid import UUID
 
 from loguru import logger
-from sqlalchemy import delete, or_, update
+from sqlalchemy import delete, update
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.agent.artifacts import session_artifact_dir
-from app.agent.sandbox_config import managed_worktree_roots
 from app.core.logging_config import SESSION_LOG_DIR, remove_session_sink
 from app.core.paths import workspace_dir
 from app.models.chat import (
@@ -29,7 +29,6 @@ from app.models.chat import (
     CodingProjectWorkspace,
     CodingWorkspace,
     DreamLog,
-    GitServerConnection,
     SessionMessage,
 )
 from app.models.goal import SessionGoal
@@ -43,12 +42,11 @@ from app.models.webbridge import (
 from app.scheduler.models import ScheduledTask
 from app.scheduler.scheduler import task_scheduler
 from app.services import agent_service, memory_stream_store, team_manager
+from app.services.coding_project_service import (
+    get_visible_project_ids_for_workspace_path,
+)
 from app.services.snapshot_service import snapshot_dir
 from app.services.terminal_service import terminal_manager
-
-
-class PurgeConflictError(ValueError):
-    """The requested standalone purge would destroy project-owned state."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,113 +220,97 @@ async def purge_session(db: AsyncSession, session_id: UUID) -> bool:
     return True
 
 
-def _git(source: Path, *args: str) -> subprocess.CompletedProcess[str] | None:
-    try:
-        return subprocess.run(
-            ["git", "-C", str(source), *args],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=20,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        logger.warning(
-            "managed_worktree_cleanup_failed source={} error={}", source, exc
-        )
+async def _sole_owner(db: AsyncSession, workspace: str | None) -> UUID | None:
+    """The one live project owning *workspace* (or its worktree source)."""
+    if not workspace:
         return None
+    owners = await get_visible_project_ids_for_workspace_path(db, workspace)
+    return owners[0] if len(owners) == 1 else None
 
 
-async def _remove_managed_worktree(source_path: str, worktree_path: str) -> None:
-    source = Path(source_path).expanduser().resolve()
-    worktree = Path(worktree_path).expanduser().resolve()
-    if not any(root in worktree.parents for root in managed_worktree_roots(source)):
-        logger.warning("managed_worktree_cleanup_refused path={}", worktree)
-        return
+async def purge_standalone_coding_sessions(
+    db: AsyncSession, *, created_before: datetime | None = None
+) -> PurgeResult:
+    """File or permanently remove Coding sessions and tasks with no project.
 
-    branch_result = await asyncio.to_thread(
-        _git, worktree, "symbolic-ref", "--quiet", "--short", "HEAD"
-    )
-    branch = (
-        branch_result.stdout.strip()
-        if branch_result is not None and branch_result.returncode == 0
-        else None
-    )
-    removed = await asyncio.to_thread(
-        _git, source, "worktree", "remove", "--force", str(worktree)
-    )
-    if removed is None or removed.returncode != 0:
-        await _remove_tree(worktree)
-        await asyncio.to_thread(_git, source, "worktree", "prune")
-    if branch and branch.startswith("EvoFlux/"):
-        await asyncio.to_thread(_git, source, "branch", "-D", branch)
+    Coding is project-only: a Coding chat or scheduled task that belongs to
+    no project (a standalone workspace from before that rule, or one whose
+    project link was lost) can no longer be opened anywhere.
 
+    One whose repository — or, for a worktree, its source repository — now
+    belongs to exactly one project is filed under that project instead: a
+    repo that joined a project later never had its older chats moved over.
+    The rest are deleted, their sub-agent sessions and side chats with them.
+    Repository sources and the repository registry are left alone, so the
+    folders can still be added to a project.
 
-async def purge_workspace(db: AsyncSession, path: str) -> PurgeResult:
-    """Permanently remove one standalone repository and all owned app data."""
-    resolved = str(Path(path).expanduser().resolve())
-    rows = list(
-        (
+    ``created_before`` leaves rows made after that moment alone: a row still
+    being set up by a live request (a member session is written before its
+    parent link) must not be caught half-built.
+
+    Idempotent; cheap when there is nothing to remove.
+    """
+    session_filter: list[Any] = [
+        ChatSession.mode == "coding",
+        col(ChatSession.project_id).is_(None),
+        col(ChatSession.parent_session_id).is_(None),
+        col(ChatSession.session_type) != "side_chat",
+    ]
+    task_filter: list[Any] = [
+        ScheduledTask.mode == "coding",
+        col(ScheduledTask.project_id).is_(None),
+    ]
+    if created_before is not None:
+        session_filter.append(col(ChatSession.created_at) < created_before)
+        task_filter.append(col(ScheduledTask.created_at) < created_before)
+    seeds = list((await db.exec(select(ChatSession).where(*session_filter))).all())
+    scheduled = list((await db.exec(select(ScheduledTask).where(*task_filter))).all())
+    if not seeds and not scheduled:
+        await db.rollback()
+        return PurgeResult(0, ())
+
+    adopted: dict[UUID, UUID] = {}
+    for session in seeds:
+        owner = await _sole_owner(db, session.workspace)
+        if owner is not None:
+            session.project_id = owner
+            db.add(session)
+            adopted[session.id] = owner
+    if adopted:
+        # Their side chats travel with them.
+        side_chats = (
             await db.exec(
-                select(CodingWorkspace).where(
-                    or_(
-                        col(CodingWorkspace.path) == resolved,
-                        col(CodingWorkspace.source_path) == resolved,
-                    )
+                select(ChatSession).where(
+                    col(ChatSession.source_session_id).in_(set(adopted)),
+                    col(ChatSession.project_id).is_(None),
                 )
             )
         ).all()
-    )
-    source = next((row for row in rows if row.path == resolved), None)
-    if source is not None:
-        membership = (
-            await db.exec(
-                select(CodingProjectWorkspace)
-                .join(
-                    CodingProject,
-                    col(CodingProject.id) == col(CodingProjectWorkspace.project_id),
-                )
-                .where(
-                    col(CodingProjectWorkspace.workspace_id) == source.id,
-                    col(CodingProject.deleted_at).is_(None),
-                )
-            )
-        ).first()
-        if membership is not None:
-            raise PurgeConflictError(
-                "Workspace belongs to a project; remove it from the project first."
-            )
+        for side_chat in side_chats:
+            if side_chat.source_session_id is not None:
+                side_chat.project_id = adopted[side_chat.source_session_id]
+                db.add(side_chat)
+    kept_tasks = []
+    for task in scheduled:
+        owner = await _sole_owner(db, task.workspace)
+        if owner is not None:
+            task.project_id = owner
+            db.add(task)
+        else:
+            kept_tasks.append(task)
+    scheduled = kept_tasks
+    seed_ids = {session.id for session in seeds if session.id not in adopted}
+    if adopted:
+        logger.info("standalone_coding_sessions_adopted sessions={}", len(adopted))
+    if not seed_ids and not scheduled:
+        await db.commit()
+        return PurgeResult(0, ())
 
-    workspace_paths = {resolved, *(row.path for row in rows)}
-    managed_worktrees = tuple(
-        (row.source_path, row.path)
-        for row in rows
-        if row.kind == "worktree" and row.managed and row.source_path
-    )
-    seed_ids = set(
-        (
-            await db.exec(
-                select(ChatSession.id).where(
-                    col(ChatSession.workspace).in_(workspace_paths)
-                )
-            )
-        ).all()
-    )
     sessions = await _session_closure(db, seed_ids)
     session_ids: set[UUID] = {session.id for session in sessions}
+    workspace_paths = {session.workspace for session in sessions if session.workspace}
     await _stop_session_runtime(session_ids)
     files = await _purge_session_rows(db, sessions, delete_scheduled_tasks=True)
-
-    scheduled = list(
-        (
-            await db.exec(
-                select(ScheduledTask).where(
-                    col(ScheduledTask.workspace).in_(workspace_paths)
-                )
-            )
-        ).all()
-    )
     task_scheduler.cancel_timers({task.id for task in scheduled})
     if scheduled:
         await db.exec(
@@ -336,27 +318,13 @@ async def purge_workspace(db: AsyncSession, path: str) -> PurgeResult:
                 col(ScheduledTask.id).in_({t.id for t in scheduled})
             )
         )
-    workspace_ids = {row.id for row in rows}
-    if workspace_ids:
-        await db.exec(
-            delete(CodingProjectWorkspace).where(
-                col(CodingProjectWorkspace.workspace_id).in_(workspace_ids)
-            )
-        )
-        await db.exec(
-            delete(GitServerConnection).where(
-                col(GitServerConnection.workspace_id).in_(workspace_ids)
-            )
-        )
-    for row in rows:
-        await db.delete(row)
     await db.commit()
 
     await _purge_session_files(files)
-    for source_path, worktree_path in managed_worktrees:
-        await _remove_managed_worktree(source_path, worktree_path)
     logger.info(
-        "coding_workspace_purged path={} sessions={}", resolved, len(session_ids)
+        "standalone_coding_sessions_purged sessions={} scheduled_tasks={}",
+        len(session_ids),
+        len(scheduled),
     )
     return PurgeResult(len(session_ids), tuple(sorted(workspace_paths)))
 
@@ -474,10 +442,9 @@ async def purge_project_workspace(
 
 
 __all__ = [
-    "PurgeConflictError",
     "PurgeResult",
     "purge_project",
     "purge_project_workspace",
     "purge_session",
-    "purge_workspace",
+    "purge_standalone_coding_sessions",
 ]

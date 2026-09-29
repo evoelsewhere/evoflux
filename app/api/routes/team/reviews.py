@@ -466,6 +466,10 @@ async def list_reviews(
         if worktree and worktree.source_path:
             scoped_path = worktree.source_path
         workspace_rows = [row for row in workspace_rows if row.path == scoped_path]
+    else:
+        # Coding is project-only: a repository in no project has no chat to
+        # open a review in, so the unscoped list shows project repositories.
+        workspace_rows = [row for row in workspace_rows if row.id in project_membership]
     targets = list(
         await asyncio.gather(
             *(

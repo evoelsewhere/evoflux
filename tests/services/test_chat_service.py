@@ -1967,3 +1967,64 @@ async def test_undo_and_redo_use_workspace_snapshots(session, tmp_path, monkeypa
     refreshed = await session.get(ChatSession, chat_session.id)
     assert refreshed is not None
     assert refreshed.revert is None
+
+
+@pytest.mark.asyncio
+async def test_undo_and_redo_rewind_every_project_repository(
+    session, tmp_path, monkeypatch
+):
+    """A multi-repo turn is undone (and redone) in every repository it touched."""
+    import shutil
+
+    if shutil.which("git") is None:
+        pytest.skip("git binary not available")
+
+    import app.services.chat_service as cs
+    from app.core.config import settings
+    from app.services import snapshot_service
+    from app.services.chat_service import (
+        redo_session_messages,
+        undo_session_messages,
+    )
+
+    monkeypatch.setattr(settings, "EVOFLUX_STATE_DIR", str(tmp_path / "state"))
+    api = tmp_path / "api"
+    web = tmp_path / "web"
+    api.mkdir()
+    web.mkdir()
+    monkeypatch.setattr(cs, "session_workspace_dir", lambda sid, w: api)
+    (api / "main.py").write_text("v1")
+    (web / "users.ts").write_text("v1")
+    chat_session = await create_chat_session(session)
+
+    snap = await snapshot_service.track_repositories(str(chat_session.id), api, [web])
+    assert isinstance(snap, dict)
+    assert set(snap) == {str(api.resolve()), str(web.resolve())}
+    await save_message(
+        session,
+        chat_session.id,
+        HumanMessage(content="add email"),
+        extra={"snapshot": snap},
+    )
+    await save_message(session, chat_session.id, AssistantMessage(content="done"))
+    # The turn edits both repositories and adds a file to the sibling.
+    (api / "main.py").write_text("v2")
+    (web / "users.ts").write_text("v2")
+    (web / "email.ts").write_text("new")
+    await session.commit()
+
+    shift = await undo_session_messages(session, chat_session.id)
+    assert shift.applied is True
+    assert (api / "main.py").read_text() == "v1"
+    assert (web / "users.ts").read_text() == "v1"
+    assert not (web / "email.ts").exists()
+    assert "main.py" in shift.modified
+    assert (web.resolve() / "users.ts").as_posix() in shift.modified
+    assert (web.resolve() / "email.ts").as_posix() in shift.removed
+
+    shift = await redo_session_messages(session, chat_session.id)
+    assert shift.applied is True
+    assert shift.target is None
+    assert (api / "main.py").read_text() == "v2"
+    assert (web / "users.ts").read_text() == "v2"
+    assert (web / "email.ts").read_text() == "new"

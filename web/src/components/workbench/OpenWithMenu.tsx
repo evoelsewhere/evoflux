@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   AppWindow,
   ChevronDown,
@@ -9,6 +10,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { tauriOpenWorkspaceWith, type WorkspaceOpener } from '@/api/tauri-workspace'
@@ -20,7 +24,16 @@ import { useToastStore } from '@/stores/useToastStore'
 interface OpenWithMenuProps {
   /** Absolute workspace root to open; null shows the workspace picker action. */
   workspace: string | null
+  /**
+   * Every repository the session works in, *workspace* first. With more
+   * than one, the menu asks which repository the app should open.
+   */
+  repositories?: readonly string[]
   onChooseWorkspace?: () => void
+}
+
+function repositoryName(path: string): string {
+  return path.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || path
 }
 
 /**
@@ -28,15 +41,20 @@ interface OpenWithMenuProps {
  * workspace (detected natively by the Rust opener catalog). Desktop-only;
  * the parent decides whether to render it at all.
  */
-export function OpenWithMenu({ workspace, onChooseWorkspace }: OpenWithMenuProps) {
+export function OpenWithMenu({ workspace, repositories = [], onChooseWorkspace }: OpenWithMenuProps) {
   const pushToast = useToastStore((state) => state.push)
   const openersQuery = useWorkspaceOpenersQuery(workspace !== null)
   const openers = openersQuery.data ?? []
+  // The repository chosen in this menu; falls back to the primary when the
+  // choice leaves the session's repository list (another session opened).
+  const [chosen, setChosen] = useState<string | null>(null)
+  const target = chosen && repositories.includes(chosen) ? chosen : workspace
+  const choosesRepository = workspace !== null && repositories.length > 1
 
   const openWith = async (opener: WorkspaceOpener) => {
-    if (!workspace) return
+    if (!target) return
     try {
-      await tauriOpenWorkspaceWith(workspace, opener.id)
+      await tauriOpenWorkspaceWith(target, opener.id)
     } catch (error) {
       pushToast({
         tone: 'error',
@@ -53,8 +71,8 @@ export function OpenWithMenu({ workspace, onChooseWorkspace }: OpenWithMenuProps
         onClick={onChooseWorkspace}
         disabled={!onChooseWorkspace}
         className="group flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-(--color-text-muted) outline-none transition-colors hover:bg-(--bg-key) hover:text-(--color-text) disabled:pointer-events-none disabled:opacity-50"
-        aria-label="Choose a workspace folder"
-        title="Choose a workspace folder"
+        aria-label="Open a folder as a project"
+        title="Open a folder as a project"
       >
         <FolderOpen size={14} className="shrink-0" />
         <span className="workbench-openwith-label">Open folder</span>
@@ -79,8 +97,23 @@ export function OpenWithMenu({ workspace, onChooseWorkspace }: OpenWithMenuProps
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
+        {choosesRepository && (
+          <>
+            <div className="px-1.5 py-1 text-xs font-medium text-(--color-text-muted)">
+              Repository
+            </div>
+            <DropdownMenuRadioGroup value={target} onValueChange={(value) => setChosen(value as string)}>
+              {repositories.map((repository) => (
+                <DropdownMenuRadioItem key={repository} value={repository} title={repository}>
+                  <span className="min-w-0 truncate">{repositoryName(repository)}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <div className="px-1.5 py-1 text-xs font-medium text-(--color-text-muted)">
-          Open workspace in
+          {choosesRepository && target ? `Open ${repositoryName(target)} in` : 'Open workspace in'}
         </div>
         {openersQuery.isLoading && (
           <DropdownMenuItem disabled>

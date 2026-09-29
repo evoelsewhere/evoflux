@@ -183,15 +183,14 @@ export interface CodingWorkspaceTreeWorktree {
 }
 
 export interface CodingWorkspaceTreeRepository {
-  // null only for a worktree whose source repo is itself hidden/deleted.
-  workspace_id: string | null
+  workspace_id: string
   path: string
   name: string
   worktrees: CodingWorkspaceTreeWorktree[]
-  // The project this repo belongs to, if any — a real FK lookup done
+  // The (oldest) project this repo belongs to — a real FK lookup done
   // server-side, not something to reconstruct by matching paths against a
-  // separately-fetched project list.
-  project_id: string | null
+  // separately-fetched project list. Repos in no project are not listed.
+  project_id: string
 }
 
 export interface CodingWorkspaceTreeResponse {
@@ -780,6 +779,8 @@ export interface SuggestedTask {
 export interface SuggestedTaskStartResult {
   session_id: string
   workspace: string
+  /** The Coding project the target session belongs to. */
+  project_id: string | null
   /** Posted by the client as the target session's next message. */
   prompt: string
   worktree_path: string | null

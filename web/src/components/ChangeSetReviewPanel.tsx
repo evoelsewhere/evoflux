@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Check, FileDiff, Loader2, X } from 'lucide-react'
 import { DiffEditor } from '@monaco-editor/react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   applyChangeSet,
@@ -11,6 +11,7 @@ import {
 } from '@/api/client'
 import type { ChangeSetFile, ChangeSetResponse, EditorActionRequest } from '@/api/types'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import { queryKeys } from '@/queries/keys'
 import { cn } from '@/lib/utils'
 import { useChangeSetStore } from '@/stores/useChangeSetStore'
 import { useTeamStore } from '@/stores/useTeamStore'
@@ -93,6 +94,7 @@ export function ChangeSetReviewPanel() {
   const setBusy = useChangeSetStore((state) => state.setBusy)
   const sessionId = useTeamStore((state) => state.sessionId)
   const pushToast = useToastStore((state) => state.push)
+  const queryClient = useQueryClient()
   const [selectedPath, setSelectedPath] = useState<string | null>(active?.files[0]?.path ?? null)
   const [followupRequest, setFollowupRequest] = useState<EditorActionRequest | null>(null)
   const openWorkbenchTool = useUIStore((state) => state.openWorkbenchTool)
@@ -121,6 +123,18 @@ export function ChangeSetReviewPanel() {
         ? await applyChangeSet(active.workspace, active.id, paths, sessionId)
         : await rejectChangeSet(active.workspace, active.id, paths)
       setActive(updated)
+      if (decision === 'apply') {
+        // The files changed on disk in the ChangeSet's own repository, which
+        // need not be the session's primary one.
+        for (const queryKey of [
+          queryKeys.coding.files(active.workspace),
+          queryKeys.coding.diff(active.workspace),
+          queryKeys.coding.status(active.workspace),
+          queryKeys.git.changes(active.workspace),
+        ]) {
+          void queryClient.invalidateQueries({ queryKey })
+        }
+      }
     } catch (error) {
       pushToast({
         tone: 'error',
