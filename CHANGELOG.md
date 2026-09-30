@@ -4,7 +4,22 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- Building the desktop sidecar fails fast with `web bundle missing` when the web
+  interface has not been built yet, instead of silently producing a bundle that
+  cannot serve the UI.
+
+### Fixed
+
+- The **Remote Control** link and QR code open the EvoFlux interface on a phone
+  instead of a `{"detail": "Not Found"}` API response. The desktop bundle now
+  ships the web interface inside the sidecar, so the private tailnet address
+  serves both the app and its API from one origin.
+- Reloading EvoFlux on a phone at a nested page such as **Settings → Remote
+  Control** returns to that page instead of a not-found error. Missing API
+  endpoints still answer with a JSON `Not Found`, and a missing asset still
+  fails visibly rather than loading the app shell.
 
 ## [3.0.3] - 2026-09-30
 
