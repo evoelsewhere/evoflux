@@ -118,7 +118,14 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(body.detail || `Import API error ${res.status}`)
+    const detail = body.detail
+    const message =
+      typeof detail === 'string'
+        ? detail
+        : typeof detail === 'object' && detail !== null
+          ? detail.error || detail.message || JSON.stringify(detail)
+          : `Import API error ${res.status}`
+    throw new Error(message)
   }
   return res.json()
 }
