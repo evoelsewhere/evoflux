@@ -141,3 +141,43 @@ def test_missing_static_assets_still_404(tmp_path: Path) -> None:
 
     client = TestClient(app)
     assert client.get("/assets/gone.js").status_code == 404
+
+
+def test_shipped_bundle_serves_the_spa_instead_of_the_api_404(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The QR link must open the app, not the API's ``{"detail": "Not Found"}``.
+
+    Walks the exact shipped layout: the release bundling step writes the web
+    build to ``app/_web_dist`` and the running sidecar resolves it from there.
+    """
+    import scripts.build_sidecar as build_sidecar
+
+    root = tmp_path / "checkout"
+    _write_dist(root / "web" / "dist", "<title>evo</title>")
+    site_packages = root / "site-packages"
+    (site_packages / "app" / "api").mkdir(parents=True)
+
+    assert build_sidecar.bundle_web_dist(root, site_packages) == 1
+
+    monkeypatch.setattr(
+        static_web, "__file__", str(site_packages / "app" / "api" / "static_web.py")
+    )
+    monkeypatch.delenv(static_web._ENV_DIST, raising=False)
+    assert default_web_dist() == site_packages / "app" / "_web_dist"
+
+    app = FastAPI()
+
+    @app.get("/api/ping")
+    def ping() -> dict[str, str]:
+        return {"pong": "yes"}
+
+    assert mount_web_ui(app) is True
+
+    client = TestClient(app)
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "<title>evo</title>" in home.text
+    assert "detail" not in home.text
+
+    assert client.get("/api/ping").json() == {"pong": "yes"}
