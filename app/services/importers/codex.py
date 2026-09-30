@@ -48,10 +48,12 @@ def _normalise_content(content: Any) -> str:
                 parts.append(block)
             elif isinstance(block, dict):
                 btype = block.get("type", "")
-                if btype == "text":
+                if btype in ("text", "input_text", "output_text"):
                     parts.append(block.get("text", ""))
                 elif btype == "tool_use":
                     parts.append(f"[Tool call: {block.get('name', 'unknown')}]")
+                elif btype == "tool_result":
+                    parts.append("[Tool result]")
                 else:
                     parts.append(f"[{btype}]")
         return "\n".join(parts)
@@ -62,6 +64,7 @@ def _extract_codex_message(entry: dict[str, Any]) -> dict[str, Any] | None:
     """Extract a normalised message from a Codex JSONL entry.
 
     Handles:
+    - ``{"type":"response_item","payload":{"type":"message","role":"user","content":"..."}}``
     - ``{"type":"event_msg","payload":{"type":"message","role":"user","content":"..."}}``
     - ``{"type":"event_msg","payload":{"type":"assistant_message","content":"..."}}``
     - ``{"role":"user","content":"..."}`` (simple format)
@@ -69,6 +72,40 @@ def _extract_codex_message(entry: dict[str, Any]) -> dict[str, Any] | None:
     """
     entry_type = entry.get("type", "")
 
+    # Skip non-message types
+    if entry_type in (
+        "session_meta",
+        "world_state",
+        "turn_context",
+        "task_started",
+        "item_completed",
+        "item_updated",
+        "turn_completed",
+    ):
+        return None
+
+    # ── response_item format (Codex CLI current) ────────────────────────
+    if entry_type == "response_item":
+        payload = entry.get("payload", {})
+        if payload.get("type") == "message":
+            role = payload.get("role", "")
+            content = _normalise_content(payload.get("content", ""))
+            if role and content and role != "developer":
+                role_map = {
+                    "user": "user",
+                    "assistant": "assistant",
+                    "system": "system",
+                }
+                return {
+                    "role": role_map.get(role, role),
+                    "content": content,
+                    "created_at": (
+                        _parse_iso(entry.get("timestamp")) or utcnow()
+                    ).isoformat(),
+                }
+        return None
+
+    # ── event_msg format (Codex CLI older) ──────────────────────────────
     if entry_type == "event_msg":
         payload = entry.get("payload", {})
         payload_type = payload.get("type", "")
@@ -76,7 +113,7 @@ def _extract_codex_message(entry: dict[str, Any]) -> dict[str, Any] | None:
         if payload_type == "message":
             role = payload.get("role", "")
             content = _normalise_content(payload.get("content", ""))
-            if role and content:
+            if role and content and role != "developer":
                 role_map = {
                     "user": "user",
                     "assistant": "assistant",
@@ -103,9 +140,7 @@ def _extract_codex_message(entry: dict[str, Any]) -> dict[str, Any] | None:
 
         return None
 
-    if entry_type == "session_meta":
-        return None
-
+    # ── Simple format: role + content at top level ──────────────────────
     role = entry.get("role", "")
     content = _normalise_content(entry.get("content", ""))
     if not role or not content:

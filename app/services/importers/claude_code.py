@@ -394,6 +394,178 @@ def _parse_settings(settings_path: Path) -> list[ImportItem]:
     return items
 
 
+def _scan_skills_in_dir(skills_dir: Path, source_label: str) -> list[ImportItem]:
+    """Scan a ``skills/`` directory for SKILL.md files and return ImportItems."""
+    items: list[ImportItem] = []
+    now = utcnow()
+
+    if not skills_dir.is_dir():
+        return items
+
+    for skill_dir in skills_dir.iterdir():
+        if not skill_dir.is_dir():
+            continue
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+        try:
+            content = skill_md.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if not content:
+            continue
+
+        frontmatter, body = _split_frontmatter(content)
+        name = frontmatter.get("name", skill_dir.name)
+        description = frontmatter.get("description", "")
+
+        items.append(
+            ImportItem(
+                kind="skill",
+                source="claude_code",
+                source_id=f"{source_label}:skill:{name}",
+                data={
+                    "name": name,
+                    "description": description or f"Skill from {source_label}",
+                    "body": body,
+                    "created_at": now.isoformat(),
+                },
+                label=f"Skill: {name}",
+            )
+        )
+
+    return items
+
+
+def _parse_plugin_skills(claude_dir: Path) -> list[ImportItem]:
+    """Parse skills from installed plugins listed in ``installed_plugins.json``.
+
+    For each plugin, resolves its ``installPath`` and scans
+    ``skills/*/SKILL.md``.
+    """
+    items: list[ImportItem] = []
+
+    installed_path = claude_dir / "plugins" / "installed_plugins.json"
+    if not installed_path.is_file():
+        return items
+
+    try:
+        data = json.loads(installed_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return items
+
+    plugins_dict = data.get("plugins", {}) if isinstance(data, dict) else {}
+    for plugin_key, installs in plugins_dict.items():
+        if not isinstance(installs, list) or not installs:
+            continue
+        install = installs[0]
+        install_path = install.get("installPath", "")
+        if not install_path:
+            continue
+        plugin_dir = Path(install_path)
+        items.extend(_scan_skills_in_dir(plugin_dir / "skills", plugin_key))
+
+    return items
+
+
+def _parse_standalone_plugins(claude_dir: Path) -> list[ImportItem]:
+    """Scan any directory under ``~/.claude/`` that looks like a plugin.
+
+    A directory is treated as a standalone plugin if it has a ``skills/``
+    subdirectory or a ``plugin.json`` manifest.  This catches plugins
+    installed outside ``installed_plugins.json`` (e.g. manually placed).
+    """
+    items: list[ImportItem] = []
+    now = utcnow()
+    seen_source_ids: set[str] = set()
+
+    if not claude_dir.is_dir():
+        return items
+
+    for child in claude_dir.iterdir():
+        if not child.is_dir():
+            continue
+        # Skip known non-plugin directories
+        if child.name in (
+            "projects",
+            "plugins",
+            "sessions",
+            "commands",
+            "browser",
+            "cache",
+            "plans",
+        ):
+            continue
+
+        has_skills = (child / "skills").is_dir()
+        has_manifest = (child / "plugin.json").is_file()
+
+        if not has_skills and not has_manifest:
+            continue
+
+        plugin_name = child.name
+
+        # Scan skills
+        if has_skills:
+            skill_items = _scan_skills_in_dir(
+                child / "skills", f"standalone:{plugin_name}"
+            )
+            for si in skill_items:
+                if si.source_id not in seen_source_ids:
+                    seen_source_ids.add(si.source_id)
+                    items.append(si)
+
+        # Scan MCP config
+        mcp_path = child / "mcp.json"
+        if mcp_path.is_file():
+            try:
+                mcp_data = json.loads(mcp_path.read_text(encoding="utf-8"))
+                servers = mcp_data.get("mcpServers", mcp_data.get("servers", {}))
+                for server_name, server_config in servers.items():
+                    if not isinstance(server_config, dict):
+                        continue
+                    sid = f"standalone:{plugin_name}:mcp:{server_name}"
+                    if sid not in seen_source_ids:
+                        seen_source_ids.add(sid)
+                        items.append(
+                            ImportItem(
+                                kind="mcp_server",
+                                source="claude_code",
+                                source_id=sid,
+                                data={
+                                    "name": server_name,
+                                    "server": server_config,
+                                    "created_at": now.isoformat(),
+                                },
+                                label=f"MCP: {server_name}",
+                            )
+                        )
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    return items
+
+
+def _split_frontmatter(content: str) -> tuple[dict[str, str], str]:
+    """Split YAML frontmatter from body text."""
+    import re
+
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)", content, re.DOTALL)
+    if not match:
+        return {}, content
+
+    fm_text = match.group(1)
+    body = match.group(2)
+
+    result: dict[str, str] = {}
+    for line in fm_text.split("\n"):
+        if ":" in line:
+            key, _, value = line.partition(":")
+            result[key.strip()] = value.strip().strip('"').strip("'")
+
+    return result, body
+
+
 def _slugify(text: str) -> str:
     import re
 
@@ -456,6 +628,12 @@ def parse_claude_code_export(path: Path) -> ImportBundle:
     settings_path = path / "settings.json"
     if settings_path.is_file():
         all_items.extend(_parse_settings(settings_path))
+
+    # Plugin skills from installed_plugins.json
+    all_items.extend(_parse_plugin_skills(path))
+
+    # Standalone plugin directories (any dir with skills/ or plugin.json)
+    all_items.extend(_parse_standalone_plugins(path))
 
     return ImportBundle(
         source="claude_code",

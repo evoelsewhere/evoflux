@@ -151,28 +151,73 @@ async def import_scan() -> ScanResponse:
                     session_count += len(proj_sessions)
                     project_names.append(proj.name)
 
-        # Plugins from plugins/installed_plugins.json
+        # Parse installed plugins and enumerate their skills
+        import json as json_mod
+
         plugin_count = 0
+        skill_count = 0
+        skill_names: list[str] = []
         installed_plugins = claude_dir / "plugins" / "installed_plugins.json"
         if installed_plugins.is_file():
             try:
-                import json as json_mod
-
                 plugins_data = json_mod.loads(
                     installed_plugins.read_text(encoding="utf-8")
                 )
-                if isinstance(plugins_data, list):
-                    plugin_count = len(plugins_data)
-                elif isinstance(plugins_data, dict):
-                    plugin_count = len(plugins_data)
+                plugins_dict = (
+                    plugins_data.get("plugins", {})
+                    if isinstance(plugins_data, dict)
+                    else {}
+                )
+                plugin_count = len(plugins_dict)
+                # Enumerate skills from each plugin's cache directory
+                for plugin_name, installs in plugins_dict.items():
+                    if not isinstance(installs, list) or not installs:
+                        continue
+                    install = installs[0]
+                    install_path = install.get("installPath", "")
+                    if not install_path:
+                        continue
+                    plugin_dir = Path(install_path)
+                    skills_dir = plugin_dir / "skills"
+                    if skills_dir.is_dir():
+                        for skill_dir in skills_dir.iterdir():
+                            if (
+                                skill_dir.is_dir()
+                                and (skill_dir / "SKILL.md").is_file()
+                            ):
+                                skill_count += 1
+                                skill_names.append(skill_dir.name)
             except (ValueError, OSError):
                 pass
 
-        # MCP config from management-kit or .mcp.json
+        # Standalone plugins: any dir with skills/ or plugin.json
+        standalone_skill_count = 0
+        skip_dirs = {
+            "projects",
+            "plugins",
+            "sessions",
+            "commands",
+            "browser",
+            "cache",
+            "plans",
+        }
+        for child in claude_dir.iterdir():
+            if not child.is_dir() or child.name in skip_dirs:
+                continue
+            child_skills = child / "skills"
+            if child_skills.is_dir():
+                for s in child_skills.iterdir():
+                    if s.is_dir() and (s / "SKILL.md").is_file():
+                        standalone_skill_count += 1
+                        skill_names.append(f"{child.name}:{s.name}")
+
+        # MCP config: .mcp.json or any standalone plugin with mcp.json
         has_mcp = (claude_dir / ".mcp.json").is_file()
-        mgmt_kit = claude_dir / "management-kit"
-        if mgmt_kit.is_dir() and (mgmt_kit / "mcp.json").is_file():
-            has_mcp = True
+        for child in claude_dir.iterdir():
+            if child.is_dir() and child.name not in skip_dirs:
+                if (child / "mcp.json").is_file():
+                    has_mcp = True
+                    break
 
         # Plans
         plan_count = 0
@@ -186,9 +231,11 @@ async def import_scan() -> ScanResponse:
         if commands_dir.is_dir():
             cmd_count = len(list(commands_dir.glob("*.md")))
 
+        total_skill_count = skill_count + standalone_skill_count
         total = (
             session_count
             + plugin_count
+            + total_skill_count
             + (1 if has_mcp else 0)
             + plan_count
             + cmd_count
@@ -201,6 +248,8 @@ async def import_scan() -> ScanResponse:
                 )
             if plugin_count:
                 parts.append(f"{plugin_count} plugins")
+            if total_skill_count:
+                parts.append(f"{total_skill_count} skills")
             if cmd_count:
                 parts.append(f"{cmd_count} commands")
             if plan_count:
