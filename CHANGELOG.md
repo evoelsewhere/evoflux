@@ -6,6 +6,14 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Unread desktop notifications now show a count on the Windows taskbar or macOS
+  Dock icon, request operating-system attention for new alerts, and clear when
+  EvoFlux returns to the foreground.
+- Notification quick actions now finish before opening the session, target the
+  app's lead session while replying to the session that owns the pending
+  request, and report when a response could not be sent. Windows question
+  alerts support quick-choice and inline text replies; agent-spawn defaults no
+  longer require a particular model-id format.
 - The scheduled models.dev snapshot job now opens a reviewable pull request
   for registry updates instead of writing directly to `main` or failing with
   an unreconciled stale snapshot.

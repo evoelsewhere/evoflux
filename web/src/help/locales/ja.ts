@@ -2483,7 +2483,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'Appearance にはテーマ、アクセント、フォント、モーション、ロケール（en / vi / ja）。',
       'Diagnostics はライブサブシステム検査 — HealthDot の二値信号を補完。',
       'Intelligence vs System vs Application のグループが、リスクのあるトグルをテーマ選択と混ぜない。',
-      'Notifications にはテスト ping — フォーカス外アラートを信頼する前に使う。',
+      'Notifications にはテスト ping — フォーカス外アラートを信頼する前に使う。未読数はアプリのアイコンに表示され、taskbar または Dock で注意を促す。EvoFlux に戻ると未読状態は解除される。Windows の質問通知には選択ボタンと返信欄がある。',
       'どの設定ページがトグルを持つか忘れたらコマンドパレットを開く。'
 ],
     blocks: [

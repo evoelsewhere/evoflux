@@ -2469,7 +2469,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Appearance gồm theme, accent, fonts, motion và locale (en / vi / ja).',
       'Diagnostics cho check subsystem live — bổ sung tín hiệu nhị phân của HealthDot.',
       'Nhóm Intelligence vs System vs Application giữ toggle rủi ro khỏi lẫn với chọn theme.',
-      'Notifications có test ping — dùng trước khi tin alert khi không focus.',
+      'Notifications có test ping — dùng trước khi tin alert khi không focus. Alert chưa đọc hiện số trên icon app và gọi chú ý ở taskbar hoặc Dock; quay lại EvoFlux sẽ xóa trạng thái chưa đọc. Câu hỏi trên Windows có nút chọn nhanh và ô trả lời.',
       'Mở command palette nếu quên trang settings nào sở hữu toggle.'
 ],
     blocks: [

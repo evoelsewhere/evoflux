@@ -255,6 +255,21 @@ export async function replyPermissionRequest(
   }
 }
 
+export async function getPendingPermissions(sessionId: string): Promise<{
+  permissions: Array<{
+    id: string
+    session_id: string
+    tool: string
+    patterns: string[]
+    always_patterns: string[]
+    metadata: Record<string, unknown>
+  }>
+}> {
+  const res = await fetch(`${apiBaseUrl()}/team/${encodeURIComponent(sessionId)}/permissions`)
+  if (!res.ok) await parseDetailOrThrow(res, 'getPendingPermissions')
+  return res.json()
+}
+
 export async function setSessionPermissionMode(
   sessionId: string,
   mode: string,

@@ -77,6 +77,8 @@ export const STORAGE_KEYS = {
   desktopNotifications: {
     enabled: 'oa-desktop-notifications-enabled',
     soundEnabled: 'oa-desktop-notifications-sound-enabled',
+    selectedSound: 'oa-desktop-notifications-selected-sound',
+    inbox: 'oa-desktop-notifications-inbox',
   },
 
   browser: {
