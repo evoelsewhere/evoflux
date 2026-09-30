@@ -13,10 +13,10 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_db_session
+from app.api.deps import DbSession
 from app.services.import_service import (
     detect_conflicts,
     execute_import,
@@ -84,7 +84,161 @@ class HistoryItem(BaseModel):
     summary: dict[str, Any]
 
 
+class ScanResult(BaseModel):
+    """A discovered importable source on the local machine."""
+
+    source: str
+    path: str
+    label: str
+    description: str
+    estimated_items: int
+
+
+class ScanResponse(BaseModel):
+    discovered: list[ScanResult]
+
+
 # ── Endpoints ────────────────────────────────────────────────────────────────
+
+
+@router.get("/scan", response_model=ScanResponse)
+async def import_scan() -> ScanResponse:
+    """Scan the local machine for common AI tool data locations.
+
+    Returns a list of discovered sources with estimated item counts.
+    """
+    import os
+    from pathlib import Path
+
+    home = Path.home()
+    discovered: list[ScanResult] = []
+
+    # Claude.ai: look for exported JSON/ZIP in common locations
+    for search_dir in [home / "Downloads", home / "Desktop", home]:
+        if not search_dir.is_dir():
+            continue
+        for f in search_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in (".json", ".zip"):
+                name_lower = f.name.lower()
+                if "claude" in name_lower and "export" in name_lower:
+                    discovered.append(
+                        ScanResult(
+                            source="claude_web",
+                            path=str(f),
+                            label=f"Claude.ai export: {f.name}",
+                            description=f"Export file in {search_dir.name}",
+                            estimated_items=0,
+                        )
+                    )
+
+    # Claude Code: ~/.claude/
+    claude_dir = home / ".claude"
+    if claude_dir.is_dir():
+        session_count = 0
+        projects_dir = claude_dir / "projects"
+        if projects_dir.is_dir():
+            for proj in projects_dir.iterdir():
+                sessions = proj / "sessions"
+                if sessions.is_dir():
+                    session_count += len(list(sessions.glob("*.jsonl")))
+
+        cmd_count = 0
+        commands_dir = claude_dir / "commands"
+        if commands_dir.is_dir():
+            cmd_count = len(list(commands_dir.glob("*.md")))
+
+        has_mcp = (claude_dir / ".mcp.json").is_file()
+
+        total = session_count + cmd_count + (1 if has_mcp else 0)
+        if total > 0:
+            parts: list[str] = []
+            if session_count:
+                parts.append(f"{session_count} sessions")
+            if cmd_count:
+                parts.append(f"{cmd_count} commands")
+            if has_mcp:
+                parts.append("MCP config")
+            discovered.append(
+                ScanResult(
+                    source="claude_code",
+                    path=str(claude_dir),
+                    label="Claude Code",
+                    description=", ".join(parts),
+                    estimated_items=total,
+                )
+            )
+
+    # ChatGPT: look for export ZIP/JSON in Downloads
+    for search_dir in [home / "Downloads", home / "Desktop"]:
+        if not search_dir.is_dir():
+            continue
+        for f in search_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in (".json", ".zip"):
+                name_lower = f.name.lower()
+                if ("chatgpt" in name_lower or "conversations" in name_lower) and (
+                    "export" in name_lower or "share" in name_lower
+                ):
+                    discovered.append(
+                        ScanResult(
+                            source="chatgpt",
+                            path=str(f),
+                            label=f"ChatGPT export: {f.name}",
+                            description=f"Export file in {search_dir.name}",
+                            estimated_items=0,
+                        )
+                    )
+
+    # Codex: .codex/ in common project dirs
+    codex_dir = home / ".codex"
+    if codex_dir.is_dir():
+        session_count = 0
+        sessions_dir = codex_dir / "sessions"
+        if sessions_dir.is_dir():
+            session_count = len(list(sessions_dir.glob("*.jsonl")))
+        has_instructions = (codex_dir / "instructions.md").is_file()
+        total = session_count + (1 if has_instructions else 0)
+        if total > 0:
+            discovered.append(
+                ScanResult(
+                    source="codex",
+                    path=str(codex_dir),
+                    label="Codex CLI",
+                    description=f"{session_count} sessions"
+                    + (", instructions" if has_instructions else ""),
+                    estimated_items=total,
+                )
+            )
+
+    # Cursor: look for .cursor/ in cwd and common project dirs
+    cwd = Path(os.getcwd())
+    cursor_dir = cwd / ".cursor"
+    cursorrules = cwd / ".cursorrules"
+    if cursor_dir.is_dir() or cursorrules.is_file():
+        rule_count = 0
+        rules_dir = cursor_dir / "rules"
+        if rules_dir.is_dir():
+            rule_count = len(list(rules_dir.glob("*.mdc")))
+        has_mcp = (cursor_dir / "mcp.json").is_file()
+        total = rule_count + (1 if cursorrules.is_file() else 0) + (1 if has_mcp else 0)
+        if total > 0:
+            parts = []
+            if rule_count:
+                parts.append(f"{rule_count} rules")
+            if cursorrules.is_file():
+                parts.append(".cursorrules")
+            if has_mcp:
+                parts.append("MCP config")
+            discovered.append(
+                ScanResult(
+                    source="cursor",
+                    path=str(cwd),
+                    label="Cursor (current workspace)",
+                    description=", ".join(parts),
+                    estimated_items=total,
+                )
+            )
+
+    return ScanResponse(discovered=discovered)
 
 
 @router.post("/detect", response_model=DetectResponse)
@@ -232,7 +386,7 @@ async def update_item_action(
 @router.post("/execute/{import_id}", response_model=ExecuteResponse)
 async def import_execute(
     import_id: str,
-    db: Any = Depends(get_db_session),
+    db: DbSession,
 ) -> ExecuteResponse:
     """Execute the import, writing accepted items to EvoFlux data stores."""
     bundle = get_bundle(import_id)
@@ -266,7 +420,7 @@ async def import_cancel(import_id: str) -> dict[str, str]:
 
 @router.get("/history")
 async def import_history(
-    db: Any = Depends(get_db_session),
+    db: DbSession,
 ) -> dict[str, Any]:
     """Return past import operations from the history table."""
     from json import JSONDecodeError, loads

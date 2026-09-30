@@ -14,6 +14,10 @@ All notable changes to EvoFlux are documented in this file.
   folder via the native file dialog. A welcome popup appears on first launch
   offering to import data from another AI tool.
 
+- Documented the design for background action notifications, app-branded
+  desktop alerts, and locally managed notification sounds, with implementation
+  plans for desktop activation, attention events, and the local sound library.
+
 ### Changed
 
 - The scheduled models.dev snapshot job now opens a reviewable pull request

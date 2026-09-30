@@ -163,6 +163,19 @@ export async function cancelImport(importId: string): Promise<void> {
   await apiFetch(`/${importId}`, { method: 'DELETE' })
 }
 
+/** Scan local machine for common AI tool data locations. */
+export async function scanLocalSources(): Promise<{ discovered: ScanResult[] }> {
+  return apiFetch('/scan')
+}
+
+export interface ScanResult {
+  source: string
+  path: string
+  label: string
+  description: string
+  estimated_items: number
+}
+
 /** Fetch import history. */
 export async function getImportHistory(): Promise<{ imports: HistoryEntry[] }> {
   return apiFetch('/history')
