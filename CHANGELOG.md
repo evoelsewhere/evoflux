@@ -4,6 +4,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.0.3] - 2026-09-30
+
 ### Added
 
 - The agent's `grep` tool takes an `output_mode`: `files_with_matches` lists
