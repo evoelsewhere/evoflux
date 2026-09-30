@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import io
+import tarfile
 import zipfile
 
 from pathlib import Path
@@ -120,6 +123,80 @@ def test_bundle_msvc_runtime_fails_when_runtime_is_unavailable(tmp_path) -> None
 
     with pytest.raises(SystemExit, match="msvcp140.dll"):
         bundle_msvc_runtime(python_dir, site_packages, sources=[redist])
+
+
+def _ripgrep_tarball() -> bytes:
+    buffer = io.BytesIO()
+    top = f"ripgrep-{build_sidecar.RIPGREP_VERSION}-x86_64-unknown-linux-musl"
+    members = {
+        f"{top}/rg": b"#!rg",
+        f"{top}/COPYING": b"copying",
+        f"{top}/LICENSE-MIT": b"mit",
+        f"{top}/UNLICENSE": b"unlicense",
+        f"{top}/doc/rg.1": b"manual",
+        # Only base names inside the top directory are ever written.
+        f"{top}/../escape": b"outside",
+    }
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+def _serve(monkeypatch, payload: bytes, sha256: str) -> None:
+    monkeypatch.setattr(build_sidecar, "IS_WINDOWS", False)
+    monkeypatch.setitem(
+        build_sidecar.RIPGREP_ASSETS,
+        "x86_64-unknown-linux-gnu",
+        ("x86_64-unknown-linux-musl.tar.gz", sha256),
+    )
+    monkeypatch.setattr(
+        build_sidecar.urllib.request,
+        "urlopen",
+        lambda url, timeout: io.BytesIO(payload),
+    )
+
+
+def test_fetch_ripgrep_keeps_binary_and_licenses(tmp_path, monkeypatch) -> None:
+    payload = _ripgrep_tarball()
+    _serve(monkeypatch, payload, hashlib.sha256(payload).hexdigest())
+
+    rg = build_sidecar.fetch_ripgrep(tmp_path / "ripgrep", "x86_64-unknown-linux-gnu")
+
+    assert rg == tmp_path / "ripgrep" / "rg"
+    assert rg.read_bytes() == b"#!rg"
+    assert sorted(p.name for p in rg.parent.iterdir()) == [
+        "COPYING",
+        "LICENSE-MIT",
+        "UNLICENSE",
+        "rg",
+    ]
+    assert not (tmp_path / "escape").exists()
+
+
+def test_fetch_ripgrep_rejects_checksum_mismatch(tmp_path, monkeypatch) -> None:
+    _serve(monkeypatch, _ripgrep_tarball(), "0" * 64)
+
+    with pytest.raises(SystemExit, match="checksum mismatch"):
+        build_sidecar.fetch_ripgrep(tmp_path / "ripgrep", "x86_64-unknown-linux-gnu")
+    assert not (tmp_path / "ripgrep" / "rg").exists()
+
+
+def test_ripgrep_is_pinned_for_every_sidecar_triple() -> None:
+    triples = {
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+    }
+    assert set(build_sidecar.RIPGREP_ASSETS) == triples
+    for suffix, sha256 in build_sidecar.RIPGREP_ASSETS.values():
+        assert suffix.endswith((".zip", ".tar.gz"))
+        assert len(sha256) == 64 and int(sha256, 16) >= 0
 
 
 def test_zip_pure_python_packages_keeps_runtime_data_on_disk(tmp_path) -> None:

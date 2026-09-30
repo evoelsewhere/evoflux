@@ -19,9 +19,31 @@ from app.agent.tools.builtin.filesystem._ignore import (
 from app.agent.tools.registry import Tool
 
 
+# Matches collected before sorting; beyond this the total is reported as "N+".
+_MAX_SCAN = 20_000
+
+
 def _newest_first(hits: list[tuple[float, str]]) -> list[str]:
     """Sort (mtime, display_path) hits newest-first; recency ≈ relevance."""
     return [p for _, p in sorted(hits, key=lambda t: (-t[0], t[1]))]
+
+
+def _page(matches: list[str], offset: int, limit: int) -> list[str]:
+    """Slice one page and end a partial page with a notice for the model."""
+    total = len(matches)
+    shown = f"{total}+" if total >= _MAX_SCAN else str(total)
+    if offset >= total:
+        return [f"No entries at offset {offset} — only {shown} files."]
+    page = matches[offset : offset + limit]
+    end = offset + len(page)
+    if end < total:
+        page.append(
+            f"[Showing files {offset + 1}-{end} of {shown}, newest first. Pass "
+            f"offset={end} for the next page, or narrow the pattern or directory.]"
+        )
+    elif offset > 0:
+        page.append(f"[Showing files {offset + 1}-{end} of {shown}.]")
+    return page
 
 
 async def _glob_files(
@@ -46,6 +68,15 @@ async def _glob_files(
         int,
         Field(description="Maximum number of results to return (default 200)."),
     ] = 200,
+    offset: Annotated[
+        int,
+        Field(
+            description=(
+                "Skip this many files first. Use the offset a truncation notice "
+                "gives to fetch the next page."
+            )
+        ),
+    ] = 0,
 ) -> str:
     """Find files by glob pattern. match='path' matches the full relative path (supports **); match='name' matches filename only."""
     sandbox = get_sandbox()
@@ -86,7 +117,7 @@ async def _glob_files(
                     if fnmatch.fnmatch(fname, pattern):
                         fpath = current / fname
                         hits.append((_mtime(fpath), sandbox.display_path(fpath)))
-                        if len(hits) >= max_results:
+                        if len(hits) >= _MAX_SCAN:
                             return _newest_first(hits)
             return _newest_first(hits)
 
@@ -95,7 +126,7 @@ async def _glob_files(
 
         def _scan_path() -> list[str]:
             hits: list[tuple[float, str]] = []
-            for m in sorted(resolved.glob(pattern)):
+            for m in resolved.glob(pattern):
                 if not m.is_file():
                     continue
                 rel = m.relative_to(resolved)
@@ -106,7 +137,7 @@ async def _glob_files(
                 if is_gitignored(rel.as_posix(), is_dir=False, rules=gitignore_rules):
                     continue
                 hits.append((_mtime(m), sandbox.display_path(m)))
-                if len(hits) >= max_results:
+                if len(hits) >= _MAX_SCAN:
                     break
             return _newest_first(hits)
 
@@ -114,7 +145,7 @@ async def _glob_files(
 
     if not matches:
         return f"No files matching '{pattern}' in {sandbox.display_path(resolved)}"
-    return "\n".join(matches)
+    return "\n".join(_page(matches, max(0, int(offset)), max(1, int(max_results))))
 
 
 glob_files = Tool(
@@ -123,7 +154,8 @@ glob_files = Tool(
     description=(
         "Find files by glob pattern. Use match='path' (default) for full-path patterns "
         "like 'src/**/*.ts', or match='name' for filename-only like '*.py'. "
-        "Results are sorted by modification time, newest first."
+        "Results are sorted by modification time, newest first; a partial page "
+        "ends with a notice giving the offset for the next page."
     ),
     concurrency_safe=True,
     read_only=True,

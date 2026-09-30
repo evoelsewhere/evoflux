@@ -522,6 +522,8 @@ jobs:
           [[ -f "$product_dir/sidecar/site-packages/app/cli/__main__.py" ]]
           [[ -x "$product_dir/sidecar/tailnet/evoflux-tailnet" ]]
           [[ -f "$product_dir/sidecar/tailnet/LICENSE.tailscale" ]]
+          [[ -x "$product_dir/sidecar/ripgrep/rg" ]]
+          [[ -f "$product_dir/sidecar/ripgrep/LICENSE-MIT" ]]
 
       - name: Smoke-test first Linux DEB launch
         if: runner.os == 'Linux'

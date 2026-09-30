@@ -4,14 +4,41 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- The agent's `grep` tool takes an `output_mode`: `files_with_matches` lists
+  only the matching files, newest first, and `count` gives matching lines per
+  file with a total. It pages with `offset`, filters by language with `type`,
+  matches literal text with `fixed_strings` and patterns that span lines with
+  `multiline`. A partial page ends with a notice naming the next `offset`
+  instead of silently stopping at `max_results`, and patterns with
+  backreferences or look-around run in ripgrep's PCRE2 engine.
+
 ### Changed
 
 - The scheduled models.dev snapshot job now opens a reviewable pull request
   for registry updates instead of writing directly to `main` or failing with
   an unreconciled stale snapshot.
+- New research note `documents/research/agent-code-search-tools.md` compares
+  the code-search tools of Claude Code, opencode, Gemini CLI, Codex, Cline and
+  Roo Code with EvoFlux's `grep`/`glob`, and proposes shipping ripgrep in the
+  desktop app plus output modes, pagination and truncation notices.
+- The desktop app ships ripgrep 15.2.0, so the agent's `grep` stays fast and
+  follows nested `.gitignore` files on computers without ripgrep installed,
+  instead of falling back to a slow scan with a 10-second limit. Agent shell
+  commands can run `rg` too: the bundled copy is added at the end of `PATH`,
+  so a ripgrep you installed yourself still takes precedence.
+- The chat shows a finished search as **Searched** `<pattern>` and a finished
+  file search as **Found** `<pattern>` (previously **Listed Searching …**),
+  naming the filters and output mode, and shows a page notice under the
+  results instead of counting it as an entry.
 
 ### Fixed
 
+- The agent's `glob` tool returns the newest matching files. It used to keep
+  the first 200 matches in name order and only then sort them by date, so a
+  recently edited file could be missing; it now sorts every match, pages with
+  `offset`, and says when files were left out.
 - The Windows desktop app starts on PCs without the Microsoft Visual C++
   Redistributable. The app's built-in Python now ships the C++ runtime
   (`msvcp140.dll`) itself, so startup no longer loops on `auto_migrate_failed`

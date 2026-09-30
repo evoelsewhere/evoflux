@@ -13,6 +13,7 @@ Layout produced under ``<out>/``::
         pydantic/
         …
       tailnet/               ← embedded tsnet helper + license notices
+      ripgrep/               ← pinned rg binary + license notices (grep tool)
 
 The Tauri shell runs a tiny bootstrap that adds
 ``sidecar-bundle/site-packages`` with ``site.addsitedir()`` so platform
@@ -45,6 +46,7 @@ entry in ``tauri.conf.json``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import platform
 import re
@@ -52,7 +54,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -94,6 +98,40 @@ IS_WINDOWS = platform.system() == "Windows"
 MSVC_RUNTIME_DLL = re.compile(
     rb"(?i)\b((?:msvcp140|vcruntime140|concrt140|vcomp140)(?:_[a-z0-9_]+)?\.dll)"
 )
+
+# ripgrep shipped for the agent's grep tool: most end-user machines have no
+# rg on PATH, and the Python fallback is far slower and reads only the search
+# root's .gitignore. Asset suffix and SHA-256 per sidecar target triple, pinned
+# from the GitHub release and checked against its published .sha256 files.
+# Linux takes the static musl builds so one binary runs on every glibc.
+RIPGREP_VERSION = "15.2.0"
+RIPGREP_ASSETS: dict[str, tuple[str, str]] = {
+    "x86_64-pc-windows-msvc": (
+        "x86_64-pc-windows-msvc.zip",
+        "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5",
+    ),
+    "aarch64-pc-windows-msvc": (
+        "aarch64-pc-windows-msvc.zip",
+        "e4abca10c3a64ebea742667dd7009449d49403db5460dd6873e389fa2945360f",
+    ),
+    "x86_64-apple-darwin": (
+        "x86_64-apple-darwin.tar.gz",
+        "af7825fcc69a2afc7a7aea55fc9af90e26421d8f20fe59df32e233c0b8a231c1",
+    ),
+    "aarch64-apple-darwin": (
+        "aarch64-apple-darwin.tar.gz",
+        "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
+    ),
+    "x86_64-unknown-linux-gnu": (
+        "x86_64-unknown-linux-musl.tar.gz",
+        "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+    ),
+    "aarch64-unknown-linux-gnu": (
+        "aarch64-unknown-linux-musl.tar.gz",
+        "800b1e7206afe799dfb5a6901f23147cfaabe0e52210538100f61e86e1740915",
+    ),
+}
+RIPGREP_LICENSES = ("COPYING", "LICENSE-MIT", "UNLICENSE")
 
 
 def detect_target_triple() -> str:
@@ -399,6 +437,60 @@ def bundle_msvc_runtime(
         shutil.copy2(source, python_dir / name)
         copied.append(name)
     return copied
+
+
+def fetch_ripgrep(out: Path, triple: str) -> Path:
+    """Download the pinned ripgrep for ``triple`` into ``out`` and verify it.
+
+    Only the binary and its license notices are kept, each written by its
+    base name so an archive entry can never escape ``out``. Returns the path
+    of the binary.
+    """
+    asset = RIPGREP_ASSETS.get(triple)
+    if asset is None:
+        raise SystemExit(f"no pinned ripgrep build for {triple}")
+    suffix, expected = asset
+    name = f"ripgrep-{RIPGREP_VERSION}-{suffix}"
+    url = (
+        "https://github.com/BurntSushi/ripgrep/releases/download/"
+        f"{RIPGREP_VERSION}/{name}"
+    )
+    binary = "rg.exe" if IS_WINDOWS else "rg"
+    wanted = {binary, *RIPGREP_LICENSES}
+    out.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / name
+        print(f">> download {url}", flush=True)
+        with urllib.request.urlopen(url, timeout=120) as response:
+            archive.write_bytes(response.read())
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if digest != expected:
+            raise SystemExit(
+                f"ripgrep checksum mismatch for {name}: expected {expected}, "
+                f"got {digest}"
+            )
+        # Release archives hold one top-level ``ripgrep-<version>-<triple>/``.
+        if suffix.endswith(".zip"):
+            with zipfile.ZipFile(archive) as bundle:
+                for info in bundle.infolist():
+                    parts = Path(info.filename).parts
+                    if len(parts) == 2 and parts[1] in wanted and not info.is_dir():
+                        (out / parts[1]).write_bytes(bundle.read(info))
+        else:
+            with tarfile.open(archive, "r:gz") as bundle:
+                for member in bundle.getmembers():
+                    parts = Path(member.name).parts
+                    if len(parts) == 2 and parts[1] in wanted and member.isfile():
+                        source = bundle.extractfile(member)
+                        if source is not None:
+                            (out / parts[1]).write_bytes(source.read())
+    rg = out / binary
+    missing = sorted(entry for entry in wanted if not (out / entry).is_file())
+    if missing:
+        raise SystemExit(f"ripgrep archive {name} is missing {', '.join(missing)}")
+    if not IS_WINDOWS:
+        rg.chmod(0o755)
+    return rg
 
 
 def zip_pure_python_packages(site_packages: Path) -> tuple[int, int]:
@@ -839,6 +931,14 @@ def main() -> int:
         action="store_true",
         help="Skip the embedded tsnet helper (development diagnostics only).",
     )
+    ap.add_argument(
+        "--no-ripgrep",
+        action="store_true",
+        help=(
+            "Skip the bundled ripgrep; grep then needs rg on PATH or falls back "
+            "to the slow Python scan (development diagnostics only)."
+        ),
+    )
     args = ap.parse_args()
 
     root = Path(args.root).resolve()
@@ -895,17 +995,24 @@ def main() -> int:
             cwd=root,
         )
 
-    # ── 5. Smoke test ───────────────────────────────────────────────────
+    # ── 5. Fetch the pinned ripgrep for the grep tool ──────────────────
+    if not args.no_ripgrep:
+        rg = fetch_ripgrep(out / "ripgrep", detect_target_triple())
+        run([str(rg), "--version"])
+
+    # ── 6. Smoke test ───────────────────────────────────────────────────
     if not args.no_smoke:
         validate_migration_bundle(python_bin, site_packages)
         smoke_test(python_bin, site_packages)
 
-    # ── 6. Report ────────────────────────────────────────────────────────
+    # ── 7. Report ────────────────────────────────────────────────────────
     print("\n=== bundle summary ===")
     report_size(python_target, "python runtime")
     report_size(site_packages, "site-packages")
     if (out / "tailnet").is_dir():
         report_size(out / "tailnet", "embedded tailnet")
+    if (out / "ripgrep").is_dir():
+        report_size(out / "ripgrep", "bundled ripgrep")
     report_size(out, "TOTAL")
     return 0
 
