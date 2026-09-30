@@ -4,6 +4,16 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Settings → Import**: import data from external AI tools into EvoFlux.
+  Supports Claude.ai (JSON/ZIP), ChatGPT (conversations.json), Claude Code
+  (``~/.claude/`` directory), Codex CLI, Cursor, and generic files (MCP config,
+  skills, agents, knowledge). Imported sessions are tagged with a source badge.
+  Use the source buttons in **Settings → Import** to pick a local file or
+  folder via the native file dialog. A welcome popup appears on first launch
+  offering to import data from another AI tool.
+
 ### Changed
 
 - The scheduled models.dev snapshot job now opens a reviewable pull request

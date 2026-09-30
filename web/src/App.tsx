@@ -7,6 +7,7 @@ import { AppMotionConfig } from '@/components/motion/AppMotionConfig'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useLocale } from '@/i18n'
 import { WebBridgeAppearanceSync } from '@/components/WebBridgeAppearanceSync'
+import { ImportWelcomePopup } from '@/components/ImportWelcomePopup'
 
 const ANSI_SGR_PATTERN = new RegExp(
   `${String.fromCharCode(27)}\\[[0-9;]*m`,
@@ -23,6 +24,7 @@ function App() {
         <Suspense fallback={<AppLoadingScreen />}>
           <WebBridgeAppearanceSync />
           <RouterProvider router={router} />
+          <ImportWelcomePopup />
         </Suspense>
       ) : (
         <AppLoadingScreen
