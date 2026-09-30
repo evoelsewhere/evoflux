@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-update-notification-badge"
+description = "Enables the app_update_notification_badge command without any pre-configured scope."
+commands.allow = ["app_update_notification_badge"]
+
+[[permission]]
+identifier = "deny-app-update-notification-badge"
+description = "Denies the app_update_notification_badge command without any pre-configured scope."
+commands.deny = ["app_update_notification_badge"]

@@ -2531,7 +2531,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'Appearance includes theme, accent, fonts, motion, and locale (en / vi / ja).',
       'Diagnostics is for live subsystem checks — complementary to HealthDot’s binary signal.',
       'Intelligence vs System vs Application groupings keep risky toggles from mixing with theme picks.',
-      'Notifications include a test ping — use it before trusting unfocused alerts.',
+      'Notifications include a test ping — use it before trusting unfocused alerts. Unread alerts count on the app icon and request taskbar or Dock attention; returning to EvoFlux clears them. Windows question alerts support quick choices and a reply field.',
       'Open the command palette if you forget which settings page owns a toggle.'
 ],
     blocks: [
