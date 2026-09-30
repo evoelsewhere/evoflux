@@ -21,6 +21,7 @@ import {
   type ImportSource,
   type ScanResult,
   type HistoryEntry,
+  type AutoSyncSettings,
   SOURCE_LABELS,
   pickImportSource,
   detectImport,
@@ -29,6 +30,8 @@ import {
   updateItemAction,
   scanLocalSources,
   getImportHistory,
+  getAutoSyncSettings,
+  updateAutoSyncSettings,
 } from '@/api/import'
 import { Button } from '@/components/ui/button'
 import { SelectControl } from '@/components/ui/select'
@@ -44,6 +47,7 @@ export function ImportSettingsPage() {
   const [executeResult, setExecuteResult] = useState<ExecuteResponse | null>(null)
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
+  const [autoSync, setAutoSync] = useState<AutoSyncSettings | null>(null)
 
   // Auto-scan on mount
   useEffect(() => {
@@ -61,6 +65,13 @@ export function ImportSettingsPage() {
       .then((res) => setHistory(res.imports))
       .catch(() => {})
       .finally(() => setHistoryLoading(false))
+  }, [])
+
+  // Load auto-sync settings
+  useEffect(() => {
+    getAutoSyncSettings()
+      .then((res) => setAutoSync(res))
+      .catch(() => {})
   }, [])
 
   const handleDetect = useCallback(async (path: string, source?: string) => {
@@ -130,6 +141,15 @@ export function ImportSettingsPage() {
         setPhase('idle')
       })
       .catch(() => setPhase('idle'))
+  }, [])
+
+  const handleAutoSyncToggle = useCallback(async (enabled: boolean) => {
+    try {
+      const updated = await updateAutoSyncSettings({ enabled })
+      setAutoSync(updated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
   }, [])
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -244,6 +264,60 @@ export function ImportSettingsPage() {
             />
           </SettingsGroup>
         </>
+      )}
+
+      {/* ── Auto-sync ──────────────────────────────────────────────────── */}
+      {autoSync && (phase === 'idle' || phase === 'scanning') && (
+        <SettingsGroup title="Auto-sync">
+          <SettingsRow
+            label="Automatically detect new items"
+            description="Periodically scan for new skills, plugins, agents, and conversations added by other AI tools. Shows a notification when new items are found."
+            control={
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoSync.enabled}
+                onClick={() => handleAutoSyncToggle(!autoSync.enabled)}
+                className={cn(
+                  'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+                  autoSync.enabled ? 'bg-(--color-accent)' : 'bg-(--color-border)',
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    'pointer-events-none inline-block size-4 rounded-full bg-white shadow-sm transition-transform',
+                    autoSync.enabled ? 'translate-x-4' : 'translate-x-0',
+                  )}
+                />
+              </button>
+            }
+          />
+          {autoSync.enabled && (
+            <SettingsRow
+              label="Scan interval"
+              description={`Scan every ${autoSync.scan_interval_seconds} seconds`}
+              control={
+                <SelectControl
+                  value={String(autoSync.scan_interval_seconds)}
+                  onValueChange={(v) =>
+                    updateAutoSyncSettings({ scan_interval_seconds: Number(v) })
+                      .then(setAutoSync)
+                      .catch(() => {})
+                  }
+                  size="sm"
+                  options={[
+                    { value: '60', label: '1 minute' },
+                    { value: '300', label: '5 minutes' },
+                    { value: '600', label: '10 minutes' },
+                    { value: '1800', label: '30 minutes' },
+                    { value: '3600', label: '1 hour' },
+                  ]}
+                />
+              }
+            />
+          )}
+        </SettingsGroup>
       )}
 
       {/* ── Detecting spinner ──────────────────────────────────────────── */}

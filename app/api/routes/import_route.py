@@ -241,6 +241,60 @@ async def import_scan() -> ScanResponse:
     return ScanResponse(discovered=discovered)
 
 
+@router.get("/auto-sync")
+async def get_auto_sync_settings() -> dict[str, Any]:
+    """Return the current auto-sync settings."""
+    from app.core.runtime_settings import load_runtime_settings
+
+    settings = load_runtime_settings()
+    cfg = settings.import_auto_sync
+    return {
+        "enabled": cfg.enabled,
+        "scan_interval_seconds": cfg.scan_interval_seconds,
+        "notify_new_items": cfg.notify_new_items,
+    }
+
+
+@router.put("/auto-sync")
+async def update_auto_sync_settings(body: dict[str, Any]) -> dict[str, Any]:
+    """Update auto-sync settings in settings.yaml."""
+    import yaml
+
+    settings_path = Path.home() / ".evoflux" / "dev" / "config" / "settings.yaml"
+    if not settings_path.exists():
+        settings_path = Path(".evoflux") / "dev" / "config" / "settings.yaml"
+
+    # Load current
+    try:
+        with open(settings_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        data = {}
+
+    # Update
+    import_cfg = data.get("import_auto_sync", {})
+    if "enabled" in body:
+        import_cfg["enabled"] = bool(body["enabled"])
+    if "scan_interval_seconds" in body:
+        import_cfg["scan_interval_seconds"] = int(body["scan_interval_seconds"])
+    if "notify_new_items" in body:
+        import_cfg["notify_new_items"] = bool(body["notify_new_items"])
+    data["import_auto_sync"] = import_cfg
+
+    # Write back
+    try:
+        with open(settings_path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, allow_unicode=True)
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not save settings: {exc}")
+
+    return {
+        "enabled": import_cfg.get("enabled", False),
+        "scan_interval_seconds": import_cfg.get("scan_interval_seconds", 300),
+        "notify_new_items": import_cfg.get("notify_new_items", True),
+    }
+
+
 @router.post("/detect", response_model=DetectResponse)
 async def import_detect(body: DetectRequest) -> DetectResponse:
     """Auto-detect the source format and return a preview bundle.

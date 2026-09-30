@@ -176,6 +176,27 @@ export interface ScanResult {
   estimated_items: number
 }
 
+/** Get auto-sync settings. */
+export async function getAutoSyncSettings(): Promise<AutoSyncSettings> {
+  return apiFetch('/auto-sync')
+}
+
+/** Update auto-sync settings. */
+export async function updateAutoSyncSettings(
+  settings: Partial<AutoSyncSettings>,
+): Promise<AutoSyncSettings> {
+  return apiFetch('/auto-sync', {
+    method: 'PUT',
+    body: JSON.stringify(settings),
+  })
+}
+
+export interface AutoSyncSettings {
+  enabled: boolean
+  scan_interval_seconds: number
+  notify_new_items: boolean
+}
+
 /** Fetch import history. */
 export async function getImportHistory(): Promise<{ imports: HistoryEntry[] }> {
   return apiFetch('/history')
