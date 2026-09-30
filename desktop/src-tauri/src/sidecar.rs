@@ -8,8 +8,8 @@
 //!
 //! - `sidecar/python/bin/python3`: the bundled CPython interpreter.
 //! - `sidecar/site-packages/`: pre-installed evoflux + dependencies.
-//! - `sidecar/_web_dist/`: the built React frontend (also embedded in
-//!   `site-packages/app/_web_dist/`; either works).
+//! - `sidecar/site-packages/app/_web_dist/`: the built React frontend that the
+//!   sidecar serves at `/`, so the remote tailnet session has one origin.
 //!
 //! Windows-specific Job-Object code is retained behind `#[cfg(windows)]`
 //! gates as defensive portability for any future Windows desktop revival;
