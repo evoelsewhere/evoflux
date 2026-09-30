@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Import, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 
 import {
   SettingsCallout,
@@ -33,6 +34,7 @@ import {
   getAutoSyncSettings,
   updateAutoSyncSettings,
 } from '@/api/import'
+import { queryKeys } from '@/queries/keys'
 import { Button } from '@/components/ui/button'
 import { SelectControl } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
@@ -40,6 +42,7 @@ import { cn } from '@/lib/utils'
 type Phase = 'scanning' | 'idle' | 'detecting' | 'preview' | 'executing' | 'done'
 
 export function ImportSettingsPage() {
+  const queryClient = useQueryClient()
   const [phase, setPhase] = useState<Phase>('scanning')
   const [error, setError] = useState<string | null>(null)
   const [discovered, setDiscovered] = useState<ScanResult[]>([])
@@ -101,13 +104,14 @@ export function ImportSettingsPage() {
       const result = await executeImport(detectResult.import_id)
       setExecuteResult(result)
       setPhase('done')
-      // Refresh history
+      // Refresh sidebar sessions and history
+      void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
       getImportHistory().then((res) => setHistory(res.imports)).catch(() => {})
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setPhase('preview')
     }
-  }, [detectResult])
+  }, [detectResult, queryClient])
 
   const handleCancel = useCallback(async () => {
     if (detectResult) await cancelImport(detectResult.import_id).catch(() => {})
@@ -521,6 +525,7 @@ function ImportResult({
   const totalImported = Object.values(result.imported).reduce((a, b) => a + b, 0)
   const totalSkipped = Object.values(result.skipped).reduce((a, b) => a + b, 0)
   const hasErrors = result.errors.length > 0
+  const hasImportedSessions = (result.imported.sessions ?? 0) > 0
 
   return (
     <SettingsCallout tone={hasErrors ? 'warning' : 'success'}>
@@ -529,11 +534,18 @@ function ImportResult({
           <CheckCircle2 size={14} />
           <span>
             {totalImported} item{totalImported !== 1 ? 's' : ''} imported
-            {totalSkipped > 0 && `, ${totalSkipped} skipped`}
+            {totalSkipped > 0 && `, ${totalSkipped} skipped (already imported)`}
             {hasErrors && `, ${result.errors.length} error${result.errors.length !== 1 ? 's' : ''}`}
           </span>
         </span>
-        <Button variant="ghost" size="sm" onClick={onReset}>Import more</Button>
+        <div className="flex gap-2">
+          {hasImportedSessions && (
+            <Button variant="outline" size="sm" onClick={() => window.location.href = '/'}>
+              View sessions
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={onReset}>Import more</Button>
+        </div>
       </div>
       {hasErrors && (
         <div className="mt-2 space-y-1 text-[12px] text-(--color-error)">
