@@ -58,6 +58,74 @@ def _normalise_content(content: Any) -> str:
     return str(content) if content else ""
 
 
+def _extract_codex_message(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """Extract a normalised message from a Codex JSONL entry.
+
+    Handles:
+    - ``{"type":"event_msg","payload":{"type":"message","role":"user","content":"..."}}``
+    - ``{"type":"event_msg","payload":{"type":"assistant_message","content":"..."}}``
+    - ``{"role":"user","content":"..."}`` (simple format)
+    - ``{"type":"session_meta",…}`` → skip
+    """
+    entry_type = entry.get("type", "")
+
+    if entry_type == "event_msg":
+        payload = entry.get("payload", {})
+        payload_type = payload.get("type", "")
+
+        if payload_type == "message":
+            role = payload.get("role", "")
+            content = _normalise_content(payload.get("content", ""))
+            if role and content:
+                role_map = {
+                    "user": "user",
+                    "assistant": "assistant",
+                    "system": "system",
+                }
+                return {
+                    "role": role_map.get(role, role),
+                    "content": content,
+                    "created_at": (
+                        _parse_iso(entry.get("timestamp")) or utcnow()
+                    ).isoformat(),
+                }
+
+        if payload_type == "assistant_message":
+            content = _normalise_content(payload.get("content", ""))
+            if content:
+                return {
+                    "role": "assistant",
+                    "content": content,
+                    "created_at": (
+                        _parse_iso(entry.get("timestamp")) or utcnow()
+                    ).isoformat(),
+                }
+
+        return None
+
+    if entry_type == "session_meta":
+        return None
+
+    role = entry.get("role", "")
+    content = _normalise_content(entry.get("content", ""))
+    if not role or not content:
+        return None
+
+    role_map = {
+        "human": "user",
+        "user": "user",
+        "assistant": "assistant",
+        "system": "system",
+    }
+    return {
+        "role": role_map.get(role, role),
+        "content": content,
+        "created_at": (
+            _parse_iso(entry.get("timestamp") or entry.get("created_at")) or utcnow()
+        ).isoformat(),
+    }
+
+
 def _parse_session_jsonl(path: Path) -> dict[str, Any] | None:
     """Parse a Codex JSONL session file."""
     messages: list[dict[str, Any]] = []
@@ -74,32 +142,11 @@ def _parse_session_jsonl(path: Path) -> dict[str, Any] | None:
                 except json.JSONDecodeError:
                     continue
 
-                role = entry.get("role", "")
-                content = _normalise_content(entry.get("content", ""))
-                if not role or not content:
-                    continue
-
-                role_map = {
-                    "human": "user",
-                    "user": "user",
-                    "assistant": "assistant",
-                    "system": "system",
-                }
-                role = role_map.get(role, role)
-
-                msg_created = _parse_iso(
-                    entry.get("timestamp") or entry.get("created_at")
-                )
-                if created_at is None:
-                    created_at = msg_created
-
-                messages.append(
-                    {
-                        "role": role,
-                        "content": content,
-                        "created_at": (msg_created or utcnow()).isoformat(),
-                    }
-                )
+                msg = _extract_codex_message(entry)
+                if msg:
+                    if created_at is None:
+                        created_at = _parse_iso(msg.get("created_at"))
+                    messages.append(msg)
     except OSError:
         return None
 
@@ -127,7 +174,8 @@ def _parse_sessions(sessions_dir: Path) -> list[ImportItem]:
     items: list[ImportItem] = []
     if not sessions_dir.is_dir():
         return items
-    for session_file in sorted(sessions_dir.glob("*.jsonl")):
+    # Sessions are nested: sessions/2026/09/<day>/thread.jsonl
+    for session_file in sorted(sessions_dir.rglob("*.jsonl")):
         data = _parse_session_jsonl(session_file)
         if data:
             items.append(

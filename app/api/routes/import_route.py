@@ -131,38 +131,87 @@ async def import_scan() -> ScanResponse:
                         )
                     )
 
-    # Claude Code: ~/.claude/
+    # Claude Desktop / Claude Code: ~/.claude/
     claude_dir = home / ".claude"
     if claude_dir.is_dir():
         session_count = 0
+        project_names: list[str] = []
         projects_dir = claude_dir / "projects"
         if projects_dir.is_dir():
             for proj in projects_dir.iterdir():
-                sessions = proj / "sessions"
-                if sessions.is_dir():
-                    session_count += len(list(sessions.glob("*.jsonl")))
+                if not proj.is_dir():
+                    continue
+                # Sessions are JSONL files directly in the project dir
+                proj_sessions = list(proj.glob("*.jsonl"))
+                # Also check sessions/ subdirectory
+                sessions_sub = proj / "sessions"
+                if sessions_sub.is_dir():
+                    proj_sessions.extend(sessions_sub.glob("*.jsonl"))
+                if proj_sessions:
+                    session_count += len(proj_sessions)
+                    project_names.append(proj.name)
 
+        # Plugins from plugins/installed_plugins.json
+        plugin_count = 0
+        installed_plugins = claude_dir / "plugins" / "installed_plugins.json"
+        if installed_plugins.is_file():
+            try:
+                import json as json_mod
+
+                plugins_data = json_mod.loads(
+                    installed_plugins.read_text(encoding="utf-8")
+                )
+                if isinstance(plugins_data, list):
+                    plugin_count = len(plugins_data)
+                elif isinstance(plugins_data, dict):
+                    plugin_count = len(plugins_data)
+            except (ValueError, OSError):
+                pass
+
+        # MCP config from management-kit or .mcp.json
+        has_mcp = (claude_dir / ".mcp.json").is_file()
+        mgmt_kit = claude_dir / "management-kit"
+        if mgmt_kit.is_dir() and (mgmt_kit / "mcp.json").is_file():
+            has_mcp = True
+
+        # Plans
+        plan_count = 0
+        plans_dir = claude_dir / "plans"
+        if plans_dir.is_dir():
+            plan_count = len(list(plans_dir.glob("*.md")))
+
+        # Commands (slash commands)
         cmd_count = 0
         commands_dir = claude_dir / "commands"
         if commands_dir.is_dir():
             cmd_count = len(list(commands_dir.glob("*.md")))
 
-        has_mcp = (claude_dir / ".mcp.json").is_file()
-
-        total = session_count + cmd_count + (1 if has_mcp else 0)
+        total = (
+            session_count
+            + plugin_count
+            + (1 if has_mcp else 0)
+            + plan_count
+            + cmd_count
+        )
         if total > 0:
             parts: list[str] = []
             if session_count:
-                parts.append(f"{session_count} sessions")
+                parts.append(
+                    f"{session_count} sessions across {len(project_names)} projects"
+                )
+            if plugin_count:
+                parts.append(f"{plugin_count} plugins")
             if cmd_count:
                 parts.append(f"{cmd_count} commands")
+            if plan_count:
+                parts.append(f"{plan_count} plans")
             if has_mcp:
                 parts.append("MCP config")
             discovered.append(
                 ScanResult(
                     source="claude_code",
                     path=str(claude_dir),
-                    label="Claude Code",
+                    label="Claude Desktop / Claude Code",
                     description=", ".join(parts),
                     estimated_items=total,
                 )
@@ -188,13 +237,14 @@ async def import_scan() -> ScanResponse:
                         )
                     )
 
-    # Codex: .codex/ in common project dirs
+    # Codex: ~/.codex/ — sessions nested by year/month/day
     codex_dir = home / ".codex"
     if codex_dir.is_dir():
         session_count = 0
         sessions_dir = codex_dir / "sessions"
         if sessions_dir.is_dir():
-            session_count = len(list(sessions_dir.glob("*.jsonl")))
+            # Sessions are nested: sessions/2026/09/<day>/thread.jsonl
+            session_count = len(list(sessions_dir.rglob("*.jsonl")))
         has_instructions = (codex_dir / "instructions.md").is_file()
         total = session_count + (1 if has_instructions else 0)
         if total > 0:

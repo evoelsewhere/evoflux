@@ -82,13 +82,65 @@ def _parse_session_jsonl(path: Path) -> dict[str, Any] | None:
 
 
 def _extract_message(entry: dict[str, Any]) -> dict[str, Any] | None:
-    """Extract a normalised message from a Claude Code JSONL entry."""
-    # Claude Code JSONL entries vary — common patterns:
-    # {"type": "message", "role": "user", "content": "..."}
-    # {"type": "assistant", "message": {"role": "assistant", "content": [...]}}
-    # {"role": "human", "content": "..."}
-    # {"role": "assistant", "content": "..."}
+    """Extract a normalised message from a Claude Code JSONL entry.
 
+    Handles multiple formats:
+    - Claude Desktop: {"type":"queue-operation","operation":"enqueue","content":"..."}
+    - Claude Desktop: {"type":"human","message":{"role":"human","content":"..."}}
+    - Claude Code CLI: {"type":"message","role":"user","content":"..."}
+    - Claude Code CLI: {"message":{"role":"assistant","content":[...]}}
+    """
+    entry_type = entry.get("type", "")
+
+    # ── Claude Desktop queue-operation format ────────────────────────────
+    if entry_type == "queue-operation":
+        operation = entry.get("operation", "")
+        if operation == "enqueue":
+            content = entry.get("content", "")
+            if content:
+                return {
+                    "role": "user",
+                    "content": str(content),
+                    "created_at": (utcnow()).isoformat(),
+                }
+        return None
+
+    # ── Claude Desktop message types ────────────────────────────────────
+    if entry_type in ("human", "user"):
+        msg = entry.get("message", entry)
+        content = _normalise_content(msg.get("content", ""))
+        if content:
+            timestamp = entry.get("timestamp")
+            return {
+                "role": "user",
+                "content": content,
+                "created_at": (_parse_iso(timestamp) or utcnow()).isoformat(),
+            }
+        return None
+
+    if entry_type in ("assistant", "ai"):
+        msg = entry.get("message", entry)
+        content = _normalise_content(msg.get("content", ""))
+        if content:
+            timestamp = entry.get("timestamp")
+            return {
+                "role": "assistant",
+                "content": content,
+                "created_at": (_parse_iso(timestamp) or utcnow()).isoformat(),
+            }
+        return None
+
+    if entry_type == "system":
+        content = _normalise_content(entry.get("content", entry.get("message", "")))
+        if content:
+            return {
+                "role": "system",
+                "content": content,
+                "created_at": (utcnow()).isoformat(),
+            }
+        return None
+
+    # ── Claude Code CLI format ──────────────────────────────────────────
     role_raw = entry.get("role", "")
     content_raw = entry.get("content", "")
 
@@ -99,15 +151,7 @@ def _extract_message(entry: dict[str, Any]) -> dict[str, Any] | None:
         content_raw = inner.get("content", content_raw)
 
     if not role_raw:
-        entry_type = entry.get("type", "")
-        if entry_type in ("user", "human"):
-            role_raw = "user"
-        elif entry_type in ("assistant", "ai"):
-            role_raw = "assistant"
-        elif entry_type == "system":
-            role_raw = "system"
-        else:
-            return None
+        return None
 
     role = _normalise_role(role_raw)
     content = _normalise_content(content_raw)
@@ -202,23 +246,28 @@ def _parse_projects(projects_dir: Path) -> list[ImportItem]:
                     )
                 )
 
-        # Parse sessions/*.jsonl
+        # Parse sessions/*.jsonl — check both sessions/ subdir and project root
+        jsonl_files: list[Path] = []
         sessions_dir = project_path / "sessions"
         if sessions_dir.is_dir():
-            for session_file in sorted(sessions_dir.glob("*.jsonl")):
-                session_data = _parse_session_jsonl(session_file)
-                if session_data:
-                    items.append(
-                        ImportItem(
-                            kind="session",
-                            source="claude_code",
-                            source_id=(
-                                f"project:{project_name}:session:{session_file.stem}"
-                            ),
-                            data=session_data,
-                            label=session_data["title"],
-                        )
+            jsonl_files.extend(sorted(sessions_dir.glob("*.jsonl")))
+        # Claude Desktop stores JSONL directly in project dir
+        jsonl_files.extend(sorted(project_path.glob("*.jsonl")))
+
+        for session_file in jsonl_files:
+            session_data = _parse_session_jsonl(session_file)
+            if session_data:
+                items.append(
+                    ImportItem(
+                        kind="session",
+                        source="claude_code",
+                        source_id=(
+                            f"project:{project_name}:session:{session_file.stem}"
+                        ),
+                        data=session_data,
+                        label=session_data["title"],
                     )
+                )
 
     return items
 
