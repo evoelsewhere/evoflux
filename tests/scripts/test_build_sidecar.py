@@ -4,8 +4,14 @@ import zipfile
 
 from pathlib import Path
 
+import pytest
+
 import scripts.build_sidecar as build_sidecar
-from scripts.build_sidecar import strip_bundle, zip_pure_python_packages
+from scripts.build_sidecar import (
+    bundle_msvc_runtime,
+    strip_bundle,
+    zip_pure_python_packages,
+)
 
 
 def test_install_packages_installs_locked_versions(tmp_path, monkeypatch) -> None:
@@ -76,6 +82,44 @@ def test_strip_bundle_removes_only_release_artefacts(tmp_path) -> None:
     assert not discovery_documents.exists()
     assert (metadata / "METADATA").is_file()
     assert not (metadata / "RECORD").exists()
+
+
+def _msvc_layout(tmp_path: Path) -> tuple[Path, Path, Path]:
+    python_dir = tmp_path / "python"
+    python_dir.mkdir()
+    (python_dir / "vcruntime140.dll").write_bytes(b"runtime")
+    site_packages = tmp_path / "site-packages"
+    greenlet = site_packages / "greenlet"
+    greenlet.mkdir(parents=True)
+    (greenlet / "_greenlet.cp312-win_amd64.pyd").write_bytes(
+        b"MZ\x00MSVCP140.dll\x00VCRUNTIME140.dll\x00python312.dll\x00"
+    )
+    # A package that ships its own copy next to the extension needs nothing.
+    vendored = site_packages / "vendored"
+    vendored.mkdir()
+    (vendored / "ext.pyd").write_bytes(b"MZ\x00concrt140.dll\x00")
+    (vendored / "concrt140.dll").write_bytes(b"own copy")
+    redist = tmp_path / "redist"
+    redist.mkdir()
+    return python_dir, site_packages, redist
+
+
+def test_bundle_msvc_runtime_copies_missing_cpp_runtime(tmp_path) -> None:
+    python_dir, site_packages, redist = _msvc_layout(tmp_path)
+    (redist / "msvcp140.dll").write_bytes(b"cpp runtime")
+
+    copied = bundle_msvc_runtime(python_dir, site_packages, sources=[redist])
+
+    assert copied == ["msvcp140.dll"]
+    assert (python_dir / "msvcp140.dll").read_bytes() == b"cpp runtime"
+    assert not (python_dir / "concrt140.dll").exists()
+
+
+def test_bundle_msvc_runtime_fails_when_runtime_is_unavailable(tmp_path) -> None:
+    python_dir, site_packages, redist = _msvc_layout(tmp_path)
+
+    with pytest.raises(SystemExit, match="msvcp140.dll"):
+        bundle_msvc_runtime(python_dir, site_packages, sources=[redist])
 
 
 def test_zip_pure_python_packages_keeps_runtime_data_on_disk(tmp_path) -> None:

@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import os
 import platform
+import re
 import shutil
 import signal
 import subprocess
@@ -83,6 +84,16 @@ STRIP_RELATIVE_DIRS = (
 )
 
 IS_WINDOWS = platform.system() == "Windows"
+
+# MSVC runtime DLLs that Windows native extensions import by name.
+# python-build-standalone ships only vcruntime140*.dll; C++ extensions such as
+# greenlet (required by SQLAlchemy's asyncio bridge) also import msvcp140.dll,
+# which exists only where the Visual C++ Redistributable is installed. Build
+# machines have it, so the smoke test passes there while a clean end-user
+# machine fails with "DLL load failed while importing _greenlet".
+MSVC_RUNTIME_DLL = re.compile(
+    rb"(?i)\b((?:msvcp140|vcruntime140|concrt140|vcomp140)(?:_[a-z0-9_]+)?\.dll)"
+)
 
 
 def detect_target_triple() -> str:
@@ -330,6 +341,64 @@ def strip_bundle(site_packages: Path) -> int:
         except OSError:
             pass
     return removed
+
+
+def msvc_runtime_sources() -> list[Path]:
+    """Directories to copy MSVC runtime DLLs from, most preferred first.
+
+    ``VCToolsRedistDir`` is set in a Visual Studio developer shell and holds the
+    redistributable CRT; System32 holds the installed Redistributable, which is
+    what the build machine's own smoke test resolves against.
+    """
+    arch = "arm64" if detect_target_triple().startswith("aarch64") else "x64"
+    sources: list[Path] = []
+    redist = os.environ.get("VCToolsRedistDir")
+    if redist:
+        sources += sorted(
+            (Path(redist) / arch).glob("Microsoft.VC14*.CRT"), reverse=True
+        )
+    sources.append(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32")
+    return sources
+
+
+def bundle_msvc_runtime(
+    python_dir: Path, site_packages: Path, sources: list[Path] | None = None
+) -> list[str]:
+    """Copy MSVC runtime DLLs imported by bundled extensions next to python.exe.
+
+    Windows resolves an extension module's imports from the application
+    directory (the interpreter's), the extension's own directory and System32,
+    so a DLL present in neither of the first two is only found on machines with
+    the Visual C++ Redistributable. Returns the names copied; exits when a
+    needed DLL is in none of ``sources``.
+    """
+    present = {path.name.lower() for path in python_dir.glob("*.dll")}
+    local: dict[Path, set[str]] = {}
+    needed: set[str] = set()
+    for path in site_packages.rglob("*"):
+        if path.suffix.lower() not in {".pyd", ".dll"} or not path.is_file():
+            continue
+        if path.parent not in local:
+            local[path.parent] = {p.name.lower() for p in path.parent.glob("*.dll")}
+        for match in MSVC_RUNTIME_DLL.finditer(path.read_bytes()):
+            name = match.group(1).decode("ascii").lower()
+            if name not in present and name not in local[path.parent]:
+                needed.add(name)
+
+    source_dirs = msvc_runtime_sources() if sources is None else sources
+    copied: list[str] = []
+    for name in sorted(needed):
+        source = next((d / name for d in source_dirs if (d / name).is_file()), None)
+        if source is None:
+            searched = "\n  ".join(str(d) for d in source_dirs)
+            raise SystemExit(
+                f"{name} is imported by a bundled extension but was not found in:"
+                f"\n  {searched}\nInstall the Visual C++ Redistributable or run "
+                "from a Visual Studio developer shell."
+            )
+        shutil.copy2(source, python_dir / name)
+        copied.append(name)
+    return copied
 
 
 def zip_pure_python_packages(site_packages: Path) -> tuple[int, int]:
@@ -802,6 +871,9 @@ def main() -> int:
     # ── 3. Strip caches/tests/etc. ──────────────────────────────────────
     saved = strip_bundle(site_packages)
     print(f"stripped: {human_bytes(saved)}")
+    if IS_WINDOWS:
+        copied = bundle_msvc_runtime(python_target, site_packages)
+        print(f"msvc runtime: {', '.join(copied) or 'nothing missing'}")
     if IS_WINDOWS and not args.no_zip_purelib:
         packages_zipped, files_zipped = zip_pure_python_packages(site_packages)
         print(

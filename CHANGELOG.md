@@ -12,6 +12,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- The Windows desktop app starts on PCs without the Microsoft Visual C++
+  Redistributable. The app's built-in Python now ships the C++ runtime
+  (`msvcp140.dll`) itself, so startup no longer loops on `auto_migrate_failed`
+  with "DLL load failed while importing _greenlet".
 - In the Coding sidebar, the project picker row, the **Chats** header and the
   repository rows sit on the same see-through surface as the rest of the
   sidebar instead of showing as darker or grey bands.
