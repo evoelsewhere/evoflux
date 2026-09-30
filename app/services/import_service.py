@@ -206,10 +206,11 @@ async def detect_conflicts(
     db: AsyncSession,
     bundle: ImportBundle,
 ) -> ImportBundle:
-    """Check each item in *bundle* against existing data and annotate conflicts.
+    """Check each item against existing data and annotate conflicts.
 
-    Mutates items in-place (sets ``conflicts`` and ``action``) and returns the
-    bundle for chaining.
+    Sessions: match by (source, title).  Agents/skills: file existence.
+    MCP servers: name in mcp.json.  Knowledge: filename in wiki/sources/.
+    Items already present get ``action="skip"`` and a conflict note.
     """
     for item in bundle.items:
         if item.kind == "session":
@@ -218,23 +219,25 @@ async def detect_conflicts(
             _check_agent_conflict(item)
         elif item.kind == "skill":
             _check_skill_conflict(item)
-        # Other kinds: no conflict detection in Phase 1
+        elif item.kind == "mcp_server":
+            _check_mcp_conflict(item)
+        elif item.kind == "knowledge":
+            _check_knowledge_conflict(item)
 
     return bundle
 
 
 async def _check_session_conflict(db: AsyncSession, item: ImportItem) -> None:
-    """Check if a session with the same source_id already exists."""
+    """Check if a session with the same source+title already exists."""
+    title = item.data.get("title", "")
     stmt = select(ChatSession).where(
         col(ChatSession.source) == item.source,
-        col(ChatSession.title) == item.data.get("title"),
+        col(ChatSession.title) == title,
     )
     result = await db.execute(stmt)
     existing = result.scalars().first()
     if existing is not None:
-        item.conflicts.append(
-            f"Session '{item.data.get('title')}' already imported (id={existing.id})"
-        )
+        item.conflicts.append("Already imported")
         item.action = "skip"
 
 
@@ -246,7 +249,7 @@ def _check_agent_conflict(item: ImportItem) -> None:
         Path(settings.EVOFLUX_CONFIG_DIR) / "agents" / f"{item.data.get('name', '')}.md"
     )
     if agent_file.exists():
-        item.conflicts.append(f"Agent file already exists: {agent_file}")
+        item.conflicts.append("Agent already exists")
         item.action = "skip"
 
 
@@ -256,7 +259,38 @@ def _check_skill_conflict(item: ImportItem) -> None:
 
     skill_dir = Path(settings.EVOFLUX_CONFIG_DIR) / "skills" / item.data.get("name", "")
     if skill_dir.exists():
-        item.conflicts.append(f"Skill directory already exists: {skill_dir}")
+        item.conflicts.append("Skill already exists")
+        item.action = "skip"
+
+
+def _check_mcp_conflict(item: ImportItem) -> None:
+    """Check if an MCP server with the same name already exists in config."""
+    import json as json_mod
+
+    from app.core.config import settings
+
+    mcp_path = Path(settings.EVOFLUX_CONFIG_DIR) / "mcp.json"
+    if not mcp_path.exists():
+        return
+    try:
+        data = json_mod.loads(mcp_path.read_text(encoding="utf-8"))
+        servers = data.get("servers", {})
+        if item.data.get("name") in servers:
+            item.conflicts.append("MCP server already exists")
+            item.action = "skip"
+    except (ValueError, OSError):
+        pass
+
+
+def _check_knowledge_conflict(item: ImportItem) -> None:
+    """Check if a knowledge file with the same name already exists."""
+    from app.core.config import settings
+
+    filename = item.data.get("filename", "")
+    safe_name = "".join(c for c in filename if c.isalnum() or c in ".-_")[:200]
+    knowledge_path = Path(settings.EVOFLUX_WIKI_DIR) / "sources" / safe_name
+    if knowledge_path.exists():
+        item.conflicts.append("Knowledge file already exists")
         item.action = "skip"
 
 

@@ -346,11 +346,15 @@ async def update_auto_sync_settings(body: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/detect", response_model=DetectResponse)
-async def import_detect(body: DetectRequest) -> DetectResponse:
+async def import_detect(
+    body: DetectRequest,
+    db: DbSession,
+) -> DetectResponse:
     """Auto-detect the source format and return a preview bundle.
 
     Accepts a local filesystem path.  The Python sidecar reads the file
-    directly — no upload required.
+    directly — no upload required.  Runs conflict detection against the DB
+    to mark items that were already imported.
     """
     path = Path(body.path).expanduser().resolve()
     if not path.exists():
@@ -366,8 +370,15 @@ async def import_detect(body: DetectRequest) -> DetectResponse:
             },
         )
 
+    # Run conflict detection to mark already-imported items
+    await detect_conflicts(db, bundle)
+
     import_id = uuid.uuid4().hex[:16]
     store_bundle(import_id, bundle)
+
+    # Count new vs already-imported
+    new_count = sum(1 for it in bundle.items if it.action != "skip")
+    already_count = sum(1 for it in bundle.items if it.action == "skip")
 
     # Build item previews
     items: list[ImportItemPreview] = []
@@ -379,6 +390,19 @@ async def import_detect(body: DetectRequest) -> DetectResponse:
             created = item.data.get("created_at", "")[:10]
             if created:
                 preview_parts.append(f"created {created}")
+        elif item.kind == "agent":
+            preview_parts.append(item.data.get("description", "")[:60])
+        elif item.kind == "skill":
+            preview_parts.append(item.data.get("description", "")[:60])
+        elif item.kind == "mcp_server":
+            preview_parts.append("MCP server config")
+        elif item.kind == "knowledge":
+            preview_parts.append(item.data.get("filename", ""))
+        elif item.kind == "setting":
+            preview_parts.append("Settings/credentials")
+
+        if item.action == "skip":
+            preview_parts.append("already imported")
 
         items.append(
             ImportItemPreview(
@@ -405,6 +429,8 @@ async def import_detect(body: DetectRequest) -> DetectResponse:
         path=str(path),
         summary={
             "total_items": len(bundle.items),
+            "new_items": new_count,
+            "already_imported": already_count,
             "conflicts": sum(1 for it in bundle.items if it.conflicts),
             **kind_counts,
         },

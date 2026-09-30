@@ -411,6 +411,16 @@ function ImportPreview({
             {count} {kind}{count !== 1 ? 's' : ''}
           </span>
         ))}
+        {result.summary.new_items > 0 && (
+          <span className="rounded-full bg-(--color-success)/10 px-2.5 py-1 text-[12px] font-medium text-(--color-success)">
+            {result.summary.new_items} new
+          </span>
+        )}
+        {result.summary.already_imported > 0 && (
+          <span className="rounded-full bg-(--color-text-subtle)/10 px-2.5 py-1 text-[12px] font-medium text-(--color-text-muted)">
+            {result.summary.already_imported} already imported
+          </span>
+        )}
         {conflictCount > 0 && (
           <span className="rounded-full bg-(--color-warning)/10 px-2.5 py-1 text-[12px] font-medium text-(--color-warning)">
             {conflictCount} conflict{conflictCount !== 1 ? 's' : ''}
@@ -446,7 +456,7 @@ function ImportPreview({
       {/* Actions */}
       <div className="flex items-center gap-3 px-4 py-3 border-t border-(--color-border-subtle)">
         <Button onClick={onExecute} disabled={importCount === 0}>
-          Import {importCount} item{importCount !== 1 ? 's' : ''}
+          Import {importCount} new item{importCount !== 1 ? 's' : ''}
         </Button>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
       </div>
