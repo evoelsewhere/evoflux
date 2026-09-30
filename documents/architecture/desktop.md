@@ -19,6 +19,15 @@ persistent in-app browser, and integrates native windows, tray and updates.
 Secondary windows reuse the same backend and token. Startup failures remain on
 the splash screen with Retry and backend-log actions.
 
+The sidecar bundle also carries helper binaries that Tauri hands to the backend
+through the environment: `tailnet/evoflux-tailnet` (`EVOFLUX_TSNET_BIN`) and a
+pinned, checksum-verified `ripgrep/rg` (`EVOFLUX_RG_BIN`) that the agent's
+`grep` tool uses before any `rg` on `PATH`. Agent shells get its directory
+appended to `PATH`, so a user-installed `rg` keeps precedence there, while
+`EVOFLUX_RG_BIN` itself stays internal. `scripts/build_sidecar.py` pins
+the ripgrep release per target triple, and on Windows it also copies the MSVC
+C++ runtime DLLs that bundled extensions import next to `python.exe`.
+
 Primary ownership: `desktop/src-tauri/src/sidecar.rs` and
 `app/cli/commands/serve.py`.
 

@@ -476,14 +476,19 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
     const scope = hasScope ? ` in ${directory}` : ''
     const modeSuffix = match === 'name' ? ' (by name)' : ''
     const truncatedPattern = pattern ? trunc(pattern) : null
+    // "Found <pattern>" once done, "Finding <pattern>" while it runs.
     return {
       header: truncatedPattern
-        ? <>Finding <Arg>{truncatedPattern}</Arg>{scope}{modeSuffix}</>
+        ? <><Arg>{truncatedPattern}</Arg>{scope}{modeSuffix}</>
         : 'Finding files…',
       headerTitle: truncatedPattern
-        ? `Finding ${truncatedPattern}${scope}${modeSuffix}`
+        ? `${truncatedPattern}${scope}${modeSuffix}`
         : 'Finding files…',
       formattedArgs: null,
+      completedLabel: 'Found',
+      activityLabel: truncatedPattern
+        ? `Finding ${truncatedPattern}${scope}${modeSuffix}`
+        : 'Finding files',
     }
   }
 
@@ -494,17 +499,28 @@ export function getToolDisplay(name: string, args: string | undefined): ToolDisp
     const include = str(parsed, 'include')
     const hasScope = directory && directory !== '.' && directory !== './'
     const scope = hasScope ? ` in ${directory}` : ''
-    const hasFilter = include && include !== '*'
-    const filter = hasFilter ? ` (${include})` : ''
+    const fileType = str(parsed, 'type')
+    const outputMode = str(parsed, 'output_mode')
+    const filters = [
+      include && include !== '*' ? include : null,
+      fileType ? `type ${fileType}` : null,
+      outputMode === 'files_with_matches' ? 'files' : outputMode === 'count' ? 'count' : null,
+    ].filter(Boolean)
+    const filter = filters.length ? ` (${filters.join(', ')})` : ''
     const truncatedPattern = pattern ? trunc(pattern) : null
+    // "Searched <pattern>" once done, "Searching <pattern>" while it runs.
     return {
       header: truncatedPattern
-        ? <>Searching <Arg>{truncatedPattern}</Arg>{scope}{filter}</>
+        ? <><Arg>{truncatedPattern}</Arg>{scope}{filter}</>
         : 'Searching files…',
       headerTitle: truncatedPattern
-        ? `Searching ${truncatedPattern}${scope}${filter}`
+        ? `${truncatedPattern}${scope}${filter}`
         : 'Searching files…',
       formattedArgs: null,
+      completedLabel: 'Searched',
+      activityLabel: truncatedPattern
+        ? `Searching ${truncatedPattern}${scope}${filter}`
+        : 'Searching files',
     }
   }
 

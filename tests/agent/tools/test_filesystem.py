@@ -20,7 +20,11 @@ from app.agent.tools.builtin.filesystem import (
     read_file,
     write_file,
 )
-from app.agent.tools.builtin.filesystem.grep import _grep_files
+from app.agent.tools.builtin.filesystem.grep import (
+    RG_BIN_ENV,
+    _grep_files,
+    ripgrep_binary,
+)
 from app.agent.tools.builtin.filesystem.rm import _remove_path
 from app.agent.tools.builtin.filesystem.glob import _glob_files as _search_files
 
@@ -382,7 +386,12 @@ async def test_glob_name_limits_to_200_results(sandbox):
     for i in range(205):
         (tmp_path / f"file_{i:03d}.py").write_text("# content")
     result = await _search_files("*.py", directory=".", match="name")
-    assert len(result.strip().splitlines()) == 200
+    *files, notice = result.strip().splitlines()
+    assert len(files) == 200
+    assert notice == (
+        "[Showing files 1-200 of 205, newest first. Pass offset=200 for the next "
+        "page, or narrow the pattern or directory.]"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +439,10 @@ class TestGrepFiles:
 
     async def test_grep_max_results(self, workspace):
         result = await grep_files.arun(pattern=".", directory=".", max_results=2)
-        assert len(result.strip().split("\n")) == 2
+        *lines, notice = result.strip().split("\n")
+        assert len(lines) == 2
+        assert notice.startswith("[Showing matching lines 1-2; more exist.")
+        assert "offset=2" in notice
 
     async def test_grep_skips_hidden_dirs(self, workspace):
         hidden = workspace / ".hidden"
@@ -534,7 +546,13 @@ class TestGlobFiles:
         for i in range(10):
             (workspace / f"file_{i}.txt").write_text(f"content {i}")
         result = await glob_files.arun(pattern="*.txt", directory=".", max_results=3)
-        assert len(result.strip().split("\n")) == 3
+        *files, notice = result.strip().split("\n")
+        assert len(files) == 3
+        assert notice.startswith("[Showing files 1-3 of 10, newest first.")
+        rest = await glob_files.arun(
+            pattern="*.txt", directory=".", max_results=3, offset=9
+        )
+        assert rest.split("\n")[-1] == "[Showing files 10-10 of 10.]"
 
     async def test_glob_respects_gitignore_and_common_generated_dirs(self, workspace):
         (workspace / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
@@ -666,6 +684,7 @@ def no_rg(monkeypatch):
     """Force the pure-Python grep fallback regardless of installed tools."""
     import shutil as _shutil
 
+    monkeypatch.delenv(RG_BIN_ENV, raising=False)
     real_which = _shutil.which
     monkeypatch.setattr(
         _shutil,
@@ -741,6 +760,7 @@ def _install_fake_rg(tmp_path, monkeypatch, body: str):
         script.chmod(0o755)
         target = script
 
+    monkeypatch.delenv(RG_BIN_ENV, raising=False)
     real_which = _shutil.which
     monkeypatch.setattr(
         _shutil,
@@ -762,7 +782,7 @@ class TestGrepRipgrep:
             "sys.stdout.write('--\\n')\n"
             "sys.stdout.write('sub/nested.py\\x1e2\\x1eprint(os.getcwd())\\n')\n",
         )
-        result = await grep_files.arun(pattern="anything", directory=".")
+        result = await grep_files.arun(pattern="anything", directory=".", context=1)
         assert "hello.py:1: def hello():" in result
         assert "--" in result
         assert "sub/nested.py-2- print(os.getcwd())" in result
@@ -786,14 +806,207 @@ class TestGrepRipgrep:
         # Fallback scan still finds the real file content.
         assert "hello.py:1:" in result
 
-    @pytest.mark.skipif(
-        importlib.import_module("shutil").which("rg") is None,
-        reason="ripgrep not installed",
-    )
+    @pytest.mark.skipif(ripgrep_binary() is None, reason="ripgrep not installed")
     async def test_real_rg_matches_legacy_format(self, workspace):
         result = await grep_files.arun(pattern="def ", directory=".")
         assert "hello.py:1: def hello():" in result
         assert "world.py:1: def world():" in result
+
+    async def test_bundled_rg_is_preferred_over_path(self, tmp_path, monkeypatch):
+        import shutil as _shutil
+
+        bundled = tmp_path / "rg-bundled"
+        bundled.write_text("", encoding="utf-8")
+        monkeypatch.setattr(_shutil, "which", lambda name, *a, **kw: "/usr/bin/rg")
+        monkeypatch.setenv(RG_BIN_ENV, str(bundled))
+        assert ripgrep_binary() == str(bundled)
+        monkeypatch.setenv(RG_BIN_ENV, str(tmp_path / "missing"))
+        assert ripgrep_binary() == "/usr/bin/rg"
+
+
+# ---------------------------------------------------------------------------
+# grep_files — output modes, paging and filters, on both backends
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(params=["python", "rg"])
+def grep_backend(request, monkeypatch):
+    if request.param == "python":
+        request.getfixturevalue("no_rg")
+    elif ripgrep_binary() is None:
+        pytest.skip("ripgrep not installed")
+    return request.param
+
+
+class TestGrepModes:
+    async def test_files_with_matches_lists_newest_first(self, workspace, grep_backend):
+        import os as _os
+        import time as _time
+
+        now = _time.time()
+        _os.utime(workspace / "hello.py", (now - 1000, now - 1000))
+        _os.utime(workspace / "world.py", (now, now))
+        result = await grep_files.arun(
+            pattern="def ", directory=".", output_mode="files_with_matches"
+        )
+        assert result.split("\n") == ["world.py", "hello.py"]
+
+    async def test_files_with_matches_pages_with_total(self, workspace, grep_backend):
+        result = await grep_files.arun(
+            pattern="print|def",
+            directory=".",
+            output_mode="files_with_matches",
+            max_results=2,
+        )
+        *files, notice = result.split("\n")
+        assert len(files) == 2
+        assert notice == (
+            "[Showing files 1-2 of 3. Pass offset=2 for the next page, "
+            "or narrow directory/include/type.]"
+        )
+        rest = await grep_files.arun(
+            pattern="print|def",
+            directory=".",
+            output_mode="files_with_matches",
+            max_results=2,
+            offset=2,
+        )
+        *more, last = rest.split("\n")
+        assert len(more) == 1 and more[0] not in files
+        assert last == "[Showing files 3-3 of 3.]"
+
+    async def test_count_reports_per_file_and_total(self, workspace, grep_backend):
+        (workspace / "many.txt").write_text("print\nprint\nprint\n")
+        result = await grep_files.arun(
+            pattern="print", directory=".", output_mode="count"
+        )
+        lines = result.split("\n")
+        assert "many.txt:3" in lines
+        assert "hello.py:1" in lines
+        assert lines[-1] == "[5 matching lines in 3 files.]"
+
+    async def test_count_total_covers_every_page(self, workspace, grep_backend):
+        result = await grep_files.arun(
+            pattern="print", directory=".", output_mode="count", max_results=1
+        )
+        assert result.split("\n")[-1] == (
+            "[2 matching lines in 2 files; showing files 1-1. "
+            "Pass offset=1 for the next page.]"
+        )
+
+    async def test_content_offset_returns_next_page(self, workspace, grep_backend):
+        (workspace / "lines.txt").write_text("".join(f"hit {i}\n" for i in range(1, 6)))
+        result = await grep_files.arun(
+            pattern="hit", directory=".", include="lines.txt", max_results=2, offset=2
+        )
+        assert result.split("\n") == [
+            "lines.txt:3: hit 3",
+            "lines.txt:4: hit 4",
+            "[Showing matching lines 3-4; more exist. Pass offset=4 for the next "
+            "page, or narrow directory/include/type.]",
+        ]
+        last = await grep_files.arun(
+            pattern="hit", directory=".", include="lines.txt", max_results=2, offset=4
+        )
+        assert last.split("\n") == [
+            "lines.txt:5: hit 5",
+            "[Showing matching lines 5-5 of 5.]",
+        ]
+
+    async def test_offset_past_end_says_so(self, workspace, grep_backend):
+        result = await grep_files.arun(pattern="def ", directory=".", offset=10)
+        assert result == "No entries at offset 10 — only 2 matching lines."
+
+    async def test_paged_context_keeps_only_page_matches(self, workspace, grep_backend):
+        (workspace / "ctx.txt").write_text("a\nhit 1\nb\nhit 2\nc\n")
+        result = await grep_files.arun(
+            pattern="hit", directory=".", include="ctx.txt", context=1, max_results=1
+        )
+        assert result.split("\n")[:3] == [
+            "ctx.txt-1- a",
+            "ctx.txt:2: hit 1",
+            "ctx.txt-3- b",
+        ]
+        assert "hit 2" not in result
+
+    async def test_type_filters_by_language(self, workspace, grep_backend):
+        result = await grep_files.arun(
+            pattern="readme|print",
+            directory=".",
+            type="py",
+            output_mode="files_with_matches",
+        )
+        assert "readme.md" not in result
+        assert "hello.py" in result
+
+    async def test_unknown_type_is_an_error(self, workspace, grep_backend):
+        with pytest.raises(ToolExecutionError, match="Unknown type"):
+            await grep_files.arun(pattern="x", directory=".", type="nosuchtype")
+
+    async def test_fixed_strings_matches_literally(self, workspace, grep_backend):
+        result = await grep_files.arun(
+            pattern="print(os.", directory=".", fixed_strings=True
+        )
+        assert result == "sub/nested.py:2: print(os.getcwd())"
+
+    async def test_multiline_matches_across_lines(self, workspace, grep_backend):
+        # LF on disk: rg reads raw bytes, so on CRLF files the model has to
+        # write \r?\n (the tool description says so).
+        (workspace / "hello.py").write_bytes(b"def hello():\n    print('hello')\n")
+        result = await grep_files.arun(
+            pattern=r"def hello\(\):\n\s+print", directory=".", multiline=True
+        )
+        assert result.split("\n") == [
+            "hello.py:1: def hello():",
+            "hello.py:2:     print('hello')",
+        ]
+
+    async def test_pages_join_into_the_full_result(
+        self, workspace, grep_backend, monkeypatch
+    ):
+        import app.agent.tools.builtin.filesystem.grep as grep_module
+
+        for name in ("b.txt", "a.txt", "c/d.txt", "c.txt"):
+            path = workspace / name
+            path.parent.mkdir(exist_ok=True)
+            path.write_text("hit\nmiss\nhit\n")
+        # Force the rerun in rg's sorted order past three matching lines.
+        monkeypatch.setattr(grep_module, "_PARALLEL_CAP", 3)
+        full = await grep_files.arun(
+            pattern="hit", directory=".", include="*.txt", max_results=100
+        )
+        pages: list[str] = []
+        for offset in range(0, 8, 3):
+            page = await grep_files.arun(
+                pattern="hit",
+                directory=".",
+                include="*.txt",
+                max_results=3,
+                offset=offset,
+            )
+            pages += [line for line in page.split("\n") if not line.startswith("[")]
+        assert pages == full.split("\n")
+        assert len(pages) == 8
+
+    @pytest.mark.skipif(ripgrep_binary() is None, reason="ripgrep not installed")
+    async def test_rg_results_follow_component_wise_path_order(self, workspace):
+        for name in ("z.py", "a.py", "a/b.py", "sub/zz.py"):
+            path = workspace / name
+            path.parent.mkdir(exist_ok=True)
+            path.write_text("needle\n")
+        result = await grep_files.arun(pattern="needle", directory=".")
+        assert [line.split(":")[0] for line in result.split("\n")] == [
+            "a/b.py",
+            "a.py",
+            "sub/zz.py",
+            "z.py",
+        ]
+
+    async def test_backreference_pattern_is_supported(self, workspace, grep_backend):
+        result = await grep_files.arun(
+            pattern=r"(l)\1", directory=".", output_mode="files_with_matches"
+        )
+        assert result == "hello.py"
 
 
 # ---------------------------------------------------------------------------
@@ -822,3 +1035,22 @@ async def test_glob_orders_newest_first(sandbox):
     result_path = await _search_files(pattern="*.py")
     lines_path = result_path.split("\n")
     assert lines_path.index("new.py") < lines_path.index("old.py")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("match", ["path", "name"])
+async def test_glob_newest_file_survives_the_page_cut(sandbox, match):
+    import os as _os
+    import time as _time
+
+    _, tmp_path = sandbox
+    now = _time.time()
+    for i in range(5):
+        path = tmp_path / f"a_{i}.py"
+        path.write_text("old")
+        _os.utime(path, (now - 1000, now - 1000))
+    # Sorts last by name, so a cut taken before the mtime sort would drop it.
+    (tmp_path / "z_newest.py").write_text("new")
+
+    result = await _search_files(pattern="*.py", match=match, max_results=2)
+    assert result.split("\n")[0] == "z_newest.py"
