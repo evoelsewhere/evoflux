@@ -288,6 +288,57 @@ async def import_scan() -> ScanResponse:
                 )
             )
 
+    # Workspace-level configs: CLAUDE.md, AGENTS.md, .github/copilot-instructions.md
+    workspace_items: list[str] = []
+    if (cwd / "CLAUDE.md").is_file():
+        workspace_items.append("CLAUDE.md")
+    if (cwd / "AGENTS.md").is_file():
+        workspace_items.append("AGENTS.md")
+    if (cwd / ".github" / "copilot-instructions.md").is_file():
+        workspace_items.append("Copilot instructions")
+    if (cwd / ".windsurfrules").is_file():
+        workspace_items.append(".windsurfrules")
+    if workspace_items:
+        discovered.append(
+            ScanResult(
+                source="generic",
+                path=str(cwd),
+                label="Workspace instructions",
+                description=", ".join(workspace_items),
+                estimated_items=len(workspace_items),
+            )
+        )
+
+    # Common project directories: scan for .claude/, .cursor/, .codex/
+    for project_dir_name in ("projects", "dev", "code", "repos", "work"):
+        project_base = home / project_dir_name
+        if not project_base.is_dir():
+            continue
+        # Only scan immediate children (max depth 1)
+        try:
+            for child in project_base.iterdir():
+                if not child.is_dir():
+                    continue
+                child_items: list[str] = []
+                if (child / ".claude").is_dir() or (child / "CLAUDE.md").is_file():
+                    child_items.append("Claude config")
+                if (child / ".cursor").is_dir() or (child / ".cursorrules").is_file():
+                    child_items.append("Cursor config")
+                if (child / ".codex").is_dir():
+                    child_items.append("Codex config")
+                if child_items:
+                    discovered.append(
+                        ScanResult(
+                            source="generic",
+                            path=str(child),
+                            label=f"{child.name} ({project_dir_name}/)",
+                            description=", ".join(child_items),
+                            estimated_items=len(child_items),
+                        )
+                    )
+        except OSError:
+            continue
+
     return ScanResponse(discovered=discovered)
 
 
