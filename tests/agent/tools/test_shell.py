@@ -247,6 +247,62 @@ def test_scrubbed_env_without_office_runtime_adds_nothing(monkeypatch):
     assert "EVOFLUX_SOFFICE" not in _scrubbed_env()
 
 
+def _bundled_rg(monkeypatch, tmp_path):
+    from app.services.office_runtime import installer
+
+    monkeypatch.setattr(installer, "installed_runtime", lambda: None)
+    rg = tmp_path / "sidecar" / "ripgrep" / ("rg.exe" if os.name == "nt" else "rg")
+    rg.parent.mkdir(parents=True)
+    rg.write_bytes(b"")
+    monkeypatch.setenv("EVOFLUX_RG_BIN", str(rg))
+    return rg
+
+
+@pytest.mark.parametrize("inherit", [False, True])
+def test_shell_path_falls_back_to_the_bundled_ripgrep(monkeypatch, tmp_path, inherit):
+    rg = _bundled_rg(monkeypatch, tmp_path)
+    monkeypatch.setenv("PATH", os.pathsep.join(["/usr/local/bin", "/usr/bin"]))
+
+    env = _scrubbed_env(inherit=inherit)
+
+    path_key = next(key for key in env if key.upper() == "PATH")
+    # Last, so an rg the user installed keeps winning on PATH.
+    assert env[path_key].split(os.pathsep) == [
+        "/usr/local/bin",
+        "/usr/bin",
+        str(rg.parent),
+    ]
+    assert not any(key.upper() == "EVOFLUX_RG_BIN" for key in env)
+
+
+def test_command_env_keeps_the_bundled_ripgrep_after_the_login_path(
+    monkeypatch, tmp_path
+):
+    rg = _bundled_rg(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "app.agent.tools.builtin.shell.discover_login_path",
+        lambda _shell: os.pathsep.join(["/login/bin", str(rg.parent)]),
+    )
+
+    env = _command_env("/bin/bash")
+
+    # Already on the login PATH: not added a second time.
+    assert env["PATH"].split(os.pathsep) == ["/login/bin", str(rg.parent)]
+
+
+def test_shell_path_is_unchanged_without_a_bundled_ripgrep(monkeypatch, tmp_path):
+    from app.services.office_runtime import installer
+
+    monkeypatch.setattr(installer, "installed_runtime", lambda: None)
+    monkeypatch.setenv("EVOFLUX_RG_BIN", str(tmp_path / "missing" / "rg"))
+    monkeypatch.setenv("PATH", "/usr/bin")
+
+    env = _scrubbed_env()
+
+    path_key = next(key for key in env if key.upper() == "PATH")
+    assert env[path_key] == "/usr/bin"
+
+
 def test_scrubbed_env_leak_keys_covers_known_offenders():
     """Sanity check: the leak-key set covers the vars we documented."""
     expected = {

@@ -8,8 +8,8 @@
 //!
 //! - `sidecar/python/bin/python3`: the bundled CPython interpreter.
 //! - `sidecar/site-packages/`: pre-installed evoflux + dependencies.
-//! - `sidecar/_web_dist/`: the built React frontend (also embedded in
-//!   `site-packages/app/_web_dist/`; either works).
+//! - `sidecar/site-packages/app/_web_dist/`: the built React frontend that the
+//!   sidecar serves at `/`, so the remote tailnet session has one origin.
 //!
 //! Windows-specific Job-Object code is retained behind `#[cfg(windows)]`
 //! gates as defensive portability for any future Windows desktop revival;
@@ -143,6 +143,11 @@ impl Sidecar {
             cmd.env("EVOFLUX_TSNET_BIN", tailnet_bin);
         } else {
             log::warn!("embedded tailnet helper is not present; external Tailscale fallback only");
+        }
+        if let Some(rg_bin) = resolve_ripgrep_bin(&sidecar_root) {
+            cmd.env("EVOFLUX_RG_BIN", rg_bin);
+        } else {
+            log::warn!("bundled ripgrep is not present; grep uses rg on PATH or a slower scan");
         }
 
         // ``APP_ENV`` defaults to ``production`` (XDG dirs shared with a
@@ -409,6 +414,14 @@ fn resolve_tailnet_bin(sidecar_root: &Path) -> Option<PathBuf> {
         .join("evoflux-tailnet.exe");
     #[cfg(not(target_os = "windows"))]
     let candidate = sidecar_root.join("tailnet").join("evoflux-tailnet");
+    candidate.is_file().then_some(candidate)
+}
+
+fn resolve_ripgrep_bin(sidecar_root: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    let candidate = sidecar_root.join("ripgrep").join("rg.exe");
+    #[cfg(not(target_os = "windows"))]
+    let candidate = sidecar_root.join("ripgrep").join("rg");
     candidate.is_file().then_some(candidate)
 }
 

@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import hashlib
+import io
+import tarfile
 import zipfile
 
 from pathlib import Path
 
+import pytest
+
 import scripts.build_sidecar as build_sidecar
-from scripts.build_sidecar import strip_bundle, zip_pure_python_packages
+from scripts.build_sidecar import (
+    bundle_msvc_runtime,
+    strip_bundle,
+    zip_pure_python_packages,
+)
 
 
 def test_install_packages_installs_locked_versions(tmp_path, monkeypatch) -> None:
@@ -78,6 +87,118 @@ def test_strip_bundle_removes_only_release_artefacts(tmp_path) -> None:
     assert not (metadata / "RECORD").exists()
 
 
+def _msvc_layout(tmp_path: Path) -> tuple[Path, Path, Path]:
+    python_dir = tmp_path / "python"
+    python_dir.mkdir()
+    (python_dir / "vcruntime140.dll").write_bytes(b"runtime")
+    site_packages = tmp_path / "site-packages"
+    greenlet = site_packages / "greenlet"
+    greenlet.mkdir(parents=True)
+    (greenlet / "_greenlet.cp312-win_amd64.pyd").write_bytes(
+        b"MZ\x00MSVCP140.dll\x00VCRUNTIME140.dll\x00python312.dll\x00"
+    )
+    # A package that ships its own copy next to the extension needs nothing.
+    vendored = site_packages / "vendored"
+    vendored.mkdir()
+    (vendored / "ext.pyd").write_bytes(b"MZ\x00concrt140.dll\x00")
+    (vendored / "concrt140.dll").write_bytes(b"own copy")
+    redist = tmp_path / "redist"
+    redist.mkdir()
+    return python_dir, site_packages, redist
+
+
+def test_bundle_msvc_runtime_copies_missing_cpp_runtime(tmp_path) -> None:
+    python_dir, site_packages, redist = _msvc_layout(tmp_path)
+    (redist / "msvcp140.dll").write_bytes(b"cpp runtime")
+
+    copied = bundle_msvc_runtime(python_dir, site_packages, sources=[redist])
+
+    assert copied == ["msvcp140.dll"]
+    assert (python_dir / "msvcp140.dll").read_bytes() == b"cpp runtime"
+    assert not (python_dir / "concrt140.dll").exists()
+
+
+def test_bundle_msvc_runtime_fails_when_runtime_is_unavailable(tmp_path) -> None:
+    python_dir, site_packages, redist = _msvc_layout(tmp_path)
+
+    with pytest.raises(SystemExit, match="msvcp140.dll"):
+        bundle_msvc_runtime(python_dir, site_packages, sources=[redist])
+
+
+def _ripgrep_tarball() -> bytes:
+    buffer = io.BytesIO()
+    top = f"ripgrep-{build_sidecar.RIPGREP_VERSION}-x86_64-unknown-linux-musl"
+    members = {
+        f"{top}/rg": b"#!rg",
+        f"{top}/COPYING": b"copying",
+        f"{top}/LICENSE-MIT": b"mit",
+        f"{top}/UNLICENSE": b"unlicense",
+        f"{top}/doc/rg.1": b"manual",
+        # Only base names inside the top directory are ever written.
+        f"{top}/../escape": b"outside",
+    }
+    with tarfile.open(fileobj=buffer, mode="w:gz") as archive:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
+def _serve(monkeypatch, payload: bytes, sha256: str) -> None:
+    monkeypatch.setattr(build_sidecar, "IS_WINDOWS", False)
+    monkeypatch.setitem(
+        build_sidecar.RIPGREP_ASSETS,
+        "x86_64-unknown-linux-gnu",
+        ("x86_64-unknown-linux-musl.tar.gz", sha256),
+    )
+    monkeypatch.setattr(
+        build_sidecar.urllib.request,
+        "urlopen",
+        lambda url, timeout: io.BytesIO(payload),
+    )
+
+
+def test_fetch_ripgrep_keeps_binary_and_licenses(tmp_path, monkeypatch) -> None:
+    payload = _ripgrep_tarball()
+    _serve(monkeypatch, payload, hashlib.sha256(payload).hexdigest())
+
+    rg = build_sidecar.fetch_ripgrep(tmp_path / "ripgrep", "x86_64-unknown-linux-gnu")
+
+    assert rg == tmp_path / "ripgrep" / "rg"
+    assert rg.read_bytes() == b"#!rg"
+    assert sorted(p.name for p in rg.parent.iterdir()) == [
+        "COPYING",
+        "LICENSE-MIT",
+        "UNLICENSE",
+        "rg",
+    ]
+    assert not (tmp_path / "escape").exists()
+
+
+def test_fetch_ripgrep_rejects_checksum_mismatch(tmp_path, monkeypatch) -> None:
+    _serve(monkeypatch, _ripgrep_tarball(), "0" * 64)
+
+    with pytest.raises(SystemExit, match="checksum mismatch"):
+        build_sidecar.fetch_ripgrep(tmp_path / "ripgrep", "x86_64-unknown-linux-gnu")
+    assert not (tmp_path / "ripgrep" / "rg").exists()
+
+
+def test_ripgrep_is_pinned_for_every_sidecar_triple() -> None:
+    triples = {
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-unknown-linux-gnu",
+    }
+    assert set(build_sidecar.RIPGREP_ASSETS) == triples
+    for suffix, sha256 in build_sidecar.RIPGREP_ASSETS.values():
+        assert suffix.endswith((".zip", ".tar.gz"))
+        assert len(sha256) == 64 and int(sha256, 16) >= 0
+
+
 def test_zip_pure_python_packages_keeps_runtime_data_on_disk(tmp_path) -> None:
     pure_package = tmp_path / "pure_package"
     pure_package.mkdir()
@@ -102,3 +223,45 @@ def test_zip_pure_python_packages_keeps_runtime_data_on_disk(tmp_path) -> None:
             "pure_package/__init__.py",
             "pure_package/module.py",
         }
+
+
+def _make_web_dist(root: Path) -> Path:
+    dist = root / "web" / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (dist / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    return dist
+
+
+def test_bundle_web_dist_copies_web_build_into_app(tmp_path) -> None:
+    _make_web_dist(tmp_path)
+    site_packages = tmp_path / "site-packages"
+    (site_packages / "app").mkdir(parents=True)
+
+    copied = build_sidecar.bundle_web_dist(tmp_path, site_packages)
+
+    target = site_packages / "app" / "_web_dist"
+    assert copied == 2
+    assert (target / "index.html").read_text(encoding="utf-8") == "<!doctype html>"
+    assert (target / "assets" / "app.js").is_file()
+
+
+def test_bundle_web_dist_replaces_stale_bundle(tmp_path) -> None:
+    _make_web_dist(tmp_path)
+    site_packages = tmp_path / "site-packages"
+    stale = site_packages / "app" / "_web_dist"
+    stale.mkdir(parents=True)
+    (stale / "gone.js").write_text("stale", encoding="utf-8")
+
+    build_sidecar.bundle_web_dist(tmp_path, site_packages)
+
+    assert not (stale / "gone.js").exists()
+    assert (stale / "index.html").is_file()
+
+
+def test_bundle_web_dist_requires_a_built_web_ui(tmp_path) -> None:
+    site_packages = tmp_path / "site-packages"
+    (site_packages / "app").mkdir(parents=True)
+
+    with pytest.raises(SystemExit, match="web bundle missing"):
+        build_sidecar.bundle_web_dist(tmp_path, site_packages)
