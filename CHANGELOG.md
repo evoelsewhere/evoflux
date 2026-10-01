@@ -4,6 +4,14 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Actionable desktop notifications for background work and attention requests,
+  with deep links and supported quick replies. A notification inbox shows unread
+  items, while taskbar and Dock badges surface the unread count.
+- Notification sounds can be selected and managed from Settings, including
+  uploading, previewing, renaming and deleting local sounds.
+
 ### Changed
 
 - Building the desktop sidecar fails fast with `web bundle missing` when the web

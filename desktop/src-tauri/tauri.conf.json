@@ -112,6 +112,9 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["evoflux"] }
+    },
     "updater": {
       "pubkey": "",
       "endpoints": [

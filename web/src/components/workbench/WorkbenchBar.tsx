@@ -33,6 +33,7 @@ import { useRegistryQuery, useWebBridgeSettingsQuery } from '@/queries'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { WebBridgeStatusPopover } from '@/components/shell/WebBridgeStatusDialog'
 import { SuggestedTaskDock } from '@/components/SuggestedTaskDock'
+import { NotificationInboxButton } from '@/components/notifications/NotificationInboxButton'
 
 interface WorkbenchBarProps {
   activeAgent: string | null
@@ -228,6 +229,8 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           onEnabledChange={props.onWebBridgeEnabledChange}
           policyEnabled={webBridgePolicyEnabled}
         />
+
+        <NotificationInboxButton />
 
         <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
 
