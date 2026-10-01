@@ -8,6 +8,11 @@ No changes yet.
 
 ## [3.0.4] - 2026-10-01
 
+### Fixed
+
+- Desktop release builds now bundle the web interface with the sidecar so
+  Remote Control works in the packaged app.
+
 ### Added
 
 - Actionable desktop notifications for background work and attention requests,

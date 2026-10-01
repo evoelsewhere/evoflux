@@ -236,6 +236,12 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Build web interface
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
       - name: Install Linux desktop build dependencies
         if: runner.os == 'Linux'
         shell: bash
