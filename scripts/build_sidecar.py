@@ -344,6 +344,26 @@ def install_packages(
     )
 
 
+def bundle_web_dist(root: Path, site_packages: Path) -> int:
+    """Copy the built React bundle into ``site-packages/app/_web_dist``.
+
+    The desktop shell and the remote Tailscale session both need the SPA and the
+    API on one origin, so the web build has to travel inside the sidecar bundle;
+    ``site-packages`` has no ``web/`` sibling the running code could find.
+    Returns the number of files copied.
+    """
+    source = root / "web" / "dist"
+    if not (source / "index.html").is_file():
+        raise SystemExit(
+            f"web bundle missing: {source / 'index.html'} — build the web UI first"
+        )
+    target = site_packages / "app" / "_web_dist"
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source, target)
+    return sum(1 for path in target.rglob("*") if path.is_file())
+
+
 def strip_bundle(site_packages: Path) -> int:
     """Remove caches/tests/etc. from site-packages. Returns bytes saved."""
     removed = 0
@@ -909,8 +929,7 @@ def main() -> int:
         "--extras",
         default="office-preview",
         help=(
-            "Comma-separated optional-dep extras to install "
-            "(default: office-preview)."
+            "Comma-separated optional-dep extras to install (default: office-preview)."
         ),
     )
     ap.add_argument(
@@ -980,6 +999,10 @@ def main() -> int:
             "zipimport: "
             f"packed {packages_zipped} pure-Python packages / {files_zipped} files"
         )
+
+    # ── 3b. Ship the built web UI alongside the API ────────────────────
+    web_files = bundle_web_dist(root, site_packages)
+    print(f"web ui:        {web_files} files -> site-packages/app/_web_dist")
 
     # ── 4. Build the embedded tailnet helper ────────────────────────────
     if not args.no_tailnet:
