@@ -7,7 +7,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.static_web import mount_web_ui
+from app.api import static_web
+from app.api.static_web import default_web_dist, mount_web_ui
 
 
 def _make_dist(tmp_path: Path) -> Path:
@@ -57,3 +58,126 @@ def test_api_routes_win_over_mount(tmp_path: Path) -> None:
     client = TestClient(app)
     assert client.get("/api/ping").json() == {"pong": "yes"}
     assert client.get("/").status_code == 200
+
+
+def _point_module_at(root: Path, monkeypatch) -> Path:
+    """Fake ``app/api/static_web.py`` living under ``root`` so path math is real."""
+    module_file = root / "app" / "api" / "static_web.py"
+    module_file.parent.mkdir(parents=True)
+    module_file.write_text("", encoding="utf-8")
+    monkeypatch.setattr(static_web, "__file__", str(module_file))
+    monkeypatch.delenv(static_web._ENV_DIST, raising=False)
+    return module_file
+
+
+def _write_dist(path: Path, marker: str) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "index.html").write_text(marker, encoding="utf-8")
+    return path
+
+
+def test_default_web_dist_prefers_repo_layout(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "checkout"
+    _point_module_at(root, monkeypatch)
+    repo_dist = _write_dist(root / "web" / "dist", "repo")
+    _write_dist(root / "app" / "_web_dist", "packaged")
+
+    assert default_web_dist() == repo_dist
+
+
+def test_default_web_dist_falls_back_to_packaged_bundle(
+    tmp_path: Path, monkeypatch
+) -> None:
+    # Packaged sidecar layout: site-packages/app/_web_dist, no web/ sibling.
+    root = tmp_path / "site-packages"
+    _point_module_at(root, monkeypatch)
+    packaged = _write_dist(root / "app" / "_web_dist", "packaged")
+
+    assert default_web_dist() == packaged
+
+
+def test_default_web_dist_without_any_bundle(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "site-packages"
+    _point_module_at(root, monkeypatch)
+
+    # Still the conventional path, so mount_web_ui() skips the mount entirely.
+    assert default_web_dist() == root / "web" / "dist"
+
+
+def test_default_web_dist_env_override_wins(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "checkout"
+    _point_module_at(root, monkeypatch)
+    _write_dist(root / "web" / "dist", "repo")
+    override = _write_dist(tmp_path / "elsewhere", "override")
+    monkeypatch.setenv(static_web._ENV_DIST, str(override))
+
+    assert default_web_dist() == override
+
+
+def test_spa_fallback_renders_client_side_routes(tmp_path: Path) -> None:
+    app = FastAPI()
+    assert mount_web_ui(app, dist=_make_dist(tmp_path)) is True
+
+    client = TestClient(app)
+    route = client.get("/settings/remote")
+    assert route.status_code == 200
+    assert "<title>evo</title>" in route.text
+
+
+def test_api_paths_keep_their_json_404(tmp_path: Path) -> None:
+    app = FastAPI()
+    assert mount_web_ui(app, dist=_make_dist(tmp_path)) is True
+
+    client = TestClient(app)
+    missing = client.get("/api/nope")
+    assert missing.status_code == 404
+    assert missing.json() == {"detail": "Not Found"}
+    assert "text/html" not in missing.headers.get("content-type", "")
+
+
+def test_missing_static_assets_still_404(tmp_path: Path) -> None:
+    app = FastAPI()
+    assert mount_web_ui(app, dist=_make_dist(tmp_path)) is True
+
+    client = TestClient(app)
+    assert client.get("/assets/gone.js").status_code == 404
+
+
+def test_shipped_bundle_serves_the_spa_instead_of_the_api_404(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The QR link must open the app, not the API's ``{"detail": "Not Found"}``.
+
+    Walks the exact shipped layout: the release bundling step writes the web
+    build to ``app/_web_dist`` and the running sidecar resolves it from there.
+    """
+    import scripts.build_sidecar as build_sidecar
+
+    root = tmp_path / "checkout"
+    _write_dist(root / "web" / "dist", "<title>evo</title>")
+    site_packages = root / "site-packages"
+    (site_packages / "app" / "api").mkdir(parents=True)
+
+    assert build_sidecar.bundle_web_dist(root, site_packages) == 1
+
+    monkeypatch.setattr(
+        static_web, "__file__", str(site_packages / "app" / "api" / "static_web.py")
+    )
+    monkeypatch.delenv(static_web._ENV_DIST, raising=False)
+    assert default_web_dist() == site_packages / "app" / "_web_dist"
+
+    app = FastAPI()
+
+    @app.get("/api/ping")
+    def ping() -> dict[str, str]:
+        return {"pong": "yes"}
+
+    assert mount_web_ui(app) is True
+
+    client = TestClient(app)
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "<title>evo</title>" in home.text
+    assert "detail" not in home.text
+
+    assert client.get("/api/ping").json() == {"pong": "yes"}

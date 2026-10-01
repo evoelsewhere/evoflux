@@ -24,6 +24,8 @@ fn main() {
             "app_save_backend_server",
             "app_use_external_backend",
             "app_use_bundled_backend",
+            "app_send_attention_notification",
+            "app_update_notification_badge",
             "app_new_window",
             "app_menu_action",
             "app_browser_webview_navigate",

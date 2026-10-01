@@ -1,15 +1,25 @@
 import { getPlatform } from '@/hooks/use-platform'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import type { NotificationActivation } from '@/lib/notification-activation'
+import { addInboxNotification } from '@/lib/notification-inbox'
 import { translateText } from '@/i18n'
 
-export type DesktopNotificationKind = 'assistant_done' | 'background_done' | 'reminder_fired' | 'import_sync'
+export type DesktopNotificationKind =
+  | 'assistant_done'
+  | 'background_done'
+  | 'reminder_fired'
+  | 'question_asked'
+  | 'permission_asked'
+  | 'agent_not_configured'
+  | 'terminal_error'
+  | 'goal_blocked'
 export type DesktopNotificationStatus = 'sent' | 'disabled' | 'unsupported' | 'permission-denied' | 'error'
 
 export interface DesktopNotificationPayload {
   kind: DesktopNotificationKind
   title: string
   body: string
-  actionTarget?: 'settings_import'
+  activation?: NotificationActivation
 }
 
 export interface DesktopNotificationResult {
@@ -62,12 +72,21 @@ export function setDesktopNotificationSoundsEnabled(enabled: boolean): void {
   window.localStorage.setItem(SOUND_ENABLED_KEY, String(enabled))
 }
 
-function playNotificationSound(): void {
+async function playNotificationSound(): Promise<void> {
   if (!areDesktopNotificationSoundsEnabled()) return
-  const audio = new Audio('/notification.wav')
-  audio.play().catch((err: unknown) => {
+  let objectUrl: string | undefined
+  try {
+    const { getSelectedNotificationSound } = await import('@/lib/notification-sound-library')
+    const sound = await getSelectedNotificationSound()
+    const source = sound ? (objectUrl = URL.createObjectURL(sound)) : '/notification.wav'
+    const audio = new Audio(source)
+    audio.onended = () => { if (objectUrl) URL.revokeObjectURL(objectUrl) }
+    audio.onerror = () => { if (objectUrl) URL.revokeObjectURL(objectUrl) }
+    await audio.play()
+  } catch (err) {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
     console.warn('desktop notification sound failed', err)
-  })
+  }
 }
 
 export function isBackgroundCompletion(toolName: string, result: string | undefined): boolean {
@@ -104,7 +123,7 @@ async function shouldNotify(options: { force?: boolean } = {}): Promise<DesktopN
 
 export async function sendDesktopNotification(
   payload: DesktopNotificationPayload,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; trackInbox?: boolean } = {},
 ): Promise<DesktopNotificationResult> {
   const skipped = await shouldNotify(options)
   if (skipped) return skipped
@@ -119,13 +138,38 @@ export async function sendDesktopNotification(
     if (!granted) {
       return { status: 'permission-denied', message: 'OS notification permission was not granted.' }
     }
-    await sendNotification({
-      title: translateText(payload.title),
-      body: translateText(payload.body),
-      group: `EvoFlux-${payload.kind}`,
-      extra: payload.actionTarget ? { actionTarget: payload.actionTarget } : undefined,
+    const { invoke } = await import('@tauri-apps/api/core')
+    if (payload.activation || getPlatform().os === 'windows') {
+      try {
+        await invoke('app_send_attention_notification', {
+          title: translateText(payload.title),
+          body: translateText(payload.body),
+          activation: payload.activation
+            ? {
+                ...payload.activation,
+                actions: payload.activation.actions?.map((action) => ({
+                  ...action,
+                  label: translateText(action.label),
+                })),
+              }
+            : null,
+        })
+        void playNotificationSound()
+        if (options.trackInbox !== false) addInboxNotification(payload)
+        return { status: 'sent', message: 'Native notification sent.' }
+      } catch (error) {
+        if (getPlatform().os === 'windows') throw error
+      }
+    }
+    await invoke('plugin:notification|notify', {
+      options: {
+        title: translateText(payload.title),
+        body: translateText(payload.body),
+        group: `EvoFlux-${payload.kind}`,
+      },
     })
-    playNotificationSound()
+    void playNotificationSound()
+    if (options.trackInbox !== false) addInboxNotification(payload)
     return { status: 'sent', message: 'Native notification sent.' }
   } catch (err) {
     console.warn('desktop notification failed', err)

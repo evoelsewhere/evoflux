@@ -119,11 +119,13 @@ def _scrubbed_env(*, inherit: bool = False) -> dict[str, str]:
             key.upper() for key in os.environ if key.upper().startswith("EVOFLUX_")
         }
         if inherit:
-            return {
-                key: value
-                for key, value in os.environ.items()
-                if key.upper() not in internal_upper
-            }
+            return _expose_app_runtimes(
+                {
+                    key: value
+                    for key, value in os.environ.items()
+                    if key.upper() not in internal_upper
+                }
+            )
         blocked_upper = {*_PYTHON_ENV_LEAK_KEYS_UPPER, *internal_upper}
         return _expose_app_runtimes(
             {
@@ -171,17 +173,35 @@ def _command_env(shell_bin: str, *, inherit: bool = False) -> dict[str, str]:
 
 
 def _expose_app_runtimes(env: dict[str, str]) -> dict[str, str]:
-    """Add runtimes the user installed through EvoFlux (e.g. LibreOffice).
+    """Add runtimes the app provides (bundled ripgrep, LibreOffice installed
+    through EvoFlux).
 
     EvoFlux internal variables are never inherited, so tools the app itself
     provides must be advertised explicitly for Skills to find them.
     """
+    from app.agent.tools.builtin.filesystem.grep import bundled_ripgrep
     from app.services.office_runtime.installer import expose_to_tool_environment
 
+    rg = bundled_ripgrep()
+    if rg:
+        # Appended, so an rg the user installed keeps winning; Skills that run
+        # `rg` still work on machines without one.
+        _append_to_path(env, str(Path(rg).parent))
     try:
         return expose_to_tool_environment(env)
     except OSError:
         return env
+
+
+def _append_to_path(env: dict[str, str], directory: str) -> None:
+    path_key = next((key for key in env if key.upper() == "PATH"), "PATH")
+    entries = [entry for entry in env.get(path_key, "").split(os.pathsep) if entry]
+    folded = os.path.normcase(os.path.normpath(directory))
+    if not any(
+        os.path.normcase(os.path.normpath(entry)) == folded for entry in entries
+    ):
+        entries.append(directory)
+    env[path_key] = os.pathsep.join(entries)
 
 
 def _tail_text(text: str, max_lines: int, max_bytes: int) -> tuple[str, bool]:

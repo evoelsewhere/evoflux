@@ -1,7 +1,7 @@
 {
   "name": "evoflux-web",
   "private": true,
-  "version": "3.0.2",
+  "version": "3.0.4",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -32,6 +32,7 @@
     "@tanstack/router-devtools": "^1.166.11",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
+    "@tauri-apps/plugin-deep-link": "2.4.9",
     "@tauri-apps/plugin-dialog": "^2",
     "@tauri-apps/plugin-haptics": "^2.3.2",
     "@tauri-apps/plugin-notification": "^2",

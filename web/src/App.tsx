@@ -7,6 +7,10 @@ import { AppMotionConfig } from '@/components/motion/AppMotionConfig'
 import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useLocale } from '@/i18n'
 import { WebBridgeAppearanceSync } from '@/components/WebBridgeAppearanceSync'
+import { handleNotificationAction } from '@/lib/notification-actions'
+import { startNotificationActivation } from '@/lib/notification-activation'
+import { startNotificationDesktopBadge } from '@/lib/notification-desktop-badge'
+import { useToastStore } from '@/stores/useToastStore'
 import { ImportWelcomePopup } from '@/components/ImportWelcomePopup'
 import { getPlatform } from '@/hooks/use-platform'
 import { useUIStore } from '@/stores/useUIStore'
@@ -20,6 +24,44 @@ const ANSI_SGR_PATTERN = new RegExp(
 function App() {
   useLocale()
   const backend = useAppBackendBootstrap()
+
+  useEffect(() => {
+    let stopped = false
+    let stopActivation: (() => void) | undefined
+    const stopBadge = startNotificationDesktopBadge()
+    void startNotificationActivation(router, async (activation) => {
+      try {
+        const result = await handleNotificationAction(activation)
+        if (result === 'replied') {
+          useToastStore.getState().push({
+            tone: 'success',
+            title: 'Notification response sent',
+            description: 'EvoFlux received your response.',
+          })
+        } else if (result === 'stale') {
+          useToastStore.getState().push({
+            tone: 'info',
+            title: 'This request was already resolved',
+            description: 'The related session will open so you can review it.',
+          })
+        }
+      } catch {
+        useToastStore.getState().push({
+          tone: 'error',
+          title: 'Could not send notification response',
+          description: 'The related session will open so you can answer there.',
+        })
+      }
+    }).then((stop) => {
+      if (stopped) stop()
+      else stopActivation = stop
+    })
+    return () => {
+      stopped = true
+      stopActivation?.()
+      stopBadge()
+    }
+  }, [])
   const backendReadyRef = useRef(backend.ready)
   const pendingImportAction = useRef(false)
   backendReadyRef.current = backend.ready

@@ -14,6 +14,7 @@ import {
   SettingsPage,
   SettingsRow,
 } from '@/components/settings/SettingsLayout'
+import { NotificationSoundLibrary } from '@/components/settings/NotificationSoundLibrary'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 
@@ -81,6 +82,10 @@ export function NotificationSettingsPage() {
             />
           }
         />
+      </SettingsGroup>
+
+      <SettingsGroup title="Notification sounds">
+        <NotificationSoundLibrary />
       </SettingsGroup>
 
       <SettingsGroup

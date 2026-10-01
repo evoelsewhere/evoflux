@@ -1,11 +1,15 @@
-// Prevents additional console window on Windows in release.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Protocol activation can start the debug executable from the Windows shell.
+// Use the GUI subsystem in every Windows profile so it never flashes a console
+// before the notification fast path forwards the URL to the running app.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 mod autostart;
 mod computer_app;
 mod desktop_settings;
 mod keep_awake;
 mod native_messaging;
+mod notification_activation;
+mod notification_badge;
 mod openers;
 mod sidecar;
 mod update_stage;
@@ -6512,6 +6516,10 @@ async fn start_backend_and_window(app: AppHandle) -> Result<()> {
 }
 
 fn main() {
+    if notification_activation::forward_notification_activation_to_running_instance() {
+        return;
+    }
+
     if native_messaging::invoked_as_native_host() {
         if let Err(error) = native_messaging::run_native_host() {
             eprintln!("EvoFlux WebBridge native host failed: {error:#}");
@@ -6556,6 +6564,14 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // The Windows adapter invokes this callback synchronously from
+            // WM_COPYDATA. Queue window operations so protocol activation can
+            // return to the shell immediately instead of waiting on the UI.
+            let app_for_callback = app.clone();
+            let _ = app.run_on_main_thread(move || show_main_window(&app_for_callback));
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(log_plugin)
         .plugin(updater_plugin.build())
         .plugin(
@@ -6568,9 +6584,6 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main_window(app);
-        }))
         .manage(state)
         .on_menu_event(|app, event| handle_desktop_menu(app, event.id().as_ref()))
         .invoke_handler(tauri::generate_handler![
@@ -6588,6 +6601,8 @@ fn main() {
             app_save_backend_server,
             app_use_external_backend,
             app_use_bundled_backend,
+            notification_activation::app_send_attention_notification,
+            notification_badge::app_update_notification_badge,
             app_new_window,
             app_menu_action,
             app_browser_webview_navigate,
@@ -6621,7 +6636,17 @@ fn main() {
             openers::open_workspace_with,
         ])
         .setup(|app| {
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(error) = app.deep_link().register_all() {
+                    log::warn!("could not register deep-link handlers: {error}");
+                }
+            }
             install_desktop_menus(app)?;
+            if let Err(error) = notification_activation::install_identity(app.handle()) {
+                log::warn!("could not install Windows notification identity: {error}");
+            }
             desktop_settings::apply_at_startup(app.handle());
             if let Ok(dir) = update_stage::dir(app.handle()) {
                 update_stage::discard_installed(&dir, env!("CARGO_PKG_VERSION"));
@@ -6663,6 +6688,9 @@ fn main() {
                 event: WindowEvent::Focused(true),
                 ..
             } if label == MAIN_WINDOW || label.starts_with(SECONDARY_WINDOW_PREFIX) => {
+                if let Some(window) = app.get_webview_window(&label) {
+                    let _ = window.request_user_attention(None);
+                }
                 let state: tauri::State<'_, AppState> = app.state();
                 tauri::async_runtime::block_on(async {
                     *state.active_window_label.lock().await = label.to_string();
