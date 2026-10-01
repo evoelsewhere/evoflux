@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from app.services.importers.base import ImportBundle, ImportItem, utcnow
+from app.services.importers.generic import parse_generic_export
 
 
 def _parse_iso(raw: Any) -> datetime | None:
@@ -284,6 +285,16 @@ def parse_codex_export(path: Path) -> ImportBundle:
     all_items.extend(_parse_sessions(path / "sessions"))
     all_items.extend(_parse_instructions(path / "instructions.md"))
     all_items.extend(_parse_config(path / "config.json"))
+
+    # Codex reads user skills from the shared Agent Skills root next to .codex.
+    skills_root = path.parent / ".agents" / "skills"
+    if skills_root.is_dir():
+        skills = parse_generic_export(skills_root).items
+        for item in skills:
+            if item.kind == "skill":
+                item.source = "codex"
+                item.source_id = f"codex:{item.source_id}"
+                all_items.append(item)
 
     return ImportBundle(
         source="codex",

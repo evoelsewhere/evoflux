@@ -7,6 +7,8 @@ and writes accepted items through existing EvoFlux services.
 from __future__ import annotations
 
 import json
+import hashlib
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,7 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
 from app.models.chat import ChatSession, SessionMessage
-from app.services.importers.base import ImportBundle, ImportItem, ImportResult, utcnow
+from app.services.importers.base import (
+    ImportBundle,
+    ImportItem,
+    ImportItemOutcome,
+    ImportResult,
+    ImportUndoResult,
+    utcnow,
+)
 from app.services.importers.claude_web import parse_claude_web_export
 from app.services.importers.chatgpt import parse_chatgpt_export
 from app.services.importers.claude_code import parse_claude_code_export
@@ -213,6 +222,9 @@ async def detect_conflicts(
     Items already present get ``action="skip"`` and a conflict note.
     """
     for item in bundle.items:
+        item.conflicts.clear()
+        item.data.pop("_matched_session_id", None)
+        item.data.pop("_conflict_reason", None)
         if item.kind == "session":
             await _check_session_conflict(db, item)
         elif item.kind == "agent":
@@ -228,17 +240,44 @@ async def detect_conflicts(
 
 
 async def _check_session_conflict(db: AsyncSession, item: ImportItem) -> None:
-    """Check if a session with the same source+title already exists."""
+    """Match stable source identity, falling back only to unique legacy titles."""
     title = item.data.get("title", "")
-    stmt = select(ChatSession).where(
-        col(ChatSession.source) == item.source,
-        col(ChatSession.title) == title,
-    )
-    result = await db.execute(stmt)
-    existing = result.scalars().first()
+    existing = None
+    if item.source_id:
+        result = await db.execute(
+            select(ChatSession).where(
+                col(ChatSession.source) == item.source,
+                col(ChatSession.source_item_id) == item.source_id,
+            )
+        )
+        existing = result.scalars().first()
+
+    if existing is None:
+        stmt = select(ChatSession).where(
+            col(ChatSession.source) == item.source,
+            col(ChatSession.title) == title,
+        )
+        result = await db.execute(stmt)
+        candidates = list(result.scalars().all())
+        # A different stable source ID is a different source session. Legacy
+        # title matching is safe only for sessions that predate source IDs.
+        legacy_matches = [
+            candidate for candidate in candidates if candidate.source_item_id is None
+        ]
+        if len(legacy_matches) == 1:
+            existing = legacy_matches[0]
+        elif not item.source_id and len(candidates) == 1:
+            existing = candidates[0]
+        elif len(legacy_matches) > 1 or (not item.source_id and len(candidates) > 1):
+            item.conflicts.append("Multiple legacy sessions have this source and title")
+            item.data["_conflict_reason"] = "ambiguous_legacy_match"
+            item.action = "skip"
+
     if existing is not None:
+        item.data["_matched_session_id"] = str(existing.id)
         item.conflicts.append("Already imported")
-        item.action = "skip"
+        if item.action not in {"reimport", "replace"}:
+            item.action = "skip"
 
 
 def _check_agent_conflict(item: ImportItem) -> None:
@@ -246,7 +285,9 @@ def _check_agent_conflict(item: ImportItem) -> None:
     from app.core.config import settings
 
     agent_file = (
-        Path(settings.EVOFLUX_CONFIG_DIR) / "agents" / f"{item.data.get('name', '')}.md"
+        Path(settings.EVOFLUX_CONFIG_DIR)
+        / "agents"
+        / f"{_agent_file_name(item.data.get('name', ''))}.md"
     )
     if agent_file.exists():
         item.conflicts.append("Agent already exists")
@@ -257,7 +298,9 @@ def _check_skill_conflict(item: ImportItem) -> None:
     """Check if a skill directory with the same name exists."""
     from app.core.config import settings
 
-    skill_dir = Path(settings.EVOFLUX_CONFIG_DIR) / "skills" / item.data.get("name", "")
+    skill_dir = Path(settings.SKILLS_DIR) / _skill_directory_name(
+        item.data.get("name", "")
+    )
     if skill_dir.exists():
         item.conflicts.append("Skill already exists")
         item.action = "skip"
@@ -300,37 +343,218 @@ def _check_knowledge_conflict(item: ImportItem) -> None:
 async def execute_import(
     db: AsyncSession,
     bundle: ImportBundle,
+    *,
+    origin: str = "manual",
 ) -> ImportResult:
-    """Write accepted items into EvoFlux data stores.
-
-    Returns an :class:`ImportResult` with counts per kind.
-    """
+    """Write accepted items and a durable per-item journal."""
     result = ImportResult()
     now = utcnow()
+    import uuid
 
-    for item in bundle.items:
+    from app.models.import_job import ImportJob
+    from app.models.import_job_item import ImportJobItem
+
+    job = ImportJob(
+        id=uuid.uuid4().hex,
+        source=bundle.source,
+        source_path=bundle.metadata.get("source_path", ""),
+        detected_format=bundle.detected_format,
+        origin=origin if origin in {"manual", "auto_sync"} else "manual",
+        undo_state="available",
+        status="completed",
+        imported_counts="{}",
+        skipped_counts="{}",
+        error_count=0,
+        item_count=len(bundle.items),
+        created_at=now,
+        completed_at=now,
+    )
+    db.add(job)
+    await db.commit()
+    result.import_id = job.id
+
+    for index, item in enumerate(bundle.items):
+        source_item_id = f"{item.kind}:{item.source_id or index}"
         if item.action == "skip":
             result.skipped[item.kind] = result.skipped.get(item.kind, 0) + 1
+            journal = ImportJobItem(
+                id=uuid.uuid4().hex,
+                job_id=job.id,
+                source_item_id=source_item_id,
+                kind=item.kind,
+                label=item.label,
+                operation="none",
+                outcome="skipped",
+                reason=item.data.get("_conflict_reason")
+                or "Skipped by user or conflict detection",
+                created_at=now,
+                updated_at=utcnow(),
+            )
+            db.add(journal)
+            result.items.append(
+                ImportItemOutcome(
+                    source_item_id,
+                    item.kind,
+                    item.label,
+                    "none",
+                    "skipped",
+                    journal.reason,
+                )
+            )
             continue
 
+        if item.kind not in {"session", "agent", "skill", "knowledge", "mcp_server"}:
+            result.skipped[item.kind] = result.skipped.get(item.kind, 0) + 1
+            journal = ImportJobItem(
+                id=uuid.uuid4().hex,
+                job_id=job.id,
+                source_item_id=source_item_id,
+                kind=item.kind,
+                label=item.label,
+                operation="none",
+                outcome="skipped",
+                reason="This item type is not supported by the importer.",
+                created_at=now,
+                updated_at=utcnow(),
+            )
+            db.add(journal)
+            result.items.append(
+                ImportItemOutcome(
+                    source_item_id,
+                    item.kind,
+                    item.label,
+                    "none",
+                    "skipped",
+                    journal.reason,
+                )
+            )
+            continue
+
+        is_reimport = item.action in {"reimport", "replace"}
+        target_ref: str | None = None
+        before_snapshot: str | None = None
+        operation = "reimported" if is_reimport else "created"
+        session_target: ChatSession | None = None
+        target_path: Path | None = None
+        journal_id = uuid.uuid4().hex
+        journal: ImportJobItem | None = None
         try:
             if item.kind == "session":
-                await _import_session(db, item, now)
-            elif item.kind == "agent":
-                _import_agent(item, now)
-            elif item.kind == "skill":
-                _import_skill(item, now)
-            elif item.kind == "knowledge":
-                _import_knowledge(item, now)
-            elif item.kind == "mcp_server":
-                _import_mcp_server(item, now)
+                session_target = await _find_session_match(db, item)
+                if is_reimport and session_target is None:
+                    raise ValueError(
+                        "The selected conflict no longer has a unique target"
+                    )
+                if not is_reimport and session_target is not None:
+                    raise ValueError(
+                        "This session now conflicts with an existing import; review it again"
+                    )
+                if session_target is not None:
+                    target_ref = str(session_target.id)
+                    before_snapshot = json.dumps(
+                        await _session_snapshot(db, session_target),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
             else:
-                # Not yet implemented — skip silently
-                result.skipped[item.kind] = result.skipped.get(item.kind, 0) + 1
-                continue
+                target_path = _target_path_for_item(item)
+                target_ref = str(target_path)
+                if item.kind == "mcp_server" and target_path.exists():
+                    existing_config = json.loads(
+                        target_path.read_text(encoding="utf-8")
+                    )
+                    server_name = item.data.get("name")
+                    server_exists = server_name in existing_config.get("servers", {})
+                    if server_exists and not is_reimport:
+                        raise ValueError(
+                            "The MCP server already exists; choose Re-import to replace it"
+                        )
+                    previous_server = existing_config.get("servers", {}).get(
+                        server_name
+                    )
+                    before_snapshot = json.dumps(
+                        {
+                            "config_existed": True,
+                            "server_existed": server_exists,
+                            "server_name": server_name,
+                            "server": _sanitize_mcp_value(previous_server)
+                            if server_exists
+                            else None,
+                        },
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                elif item.kind == "mcp_server":
+                    before_snapshot = json.dumps(
+                        {
+                            "config_existed": False,
+                            "server_existed": False,
+                            "server_name": item.data.get("name", "imported-server"),
+                            "server": None,
+                        }
+                    )
+                elif target_path.exists():
+                    if not is_reimport:
+                        raise ValueError(
+                            "The target already exists; choose Re-import to replace it"
+                        )
+                    before_snapshot = json.dumps(
+                        {"contents": target_path.read_text(encoding="utf-8")},
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                elif is_reimport:
+                    raise ValueError(
+                        "The selected conflict no longer exists; review it again"
+                    )
 
+            journal = ImportJobItem(
+                id=journal_id,
+                job_id=job.id,
+                source_item_id=source_item_id,
+                kind=item.kind,
+                label=item.label,
+                operation=operation,
+                target_ref=target_ref,
+                outcome="pending",
+                before_snapshot=before_snapshot,
+                created_at=now,
+                updated_at=utcnow(),
+            )
+            db.add(journal)
+            await db.commit()
+
+            if item.kind == "session":
+                if session_target is None:
+                    session_target = await _import_session(db, item, now)
+                else:
+                    await _replace_session(db, session_target, item, now)
+                target_ref = str(session_target.id)
+                journal.target_ref = target_ref
+                journal.after_fingerprint = await _session_fingerprint(
+                    db, session_target
+                )
+            else:
+                _write_import_item(item, now)
+                assert target_path is not None
+                journal.after_fingerprint = _file_fingerprint(target_path)
+
+            journal.outcome = "imported"
+            journal.updated_at = utcnow()
             result.imported[item.kind] = result.imported.get(item.kind, 0) + 1
+            result.items.append(
+                ImportItemOutcome(
+                    source_item_id,
+                    item.kind,
+                    item.label,
+                    operation,
+                    "imported",
+                    target_ref=target_ref,
+                )
+            )
+            await db.commit()
         except Exception as exc:
+            await db.rollback()
             result.errors.append(
                 {
                     "item": item.label,
@@ -338,39 +562,368 @@ async def execute_import(
                     "error": str(exc),
                 }
             )
+            failed = await db.get(ImportJobItem, journal_id)
+            if failed is None:
+                failed = ImportJobItem(
+                    id=journal_id,
+                    job_id=job.id,
+                    source_item_id=source_item_id,
+                    kind=item.kind,
+                    label=item.label,
+                    operation=operation,
+                    target_ref=target_ref,
+                    outcome="failed",
+                    reason=str(exc),
+                    before_snapshot=before_snapshot,
+                    created_at=now,
+                    updated_at=utcnow(),
+                )
+                db.add(failed)
+            else:
+                failed.outcome = "failed"
+                failed.reason = str(exc)
+                failed.updated_at = utcnow()
+            result.items.append(
+                ImportItemOutcome(
+                    source_item_id,
+                    item.kind,
+                    item.label,
+                    operation,
+                    "failed",
+                    str(exc),
+                    target_ref,
+                )
+            )
+            await db.commit()
 
+    job.imported_counts = json.dumps(result.imported)
+    job.skipped_counts = json.dumps(result.skipped)
+    job.error_count = len(result.errors)
+    job.completed_at = utcnow()
+    if not result.imported:
+        job.undo_state = "unavailable"
     await db.commit()
+    return result
 
-    # Record import job in history
-    import json as json_mod
-    import uuid
+
+async def undo_import(db: AsyncSession, job_id: str) -> ImportUndoResult:
+    """Undo a journaled job only when each target still matches its import."""
+    from sqlmodel import delete
 
     from app.models.import_job import ImportJob
+    from app.models.import_job_item import ImportJobItem
 
-    job = ImportJob(
-        id=uuid.uuid4().hex[:32],
-        source=bundle.source,
-        source_path=bundle.metadata.get("source_path", ""),
-        detected_format=bundle.detected_format,
-        status="completed",
-        imported_counts=json_mod.dumps(result.imported),
-        skipped_counts=json_mod.dumps(result.skipped),
-        error_count=len(result.errors),
-        item_count=len(bundle.items),
-        created_at=now,
-        completed_at=utcnow(),
+    job = await db.get(ImportJob, job_id)
+    if job is None:
+        raise ValueError("Import history item not found")
+    rows = list(
+        (
+            await db.execute(
+                select(ImportJobItem)
+                .where(ImportJobItem.job_id == job_id)
+                .order_by(ImportJobItem.created_at, ImportJobItem.id)
+            )
+        )
+        .scalars()
+        .all()
     )
-    db.add(job)
-    await db.commit()
+    if job.undo_state == "unavailable":
+        return ImportUndoResult(job_id=job_id, state="unavailable")
+    if job.undo_state == "undone":
+        return ImportUndoResult(job_id=job_id, state="undone")
 
+    result = ImportUndoResult(job_id=job_id, state="undone")
+    for row in rows:
+        if row.outcome == "undone":
+            result.undone += 1
+            continue
+        if row.outcome == "undo_skipped":
+            result.skipped += 1
+            result.items.append(
+                ImportItemOutcome(
+                    row.source_item_id,
+                    row.kind,
+                    row.label,
+                    row.operation,
+                    "undo_skipped",
+                    row.reason,
+                    row.target_ref,
+                )
+            )
+            continue
+        if row.outcome != "imported":
+            continue
+
+        reason: str | None = None
+        try:
+            if row.kind == "session":
+                from uuid import UUID
+
+                from app.models.chat import ChatSession, SessionMessage
+
+                session = (
+                    await db.get(ChatSession, UUID(row.target_ref))
+                    if row.target_ref
+                    else None
+                )
+                if session is None:
+                    reason = "Imported session no longer exists"
+                elif await _session_fingerprint(db, session) != row.after_fingerprint:
+                    reason = "Session changed after import; left it untouched"
+                elif row.operation == "created" and row.kind != "mcp_server":
+                    await db.execute(
+                        delete(SessionMessage).where(
+                            SessionMessage.session_id == session.id
+                        )
+                    )
+                    await db.delete(session)
+                else:
+                    await _restore_session(
+                        db, session, json.loads(row.before_snapshot or "{}")
+                    )
+            else:
+                path = Path(row.target_ref or "")
+                if not path.is_file():
+                    reason = "Imported file no longer exists"
+                elif _file_fingerprint(path) != row.after_fingerprint:
+                    reason = "File changed after import; left it untouched"
+                elif row.kind == "mcp_server":
+                    snapshot = json.loads(
+                        row.before_snapshot
+                        or '{"config_existed":false,"server_existed":false,"server":null}'
+                    )
+                    config = json.loads(path.read_text(encoding="utf-8"))
+                    servers = config.setdefault("servers", {})
+                    server_name = snapshot.get("server_name") or row.label
+                    current_server = servers.get(server_name, {})
+                    if snapshot.get("server_existed"):
+                        previous_server = snapshot.get("server") or {}
+                        servers[server_name] = _restore_mcp_sensitive_values(
+                            previous_server, current_server
+                        )
+                    else:
+                        servers.pop(server_name, None)
+
+                    if (
+                        not snapshot.get("config_existed")
+                        and not servers
+                        and set(config).issubset({"servers"})
+                    ):
+                        path.unlink()
+                    else:
+                        path.write_text(
+                            json.dumps(config, indent=2, ensure_ascii=False) + "\n",
+                            encoding="utf-8",
+                        )
+                elif row.operation == "created":
+                    path.unlink()
+                    if row.kind == "skill":
+                        try:
+                            path.parent.rmdir()
+                        except OSError:
+                            pass
+                else:
+                    snapshot = json.loads(row.before_snapshot or "{}")
+                    path.write_text(snapshot["contents"], encoding="utf-8")
+        except Exception as exc:
+            reason = str(exc)
+
+        if reason:
+            row.outcome = "undo_skipped"
+            row.reason = reason
+            result.skipped += 1
+        else:
+            row.outcome = "undone"
+            row.reason = None
+            result.undone += 1
+        row.updated_at = utcnow()
+        result.items.append(
+            ImportItemOutcome(
+                row.source_item_id,
+                row.kind,
+                row.label,
+                row.operation,
+                row.outcome,
+                row.reason,
+                row.target_ref,
+            )
+        )
+
+    if result.skipped:
+        result.state = "partially_undone"
+        job.undo_state = "partially_undone"
+    else:
+        job.undo_state = "undone"
+    await db.commit()
     return result
+
+
+async def _find_session_match(db: AsyncSession, item: ImportItem) -> ChatSession | None:
+    if item.source_id:
+        exact = await db.execute(
+            select(ChatSession).where(
+                col(ChatSession.source) == item.source,
+                col(ChatSession.source_item_id) == item.source_id,
+            )
+        )
+        existing = exact.scalars().first()
+        if existing is not None:
+            return existing
+    result = await db.execute(
+        select(ChatSession).where(
+            col(ChatSession.source) == item.source,
+            col(ChatSession.title) == item.data.get("title", ""),
+        )
+    )
+    candidates = list(result.scalars().all())
+    legacy = [candidate for candidate in candidates if candidate.source_item_id is None]
+    if len(legacy) == 1:
+        return legacy[0]
+    if not item.source_id and len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+async def _session_snapshot(db: AsyncSession, session: ChatSession) -> dict[str, Any]:
+    messages = (
+        (
+            await db.execute(
+                select(SessionMessage)
+                .where(SessionMessage.session_id == session.id)
+                .order_by(SessionMessage.created_at, SessionMessage.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "session": {
+            "id": str(session.id),
+            "title": session.title,
+            "mode": session.mode,
+            "source": session.source,
+            "source_item_id": session.source_item_id,
+            "imported_at": session.imported_at.isoformat()
+            if session.imported_at
+            else None,
+            "created_at": session.created_at.isoformat(),
+            "updated_at": session.updated_at.isoformat(),
+        },
+        "messages": [
+            {
+                "id": str(message.id),
+                "role": message.role,
+                "content": message.content,
+                "reasoning_content": message.reasoning_content,
+                "tool_calls": message.tool_calls,
+                "tool_call_id": message.tool_call_id,
+                "name": message.name,
+                "extra": message.extra,
+                "is_summary": message.is_summary,
+                "exclude_from_context": message.exclude_from_context,
+                "created_at": message.created_at.isoformat(),
+            }
+            for message in messages
+        ],
+    }
+
+
+async def _session_fingerprint(db: AsyncSession, session: ChatSession) -> str:
+    snapshot = await _session_snapshot(db, session)
+    encoded = json.dumps(
+        snapshot, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+async def _restore_session(
+    db: AsyncSession, session: ChatSession, snapshot: dict[str, Any]
+) -> None:
+    from uuid import UUID
+
+    from sqlmodel import delete
+
+    values = snapshot["session"]
+    session.title = values["title"]
+    session.mode = values["mode"]
+    session.source = values["source"]
+    session.source_item_id = values["source_item_id"]
+    session.imported_at = _parse_iso(values["imported_at"])
+    session.created_at = _parse_iso(values["created_at"]) or session.created_at
+    session.updated_at = _parse_iso(values["updated_at"]) or session.updated_at
+    await db.execute(
+        delete(SessionMessage).where(SessionMessage.session_id == session.id)
+    )
+    for raw in snapshot["messages"]:
+        db.add(
+            SessionMessage(
+                id=UUID(raw["id"]),
+                session_id=session.id,
+                role=raw["role"],
+                content=raw["content"],
+                reasoning_content=raw["reasoning_content"],
+                tool_calls=raw["tool_calls"],
+                tool_call_id=raw["tool_call_id"],
+                name=raw["name"],
+                extra=raw["extra"],
+                is_summary=raw["is_summary"],
+                exclude_from_context=raw["exclude_from_context"],
+                created_at=_parse_iso(raw["created_at"]) or utcnow(),
+            )
+        )
+
+
+def _target_path_for_item(item: ImportItem) -> Path:
+    from app.core.config import settings
+
+    if item.kind == "agent":
+        return (
+            Path(settings.EVOFLUX_CONFIG_DIR)
+            / "agents"
+            / f"{_agent_file_name(item.data.get('name', ''))}.md"
+        )
+    if item.kind == "skill":
+        return (
+            Path(settings.SKILLS_DIR)
+            / _skill_directory_name(item.data.get("name", ""))
+            / "SKILL.md"
+        )
+    if item.kind == "knowledge":
+        filename = item.data.get("filename", "imported-knowledge.md")
+        safe_name = "".join(c for c in filename if c.isalnum() or c in ".-_")[:200]
+        return Path(settings.EVOFLUX_WIKI_DIR) / "sources" / safe_name
+    if item.kind == "mcp_server":
+        return Path(settings.EVOFLUX_CONFIG_DIR) / "mcp.json"
+    raise ValueError(f"No file target for import kind {item.kind}")
+
+
+def _file_fingerprint(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _agent_file_name(raw_name: Any) -> str:
+    name = re.sub(r"[^A-Za-z0-9_-]+", "-", str(raw_name or "").strip())
+    return name.strip("-_")[:80] or "imported-agent"
+
+
+def _write_import_item(item: ImportItem, now: datetime) -> None:
+    if item.kind == "agent":
+        _import_agent(item, now)
+    elif item.kind == "skill":
+        _import_skill(item, now)
+    elif item.kind == "knowledge":
+        _import_knowledge(item, now)
+    elif item.kind == "mcp_server":
+        _import_mcp_server(item, now)
+    else:
+        raise ValueError(f"Unsupported file import kind {item.kind}")
 
 
 async def _import_session(
     db: AsyncSession,
     item: ImportItem,
     now: datetime,
-) -> None:
+) -> ChatSession:
     """Create a ChatSession and its messages from an ImportItem."""
     data = item.data
     created_at = _parse_iso(data.get("created_at")) or now
@@ -379,6 +932,7 @@ async def _import_session(
         title=data.get("title", "Imported session"),
         mode=data.get("mode", "work"),
         source=item.source,
+        source_item_id=item.source_id or None,
         imported_at=now,
         created_at=created_at,
         updated_at=_parse_iso(data.get("updated_at")) or now,
@@ -397,6 +951,40 @@ async def _import_session(
 
     await db.flush()
 
+    return session
+
+
+async def _replace_session(
+    db: AsyncSession,
+    session: ChatSession,
+    item: ImportItem,
+    now: datetime,
+) -> None:
+    from sqlmodel import delete
+
+    data = item.data
+    session.title = data.get("title", "Imported session")
+    session.mode = data.get("mode", session.mode)
+    session.source = item.source
+    session.source_item_id = item.source_id or session.source_item_id
+    session.imported_at = now
+    session.created_at = _parse_iso(data.get("created_at")) or session.created_at
+    session.updated_at = _parse_iso(data.get("updated_at")) or now
+    await db.execute(
+        delete(SessionMessage).where(SessionMessage.session_id == session.id)
+    )
+    for message_data in data.get("messages", []):
+        db.add(
+            SessionMessage(
+                session_id=session.id,
+                role=message_data.get("role", "user"),
+                content=message_data.get("content", ""),
+                created_at=_parse_iso(message_data.get("created_at"))
+                or session.created_at,
+            )
+        )
+    await db.flush()
+
 
 def _import_agent(item: ImportItem, now: datetime) -> None:
     """Write an agent .md file with YAML frontmatter."""
@@ -406,7 +994,7 @@ def _import_agent(item: ImportItem, now: datetime) -> None:
     agent_dir.mkdir(parents=True, exist_ok=True)
 
     data = item.data
-    name = data.get("name", "imported-agent")
+    name = _agent_file_name(data.get("name", "imported-agent"))
     desc = data.get("description", "")
     instructions = data.get("instructions", "")
 
@@ -425,25 +1013,41 @@ imported_at: "{now.isoformat()}"
 def _import_skill(item: ImportItem, now: datetime) -> None:
     """Write a skill directory with SKILL.md."""
     from app.core.config import settings
+    import yaml
 
-    skill_dir = (
-        Path(settings.EVOFLUX_CONFIG_DIR)
-        / "skills"
-        / item.data.get("name", "imported-skill")
-    )
+    name = _skill_directory_name(item.data.get("name", ""))
+    skill_dir = Path(settings.SKILLS_DIR) / name
     skill_dir.mkdir(parents=True, exist_ok=True)
 
     data = item.data
-    content = f"""---
-name: {data.get("name", "imported-skill")}
-description: {data.get("description", "")}
-source: {item.source}
-imported_at: "{now.isoformat()}"
----
-
-{data.get("body", "")}
-"""
+    frontmatter = {
+        "name": name,
+        "description": str(data.get("description") or f"Imported skill: {name}"),
+        "source": item.source,
+        "imported_at": now.isoformat(),
+    }
+    for key in (
+        "license",
+        "compatibility",
+        "metadata",
+        "allowed-tools",
+        "disable-model-invocation",
+        "user-invocable",
+    ):
+        if key in data.get("frontmatter", {}):
+            frontmatter[key] = data["frontmatter"][key]
+    serialized = yaml.safe_dump(
+        frontmatter, allow_unicode=True, sort_keys=False
+    ).rstrip()
+    content = f"---\n{serialized}\n---\n\n{data.get('body', '')}\n"
     (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
+
+
+def _skill_directory_name(raw_name: Any) -> str:
+    """Return a portable, traversal-safe directory name for an imported skill."""
+    name = str(raw_name or "").strip().casefold()
+    name = re.sub(r"[^a-z0-9]+", "-", name).strip("-")[:64].rstrip("-")
+    return name or "imported-skill"
 
 
 def _import_knowledge(item: ImportItem, now: datetime) -> None:
@@ -467,6 +1071,7 @@ def _import_mcp_server(item: ImportItem, now: datetime) -> None:
     from app.core.config import settings
 
     mcp_path = Path(settings.EVOFLUX_CONFIG_DIR) / "mcp.json"
+    mcp_path.parent.mkdir(parents=True, exist_ok=True)
 
     existing: dict[str, Any] = {}
     if mcp_path.exists():
@@ -476,15 +1081,74 @@ def _import_mcp_server(item: ImportItem, now: datetime) -> None:
             existing = {}
 
     servers = existing.get("servers", {})
-    server_data = item.data.get("server", {})
+    incoming_server = _sanitize_mcp_value(item.data.get("server", {}))
     server_name = item.data.get("name", "imported-server")
-    servers[server_name] = server_data
+    old_server = servers.get(server_name, {})
+    servers[server_name] = _restore_mcp_sensitive_values(incoming_server, old_server)
     existing["servers"] = servers
 
     mcp_path.write_text(
         json_mod.dumps(existing, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+
+
+_MCP_SENSITIVE_NAMES = {
+    "env",
+    "headers",
+    "key",
+    "token",
+    "secret",
+    "password",
+    "credential",
+    "authorization",
+    "auth",
+}
+
+
+def _is_sensitive_mcp_name(name: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", name.casefold())
+    return normalized in _MCP_SENSITIVE_NAMES or any(
+        marker in normalized
+        for marker in (
+            "apikey",
+            "privatekey",
+            "accesskey",
+            "clientkey",
+            "token",
+            "secret",
+            "password",
+            "credential",
+            "authorization",
+            "auth",
+        )
+    )
+
+
+def _sanitize_mcp_value(value: Any) -> Any:
+    """Remove credential-bearing MCP fields before storing imported data or journal snapshots."""
+    if isinstance(value, dict):
+        return {
+            key: _sanitize_mcp_value(nested)
+            for key, nested in value.items()
+            if not _is_sensitive_mcp_name(str(key))
+        }
+    if isinstance(value, list):
+        return [_sanitize_mcp_value(item) for item in value]
+    return value
+
+
+def _restore_mcp_sensitive_values(safe_value: Any, existing_value: Any) -> Any:
+    """Keep locally configured credentials from the current MCP entry."""
+    if not isinstance(safe_value, dict) or not isinstance(existing_value, dict):
+        return safe_value
+    result = dict(safe_value)
+    for key, old_value in existing_value.items():
+        if _is_sensitive_mcp_name(str(key)):
+            result[key] = old_value
+        elif key in result:
+            result[key] = _restore_mcp_sensitive_values(result[key], old_value)
+    return result
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

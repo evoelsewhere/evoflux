@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from sqlmodel import select
 
 from app.api.deps import DbSession
 from app.services.import_service import (
@@ -24,6 +25,7 @@ from app.services.import_service import (
     parse_import,
     remove_bundle,
     store_bundle,
+    undo_import,
 )
 
 router = APIRouter()
@@ -66,11 +68,21 @@ class UpdateItemRequest(BaseModel):
     """Update conflict resolution for a single item."""
 
     action: str = Field(
-        ..., description="Resolution: 'import', 'skip', 'replace', or 'rename'"
+        ..., description="Resolution: 'import', 'skip', 'reimport', or 'rename'"
     )
 
 
+class BulkUpdateItemsRequest(BaseModel):
+    indexes: list[int] = Field(..., min_length=1)
+    action: Literal["import", "skip", "reimport"]
+
+
+class ExecuteRequest(BaseModel):
+    origin: Literal["manual", "auto_sync"] = "manual"
+
+
 class ExecuteResponse(BaseModel):
+    import_id: str | None = None
     imported: dict[str, int]
     skipped: dict[str, int]
     errors: list[dict[str, Any]]
@@ -602,7 +614,7 @@ async def update_item_action(
     if item_index < 0 or item_index >= len(bundle.items):
         raise HTTPException(status_code=400, detail="Invalid item index")
 
-    allowed = {"import", "skip", "replace", "rename"}
+    allowed = {"import", "skip", "replace", "reimport", "rename"}
     if body.action not in allowed:
         raise HTTPException(
             status_code=400,
@@ -613,10 +625,38 @@ async def update_item_action(
     return {"status": "ok"}
 
 
+@router.patch("/preview/{import_id}/items")
+async def update_items_action(
+    import_id: str,
+    body: BulkUpdateItemsRequest,
+) -> dict[str, Any]:
+    """Apply one action to selected preview rows after validating all indexes."""
+    bundle = get_bundle(import_id)
+    if bundle is None:
+        raise HTTPException(status_code=404, detail="Import not found")
+    indexes = body.indexes
+    if len(set(indexes)) != len(indexes):
+        raise HTTPException(status_code=400, detail="Item indexes must be unique")
+    if any(index < 0 or index >= len(bundle.items) for index in indexes):
+        raise HTTPException(status_code=400, detail="Invalid item index")
+    if body.action == "reimport" and any(
+        not bundle.items[index].conflicts for index in indexes
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Re-import can only be applied to items with detected conflicts",
+        )
+
+    for index in indexes:
+        bundle.items[index].action = body.action  # type: ignore[assignment]
+    return {"status": "ok", "updated": len(indexes)}
+
+
 @router.post("/execute/{import_id}", response_model=ExecuteResponse)
 async def import_execute(
     import_id: str,
     db: DbSession,
+    body: ExecuteRequest | None = None,
 ) -> ExecuteResponse:
     """Execute the import, writing accepted items to EvoFlux data stores."""
     bundle = get_bundle(import_id)
@@ -632,9 +672,11 @@ async def import_execute(
             item.action = "skip"
 
     # Execute
-    result = await execute_import(db, bundle)
+    result = await execute_import(db, bundle, origin=body.origin if body else "manual")
+    remove_bundle(import_id)
 
     return ExecuteResponse(
+        import_id=result.import_id,
         imported=result.imported,
         skipped=result.skipped,
         errors=result.errors,
@@ -658,6 +700,7 @@ async def import_history(
     from sqlmodel import select
 
     from app.models.import_job import ImportJob
+    from app.models.import_job_item import ImportJobItem
 
     stmt = select(ImportJob).order_by(ImportJob.created_at.desc()).limit(50)
     result = await db.execute(stmt)
@@ -671,6 +714,20 @@ async def import_history(
             imported = loads(job.imported_counts)
         except (JSONDecodeError, TypeError):
             pass
+        journal_rows = (
+            (
+                await db.execute(
+                    select(ImportJobItem).where(ImportJobItem.job_id == job.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        undoable_count = sum(1 for row in journal_rows if row.outcome == "imported")
+        undone_count = sum(1 for row in journal_rows if row.outcome == "undone")
+        undo_skipped_count = sum(
+            1 for row in journal_rows if row.outcome == "undo_skipped"
+        )
         try:
             skipped = loads(job.skipped_counts)
         except (JSONDecodeError, TypeError):
@@ -687,6 +744,12 @@ async def import_history(
                 "skipped": skipped,
                 "error_count": job.error_count,
                 "item_count": job.item_count,
+                "origin": job.origin,
+                "undo_state": job.undo_state,
+                "undo_available": job.undo_state == "available",
+                "undoable_count": undoable_count,
+                "undone_count": undone_count,
+                "undo_skipped_count": undo_skipped_count,
                 "created_at": job.created_at.isoformat() if job.created_at else None,
                 "completed_at": job.completed_at.isoformat()
                 if job.completed_at
@@ -695,3 +758,66 @@ async def import_history(
         )
 
     return {"imports": items}
+
+
+@router.get("/history/{job_id}")
+async def import_history_detail(job_id: str, db: DbSession) -> dict[str, Any]:
+    """Return per-item outcomes without exposing local undo snapshots."""
+    from app.models.import_job import ImportJob
+    from app.models.import_job_item import ImportJobItem
+
+    job = await db.get(ImportJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Import history item not found")
+    rows = (
+        (
+            await db.execute(
+                select(ImportJobItem)
+                .where(ImportJobItem.job_id == job_id)
+                .order_by(ImportJobItem.created_at, ImportJobItem.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "import_id": job.id,
+        "origin": job.origin,
+        "undo_state": job.undo_state,
+        "items": [
+            {
+                "source_item_id": row.source_item_id,
+                "kind": row.kind,
+                "label": row.label,
+                "operation": row.operation,
+                "outcome": row.outcome,
+                "reason": row.reason,
+            }
+            for row in rows
+        ],
+    }
+
+
+@router.post("/history/{job_id}/undo")
+async def import_history_undo(job_id: str, db: DbSession) -> dict[str, Any]:
+    try:
+        result = await undo_import(db, job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "import_id": result.job_id,
+        "state": result.state,
+        "undone": result.undone,
+        "skipped": result.skipped,
+        "items": [
+            {
+                "source_item_id": item.source_item_id,
+                "kind": item.kind,
+                "label": item.label,
+                "operation": item.operation,
+                "outcome": item.outcome,
+                "reason": item.reason,
+            }
+            for item in result.items
+        ],
+    }

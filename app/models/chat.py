@@ -123,6 +123,9 @@ class ChatSession(SQLModel, table=True):
         # Me cover ORDER BY created_at listings (list_sessions_page,
         # get_latest_top_level_session filter on parent_session_id IS NULL)
         sa.Index("ix_chat_sessions_parent_created", "parent_session_id", "created_at"),
+        sa.UniqueConstraint(
+            "source", "source_item_id", name="uq_chat_sessions_source_item_id"
+        ),
     )
 
     id: UUID = Field(default_factory=uuid7, primary_key=True)
@@ -243,6 +246,7 @@ class ChatSession(SQLModel, table=True):
         max_length=50,
         sa_column=Column(sa.String(50), nullable=True, index=True),
     )
+    source_item_id: str | None = Field(default=None, sa_column=Column(sa.Text()))
     imported_at: datetime | None = Field(
         default=None,
         sa_column=Column(TZDateTime(), nullable=True),

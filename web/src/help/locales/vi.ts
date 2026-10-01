@@ -878,6 +878,43 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
 ],
   },
   {
+    id: 'multi-source-import',
+    category: 'sessions',
+    title: 'Import chat từ công cụ AI khác',
+    summary:
+      'Đưa conversation và tài nguyên agent được hỗ trợ vào EvoFlux tại Settings → Import. Chat đã import hiển thị nguồn trong sidebar và thanh conversation.',
+    keywords: ['import', 'Claude', 'ChatGPT', 'Codex', 'Cursor', 'migration', 'export', 'nhập dữ liệu'],
+    openAction: { type: 'settings', path: 'import' },
+    setup:
+      'Mở Settings → Import, chọn nguồn rồi chọn file export hoặc thư mục dữ liệu local. Xem lại các mục và conflict trước khi import; bật Auto-sync để tự nhập session, skill, agent mới khi EvoFlux đang mở.',
+    tricks: [
+      'Native file picker đọc dữ liệu nguồn tại máy; EvoFlux không upload export lên dịch vụ từ xa.',
+      'Conversation đã import giữ nhãn nguồn để phân biệt với chat tạo trong EvoFlux.',
+      'Auto-sync không thay thế conflict hiện có và không tự nhập cấu hình MCP; hãy xem lại các mục này thủ công.',
+      'Chọn Re-import để cập nhật đúng mục đã khớp tại chỗ. Có thể chọn nhiều conflict để re-import cùng lúc.',
+      'Undo áp dụng cho các lượt import mới có journal. Nếu mục tiêu đã được sửa sau import, Undo sẽ giữ nguyên thay đổi và báo kết quả một phần.',
+      'Preview có thể tìm theo tên, lọc theo loại và chia trang khi export dài.',
+      'Dùng Search sessions & history trong sidebar để tìm chat cũ; Settings → Skills có bộ lọc riêng.',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Settings → Import hỗ trợ export Claude.ai, dữ liệu Claude Code, export ChatGPT, Codex, Cursor và các file generic được hỗ trợ. Auto-sync chỉ chạy khi EvoFlux đang mở và chỉ tự nhập session, skill, agent mới. Conflict và cấu hình MCP cần được xem lại thủ công.',
+      },
+      {
+        type: 'p',
+        text: 'Claude Code đọc skill ở ~/.claude/skills; Codex đọc skill dùng chung ở ~/.agents/skills. Skill được lưu vào thư mục user skills của EvoFlux để xuất hiện trong Settings → Skills. Với danh sách dài, tìm trong sidebar để mở chat cũ, dùng ô lọc trong Settings → Skills và tìm kiếm/phân trang trong preview import.',
+      },
+      {
+        type: 'callout',
+        tone: 'info',
+        title: 'Kiểm tra trước khi import',
+        text: 'Preview liệt kê nội dung EvoFlux đọc được cùng conflict đã phát hiện. Re-import cập nhật mục đã khớp tại chỗ. Undo xóa hoặc khôi phục mục chưa bị sửa và giữ lại mọi thay đổi mới hơn. API key và credential không được import.',
+      },
+    ],
+    related: ['sessions-folders'],
+  },
+  {
     id: 'workbench-tools',
     category: 'workbench',
     title: 'Workbench tools',

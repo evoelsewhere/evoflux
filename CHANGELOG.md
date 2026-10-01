@@ -7,22 +7,32 @@ All notable changes to EvoFlux are documented in this file.
 ### Added
 
 - **Settings → Import**: import data from external AI tools into EvoFlux.
-  Supports Claude.ai (JSON/ZIP), ChatGPT (conversations.json), Claude Code
-  (``~/.claude/`` directory), Codex CLI, Cursor, and generic files (MCP config,
-  skills, agents, knowledge). Imported sessions are tagged with a source badge.
-  Use the source buttons in **Settings → Import** to pick a local file or
-  folder via the native file dialog. A welcome popup appears on first launch
+  Supports Claude.ai (JSON/ZIP), ChatGPT (`conversations.json`), Claude Code
+  (`~/.claude/` directory), Codex CLI, Cursor, and generic files (MCP config,
+  skills, agents, knowledge). Imported conversations show a source badge in
+  the sidebar and conversation bar. A welcome popup appears on first launch
   offering to import data from another AI tool.
+- **Settings → Import**: auto-sync new sessions, skills, and agents while
+  EvoFlux is open. Conflicts and MCP configuration stay under manual review.
+  Preview supports bulk re-import of selected conflicts, updating each matched
+  target in place. Import history entries can be undone; targets edited after
+  import are left untouched and reported as partial results.
 
-- Documented the design for background action notifications, app-branded
-  desktop alerts, and locally managed notification sounds, with implementation
-  plans for desktop activation, attention events, and the local sound library.
+### Fixed
+
+- **Settings → Import** now runs database migrations when the current revision
+  is `00000070`.
+- Imported skills now use the configured user skills directory and valid YAML
+  frontmatter. Claude Code global skills and Codex shared `.agents/skills`
+  are included, and search can find skills beyond the old 400-item scan window.
+- The import success screen now detects imported sessions correctly and offers
+  **View sessions** after a conversation import.
 
 ### Changed
 
-- The scheduled models.dev snapshot job now opens a reviewable pull request
-  for registry updates instead of writing directly to `main` or failing with
-  an unreconciled stale snapshot.
+- Long import previews can be searched by name or detail, filtered by item
+  type, and paged in groups of 100. Skills lists keep their filter visible
+  while scrolling, and sidebar search helps find older sessions and history.
 
 ## [3.0.2] - 2026-09-29
 

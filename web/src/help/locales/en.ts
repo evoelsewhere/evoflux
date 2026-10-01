@@ -906,6 +906,43 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
 ],
   },
   {
+    id: 'multi-source-import',
+    category: 'sessions',
+    title: 'Import chats from other AI tools',
+    summary:
+      'Bring supported conversations and local agent resources into EvoFlux from Settings → Import. Imported chats show their source in the sidebar and conversation bar.',
+    keywords: ['import', 'Claude', 'ChatGPT', 'Codex', 'Cursor', 'migration', 'export'],
+    openAction: { type: 'settings', path: 'import' },
+    setup:
+      'Open Settings → Import, choose a source, and select its local export file or data directory. Review detected items and conflicts before import; enable Auto-sync to bring in new sessions, skills, and agents while EvoFlux is open.',
+    tricks: [
+      'The native file picker reads source data locally; EvoFlux does not upload the export to a remote service.',
+      'Imported conversations keep a source label so they are easy to distinguish from chats created in EvoFlux.',
+      'Auto-sync never replaces existing conflicts or imports MCP configuration; review those items manually.',
+      'Choose Re-import for a conflict to update the matched item in place. Select several conflicts to re-import them together.',
+      'Undo is available for newly journaled imports. If a target changed after import, Undo leaves it intact and reports a partial result.',
+      'Search the preview by name, filter by item type, and page through large exports.',
+      'Use Search sessions & history in the sidebar to find older chats; Settings → Skills has its own filter.',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Settings → Import supports Claude.ai exports, Claude Code data, ChatGPT exports, Codex, Cursor, and supported generic files. Auto-sync runs only while EvoFlux is open and automatically imports new sessions, skills, and agents. Existing conflicts and MCP configuration stay under manual review.',
+      },
+      {
+        type: 'p',
+        text: 'Claude Code skills are read from ~/.claude/skills; Codex skills are read from the shared ~/.agents/skills directory. Imported skills are saved to EvoFlux’s user skills directory so they appear in Settings → Skills. For long lists, search from the sidebar for older chats, filter Settings → Skills, and search or page through the import preview.',
+      },
+      {
+        type: 'callout',
+        tone: 'info',
+        title: 'Review before importing',
+        text: 'The preview lists the content EvoFlux can read and any conflicts it detected. Re-import updates a matched target in place. Undo removes or restores unchanged targets and leaves later edits untouched. API keys and credentials are not imported.',
+      },
+    ],
+    related: ['sessions-folders'],
+  },
+  {
     id: 'workbench-tools',
     category: 'workbench',
     title: 'Workbench tools',

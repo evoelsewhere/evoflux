@@ -7,6 +7,7 @@ from .chat import (
 )
 from .goal import SessionGoal
 from .import_job import ImportJob
+from .import_job_item import ImportJobItem
 from .memory import MemoryExtractionState, MemoryFact, MemoryFactEvidence
 from .prompt_cache import SessionPrefixSnapshot
 from .remote_use import RemoteUseSession
@@ -28,6 +29,7 @@ __all__ = [
     "DreamNotesLog",
     "GitServerConnection",
     "ImportJob",
+    "ImportJobItem",
     "MemoryExtractionState",
     "MemoryFact",
     "MemoryFactEvidence",

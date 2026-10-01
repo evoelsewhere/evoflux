@@ -40,7 +40,7 @@ ImportSource = Literal[
 
 # ── Conflict resolution actions ──────────────────────────────────────────────
 
-ConflictAction = Literal["import", "skip", "replace", "rename"]
+ConflictAction = Literal["import", "skip", "replace", "reimport", "rename"]
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -76,6 +76,28 @@ class ImportResult:
     imported: dict[str, int] = field(default_factory=dict)
     skipped: dict[str, int] = field(default_factory=dict)
     errors: list[dict[str, Any]] = field(default_factory=list)
+    import_id: str | None = None
+    items: list["ImportItemOutcome"] = field(default_factory=list)
+
+
+@dataclass
+class ImportItemOutcome:
+    source_item_id: str
+    kind: str
+    label: str
+    operation: str
+    outcome: str
+    reason: str | None = None
+    target_ref: str | None = None
+
+
+@dataclass
+class ImportUndoResult:
+    job_id: str
+    state: str
+    undone: int = 0
+    skipped: int = 0
+    items: list[ImportItemOutcome] = field(default_factory=list)
 
 
 def utcnow() -> datetime:

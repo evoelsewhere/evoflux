@@ -33,6 +33,7 @@ import { useRegistryQuery, useWebBridgeSettingsQuery } from '@/queries'
 import { ContextBudgetBar } from '@/components/ContextBudgetBar'
 import { WebBridgeStatusPopover } from '@/components/shell/WebBridgeStatusDialog'
 import { SuggestedTaskDock } from '@/components/SuggestedTaskDock'
+import { formatImportSource } from '@/lib/import-source'
 
 interface WorkbenchBarProps {
   activeAgent: string | null
@@ -49,6 +50,7 @@ interface WorkbenchBarProps {
   isMacOverlay: boolean
   /** Current mode — 'work' or 'coding'. */
   mode: 'work' | 'coding'
+  importedSource?: string | null
   /** Absolute workspace root for the "Open in" menu. */
   workspace?: string | null
   /** Every repository the session works in, `workspace` first. */
@@ -107,6 +109,7 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
   const canCompactContext = Boolean(sessionId && props.activeAgent === leadName)
   const viewModeLabel = props.viewMode === 'agent' ? 'Agent' : 'Split'
   const ViewModeIcon = props.viewMode === 'agent' ? FocusViewIcon : SplitViewIcon
+  const importedSource = formatImportSource(props.importedSource)
 
   return (
     <header
@@ -188,6 +191,16 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
             {props.leadOptions.length === 0 && <p className="px-2 py-2 text-xs text-(--color-text-muted)">No lead agents configured for this mode.</p>}
           </DropdownMenuContent>
         </DropdownMenu>
+        {importedSource && (
+          <span
+            role="note"
+            className="flex h-7 max-w-32 shrink-0 items-center gap-1 truncate rounded-lg border border-(--color-accent)/25 bg-(--color-accent)/8 px-2 text-[10px] font-medium text-(--color-accent)"
+            title={`Imported from ${importedSource}`}
+            aria-label={`Imported from ${importedSource}`}
+          >
+            Imported · {importedSource}
+          </span>
+        )}
         {props.reviewContext && props.onOpenReviewContext && (
           <motion.button
             type="button"

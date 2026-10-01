@@ -4,22 +4,18 @@
  * Uses Tauri dialog for local file/folder selection (no web upload).
  */
 
-// ── Types ───────────────────────────────────────────────────────────────────
+import { IMPORT_SOURCE_LABELS } from '@/lib/import-source'
+import type { ImportSource } from '@/lib/import-source'
+export type { ImportSource } from '@/lib/import-source'
 
-export type ImportSource =
-  | 'claude_web'
-  | 'claude_code'
-  | 'chatgpt'
-  | 'codex'
-  | 'cursor'
-  | 'generic'
+// ── Types ───────────────────────────────────────────────────────────────────
 
 export interface ImportItemPreview {
   id: string
   kind: string
   label: string
   preview: string
-  action: 'import' | 'skip' | 'replace' | 'rename'
+  action: 'import' | 'skip' | 'replace' | 'reimport' | 'rename'
   conflicts: string[]
   target_name: string
 }
@@ -37,18 +33,38 @@ export interface ExecuteResponse {
   imported: Record<string, number>
   skipped: Record<string, number>
   errors: { item: string; kind: string; error: string }[]
+  import_id?: string
+}
+
+export type ImportItemAction = 'import' | 'skip' | 'reimport'
+
+export interface ImportItemOutcome {
+  source_item_id: string
+  kind: string
+  label: string
+  operation: string
+  outcome: string
+  reason?: string | null
+}
+
+export interface ImportJobDetail {
+  import_id: string
+  origin: 'manual' | 'auto_sync'
+  undo_state: 'available' | 'unavailable' | 'undone' | 'partially_undone'
+  items: ImportItemOutcome[]
+}
+
+export interface ImportUndoResponse {
+  import_id: string
+  state: 'available' | 'unavailable' | 'undone' | 'partially_undone'
+  undone: number
+  skipped: number
+  items: ImportItemOutcome[]
 }
 
 // ── Source metadata ─────────────────────────────────────────────────────────
 
-export const SOURCE_LABELS: Record<ImportSource, string> = {
-  claude_web: 'Claude.ai',
-  claude_code: 'Claude Code',
-  chatgpt: 'ChatGPT',
-  codex: 'Codex',
-  cursor: 'Cursor',
-  generic: 'Other / Generic',
-}
+export const SOURCE_LABELS: Record<ImportSource, string> = IMPORT_SOURCE_LABELS
 
 export const SOURCE_ICONS: Record<ImportSource, string> = {
   claude_web: 'Bot',
@@ -134,10 +150,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 export async function detectImport(
   path: string,
   source?: ImportSource,
+  signal?: AbortSignal,
 ): Promise<DetectResponse> {
   return apiFetch<DetectResponse>('/detect', {
     method: 'POST',
     body: JSON.stringify({ path, source: source ?? null }),
+    signal,
   })
 }
 
@@ -150,18 +168,38 @@ export async function getPreview(importId: string): Promise<DetectResponse> {
 export async function updateItemAction(
   importId: string,
   itemIndex: number,
-  action: 'import' | 'skip' | 'replace' | 'rename',
+  action: ImportItemAction,
+  signal?: AbortSignal,
 ): Promise<void> {
   await apiFetch(`/preview/${importId}/items/${itemIndex}`, {
     method: 'PATCH',
     body: JSON.stringify({ action }),
+    signal,
+  })
+}
+
+export async function updateItemsAction(
+  importId: string,
+  indexes: number[],
+  action: ImportItemAction,
+  signal?: AbortSignal,
+): Promise<void> {
+  await apiFetch(`/preview/${importId}/items`, {
+    method: 'PATCH',
+    body: JSON.stringify({ indexes, action }),
+    signal,
   })
 }
 
 /** Execute the import. */
-export async function executeImport(importId: string): Promise<ExecuteResponse> {
+export async function executeImport(
+  importId: string,
+  options: { origin?: 'manual' | 'auto_sync'; signal?: AbortSignal } = {},
+): Promise<ExecuteResponse> {
   return apiFetch<ExecuteResponse>(`/execute/${importId}`, {
     method: 'POST',
+    body: JSON.stringify({ origin: options.origin ?? 'manual' }),
+    signal: options.signal,
   })
 }
 
@@ -171,8 +209,8 @@ export async function cancelImport(importId: string): Promise<void> {
 }
 
 /** Scan local machine for common AI tool data locations. */
-export async function scanLocalSources(): Promise<{ discovered: ScanResult[] }> {
-  return apiFetch('/scan')
+export async function scanLocalSources(signal?: AbortSignal): Promise<{ discovered: ScanResult[] }> {
+  return apiFetch('/scan', { signal })
 }
 
 export interface ScanResult {
@@ -184,8 +222,8 @@ export interface ScanResult {
 }
 
 /** Get auto-sync settings. */
-export async function getAutoSyncSettings(): Promise<AutoSyncSettings> {
-  return apiFetch('/auto-sync')
+export async function getAutoSyncSettings(signal?: AbortSignal): Promise<AutoSyncSettings> {
+  return apiFetch('/auto-sync', { signal })
 }
 
 /** Update auto-sync settings. */
@@ -209,6 +247,14 @@ export async function getImportHistory(): Promise<{ imports: HistoryEntry[] }> {
   return apiFetch('/history')
 }
 
+export async function getImportJob(jobId: string): Promise<ImportJobDetail> {
+  return apiFetch(`/history/${jobId}`)
+}
+
+export async function undoImport(jobId: string): Promise<ImportUndoResponse> {
+  return apiFetch(`/history/${jobId}/undo`, { method: 'POST' })
+}
+
 export interface HistoryEntry {
   import_id: string
   source: string
@@ -219,6 +265,12 @@ export interface HistoryEntry {
   skipped: Record<string, number>
   error_count: number
   item_count: number
+  origin?: 'manual' | 'auto_sync'
+  undo_state?: 'available' | 'unavailable' | 'undone' | 'partially_undone'
+  undo_available?: boolean
+  undoable_count?: number
+  undone_count?: number
+  undo_skipped_count?: number
   created_at: string | null
   completed_at: string | null
 }

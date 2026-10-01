@@ -7,7 +7,7 @@
  * Preview table shows exactly what will be imported.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { Import, Loader2, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react'
+import { Import, Loader2, CheckCircle2, AlertTriangle, RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 
 import {
@@ -23,6 +23,7 @@ import {
   type ScanResult,
   type HistoryEntry,
   type AutoSyncSettings,
+  type ImportItemAction,
   SOURCE_LABELS,
   pickImportSource,
   detectImport,
@@ -33,11 +34,14 @@ import {
   getImportHistory,
   getAutoSyncSettings,
   updateAutoSyncSettings,
+  updateItemsAction,
+  undoImport,
 } from '@/api/import'
 import { queryKeys } from '@/queries/keys'
 import { Button } from '@/components/ui/button'
 import { SelectControl } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { notifyImportAutoSyncSettingsChanged } from '@/lib/import-auto-sync'
 
 type Phase = 'scanning' | 'idle' | 'detecting' | 'preview' | 'executing' | 'done'
 
@@ -51,6 +55,8 @@ export function ImportSettingsPage() {
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
   const [autoSync, setAutoSync] = useState<AutoSyncSettings | null>(null)
+  const [undoingImportId, setUndoingImportId] = useState<string | null>(null)
+  const [undoMessage, setUndoMessage] = useState<string | null>(null)
 
   // Auto-scan on mount
   useEffect(() => {
@@ -98,6 +104,8 @@ export function ImportSettingsPage() {
 
   const handleExecute = useCallback(async () => {
     if (!detectResult) return
+    const reimportCount = detectResult.items.filter((item) => item.action === 'reimport' || item.action === 'replace').length
+    if (reimportCount && !window.confirm(`Re-import ${reimportCount} existing item${reimportCount === 1 ? '' : 's'} and replace the currently imported content?`)) return
     setPhase('executing')
     setError(null)
     try {
@@ -113,6 +121,46 @@ export function ImportSettingsPage() {
     }
   }, [detectResult, queryClient])
 
+  const handleBulkAction = useCallback(async (indexes: number[], action: ImportItemAction) => {
+    if (!detectResult) return
+    try {
+      await updateItemsAction(detectResult.import_id, indexes, action)
+      setDetectResult((previous) => {
+        if (!previous) return previous
+        const items = [...previous.items]
+        for (const index of indexes) items[index] = { ...items[index], action }
+        return { ...previous, items }
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }, [detectResult])
+
+  const handleUndo = useCallback(async (entry: HistoryEntry) => {
+    if (!entry.undo_available || undoingImportId) return
+    const count = entry.undoable_count ?? 0
+    if (!window.confirm(`Undo this import? ${count} imported item${count === 1 ? '' : 's'} will be removed or restored.`)) return
+    setUndoingImportId(entry.import_id)
+    setUndoMessage(null)
+    try {
+      const result = await undoImport(entry.import_id)
+      const skippedDetails = result.items
+        .filter((item) => item.outcome === 'undo_skipped')
+        .map((item) => `${item.label}: ${item.reason ?? 'left untouched'}`)
+      const summary = result.skipped
+        ? `Undo completed partially: ${result.undone} changed, ${result.skipped} left untouched.`
+        : `Undo complete: ${result.undone} item${result.undone === 1 ? '' : 's'} restored or removed.`
+      setUndoMessage([summary, ...skippedDetails].join(' '))
+      const updated = await getImportHistory()
+      setHistory(updated.imports)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.team.sessions.all() })
+    } catch (err) {
+      setUndoMessage(err instanceof Error ? err.message : String(err))
+    } finally {
+      setUndoingImportId(null)
+    }
+  }, [queryClient, undoingImportId])
+
   const handleCancel = useCallback(async () => {
     if (detectResult) await cancelImport(detectResult.import_id).catch(() => {})
     setDetectResult(null)
@@ -122,7 +170,7 @@ export function ImportSettingsPage() {
   }, [detectResult])
 
   const handleActionChange = useCallback(
-    async (index: number, action: 'import' | 'skip' | 'replace' | 'rename') => {
+    async (index: number, action: ImportItemAction) => {
       if (!detectResult) return
       try {
         await updateItemAction(detectResult.import_id, index, action)
@@ -151,6 +199,7 @@ export function ImportSettingsPage() {
     try {
       const updated = await updateAutoSyncSettings({ enabled })
       setAutoSync(updated)
+      notifyImportAutoSyncSettingsChanged(updated)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -182,6 +231,7 @@ export function ImportSettingsPage() {
         <ImportPreview
           result={detectResult}
           onActionChange={handleActionChange}
+          onBulkAction={handleBulkAction}
           onExecute={handleExecute}
           onCancel={handleCancel}
         />
@@ -275,7 +325,7 @@ export function ImportSettingsPage() {
         <SettingsGroup title="Auto-sync">
           <SettingsRow
             label="Automatically detect new items"
-            description="Periodically scan for new skills, plugins, agents, and conversations added by other AI tools. Shows a notification when new items are found."
+            description="Import new sessions, skills, and agents while EvoFlux is open. Existing conflicts and MCP configuration stay under manual review."
             control={
               <button
                 type="button"
@@ -306,7 +356,10 @@ export function ImportSettingsPage() {
                   value={String(autoSync.scan_interval_seconds)}
                   onValueChange={(v) =>
                     updateAutoSyncSettings({ scan_interval_seconds: Number(v) })
-                      .then(setAutoSync)
+                      .then((updated) => {
+                        setAutoSync(updated)
+                        notifyImportAutoSyncSettingsChanged(updated)
+                      })
                       .catch(() => {})
                   }
                   size="sm"
@@ -337,6 +390,7 @@ export function ImportSettingsPage() {
       {/* ── History ────────────────────────────────────────────────────── */}
       {!historyLoading && history.length > 0 && (
         <SettingsGroup title="Previous imports">
+          {undoMessage && <div className="px-4 py-2 text-xs text-(--color-text-muted)" role="status">{undoMessage}</div>}
           <div className="overflow-x-auto">
             <table className="w-full text-[13px]">
               <thead>
@@ -345,6 +399,7 @@ export function ImportSettingsPage() {
                   <th className="px-4 py-2 font-medium">Items</th>
                   <th className="px-4 py-2 font-medium">Status</th>
                   <th className="px-4 py-2 font-medium">Date</th>
+                  <th className="px-4 py-2 font-medium">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -372,6 +427,15 @@ export function ImportSettingsPage() {
                         </span>
                       </td>
                       <td className="px-4 py-2 text-(--color-text-muted)">{date}</td>
+                      <td className="px-4 py-2">
+                        {entry.undo_available ? (
+                          <Button size="sm" variant="outline" disabled={undoingImportId !== null} onClick={() => void handleUndo(entry)}>
+                            {undoingImportId === entry.import_id ? 'Undoing…' : 'Undo'}
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-(--color-text-muted)">{entry.undo_state === 'undone' ? 'Undone' : entry.undo_state === 'partially_undone' ? 'Partially undone' : 'Undo unavailable'}</span>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
@@ -389,22 +453,51 @@ export function ImportSettingsPage() {
 function ImportPreview({
   result,
   onActionChange,
+  onBulkAction,
   onExecute,
   onCancel,
 }: {
   result: DetectResponse
-  onActionChange: (index: number, action: 'import' | 'skip' | 'replace' | 'rename') => void
+  onActionChange: (index: number, action: ImportItemAction) => void
+  onBulkAction: (indexes: number[], action: ImportItemAction) => void
   onExecute: () => void
   onCancel: () => void
 }) {
-  const importCount = result.items.filter((it) => it.action === 'import').length
+  const [itemQuery, setItemQuery] = useState('')
+  const [kindFilter, setKindFilter] = useState('all')
+  const [page, setPage] = useState(0)
+  const [selectedConflicts, setSelectedConflicts] = useState<Set<number>>(() => new Set())
+  const pageSize = 100
+  const newImportCount = result.items.filter((it) => it.action === 'import').length
+  const reimportCount = result.items.filter((it) => it.action === 'reimport' || it.action === 'replace').length
+  const importCount = newImportCount + reimportCount
   const conflictCount = result.items.filter((it) => it.conflicts.length > 0).length
+  const allConflictIndexes = result.items.flatMap((item, index) => item.conflicts.length ? [index] : [])
+
+  const selectConflicts = (indexes: number[], selected: boolean) => {
+    setSelectedConflicts((previous) => {
+      const next = new Set(previous)
+      for (const index of indexes) selected ? next.add(index) : next.delete(index)
+      return next
+    })
+  }
 
   // Group items by kind for summary
   const kindCounts: Record<string, number> = {}
   for (const item of result.items) {
     kindCounts[item.kind] = (kindCounts[item.kind] || 0) + 1
   }
+  const filteredItems = result.items
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => {
+      if (kindFilter !== 'all' && item.kind !== kindFilter) return false
+      const query = itemQuery.trim().toLocaleLowerCase()
+      return !query || [item.kind, item.label, item.target_name, item.preview, ...item.conflicts]
+        .some((field) => field.toLocaleLowerCase().includes(query))
+    })
+  const pageCount = Math.max(1, Math.ceil(filteredItems.length / pageSize))
+  const visibleItems = filteredItems.slice(page * pageSize, (page + 1) * pageSize)
+  const visibleConflictIndexes = visibleItems.flatMap(({ item, index }) => item.conflicts.length ? [index] : [])
 
   return (
     <SettingsGroup title={`Preview — ${SOURCE_LABELS[result.detected_source as ImportSource] ?? result.detected_source}`}>
@@ -432,11 +525,58 @@ function ImportPreview({
         )}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 border-y border-(--color-border-subtle) px-3 py-2">
+        <div className="flex h-9 min-w-48 flex-1 items-center gap-2 rounded-md border border-(--color-border) px-2.5">
+          <Search size={14} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
+          <input
+            value={itemQuery}
+            onChange={(event) => { setItemQuery(event.target.value); setPage(0) }}
+            placeholder="Find a session, skill, or item…"
+            aria-label="Find an import item"
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-(--color-text-muted)"
+          />
+        </div>
+        <select
+          value={kindFilter}
+          onChange={(event) => { setKindFilter(event.target.value); setPage(0) }}
+          aria-label="Filter import items by type"
+          className="h-9 rounded-md border border-(--color-border) bg-(--bg-card) px-2 text-sm text-(--color-text)"
+        >
+          <option value="all">All types ({result.items.length})</option>
+          {Object.entries(kindCounts).map(([kind, count]) => (
+            <option key={kind} value={kind}>{kind} ({count})</option>
+          ))}
+        </select>
+        <span className="w-full text-right text-xs text-(--color-text-muted) sm:w-auto">
+          {filteredItems.length === result.items.length
+            ? `${result.items.length} items`
+            : `${filteredItems.length} of ${result.items.length} items`}
+        </span>
+      </div>
+
+      {conflictCount > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-(--color-border-subtle) px-3 py-2">
+          <Button size="sm" variant="outline" onClick={() => selectConflicts(visibleConflictIndexes, true)} disabled={!visibleConflictIndexes.length}>
+            Select visible conflicts
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => selectConflicts(allConflictIndexes, true)}>
+            Select all conflicts ({conflictCount})
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelectedConflicts(new Set())} disabled={!selectedConflicts.size}>
+            Clear selection
+          </Button>
+          <Button size="sm" onClick={() => onBulkAction([...selectedConflicts], 'reimport')} disabled={!selectedConflicts.size}>
+            Re-import selected ({selectedConflicts.size})
+          </Button>
+        </div>
+      )}
+
       {/* Items table */}
-      <div className="overflow-x-auto">
+      <div className="max-h-[55vh] overflow-auto overscroll-contain">
         <table className="w-full text-[13px]">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-(--bg-card)">
             <tr className="border-b border-(--color-border-subtle) text-left text-(--color-text-muted)">
+              <th className="px-3 py-2 font-medium" aria-label="Select"></th>
               <th className="px-4 py-2 font-medium">Type</th>
               <th className="px-4 py-2 font-medium">Name</th>
               <th className="px-4 py-2 font-medium">Details</th>
@@ -444,12 +584,36 @@ function ImportPreview({
             </tr>
           </thead>
           <tbody>
-            {result.items.map((item, i) => (
-              <PreviewRow key={item.id} item={item} index={i} onActionChange={onActionChange} />
+            {visibleItems.map(({ item, index }) => (
+              <PreviewRow
+                key={item.id}
+                item={item}
+                index={index}
+                selected={selectedConflicts.has(index)}
+                onSelect={(selected) => selectConflicts([index], selected)}
+                onActionChange={onActionChange}
+              />
             ))}
           </tbody>
         </table>
+        {visibleItems.length === 0 && (
+          <p className="px-4 py-8 text-center text-sm text-(--color-text-muted)">No import items match this filter.</p>
+        )}
       </div>
+
+      {filteredItems.length > pageSize && (
+        <div className="flex items-center justify-between border-t border-(--color-border-subtle) px-3 py-2 text-xs text-(--color-text-muted)">
+          <span>Page {page + 1} of {pageCount}</span>
+          <div className="flex gap-1">
+            <Button variant="ghost" size="sm" onClick={() => setPage((current) => Math.max(0, current - 1))} disabled={page === 0} aria-label="Previous page">
+              <ChevronLeft size={14} /> Previous
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} disabled={page >= pageCount - 1} aria-label="Next page">
+              Next <ChevronRight size={14} />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {result.warnings.length > 0 && (
         <div className="px-4 py-2 text-[12px] text-(--color-warning)">
@@ -460,7 +624,11 @@ function ImportPreview({
       {/* Actions */}
       <div className="flex items-center gap-3 px-4 py-3 border-t border-(--color-border-subtle)">
         <Button onClick={onExecute} disabled={importCount === 0}>
-          Import {importCount} new item{importCount !== 1 ? 's' : ''}
+          {reimportCount === 0
+            ? `Import ${newImportCount} new item${newImportCount !== 1 ? 's' : ''}`
+            : newImportCount === 0
+              ? `Re-import ${reimportCount} existing item${reimportCount !== 1 ? 's' : ''}`
+              : `Import ${newImportCount} new + re-import ${reimportCount} existing`}
         </Button>
         <Button variant="ghost" onClick={onCancel}>Cancel</Button>
       </div>
@@ -471,16 +639,23 @@ function ImportPreview({
 function PreviewRow({
   item,
   index,
+  selected,
+  onSelect,
   onActionChange,
 }: {
   item: { id: string; kind: string; label: string; preview: string; action: string; conflicts: string[]; target_name: string }
   index: number
-  onActionChange: (index: number, action: 'import' | 'skip' | 'replace' | 'rename') => void
+  selected: boolean
+  onSelect: (selected: boolean) => void
+  onActionChange: (index: number, action: ImportItemAction) => void
 }) {
   const hasConflict = item.conflicts.length > 0
 
   return (
     <tr className={cn('border-b border-(--color-border-subtle) last:border-0', hasConflict && 'bg-(--color-warning)/5')}>
+      <td className="px-3 py-2">
+        {hasConflict && <input type="checkbox" checked={selected} onChange={(event) => onSelect(event.target.checked)} aria-label={`Select conflict ${item.target_name}`} />}
+      </td>
       <td className="px-4 py-2">
         <span className="rounded-full bg-(--bg-key) px-2 py-0.5 text-[11px] font-medium text-(--color-text-muted)">
           {item.kind}
@@ -499,13 +674,13 @@ function PreviewRow({
       <td className="px-4 py-2">
         <SelectControl
           value={item.action}
-          onValueChange={(v) => onActionChange(index, v as 'import' | 'skip' | 'replace' | 'rename')}
+          onValueChange={(v) => onActionChange(index, v as ImportItemAction)}
           size="sm"
           options={[
-            { value: 'import', label: 'Import' },
             { value: 'skip', label: 'Skip' },
-            { value: 'replace', label: 'Replace' },
-            { value: 'rename', label: 'Rename' },
+            ...(hasConflict
+              ? [{ value: 'reimport', label: 'Re-import' }]
+              : [{ value: 'import', label: 'Import' }]),
           ]}
         />
       </td>
@@ -525,7 +700,7 @@ function ImportResult({
   const totalImported = Object.values(result.imported).reduce((a, b) => a + b, 0)
   const totalSkipped = Object.values(result.skipped).reduce((a, b) => a + b, 0)
   const hasErrors = result.errors.length > 0
-  const hasImportedSessions = (result.imported.sessions ?? 0) > 0
+  const hasImportedSessions = (result.imported.session ?? 0) > 0
 
   return (
     <SettingsCallout tone={hasErrors ? 'warning' : 'success'}>

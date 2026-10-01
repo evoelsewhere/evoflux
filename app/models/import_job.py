@@ -20,6 +20,16 @@ class ImportJob(SQLModel, table=True):
     source: str = Field(sa_column=Column(sa.String(50), nullable=False, index=True))
     source_path: str = Field(sa_column=Column(sa.Text(), nullable=False))
     detected_format: str = Field(sa_column=Column(sa.String(50), nullable=False))
+    origin: str = Field(
+        default="manual",
+        sa_column=Column(sa.String(20), nullable=False, server_default="manual"),
+    )
+    undo_state: str = Field(
+        default="unavailable",
+        sa_column=Column(
+            sa.String(24), nullable=False, server_default="unavailable"
+        ),
+    )
     status: str = Field(
         default="completed",
         sa_column=Column(sa.String(20), nullable=False, server_default="completed"),

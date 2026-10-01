@@ -629,6 +629,9 @@ def parse_claude_code_export(path: Path) -> ImportBundle:
     if settings_path.is_file():
         all_items.extend(_parse_settings(settings_path))
 
+    # Claude Code also supports user-level skills directly under ~/.claude/skills.
+    all_items.extend(_scan_skills_in_dir(path / "skills", "global"))
+
     # Plugin skills from installed_plugins.json
     all_items.extend(_parse_plugin_skills(path))
 

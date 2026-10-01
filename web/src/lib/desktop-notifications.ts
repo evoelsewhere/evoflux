@@ -2,13 +2,14 @@ import { getPlatform } from '@/hooks/use-platform'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
 import { translateText } from '@/i18n'
 
-export type DesktopNotificationKind = 'assistant_done' | 'background_done' | 'reminder_fired'
+export type DesktopNotificationKind = 'assistant_done' | 'background_done' | 'reminder_fired' | 'import_sync'
 export type DesktopNotificationStatus = 'sent' | 'disabled' | 'unsupported' | 'permission-denied' | 'error'
 
 export interface DesktopNotificationPayload {
   kind: DesktopNotificationKind
   title: string
   body: string
+  actionTarget?: 'settings_import'
 }
 
 export interface DesktopNotificationResult {
@@ -109,7 +110,7 @@ export async function sendDesktopNotification(
   if (skipped) return skipped
 
   try {
-    const { isPermissionGranted, requestPermission } = await import('@tauri-apps/plugin-notification')
+    const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification')
     let granted = await isPermissionGranted()
     if (!granted && !permissionRequested) {
       permissionRequested = true
@@ -118,13 +119,11 @@ export async function sendDesktopNotification(
     if (!granted) {
       return { status: 'permission-denied', message: 'OS notification permission was not granted.' }
     }
-    const { invoke } = await import('@tauri-apps/api/core')
-    await invoke('plugin:notification|notify', {
-      options: {
-        title: translateText(payload.title),
-        body: translateText(payload.body),
-        group: `EvoFlux-${payload.kind}`,
-      },
+    await sendNotification({
+      title: translateText(payload.title),
+      body: translateText(payload.body),
+      group: `EvoFlux-${payload.kind}`,
+      extra: payload.actionTarget ? { actionTarget: payload.actionTarget } : undefined,
     })
     playNotificationSound()
     return { status: 'sent', message: 'Native notification sent.' }

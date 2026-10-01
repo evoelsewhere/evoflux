@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import { Suspense, useEffect, useRef } from 'react'
 import { RouterProvider } from '@tanstack/react-router'
 import { FileText, RotateCcw } from 'lucide-react'
 import { useAppBackendBootstrap } from './hooks/use-app-backend-bootstrap'
@@ -8,6 +8,9 @@ import EvoFluxLogo from '@/assets/brand/evoflux-app-icon.png'
 import { useLocale } from '@/i18n'
 import { WebBridgeAppearanceSync } from '@/components/WebBridgeAppearanceSync'
 import { ImportWelcomePopup } from '@/components/ImportWelcomePopup'
+import { getPlatform } from '@/hooks/use-platform'
+import { useUIStore } from '@/stores/useUIStore'
+import { startImportAutoSync } from '@/lib/import-auto-sync'
 
 const ANSI_SGR_PATTERN = new RegExp(
   `${String.fromCharCode(27)}\\[[0-9;]*m`,
@@ -17,6 +20,45 @@ const ANSI_SGR_PATTERN = new RegExp(
 function App() {
   useLocale()
   const backend = useAppBackendBootstrap()
+  const backendReadyRef = useRef(backend.ready)
+  const pendingImportAction = useRef(false)
+  backendReadyRef.current = backend.ready
+
+  useEffect(() => {
+    if (!getPlatform().isTauri) return
+    let cancelled = false
+    let unlisten: (() => void) | undefined
+    void import('@tauri-apps/plugin-notification')
+      .then(({ onAction }) =>
+        onAction((notification) => {
+          if (notification.extra?.actionTarget === 'settings_import') {
+            if (backendReadyRef.current) useUIStore.getState().openSettings('import')
+            else pendingImportAction.current = true
+          }
+        }),
+      )
+      .then((listener) => {
+        if (cancelled) listener.unregister()
+        else unlisten = () => listener.unregister()
+      })
+      .catch((error: unknown) => console.warn('notification action listener failed', error))
+    return () => {
+      cancelled = true
+      unlisten?.()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (backend.ready && pendingImportAction.current) {
+      pendingImportAction.current = false
+      useUIStore.getState().openSettings('import')
+    }
+  }, [backend.ready])
+
+  useEffect(() => {
+    if (!backend.ready) return
+    return startImportAutoSync()
+  }, [backend.ready])
 
   return (
     <AppMotionConfig>
