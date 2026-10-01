@@ -163,28 +163,40 @@ function ShellResult({ result }: { result: string }) {
 // Filesystem renderers
 // ---------------------------------------------------------------------------
 
+// grep/glob end a partial page with "[Showing … Pass offset=N …]" and grep's
+// count mode with "[N matching lines in M files.]" — metadata, not entries.
+const PAGE_NOTICE = /^\[(Showing |\d+ matching lines in )[^\n]*\]$/
+
 function FileListResult({ result }: { result: string }) {
   // ls / glob return newline-separated paths or JSON array
   const parsed = tryParseJSON(result)
-  const entries: string[] = Array.isArray(parsed)
+  const lines: string[] = Array.isArray(parsed)
     ? parsed.map(String)
     : result
         .split('\n')
         .map((l) => l.trim())
         .filter(Boolean)
+  const notices = lines.filter((line) => PAGE_NOTICE.test(line))
+  const items = lines.filter((line) => !PAGE_NOTICE.test(line))
+  const entryCount = items.filter((line) => line !== '--').length
 
   return (
     <div className="flex flex-col gap-1">
       <span className="font-mono text-xs text-(--color-text-muted)">
-        {entries.length} {entries.length === 1 ? 'entry' : 'entries'}
+        {entryCount} {entryCount === 1 ? 'entry' : 'entries'}
       </span>
       <ul className="space-y-0.5">
-        {entries.map((e, i) => (
+        {items.map((e, i) => (
           <li key={i} className="font-mono text-xs leading-relaxed text-(--color-text-2)">
             {e}
           </li>
         ))}
       </ul>
+      {notices.map((notice, i) => (
+        <span key={i} className="font-mono text-xs text-(--color-text-muted)">
+          {notice}
+        </span>
+      ))}
     </div>
   )
 }

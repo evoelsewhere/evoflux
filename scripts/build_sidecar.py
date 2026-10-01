@@ -13,6 +13,7 @@ Layout produced under ``<out>/``::
         pydantic/
         …
       tailnet/               ← embedded tsnet helper + license notices
+      ripgrep/               ← pinned rg binary + license notices (grep tool)
 
 The Tauri shell runs a tiny bootstrap that adds
 ``sidecar-bundle/site-packages`` with ``site.addsitedir()`` so platform
@@ -45,13 +46,17 @@ entry in ``tauri.conf.json``.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import platform
+import re
 import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -83,6 +88,50 @@ STRIP_RELATIVE_DIRS = (
 )
 
 IS_WINDOWS = platform.system() == "Windows"
+
+# MSVC runtime DLLs that Windows native extensions import by name.
+# python-build-standalone ships only vcruntime140*.dll; C++ extensions such as
+# greenlet (required by SQLAlchemy's asyncio bridge) also import msvcp140.dll,
+# which exists only where the Visual C++ Redistributable is installed. Build
+# machines have it, so the smoke test passes there while a clean end-user
+# machine fails with "DLL load failed while importing _greenlet".
+MSVC_RUNTIME_DLL = re.compile(
+    rb"(?i)\b((?:msvcp140|vcruntime140|concrt140|vcomp140)(?:_[a-z0-9_]+)?\.dll)"
+)
+
+# ripgrep shipped for the agent's grep tool: most end-user machines have no
+# rg on PATH, and the Python fallback is far slower and reads only the search
+# root's .gitignore. Asset suffix and SHA-256 per sidecar target triple, pinned
+# from the GitHub release and checked against its published .sha256 files.
+# Linux takes the static musl builds so one binary runs on every glibc.
+RIPGREP_VERSION = "15.2.0"
+RIPGREP_ASSETS: dict[str, tuple[str, str]] = {
+    "x86_64-pc-windows-msvc": (
+        "x86_64-pc-windows-msvc.zip",
+        "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5",
+    ),
+    "aarch64-pc-windows-msvc": (
+        "aarch64-pc-windows-msvc.zip",
+        "e4abca10c3a64ebea742667dd7009449d49403db5460dd6873e389fa2945360f",
+    ),
+    "x86_64-apple-darwin": (
+        "x86_64-apple-darwin.tar.gz",
+        "af7825fcc69a2afc7a7aea55fc9af90e26421d8f20fe59df32e233c0b8a231c1",
+    ),
+    "aarch64-apple-darwin": (
+        "aarch64-apple-darwin.tar.gz",
+        "3750b2e93f37e0c692657da574d7019a101c0084da05a790c83fd335bad973e4",
+    ),
+    "x86_64-unknown-linux-gnu": (
+        "x86_64-unknown-linux-musl.tar.gz",
+        "33e15bcf1624b25cdd2a55813a47a2f95dbe126268203e76aa6a585d1e7b149c",
+    ),
+    "aarch64-unknown-linux-gnu": (
+        "aarch64-unknown-linux-musl.tar.gz",
+        "800b1e7206afe799dfb5a6901f23147cfaabe0e52210538100f61e86e1740915",
+    ),
+}
+RIPGREP_LICENSES = ("COPYING", "LICENSE-MIT", "UNLICENSE")
 
 
 def detect_target_triple() -> str:
@@ -295,6 +344,26 @@ def install_packages(
     )
 
 
+def bundle_web_dist(root: Path, site_packages: Path) -> int:
+    """Copy the built React bundle into ``site-packages/app/_web_dist``.
+
+    The desktop shell and the remote Tailscale session both need the SPA and the
+    API on one origin, so the web build has to travel inside the sidecar bundle;
+    ``site-packages`` has no ``web/`` sibling the running code could find.
+    Returns the number of files copied.
+    """
+    source = root / "web" / "dist"
+    if not (source / "index.html").is_file():
+        raise SystemExit(
+            f"web bundle missing: {source / 'index.html'} — build the web UI first"
+        )
+    target = site_packages / "app" / "_web_dist"
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(source, target)
+    return sum(1 for path in target.rglob("*") if path.is_file())
+
+
 def strip_bundle(site_packages: Path) -> int:
     """Remove caches/tests/etc. from site-packages. Returns bytes saved."""
     removed = 0
@@ -330,6 +399,118 @@ def strip_bundle(site_packages: Path) -> int:
         except OSError:
             pass
     return removed
+
+
+def msvc_runtime_sources() -> list[Path]:
+    """Directories to copy MSVC runtime DLLs from, most preferred first.
+
+    ``VCToolsRedistDir`` is set in a Visual Studio developer shell and holds the
+    redistributable CRT; System32 holds the installed Redistributable, which is
+    what the build machine's own smoke test resolves against.
+    """
+    arch = "arm64" if detect_target_triple().startswith("aarch64") else "x64"
+    sources: list[Path] = []
+    redist = os.environ.get("VCToolsRedistDir")
+    if redist:
+        sources += sorted(
+            (Path(redist) / arch).glob("Microsoft.VC14*.CRT"), reverse=True
+        )
+    sources.append(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32")
+    return sources
+
+
+def bundle_msvc_runtime(
+    python_dir: Path, site_packages: Path, sources: list[Path] | None = None
+) -> list[str]:
+    """Copy MSVC runtime DLLs imported by bundled extensions next to python.exe.
+
+    Windows resolves an extension module's imports from the application
+    directory (the interpreter's), the extension's own directory and System32,
+    so a DLL present in neither of the first two is only found on machines with
+    the Visual C++ Redistributable. Returns the names copied; exits when a
+    needed DLL is in none of ``sources``.
+    """
+    present = {path.name.lower() for path in python_dir.glob("*.dll")}
+    local: dict[Path, set[str]] = {}
+    needed: set[str] = set()
+    for path in site_packages.rglob("*"):
+        if path.suffix.lower() not in {".pyd", ".dll"} or not path.is_file():
+            continue
+        if path.parent not in local:
+            local[path.parent] = {p.name.lower() for p in path.parent.glob("*.dll")}
+        for match in MSVC_RUNTIME_DLL.finditer(path.read_bytes()):
+            name = match.group(1).decode("ascii").lower()
+            if name not in present and name not in local[path.parent]:
+                needed.add(name)
+
+    source_dirs = msvc_runtime_sources() if sources is None else sources
+    copied: list[str] = []
+    for name in sorted(needed):
+        source = next((d / name for d in source_dirs if (d / name).is_file()), None)
+        if source is None:
+            searched = "\n  ".join(str(d) for d in source_dirs)
+            raise SystemExit(
+                f"{name} is imported by a bundled extension but was not found in:"
+                f"\n  {searched}\nInstall the Visual C++ Redistributable or run "
+                "from a Visual Studio developer shell."
+            )
+        shutil.copy2(source, python_dir / name)
+        copied.append(name)
+    return copied
+
+
+def fetch_ripgrep(out: Path, triple: str) -> Path:
+    """Download the pinned ripgrep for ``triple`` into ``out`` and verify it.
+
+    Only the binary and its license notices are kept, each written by its
+    base name so an archive entry can never escape ``out``. Returns the path
+    of the binary.
+    """
+    asset = RIPGREP_ASSETS.get(triple)
+    if asset is None:
+        raise SystemExit(f"no pinned ripgrep build for {triple}")
+    suffix, expected = asset
+    name = f"ripgrep-{RIPGREP_VERSION}-{suffix}"
+    url = (
+        "https://github.com/BurntSushi/ripgrep/releases/download/"
+        f"{RIPGREP_VERSION}/{name}"
+    )
+    binary = "rg.exe" if IS_WINDOWS else "rg"
+    wanted = {binary, *RIPGREP_LICENSES}
+    out.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / name
+        print(f">> download {url}", flush=True)
+        with urllib.request.urlopen(url, timeout=120) as response:
+            archive.write_bytes(response.read())
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        if digest != expected:
+            raise SystemExit(
+                f"ripgrep checksum mismatch for {name}: expected {expected}, "
+                f"got {digest}"
+            )
+        # Release archives hold one top-level ``ripgrep-<version>-<triple>/``.
+        if suffix.endswith(".zip"):
+            with zipfile.ZipFile(archive) as bundle:
+                for info in bundle.infolist():
+                    parts = Path(info.filename).parts
+                    if len(parts) == 2 and parts[1] in wanted and not info.is_dir():
+                        (out / parts[1]).write_bytes(bundle.read(info))
+        else:
+            with tarfile.open(archive, "r:gz") as bundle:
+                for member in bundle.getmembers():
+                    parts = Path(member.name).parts
+                    if len(parts) == 2 and parts[1] in wanted and member.isfile():
+                        source = bundle.extractfile(member)
+                        if source is not None:
+                            (out / parts[1]).write_bytes(source.read())
+    rg = out / binary
+    missing = sorted(entry for entry in wanted if not (out / entry).is_file())
+    if missing:
+        raise SystemExit(f"ripgrep archive {name} is missing {', '.join(missing)}")
+    if not IS_WINDOWS:
+        rg.chmod(0o755)
+    return rg
 
 
 def zip_pure_python_packages(site_packages: Path) -> tuple[int, int]:
@@ -748,8 +929,7 @@ def main() -> int:
         "--extras",
         default="office-preview",
         help=(
-            "Comma-separated optional-dep extras to install "
-            "(default: office-preview)."
+            "Comma-separated optional-dep extras to install (default: office-preview)."
         ),
     )
     ap.add_argument(
@@ -769,6 +949,14 @@ def main() -> int:
         "--no-tailnet",
         action="store_true",
         help="Skip the embedded tsnet helper (development diagnostics only).",
+    )
+    ap.add_argument(
+        "--no-ripgrep",
+        action="store_true",
+        help=(
+            "Skip the bundled ripgrep; grep then needs rg on PATH or falls back "
+            "to the slow Python scan (development diagnostics only)."
+        ),
     )
     args = ap.parse_args()
 
@@ -802,12 +990,19 @@ def main() -> int:
     # ── 3. Strip caches/tests/etc. ──────────────────────────────────────
     saved = strip_bundle(site_packages)
     print(f"stripped: {human_bytes(saved)}")
+    if IS_WINDOWS:
+        copied = bundle_msvc_runtime(python_target, site_packages)
+        print(f"msvc runtime: {', '.join(copied) or 'nothing missing'}")
     if IS_WINDOWS and not args.no_zip_purelib:
         packages_zipped, files_zipped = zip_pure_python_packages(site_packages)
         print(
             "zipimport: "
             f"packed {packages_zipped} pure-Python packages / {files_zipped} files"
         )
+
+    # ── 3b. Ship the built web UI alongside the API ────────────────────
+    web_files = bundle_web_dist(root, site_packages)
+    print(f"web ui:        {web_files} files -> site-packages/app/_web_dist")
 
     # ── 4. Build the embedded tailnet helper ────────────────────────────
     if not args.no_tailnet:
@@ -823,17 +1018,24 @@ def main() -> int:
             cwd=root,
         )
 
-    # ── 5. Smoke test ───────────────────────────────────────────────────
+    # ── 5. Fetch the pinned ripgrep for the grep tool ──────────────────
+    if not args.no_ripgrep:
+        rg = fetch_ripgrep(out / "ripgrep", detect_target_triple())
+        run([str(rg), "--version"])
+
+    # ── 6. Smoke test ───────────────────────────────────────────────────
     if not args.no_smoke:
         validate_migration_bundle(python_bin, site_packages)
         smoke_test(python_bin, site_packages)
 
-    # ── 6. Report ────────────────────────────────────────────────────────
+    # ── 7. Report ────────────────────────────────────────────────────────
     print("\n=== bundle summary ===")
     report_size(python_target, "python runtime")
     report_size(site_packages, "site-packages")
     if (out / "tailnet").is_dir():
         report_size(out / "tailnet", "embedded tailnet")
+    if (out / "ripgrep").is_dir():
+        report_size(out / "ripgrep", "bundled ripgrep")
     report_size(out, "TOTAL")
     return 0
 

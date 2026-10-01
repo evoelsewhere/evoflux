@@ -337,8 +337,11 @@ function SessionListPanel({
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div className="space-y-0.5 pb-1">
-      <div className="sticky top-0 z-1 flex h-7 items-center gap-1.5 bg-(--bg-sidebar) px-2 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
+    <>
+      {/* The header sits outside the scroller rather than sticky inside it:
+          a sticky header needs an opaque fill to hide rows beneath it, and no
+          solid fill matches the translucent sidebar glass. */}
+      <div className="flex h-7 shrink-0 items-center gap-1.5 px-3.5 text-[10px] font-medium uppercase tracking-wide text-(--color-text-subtle)">
         <span>Chats</span>
         {!sessions.isLoading && projectSessions.length > 0 && (
           <span className="ml-auto font-normal normal-case tracking-normal tabular-nums">
@@ -346,44 +349,46 @@ function SessionListPanel({
           </span>
         )}
       </div>
-      {projectSessions.length === 0 && !sessions.isLoading && (
-        <p className="px-2 py-1.5 text-[11px] text-(--color-text-subtle)">
-          No sessions yet.
-        </p>
-      )}
-      {sessions.isLoading && (
-        <div role="status" aria-label="Loading sessions">
-          <SessionRowsSkeleton />
-        </div>
-      )}
-      {projectSessions.map((session) => (
-        <SessionRow
-          key={session.id}
-          session={session}
-          isActive={session.id === currentSessionId}
-          enterIndex={sessionEnterIndex(session.id)}
-          density="compact"
-          onSelect={onSessionSelect}
-          onOpenSideChat={onSessionSideChat}
-          onDelete={onSessionDelete}
-          pendingDelete={pendingDeleteId === session.id}
-          onCancelDelete={onCancelDelete}
-          onConfirmDelete={onConfirmDelete}
-          onEdit={onSessionEdit}
-          mobileLongPressActions={mobileLongPressActions}
-          onLongPress={onSessionLongPress}
-          onContextActions={onSessionContextActions}
-        />
-      ))}
-      {sessions.hasNextPage && (
-        <div ref={loadMoreRef} className="h-px" aria-hidden="true" />
-      )}
-      {sessions.isFetchingNextPage && (
-        <div role="status" aria-label="Loading more sessions">
-          <SessionRowsSkeleton />
-        </div>
-      )}
-    </div>
+      <div data-session-scroll className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain px-1.5 pb-1">
+        {projectSessions.length === 0 && !sessions.isLoading && (
+          <p className="px-2 py-1.5 text-[11px] text-(--color-text-subtle)">
+            No sessions yet.
+          </p>
+        )}
+        {sessions.isLoading && (
+          <div role="status" aria-label="Loading sessions">
+            <SessionRowsSkeleton />
+          </div>
+        )}
+        {projectSessions.map((session) => (
+          <SessionRow
+            key={session.id}
+            session={session}
+            isActive={session.id === currentSessionId}
+            enterIndex={sessionEnterIndex(session.id)}
+            density="compact"
+            onSelect={onSessionSelect}
+            onOpenSideChat={onSessionSideChat}
+            onDelete={onSessionDelete}
+            pendingDelete={pendingDeleteId === session.id}
+            onCancelDelete={onCancelDelete}
+            onConfirmDelete={onConfirmDelete}
+            onEdit={onSessionEdit}
+            mobileLongPressActions={mobileLongPressActions}
+            onLongPress={onSessionLongPress}
+            onContextActions={onSessionContextActions}
+          />
+        ))}
+        {sessions.hasNextPage && (
+          <div ref={loadMoreRef} className="h-px" aria-hidden="true" />
+        )}
+        {sessions.isFetchingNextPage && (
+          <div role="status" aria-label="Loading more sessions">
+            <SessionRowsSkeleton />
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -1184,7 +1189,7 @@ export function CodingSidebar({
                       on that same 14px line. */}
                   <div
                     ref={projectRowRef}
-                    className="flex h-9 shrink-0 items-center gap-1 rounded-lg bg-(--bg-key)/50 pl-1 pr-[7px]"
+                    className="flex h-9 shrink-0 items-center gap-1 rounded-lg bg-(--color-text)/4 pl-1 pr-[7px]"
                   >
                     <Combobox
                       items={projects.map((option) => ({
@@ -1209,7 +1214,7 @@ export function CodingSidebar({
                       emptyText="No matching projects."
                       size="sm"
                       clearable={false}
-                      className="min-w-0 flex-1 border-0 bg-transparent font-medium shadow-none hover:bg-(--bg-key) focus-within:ring-0"
+                      className="min-w-0 flex-1 border-0 bg-transparent font-medium shadow-none hover:bg-(--color-text)/6 focus-within:ring-0"
                       anchor={projectRowRef}
                       footer={(close) => (
                         <>
@@ -1250,7 +1255,7 @@ export function CodingSidebar({
                       type="button"
                       onClick={() => openProjectSession(project)}
                       disabled={!canCreateSession}
-                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) outline-none hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-1 focus-visible:ring-(--color-border-strong) disabled:cursor-not-allowed disabled:opacity-40"
+                      className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) outline-none hover:bg-(--color-text)/6 hover:text-(--color-text) focus-visible:ring-1 focus-visible:ring-(--color-border-strong) disabled:cursor-not-allowed disabled:opacity-40"
                       aria-label={canCreateSession ? `New session in ${project.name}` : `${project.name} has no repositories yet`}
                       title={canCreateSession ? `New chat in ${project.name}` : "Add a repository first"}
                     >
@@ -1260,7 +1265,7 @@ export function CodingSidebar({
                         menu instead of a row of 12px icons beside the name. */}
                     <DropdownMenu>
                       <DropdownMenuTrigger
-                        className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) outline-none hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:ring-1 focus-visible:ring-(--color-border-strong) data-popup-open:bg-(--bg-key)"
+                        className="flex size-7 shrink-0 items-center justify-center rounded-md text-(--color-text-muted) outline-none hover:bg-(--color-text)/6 hover:text-(--color-text) focus-visible:ring-1 focus-visible:ring-(--color-border-strong) data-popup-open:bg-(--color-text)/6"
                         aria-label={`Project actions for ${project.name}`}
                         title="Project actions"
                       >
@@ -1289,7 +1294,7 @@ export function CodingSidebar({
                   <button
                     type="button"
                     onClick={() => toggleProjectExpanded(project.id)}
-                    className="mt-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-3.5 text-xs text-(--color-text-muted) outline-none hover:bg-(--bg-key)/60 hover:text-(--color-text) focus-visible:ring-1 focus-visible:ring-(--color-border-strong)"
+                    className="mt-1 flex h-7 shrink-0 items-center gap-1.5 rounded-md px-3.5 text-xs text-(--color-text-muted) outline-none hover:bg-(--color-text)/4 hover:text-(--color-text) focus-visible:ring-1 focus-visible:ring-(--color-border-strong)"
                     aria-expanded={repositoriesExpanded}
                     aria-label={`${repositoriesExpanded ? "Hide" : "Show"} repositories in ${project.name}`}
                   >
@@ -1334,7 +1339,7 @@ export function CodingSidebar({
                               y: pos.y,
                             });
                           }}
-                          className="group/repo flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs text-(--color-text-2) hover:bg-(--bg-key) hover:text-(--color-text)"
+                          className="group/repo flex h-7 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs text-(--color-text-2) hover:bg-(--color-text)/4 hover:text-(--color-text)"
                           aria-label={`Actions for repository ${repository.display_name || repository.name || workspaceLabel(repository.path)}`}
                           title={repository.path}
                         >
@@ -1348,9 +1353,9 @@ export function CodingSidebar({
                     </div>
                   )}
 
-                  {/* Chats take the rest of the height and scroll on their own;
-                      the list's header is sticky so no row slides under it. */}
-                  <div data-session-scroll className="mt-1 min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-(--color-border-subtle) px-1.5">
+                  {/* Chats take the rest of the height; only the rows scroll,
+                      so the list's header stays put above them. */}
+                  <div className="mt-1 flex min-h-0 flex-1 flex-col border-t border-(--color-border-subtle)">
                     <ProjectSessionList
                       projectId={project.id}
                       currentSessionId={currentSessionId}
