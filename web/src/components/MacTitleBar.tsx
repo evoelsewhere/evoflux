@@ -9,6 +9,8 @@
 import { ChevronLeft, ChevronRight, PanelLeft } from 'lucide-react'
 import { useEffect } from 'react'
 
+import { NotificationInboxButton } from '@/components/notifications/NotificationInboxButton'
+
 import { usePlatform } from '@/hooks/use-platform'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
 import { useWindowHistory } from '@/hooks/use-window-history'
@@ -38,6 +40,7 @@ export function MacTitleBar() {
       aria-label="Window navigation"
     >
       <div className="absolute left-(--spacing-mac-traffic-inset) pl-2 top-[5px] flex h-7 items-center">
+        <NotificationInboxButton align="start" />
         <button
           type="button"
           onClick={requestShellSidebarToggle}

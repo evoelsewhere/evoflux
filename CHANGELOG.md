@@ -4,7 +4,12 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- On Windows and macOS, the notification bell and its **Notifications** inbox
+  panel now sit in the window title bar next to the window buttons (left of
+  the minimize/maximize/close cluster on Windows, right of the traffic lights
+  on macOS) instead of the workbench top bar.
 
 ## [3.0.4] - 2026-10-01
 
