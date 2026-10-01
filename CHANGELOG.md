@@ -10,6 +10,8 @@ No changes yet.
 
 ### Fixed
 
+- EvoFlux now starts if the operating system cannot register its deep-link
+  handlers; it records a warning and continues loading.
 - Desktop release builds now bundle the web interface with the sidecar so
   Remote Control works in the packaged app.
 
