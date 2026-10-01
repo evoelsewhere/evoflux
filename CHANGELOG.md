@@ -4,6 +4,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.0.4] - 2026-10-01
+
 ### Added
 
 - Actionable desktop notifications for background work and attention requests,
