@@ -78,7 +78,7 @@ export function SuggestedTaskDock() {
         </PopoverTrigger>
         <PopoverContent
           align="end"
-          className="w-[min(22rem,calc(100vw-1rem))] gap-0 overflow-hidden border-(--color-border) bg-(--color-surface) p-0 shadow-xl"
+          className="w-[min(22rem,calc(100vw-1rem))] gap-0 border-(--color-border) bg-(--color-surface) p-0 shadow-xl"
         >
           <section aria-label="Suggested tasks" className="flex flex-col">
             <p className="border-b border-(--color-border-subtle) px-3 py-2 text-xs font-medium text-(--color-text-muted)">
