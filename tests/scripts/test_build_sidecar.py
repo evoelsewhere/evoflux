@@ -223,3 +223,45 @@ def test_zip_pure_python_packages_keeps_runtime_data_on_disk(tmp_path) -> None:
             "pure_package/__init__.py",
             "pure_package/module.py",
         }
+
+
+def _make_web_dist(root: Path) -> Path:
+    dist = root / "web" / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    (dist / "assets" / "app.js").write_text("console.log(1)", encoding="utf-8")
+    return dist
+
+
+def test_bundle_web_dist_copies_web_build_into_app(tmp_path) -> None:
+    _make_web_dist(tmp_path)
+    site_packages = tmp_path / "site-packages"
+    (site_packages / "app").mkdir(parents=True)
+
+    copied = build_sidecar.bundle_web_dist(tmp_path, site_packages)
+
+    target = site_packages / "app" / "_web_dist"
+    assert copied == 2
+    assert (target / "index.html").read_text(encoding="utf-8") == "<!doctype html>"
+    assert (target / "assets" / "app.js").is_file()
+
+
+def test_bundle_web_dist_replaces_stale_bundle(tmp_path) -> None:
+    _make_web_dist(tmp_path)
+    site_packages = tmp_path / "site-packages"
+    stale = site_packages / "app" / "_web_dist"
+    stale.mkdir(parents=True)
+    (stale / "gone.js").write_text("stale", encoding="utf-8")
+
+    build_sidecar.bundle_web_dist(tmp_path, site_packages)
+
+    assert not (stale / "gone.js").exists()
+    assert (stale / "index.html").is_file()
+
+
+def test_bundle_web_dist_requires_a_built_web_ui(tmp_path) -> None:
+    site_packages = tmp_path / "site-packages"
+    (site_packages / "app").mkdir(parents=True)
+
+    with pytest.raises(SystemExit, match="web bundle missing"):
+        build_sidecar.bundle_web_dist(tmp_path, site_packages)

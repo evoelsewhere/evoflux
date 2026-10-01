@@ -53,6 +53,15 @@ listener when certificate domains are available; otherwise it serves HTTP
 inside the already encrypted tailnet, avoiding a separate HTTPS-admin setup
 step.
 
+The proxy forwards every path to FastAPI, so FastAPI serves the API and the
+built web UI from one origin: `scripts/build_sidecar.py` bundles the web build
+as `app/_web_dist`, and `app/api/static_web.py` mounts it at `/` ahead of no
+route and behind every API router. Unknown browser routes fall back to
+`index.html` so a reload on a nested page still loads the app, while unknown
+`/api/` paths keep their JSON `Not Found` and a missing asset fails visibly
+instead of loading the app shell. Without the bundled UI the link and QR code
+would open the API's `{"detail": "Not Found"}` response.
+
 Before proxying a request it resolves the peer with Tailscale `WhoIs`, removes
 caller-supplied identity headers, and injects the verified login/device. Those
 headers carry a per-process secret shared only with FastAPI. Both HTTP and
