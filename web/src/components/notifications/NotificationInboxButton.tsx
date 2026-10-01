@@ -55,7 +55,7 @@ function timestampLabel(timestamp: number): string {
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(timestamp)
 }
 
-export function NotificationInboxButton() {
+export function NotificationInboxButton({ align = 'end' }: { align?: 'start' | 'end' } = {}) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [items, setItems] = useState<InboxNotification[]>(() => listInboxNotifications())
@@ -93,7 +93,7 @@ export function NotificationInboxButton() {
         )}
       </PopoverTrigger>
       <PopoverContent
-        align="end"
+        align={align}
         side="bottom"
         sideOffset={8}
         collisionPadding={12}

@@ -230,7 +230,9 @@ export function WorkbenchBar(props: WorkbenchBarProps) {
           policyEnabled={webBridgePolicyEnabled}
         />
 
-        <NotificationInboxButton />
+        {/* A title bar (WindowsTitleBar / MacTitleBar) owns the bell when
+            either custom title bar is active. */}
+        {!isWindowsTitleBar && !props.isMacOverlay && <NotificationInboxButton />}
 
         <span className="mx-0.5 h-4 w-px bg-(--color-border)" aria-hidden="true" />
 

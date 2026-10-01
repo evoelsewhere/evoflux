@@ -43,6 +43,7 @@ const navigation = vi.hoisted(() => {
 vi.mock('@tanstack/react-router', () => ({
   useLocation: () => navigation.location,
   useRouter: () => ({ history: navigation.history }),
+  useNavigate: () => vi.fn(),
 }))
 
 vi.mock('@/hooks/use-platform', () => ({

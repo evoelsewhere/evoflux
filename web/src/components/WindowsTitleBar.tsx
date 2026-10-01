@@ -4,9 +4,10 @@
  *
  * Left: the app menu (File/Edit/View/Go/Developer/Help, a native popup so
  * clipboard items act on the focused field), the sidebar toggle and history
- * controls. Right: the caption buttons. Everything else drags the window and
- * double-click maximizes (useTauriDrag). The strip sits in the
- * `--app-titlebar-height` band that `.mobile-viewport` shells leave free.
+ * controls. Right: the notification bell and the caption buttons. Everything
+ * else drags the window and double-click maximizes (useTauriDrag). The strip
+ * sits in the `--app-titlebar-height` band that `.mobile-viewport` shells
+ * leave free.
  */
 import { invoke } from '@tauri-apps/api/core'
 import { LogicalPosition } from '@tauri-apps/api/dpi'
@@ -15,6 +16,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ChevronLeft, ChevronRight, Menu as MenuIcon, PanelLeft } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { NotificationInboxButton } from '@/components/notifications/NotificationInboxButton'
 import { usePlatform } from '@/hooks/use-platform'
 import { useDesktopSettings } from '@/hooks/useDesktopSettings'
 import { useTauriDrag } from '@/hooks/use-tauri-drag'
@@ -260,6 +262,10 @@ export function WindowsTitleBar() {
       </div>
 
       <div className="h-full flex-1" />
+
+      <div className="flex h-full items-center pr-1">
+        <NotificationInboxButton />
+      </div>
 
       <div className="flex h-full items-stretch">
         <button
