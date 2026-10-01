@@ -24,6 +24,8 @@ import {
   type HistoryEntry,
   type AutoSyncSettings,
   type ImportItemAction,
+  type ImportItemKind,
+  IMPORT_ITEM_KIND_OPTIONS,
   SOURCE_LABELS,
   pickImportSource,
   detectImport,
@@ -41,6 +43,10 @@ import { queryKeys } from '@/queries/keys'
 import { Button } from '@/components/ui/button'
 import { SelectControl } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import {
+  IMPORT_WELCOME_SELECTION_EVENT,
+  takeWelcomeImportKinds,
+} from '@/lib/import-selection'
 import { notifyImportAutoSyncSettingsChanged } from '@/lib/import-auto-sync'
 
 type Phase = 'scanning' | 'idle' | 'detecting' | 'preview' | 'executing' | 'done'
@@ -57,6 +63,17 @@ export function ImportSettingsPage() {
   const [autoSync, setAutoSync] = useState<AutoSyncSettings | null>(null)
   const [undoingImportId, setUndoingImportId] = useState<string | null>(null)
   const [undoMessage, setUndoMessage] = useState<string | null>(null)
+  const [welcomeImportKinds, setWelcomeImportKinds] = useState<ImportItemKind[] | null>(null)
+
+  useEffect(() => {
+    const applyWelcomeSelection = () => {
+      const selectedKinds = takeWelcomeImportKinds()
+      if (selectedKinds) setWelcomeImportKinds(selectedKinds)
+    }
+    applyWelcomeSelection()
+    window.addEventListener(IMPORT_WELCOME_SELECTION_EVENT, applyWelcomeSelection)
+    return () => window.removeEventListener(IMPORT_WELCOME_SELECTION_EVENT, applyWelcomeSelection)
+  }, [])
 
   // Auto-scan on mount
   useEffect(() => {
@@ -88,14 +105,36 @@ export function ImportSettingsPage() {
     setExecuteResult(null)
     setPhase('detecting')
     try {
-      const result = await detectImport(path, source as ImportSource | undefined)
+      const detected = await detectImport(path, source as ImportSource | undefined)
+      let result = detected
+      if (welcomeImportKinds) {
+        const selectedKinds = new Set<string>(welcomeImportKinds)
+        const skippedIndexes = detected.items.flatMap((item, index) =>
+          selectedKinds.has(item.kind) ? [] : [index],
+        )
+        if (skippedIndexes.length > 0) {
+          try {
+            await updateItemsAction(detected.import_id, skippedIndexes, 'skip')
+          } catch (err) {
+            await cancelImport(detected.import_id).catch(() => {})
+            throw err
+          }
+          const skipped = new Set(skippedIndexes)
+          result = {
+            ...detected,
+            items: detected.items.map((item, index) =>
+              skipped.has(index) ? { ...item, action: 'skip' } : item,
+            ),
+          }
+        }
+      }
       setDetectResult(result)
       setPhase('preview')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setPhase('idle')
     }
-  }, [])
+  }, [welcomeImportKinds])
 
   const handlePickFile = useCallback(async (source: ImportSource) => {
     const path = await pickImportSource(source)
@@ -230,6 +269,7 @@ export function ImportSettingsPage() {
       {phase === 'preview' && detectResult && (
         <ImportPreview
           result={detectResult}
+          welcomeImportKinds={welcomeImportKinds}
           onActionChange={handleActionChange}
           onBulkAction={handleBulkAction}
           onExecute={handleExecute}
@@ -452,12 +492,14 @@ export function ImportSettingsPage() {
 
 function ImportPreview({
   result,
+  welcomeImportKinds,
   onActionChange,
   onBulkAction,
   onExecute,
   onCancel,
 }: {
   result: DetectResponse
+  welcomeImportKinds: ImportItemKind[] | null
   onActionChange: (index: number, action: ImportItemAction) => void
   onBulkAction: (indexes: number[], action: ImportItemAction) => void
   onExecute: () => void
@@ -501,6 +543,11 @@ function ImportPreview({
 
   return (
     <SettingsGroup title={`Preview — ${SOURCE_LABELS[result.detected_source as ImportSource] ?? result.detected_source}`}>
+      {welcomeImportKinds && welcomeImportKinds.length < IMPORT_ITEM_KIND_OPTIONS.length && (
+        <div role="status" className="border-b border-(--color-border-subtle) px-4 py-2 text-xs text-(--color-text-muted)">
+          Items outside your selected categories are marked Skip. You can review and change each item below.
+        </div>
+      )}
       {/* Summary badges */}
       <div className="flex flex-wrap gap-2 px-4 py-3">
         {Object.entries(kindCounts).map(([kind, count]) => (

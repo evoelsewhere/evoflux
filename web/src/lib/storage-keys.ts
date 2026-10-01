@@ -102,5 +102,7 @@ export const STORAGE_KEYS = {
   import: {
     /** "1" once the user dismissed the first-run import welcome popup. */
     welcomeDismissed: 'oa.import.welcomeDismissed',
+    /** One-shot import category selection passed from the welcome popup (sessionStorage). */
+    welcomeSelection: 'oa.import.welcomeSelection',
   },
 } as const

@@ -22,8 +22,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { STORAGE_KEYS } from '@/lib/storage-keys'
+import { saveWelcomeImportKinds } from '@/lib/import-selection'
 import { useUIStore } from '@/stores/useUIStore'
-import { SOURCE_LABELS, type ImportSource } from '@/api/import'
+import {
+  IMPORT_ITEM_KIND_OPTIONS,
+  SOURCE_LABELS,
+  type ImportItemKind,
+  type ImportSource,
+} from '@/api/import'
 
 const SOURCES: ImportSource[] = [
   'claude_web',
@@ -36,6 +42,9 @@ const SOURCES: ImportSource[] = [
 export function ImportWelcomePopup() {
   const [open, setOpen] = useState(false)
   const [dontShow, setDontShow] = useState(false)
+  const [selectedKinds, setSelectedKinds] = useState<Set<ImportItemKind>>(
+    () => new Set(IMPORT_ITEM_KIND_OPTIONS.map(({ kind }) => kind)),
+  )
   const navigateSettings = useUIStore((s) => s.navigateSettings)
 
   // Show on first run after backend is ready
@@ -60,8 +69,22 @@ export function ImportWelcomePopup() {
   const goToImport = useCallback(() => {
     setOpen(false)
     localStorage.setItem(STORAGE_KEYS.import.welcomeDismissed, '1')
+    saveWelcomeImportKinds(
+      IMPORT_ITEM_KIND_OPTIONS
+        .filter(({ kind }) => selectedKinds.has(kind))
+        .map(({ kind }) => kind),
+    )
     navigateSettings('import')
-  }, [navigateSettings])
+  }, [navigateSettings, selectedKinds])
+
+  const toggleKind = useCallback((kind: ImportItemKind) => {
+    setSelectedKinds((previous) => {
+      const next = new Set(previous)
+      if (next.has(kind)) next.delete(kind)
+      else next.add(kind)
+      return next
+    })
+  }, [])
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && close(false)}>
@@ -72,13 +95,36 @@ export function ImportWelcomePopup() {
             Import your data
           </DialogTitle>
           <DialogDescription className="pt-1">
-            EvoFlux can import your conversations, custom instructions, skills,
-            and settings from other AI tools.
+            Choose which data categories to bring into EvoFlux. You can review
+            every item before it is imported.
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-2">
-          <p className="text-[13px] text-(--color-text-muted) mb-3">
+          <p className="mb-3 text-[13px] text-(--color-text-muted)">
+            Choose what to import:
+          </p>
+          <div role="group" aria-label="Data categories to import" className="grid grid-cols-2 gap-2">
+            {IMPORT_ITEM_KIND_OPTIONS.map((option) => (
+              <label
+                key={option.kind}
+                className="flex cursor-pointer items-start gap-2 rounded-md border border-(--color-border) p-2.5 hover:bg-(--bg-key)"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedKinds.has(option.kind)}
+                  onChange={() => toggleKind(option.kind)}
+                  className="mt-0.5 size-4 shrink-0 accent-(--color-accent)"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium">{option.label}</span>
+                  <span className="block text-[11px] text-(--color-text-muted)">{option.description}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          <p className="mb-2 mt-4 text-[12px] text-(--color-text-muted)">
             Supported sources:
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -94,8 +140,8 @@ export function ImportWelcomePopup() {
         </div>
 
         <DialogFooter className="flex-col gap-2 sm:flex-col">
-          <Button onClick={goToImport} className="w-full">
-            Import data now
+          <Button onClick={goToImport} className="w-full" disabled={selectedKinds.size === 0}>
+            Continue to import
           </Button>
           <div className="flex w-full items-center justify-between">
             <label className="flex items-center gap-2 text-[12px] text-(--color-text-muted) cursor-pointer select-none">

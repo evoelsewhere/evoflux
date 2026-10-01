@@ -5,10 +5,21 @@
  */
 
 import { IMPORT_SOURCE_LABELS } from '@/lib/import-source'
+import { apiUrl } from '@/api/base-url'
 import type { ImportSource } from '@/lib/import-source'
 export type { ImportSource } from '@/lib/import-source'
 
 // ── Types ───────────────────────────────────────────────────────────────────
+
+export const IMPORT_ITEM_KIND_OPTIONS = [
+  { kind: 'session', label: 'Conversations', description: 'Chat history' },
+  { kind: 'agent', label: 'Agents', description: 'Custom agent setups' },
+  { kind: 'skill', label: 'Skills', description: 'Reusable instructions' },
+  { kind: 'knowledge', label: 'Knowledge', description: 'Notes and reference files' },
+  { kind: 'mcp_server', label: 'MCP servers', description: 'Server configurations' },
+] as const
+
+export type ImportItemKind = (typeof IMPORT_ITEM_KIND_OPTIONS)[number]['kind']
 
 export interface ImportItemPreview {
   id: string
@@ -125,10 +136,10 @@ export async function pickImportSource(source: ImportSource): Promise<string | n
 
 // ── API calls ───────────────────────────────────────────────────────────────
 
-const API_BASE = '/api/import'
+const API_BASE = '/import'
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(apiUrl(`${API_BASE}${path}`), {
     headers: { 'Content-Type': 'application/json' },
     ...init,
   })
