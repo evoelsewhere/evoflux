@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-send-attention-notification"
+description = "Enables the app_send_attention_notification command without any pre-configured scope."
+commands.allow = ["app_send_attention_notification"]
+
+[[permission]]
+identifier = "deny-app-send-attention-notification"
+description = "Denies the app_send_attention_notification command without any pre-configured scope."
+commands.deny = ["app_send_attention_notification"]

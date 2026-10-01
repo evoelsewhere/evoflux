@@ -20,6 +20,7 @@ import {
   touchesWiki,
 } from './helpers'
 import { isBackgroundCompletion, sendDesktopNotification } from '@/lib/desktop-notifications'
+import { createNotificationActivation } from '@/lib/notification-activation'
 import type { GoalResponse, SuggestedTask, TurnCost, TurnUsage, TurnUsageBreakdown } from '@/api/types'
 import { parseTurnChanges } from '@/utils/turn-changes'
 import type { ActivityItem, CacheInvalidation, TeamStore } from './types'
@@ -373,10 +374,14 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         }
         if (isBackgroundCompletion(toolName, result)) {
           const state = get()
+          const activation = state.sessionId
+            ? createNotificationActivation('background_done', state.sessionId)
+            : undefined
           void sendDesktopNotification({
             kind: 'background_done',
             title: `Background task completed${codingWorkspaceSuffix(state)}`,
             body: sessionLabel(state),
+            ...(activation ? { activation } : {}),
           })
         }
         const events: CacheInvalidation[] = []
@@ -664,10 +669,13 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
       case 'desktop_notification': {
         const kind = d.kind as string
         if (kind !== 'assistant_done' && kind !== 'background_done' && kind !== 'reminder_fired') break
+        const sessionId = get().sessionId ?? (d.session_id as string | undefined)
+        const activation = sessionId ? createNotificationActivation(kind, sessionId) : undefined
         void sendDesktopNotification({
           kind,
-          title: d.title as string,
-          body: d.body as string,
+          title: (d.title as string | undefined) ?? 'EvoFlux notification',
+          body: (d.body as string | undefined) ?? '',
+          ...(activation ? { activation } : {}),
         })
         break
       }
@@ -803,6 +811,8 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
 
       case 'agent_not_configured': {
         const agent = d.agent as string
+        const sessionId = get().sessionId ?? (d.session_id as string | undefined) ?? ''
+        const activation = createNotificationActivation('agent_not_configured', sessionId)
         set((draft) => {
           ensureAgent(draft, agent)
           draft.agentStreams[agent].status = 'error'
@@ -813,6 +823,12 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
             action: (d.action as { type?: string; tab?: string; agent?: string } | undefined) ?? {},
           }
           draft.isTeamWorking = false
+        })
+        void sendDesktopNotification({
+          kind: 'agent_not_configured',
+          title: 'Agent setup needed',
+          body: (d.message as string | undefined) ?? `Configure ${agent} to continue.`,
+          ...(activation ? { activation } : {}),
         })
         break
       }
@@ -848,6 +864,18 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
         // every event received here should surface the approval UI.
         // Idempotent on reconnect replay of the same single-slot request.
         const requestId = d.request_id as string
+        const ownerSessionId = d.session_id as string
+        const routeSessionId = get().sessionId ?? ownerSessionId
+        const activation = createNotificationActivation('permission_asked', routeSessionId, requestId, [
+          { id: 'permission-once', label: 'Allow once' },
+          { id: 'permission-reject', label: 'Reject' },
+        ])
+        void sendDesktopNotification({
+          kind: 'permission_asked',
+          title: 'EvoFlux needs your approval',
+          body: 'A tool is waiting for your permission.',
+          ...(activation ? { activation } : {}),
+        })
         set((draft) => {
           if (draft.permissionRequest?.requestId === requestId) return
           draft.permissionRequest = {
@@ -915,6 +943,28 @@ export function createSSEHandler({ set, get }: CreateSSEHandlerArgs) {
           .filter((q) => q.question.length > 0)
         if (questions.length === 0) break
         const requestId = d.request_id as string
+        const sessionId = d.session_id as string
+        const onlyQuestion = questions.length === 1 ? questions[0] : undefined
+        const actions = onlyQuestion?.kind === 'agent_spawn'
+          && onlyQuestion.agentSpawn?.blueprint
+          && onlyQuestion.agentSpawn.defaultModel.trim()
+          ? [{ id: 'spawn-defaults', label: 'Spawn with defaults' }]
+          : onlyQuestion?.kind !== 'agent_spawn'
+            ? [
+                ...(onlyQuestion?.options.slice(0, 2).map((option) => ({ id: 'choice', label: option, input: option })) ?? []),
+                { id: 'answer', label: 'Reply' },
+              ]
+            : []
+        const routeSessionId = get().sessionId ?? sessionId
+        const activation = createNotificationActivation('question_asked', routeSessionId, requestId, actions)
+        void sendDesktopNotification({
+          kind: 'question_asked',
+          title: onlyQuestion?.kind === 'agent_spawn' ? 'Agent spawn needs your input' : 'EvoFlux needs your input',
+          body: onlyQuestion?.kind === 'agent_spawn'
+            ? 'An agent is waiting to be configured.'
+            : 'A question is waiting for your response.',
+          ...(activation ? { activation } : {}),
+        })
         set((draft) => {
           // Reconnect replay of the same batch — keep in-progress answers.
           if (draft.askUserQuestion?.requestId === requestId) return

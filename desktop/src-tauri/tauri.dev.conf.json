@@ -3,6 +3,11 @@
   "productName": "EvoFlux (dev)",
   "mainBinaryName": "EvoFlux-dev",
   "identifier": "com.evoflux.desktop.dev",
+  "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["evoflux-dev"] }
+    }
+  },
   "bundle": {
     "resources": null,
     "macOS": {
