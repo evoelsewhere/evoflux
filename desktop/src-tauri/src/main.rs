@@ -6639,7 +6639,9 @@ fn main() {
             #[cfg(any(target_os = "windows", target_os = "linux"))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                app.deep_link().register_all()?;
+                if let Err(error) = app.deep_link().register_all() {
+                    log::warn!("could not register deep-link handlers: {error}");
+                }
             }
             install_desktop_menus(app)?;
             if let Err(error) = notification_activation::install_identity(app.handle()) {
