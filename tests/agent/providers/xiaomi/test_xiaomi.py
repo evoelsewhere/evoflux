@@ -206,6 +206,38 @@ class TestXiaomiThinking:
         assert body.get("reasoning_effort") == "low"
         assert body["thinking"] == {"type": "enabled", "budget_tokens": 4_096}
 
+    def test_mimo_v26_request_gets_tool_repetition_guard(self):
+        from app.agent.schemas.chat import HumanMessage, SystemMessage
+
+        p = XiaomiProvider(
+            api_key="xiaomi-test-key",
+            model="mimo-v2.6-pro",
+            base_url=XIAOMI_API_BASE,
+        )
+        messages = [
+            SystemMessage(content="You are EvoFlux."),
+            HumanMessage(content="Inspect the project."),
+        ]
+
+        body = p._completions.build_request(
+            messages, None, stream=False, merged=p._merged_kwargs()
+        )
+
+        system_prompt = body["messages"][0]["content"]
+        normalized_prompt = " ".join(system_prompt.split())
+        assert system_prompt.startswith("You are EvoFlux.")
+        assert "Do not repeat a successful call" in normalized_prompt
+        assert "reuse results already present" in normalized_prompt
+        assert "EvoFlux tool-use guardrails" not in messages[0].content
+
+    def test_mimo_v25_request_does_not_get_v26_tool_repetition_guard(self):
+        body = self._build_body()
+
+        assert all(
+            "EvoFlux tool-use guardrails" not in str(message.get("content", ""))
+            for message in body["messages"]
+        )
+
     def test_reasoning_effort_never_sent_when_thinking_level_absent(self):
         body = self._build_body()
         assert "reasoning_effort" not in body

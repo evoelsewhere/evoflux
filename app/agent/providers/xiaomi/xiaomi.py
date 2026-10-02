@@ -73,6 +73,23 @@ from .schemas import XiaomiChatRequest, XiaomiMessage
 #: rejects the whole request rather than clamping.
 _LEGACY_EFFORT_LEVELS: tuple[str, ...] = ("minimal", "low", "medium", "high")
 
+# MiMo 2.6 can repeat or fan out tool calls in agentic sessions. This is a
+# request-local prompt addition: it is never persisted to the conversation and
+# does not change prompts sent to other Xiaomi models.
+_MIMO_V26_TOOL_GUARD = """\
+EvoFlux tool-use guardrails:
+- Read the existing tool results before deciding what to call next. Do not
+  repeat a successful call with the same tool and arguments unless the source
+  state changed or the user explicitly asked for another run.
+- Do not repeat a failed, refused, empty, or already-covered read with the same
+  arguments. Change the approach or explain what is blocking progress.
+- Make only tool calls needed for the current step. Batch calls only when they
+  are independent; reuse results already present in this conversation.
+- Continue the normal tool-result cycle until the task is complete, then give a
+  concise answer. Do not invent a tool limit or claim work succeeded if it did
+  not.
+"""
+
 
 class _XiaomiCompletionsHandler(CompletionsHandler):
     """MiMo-specific completions handler.
@@ -225,11 +242,34 @@ class _XiaomiCompletionsHandler(CompletionsHandler):
         stream: bool,
         merged: dict[str, Any],
     ) -> dict[str, Any]:
+        wire_messages = self._convert_messages_xiaomi(
+            sanitize_openai_tool_pairs(messages)
+        )
+        if self.model.casefold().startswith("mimo-v2.6"):
+            # Inject immediately before the API request rather than changing
+            # the saved/session system prompt. Keep it in the system role so
+            # user content cannot override these loop-reduction instructions.
+            system_message = next(
+                (message for message in wire_messages if message.role == "system"),
+                None,
+            )
+            if system_message is None:
+                wire_messages.insert(
+                    0,
+                    XiaomiMessage(
+                        role="system", content=_MIMO_V26_TOOL_GUARD.strip()
+                    ),
+                )
+            else:
+                system_message.content = (
+                    f"{system_message.content or ''}\n\n"
+                    f"{_MIMO_V26_TOOL_GUARD.strip()}"
+                )
+
         req = XiaomiChatRequest(
             model=self.model,
             messages=flatten_tool_content_for_provider(
-                self._convert_messages_xiaomi(sanitize_openai_tool_pairs(messages)),
-                self.model,
+                wire_messages, self.model
             ),
             tools=self.convert_tools(tools),
             temperature=merged.get("temperature"),
