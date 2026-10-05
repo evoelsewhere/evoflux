@@ -4,7 +4,43 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Plugins → Marketplace** can add and sync Agent Plugins 1.0.0 and Claude Code
+  sources, search their catalogs, and preview compatible components. Marketplace
+  installs stay disabled until trust review; importing only supported parts of a
+  partially compatible Claude plugin requires explicit consent.
+
 ### Changed
+
+- Plugin API verification applies POSIX credential-file mode checks only on POSIX
+  systems, avoiding unsupported permission assertions on Windows.
+- **Plugins → Marketplace** reflows setup and source cards to panel width, explains
+  why unsupported entries cannot install, and treats `unverified` as a trust
+  warning. On wide panels the selected package keeps its review and install action
+  pinned in view; narrow panels retain the drawer. Package inspection shows Skills,
+  MCP configuration, validation errors, README and read-only package files before
+  installation.
+- **Plugin Center** uses compact plugin rows, with components, package files and
+  technical details available on demand. Search stays visible while filters and
+  marketplace management remain secondary controls.
+
+### Fixed
+
+- Claude Code MCP plugins receive a normalized `mcp.json`; invalid component
+  diagnostics block marketplace installation, package review masks credentials,
+  and remote MCP servers awaiting authorization show **Authentication required**.
+- MCP configs using the conventional `type` transport key load correctly, so
+  existing stdio servers are not rejected during lead-agent startup.
+- **Plugin Center** marketplace package actions stay pinned inside the review
+  drawer even when package details are expanded, instead of scrolling below
+  the viewport.
+- **Plugin Center** marketplace management stays open after you expand it; the
+  section no longer snaps shut on the next catalog refresh.
+- An empty marketplace result now distinguishes "no plugins match your search
+  and filters" from an empty catalog that needs a sync.
+- The observability summary no longer returns HTTP 500 when a time-series
+  bucket contains null aggregates.
 
 - On Windows and macOS, the notification bell and its **Notifications** inbox
   panel now sit in the window title bar next to the window buttons (left of
