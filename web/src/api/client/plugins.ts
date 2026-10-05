@@ -7,7 +7,13 @@ import type {
   PluginInspection,
   PluginCredentialState,
   PluginListResponse,
+  PluginPackageReview,
+  PluginPackageFile,
   PluginOperationResponse,
+  MarketplaceCreateRequest,
+  MarketplacePlugin,
+  MarketplacePluginPreview,
+  MarketplaceSource,
   PluginWorkspaceEntry,
   PluginWorkspaceFileResponse,
   PluginWorkspaceMutationResponse,
@@ -231,5 +237,95 @@ export async function clearPluginCredentials(id: string): Promise<PluginCredenti
     { method: 'DELETE' },
   )
   if (!response.ok) await parseDetailOrThrow(response, 'DELETE /plugins/:id/credentials')
+  return response.json()
+}
+
+export async function listMarketplaces(): Promise<MarketplaceSource[]> {
+  const response = await fetch(`${apiBaseUrl()}/plugins/marketplaces`)
+  if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/marketplaces')
+  return response.json()
+}
+
+export async function addMarketplace(body: MarketplaceCreateRequest): Promise<MarketplaceSource> {
+  const response = await fetch(`${apiBaseUrl()}/plugins/marketplaces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/marketplaces')
+  return response.json()
+}
+
+export async function syncMarketplace(id: string): Promise<MarketplaceSource> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/marketplaces/${encodeURIComponent(id)}/sync`,
+    { method: 'POST' },
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/marketplaces/:id/sync')
+  return response.json()
+}
+
+export async function removeMarketplace(id: string): Promise<MarketplaceSource> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/marketplaces/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'DELETE /plugins/marketplaces/:id')
+  return response.json()
+}
+
+export async function searchMarketplacePlugins(
+  query: string,
+  marketplaceId?: string,
+): Promise<MarketplacePlugin[]> {
+  const params = new URLSearchParams()
+  if (query.trim()) params.set('q', query.trim())
+  if (marketplaceId) params.set('marketplace_id', marketplaceId)
+  const suffix = params.size ? `?${params.toString()}` : ''
+  const response = await fetch(`${apiBaseUrl()}/plugins/marketplaces/plugins${suffix}`)
+  if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/marketplaces/plugins')
+  return response.json()
+}
+
+export async function prepareMarketplacePlugin(
+  marketplaceId: string,
+  pluginName: string,
+): Promise<MarketplacePluginPreview> {
+  const response = await fetch(
+    `${apiBaseUrl()}/plugins/marketplaces/${encodeURIComponent(marketplaceId)}`
+      + `/plugins/${encodeURIComponent(pluginName)}/prepare`,
+    { method: 'POST' },
+  )
+  if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/marketplaces/:id/plugins/:name/prepare')
+  return response.json()
+}
+
+export async function installMarketplacePlugin(
+  previewId: string,
+  allowPartial = false,
+): Promise<PluginOperationResponse> {
+  const response = await fetch(`${apiBaseUrl()}/plugins/marketplaces/install`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preview_id: previewId, allow_partial: allowPartial }),
+  })
+  if (!response.ok) await parseDetailOrThrow(response, 'POST /plugins/marketplaces/install')
+  return response.json()
+}
+
+function packageReviewUrl(target: 'preview' | 'installation', id: string): string {
+  const resource = target === 'preview' ? `previews/${encodeURIComponent(id)}` : encodeURIComponent(id)
+  return `${apiBaseUrl()}/plugins/${resource}/files`
+}
+
+export async function getPluginPackageReview(target: 'preview' | 'installation', id: string): Promise<PluginPackageReview> {
+  const response = await fetch(packageReviewUrl(target, id))
+  if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/:resource/files')
+  return response.json()
+}
+
+export async function getPluginPackageFile(target: 'preview' | 'installation', id: string, path: string): Promise<PluginPackageFile> {
+  const response = await fetch(`${packageReviewUrl(target, id)}?${new URLSearchParams({ path })}`)
+  if (!response.ok) await parseDetailOrThrow(response, 'GET /plugins/:resource/files?path')
   return response.json()
 }

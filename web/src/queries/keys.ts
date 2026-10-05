@@ -150,6 +150,11 @@ export const queryKeys = {
   plugins: {
     all: () => ['plugins'] as const,
     list: () => ['plugins', 'list'] as const,
+    marketplaces: () => ['plugins', 'marketplaces'] as const,
+    marketplaceSearch: (query: string, marketplaceId?: string) =>
+      ['plugins', 'marketplaces', 'search', query, marketplaceId ?? null] as const,
+    packageReview: (target: string, id: string) => ['plugins', 'package-review', target, id] as const,
+    packageFile: (target: string, id: string, path: string) => ['plugins', 'package-file', target, id, path] as const,
     credentials: (installationId: string) =>
       ['plugins', 'credentials', installationId] as const,
   },

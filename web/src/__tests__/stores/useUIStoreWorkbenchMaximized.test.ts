@@ -24,7 +24,15 @@ async function freshStore(stored: string | null) {
 
 describe('workbench maximize is remembered across launches', () => {
   beforeEach(() => {
-    localStorage.clear()
+    const values = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      get length() { return values.size },
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      key: (index: number) => [...values.keys()][index] ?? null,
+      removeItem: (key: string) => values.delete(key),
+      setItem: (key: string, value: string) => values.set(key, String(value)),
+    } satisfies Storage)
   })
 
   it('starts docked and remembers being maximized', async () => {
