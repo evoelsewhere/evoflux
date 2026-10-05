@@ -95,7 +95,9 @@ Plugin Center's Create flow defaults a blank starter Skill name to the plugin
 name, so a new scaffold contributes a discoverable workflow instead of only a
 manifest. EvoFlux does not generate an MCP server: `mcp.json` is added only by
 an author who supplies a portable executable or remote endpoint. Static
-validation does not install dependencies or prove process readiness.
+validation does not install dependencies or prove process readiness. A remote
+server awaiting authorization remains visible as **Authentication required**;
+enabling does not grant access or make its tools available.
 
 New installations are disabled until the user reviews executable commands,
 remote hosts, environment-field names and declared capabilities. Plugin
@@ -109,6 +111,62 @@ validated/reported but not started by the plugin runtime.
 
 See [Agent Plugin architecture](../architecture/agent-plugins.md) and the
 [operator guide](../guides/agent-plugins.md).
+
+### Marketplaces
+
+The **Marketplace** tab in Plugin Center can add and sync Agent Plugins 1.0.0
+and Claude Code marketplace sources, then search their cached catalogs. Source
+setup and saved-source cards stack in narrow Plugin Center drawers and share a row
+when the panel has enough width. Results use compact selectable rows with local
+monograms, compatibility, and source cues; results stay full-width until a plugin
+is selected. On wide panels, selected details stay in a sticky side panel whose
+review/install action remains in view; narrow panels retain the details drawer.
+Search and source filters remain above the results, alongside category, component
+and compatibility filters. Categories/keywords come from catalog declarations;
+missing metadata is shown as uncategorized or not declared, never guessed from
+names. Preparing an individual package identifies its supported/unsupported
+components without fetching every catalog entry.
+
+Plugin Center starts with compact neutral rows and a short overview instead of
+full configuration and repeated health summaries. **Components**, **Package
+files**, and **Technical details** expose the deeper data on demand; paths,
+fingerprints, runtime IDs and nonblocking warnings are not shown by default.
+Blocking errors and required authorization stay visible. Search remains visible,
+while **Filters** reports active selections and **Manage marketplaces** holds
+source setup/sync controls (open initially when no source exists).
+
+**Inspect package** prepares a selected package for read-only review, not
+installation. Review displays each Skill and its description/path/validation,
+each MCP transport and command/arguments or remote URL, environment/header field
+names, capabilities, diagnostics, README, and a bounded file list/text viewer.
+Files are displayed as inert text: HTML, scripts and remote images are not
+executed or rendered. Sensitive files are excluded and credentials are masked.
+Validation errors or an unavailable file listing block the installation action;
+late inspection results cannot replace another selected package.
+
+Installed rows show a short durable-origin label: marketplace, imported archive,
+imported directory, development link, built-in, or unknown. Expanded details keep
+the full marketplace/source identity. Origin/component
+filters are separate from Marketplace filters. Local package drafts are labelled
+as development packages, not installations. Old installations without provenance
+remain unknown instead of being retroactively attributed to a marketplace.
+
+Marketplace sources/catalogs
+remain separate from installed-plugin records. Artifact packages are checked
+against their declared size and SHA-256 before inspection. Unsupported entries
+show why EvoFlux cannot install them. `unverified` is a trust warning, not an
+installability check; compatible unverified entries can still be reviewed.
+
+Claude Code marketplace entries can be installed only from supported relative,
+URL, GitHub, or Git subdirectory sources; npm and command sources are not
+installed or executed. Claude Code content is normalized only into compatible
+Skills and MCP configuration. Commands, agents, hooks, and other unsupported
+components are not imported or executed. Agent Plugins entries must declare
+`portable: true`, provide at least one supported Skills or MCP component, and
+not exclude `evoflux` in `compatibleClients`. When a package is only partly
+compatible, Plugin Center requires confirmation to install supported components
+only; the CLI requires `--allow-partial`. Installed marketplace plugins remain
+disabled until the user explicitly enables them.
 
 ## Legacy Python hooks
 

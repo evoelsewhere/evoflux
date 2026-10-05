@@ -111,6 +111,63 @@ also installs disabled by default; use `plugin show` to inspect the `trust`
 record before `plugin enable`. `--enabled` exists for deliberate non-interactive
 automation.
 
+## Marketplace sources and compatibility boundary
+
+Plugin Center's Marketplace view supports the released Agent Plugins 1.0.0
+catalog format and Claude Code marketplace catalogs. Source metadata and cached
+catalog entries are kept separate from the installed-plugin registry. Sync
+validates the marketplace URL before fetching and stores catalog metadata; it
+does not install or enable packages.
+
+A marketplace install is prepared into an isolated preview before it can change
+installed state. Agent Plugins artifacts are checked against their declared
+size and SHA-256 before package inspection. Claude Code plugins are normalized
+only into compatible Agent Skills and MCP configuration. Other declared
+components (including commands, agents, and hooks) are reported as unsupported
+and neither imported nor executed. A preview containing unsupported components
+cannot be installed without explicit partial-compatibility consent: the UI
+checkbox is sent to the API and `evoflux plugin install --allow-partial` is the
+CLI equivalent. The install API and service enforce this consent rather than
+relying on a client-only confirmation.
+
+Every marketplace-installed plugin is installed disabled. The normal trust
+review, enable action, permissions, sandbox, and per-installation MCP runtime
+remain in force; marketplace provenance does not grant runtime trust.
+
+### Safe package review and provenance
+
+Claude Code conversion writes the canonical MCP `$schema` with `mcpServers`
+before native inspection; native schema validation is not relaxed. Error-level
+component diagnostics prevent marketplace installation even when the manifest
+itself parses successfully. Supported stdio and HTTP declarations remain subject
+to the normal credential and runtime policy.
+
+Prepared-preview and installation review use separate ID-bound resources:
+`GET /api/plugins/previews/{preview_id}/files` and
+`GET /api/plugins/{installation_id}/files`. Without `path`, responses provide a
+bounded file list and README excerpt; with `?path=...`, responses provide bounded
+plain text with an explicit truncation flag. Reads reject paths escaping the
+known package, symlinks and binary/sensitive artifacts. Secret-bearing
+configuration is redacted. No file is executed, no remote image/HTML is rendered,
+and no server starts during review.
+
+Plugin Center renders a short overview with progressive disclosure under
+**Components**, **Package files**, and **Technical details**. Collapsing package
+files hides presentation, not the review-readiness check: the selected preview's
+bounded listing must still be available before installation is allowed. Text is
+fetched only for a chosen file; disclosure does not introduce package execution.
+Nonblocking warnings may be collapsed, but component errors still block install
+and remain visible alongside required authorization and explicit trust review.
+
+Catalog `categories` and `keywords` are optional metadata with empty defaults.
+Component and compatibility filters distinguish declarations and reviewed
+metadata from unknown entries; browsing does not download every package.
+Installation `origin` records marketplace identity, archive/directory import,
+development link or builtin ownership and survives package updates. Legacy
+installed records without evidence retain unknown origin; known builtin/link
+states may be inferred without guessing a marketplace. Registry metadata is
+additive and backward-compatible; no database schema migration is required.
+
 ## Runtime and precedence
 
 Plugin Skills join the normal metadata-only catalog: the model reads their
@@ -239,6 +296,9 @@ installations and their private data live in this tree.
 - An invalid Skill skips only that Skill.
 - Invalid top-level `mcp.json` disables only that plugin's MCP components.
 - An invalid or failed MCP server skips only that server.
+- A remote server in `auth_required` stays listable with that state preserved in
+  the API and **Authentication required** in Plugin Center. Enabling alone does
+  not authorize the connection or make its tools available.
 - Disabling a plugin removes its Skills and reconciles/stops its MCP runners without restarting EvoFlux.
 
 ## Product boundary
