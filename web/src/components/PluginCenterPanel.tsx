@@ -57,6 +57,10 @@ import { cn } from '@/lib/utils'
 import { PluginWorkspaceEditor } from '@/components/PluginWorkspaceEditor'
 import { PluginCredentialsPanel } from '@/components/PluginCredentialsPanel'
 import { PluginTrustReviewDialog } from '@/components/PluginTrustReviewDialog'
+import { PluginMarketplaceBrowser } from '@/components/PluginMarketplaceBrowser'
+import { PluginInspectionDetails, PluginPackageFiles } from '@/components/PluginPackageReview'
+import { SelectControl } from '@/components/ui/select'
+import { pluginOriginKind, pluginOriginLabel } from '@/utils/plugin-catalog'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useConfirm } from '@/hooks/use-confirm'
 import { ManagedResourceProviderBadge } from '@/components/settings/ManagedResourceProviderBadge'
@@ -165,15 +169,17 @@ function PluginCard({
   // you had to expand every plugin to find out anything was wrong.
   const errors = errorDiagnostics(inspection)
   const failedServers = installation.enabled
-    ? servers.filter((server) => server.enabled && server.state === 'error')
+    ? servers.filter((server) => server.enabled && (server.state === 'error' || server.state === 'auth_required'))
     : []
   const problems: { key: string; label: string; title: string }[] = []
   if (failedServers.length > 0) {
     problems.push({
       key: 'mcp',
-      label: failedServers.length === 1
-        ? '1 MCP server failed'
-        : `${failedServers.length} MCP servers failed`,
+      label: failedServers.some((server) => server.state === 'auth_required')
+        ? 'Authentication required'
+        : failedServers.length === 1
+          ? '1 MCP server failed'
+          : `${failedServers.length} MCP servers failed`,
       title: failedServers
         .map((server) => `${server.server_name}: ${server.error ?? 'failed to start'}`)
         .join(String.fromCharCode(10)),
@@ -201,11 +207,7 @@ function PluginCard({
       : 'credentials missing'
   const detailsId = `plugin-details-${installation.id}`
   const managed = installation.managed_by === 'conductor'
-  const sourceLabel = installation.source_type === 'builtin'
-    ? 'bundled'
-    : installation.source_type === 'linked'
-      ? 'dev link'
-      : 'installed'
+  const sourceLabel = pluginOriginLabel(installation)
   const hasActions = item.credentials.supported
     || (!managed && (
       item.capabilities.can_edit
@@ -216,32 +218,29 @@ function PluginCard({
   return (
     <article
       className={cn(
-        '@container/plugin-card overflow-hidden rounded-2xl border bg-(--bg-card) shadow-sm transition-[border-color,box-shadow] hover:shadow-md',
-        isValid
-          ? 'border-(--color-success)/60 hover:border-(--color-success)'
-          : 'border-(--color-error)/60 hover:border-(--color-error)',
+        '@container/plugin-card overflow-hidden rounded-lg border border-(--color-border) bg-(--bg-card) transition-colors hover:border-(--color-border-strong)',
       )}
     >
       <button
         type="button"
-        className="group flex w-full min-w-0 items-start gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-(--bg-key)/40 @sm/plugin-card:items-center"
+        className="group flex w-full min-w-0 items-start gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-(--bg-key)/40 @sm/plugin-card:items-center"
         aria-expanded={expanded}
         aria-controls={detailsId}
         onClick={() => setExpanded((current) => !current)}
       >
         <span
           className={cn(
-            'flex size-11 shrink-0 items-center justify-center rounded-xl border shadow-sm',
+            'flex size-9 shrink-0 items-center justify-center rounded-lg border',
             'border-(--color-border) bg-(--bg-key) text-(--color-text-muted)',
           )}
           aria-hidden="true"
         >
-          <Box size={21} />
+          <Box size={17} />
         </span>
 
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h3 className="truncate text-[15px] font-semibold text-(--color-text)">
+            <h3 className="truncate text-sm font-semibold text-(--color-text)">
               {displayName}
             </h3>
             {installation.version && (
@@ -257,7 +256,7 @@ function PluginCard({
             </span>
           </div>
 
-          <p className="mt-1 max-w-3xl text-sm leading-5 text-(--color-text-muted)">
+          <p className="mt-0.5 line-clamp-1 max-w-3xl text-xs leading-4 text-(--color-text-muted) @sm/plugin-card:line-clamp-2">
             {description}
           </p>
 
@@ -343,6 +342,10 @@ function PluginCard({
             id={detailsId}
             className="grid gap-4 p-4 @2xl/plugin-card:grid-cols-[minmax(150px,1fr)_minmax(150px,1fr)_auto]"
           >
+            {expanded && <section className="space-y-4 @2xl/plugin-card:col-span-3" aria-label={`Package contents for ${installation.name}`}>
+              <PluginInspectionDetails inspection={inspection} />
+              <PluginPackageFiles target="installation" id={installation.id} />
+            </section>}
             {item.provider
               && installation.managed_version_id === item.provider.applied_version_id && (
               <ManagedResourceUpdateBanner
@@ -389,8 +392,15 @@ function PluginCard({
                           )}
                         />
                         <span className="font-medium text-(--color-text)">{server.server_name}</span>
-                        <span className="text-(--color-text-muted)">{server.state}</span>
+                        <span className="text-(--color-text-muted)">
+                          {server.state === 'auth_required' ? 'Authentication required' : server.state}
+                        </span>
                       </div>
+                      {server.state === 'auth_required' && (
+                        <p className="mt-1 text-(--color-warning)">
+                          Authorize this remote MCP server before its tools can be used. Enabling does not grant access automatically.
+                        </p>
+                      )}
                       <p className="mt-1 break-all font-mono text-[11px] text-(--color-text-subtle)">
                         runtime: {server.runtime_name}
                       </p>
@@ -469,6 +479,7 @@ export function PluginCenterPanel() {
   const uploadRef = useRef<HTMLInputElement>(null)
   const updateUploadRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'installed' | 'marketplace'>('installed')
   const [inspection, setInspection] = useState<PluginInspection | null>(null)
   const [activeView, setActiveView] = useState<
     | { kind: 'editor'; root: string; name: string }
@@ -484,6 +495,8 @@ export function PluginCenterPanel() {
   // now asked for by the action that needs it, at the moment it needs it.
   const [pathPrompt, setPathPrompt] = useState<'link' | 'validate' | null>(null)
   const [filter, setFilter] = useState('')
+  const [originFilter, setOriginFilter] = useState('all')
+  const [installedComponentFilter, setInstalledComponentFilter] = useState('all')
   const {
     request: confirmRequest,
     confirm: confirmAction,
@@ -692,13 +705,12 @@ export function PluginCenterPanel() {
     return !item.inspection.valid || failed || errorDiagnostics(item.inspection).length > 0
   }).length
   const needle = filter.trim().toLowerCase()
-  const visiblePlugins = needle
-    ? plugins.filter((item) =>
-        `${item.installation.name} ${item.installation.description ?? ''}`
-          .toLowerCase()
-          .includes(needle))
-    : plugins
-  const showFilter = plugins.length >= 3
+  const visiblePlugins = plugins.filter((item) =>
+    `${item.installation.name} ${item.installation.description ?? ''} ${pluginOriginLabel(item.installation)}`.toLowerCase().includes(needle)
+    && (originFilter === 'all' || pluginOriginKind(item.installation) === originFilter)
+    && (installedComponentFilter === 'all' || (installedComponentFilter === 'skills' ? item.inspection.skills.length > 0 : item.inspection.mcp_servers.length > 0)))
+  const showFilter = plugins.length > 0 && activeTab === 'installed'
+  const activeFilterCount = [filter.trim() !== '', originFilter !== 'all', installedComponentFilter !== 'all'].filter(Boolean).length
   const closePanels = () => {
     setPathPrompt(null)
     setShowCreate(false)
@@ -732,8 +744,9 @@ export function PluginCenterPanel() {
           </div>
           {/* Refresh belongs beside the action it complements, not adrift in
               the opposite corner of the description. */}
-          <div className="flex shrink-0 items-center gap-1.5">
-            <Button variant="ghost" size="icon-sm" onClick={() => void refresh()} aria-label="Refresh plugins">
+          {activeTab === 'installed' && (
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button variant="ghost" size="icon-sm" onClick={() => void refresh()} aria-label="Refresh plugins">
               <RefreshCw className={cn(query.isFetching && 'animate-spin')} />
             </Button>
             <DropdownMenu>
@@ -772,10 +785,13 @@ export function PluginCenterPanel() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
+            </div>
+          )}
         </div>
         <p className="mt-1.5 max-w-2xl text-sm text-(--color-text-muted)">
-          Create, import, and use portable plugins with Agent Skills and MCP server configurations.
+          {activeTab === 'installed'
+            ? 'Create, import, and use portable plugins with Agent Skills and MCP server configurations.'
+            : 'Browse compatible Agent Plugins and Claude Code Skills and MCP plugins.'}
         </p>
         <div className="hidden">
           <input
@@ -908,7 +924,7 @@ export function PluginCenterPanel() {
           </div>
         )}
 
-        {showFilter && (
+        {showFilter && <>
           <div className="relative mt-3">
             <Search
               className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-(--color-text-subtle)"
@@ -923,10 +939,49 @@ export function PluginCenterPanel() {
               aria-label="Filter plugins"
             />
           </div>
-        )}
+          <details className="mt-2 rounded-lg border border-(--color-border) px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium text-(--color-text) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-accent)">Filters{activeFilterCount > 0 && ` (${activeFilterCount} active)`}</summary>
+            <div className="mt-3 space-y-2">
+              <div className="grid grid-cols-1 gap-2 @lg/plugin-center:grid-cols-2">
+                <SelectControl id="plugin-origin-filter" ariaLabel="Filter installed plugins by origin" value={originFilter} onValueChange={setOriginFilter} options={[{ value: 'all', label: 'All origins' }, { value: 'marketplace', label: 'Marketplace' }, { value: 'import_archive', label: 'Imported archive' }, { value: 'import_directory', label: 'Imported directory' }, { value: 'development_link', label: 'Development link' }, { value: 'builtin', label: 'Built-in' }, { value: 'unknown', label: 'Unknown origin' }]} />
+                <SelectControl id="installed-component-filter" ariaLabel="Filter installed plugins by component" value={installedComponentFilter} onValueChange={setInstalledComponentFilter} options={[{ value: 'all', label: 'All components' }, { value: 'skills', label: 'Skills' }, { value: 'mcp', label: 'MCP' }]} />
+              </div>
+              {activeFilterCount > 0 && <Button type="button" variant="ghost" size="sm" onClick={() => { setFilter(''); setOriginFilter('all'); setInstalledComponentFilter('all') }}>Reset filters</Button>}
+            </div>
+          </details>
+        </>}
       </header>
 
+      <div role="tablist" aria-label="Plugin Center views" className="flex gap-1 border-b border-(--color-border) px-5 pt-2">
+        {(['installed', 'marketplace'] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
+            className={cn(
+              'rounded-t-md border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+              activeTab === tab
+                ? 'border-(--color-accent) text-(--color-text)'
+                : 'border-transparent text-(--color-text-muted) hover:text-(--color-text)',
+            )}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab === 'installed' ? 'Installed' : 'Marketplace'}
+          </button>
+        ))}
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        {activeTab === 'marketplace' ? (
+          <PluginMarketplaceBrowser
+            onInstalled={(result) => {
+              setActiveTab('installed')
+              stageTrustReview(result)
+            }}
+          />
+        ) : (
+          <>
         {busy && (
           <div className="mb-4 flex items-center gap-2 rounded-lg bg-(--bg-key) px-3 py-2 text-sm text-(--color-text-muted)">
             <Loader2 className="animate-spin" size={15} /> Working…
@@ -953,6 +1008,11 @@ export function PluginCenterPanel() {
             <div className="flex items-center gap-2 font-medium text-(--color-text)">
               {inspection.valid ? <CheckCircle2 className="text-(--color-success)" /> : <AlertTriangle className="text-(--color-error)" />}
               {inspection.manifest?.name || 'Package inspection'}
+              <span className="rounded-md border border-(--color-border) px-2 py-0.5 text-xs font-normal text-(--color-text-muted)">
+                {plugins.find((item) => item.installation.root === inspection.root)
+                  ? pluginOriginLabel(plugins.find((item) => item.installation.root === inspection.root)!.installation)
+                  : 'My development package · not installed'}
+              </span>
             </div>
             <p className="mt-1 truncate font-mono text-xs text-(--color-text-muted)" title={inspection.root}>{inspection.root}</p>
             <p className="mt-2 text-sm text-(--color-text-muted)">
@@ -970,9 +1030,11 @@ export function PluginCenterPanel() {
           <div className="rounded-xl border border-(--color-error)/30 bg-(--color-error-subtle) p-4 text-sm text-(--color-error)">
             {query.error instanceof Error ? query.error.message : 'Could not load plugins.'}
           </div>
-        ) : visiblePlugins.length ? (
+        ) : plugins.length ? (
           <div className="space-y-2">
-            {visiblePlugins.map((item) => (
+            {plugins.length > 0 && <h3 className="text-sm font-semibold text-(--color-text)">Installed plugins <span className="font-normal text-(--color-text-muted)">— {visiblePlugins.length} of {plugins.length}</span></h3>}
+          {plugins.length > 0 && visiblePlugins.length === 0 && <p className="text-sm text-(--color-text-muted)">No installed plugins match these filters.</p>}
+          {visiblePlugins.map((item) => (
               <PluginCard
                 key={item.installation.id}
                 item={item}
@@ -1030,6 +1092,8 @@ export function PluginCenterPanel() {
             <h3 className="mt-3 font-medium text-(--color-text)">No plugins yet</h3>
             <p className="mt-1 text-sm text-(--color-text-muted)">Import a .evoplugin archive or link a development folder.</p>
           </div>
+        )}
+          </>
         )}
       </div>
       <PluginTrustReviewDialog
