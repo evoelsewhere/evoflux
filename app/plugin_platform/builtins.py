@@ -6,7 +6,7 @@ from functools import lru_cache
 import hashlib
 from pathlib import Path
 
-from app.plugin_platform.models import PluginInstallation
+from app.plugin_platform.models import PluginInstallation, PluginInstallationOrigin
 from app.plugin_platform.validator import inspect_plugin
 
 
@@ -40,6 +40,10 @@ def list_builtin_installations() -> tuple[PluginInstallation, ...]:
                 root=str(package_root.resolve()),
                 source_type="builtin",
                 source_ref="evoflux://builtin/" + package_root.name,
+                origin=PluginInstallationOrigin(
+                    kind="builtin",
+                    source_ref="evoflux://builtin/" + package_root.name,
+                ),
                 content_sha256=inspection.content_sha256 or "0" * 64,
                 enabled=True,
                 installed_at="1970-01-01T00:00:00+00:00",
