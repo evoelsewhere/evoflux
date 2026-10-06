@@ -234,6 +234,16 @@ class ComputerAppSettings(BaseModel):
     permission: Literal["ask", "allow"] = "ask"
 
 
+class ImportAutoSyncSettings(BaseModel):
+    """Settings for automatic import scanning from external AI tools."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    enabled: bool = False
+    scan_interval_seconds: int = Field(default=300, ge=30)
+    notify_new_items: bool = True
+
+
 class ConductorSettings(BaseModel):
     """Connection and enforcement policy for the organization control plane."""
 
@@ -320,6 +330,9 @@ class RuntimeSettings(BaseModel):
     browser: BuiltInBrowserSettings = Field(default_factory=BuiltInBrowserSettings)
     webbridge: WebBridgeSettings = Field(default_factory=WebBridgeSettings)
     computer_app: ComputerAppSettings = Field(default_factory=ComputerAppSettings)
+    import_auto_sync: ImportAutoSyncSettings = Field(
+        default_factory=ImportAutoSyncSettings
+    )
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
     team_spawn: TeamSpawnModeSettings = Field(default_factory=TeamSpawnModeSettings)
     follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)

@@ -22,6 +22,7 @@ from app.api.routes.commands import router as commands_router
 from app.api.routes.diagnostics import router as diagnostics_router
 from app.api.routes.dream import router as dream_router
 from app.api.routes.health import router as health_router
+from app.api.routes.import_route import router as import_router
 from app.api.routes.mcp import router as mcp_router
 from app.api.routes.observability import router as observability_router
 from app.api.routes.plugins import router as plugins_router
@@ -398,6 +399,7 @@ def create_app() -> FastAPI:
         diagnostics_router, prefix="/api/diagnostics", tags=["diagnostics"]
     )
     app.include_router(remote_use_router, prefix="/api/remote-use", tags=["remote-use"])
+    app.include_router(import_router, prefix="/api/import", tags=["import"])
 
     # ── Bundled web UI (catch-all of last resort) ──────────────────────────
     mount_web_ui(app)
