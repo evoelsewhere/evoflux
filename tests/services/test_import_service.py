@@ -8,6 +8,7 @@ from app.services.importers.claude_code import (
     _parse_session_jsonl,
     parse_claude_code_export,
 )
+from app.services.importers.codex import _parse_session_jsonl as _parse_codex_session_jsonl
 from app.services.importers.codex import parse_codex_export
 from app.agent.skills.spec import parse_skill
 
@@ -165,6 +166,92 @@ def test_claude_code_import_reads_global_skills(tmp_path):
     assert [(item.kind, item.data["name"]) for item in bundle.items] == [
         ("skill", "release-notes")
     ]
+
+
+def test_codex_session_keeps_function_calls_and_outputs_structured(tmp_path):
+    import json
+
+    session_file = tmp_path / "codex-session.jsonl"
+    rows = [
+        {
+            "type": "response_item",
+            "timestamp": "2026-10-06T01:00:00Z",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "Review this change."}],
+            },
+        },
+        {
+            "type": "response_item",
+            "timestamp": "2026-10-06T01:00:01Z",
+            "payload": {
+                "type": "function_call",
+                "call_id": "call-reviewer",
+                "name": "spawn_agent",
+                "arguments": '{"agent_type":"reviewer","task":"Review the diff"}',
+            },
+        },
+        {
+            "type": "response_item",
+            "timestamp": "2026-10-06T01:00:02Z",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call-reviewer",
+                "output": "No blocking issues found.",
+            },
+        },
+        {
+            "type": "response_item",
+            "timestamp": "2026-10-06T01:00:03Z",
+            "payload": {
+                "type": "reasoning",
+                "summary": [{"type": "summary_text", "text": "private reasoning"}],
+            },
+        },
+        {
+            "type": "response_item",
+            "timestamp": "2026-10-06T01:00:04Z",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {"type": "output_text", "text": "The change looks good."},
+                    {"type": "reasoning", "text": "private thought"},
+                    {"type": "tool_use", "name": "exec_command"},
+                ],
+            },
+        },
+    ]
+    session_file.write_text(
+        "\n".join(json.dumps(row) for row in rows), encoding="utf-8"
+    )
+
+    parsed = _parse_codex_session_jsonl(session_file)
+
+    assert parsed is not None
+    messages = parsed["messages"]
+    assert [message["role"] for message in messages] == [
+        "user",
+        "assistant",
+        "tool",
+        "assistant",
+    ]
+    assert messages[1]["content"] == ""
+    assert messages[1]["tool_calls"][0] == {
+        "id": "call-reviewer",
+        "type": "function",
+        "function": {
+            "name": "spawn_agent",
+            "arguments": '{"agent_type":"reviewer","task":"Review the diff"}',
+        },
+    }
+    assert messages[2]["tool_call_id"] == "call-reviewer"
+    assert messages[2]["content"] == "No blocking issues found."
+    assert messages[3]["content"] == "The change looks good."
+    assert "private reasoning" not in str(messages)
+    assert "[Tool call" not in str(messages)
+    assert "[thinking]" not in str(messages)
 
 
 def test_claude_desktop_type_rows_work_without_embedded_roles(tmp_path):
