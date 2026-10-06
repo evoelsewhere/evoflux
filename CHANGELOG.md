@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Added
 
+- **Waiting Arcade** offers optional Snake, Minesweeper Mini, Tic-tac-toe, and 2048 during active Work and Coding runs, and pauses when the run ends or needs the user's attention.
 - **Plugins → Marketplace** can add and sync Agent Plugins 1.0.0 and Claude Code
   sources, search their catalogs, and preview compatible components. Marketplace
   installs stay disabled until trust review; importing only supported parts of a

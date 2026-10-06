@@ -79,6 +79,7 @@ import type { AgentStream } from '@/stores/useTeamStore'
 import { type InputBarHandle } from '../InputBar'
 import { splitQuotedContext } from '../InputBar.skills'
 import { FloatingInputBar } from '../FloatingInputBar'
+import { WaitingArcadeHost } from '../waiting-arcade/WaitingArcadeHost'
 import { useResetOnChange } from '@/hooks/useResetOnChange'
 import { useDirectBrowserPresence } from '@/components/BrowserViewer/useDirectBrowserPresence'
 import {
@@ -433,6 +434,8 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
   const activeAgent    = useTeamStore((s) => s.activeAgent)
   const agentNames     = useTeamStore((s) => s.agentNames)
   const isTeamWorking  = useTeamStore((s) => s.isTeamWorking)
+  const permissionRequest = useTeamStore((s) => s.permissionRequest)
+  const askUserQuestion = useTeamStore((s) => s.askUserQuestion)
   const isContinuing   = useTeamStore((s) => s.isContinuing)
   const sessionIdState = useTeamStore((s) => s.sessionId)
   const browserPipSessionIds = useUIStore((state) => state.browserPipSessionIds)
@@ -1954,6 +1957,14 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
             fileRefs={fileRefs}
             onFileRefsNeeded={() => setFileRefsEnabled(true)}
             isStreaming={isTeamWorking}
+            workingActionSlot={(
+              <WaitingArcadeHost
+                isWorking={isTeamWorking}
+                sessionId={sessionIdState}
+                mode={mode}
+                hasUserActionGate={Boolean(permissionRequest || askUserQuestion)}
+              />
+            )}
             disabled={mode === 'coding' && isCodingSessionLoading}
             // Idle text stays a short lead-in: InputBar appends the trigger
             // guideline (``@ tag files/folders, $ use skills, / for commands``)
