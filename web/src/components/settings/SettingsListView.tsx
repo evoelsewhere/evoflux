@@ -181,7 +181,7 @@ export function SettingsListView({
 
         {total > 0 && (
         <SettingsGroup className="divide-y-0 shadow-[0_12px_36px_rgba(0,0,0,0.035)]" stagger={false}>
-          <div className="flex h-10 items-center gap-2 border-b border-(--color-border-subtle) px-3">
+          <div className="sticky top-0 z-10 flex h-10 items-center gap-2 border-b border-(--color-border-subtle) bg-(--bg-card) px-3">
             <Search size={13} className="shrink-0 text-(--color-text-muted)" aria-hidden="true" />
             <label htmlFor={filterId} className="sr-only">
               {filterPlaceholder}
@@ -204,7 +204,7 @@ export function SettingsListView({
               No matches for &ldquo;{query}&rdquo;.
             </p>
           ) : (
-            <ul>
+            <ul className="max-h-[min(65vh,48rem)] overflow-y-auto overscroll-contain">
               {filtered.map((row) => (
                 <ListRow
                   key={row.key}

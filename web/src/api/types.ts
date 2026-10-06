@@ -651,6 +651,9 @@ export interface SessionResponse {
   tags?: string[]
   /** Sidebar folder the session is filed under; absent when unfiled. */
   folder_id?: string | null
+  /** Import source, present only for sessions brought in from another tool. */
+  source?: string | null
+  imported_at?: string | null
 }
 
 // ── Session folders (sidebar grouping) ───────────────────────────────────────

@@ -70,3 +70,94 @@ describe('compaction transcript privacy', () => {
     expect(message.blocks[0].extra).toEqual({ state: 'compacted' })
   })
 })
+
+describe('Claude imported transcript structure', () => {
+  it('pairs a tool-only assistant turn with its result and retains sidechain origin', () => {
+    const blocks = parseTeamBlocks([
+      userMessage({
+        id: 'task-call',
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: 'call-1',
+          type: 'function',
+          function: { name: 'Task', arguments: '{"description":"Inspect"}' },
+        }],
+        extra: { import_source: { provider: 'claude_code', event_id: 'assistant-1' } },
+      }),
+      userMessage({
+        id: 'subagent-output',
+        role: 'assistant',
+        content: 'Found the cause.',
+        name: 'reviewer',
+        extra: { import_source: { provider: 'claude_code', is_sidechain: true, agent_id: 'reviewer' } },
+      }),
+      userMessage({
+        id: 'tool-result',
+        role: 'tool',
+        content: 'Review is complete.',
+        tool_call_id: 'call-1',
+        extra: { import_source: { provider: 'claude_code', event_kind: 'tool_result' } },
+      }),
+    ])
+
+    expect(blocks.find((block) => block.type === 'tool')).toMatchObject({
+      toolName: 'Task',
+      toolDone: true,
+      toolResult: 'Review is complete.',
+      toolCallId: 'call-1',
+    })
+    expect(blocks.find((block) => block.content === 'Found the cause.')).toMatchObject({
+      extra: {
+        import_source: { is_sidechain: true, agent_id: 'reviewer' },
+      },
+    })
+  })
+
+  it('renders multiple tool calls and their results when the parent has no text response', () => {
+    const blocks = parseTeamBlocks([
+      userMessage({
+        id: 'user-multi',
+        content: 'Run two independent checks.',
+      }),
+      userMessage({
+        id: 'parent-multi',
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'task-reviewer',
+            type: 'function',
+            function: { name: 'Task', arguments: '{"subagent_type":"reviewer"}' },
+          },
+          {
+            id: 'task-explorer',
+            type: 'function',
+            function: { name: 'Task', arguments: '{"subagent_type":"explorer"}' },
+          },
+        ],
+      }),
+      userMessage({
+        id: 'reviewer-result',
+        role: 'tool',
+        content: 'Reviewer complete.',
+        tool_call_id: 'task-reviewer',
+      }),
+      userMessage({
+        id: 'explorer-result',
+        role: 'tool',
+        content: 'Explorer complete.',
+        tool_call_id: 'task-explorer',
+      }),
+    ])
+
+    expect(blocks.filter((block) => block.type === 'tool')).toMatchObject([
+      { toolName: 'Task', toolCallId: 'task-reviewer', toolDone: true, toolResult: 'Reviewer complete.' },
+      { toolName: 'Task', toolCallId: 'task-explorer', toolDone: true, toolResult: 'Explorer complete.' },
+    ])
+    expect(blocks.filter((block) => block.type === 'text')).toEqual([])
+    expect(blocks.find((block) => block.type === 'user')?.content).toBe(
+      'Run two independent checks.',
+    )
+  })
+})

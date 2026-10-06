@@ -17,6 +17,7 @@ import {
   Brain,
   Building2,
   ChartColumn,
+  Import,
   GitBranch,
   Globe2,
   Info,
@@ -77,6 +78,7 @@ type SidebarPath =
   | '/settings/diagnostics'
   | '/settings/telemetry'
   | '/settings/enterprise'
+  | '/settings/import'
   | '/settings'
 
 interface SidebarItem {
@@ -340,6 +342,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             label: t('Notifications'),
             icon: Bell,
             matchPrefix: '/settings/notifications',
+          },
+          {
+            to: '/settings/import',
+            label: t('Import'),
+            icon: Import,
+            matchPrefix: '/settings/import',
           },
         ],
       },
