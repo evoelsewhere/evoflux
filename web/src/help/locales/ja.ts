@@ -1697,7 +1697,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     category: 'plugins',
     title: 'Agent Plugins：インストール、信頼確認、設定、開発',
     summary:
-      'Plugin Center でポータブル Agent Plugin を検証、インポート、確認、設定、有効化、編集、pack、更新、削除します。パッケージ境界、trust review、資格情報、Skill 検出、MCP runtime、ready にならない場合の確認手順を説明します。',
+      'Plugin Center でポータブル Agent Plugin を管理し、Agent Plugins 1.0.0 または Claude Code marketplace を閲覧します。互換性確認、trust、資格情報、Skill 検出、MCP runtime、トラブルシューティングを説明します。',
     keywords: [
       'plugin',
       'plugins',
@@ -1718,12 +1718,19 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       '資格情報',
       '信頼確認',
       'org.evoelsewhere.evoflux',
-      '拡張名前空間'
+      '拡張名前空間',
+      'marketplace',
+      'claude code',
+      '部分対応'
 ],
     setup:
-      'Work または Coding のサイドバーから Plugins を開きます。`.evoplugin`/ZIP は Add plugin → Import package、展開済みディレクトリは Link development folder、読み取り専用検査は Validate folder、scaffold と内蔵 editor は Create plugin を使います。',
+      'Work または Coding のサイドバーから Plugins を開きます。一覧は短い概要だけを表示し、詳細は Components、Package files、Technical details から開きます。検索は常に表示され、補助操作は Filters と Manage marketplaces にまとめています。install を妨げるエラーと認証要求は引き続き表示されます。別のツールの最大化状態が記憶されていても、Plugin Center は既定でサイドの workbench にドックして開きます。`.evoplugin`/ZIP は Add plugin → Import package、展開済みディレクトリは Link development folder、読み取り専用検査は Validate folder、scaffold と内蔵 editor は Create plugin を使います。Marketplace から Agent Plugins 1.0.0 または Claude Code source を追加し、sync して plugin を検索します。コンパクトな結果から plugin を選び、互換性と package 詳細を確認してから install preview を開きます。',
     tricks: [
       'ポータブル plugin は `plugin.json`、直下の `skills/*/SKILL.md`、任意の root `mcp.json` からデータとコードを提供し、EvoFlux UI を任意に注入できません。',
+      'Marketplace からの install は trust review まで disabled です。Claude Code から import するのは互換性のある Skills と MCP のみで、commands、agents、hooks は import も実行もしません。部分対応の場合は Plugin Center または `evoflux plugin install <name> --marketplace <id> --allow-partial` で明示的に確認します。',
+      'Marketplace の install 前に Inspect package を使い、各 Skill、MCP の command/transport/host、環境と header の field 名、validation diagnostics、README と package files を確認します。Viewer は読み取り専用で credentials をマスクし、HTML、script、MCP を実行しません。',
+      'Marketplace を source、catalog 宣言の category、component、compatibility で絞り込めます。Not declared/Uncategorized は metadata 不足であり、互換性の保証ではありません。個別に inspect してください。',
+      'Installed の origin は marketplace、import archive/directory、development link、built-in、古い記録の unknown を区別します。Local development draft は installation ではありません。Origin/component filter で分類できます。',
       'Import と Link は既定で disabled のままインストールされます。Trust and enable の前に trust review を読みます。',
       'Trust review は実行コマンドと引数、remote host、環境 field 名、capabilities を表示し、secret 値は表示しません。',
       '不明な項目があれば Keep disabled を選びます。disabled のままでもファイル編集と credentials 設定はできます。',
@@ -1779,6 +1786,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
           'Settings に MCP がない — plugin enabled、`mcp.json` valid、transport が SSE ではなく stdio または Streamable HTTP か確認。',
           'MCP が error — runtime row を開き executable path、args、working directory、startup log、required credentials、stdio protocol 専用 stdout を確認。',
           'Credentials が unsupported — `plugin.json` に `org.evoelsewhere.evoflux.credentials.fields` を追加し Validate 後に戻る。',
+          'Remote MCP は有効化後も Authentication required と表示される場合があります。接続の認証は別の手順であり、認証が完了するまで tool は利用できません。',
           'Remote server が ready でない — URL/host と literal headers を確認。保存済み plugin credentials は Streamable HTTP へ意図的に注入されません。',
           'Chat で tool が選ばれない — 対応 plugin Skill を使う（`$skill-name` と入力）か agent に plugin MCP server を明示選択。install だけでは全 tool を grant しません。',
           '変更が古い — Save/Validate、Plugin Center refresh、disable/enable で runtime を reconcile。'

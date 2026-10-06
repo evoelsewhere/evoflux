@@ -2059,7 +2059,27 @@ export interface PluginInspection {
   content_sha256: string | null
 }
 
+export interface PluginOrigin {
+  kind: 'marketplace' | 'import_archive' | 'import_directory' | 'development_link' | 'builtin' | 'unknown'
+  marketplace_id?: string | null
+  marketplace_name?: string | null
+  source_ref?: string | null
+}
+
+export interface PluginPackageReview {
+  files: { path: string; kind: string; size: number }[]
+  truncated: boolean
+  readme: { path: string; content?: string | null } | null
+}
+
+export interface PluginPackageFile {
+  path: string
+  content: string
+  truncated: boolean
+}
+
 export interface PluginInstallation {
+  origin?: PluginOrigin | null
   id: string
   name: string
   version: string | null
@@ -2084,7 +2104,7 @@ export interface PluginMcpRuntimeStatus {
   runtime_name: string
   transport: string
   enabled: boolean
-  state: 'stopped' | 'starting' | 'ready' | 'error'
+  state: 'stopped' | 'starting' | 'ready' | 'error' | 'auth_required'
   error: string | null
   tool_names: string[]
   started_at: string | null
@@ -2149,6 +2169,64 @@ export interface PluginCredentialState {
   configured: boolean
   fields: PluginCredentialFieldState[]
   error: string | null
+}
+
+export type MarketplaceKind = 'agent_plugins' | 'claude_code'
+export type MarketplaceSourceType =
+  | 'artifact'
+  | 'relative'
+  | 'url'
+  | 'git-subdir'
+  | 'github'
+  | 'command'
+  | 'npm'
+  | 'unsupported'
+export type MarketplaceCompatibility = 'compatible' | 'partial' | 'unsupported' | 'unknown'
+
+export interface MarketplaceSource {
+  id: string
+  kind: MarketplaceKind
+  name: string
+  url: string
+  added_at: string
+  last_synced_at: string | null
+  last_error: string | null
+}
+
+export interface MarketplacePlugin {
+  categories?: string[]
+  keywords?: string[]
+  id: string
+  marketplace_id: string
+  name: string
+  description: string
+  version: string | null
+  author: string | null
+  source_type: MarketplaceSourceType
+  source_url: string | null
+  source_path: string | null
+  source_ref: string | null
+  components: string[]
+  compatibility: MarketplaceCompatibility
+  installable: boolean
+  verification: string
+  artifact_sha256: string | null
+  artifact_size: number | null
+}
+
+export interface MarketplacePluginPreview {
+  preview_id: string
+  plugin: MarketplacePlugin
+  supported_components: string[]
+  unsupported_components: string[]
+  warnings: string[]
+  inspection: PluginInspection
+}
+
+export interface MarketplaceCreateRequest {
+  kind: MarketplaceKind
+  name: string
+  url: string
 }
 
 export interface SideChatCreateResponse {

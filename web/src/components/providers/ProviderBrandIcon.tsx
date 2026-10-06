@@ -17,6 +17,8 @@
  * FCI uses the official multi-color FPT symbol rendered with <img>.
  */
 import { useState, type ComponentType, type SVGProps } from 'react'
+import { apiUrl } from '@/api/base-url'
+import { withTokenParam } from '@/api/auth'
 import { useThemePreference } from '@/hooks/useThemePreference'
 import { cn } from '@/lib/utils'
 
@@ -102,7 +104,9 @@ function providerPrefix(modelOrProviderId: string): string {
  */
 function catalogLogoUrl(providerId: string, color: string): string {
   const params = new URLSearchParams({ color })
-  return `/api/settings/providers/${encodeURIComponent(providerId)}/logo?${params}`
+  return withTokenParam(
+    `${apiUrl(`/settings/providers/${encodeURIComponent(providerId)}/logo`)}?${params}`,
+  )
 }
 
 /**

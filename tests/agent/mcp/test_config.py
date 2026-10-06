@@ -121,6 +121,33 @@ class TestLoadConfig:
         assert server.env == {"FOO": "bar"}
         assert server.enabled is True
 
+    def test_load_config_accepts_legacy_type_transport_key(
+        self, tmp_path: Path
+    ) -> None:
+        """Legacy MCP configs using ``type`` still load as stdio servers."""
+        config_file = tmp_path / "mcp.json"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "servers": {
+                        "management-kit": {
+                            "type": "stdio",
+                            "command": "./launch.bat",
+                            "cwd": "${PLUGIN_ROOT}",
+                        }
+                    }
+                }
+            )
+        )
+
+        loaded = load_config(config_file)
+
+        server = loaded.servers["management-kit"]
+        assert isinstance(server, StdioServerConfig)
+        assert server.transport == "stdio"
+        assert server.command == "./launch.bat"
+        assert server.cwd == "${PLUGIN_ROOT}"
+
     def test_load_config_http_roundtrip(self, tmp_path: Path) -> None:
         """save_config + load_config roundtrip for http config."""
         config_file = tmp_path / "mcp.json"

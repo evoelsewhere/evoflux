@@ -40,7 +40,7 @@ from typing import Annotated, Literal
 
 from dotenv import dotenv_values
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.core.config import settings
 
@@ -65,7 +65,10 @@ class StdioServerConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    transport: Literal["stdio"] = "stdio"
+    transport: Literal["stdio"] = Field(
+        default="stdio",
+        validation_alias=AliasChoices("transport", "type"),
+    )
     command: Annotated[str, Field(min_length=1)]
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
@@ -92,7 +95,10 @@ class HttpServerConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    transport: Literal["http"] = "http"
+    transport: Literal["http"] = Field(
+        default="http",
+        validation_alias=AliasChoices("transport", "type"),
+    )
     url: Annotated[str, Field(min_length=1)]
     headers: dict[str, str] = Field(default_factory=dict)
     oauth: OAuthConfig | None = None

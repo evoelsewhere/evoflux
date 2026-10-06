@@ -5,7 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PluginCenterPanel } from '@/components/PluginCenterPanel'
 
 const pluginApi = vi.hoisted(() => ({
+  addMarketplace: vi.fn(),
   createPlugin: vi.fn(),
+  installMarketplacePlugin: vi.fn(),
+  listMarketplaces: vi.fn(),
+  getPluginPackageReview: vi.fn(),
+  getPluginPackageFile: vi.fn(),
+  prepareMarketplacePlugin: vi.fn(),
+  removeMarketplace: vi.fn(),
+  searchMarketplacePlugins: vi.fn(),
+  syncMarketplace: vi.fn(),
   importPlugin: vi.fn(),
   inspectPlugin: vi.fn(),
   listPlugins: vi.fn(),
@@ -32,6 +41,7 @@ vi.mock('@/components/PluginWorkspaceEditor', () => ({
 describe('PluginCenterPanel create flow', () => {
   beforeEach(() => {
     Object.values(pluginApi).forEach((mock) => mock.mockReset())
+    pluginApi.getPluginPackageReview.mockResolvedValue({ files: [], truncated: false, readme: null })
     pluginApi.listPlugins.mockResolvedValue({ plugins: [], mcp_servers: [] })
     pluginApi.createPlugin.mockResolvedValue({ path: '/tmp/plugins/demo-plugin' })
     pluginApi.inspectPlugin.mockResolvedValue({
@@ -140,6 +150,31 @@ describe('PluginCenterPanel create flow', () => {
   })
 })
 
+describe('PluginCenterPanel marketplace tab', () => {
+  it('opens source management from Plugin Center', async () => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { clear: vi.fn() },
+    })
+    pluginApi.listPlugins.mockResolvedValue({ plugins: [], mcp_servers: [] })
+    pluginApi.listMarketplaces.mockResolvedValue([])
+    pluginApi.searchMarketplacePlugins.mockResolvedValue([])
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PluginCenterPanel />
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(await screen.findByRole('tab', { name: 'Marketplace' }))
+
+    expect(await screen.findByRole('heading', { name: 'Add a marketplace' })).toBeVisible()
+    expect(await screen.findByText('No marketplace sources yet.')).toBeVisible()
+  })
+})
+
 describe('PluginCenterPanel health status', () => {
   const installation = {
     id: 'inst-1',
@@ -204,6 +239,19 @@ describe('PluginCenterPanel health status', () => {
 
   beforeEach(() => {
     Object.values(pluginApi).forEach((mock) => mock.mockReset())
+    pluginApi.getPluginPackageReview.mockResolvedValue({ files: [], truncated: false, readme: null })
+  })
+
+  it('keeps installed package contents behind a compact keyboard-accessible disclosure', async () => {
+    pluginApi.listPlugins.mockResolvedValue({ plugins: [item], mcp_servers: [] })
+    await renderPanel()
+
+    const row = screen.getByText('broken-mcp').closest('button')
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByLabelText('Package contents for broken-mcp')).not.toBeInTheDocument()
+    fireEvent.click(row!)
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByLabelText('Package contents for broken-mcp')).toBeVisible()
   })
 
   // The package validated, so the card read "Enabled" on a green border
@@ -229,6 +277,42 @@ describe('PluginCenterPanel health status', () => {
 
     expect(screen.getByText('1 MCP server failed')).toBeVisible()
     expect(screen.getByText(/needs attention: 1 MCP server failed/)).toBeInTheDocument()
+  })
+
+  it('shows active installed filters in the collapsed summary and offers reset', async () => {
+    pluginApi.listPlugins.mockResolvedValue({ plugins: [item], mcp_servers: [] })
+    await renderPanel()
+    const summary = screen.getByText('Filters')
+    const disclosure = summary.closest('details')
+    const search = screen.getByLabelText('Filter plugins')
+    expect(search).toBeVisible()
+    expect(search.closest('details')).toBeNull()
+    expect(disclosure).not.toHaveAttribute('open')
+    search.focus()
+    expect(search).toHaveFocus()
+    fireEvent.change(search, { target: { value: 'no-match' } })
+
+    expect(disclosure).not.toHaveAttribute('open')
+    expect(summary).toHaveTextContent('(1 active)')
+    fireEvent.click(summary)
+    expect(screen.getByRole('button', { name: 'Reset filters' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
+    expect(summary).not.toHaveTextContent('active')
+  })
+
+  it('keeps authentication-required visible on the collapsed installed row', async () => {
+    pluginApi.listPlugins.mockResolvedValue({
+      plugins: [item],
+      mcp_servers: [{
+        installation_id: 'inst-1', plugin_name: 'broken-mcp', server_name: 'private-api',
+        runtime_name: 'plugin_inst1_private-api', transport: 'http', enabled: true,
+        state: 'auth_required', error: null, tool_names: [], started_at: null,
+      }],
+    })
+    await renderPanel()
+
+    expect(screen.getAllByText('Authentication required').some((node) => node.getAttribute('class')?.includes('rounded-full'))).toBe(true)
+    expect(screen.getByText('broken-mcp').closest('button')).toHaveAttribute('aria-expanded', 'false')
   })
 
   // `inspection.valid` means the package parses, not that every component
@@ -265,6 +349,35 @@ describe('PluginCenterPanel health status', () => {
     await renderPanel()
 
     expect(screen.getByText('2 errors')).toBeVisible()
+  })
+
+  it('distinguishes marketplace installs from uploaded packages and filters their origin', async () => {
+    pluginApi.listPlugins.mockResolvedValue({ plugins: [
+      { ...item, installation: { ...installation, origin: { kind: 'marketplace', marketplace_name: 'Official catalog' } } },
+      { ...item, installation: { ...installation, id: 'upload-1', name: 'uploaded-plugin', origin: { kind: 'import_archive' } } },
+    ], mcp_servers: [] })
+    await renderPanel()
+    expect(screen.getByText('Marketplace · Official catalog')).toBeVisible()
+    expect(screen.getByText('Imported archive')).toBeVisible()
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter installed plugins by origin' }))
+    const originOption = await screen.findByRole('option', { name: 'Imported archive' })
+    fireEvent.focus(originOption)
+    fireEvent.click(originOption)
+    await waitFor(() => expect(screen.queryByText('broken-mcp')).not.toBeInTheDocument())
+    expect(screen.getByText('uploaded-plugin')).toBeVisible()
+  })
+
+  it('shows remote MCP authorization as unavailable, not ready', async () => {
+    pluginApi.listPlugins.mockResolvedValue({ plugins: [item], mcp_servers: [{
+      installation_id: 'inst-1', plugin_name: 'broken-mcp', server_name: 'always-fails',
+      runtime_name: 'plugin_inst1_always-fails', transport: 'http', enabled: true,
+      state: 'auth_required', error: null, tool_names: [], started_at: null,
+    }] })
+    await renderPanel()
+    fireEvent.click(screen.getByText('broken-mcp'))
+    expect(screen.getAllByText('Authentication required').some((node) => node.getAttribute('class')?.includes('rounded-full'))).toBe(true)
+    expect(screen.getByText(/Authorize this remote MCP server before its tools can be used/)).toBeVisible()
+    expect(screen.queryByText('ready')).not.toBeInTheDocument()
   })
 
   it('stays quiet when nothing is wrong', async () => {

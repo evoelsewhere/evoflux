@@ -1685,7 +1685,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'plugins',
     title: 'Agent Plugins: cài đặt, kiểm tra trust, cấu hình và phát triển',
     summary:
-      'Dùng Plugin Center để validate, import, kiểm tra, cấu hình, enable, sửa code, pack, update và gỡ Agent Plugin portable. Tài liệu này giải thích rõ package contract, trust review, credentials, Skill discovery, MCP runtime và cách xử lý khi plugin chưa ready.',
+      'Dùng Plugin Center để quản lý Agent Plugin portable và duyệt marketplace Agent Plugins 1.0.0 hoặc Claude Code. Tài liệu giải thích compatibility review, trust, credentials, Skill discovery, MCP runtime và cách xử lý plugin chưa ready.',
     keywords: [
       'plugin',
       'plugins',
@@ -1706,12 +1706,19 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'thông tin xác thực',
       'kiểm tra tin cậy',
       'org.evoelsewhere.evoflux',
-      'namespace mở rộng'
+      'namespace mở rộng',
+      'marketplace',
+      'claude code',
+      'allow partial'
 ],
     setup:
-      'Mở Plugins từ sidebar Work hoặc Coding. Chọn Add plugin → Import package cho `.evoplugin`/ZIP, Link development folder cho thư mục đã giải nén, Validate folder để chỉ kiểm tra, hoặc Create plugin để scaffold rồi sửa trực tiếp trong editor.',
+      'Mở Plugins từ sidebar Work hoặc Coding. Danh sách chỉ hiện tổng quan ngắn; mở Components, Package files hoặc Technical details để xem dữ liệu sâu hơn. Search luôn hiển thị; Filters và Manage marketplaces chứa các tùy chọn phụ. Lỗi chặn cài và yêu cầu xác thực vẫn hiện rõ. Plugin Center mặc định mở ở workbench bên, bất kể trạng thái maximized đã lưu của công cụ khác. Chọn Add plugin → Import package cho `.evoplugin`/ZIP, Link development folder cho thư mục đã giải nén, Validate folder để chỉ kiểm tra, hoặc Create plugin để scaffold rồi sửa trực tiếp trong editor. Chọn Marketplace để thêm nguồn Agent Plugins 1.0.0 hoặc Claude Code, sync catalog và tìm plugin. Chọn một kết quả trong danh sách gọn để xem tương thích và chi tiết package trước khi mở preview cài đặt.',
     tricks: [
       'Plugin portable đóng góp dữ liệu và code qua `plugin.json`, `skills/*/SKILL.md` ở đúng một cấp con và `mcp.json` tùy chọn; plugin không được inject UI tùy ý vào EvoFlux.',
+      'Plugin cài từ marketplace vẫn disabled cho đến khi trust review. Claude Code chỉ import Skill và MCP tương thích; commands, agents và hooks không được import hay chạy. Plugin tương thích một phần cần xác nhận rõ trong Plugin Center hoặc `evoflux plugin install <name> --marketplace <id> --allow-partial`.',
+      'Trước khi cài từ Marketplace, dùng Inspect package để xem từng Skill, cấu hình MCP (command/transport/host), tên field môi trường và header, lỗi validation, README và file trong package. Viewer chỉ đọc và che credentials; không chạy HTML, script hay MCP.',
+      'Lọc Marketplace theo nguồn, category do catalog khai báo, loại thành phần và mức tương thích. Not declared/Uncategorized nghĩa là thiếu metadata, không đồng nghĩa tương thích; hãy inspect package đó.',
+      'Nhãn nguồn trong Installed phân biệt marketplace, import archive/thư mục, development link, built-in và nguồn cũ chưa rõ. Bản nháp development chưa phải installation. Dùng bộ lọc nguồn/thành phần để tách nhóm.',
       'Import và Link luôn cài ở trạng thái disabled mặc định. Đọc trust review trước khi bấm Trust and enable.',
       'Trust review liệt kê executable cùng arguments, remote hosts, tên field môi trường và capabilities — không bao giờ hiện giá trị secret.',
       'Chọn Keep disabled nếu có mục lạ; khi disabled bạn vẫn sửa file và cấu hình credentials được.',
@@ -1767,6 +1774,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
           'Không thấy MCP trong Settings — kiểm tra plugin enabled, `mcp.json` valid và transport là stdio hoặc Streamable HTTP, không phải SSE.',
           'MCP báo error — mở rộng runtime row; kiểm executable path, args, working directory, startup log, credentials bắt buộc và bảo đảm stdout chỉ dành cho stdio protocol.',
           'Credentials báo unsupported — thêm `org.evoelsewhere.evoflux.credentials.fields` vào `plugin.json`, Validate rồi quay lại.',
+          'MCP từ xa có thể báo Authentication required sau khi bật. Cấp quyền kết nối là bước riêng; tool chưa khả dụng cho đến khi bạn hoàn tất xác thực.',
           'Remote server chưa ready — kiểm URL/host và literal headers; stored plugin credentials cố ý không inject vào Streamable HTTP.',
           'Chat không chọn tool — dùng plugin Skill tương ứng (gõ `$tên-skill`) hoặc chọn plugin MCP server rõ ràng trong agent; cài đặt một mình không grant toàn bộ tool.',
           'Thay đổi chưa cập nhật — Save/Validate lại, refresh Plugin Center rồi disable/enable để reconcile runtime.'

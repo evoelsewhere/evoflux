@@ -105,9 +105,18 @@ evoflux plugin enable <installation-id>
 evoflux plugin disable <installation-id>
 evoflux plugin update <installation-id> ./plugin.evoplugin
 evoflux plugin uninstall <installation-id>
+evoflux plugin marketplace add --type agent_plugins --name EvoFlux --url https://example.com/marketplace.json
+evoflux plugin marketplace list
+evoflux plugin marketplace sync <marketplace-id>
+evoflux plugin search research --marketplace <marketplace-id>
+evoflux plugin available --marketplace <marketplace-id>
+evoflux plugin install research-skills --marketplace <marketplace-id> --allow-partial
 ```
 
-Install/link defaults are deliberately disabled until trust review. See the
+Install/link defaults are deliberately disabled until trust review. Marketplace
+installation also stays disabled. Claude Code packages with unsupported
+components require `--allow-partial` to install only supported Skills and MCP
+configuration; the CLI does not import commands, agents, or hooks. See the
 [Agent Plugin guide](../guides/agent-plugins.md).
 
 ## Development commands

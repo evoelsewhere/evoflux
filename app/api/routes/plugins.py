@@ -10,6 +10,13 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.api.schemas.plugins import (
+    MarketplaceCreateRequest,
+    MarketplaceInstallRequest,
+    MarketplacePluginResponse,
+    MarketplacePluginPreviewResponse,
+    MarketplaceSourceResponse,
+    PluginPackageReview,
+    PluginFileText,
     PluginCreateRequest,
     PluginCredentialUpdateRequest,
     PluginEnabledRequest,
@@ -49,7 +56,21 @@ from app.plugin_platform.credentials import (
     save_credentials,
 )
 from app.plugin_platform.models import PluginInspection, PluginInstallation
+from app.plugin_platform.marketplaces import (
+    MarketplaceKind,
+    MarketplacePlugin,
+    marketplace_preview_root,
+    MarketplaceSource,
+    add_marketplace,
+    list_marketplaces,
+    install_marketplace_preview,
+    prepare_marketplace_plugin,
+    remove_marketplace,
+    search_marketplace_plugins,
+    sync_marketplace,
+)
 from app.plugin_platform.registry import plugin_data_root, staging_root
+from app.plugin_platform.validator import redact_inspection
 from app.plugin_platform.workspace import (
     PluginWorkspaceEntry,
     create_workspace_entry,
@@ -64,6 +85,65 @@ from app.conductor.models import ManagedResourceProvider
 
 
 router = APIRouter()
+
+
+@router.get(
+    "/previews/{preview_id}/files", response_model=PluginPackageReview | PluginFileText
+)
+async def review_plugin_preview(
+    preview_id: str, path: str | None = Query(default=None)
+) -> PluginPackageReview | PluginFileText:
+    from app.plugin_platform.review import list_package_files, read_package_file
+
+    root = marketplace_preview_root(preview_id)
+    if root is None:
+        raise HTTPException(status_code=404, detail="Plugin preview not found.")
+    try:
+        result = (
+            list_package_files(root) if path is None else read_package_file(root, path)
+        )
+        return (
+            PluginPackageReview.model_validate(result)
+            if path is None
+            else PluginFileText.model_validate(result)
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Package file not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/{installation_id}/files", response_model=PluginPackageReview | PluginFileText
+)
+async def review_installed_plugin(
+    installation_id: str, path: str | None = Query(default=None)
+) -> PluginPackageReview | PluginFileText:
+    from app.plugin_platform.review import list_package_files, read_package_file
+
+    try:
+        installation = get_installation(installation_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail="Plugin installation not found."
+        ) from exc
+    if installation is None:
+        raise HTTPException(status_code=404, detail="Plugin installation not found.")
+    try:
+        result = (
+            list_package_files(installation.root)
+            if path is None
+            else read_package_file(installation.root, path)
+        )
+        return (
+            PluginPackageReview.model_validate(result)
+            if path is None
+            else PluginFileText.model_validate(result)
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Package file not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _capabilities_for(installation: PluginInstallation) -> PluginLifecycleCapabilities:
@@ -91,9 +171,11 @@ def _require_mutable_path(path: str) -> None:
 
 
 def _inspection_for(installation: PluginInstallation) -> PluginInspection:
-    return inspect_plugin(
-        installation.root,
-        data_root=plugin_data_root(installation.id),
+    return redact_inspection(
+        inspect_plugin(
+            installation.root,
+            data_root=plugin_data_root(installation.id),
+        )
     )
 
 
@@ -143,6 +225,120 @@ def _http_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc))
 
 
+def _marketplace_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, KeyError):
+        return HTTPException(status_code=404, detail=str(exc).strip("'"))
+    if isinstance(exc, ValueError) and "already added" in str(exc):
+        return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=422, detail=str(exc))
+    return HTTPException(status_code=502, detail="Marketplace operation failed.")
+
+
+@router.get("/marketplaces", response_model=list[MarketplaceSourceResponse])
+async def get_marketplaces() -> list[MarketplaceSource]:
+    return await asyncio.to_thread(list_marketplaces)
+
+
+@router.post(
+    "/marketplaces",
+    response_model=MarketplaceSourceResponse,
+    status_code=201,
+)
+async def create_marketplace(body: MarketplaceCreateRequest) -> MarketplaceSource:
+    try:
+        return await asyncio.to_thread(
+            add_marketplace,
+            kind=MarketplaceKind(body.kind),
+            name=body.name,
+            url=body.url,
+        )
+    except (KeyError, ValueError) as exc:
+        raise _marketplace_http_error(exc) from exc
+
+
+@router.delete(
+    "/marketplaces/{marketplace_id}",
+    response_model=MarketplaceSourceResponse,
+)
+async def delete_marketplace(marketplace_id: str) -> MarketplaceSource:
+    try:
+        return await asyncio.to_thread(remove_marketplace, marketplace_id)
+    except (KeyError, ValueError) as exc:
+        raise _marketplace_http_error(exc) from exc
+
+
+@router.post(
+    "/marketplaces/{marketplace_id}/sync",
+    response_model=MarketplaceSourceResponse,
+)
+async def refresh_marketplace(marketplace_id: str) -> MarketplaceSource:
+    try:
+        return await asyncio.to_thread(sync_marketplace, marketplace_id)
+    except (KeyError, ValueError) as exc:
+        raise _marketplace_http_error(exc) from exc
+
+
+@router.get(
+    "/marketplaces/plugins",
+    response_model=list[MarketplacePluginResponse],
+)
+async def search_marketplaces(
+    q: str = Query(default="", max_length=200),
+    marketplace_id: str | None = Query(default=None, max_length=16),
+) -> list[MarketplacePlugin]:
+    return await asyncio.to_thread(
+        search_marketplace_plugins,
+        q,
+        marketplace_id=marketplace_id,
+    )
+
+
+@router.post(
+    "/marketplaces/{marketplace_id}/plugins/{plugin_name}/prepare",
+    response_model=MarketplacePluginPreviewResponse,
+)
+async def prepare_marketplace_install(
+    marketplace_id: str,
+    plugin_name: str,
+) -> MarketplacePluginPreviewResponse:
+    try:
+        result = await asyncio.to_thread(
+            prepare_marketplace_plugin,
+            marketplace_id,
+            plugin_name,
+        )
+        return MarketplacePluginPreviewResponse(
+            preview_id=result.preview_id,
+            plugin=MarketplacePluginResponse.model_validate(result.plugin),
+            supported_components=result.supported_components,
+            unsupported_components=result.unsupported_components,
+            warnings=result.warnings,
+            inspection=redact_inspection(result.inspection),
+        )
+    except (KeyError, ValueError) as exc:
+        raise _marketplace_http_error(exc) from exc
+
+
+@router.post(
+    "/marketplaces/install",
+    response_model=PluginOperationResponse,
+)
+async def install_prepared_marketplace_plugin(
+    body: MarketplaceInstallRequest,
+) -> PluginOperationResponse:
+    try:
+        installation = await asyncio.to_thread(
+            install_marketplace_preview,
+            body.preview_id,
+            allow_partial=body.allow_partial,
+        )
+        inspection = await asyncio.to_thread(_inspection_for, installation)
+    except (KeyError, ValueError) as exc:
+        raise _marketplace_http_error(exc) from exc
+    return PluginOperationResponse(installation=installation, inspection=inspection)
+
+
 @router.get("", response_model=PluginListResponse)
 async def list_plugins() -> PluginListResponse:
     from app.plugin_platform.runtime import plugin_mcp_runtime
@@ -171,7 +367,7 @@ async def list_plugins() -> PluginListResponse:
 
 @router.get("/inspect", response_model=PluginInspection)
 async def inspect_plugin_path(path: str = Query(min_length=1)) -> PluginInspection:
-    return await asyncio.to_thread(inspect_plugin, path)
+    return redact_inspection(await asyncio.to_thread(inspect_plugin, path))
 
 
 @router.post("/install", response_model=PluginOperationResponse, status_code=201)
@@ -182,6 +378,16 @@ async def install_plugin_path(body: PluginInstallRequest) -> PluginOperationResp
             operation,
             body.path,
             enabled=body.enabled,
+            **(
+                {}
+                if body.mode == "link"
+                else {
+                    "origin": {
+                        "kind": "import_directory",
+                        "source_ref": str(Path(body.path).expanduser().resolve()),
+                    }
+                }
+            ),
         )
         await _after_mutation()
         return PluginOperationResponse(
@@ -219,6 +425,10 @@ async def upload_plugin_archive(
             source,
             enabled=enabled,
             source_ref=f"upload:{archive.filename}",
+            origin={
+                "kind": "import_archive",
+                "source_ref": f"upload:{archive.filename}",
+            },
         )
         await _after_mutation()
         return PluginOperationResponse(
@@ -371,7 +581,9 @@ async def put_plugin_workspace_file(
         )
         await _after_mutation()
         return PluginWorkspaceMutationResponse(
-            inspection=await asyncio.to_thread(inspect_plugin, body.root)
+            inspection=redact_inspection(
+                await asyncio.to_thread(inspect_plugin, body.root)
+            )
         )
     except (OSError, ValueError) as exc:
         raise _http_error(exc) from exc
@@ -395,7 +607,9 @@ async def post_plugin_workspace_entry(
         )
         await _after_mutation()
         return PluginWorkspaceMutationResponse(
-            inspection=await asyncio.to_thread(inspect_plugin, body.root)
+            inspection=redact_inspection(
+                await asyncio.to_thread(inspect_plugin, body.root)
+            )
         )
     except (OSError, ValueError) as exc:
         raise _http_error(exc) from exc
@@ -413,7 +627,9 @@ async def remove_plugin_workspace_entry(
         await asyncio.to_thread(delete_workspace_entry, body.root, body.path)
         await _after_mutation()
         return PluginWorkspaceMutationResponse(
-            inspection=await asyncio.to_thread(inspect_plugin, body.root)
+            inspection=redact_inspection(
+                await asyncio.to_thread(inspect_plugin, body.root)
+            )
         )
     except (OSError, ValueError) as exc:
         raise _http_error(exc) from exc

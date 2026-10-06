@@ -1740,7 +1740,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'plugins',
     title: 'Agent Plugins: install, trust, configure, and develop',
     summary:
-      'Use Plugin Center to validate, import, inspect, configure, enable, edit, pack, update, and remove portable Agent Plugins. Understand the package boundary, trust review, credentials, Skill discovery, MCP runtime, and the checks to run when a plugin is not ready.',
+      'Use Plugin Center to manage portable Agent Plugins and browse Agent Plugins 1.0.0 or Claude Code marketplaces. Understand compatibility review, trust, credentials, Skill discovery, MCP runtime, and plugin troubleshooting.',
     keywords: [
       'plugin',
       'plugins',
@@ -1759,12 +1759,20 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'link folder',
       'pack archive',
       'org.evoelsewhere.evoflux',
-      'extension namespace'
+      'extension namespace',
+      'marketplace',
+      'claude code',
+      'allow partial'
 ],
     setup:
-      'Open Plugins from either the Work or Coding sidebar. Use Add plugin → Import package for `.evoplugin`/ZIP, Link development folder for an unpacked directory, Validate folder for a read-only check, or Create plugin for a scaffold plus built-in editor.',
+      'Open Plugins from either the Work or Coding sidebar. Rows show a short overview; open Components, Package files or Technical details for deeper data. Search stays visible; Filters and Manage marketplaces hold secondary controls. Blocking errors and required authorization stay visible. Use Add plugin → Import package for `.evoplugin`/ZIP, Link development folder for an unpacked directory, Validate folder for a read-only check, or Create plugin for a scaffold plus built-in editor. Select Marketplace to add an Agent Plugins 1.0.0 or Claude Code source, sync its catalog, and search plugins. Select a compact result to review compatibility and package details before opening its install preview.',
     tricks: [
       'A portable plugin contributes data and code through `plugin.json`, immediate-child `skills/*/SKILL.md`, and optional root `mcp.json`; it cannot inject custom EvoFlux UI.',
+      'Marketplace installs stay disabled until trust review. Claude Code imports only compatible Skills and MCP; commands, agents, and hooks are not imported or executed. Partial matches require explicit confirmation in Plugin Center or `evoflux plugin install <name> --marketplace <id> --allow-partial`.',
+      'Use Inspect package before a marketplace install: review each Skill, MCP command/transport/host, environment and header field names, validation diagnostics, README and package files. The viewer is read-only and masks credentials; it never executes HTML, scripts or MCP servers.',
+      'Filter Marketplace by source, declared category, component and compatibility. Not declared/Uncategorized means the catalog omitted metadata; inspect that package instead of assuming compatibility.',
+      'Installed origin badges distinguish marketplace installs, imported archives/directories, development links, built-ins and unknown older records. Local development drafts are not installations. Use the origin/component filters to separate them.',
+      'Remote MCP servers can show Authentication required after enabling. Authorization is separate from enabling; their tools remain unavailable until you authorize the connection.',
       'Import and Link install disabled by default. Read the trust review before selecting Trust and enable.',
       'Trust review lists executable commands and arguments, remote hosts, environment field names, and capabilities — never secret values.',
       'Choose Keep disabled when anything is unexpected; you can still edit files and configure credentials.',

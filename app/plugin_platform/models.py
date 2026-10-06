@@ -151,6 +151,22 @@ class PluginInspection(BaseModel):
     content_sha256: str | None = None
 
 
+class PluginInstallationOrigin(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal[
+        "marketplace",
+        "import_archive",
+        "import_directory",
+        "development_link",
+        "builtin",
+        "unknown",
+    ]
+    marketplace_id: str | None = None
+    marketplace_name: str | None = None
+    source_ref: str | None = None
+
+
 class PluginInstallation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -167,6 +183,7 @@ class PluginInstallation(BaseModel):
     managed_project_id: str | None = None
     managed_resource_id: str | None = None
     managed_version_id: str | None = None
+    origin: PluginInstallationOrigin | None = None
     installed_at: str
     updated_at: str
 
