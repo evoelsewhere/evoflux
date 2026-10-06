@@ -18,9 +18,11 @@ Design
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import duckdb
 from loguru import logger
@@ -405,6 +407,43 @@ def summarize(days: int = 7) -> ObservabilitySummary:
 # ── DuckDB queries ────────────────────────────────────────────────────────────
 
 
+def _sparse_series_from_rows(
+    series_rows: Iterable[tuple[Any, ...]],
+) -> dict[str, dict[str, Any]]:
+    """Normalize raw DuckDB bucket rows into the sparse time-series mapping.
+
+    Aggregate columns can come back as ``NULL`` (for example quantile
+    expressions over buckets without matching spans), so every numeric field
+    is coerced to a zero default instead of raising during serialization.
+    """
+    return {
+        str(bucket): {
+            "bucket_start": str(bucket),
+            "turns": int(bucket_turns or 0),
+            "llm_calls": int(bucket_llm or 0),
+            "tool_calls": int(bucket_tools or 0),
+            "failed_turns": int(bucket_failed or 0),
+            "error_spans": int(bucket_errors or 0),
+            "input_tokens": int(bucket_input or 0),
+            "output_tokens": int(bucket_output or 0),
+            "estimated_cost_usd": round(float(bucket_cost or 0.0), 8),
+            "turn_p95_ms": round(float(bucket_p95 or 0.0), 1),
+        }
+        for (
+            bucket,
+            bucket_turns,
+            bucket_tools,
+            bucket_llm,
+            bucket_failed,
+            bucket_errors,
+            bucket_input,
+            bucket_output,
+            bucket_cost,
+            bucket_p95,
+        ) in series_rows
+    }
+
+
 def _run_queries(
     con,  # noqa: ANN001 — duckdb.DuckDBPyConnection
     window_start: datetime,
@@ -517,32 +556,7 @@ def _run_queries(
         ORDER BY bucket_start
         """
     ).fetchall()
-    sparse_series = {
-        str(bucket): {
-            "bucket_start": str(bucket),
-            "turns": int(bucket_turns),
-            "llm_calls": int(bucket_llm),
-            "tool_calls": int(bucket_tools),
-            "failed_turns": int(bucket_failed),
-            "error_spans": int(bucket_errors),
-            "input_tokens": int(bucket_input),
-            "output_tokens": int(bucket_output),
-            "estimated_cost_usd": round(float(bucket_cost), 8),
-            "turn_p95_ms": round(float(bucket_p95), 1),
-        }
-        for (
-            bucket,
-            bucket_turns,
-            bucket_tools,
-            bucket_llm,
-            bucket_failed,
-            bucket_errors,
-            bucket_input,
-            bucket_output,
-            bucket_cost,
-            bucket_p95,
-        ) in series_rows
-    }
+    sparse_series = _sparse_series_from_rows(series_rows)
     time_series = _fill_time_series(
         sparse_series, window_start, window_end, bucket_size=bucket_size
     )

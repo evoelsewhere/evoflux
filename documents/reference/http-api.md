@@ -33,7 +33,7 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/agents` | agent registry and editable/runtime configuration | `agents.py` |
 | `/api/skills` | Skill discovery, bundle CRUD and on/off switch | `skills.py` |
 | `/api/mcp` | global/plugin server status and global MCP lifecycle | `mcp.py` |
-| `/api/plugins` | package inspection/install/editor/credentials/lifecycle | `plugins.py` |
+| `/api/plugins` | package inspection/install/editor/credentials/lifecycle, marketplace sources/catalogs, prepared previews and marketplace installs | `plugins.py` |
 | `/api/settings` | providers, sandbox, Git, browser, Computer App Control and Conductor | `settings.py` |
 | `/api/scheduler` | task CRUD, pause/resume and trigger | `scheduler.py` |
 | `/api/wiki` | validated Markdown tree/file operations | `wiki.py` |
@@ -43,6 +43,13 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/snippets` | snippet catalogue/rendering | `snippets.py` |
 | `/api/auth` | provider OAuth login/callback | `auth.py` |
 | `/api/quote` | cached quote-of-the-day | `quote.py` |
+
+Plugin marketplace routes add/list/remove sources, sync and search catalogs,
+prepare an install preview, and install that preview. `allow_partial` is explicit
+and defaults to `false`; the server refuses a preview with unsupported
+components until consent is supplied. Marketplace installs are disabled by
+default and use the same trust-review lifecycle as local packages. Request and
+response details are defined in the generated OpenAPI schema.
 
 ## Team subresources
 

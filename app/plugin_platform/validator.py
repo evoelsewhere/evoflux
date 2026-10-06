@@ -52,6 +52,46 @@ _MANIFEST_FIELDS = {
     "extensions",
 }
 _HTTP_FIELD_NAME_RE = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+_SECRET_ARGUMENT = re.compile(
+    r"(?i)(--?(?:token|secret|password|api[-_]key|auth)(?:=|$))"
+)
+
+
+def redact_mcp_server_config(
+    server: PortableHttpServer | PortableStdioServer,
+) -> dict[str, Any]:
+    config = server.model_dump(mode="json")
+    if isinstance(server, PortableStdioServer):
+        config["env"] = {key: "[REDACTED]" for key in server.env}
+        args: list[str] = []
+        hide_next = False
+        for argument in server.args:
+            if hide_next:
+                args.append("[REDACTED]")
+                hide_next = False
+            elif _SECRET_ARGUMENT.match(argument):
+                if "=" in argument:
+                    key = argument.split("=", 1)[0]
+                    args.append(f"{key}=[REDACTED]")
+                else:
+                    args.append(argument)
+                    hide_next = True
+            else:
+                args.append(argument)
+        config["args"] = args
+    else:
+        config["headers"] = {key: "[REDACTED]" for key in server.headers}
+        parsed = urllib.parse.urlsplit(server.url)
+        host = parsed.hostname or ""
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        query = urllib.parse.urlencode(
+            [(key, "[REDACTED]") for key, _ in urllib.parse.parse_qsl(parsed.query)]
+        )
+        config["url"] = urllib.parse.urlunsplit(
+            (parsed.scheme, host, parsed.path, query, "")
+        )
+    return config
 
 
 def _diagnostic(
@@ -445,11 +485,9 @@ def _validate_http(server: PortableHttpServer, *, scope: str) -> list[PluginDiag
         parsed = urllib.parse.urlsplit(server.url)
         hostname = parsed.hostname
         parsed.port
-    except ValueError as exc:
+    except ValueError:
         diagnostics.append(
-            _diagnostic(
-                "error", "mcp-url-invalid", f"Invalid HTTP(S) URL: {exc}", scope=scope
-            )
+            _diagnostic("error", "mcp-url-invalid", "Invalid HTTP(S) URL.", scope=scope)
         )
         return diagnostics
     if parsed.scheme not in {"http", "https"} or not hostname:
@@ -560,7 +598,7 @@ def _inspect_mcp(
             _diagnostic(
                 "error",
                 "mcp-schema-unsupported",
-                f"Unsupported MCP schema: {raw.get('$schema')!r}",
+                "Unsupported MCP schema.",
                 scope="mcp",
             )
         )
@@ -600,9 +638,14 @@ def _inspect_mcp(
             continue
         try:
             server = MCP_SERVER_ADAPTER.validate_python(server_raw)
-        except ValidationError as exc:
+        except ValidationError:
             entry_diagnostics.append(
-                _diagnostic("error", "mcp-server-invalid", str(exc), scope=scope)
+                _diagnostic(
+                    "error",
+                    "mcp-server-invalid",
+                    "Invalid MCP server configuration.",
+                    scope=scope,
+                )
             )
             transport = (
                 server_raw.get("type", "unknown")
@@ -712,6 +755,19 @@ def inspect_plugin(
     )
 
 
+def redact_inspection(inspection: PluginInspection) -> PluginInspection:
+    """Return an API-safe inspection copy with MCP secret values removed."""
+    redacted = []
+    for component in inspection.mcp_servers:
+        try:
+            server = MCP_SERVER_ADAPTER.validate_python(component.config)
+            config = redact_mcp_server_config(server)
+        except ValidationError:
+            config = {}
+        redacted.append(component.model_copy(update={"config": config}))
+    return inspection.model_copy(update={"mcp_servers": redacted})
+
+
 def package_has_symlinks(root: Path) -> bool:
     for base, dirs, files in os.walk(root, followlinks=False):
         for name in [*dirs, *files]:
@@ -730,4 +786,6 @@ __all__ = [
     "MAX_PACKAGE_FILES",
     "inspect_plugin",
     "package_has_symlinks",
+    "redact_inspection",
+    "redact_mcp_server_config",
 ]

@@ -9,11 +9,16 @@ import shutil
 import stat
 import tempfile
 import zipfile
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from uuid import uuid4
 
-from app.plugin_platform.models import PLUGIN_SCHEMA_ID, PluginInstallation
+from app.plugin_platform.models import (
+    PLUGIN_SCHEMA_ID,
+    PluginInstallation,
+    PluginInstallationOrigin,
+)
 from app.plugin_platform.registry import (
     add_installation,
     get_installation,
@@ -147,6 +152,11 @@ def _extract_archive(archive: Path, destination: Path) -> Path:
     return destination
 
 
+def extract_plugin_archive(archive: str | Path, destination: str | Path) -> Path:
+    """Safely extract a plugin archive for inspection without installing it."""
+    return _extract_archive(Path(archive), Path(destination))
+
+
 def _source_root(source: Path, staging: Path) -> Path:
     if source.is_dir():
         return source.resolve()
@@ -177,6 +187,7 @@ def link_plugin(source: str | Path, *, enabled: bool = True) -> PluginInstallati
         root=str(root),
         source_type="linked",
         source_ref=str(root),
+        origin=PluginInstallationOrigin(kind="development_link", source_ref=str(root)),
         content_sha256=inspection.content_sha256,
         enabled=enabled,
         installed_at=now,
@@ -190,6 +201,7 @@ def install_plugin(
     *,
     enabled: bool = True,
     source_ref: str | None = None,
+    origin: Mapping[str, str | None] | None = None,
 ) -> PluginInstallation:
     source_path = Path(source).expanduser().absolute()
     from app.plugin_platform.builtins import path_is_builtin_plugin
@@ -238,6 +250,13 @@ def install_plugin(
             root=str(final_path),
             source_type="installed",
             source_ref=source_ref or str(source_path.resolve()),
+            origin=PluginInstallationOrigin.model_validate(
+                origin
+                or {
+                    "kind": "unknown",
+                    "source_ref": source_ref or str(source_path.resolve()),
+                }
+            ),
             content_sha256=inspection.content_sha256,
             enabled=enabled,
             installed_at=now,
@@ -552,6 +571,7 @@ def pack_plugin(source: str | Path, output: str | Path | None = None) -> Path:
 __all__ = [
     "PluginInstallError",
     "create_plugin",
+    "extract_plugin_archive",
     "install_plugin",
     "link_plugin",
     "pack_plugin",

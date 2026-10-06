@@ -19,6 +19,16 @@ from app.plugin_platform import (
     update_plugin,
 )
 from app.plugin_platform.registry import plugin_data_root
+from app.plugin_platform.marketplaces import (
+    MarketplaceKind,
+    add_marketplace,
+    list_marketplaces,
+    remove_marketplace,
+    search_marketplace_plugins,
+    sync_marketplace,
+    install_marketplace_preview,
+    prepare_marketplace_plugin,
+)
 
 
 def _print(value) -> None:
@@ -30,6 +40,38 @@ def _print(value) -> None:
 def cmd_plugin(args: argparse.Namespace) -> None:
     try:
         action = args.plugin_action
+        if action == "marketplace":
+            if args.marketplace_action == "add":
+                source = add_marketplace(
+                    kind=MarketplaceKind(args.kind),
+                    name=args.name,
+                    url=args.url,
+                )
+                _print(source)
+                return
+            if args.marketplace_action == "list":
+                _print(list_marketplaces())
+                return
+            if args.marketplace_action == "sync":
+                sources = (
+                    [sync_marketplace(args.marketplace_id)]
+                    if args.marketplace_id
+                    else [sync_marketplace(item.id) for item in list_marketplaces()]
+                )
+                _print(sources)
+                return
+            if args.marketplace_action == "remove":
+                _print(remove_marketplace(args.marketplace_id))
+                return
+        if action in {"search", "available"}:
+            query = args.query if action == "search" else ""
+            _print(
+                search_marketplace_plugins(
+                    query,
+                    marketplace_id=getattr(args, "marketplace_id", None),
+                )
+            )
+            return
         if action == "list":
             _print(
                 [
@@ -42,6 +84,26 @@ def cmd_plugin(args: argparse.Namespace) -> None:
             _print(inspect_plugin(args.path))
             return
         if action in {"install", "link"}:
+            if action == "install" and args.marketplace_id:
+                if args.enabled:
+                    raise ValueError(
+                        "Marketplace plugins remain disabled until trust review; "
+                        "enable them separately after installation."
+                    )
+                preview = prepare_marketplace_plugin(args.marketplace_id, args.path)
+                if preview.unsupported_components and not args.allow_partial:
+                    raise ValueError(
+                        "Plugin includes unsupported components: "
+                        + ", ".join(preview.unsupported_components)
+                        + ". Re-run with --allow-partial to install only the listed supported components."
+                    )
+                _print(
+                    install_marketplace_preview(
+                        preview.preview_id,
+                        allow_partial=args.allow_partial,
+                    )
+                )
+                return
             operation = link_plugin if action == "link" else install_plugin
             _print(operation(args.path, enabled=args.enabled))
             return
@@ -98,6 +160,43 @@ def add_plugin_subparser(subparsers: argparse._SubParsersAction) -> None:
     )
     actions = parser.add_subparsers(dest="plugin_action", metavar="action")
 
+    marketplace = actions.add_parser(
+        "marketplace", help="Add and synchronize plugin marketplaces"
+    )
+    marketplace_actions = marketplace.add_subparsers(
+        dest="marketplace_action", metavar="marketplace-action", required=True
+    )
+    marketplace_add = marketplace_actions.add_parser(
+        "add", help="Add a marketplace source"
+    )
+    marketplace_add.add_argument(
+        "--type",
+        dest="kind",
+        choices=[kind.value for kind in MarketplaceKind],
+        required=True,
+    )
+    marketplace_add.add_argument("--name", required=True)
+    marketplace_add.add_argument("--url", required=True)
+    marketplace_actions.add_parser("list", help="List configured marketplace sources")
+    marketplace_sync = marketplace_actions.add_parser(
+        "sync", help="Refresh catalog metadata"
+    )
+    marketplace_sync.add_argument("marketplace_id", nargs="?")
+    marketplace_remove = marketplace_actions.add_parser(
+        "remove", help="Remove a marketplace source"
+    )
+    marketplace_remove.add_argument("marketplace_id")
+
+    search = actions.add_parser(
+        "search", help="Search synchronized marketplace catalogs"
+    )
+    search.add_argument("query")
+    search.add_argument("--marketplace", dest="marketplace_id")
+    available = actions.add_parser(
+        "available", help="List plugins in synchronized catalogs"
+    )
+    available.add_argument("--marketplace", dest="marketplace_id")
+
     actions.add_parser("list", help="List installed and linked plugins")
 
     inspect_parser = actions.add_parser("inspect", help="Validate a plugin directory")
@@ -113,6 +212,17 @@ def add_plugin_subparser(subparsers: argparse._SubParsersAction) -> None:
             ),
         )
         operation.add_argument("path")
+        if name == "install":
+            operation.add_argument(
+                "--marketplace",
+                dest="marketplace_id",
+                help="Install a plugin from a synchronized marketplace",
+            )
+            operation.add_argument(
+                "--allow-partial",
+                action="store_true",
+                help="Confirm installation of supported components only",
+            )
         enablement = operation.add_mutually_exclusive_group()
         enablement.add_argument(
             "--enabled",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
@@ -53,6 +54,40 @@ async def test_plugin_install_defaults_to_disabled_pending_trust_review(
         "environment_fields": [],
         "capabilities": [],
     }
+
+
+@pytest.mark.asyncio
+async def test_plugin_api_lists_auth_required_mcp_servers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(plugin_routes, "list_effective_installations", lambda: [])
+    monkeypatch.setattr(
+        plugin_mcp_runtime,
+        "list_status",
+        lambda: [
+            {
+                "installation_id": "context7-installation",
+                "plugin_name": "context7",
+                "server_name": "context7",
+                "runtime_name": "context7",
+                "transport": "streamable_http",
+                "enabled": True,
+                "state": "auth_required",
+                "error": None,
+                "tool_names": [],
+                "started_at": None,
+            }
+        ],
+    )
+    app = FastAPI()
+    app.include_router(plugin_routes.router, prefix="/api/plugins")
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        listed = await client.get("/api/plugins")
+
+    assert listed.status_code == 200
+    assert listed.json()["mcp_servers"][0]["state"] == "auth_required"
 
 
 @pytest.mark.asyncio
@@ -301,7 +336,8 @@ async def test_plugin_api_lifecycle(
             / installation_id
             / "credentials.json"
         )
-        assert credential_file.stat().st_mode & 0o777 == 0o600
+        if os.name == "posix":
+            assert credential_file.stat().st_mode & 0o777 == 0o600
         cleared = await client.delete(f"/api/plugins/{installation_id}/credentials")
         assert cleared.status_code == 200
         assert cleared.json()["configured"] is False

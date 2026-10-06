@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from app.services.observability_service import (
+    _sparse_series_from_rows,
     count_traces,
     get_trace,
     list_traces,
@@ -812,3 +813,30 @@ def test_get_trace_accepts_unprefixed_trace_id(
     detail = get_trace("1" * 32)
     assert detail is not None
     assert detail.trace_id == trace
+
+
+def test_sparse_series_from_rows_tolerates_null_aggregates():
+    rows = [
+        ("2026-10-01T00:00:00Z", None, None, None, None, None, None, None, None, None),
+        ("2026-10-01T01:00:00Z", 3, 1, 2, 0, 4, 100, 50, 0.0125, 123.4),
+    ]
+    series = _sparse_series_from_rows(rows)
+
+    empty = series["2026-10-01T00:00:00Z"]
+    assert empty == {
+        "bucket_start": "2026-10-01T00:00:00Z",
+        "turns": 0,
+        "llm_calls": 0,
+        "tool_calls": 0,
+        "failed_turns": 0,
+        "error_spans": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "estimated_cost_usd": 0.0,
+        "turn_p95_ms": 0.0,
+    }
+
+    populated = series["2026-10-01T01:00:00Z"]
+    assert populated["llm_calls"] == 2
+    assert populated["estimated_cost_usd"] == 0.0125
+    assert populated["turn_p95_ms"] == 123.4
