@@ -184,6 +184,66 @@ def test_alembic_upgrade_head_adds_latest_schema(tmp_path, monkeypatch):
         engine.dispose()
 
 
+def test_import_item_journal_migration_preserves_legacy_history(tmp_path, monkeypatch):
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "import-item-journal.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000072")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO import_jobs "
+                    "(id, source, source_path, detected_format, created_at) "
+                    "VALUES ('legacy-import', 'generic', '/tmp/export', 'generic', "
+                    "CURRENT_TIMESTAMP)"
+                )
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        inspector = sa.inspect(engine)
+        assert "import_job_items" in inspector.get_table_names()
+        session_columns = {
+            column["name"] for column in inspector.get_columns("chat_sessions")
+        }
+        assert "source_item_id" in session_columns
+        job_columns = {
+            column["name"] for column in inspector.get_columns("import_jobs")
+        }
+        assert {"origin", "undo_state"} <= job_columns
+        foreign_keys = inspector.get_foreign_keys("import_job_items")
+        assert any(
+            fk["referred_table"] == "import_jobs"
+            and fk["constrained_columns"] == ["job_id"]
+            and fk["referred_columns"] == ["id"]
+            for fk in foreign_keys
+        )
+        with engine.connect() as conn:
+            origin, undo_state = conn.execute(
+                sa.text(
+                    "SELECT origin, undo_state FROM import_jobs "
+                    "WHERE id = 'legacy-import'"
+                )
+            ).one()
+        assert origin == "manual"
+        assert undo_state == "unavailable"
+    finally:
+        engine.dispose()
+
+
 def test_work_mode_migration_rewrites_forge_rows_and_defaults(tmp_path, monkeypatch):
     from alembic import command
     from alembic.config import Config

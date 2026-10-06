@@ -78,6 +78,21 @@ async def test_blank_query_returns_nothing(session):
 
 
 @pytest.mark.asyncio
+async def test_skill_search_includes_matches_after_the_old_file_scan_window(
+    session, monkeypatch
+):
+    skills = [_skill(f"skill-{index:03}", "Unrelated skill") for index in range(400)]
+    skills.append(_skill("zzz-legacy-history-import", "Search old imported history"))
+    _set_skills(monkeypatch, skills)
+
+    items = await search_app(session, "legacy-history-import")
+
+    assert [(item.kind, item.label) for item in items] == [
+        ("skill", "zzz-legacy-history-import")
+    ]
+
+
+@pytest.mark.asyncio
 async def test_finds_sessions_by_title(session):
     session.add(ChatSession(title="Refactor the billing importer", mode="work"))
     session.add(ChatSession(title="Unrelated chat", mode="work"))

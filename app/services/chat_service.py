@@ -417,7 +417,13 @@ def _history_messages_stmt(session_id: UUID, boundary: SessionMessage | None = N
 def _is_history_visible(row: SessionMessage) -> bool:
     if not row.exclude_from_context:
         return True
-    return bool(row.extra and row.extra.get("queue_status") == "queued")
+    return bool(
+        row.extra
+        and (
+            row.extra.get("queue_status") == "queued"
+            or row.extra.get("visible_when_excluded") is True
+        )
+    )
 
 
 def _is_hidden_from_user(row: SessionMessage) -> bool:
@@ -1604,9 +1610,7 @@ async def get_team_history(
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 
-def _restore_reasoning_items(
-    msg: "AssistantMessage", extra: dict | None
-) -> None:
+def _restore_reasoning_items(msg: "AssistantMessage", extra: dict | None) -> None:
     """Put the provider's reasoning items back on a rehydrated turn.
 
     They ride in ``extra`` because the field itself is excluded from the
