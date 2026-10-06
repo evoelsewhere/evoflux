@@ -4,6 +4,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Repeated safe reads with no new progress are surfaced to the agent with an explanation, while changed file ranges and explicitly safe retries remain available.
+
 ### Changed
 
 - On Windows and macOS, the notification bell and its **Notifications** inbox

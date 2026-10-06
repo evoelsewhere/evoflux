@@ -26,7 +26,7 @@ from app.agent.tools.builtin.filesystem.handlers import (
     handle_document,
     handle_image,
 )
-from app.agent.tools.registry import InjectedArg, Tool
+from app.agent.tools.registry import InjectedArg, ProgressErrorPolicy, Tool
 
 _MAX_READ_BYTES = 5_242_880  # 5 MB read cap
 _MAX_CONTEXT_CHARS = 20_000  # keep read results within typical LLM context budgets
@@ -121,6 +121,61 @@ def _read_observation_range(args: dict[str, Any]) -> tuple[str, int, int] | None
     start = max(1, offset)
     revision = f"{resolved.resolve()}:{stat.st_ino}:{stat.st_size}:{stat.st_mtime_ns}"
     return revision, start, start + limit - 1
+
+
+def _read_progress_scope(args: dict[str, Any]) -> str | None:
+    """Return one stable file-revision scope across read ranges and retries."""
+
+    path = args.get("path")
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        resolved = get_sandbox().validate_path(path)
+        if resolved.is_file() and classify_file(resolved) == "text":
+            stat = resolved.stat()
+            return (
+                f"file:{resolved.resolve()}:{stat.st_ino}:"
+                f"{stat.st_size}:{stat.st_mtime_ns}"
+            )
+        if not resolved.exists():
+            return f"missing:{resolved.resolve()}"
+        if resolved.is_dir():
+            stat = resolved.stat()
+            return f"directory:{resolved.resolve()}:{stat.st_ino}:{stat.st_mtime_ns}"
+    except OSError:
+        return None
+    return None
+
+
+def _read_progress_error_policy(result: str) -> ProgressErrorPolicy | None:
+    """Classify known read failures; unknown failures stay outside the guard."""
+
+    message = result.casefold()
+    if any(
+        marker in message
+        for marker in (
+            "temporarily unavailable",
+            "resource temporarily unavailable",
+            "being used by another process",
+            "[winerror 32]",
+            "[winerror 33]",
+        )
+    ):
+        return "retry_once"
+    if any(
+        marker in message
+        for marker in (
+            "permission denied",
+            "access is denied",
+            "access denied",
+            "operation not permitted",
+            "file not found",
+            "path not found",
+            "path is a directory",
+        )
+    ):
+        return "terminal"
+    return None
 
 
 async def _read_file(
@@ -232,4 +287,6 @@ read_file = Tool(
     observation_kind="source",
     observation_key=_read_observation_key,
     observation_range=_read_observation_range,
+    progress_scope=_read_progress_scope,
+    progress_error_policy=_read_progress_error_policy,
 )

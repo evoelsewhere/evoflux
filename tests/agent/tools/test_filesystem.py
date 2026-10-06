@@ -12,6 +12,7 @@ from app.agent.artifacts import session_artifact_dir
 from app.agent.errors import ToolExecutionError
 from app.agent.sandbox import SandboxConfig, set_sandbox
 from app.agent.state import AgentState
+from app.agent.agent_loop.progress import ToolProgressTracker
 from app.core.config import settings
 from app.agent.tools.builtin.filesystem import (
     glob_files,
@@ -27,11 +28,105 @@ from app.agent.tools.builtin.filesystem.grep import (
 )
 from app.agent.tools.builtin.filesystem.rm import _remove_path
 from app.agent.tools.builtin.filesystem.glob import _glob_files as _search_files
+from app.agent.tools.builtin.filesystem.read import _read_progress_scope
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+def test_read_progress_scope_is_stable_across_ranges_and_changes_with_revision(
+    sandbox,
+):
+    _config, workspace_path = sandbox
+    target = workspace_path / "progress.txt"
+    target.write_text("first\nsecond\n", encoding="utf-8")
+
+    first = _read_progress_scope({"path": "progress.txt", "offset": 1, "limit": 1})
+    equivalent = _read_progress_scope({"path": "progress.txt", "offset": 0, "limit": 1})
+    other_range = _read_progress_scope(
+        {"path": "progress.txt", "offset": 2, "limit": 1}
+    )
+    assert first is not None
+    assert equivalent == first
+    assert other_range == first
+
+    target.write_text("replacement content\n", encoding="utf-8")
+    assert (
+        _read_progress_scope({"path": "progress.txt", "offset": 1, "limit": 1}) != first
+    )
+
+
+def test_read_progress_scope_tracks_missing_path_until_file_appears(sandbox):
+    _config, workspace_path = sandbox
+    args = {"path": "created-later.txt", "offset": 1, "limit": 10}
+
+    missing = _read_progress_scope(args)
+    assert missing is not None
+    assert _read_progress_scope({**args, "offset": 5}) == missing
+
+    (workspace_path / "created-later.txt").write_text("ready\n", encoding="utf-8")
+    assert _read_progress_scope(args) != missing
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Error: permission denied", "terminal"),
+        ("Error: File not found: missing.txt", "terminal"),
+        ("Error: Path is a directory: src", "terminal"),
+        (
+            "Error: [WinError 32] file is being used by another process",
+            "retry_once",
+        ),
+        ("Error: Resource temporarily unavailable", "retry_once"),
+        ("Error: unsupported preview format", None),
+    ],
+)
+def test_builtin_read_declares_error_policy(message, expected):
+    read_module = importlib.import_module("app.agent.tools.builtin.filesystem.read")
+    policy = getattr(read_module, "_read_progress_error_policy")
+
+    assert policy(message) == expected
+    assert read_file.progress_error_policy is policy
+
+
+@pytest.mark.asyncio
+async def test_builtin_read_progress_guard_allows_new_range_evidence(sandbox):
+    _config, workspace_path = sandbox
+    (workspace_path / "ranged.txt").write_text("first\nsecond\n", encoding="utf-8")
+    tracker = ToolProgressTracker()
+    metadata: dict = {}
+    first_args = {"path": "ranged.txt", "offset": 1, "limit": 1}
+    second_args = {"path": "ranged.txt", "offset": 2, "limit": 1}
+
+    first = await read_file.arun(**first_args)
+    second = await read_file.arun(**second_args)
+    assert first != second
+    tracker.record(read_file, first_args, first, metadata)
+    tracker.record(read_file, second_args, second, metadata)
+
+    assert (
+        tracker.should_block(
+            read_file, {"path": "ranged.txt", "offset": 3, "limit": 1}, metadata
+        )
+        is None
+    )
+
+
+def test_builtin_read_terminal_error_stops_range_variations(sandbox):
+    _config, workspace_path = sandbox
+    (workspace_path / "restricted.txt").write_text("secret\n", encoding="utf-8")
+    tracker = ToolProgressTracker()
+    metadata: dict = {}
+    first = {"path": "restricted.txt", "offset": 1, "limit": 1}
+    changed_range = {"path": "restricted.txt", "offset": 2, "limit": 1}
+
+    tracker.record(read_file, first, "Error: permission denied", metadata)
+
+    reason = tracker.should_block(read_file, changed_range, metadata)
+    assert reason is not None
 
 
 @pytest.fixture

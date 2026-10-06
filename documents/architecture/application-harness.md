@@ -66,6 +66,15 @@ protocols may name guaranteed lifecycle/team tools, but first-party role
 prompts remain capability-agnostic because optional tool schemas can be
 deferred or excluded.
 
+Read tools may also opt into cross-iteration progress tracking with
+`Tool.progress_scope`. The scope callback identifies one stable observation,
+such as a resolved file revision plus normalized range. Only `read_only` tools
+with an explicit callback participate. Identical successful results across two
+different argument sets in that scope cause a later call in that run to return
+an explanatory no-progress result. A stable read error gets one retry before a
+repeated error is blocked. Side-effecting tools are never deduplicated by this
+policy.
+
 ## Runtime context and hooks
 
 Per-run hooks are assembled by `HookPipeline`. Each registration has:
@@ -144,6 +153,9 @@ formatter and metadata path instead of maintaining a second output protocol.
   feature-specific branches. Revision-aware tools return a receipt instead of
   rereading an unchanged source range; no fixed investigation quota can block
   a legitimate evidence chain.
+- Cross-iteration no-progress handling is opt-in for explicit safe-read scopes;
+  changed file revisions and changed results remain executable, while
+  side-effecting tools remain outside the guard.
 - Shell output is journalled once, model-visible observations are bounded, and
   repeated `process` polls never replay already consumed bytes.
 - Application shutdown terminates every tracked command and Preview process

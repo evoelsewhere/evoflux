@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from app.agent.agent_loop.progress import progress_tracker
 from app.agent.errors import ToolArgumentError, ToolNotFoundError
 from app.agent.schemas.chat import ContentBlock, TextBlock, ToolResult
 from app.agent.tool_media import materialize_tool_attachments
@@ -56,12 +57,12 @@ def _prepare_observation(
     state: AgentState,
     tool: Tool,
     args: dict[str, Any],
-) -> tuple[str | None, ObservationRange | None, str | None]:
+) -> tuple[str | None, ObservationRange | None, str | None, str | None]:
     """Return revision identities plus an optional reuse receipt."""
 
     kind = getattr(tool, "observation_kind", None)
     if not isinstance(kind, str) or not kind:
-        return None, None, None
+        return None, None, None, None
 
     stats = state.metadata.setdefault(
         "tool_observation_stats",
@@ -83,6 +84,7 @@ def _prepare_observation(
             return (
                 cache_key,
                 None,
+                cached.get("result_sha256"),
                 (
                     "[Observation reused — source revision unchanged]\n"
                     f"tool: {tool.name}\n"
@@ -119,6 +121,7 @@ def _prepare_observation(
                 return (
                     cache_key,
                     observation_range,
+                    cached.get("result_sha256"),
                     (
                         "[Observation range already covered — source revision unchanged]\n"
                         f"tool: {tool.name}\n"
@@ -131,7 +134,7 @@ def _prepare_observation(
                 )
 
     stats["executed"] = int(stats.get("executed", 0)) + 1
-    return cache_key, observation_range, None
+    return cache_key, observation_range, None, None
 
 
 def make_tool_executor(
@@ -164,8 +167,9 @@ def make_tool_executor(
             tc.function.arguments[:500] if tc.function.arguments else "{}",
         )
 
+        args: dict = {}
+        active_tool: Tool | None = None
         try:
-            args: dict = {}
             if tc.function.arguments:
                 try:
                     args = json.loads(tc.function.arguments)
@@ -203,12 +207,28 @@ def make_tool_executor(
                 )
             # ─────────────────────────────────────────────────────────────
 
+            no_progress_reason = progress_tracker.should_block(
+                active_tool, args, s.metadata
+            )
+            if no_progress_reason is not None:
+                logger.info(
+                    "tool_call_blocked_no_progress agent={} tool={}",
+                    agent_name,
+                    tc.function.name,
+                )
+                return no_progress_reason
+
             (
                 observation_cache_key,
                 observation_range,
+                cached_result_hash,
                 observation_short_circuit,
             ) = _prepare_observation(s, active_tool, args)
             if observation_short_circuit is not None:
+                if isinstance(cached_result_hash, str):
+                    progress_tracker.record_digest(
+                        active_tool, args, cached_result_hash, s.metadata
+                    )
                 logger.debug(
                     "tool_observation_short_circuit agent={} tool={} result={}",
                     agent_name,
@@ -283,10 +303,12 @@ def make_tool_executor(
             else:
                 result = str(result_raw)
 
+            progress_tracker.record(active_tool, args, result, s.metadata)
+
             result_is_reusable = not result.startswith("Error:")
             result_hash = hashlib.sha256(
                 result.encode("utf-8", errors="replace")
-            ).hexdigest()[:16]
+            ).hexdigest()
             if observation_cache_key and result_is_reusable:
                 state_cache = s.metadata.setdefault("_tool_observation_cache", {})
                 state_cache[observation_cache_key] = {
@@ -349,6 +371,8 @@ def make_tool_executor(
 
         except Exception as e:
             result = f"Error: {sanitize_error(str(e))}"
+            if active_tool is not None:
+                progress_tracker.record(active_tool, args, result, s.metadata)
             tool_elapsed = time.monotonic() - tool_start
             logger.error(
                 "tool_error agent={} tool={} elapsed={:.2f}s error={}",

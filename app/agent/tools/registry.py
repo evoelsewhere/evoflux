@@ -41,6 +41,7 @@ from typing import (
     get_args,
     get_origin,
     get_type_hints,
+    Literal,
     overload,
 )
 
@@ -55,6 +56,7 @@ from app.agent.errors import ToolArgumentError, ToolExecutionError
 # The agent loop uses this contract to recognize a later request that is fully
 # covered by an earlier source range without knowing anything about tool names.
 ObservationRange = tuple[str, int, int]
+ProgressErrorPolicy = Literal["terminal", "retry_once"]
 
 
 class InjectedArg:
@@ -205,6 +207,9 @@ class Tool:
         observation_key: Callable[[dict[str, Any]], str | None] | None = None,
         observation_range: Callable[[dict[str, Any]], ObservationRange | None]
         | None = None,
+        progress_scope: Callable[[dict[str, Any]], str | None] | None = None,
+        progress_error_policy: Callable[[str], ProgressErrorPolicy | None]
+        | None = None,
     ) -> None:
         self._func = func
         # ``Callable`` is the abstract type; only function objects guarantee
@@ -253,6 +258,8 @@ class Tool:
         self.observation_kind = observation_kind
         self.observation_key = observation_key
         self.observation_range = observation_range
+        self.progress_scope = progress_scope
+        self.progress_error_policy = progress_error_policy
 
         self._model, self._definition, self._injected_params = self._build()
         self._description_factory: Callable[[], str] | None = (
@@ -492,6 +499,8 @@ def tool(
     observation_key: Callable[[dict[str, Any]], str | None] | None = None,
     observation_range: Callable[[dict[str, Any]], ObservationRange | None]
     | None = None,
+    progress_scope: Callable[[dict[str, Any]], str | None] | None = None,
+    progress_error_policy: Callable[[str], ProgressErrorPolicy | None] | None = None,
 ) -> Callable[[Callable], Tool]: ...
 
 
@@ -514,6 +523,8 @@ def tool(
     observation_key: Callable[[dict[str, Any]], str | None] | None = None,
     observation_range: Callable[[dict[str, Any]], ObservationRange | None]
     | None = None,
+    progress_scope: Callable[[dict[str, Any]], str | None] | None = None,
+    progress_error_policy: Callable[[str], ProgressErrorPolicy | None] | None = None,
 ) -> Tool | Callable[[Callable], Tool]:
     """Decorator that converts a function into a :class:`Tool`.
 
@@ -564,6 +575,8 @@ def tool(
             observation_kind=observation_kind,
             observation_key=observation_key,
             observation_range=observation_range,
+            progress_scope=progress_scope,
+            progress_error_policy=progress_error_policy,
         )
 
     return decorator
