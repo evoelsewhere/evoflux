@@ -98,4 +98,11 @@ export const STORAGE_KEYS = {
     /** "1" once the user ticked "Don't show again" on the policy warning. */
     policyAcknowledged: 'oa.remoteControl.policyAcknowledged',
   },
+
+  import: {
+    /** "1" once the user dismissed the first-run import welcome popup. */
+    welcomeDismissed: 'oa.import.welcomeDismissed',
+    /** One-shot import category selection passed from the welcome popup (sessionStorage). */
+    welcomeSelection: 'oa.import.welcomeSelection',
+  },
 } as const

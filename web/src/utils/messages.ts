@@ -75,7 +75,9 @@ function assistantBlocks(
     lifecycle?: unknown
     turn_usage?: unknown
     usage?: unknown
+    import_source?: Record<string, unknown>
   } | null
+  const importedSource = extra?.import_source
   const responseDurationMs = typeof extra?.duration_ms === 'number' ? extra.duration_ms : undefined
   const model = typeof extra?.model === 'string' ? extra.model : undefined
   const lifecycle = extra?.lifecycle === 'sleep' ? 'sleep' : undefined
@@ -90,7 +92,13 @@ function assistantBlocks(
       timestamp,
       responseDurationMs,
       turnUsage,
-      extra: model || lifecycle ? { ...(model ? { model } : {}), ...(lifecycle ? { lifecycle } : {}) } : undefined,
+      extra: model || lifecycle || importedSource
+        ? {
+            ...(model ? { model } : {}),
+            ...(lifecycle ? { lifecycle } : {}),
+            ...(importedSource ? { import_source: importedSource } : {}),
+          }
+        : undefined,
     })
   }
 
@@ -135,6 +143,7 @@ function assistantBlocks(
       toolCallId: tool.id,
       toolDone: false,
       timestamp,
+      extra: importedSource ? { import_source: importedSource } : undefined,
     }
     blocks.push(block)
     if (tool.id) pendingToolBlocks.set(tool.id, block)
