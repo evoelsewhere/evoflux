@@ -460,3 +460,38 @@ class TestGatewayRejectedParameters:
     def test_models_that_take_a_temperature_keep_the_family_default(self):
         body = self._body("opencode-go:kimi-k2.6")
         assert body["temperature"] == 0.6
+
+
+class TestToolResultsCarryNoName:
+    """``glm-5.3-flash``: 400 ``messages[3]: "name" is not supported`` on the
+    request that follows a tool call, found by a write-then-read conversation."""
+
+    def test_tool_messages_are_sent_without_name(self):
+        p = build_provider("opencode-go:glm-5.3-flash")
+        call = ToolCall(id="c1", function=FunctionCall(name="write", arguments="{}"))
+        messages = [
+            HumanMessage(content="make a file"),
+            AssistantMessage(content=None, tool_calls=[call]),
+            ToolMessage(content="ok", tool_call_id="c1", name="write"),
+        ]
+
+        body = p._completions.build_request(messages, None, False, p._merged_kwargs())
+
+        tool = [m for m in body["messages"] if m["role"] == "tool"]
+        assert len(tool) == 1
+        assert tool[0]["tool_call_id"] == "c1"
+        assert "name" not in tool[0]
+
+    def test_the_call_itself_still_names_the_function(self):
+        p = build_provider("opencode-go:glm-5.3-flash")
+        call = ToolCall(id="c1", function=FunctionCall(name="write", arguments="{}"))
+        messages = [
+            HumanMessage(content="make a file"),
+            AssistantMessage(content=None, tool_calls=[call]),
+            ToolMessage(content="ok", tool_call_id="c1", name="write"),
+        ]
+
+        body = p._completions.build_request(messages, None, False, p._merged_kwargs())
+
+        assistant = next(m for m in body["messages"] if m["role"] == "assistant")
+        assert assistant["tool_calls"][0]["function"]["name"] == "write"
