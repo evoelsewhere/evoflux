@@ -57,7 +57,6 @@ from app.agent.hooks.skills import SkillsPromptFinalizerHook
 from app.agent.hooks.summarization import build_team_summarization_hook
 from app.agent.hooks.title_generation import build_title_generation_hook
 from app.agent.hooks.memory_extraction import build_memory_extraction_hook
-from app.agent.lifecycle import is_sleep_message
 from app.agent.mode.team.hooks.queued_injection import QueuedMessageInjectionHook
 from app.agent.mode.team.hooks.team_inbox import TeamInboxHook
 from app.agent.mode.team.hooks.team_prompt import AgentTeamProtocolHook
@@ -170,7 +169,7 @@ LEAD_COMMUNICATION_RULES = """\
 {{ROUTING_GUIDE}}
 - **Roster management.** Members are spawned on demand, and interactive spawn waits for user confirmation of model and thinking effort. Before parallel routing or reusing a possibly busy member, call `team_manage(action='status')` to inspect live state, active Task ID, and queue depth. A bare-blueprint `team_delegate` atomically spawns or reuses an instance; if it reports `Queued behind active work`, accept the queue or intentionally spawn another instance when work must overlap.
 - **Coordination.** Use `team_delegate` for structured assignments, `team_message` for quick questions/answers/status, `team_handoff` for deliverables, and `team_state` for durable shared facts. A delegation's durable Task ID must be preserved through `depends_on`, handoff, rejection, and rework. Never create a task through `team_message`; do not answer the user until every assigned member has a final handoff.
-- **Waiting on a member? Respond with exactly `<sleep>`** — just the token, no tool calls and no plain text. After delegating you may send one brief "work is underway" note (see workflow step 3), but every wake after that where you're still waiting on outstanding delegations and have nothing new to verify or synthesise — no partial answer, no "here's what I have so far," no guessed conclusion — must be exactly `<sleep>`. Answering on your own before a member reports back defeats the delegation and shows the user an answer the team hasn't actually produced yet; your next real response after their handoff arrives is the answer.
+- **Waiting on a member? Call `sleep`** — it takes no arguments; never write text just to say you are waiting. After delegating you may send one brief "work is underway" note (see workflow step 3), but every wake after that where you're still waiting on outstanding delegations and have nothing new to verify or synthesise — no partial answer, no "here's what I have so far," no guessed conclusion — must be a bare `sleep` call. Answering on your own before a member reports back defeats the delegation and shows the user an answer the team hasn't actually produced yet; your next real response after their handoff arrives is the answer.
 - **Choose workspace isolation.** For code-changing work, set `isolation='worktree'` (or use `auto`) and name every affected repository in `target_repos`; use `shared` only for read-only work or small non-overlapping edits. The runtime gives each recipient its own branch/worktree set. After a final handoff, inspect it with `team_worktree(action='review', task_id=...)`, then explicitly `merge`, `discard`, or `team_reject`. Dependencies do not start until isolated work is merged. When all accepted tasks are merged, call `team_worktree(action='finalize')` to fast-forward clean source repositories.
 - Member capabilities come from their blueprint/root configuration at spawn time. If a member lacks a required capability, use an appropriately configured blueprint or update durable settings rather than mutating a live member.
 - Always format your responses in **Markdown**. No emoji."""
@@ -217,8 +216,8 @@ MEMBER_COMMUNICATION_RULES = """\
 - **Use `team_handoff` for all substantial deliverables** — research findings, analysis, proposals, completed work. It produces structured artifacts (summary, findings, evidence, confidence, next_actions) that recipients can act on without re-parsing. Use `team_message` only for short questions, clarifications, or status queries. Use `team_state` to share persistent key-value data (URLs, config, discoveries) visible to all team members.
 - **Talk to peers directly for questions and unsolicited context — you are not limited to the lead.** A task-linked final `team_handoff` must go to the task's delegator so the durable task can complete; the runtime injects its artifact into dependent task briefs automatically. Do not manually relay dependency results that already use `depends_on`.
 - Message the lead specifically only when you owe *them* your final deliverable, or you are blocked and need a decision; otherwise prefer peer-to-peer.
-- **Idle, waiting, or done? Your only response is exactly `<sleep>`** — just the token, no tool calls and no plain text. Use it whenever you have nothing to send this turn (waiting on a peer's reply, no task to claim, or your work is finished).
-- NEVER send social messages ("hi", "got it", "working on it", "standing by") — `<sleep>` instead.
+- **Idle, waiting, or done? Call `sleep`** — it takes no arguments; never write text just to say you are waiting. Use it whenever you have nothing to send this turn (waiting on a peer's reply, no task to claim, or your work is finished).
+- NEVER send social messages ("hi", "got it", "working on it", "standing by") — call `sleep` instead.
 - **Missing a capability?** Follow the deferred-tool activation protocol first. Only when its catalog genuinely lacks the capability, describe **what you're trying to do** in plain language to the lead via `team_message` (e.g. "I need to write files to disk", "I need shadcn component examples") rather than guessing at tool/skill/MCP names the lead would have to decode. The lead grants the capability and you'll see it on your next turn.
 - **Verify before you claim.** Read each tool result before reporting. If a tool returned an error, NEVER say the operation succeeded. When you write a file or mutate state, confirm with a cheap follow-up (e.g. `ls` the directory, `read` the file) before telling anyone it's done. **Record your verification** in `team_handoff` by setting `verified=True`, `verification_method`, and `verification_result` so the lead can trust your work without re-checking.
 - **Work only in the assigned workspace.** For isolated delegations the runtime has already rebound your sandbox and repository map to your private worktree set. Do not create, merge, delete, or switch Git worktrees/branches yourself. Commit/snapshot and integration are runtime/lead responsibilities.
@@ -234,16 +233,16 @@ MEMBER_PROTOCOL = """\
 1. Receive task instructions via `[{lead_name}] ● TASK DELEGATION:` (structured — has Goal, Expected output, Constraints) or `[{lead_name}]: ...` (free-form) or from a peer.
     - **When you receive a structured delegation:** retain its delegation **Task ID** and pass it as `task_id` in every partial/final `team_handoff`. This UUID is distinct from a todo `task_id`. Your deliverable MUST satisfy the stated **Expected output** and respect all **Constraints**. Use the **Goal** as your north star and **Context** as starting knowledge. Do not deviate from the spec — if you believe the spec is wrong or unclear, ask the lead via `team_message` before proceeding.
     - **When you receive a rejection (`❌ REJECTED`):** retain the same delegation **Task ID**, read **Reason** and **Issues** carefully, and address EVERY listed issue. Follow the **Suggestions** — they are actionable fixes, not optional hints. Then re-deliver via `team_handoff(task_id='<same UUID>', ...)` with improvements. Do NOT argue with the rejection or repeat the same output — fix the problems.
-2. If the instruction names a todo task, call `todo_manage(actions=[{{"action":"claim","task_id":"..."}}])` before starting. If the claim is blocked, respond `<sleep>` and wait for the dependency owner to finish instead of starting early.
+2. If the instruction names a todo task, call `todo_manage(actions=[{{"action":"claim","task_id":"..."}}])` before starting. If the claim is blocked, call `sleep` and wait for the dependency owner to finish instead of starting early.
 3. **Use skills progressively.** Start from the visible tool schemas and this role contract. Read a skill's SKILL.md only when the task needs a specialized workflow that those surfaces do not already define; never read skills speculatively.
 4. Do your work (research, write, calculate, etc.).
-5. If you need help or input from any teammate, call `team_message(to=[teammate_name])`, then `<sleep>` — the answer arrives next wake.
+5. If you need help or input from any teammate, call `team_message(to=[teammate_name])`, then `sleep` — the answer arrives next wake.
 6. **Deliver output via `team_handoff`** (not `team_message`) to the task's delegator, always passing the delegation `task_id` shown in the task brief. Use `status: "partial"` for incremental batches and `status: "final"` for the complete deliverable. Fill `findings` with key points, `evidence` with supporting data, and `confidence` with your self-assessed certainty (0.0–1.0). For tasks declared with `depends_on`, the runtime forwards your final artifact to downstream owners.
    - **Verify before you hand off.** If your work mutated state (wrote a file, ran a command, changed config), confirm the result with a cheap follow-up check *before* handing off. Then set `verified=True` with `verification_method` describing how you checked and `verification_result` with what you found. For pure research/analysis with no side-effects, omit verification.
 7. When sending to the lead: `team_handoff(to=["{lead_name}"], task_id="<delegation UUID>")` with your **final, complete result** (`status: "final"`) unless the lead explicitly asked for incremental updates.
-8. If you have nothing to do: `<sleep>` immediately.
+8. If you have nothing to do: call `sleep` immediately.
 
-**NEVER write plain text for responses/results; use `team_handoff` for deliverables, `team_message` for questions/clarifications, or return exactly `<sleep>` when waiting or idle.**"""
+**NEVER write plain text for responses/results; use `team_handoff` for deliverables, `team_message` for questions/clarifications, or call `sleep` when waiting or idle.**"""
 
 
 # -- Helpers -------------------------------------------------------------------
@@ -320,7 +319,7 @@ def _open_task_nudge_content(open_todos: list[dict], lead_name: str) -> str:
             f'`team_message(to=["{lead_name}"])`.',
             "If you are blocked, report the blocker to the lead using `team_message`.",
             "If more work is needed, continue working. If you need to wait, "
-            "respond exactly `<sleep>`.",
+            "call `sleep`.",
         ]
     )
     return "\n".join(lines)
@@ -339,8 +338,8 @@ def _lead_wait_nudge_content(
         f"on a team_handoff from: {names}. Answering on your own before they "
         "report back is not the team's real answer — it shows the user a "
         f"conclusion the team hasn't actually produced yet.{task_line}\n\n"
-        "Do not repeat, extend, or build on what you just said. Respond with "
-        f"exactly `<sleep>` now and wait. Once {names} report back via "
+        "Do not repeat, extend, or build on what you just said. Call "
+        f"`sleep` now and wait. Once {names} report back via "
         "`team_handoff`, synthesise your actual final response then."
     )
 
@@ -914,7 +913,7 @@ class TeamMemberBase(abc.ABC):
             self._detect_config_drift()
 
             # Me: re-activate if messages arrived while agent.run() was executing.
-            # agent.run() breaks on <sleep>/final-response without running
+            # agent.run() breaks on sleep/final-response without running
             # TeamInboxHook again, so any message queued during that last LLM call
             # sits in the inbox.  Calling _maybe_activate here is safe: state is
             # already "idle", so it spawns a fresh activation task that loads
@@ -1820,8 +1819,6 @@ class TeamMemberBase(abc.ABC):
         last = rows[0]
         if last.role != "assistant" or last.tool_calls:
             return
-        if is_sleep_message(last):
-            return
         if str(last.id) == self._last_open_task_nudge_message_id:
             # Already nudged for this exact stopping point — re-checking on
             # every idle tick without a new turn from the member would spam
@@ -1875,7 +1872,7 @@ class TeamMemberBase(abc.ABC):
         """Wake the lead if it answered while a delegated handoff is still pending.
 
         System-level backstop for the ``LEAD_COMMUNICATION_RULES`` rule that
-        the lead must ``<sleep>`` instead of answering while team_delegate /
+        the lead must call ``sleep`` instead of answering while team_delegate /
         team_reject recipients haven't sent their final team_handoff yet.
         Prompt compliance alone can't be guaranteed — this catches the
         violation and forces a correction on the next wake, the same way
@@ -1918,9 +1915,6 @@ class TeamMemberBase(abc.ABC):
         last = rows[0]
         if last.role != "assistant" or last.tool_calls:
             return
-        if is_sleep_message(last):
-            return  # already complied
-
         pending_sorted = sorted(pending)
         nudge_key = f"{self.session_id}:{'|'.join(pending_task_ids)}"
         if self._lead_wait_nudge_counts.get(nudge_key, 0) >= MAX_LEAD_WAIT_NUDGES:

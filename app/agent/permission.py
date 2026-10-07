@@ -194,6 +194,8 @@ _SAFE_TOOLS: frozenset[str] = frozenset(
         "team_delegate",
         "team_reject",
         "team_manage",
+        # ends the turn while idle or waiting; touches nothing
+        "sleep",
         # background-task introspection (start stays gated through shell)
         "process",
         # schema loading only; real execution stays permission-gated

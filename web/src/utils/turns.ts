@@ -7,7 +7,6 @@
  */
 import type { ContentBlock } from '@/api/types'
 import { isConsolidatedDelegationMessage } from '@/utils/blocks'
-import { extractSleepPrefix, hasSleepLifecycle } from '@/utils/format'
 
 export type TurnItem =
   | { kind: 'user'; block: ContentBlock; index: number }
@@ -18,29 +17,35 @@ export interface VisibleTurnWindow {
   visibleTurnItems: TurnItem[]
 }
 
-function consolidateDelegationWaitPhase(blocks: ContentBlock[]): ContentBlock[] {
-  const hiddenTextIndexes = new Set<number>()
+/**
+ * Hide what the reader should not have to wade through while an agent waits.
+ *
+ * `sleep` is control state, so its tool block is never shown. When it follows a
+ * `team_delegate`, the "work is underway" prose written in between is hidden
+ * too: the delegation card already says it.
+ */
+function hideWaitPhase(blocks: ContentBlock[]): ContentBlock[] {
+  const hiddenIndexes = new Set<number>()
   let delegationIndex = -1
 
   blocks.forEach((block, index) => {
-    if (block.type === 'tool' && block.toolName === 'team_delegate') {
+    if (block.type !== 'tool') return
+    if (block.toolName === 'team_delegate') {
       delegationIndex = index
       return
     }
-    if (
-      delegationIndex >= 0
-      && block.type === 'text'
-      && (hasSleepLifecycle(block.extra) || extractSleepPrefix(block.content) !== null)
-    ) {
-      for (let candidate = delegationIndex + 1; candidate <= index; candidate++) {
-        if (blocks[candidate]?.type === 'text') hiddenTextIndexes.add(candidate)
+    if (block.toolName !== 'sleep') return
+    hiddenIndexes.add(index)
+    if (delegationIndex >= 0) {
+      for (let candidate = delegationIndex + 1; candidate < index; candidate++) {
+        if (blocks[candidate]?.type === 'text') hiddenIndexes.add(candidate)
       }
       delegationIndex = -1
     }
   })
 
-  return hiddenTextIndexes.size > 0
-    ? blocks.filter((_, index) => !hiddenTextIndexes.has(index))
+  return hiddenIndexes.size > 0
+    ? blocks.filter((_, index) => !hiddenIndexes.has(index))
     : blocks
 }
 
@@ -137,7 +142,7 @@ export function partitionTurns(blocks: ContentBlock[]): TurnItem[] {
       turnBlocks.push(block)
       i++
     }
-    const visibleTurnBlocks = consolidateDelegationWaitPhase(turnBlocks)
+    const visibleTurnBlocks = hideWaitPhase(turnBlocks)
     if (visibleTurnBlocks.length > 0) {
       items.push({ kind: 'assistant', blocks: visibleTurnBlocks, startIndex })
     }

@@ -21,6 +21,7 @@ from uuid import uuid7  # ty: ignore[unresolved-import] - backported in app.__in
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agent.tools.coercion import StrList
 from app.agent.tools.registry import Tool
 
 if TYPE_CHECKING:
@@ -240,13 +241,14 @@ def make_team_delegate_tool(
 
     async def team_delegate(
         to: Annotated[
-            list[str],
+            StrList,
             Field(
                 description=(
                     "Recipient handles — exact instance handles "
                     "(e.g. 'executor#1') or bare blueprint name "
                     "when only one instance is live. A bare blueprint with no "
-                    "live instance is spawned atomically before assignment."
+                    "live instance is spawned atomically before assignment. "
+                    "Always an array, even for one recipient: [\"explorer\"]."
                 ),
             ),
         ],
@@ -272,7 +274,7 @@ def make_team_delegate_tool(
             ),
         ],
         constraints: Annotated[
-            list[str],
+            StrList,
             Field(
                 description=(
                     "Boundaries — e.g. 'only Python 3.14 features', "
@@ -295,7 +297,7 @@ def make_team_delegate_tool(
             Field(description="Task priority — guides urgency and thoroughness."),
         ] = "normal",
         depends_on: Annotated[
-            list[str],
+            StrList,
             Field(
                 description=(
                     "Delegation task UUIDs this task depends on. The runtime "
@@ -313,7 +315,7 @@ def make_team_delegate_tool(
             ),
         ] = None,
         target_paths: Annotated[
-            list[str],
+            StrList,
             Field(
                 description=(
                     "Workspace-relative files/directories the task may modify. "
@@ -341,7 +343,7 @@ def make_team_delegate_tool(
             ),
         ] = "auto",
         target_repos: Annotated[
-            list[str],
+            StrList,
             Field(
                 description=(
                     "Repository names or exact absolute project-repository paths "
@@ -561,7 +563,16 @@ def make_team_delegate_tool(
             )
         return f"Task delegated to {', '.join(resolved)}. {' '.join(states)}{suffix}"
 
-    return Tool(team_delegate, name="team_delegate", description=_DELEGATE_DESCRIPTION)
+    return Tool(
+        team_delegate,
+        name="team_delegate",
+        description=_DELEGATE_DESCRIPTION,
+        usage_example=(
+            'team_delegate(to=["explorer"], goal="Find where retries are '
+            'configured", expected_output="A list of file paths with one-line '
+            'summaries")'
+        ),
+    )
 
 
 def _normalize_target_paths(paths: list[str]) -> list[str]:

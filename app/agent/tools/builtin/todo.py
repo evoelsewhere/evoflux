@@ -331,6 +331,12 @@ _DESCRIPTION = """\
 Manage the structured task list as the lead. Pass one or more actions in a single call;
 they are executed in order.
 
+Call shape
+----------
+The single argument is `actions`: a list of objects, each carrying an `action` key.
+There is no `todos` argument — put every task inside an action object.
+    todo_manage(actions=[{"action": "create", "content": "Write the tests", "status": "pending", "priority": "medium"}])
+
 Actions
 -------
 create  — Add a new task (returns the assigned task_id).
@@ -365,6 +371,11 @@ _MEMBER_DESCRIPTION = """\
 Claim and update your assigned tasks. Pass one or more actions in a single call;
 they are executed in order.
 
+Call shape
+----------
+The single argument is `actions`: a list of objects, each carrying an `action` key.
+    todo_manage(actions=[{"action": "claim", "task_id": "task_1"}])
+
 Actions
 -------
 claim   — Claim an assigned, unblocked task and move it to in_progress.
@@ -374,7 +385,7 @@ read    — Return the full task list with task_ids.
 Rules
 -----
 - Claim a task before starting work.
-- If claim reports blocked dependencies, do not start; respond `<sleep>` and wait.
+- If claim reports blocked dependencies, do not start; call `sleep` and wait.
 - Only update tasks assigned to or claimed by you.
 - Mark your task completed immediately when done.\
 """
@@ -395,7 +406,14 @@ def _assignee_matches_actor(assigned_to: Any, actor: str | None) -> bool:
 async def _todo_manage(
     actions: Annotated[
         list[AnyAction],
-        Field(description="Ordered list of actions to execute."),
+        Field(
+            description=(
+                "Ordered list of action objects, each with an `action` key "
+                "(create, update, delete or read). Example: "
+                '[{"action": "create", "content": "Write the tests", '
+                '"status": "pending", "priority": "medium"}]'
+            )
+        ),
     ],
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str:
@@ -405,7 +423,13 @@ async def _todo_manage(
 async def _todo_manage_member(
     actions: Annotated[
         list[MemberAnyAction],
-        Field(description="Ordered list of claim/read/update actions to execute."),
+        Field(
+            description=(
+                "Ordered list of action objects, each with an `action` key "
+                '(claim, update or read). Example: [{"action": "claim", '
+                '"task_id": "task_1"}]'
+            )
+        ),
     ],
     _state: Annotated[Any, InjectedArg()] = None,
 ) -> str:
@@ -585,6 +609,11 @@ todo_manage = Tool(
     _todo_manage,
     name="todo_manage",
     description=_DESCRIPTION,
+    usage_example=(
+        'todo_manage(actions=[{"action": "create", "content": "Write the tests", '
+        '"status": "pending", "priority": "medium"}, '
+        '{"action": "update", "task_id": "task_1", "status": "completed"}])'
+    ),
 )
 
 
@@ -592,6 +621,7 @@ todo_manage_member = Tool(
     _todo_manage_member,
     name="todo_manage",
     description=_MEMBER_DESCRIPTION,
+    usage_example='todo_manage(actions=[{"action": "claim", "task_id": "task_1"}])',
 )
 
 

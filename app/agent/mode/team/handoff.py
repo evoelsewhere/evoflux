@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agent.tools.coercion import StrList
 from app.agent.tools.registry import InjectedArg, Tool
 
 if TYPE_CHECKING:
@@ -212,7 +213,7 @@ def make_team_handoff_tool(
 
     async def team_handoff(
         to: Annotated[
-            list[str],
+            StrList,
             Field(
                 description=(
                     "Recipient names — exact instance handles "
