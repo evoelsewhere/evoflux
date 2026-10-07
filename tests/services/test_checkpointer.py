@@ -335,8 +335,13 @@ class TestSQLiteCheckpointerSync:
         assert any(m.content == "tool result" for m in messages)
 
     @pytest.mark.asyncio
-    async def test_sync_persists_lifecycle_only_assistant(self):
-        """Lifecycle metadata makes an empty assistant row durable."""
+    async def test_sync_skips_an_assistant_with_nothing_but_metadata(self):
+        """An empty assistant turn is not worth a row.
+
+        Waiting used to leave exactly such a row (a ``lifecycle`` flag and no
+        content); it is now a ``sleep`` tool call, which is persisted as the
+        tool call it is.
+        """
         import app.core.db as _db
         from app.services.chat_service import get_messages
 
@@ -348,16 +353,50 @@ class TestSQLiteCheckpointerSync:
         cp = SQLiteCheckpointer(_db.async_session_factory)
         ctx = _ctx(str(sid))
         state = AgentState(
-            messages=[AssistantMessage(content=None, extra={"lifecycle": "sleep"})]
+            messages=[AssistantMessage(content=None, extra={"model": "m"})]
         )
 
         await cp.sync(ctx, state)
 
         async with _db.async_session_factory() as db:
             messages = await get_messages(db, sid)
-        assert len(messages) == 1
-        assert messages[0].content in {None, ""}
-        assert messages[0].extra == {"lifecycle": "sleep"}
+        assert messages == []
+
+    @pytest.mark.asyncio
+    async def test_sync_persists_a_sleep_tool_call_and_its_result(self):
+        """Waiting is durable as an ordinary tool call, not as a marker row."""
+        import app.core.db as _db
+        from app.agent.schemas.chat import FunctionCall, ToolCall, ToolMessage
+        from app.services.chat_service import get_messages
+
+        sid = uuid.uuid7()
+        async with _db.async_session_factory() as db:
+            async with db.begin():
+                await _make_session(db, sid)
+
+        cp = SQLiteCheckpointer(_db.async_session_factory)
+        ctx = _ctx(str(sid))
+        call = ToolCall(
+            id="call_sleep", function=FunctionCall(name="sleep", arguments="{}")
+        )
+        state = AgentState(
+            messages=[
+                AssistantMessage(content=None, tool_calls=[call]),
+                ToolMessage(
+                    content="Sleeping until the next message.",
+                    tool_call_id="call_sleep",
+                    name="sleep",
+                ),
+            ]
+        )
+
+        await cp.sync(ctx, state)
+
+        async with _db.async_session_factory() as db:
+            messages = await get_messages(db, sid)
+        assert [m.role for m in messages] == ["assistant", "tool"]
+        assert messages[0].tool_calls[0].function.name == "sleep"
+        assert messages[1].content == "Sleeping until the next message."
 
     @pytest.mark.asyncio
     async def test_sync_persists_tool_message_extra_duration(self):
