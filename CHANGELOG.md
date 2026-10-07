@@ -69,6 +69,12 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- Installing a language server on Windows no longer fails with "Access is denied"
+  when moving the new install into place. A momentary file lock (antivirus, the
+  indexer, or the old server still running) is retried, the running server is
+  stopped first, leftover staging folders from a crashed install are cleaned up,
+  and a lock that does not clear now says what to close instead of a raw
+  `PermissionError`.
 - The sandbox's shell-command audit on Windows no longer logs paths that never
   existed. Git Bash spellings such as `/c/Users/...` and `/dev/null`, and
   strings that merely contain a slash (a `curl -w` format, a `python -c` body),
