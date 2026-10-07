@@ -27,7 +27,10 @@ All notable changes to EvoFlux are documented in this file.
   models over Chat Completions. Previously every model was sent to Chat
   Completions regardless of family. DeepSeek, Kimi and
   MiMo models keep their reasoning across tool calls, and `OPENCODE_BASE_URL`
-  and `OPENCODE_GO_BASE_URL` override each plan's endpoint.
+  and `OPENCODE_GO_BASE_URL` override each plan's endpoint. Every OpenCode
+  request now carries the `x-opencode-session` header OpenCode Go requires, so
+  title generation and other calls outside a chat no longer fail with
+  `MissingSessionID`.
 - **Settings → Providers → OpenCode Go** shows your rolling 5-hour, weekly and
   monthly usage as percent used with each window's reset time, refreshed every
   minute, and flags a window that has reached its limit.
