@@ -49,9 +49,10 @@ export interface WaitingArcadePanelProps {
   onOpenChange: (open: boolean) => void
   active: boolean
   launcherVisible: boolean
+  launcherEmphasized?: boolean
 }
 
-export function WaitingArcadePanel({ open, onOpenChange, active, launcherVisible }: WaitingArcadePanelProps) {
+export function WaitingArcadePanel({ open, onOpenChange, active, launcherVisible, launcherEmphasized = false }: WaitingArcadePanelProps) {
   const { t } = useI18n()
   const [selectedGame, setSelectedGame] = useState<GameId | null>(null)
   const triggerId = useId()
@@ -60,25 +61,37 @@ export function WaitingArcadePanel({ open, onOpenChange, active, launcherVisible
   return (
     <>
       <Popover open={open} onOpenChange={onOpenChange} triggerId={triggerId}>
-        <DropdownMenu>
+        {launcherVisible && (launcherEmphasized ? (
           <PopoverTrigger
             id={triggerId}
             type="button"
-            render={<DropdownMenuTrigger />}
-            hidden={!launcherVisible}
-            aria-label={t('More composer actions')}
-            title={t('More composer actions')}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent text-(--color-text-muted) transition-colors hover:border-(--color-border) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-2 focus-visible:outline-(--color-accent)"
+            aria-label={t('Play while waiting')}
+            title={t('Play while waiting')}
+            className="inline-flex h-8 max-w-[min(12rem,45vw)] shrink-0 items-center justify-center gap-1.5 rounded-md border border-(--color-accent)/40 bg-(--color-accent)/10 px-2.5 text-xs font-medium text-(--color-text) transition-colors hover:border-(--color-accent) hover:bg-(--color-accent)/15 focus-visible:outline-2 focus-visible:outline-(--color-accent)"
           >
-            <MoreHorizontal size={16} aria-hidden="true" />
+            <Gamepad2 size={15} className="text-(--color-accent)" aria-hidden="true" />
+            <span className="truncate">{t('Play while waiting')}</span>
           </PopoverTrigger>
-          <DropdownMenuContent align="end" side="top" className="w-52">
-            <DropdownMenuItem onClick={() => onOpenChange(true)}>
-              <Gamepad2 className="text-(--color-accent)" aria-hidden="true" />
-              {t('Play while waiting')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        ) : (
+          <DropdownMenu>
+            <PopoverTrigger
+              id={triggerId}
+              type="button"
+              render={<DropdownMenuTrigger />}
+              aria-label={t('More composer actions')}
+              title={t('More composer actions')}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent text-(--color-text-muted) transition-colors hover:border-(--color-border) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-2 focus-visible:outline-(--color-accent)"
+            >
+              <MoreHorizontal size={16} aria-hidden="true" />
+            </PopoverTrigger>
+            <DropdownMenuContent align="end" side="top" className="w-52">
+              <DropdownMenuItem onClick={() => onOpenChange(true)}>
+                <Gamepad2 className="text-(--color-accent)" aria-hidden="true" />
+                {t('Play while waiting')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ))}
       <PopoverContent
         keepMounted
         side="top"

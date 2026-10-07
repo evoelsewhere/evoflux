@@ -2742,7 +2742,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
     summary: 'Work または Coding のエージェント実行中にローカルゲームを開きます。',
       keywords: ['arcade', 'game', 'pixel', 'snake', 'minesweeper', 'tic-tac-toe', '2048', 'memory pairs', 'breakout', '待機', '一時停止'],
     blocks: [
-        { type: 'p', text: 'エージェントが 1.5 秒間動作すると、Stop の横にある More composer actions を開き、Play while waiting を選べます。Snake、Minesweeper Mini、Tic-tac-toe、2048、Memory Pairs、Mini Breakout から選べます。メニューは任意で、チャットを覆ったり自動でフォーカスを移したりしません。' },
+        { type: 'p', text: 'エージェントの作業が 1.5 秒続くと、Stop の横に Play while waiting が 10 秒間表示され、その後 More composer actions に収納されます。パネルが開いている場合は、閉じるまでラベルが表示されます。Snake、Minesweeper Mini、Tic-tac-toe、2048、Memory Pairs、Mini Breakout から選べます。起動するまでチャットを覆わず、フォーカスも移しません。' },
       { type: 'p', text: 'ゲームはチャット内でローカルに動作します。Tic-tac-toe の相手は固定ルールで動き、モデルは呼び出しません。スコアはエージェントの進捗を示しません。Minesweeper に制限時間はありません。' },
       { type: 'p', text: 'パネルを閉じると一時停止し、同じセッションの盤面を保持します。質問、権限要求、停止、完了時はパネルを閉じてゲームを一時停止します。要求に対応した後、エージェントが再開したら自分でゲームを開いてください。セッションを切り替えると盤面は消去されます。' },
         { type: 'p', text: 'Snake の矢印キーと WASD は盤面にフォーカスがあるときだけ有効です。Space で一時停止・再開できます。視差効果を減らす設定では Snake の速度が下がり、2048 のタイルアニメーションは無効になります。Minesweeper Mini、Tic-tac-toe、Memory Pairs は矢印キーでマスを移動し、Enter または Space で操作します。Mini Breakout は左右の矢印キーまたは A/D でパドルを動かし、Space で開始・一時停止します。2048 は盤面にフォーカスしてから矢印キーを使います。Close、Escape、またはパネル外のクリックで閉じられます。' },
