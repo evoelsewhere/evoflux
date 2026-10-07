@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
 
 from app.agent.artifacts import TOOL_RESULTS_DIR, tool_results_dir
 from app.agent.hooks.tool_result_offload import ToolResultOffloadHook, _NEVER_OFFLOAD
@@ -391,3 +392,82 @@ class TestWriteOffload:
             from app.agent.sandbox import _sandbox_ctx
 
             _sandbox_ctx.reset(token)
+
+
+# ---------------------------------------------------------------------------
+# A team member's sandbox belongs to the lead's session
+# ---------------------------------------------------------------------------
+
+
+class TestMemberOffloadIsReadableBack:
+    """Regression: ``explorer#1`` could not read its own offloaded result.
+
+    The member's run context carries the member's session id, but its sandbox
+    is bound to the lead's session and only authorizes that session's artifact
+    directory. The offload used to land in the member's directory — denied.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _data_dir_outside_the_workspace(self, tmp_path, monkeypatch):
+        """Mirror production, where app data is not inside the workspace."""
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "EVOFLUX_DATA_DIR", str(tmp_path / "data"))
+        self.workspace = tmp_path / "workspace"
+
+    async def _offload(self, *, sandbox_session, run_session):
+        sandbox = SandboxConfig(
+            workspace=str(self.workspace), session_id=sandbox_session
+        )
+        token = set_sandbox(sandbox)
+        try:
+            hook = ToolResultOffloadHook(char_threshold=100)
+            handler = AsyncMock(return_value="x" * 500)
+            result = await hook.wrap_tool_call(
+                make_ctx(agent_name="explorer#1", session_id=run_session),
+                make_state(),
+                make_tool_call(id="call_1"),
+                handler,
+            )
+            return sandbox, result
+        finally:
+            from app.agent.sandbox import _sandbox_ctx
+
+            _sandbox_ctx.reset(token)
+
+    async def test_member_result_lands_in_the_sandbox_session_directory(self):
+        _, result = await self._offload(
+            sandbox_session="lead-session", run_session="member-session"
+        )
+
+        expected = tool_results_dir("explorer#1", "lead-session") / "call_1.txt"
+        assert expected.exists()
+        assert str(expected) in result
+        assert not (
+            tool_results_dir("explorer#1", "member-session") / "call_1.txt"
+        ).exists()
+
+    async def test_the_sandbox_allows_reading_the_offloaded_file(self):
+        sandbox, _ = await self._offload(
+            sandbox_session="lead-session", run_session="member-session"
+        )
+        path = tool_results_dir("explorer#1", "lead-session") / "call_1.txt"
+
+        assert sandbox.validate_path(str(path)) == path.resolve()
+
+    async def test_the_old_location_is_what_the_sandbox_refused(self):
+        """Pins the failure so the fix cannot silently stop mattering."""
+        sandbox = SandboxConfig(
+            workspace=str(self.workspace), session_id="lead-session"
+        )
+        stray = tool_results_dir("explorer#1", "member-session") / "call_1.txt"
+        stray.parent.mkdir(parents=True, exist_ok=True)
+        stray.write_text("x", encoding="utf-8")
+
+        with pytest.raises(PermissionError, match="denied sandbox root"):
+            sandbox.validate_path(str(stray))
+
+    async def test_falls_back_to_the_run_session_without_a_bound_sandbox(self):
+        await self._offload(sandbox_session=None, run_session="run-only")
+
+        assert (tool_results_dir("explorer#1", "run-only") / "call_1.txt").exists()
