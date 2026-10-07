@@ -12,7 +12,10 @@ Resolution order
    base URL plus a bearer token. A dedicated subclass is used when one
    exists (it carries a real wire quirk — DeepSeek's thinking toggle,
    OpenRouter's reasoning object, MiMo's ``reasoning_content`` echo);
-   otherwise the generic Chat Completions provider is enough.
+   otherwise the generic Chat Completions provider is enough. OpenCode
+   Zen/Go are the one registry-driven exception: a single ID serves three
+   wire protocols, so :func:`build_opencode_provider` picks the adapter
+   per model.
 3. **models.dev catalog.** A provider ID EvoFlux has no curated entry for
    still resolves if the catalog knows its endpoint and credential name.
    This is what makes the long tail of ~200 catalog providers reachable
@@ -51,6 +54,11 @@ from app.agent.providers.foundry import FoundryClaudeProvider, FoundryProvider
 from app.agent.providers.googlegenai import GoogleGenAIProvider
 from app.agent.providers.kimi import KimiCodeProvider  # noqa: F401
 from app.agent.providers.ollama import OllamaProvider  # noqa: F401
+from app.agent.providers.opencode import (
+    OPENCODE_PROVIDER_IDS,
+    anonymous_api_key,
+    build_opencode_provider,
+)
 from app.agent.providers.openai import ChatCompletionsOnlyProvider, OpenAIProvider
 from app.agent.providers.openai.compatible import (
     OPENAI_COMPATIBLE_PROVIDER_SPECS,  # noqa: F401 — re-exported for callers
@@ -178,6 +186,8 @@ def _resolve_config_key_and_url(
     name: str,
     s: object,
     config: ProviderConfig | None = None,
+    *,
+    anonymous_key: str | None = None,
 ) -> tuple[str | SecretStr, str]:
     """Resolve the API key and base URL for an OpenAI-compatible provider.
 
@@ -210,7 +220,14 @@ def _resolve_config_key_and_url(
         else:
             api_key = configured_key
     else:
-        api_key = require_api_key(configured_key, resolved.env_var, resolved.label)
+        try:
+            api_key = require_api_key(configured_key, resolved.env_var, resolved.label)
+        except ValueError:
+            # A keyless-but-allowed model (OpenCode's free tier) uses the
+            # public key its own client sends; anything else still fails.
+            if anonymous_key is None:
+                raise
+            api_key = anonymous_key
 
     typed_api_key = cast(str | SecretStr | None, api_key)
 
@@ -428,6 +445,21 @@ def _build_from_registry(
     to installed plugins, then reports the ID as unsupported.
     """
     config = resolve_provider(name)
+    if config is not None and name in OPENCODE_PROVIDER_IDS:
+        typed_api_key, base_url = _resolve_config_key_and_url(
+            name, s, config, anonymous_key=anonymous_api_key(name, model)
+        )
+        return _with_provider_name(
+            build_opencode_provider(
+                name,
+                model=model,
+                api_key=typed_api_key,
+                base_url=base_url,
+                model_kwargs=kwargs,
+            ),
+            name,
+        )
+
     if config is not None and is_openai_compatible(config):
         typed_api_key, base_url = _resolve_config_key_and_url(name, s, config)
         provider_cls = _resolve_compatible_class(name)

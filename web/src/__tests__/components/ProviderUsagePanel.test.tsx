@@ -95,4 +95,41 @@ describe('provider usage panel', () => {
       screen.getByRole('progressbar', { name: 'Monthly premium requests' }),
     ).toHaveAttribute('aria-valuenow', '14')
   })
+
+  it('renders OpenCode Go rolling, weekly and monthly windows', () => {
+    const resetsAt = Date.UTC(2026, 9, 12) / 1000
+    render(
+      <UsagePanel
+        limits={[
+          { limit_id: 'rolling', limit_name: 'Go', plan_type: 'go', primary: { used_percent: 12.5, window_minutes: 300, resets_at: resetsAt } },
+          { limit_id: 'weekly', limit_name: 'Go', plan_type: 'go', primary: { used_percent: 40, window_minutes: 7 * 24 * 60, resets_at: resetsAt } },
+          { limit_id: 'monthly', limit_name: 'Go', plan_type: 'go', primary: { used_percent: 0, window_minutes: 30 * 24 * 60, resets_at: resetsAt } },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('Plan: Go')).toBeVisible()
+    expect(screen.getByText('Go · 5h window')).toBeVisible()
+    expect(screen.getByText('Go · Weekly usage')).toBeVisible()
+    expect(screen.getByText('Go · Monthly usage')).toBeVisible()
+    expect(screen.getByText('88% remaining')).toBeVisible()
+    expect(screen.getByText('60% remaining')).toBeVisible()
+    expect(screen.getByText('100% remaining')).toBeVisible()
+    expect(screen.getByRole('progressbar', { name: 'Go · Weekly usage' })).toHaveAttribute(
+      'aria-valuenow',
+      '40',
+    )
+  })
+
+  it('flags the reached OpenCode Go window', () => {
+    render(
+      <UsagePanel
+        limits={[
+          { limit_id: 'weekly', limit_name: 'Go', plan_type: 'go', rate_limit_reached_type: 'weekly', primary: { used_percent: 100, window_minutes: 7 * 24 * 60 } },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('Limit reached: weekly')).toBeVisible()
+  })
 })

@@ -100,6 +100,13 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: SecretStr | None = None
     XIAOMI_API_KEY: SecretStr | None = None
     XIAOMI_BASE_URL: str = ""
+    # OpenCode Zen and Go are separate products with separate keys. Declared
+    # here (not left to the environment) so a key saved in ``.env`` survives a
+    # restart: undeclared names are ignored by the settings loader.
+    OPENCODE_API_KEY: SecretStr | None = None
+    OPENCODE_BASE_URL: str = ""
+    OPENCODE_GO_API_KEY: SecretStr | None = None
+    OPENCODE_GO_BASE_URL: str = ""
     # StepFun publishes one API under four hosts — global and China open
     # platforms, each with a ``step_plan`` subscription variant — so the base
     # URL stays configurable and must match where the key was issued.

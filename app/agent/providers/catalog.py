@@ -203,6 +203,14 @@ _OVERRIDES: dict[str, ProviderEntry] = {
         "auto_connect": False,
         "description": "Run models locally with the Ollama daemon.",
     },
+    "opencode": {
+        "description": "OpenCode Zen — pay-as-you-go gateway to Claude, GPT, "
+        "Gemini and open coding models, plus free models."
+    },
+    "opencode-go": {
+        "description": "OpenCode Go — low-cost subscription for open coding "
+        "models such as Kimi, GLM, DeepSeek and MiniMax."
+    },
     "openai": {"description": "GPT-5.x, GPT-4.1, etc."},
     "openrouter": {"description": "Many models, free tiers available."},
     "perplexity": {

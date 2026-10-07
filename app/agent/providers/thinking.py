@@ -350,7 +350,15 @@ def model_transport(provider_id: str, model: str | None) -> Transport:
     ``npm`` on the model itself, and ignoring it sent Claude-on-Vertex the
     Gemini reasoning payload — the wrong field, not merely a wrong value.
     """
+    config = get_provider_config((provider_id or "").strip().lower())
     if model:
+        # A provider's own documented routing outranks the catalog: it names
+        # the endpoint the gateway actually serves, where models.dev can lag.
+        if config is not None:
+            documented = config.transport_for_model(model)
+            if documented is not None:
+                return documented
+
         from app.agent.providers.model_metadata import (
             get_model_metadata,
             qualified_model_id,
@@ -360,7 +368,6 @@ def model_transport(provider_id: str, model: str | None) -> Transport:
         npm = get_model_metadata(qualified_model_id(provider_id, model)).wire.get("npm")
         if npm:
             return transport_for_npm(npm)
-    config = get_provider_config((provider_id or "").strip().lower())
     return config.transport if config else Transport.OPENAI_COMPLETIONS
 
 

@@ -10,7 +10,7 @@
     {
       "name": "evoflux-api",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "uvicorn", "app.server:app", "--port", "8000", "--no-access-log"],
+      "runtimeArgs": ["run", "python", "-m", "uvicorn", "app.server:app", "--port", "8000", "--no-access-log"],
       "port": 8000
     }
   ]
