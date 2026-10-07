@@ -81,10 +81,20 @@ function prependUniqueBlocks(
 }
 
 function parseAgentBlocks(messages: MessageResponse[], agentName: string): ContentBlock[] {
-  return parseTeamBlocks(messages).map((block) => ({
-    ...block,
-    extra: { ...(block.extra ?? {}), _source_agent: agentName },
-  }))
+  return parseTeamBlocks(messages).map((block) => {
+    const importedSource = block.extra?.import_source as {
+      is_sidechain?: unknown
+      agent_id?: unknown
+    } | undefined
+    const sourceAgent = importedSource?.is_sidechain === true
+      && typeof importedSource.agent_id === 'string'
+      ? importedSource.agent_id
+      : agentName
+    return {
+      ...block,
+      extra: { ...(block.extra ?? {}), _source_agent: sourceAgent },
+    }
+  })
 }
 
 function historyMessageCount(history: Awaited<ReturnType<typeof teamHistory>>): number {

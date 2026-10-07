@@ -308,11 +308,11 @@ export function SidebarSearchTrigger({
           ? 'h-8 gap-2 rounded-lg px-2.5 text-[11px]'
           : 'h-9 gap-2 rounded-xl px-2.5 text-xs',
       )}
-      aria-label="Open command palette"
+      aria-label="Search sessions, messages, and app content"
       title={`Open command palette (${shortcut})`}
     >
       <Search size={compact ? 14 : 13} className="shrink-0 text-(--color-text-subtle) transition-colors group-hover:text-(--color-text-muted)" aria-hidden="true" />
-      <span className="flex-1">Search…</span>
+      <span className="min-w-0 flex-1 truncate">Search sessions &amp; history…</span>
       <kbd
         className={cn(
           'rounded-md bg-(--bg-card)/75 px-1.5 font-sans font-medium leading-none tracking-normal text-(--color-text-muted) shadow-[inset_0_0_0_1px_var(--color-border)]',

@@ -39,6 +39,7 @@ import { BrowserSettingsPage } from '@/routes/settings.browser'
 import { ComputerAppsSettingsPage } from '@/routes/settings.computer-apps'
 import { EnterpriseSettingsPage } from '@/components/settings/EnterpriseSettings'
 import { LanguageServersSettingsPage } from '@/routes/settings.language-servers'
+import { ImportSettingsPage } from '@/routes/settings.import'
 
 const LIST_SECTIONS: Readonly<Record<string, string>> = {
   agents: 'Agents',
@@ -62,6 +63,7 @@ const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   telemetry: 'Telemetry',
   diagnostics: 'Diagnostics',
   enterprise: 'Enterprise',
+  import: 'Import',
 }
 
 interface Crumb {
@@ -125,6 +127,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'diagnostics') return <DiagnosticsPage />
   if (section === 'telemetry') return <TelemetrySettingsPage />
   if (section === 'enterprise') return <EnterpriseSettingsPage />
+  if (section === 'import') return <ImportSettingsPage />
   return <SettingsHubPage />
 }
 

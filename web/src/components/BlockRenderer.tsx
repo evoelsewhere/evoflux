@@ -462,6 +462,32 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
       )
     }
     case 'text': {
+      const importedSource = block.extra?.import_source as {
+        provider?: unknown
+        event_kind?: unknown
+        is_sidechain?: unknown
+        agent_id?: unknown
+      } | undefined
+      const sidechainAgent = importedSource?.provider === 'claude_code'
+        && importedSource.is_sidechain === true
+        ? (typeof importedSource.agent_id === 'string'
+          ? Array.from(importedSource.agent_id)
+              .filter((character) => {
+                const codePoint = character.codePointAt(0) ?? 0
+                return codePoint >= 32 && !(codePoint >= 127 && codePoint <= 159)
+              })
+              .join('')
+              .slice(0, 100)
+          : '')
+        : null
+      const sidechainLabel = sidechainAgent !== null
+        ? `Subagent · ${sidechainAgent || 'agent'}`
+        : null
+      const parentAgentLabel = importedSource?.provider === 'claude_code'
+        && importedSource.event_kind === 'assistant'
+        ? 'Main agent · Claude Code'
+        : null
+      const sourceLabel = sidechainLabel ?? parentAgentLabel
       // Lifecycle-only blocks are control state, not chat content. Keep the
       // legacy suffix parser so old persisted history is sanitized too.
       const sleepPrefix = extractSleepPrefix(block.content)
@@ -469,12 +495,18 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
         const visibleContent = sleepPrefix ?? block.content
         if (!visibleContent) return null
         return (
-          <LazyMarkdownBlock content={visibleContent} sessionId={sessionId} isStreaming={isStreaming} />
+          <div>
+            {sourceLabel && <div className="mb-1 text-[11px] font-medium text-(--color-text-subtle)">{sourceLabel}</div>}
+            <LazyMarkdownBlock content={visibleContent} sessionId={sessionId} isStreaming={isStreaming} />
+          </div>
         )
       }
 
       return (
-        <LazyMarkdownBlock content={block.content} sessionId={sessionId} isStreaming={isStreaming} />
+        <div>
+          {sourceLabel && <div className="mb-1 text-[11px] font-medium text-(--color-text-subtle)">{sourceLabel}</div>}
+          <LazyMarkdownBlock content={block.content} sessionId={sessionId} isStreaming={isStreaming} />
+        </div>
       )
     }
     default:
