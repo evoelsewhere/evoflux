@@ -323,12 +323,42 @@ class TestClientHeaders:
         self._assert_tagged(headers)
         assert headers["x-goog-api-key"] == "oc-test-key"
 
-    def test_session_headers_omitted_rather_than_empty_without_a_session(self):
+    def test_session_is_always_sent_because_the_gateway_requires_it(self):
+        """No conversation (title generation, memory passes) is not "no session"."""
         p = build_provider("opencode:kimi-k3")
         headers = p._completions._request_headers(p._merged_kwargs())
-        assert "x-opencode-session" not in headers
-        assert "x-opencode-session-id" not in headers
+        assert headers["x-opencode-session"].startswith("evoflux-v1:")
+        assert headers["x-opencode-session-id"] == headers["x-opencode-session"]
         assert headers["x-opencode-client"] == "evoflux"
+        assert all(value for value in headers.values())
+
+    def test_fallback_session_is_stable_per_provider_and_unique_across_them(self):
+        a = build_provider("opencode:kimi-k3")
+        b = build_provider("opencode:kimi-k3")
+        first = a._completions._request_headers(a._merged_kwargs())
+        second = a._completions._request_headers(a._merged_kwargs())
+        other = b._completions._request_headers(b._merged_kwargs())
+        assert first["x-opencode-session"] == second["x-opencode-session"]
+        assert first["x-opencode-session"] != other["x-opencode-session"]
+
+    def test_conversation_key_wins_over_the_fallback(self):
+        p = build_provider("opencode:kimi-k3")
+        headers = p._completions._request_headers(self._merged(p))
+        assert headers["x-opencode-session"] == self.SESSION
+
+    @pytest.mark.parametrize(
+        "ref",
+        ["opencode:claude-sonnet-5", "opencode:gpt-5.5", "opencode:gemini-3.5-flash"],
+    )
+    def test_every_adapter_sends_a_session_without_a_conversation(self, ref):
+        p = build_provider(ref)
+        if ref.endswith("gemini-3.5-flash"):
+            headers = p._auth_headers()
+        elif hasattr(p, "_responses") and p._use_responses:
+            headers = p._responses._request_headers(p._merged_kwargs())
+        else:
+            headers = p._request_headers(p._merged_kwargs())
+        assert headers["x-opencode-session"].startswith("evoflux-v1:")
 
     def test_request_id_is_unique_per_call(self):
         p = build_provider("opencode:kimi-k3")

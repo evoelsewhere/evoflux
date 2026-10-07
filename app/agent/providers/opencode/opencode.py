@@ -27,14 +27,17 @@ Auth: ``Bearer {key}`` on every endpoint — ``OPENCODE_API_KEY`` for Zen and
 Gemini surfaces natively read ``x-api-key`` / ``x-goog-api-key``, so those
 adapters send the Bearer header alongside their own.
 
-Client headers: OpenCode's own client tags every request to its gateways with
-``x-opencode-session`` / ``x-opencode-session-id`` (the conversation),
-``x-opencode-request`` (this call) and ``x-opencode-client`` (which app),
-plus a ``User-Agent``. The gateway uses them to group a conversation's
-requests, so every adapter here sends them. The session value is EvoFlux's
-opaque cache-affinity key, never the raw session ID, and
-``x-opencode-project`` is omitted because a project ID is local state the
-gateway has no use for from us.
+Client headers: OpenCode requires "a stable session ID in ``x-opencode-session``
+for each conversation" and a client's own ``User-Agent``
+(https://opencode.ai/docs/go/#where-can-i-use-it); without the session header
+the gateway answers ``400 MissingSessionID``. Every adapter therefore sends
+``x-opencode-session`` / ``x-opencode-session-id`` plus ``x-opencode-request``
+(this call) and ``x-opencode-client`` (which app), as OpenCode's own client
+does. The session value is EvoFlux's opaque cache-affinity key, never the raw
+session ID. Calls with no conversation behind them (title generation, memory
+passes) use an id minted once per provider instance, so they are still routed
+as one stable session. ``x-opencode-project`` is omitted because a project ID
+is local state the gateway has no use for from us.
 
 Anonymous access: OpenCode's client falls back to the public key ``public``
 for ``$0`` Zen models when no credential is configured.
@@ -94,24 +97,32 @@ PUBLIC_API_KEY = "public"
 CLIENT_ID = "evoflux"
 
 
-def opencode_request_headers(merged: dict[str, Any] | None = None) -> dict[str, str]:
-    """Per-request client headers OpenCode's gateways expect.
+def new_session_id() -> str:
+    """A session id for calls that belong to no conversation, minted once per owner."""
+    return f"evoflux-v1:{uuid.uuid4().hex}"
 
-    Every value is real: the request ID is fresh per call, and the session
-    headers are present only when the agent loop supplied an affinity key —
-    a header with an empty value is worse than none.
+
+def opencode_request_headers(
+    merged: dict[str, Any] | None, fallback_session: str
+) -> dict[str, str]:
+    """Per-request client headers OpenCode's gateways require or expect.
+
+    The session is the agent loop's affinity key when there is one and
+    *fallback_session* otherwise — never absent, because the gateway rejects a
+    request without it. The request id is fresh per call.
     """
-    headers = {
+    source = merged or {}
+    session = source.get("cache_probe_scope") or source.get("prompt_cache_key")
+    if not (isinstance(session, str) and session.strip()):
+        session = fallback_session
+    session = session.strip()
+    return {
         "User-Agent": f"EvoFlux/{VERSION}",
         "x-opencode-client": CLIENT_ID,
         "x-opencode-request": uuid.uuid4().hex,
+        "x-opencode-session": session,
+        "x-opencode-session-id": session,
     }
-    source = merged or {}
-    session = source.get("cache_probe_scope") or source.get("prompt_cache_key")
-    if isinstance(session, str) and session.strip():
-        headers["x-opencode-session"] = session.strip()
-        headers["x-opencode-session-id"] = session.strip()
-    return headers
 
 
 def anonymous_api_key(provider_id: str, model: str) -> str | None:
@@ -177,9 +188,13 @@ class _OpenCodeCompletionsHandler(CompletionsHandler):
     ) -> None:
         super().__init__(model, base_url, headers)
         self.echo_reasoning = echo_reasoning
+        self._fallback_session = new_session_id()
 
     def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
-        return {**super()._request_headers(merged), **opencode_request_headers(merged)}
+        return {
+            **super()._request_headers(merged),
+            **opencode_request_headers(merged, self._fallback_session),
+        }
 
     def build_request(
         self,
@@ -220,8 +235,15 @@ class _OpenCodeResponsesHandler(ResponsesHandler):
 
     default_provider_id = "opencode"
 
+    def __init__(self, model: str, base_url: str, headers: dict[str, str]) -> None:
+        super().__init__(model, base_url, headers)
+        self._fallback_session = new_session_id()
+
     def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
-        return {**super()._request_headers(merged), **opencode_request_headers(merged)}
+        return {
+            **super()._request_headers(merged),
+            **opencode_request_headers(merged, self._fallback_session),
+        }
 
 
 class OpenCodeProvider(OpenAIProvider):
@@ -309,9 +331,13 @@ class OpenCodeMessagesProvider(AnthropicProvider):
             max_tokens=max_tokens,
             model_kwargs=model_kwargs,
         )
+        self._fallback_session = new_session_id()
 
     def _request_headers(self, merged: dict[str, Any]) -> dict[str, str]:
-        return {**super()._request_headers(merged), **opencode_request_headers(merged)}
+        return {
+            **super()._request_headers(merged),
+            **opencode_request_headers(merged, self._fallback_session),
+        }
 
 
 class OpenCodeGeminiProvider(GoogleGenAIProvider):
@@ -323,11 +349,15 @@ class OpenCodeGeminiProvider(GoogleGenAIProvider):
     #: auth headers without passing it, but the session headers need it.
     _call_context: dict[str, Any] | None = None
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._fallback_session = new_session_id()
+
     def _auth_headers(self) -> dict[str, str]:
         return {
             "x-goog-api-key": self.api_key,
             "Authorization": f"Bearer {self.api_key}",
-            **opencode_request_headers(self._call_context),
+            **opencode_request_headers(self._call_context, self._fallback_session),
         }
 
     async def chat(

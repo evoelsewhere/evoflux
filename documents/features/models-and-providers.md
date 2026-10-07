@@ -136,6 +136,14 @@ assistant turns for models whose catalogue row sets
 `interleaved_field: reasoning_content` (DeepSeek V4, Kimi, MiMo). Without the
 echo those backends reject the next request in the conversation.
 
+Every OpenCode request carries `x-opencode-session` (plus a `User-Agent` of its
+own, `x-opencode-client` and a per-call `x-opencode-request`). OpenCode Go
+requires the session header and answers `400 MissingSessionID` without it, so a
+call outside a conversation — title generation, memory passes — sends an id
+minted once per provider instance instead of omitting it. Inside a chat the value
+is the same opaque cache-affinity key the rest of the runtime uses, never the
+raw session ID.
+
 Go limits are enforced by OpenCode per model in dollars (5-hour 20%, weekly
 50%, monthly 100% of the monthly allowance). When a limit is hit, requests
 are blocked unless **Use balance** is enabled in the OpenCode Console, which
