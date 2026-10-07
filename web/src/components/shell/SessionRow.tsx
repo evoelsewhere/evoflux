@@ -22,6 +22,7 @@ import { LongPressButton } from '@/components/ui/long-press-button'
 import { formatRelativeDate, formatShortDate } from '@/utils/format'
 import { useMotionPreset, fadeRise, staggerDelay } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import { formatImportSource } from '@/lib/import-source'
 import type { SessionResponse } from '@/api/types'
 
 export interface SessionRowProps {
@@ -83,6 +84,7 @@ export function SessionRow({
   const isScheduled = Boolean(session.scheduled_task_name)
   const isRunning = session.running === true
   const isBrowserCreated = session.tags?.includes('webbridge_origin:browser') ?? false
+  const importedSource = formatImportSource(session.source)
   const tooltip = [
     session.title || 'Untitled',
     session.scheduled_task_name,
@@ -159,6 +161,16 @@ export function SessionRow({
             <span className="min-w-0 flex-1 truncate">
               {session.title || 'Untitled'}
             </span>
+            {importedSource && (
+              <span
+                role="note"
+                title={`Imported from ${importedSource}`}
+                aria-label={`Imported from ${importedSource}`}
+                className="max-w-24 shrink-0 truncate rounded-xs bg-(--color-accent)/10 px-1 py-px text-[9px] leading-tight text-(--color-accent)"
+              >
+                {importedSource}
+              </span>
+            )}
             {isScheduled && (
               <span className="shrink-0 rounded-xs px-1 py-px text-[10px] leading-tight bg-(--bg-key) text-(--color-text-subtle)">
                 sched
@@ -190,6 +202,16 @@ export function SessionRow({
                 {session.title || 'Untitled'}
               </motion.span>
             </AnimatePresence>
+            {importedSource && (
+              <span
+                role="note"
+                title={`Imported from ${importedSource}`}
+                aria-label={`Imported from ${importedSource}`}
+                className="max-w-24 shrink-0 truncate rounded-xs bg-(--color-accent)/10 px-1 py-px text-[9px] leading-tight font-normal text-(--color-accent)"
+              >
+                {importedSource}
+              </span>
+            )}
             {isScheduled && (
               <span className="shrink-0 rounded-xs bg-(--bg-key) px-1 py-px text-[10px] leading-tight font-normal text-(--color-text-subtle)">
                 sched

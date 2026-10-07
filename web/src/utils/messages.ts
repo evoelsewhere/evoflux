@@ -57,6 +57,95 @@ function resolveTurnUsage(
   return (turn.calls ?? 1) === 1 ? { ...turn, cost: call.cost } : turn
 }
 
+const IMPORTED_TOOL_RESULT_MISSING = 'No result was recorded in the imported history.'
+
+function conciseDetail(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const detail = value.replace(/\s+/g, ' ').trim()
+  if (!detail) return undefined
+  return detail.length > 160 ? `${detail.slice(0, 157)}…` : detail
+}
+
+function parseToolArguments(raw: string | undefined): Record<string, unknown> {
+  if (!raw) return {}
+  try {
+    const value: unknown = JSON.parse(raw)
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {}
+  } catch {
+    return {}
+  }
+}
+
+function importedToolSummary(
+  provider: unknown,
+  name: string,
+  rawArguments: string | undefined,
+): string | undefined {
+  if (provider !== 'claude_code' && provider !== 'codex') return undefined
+  const args = parseToolArguments(rawArguments)
+  const detail = conciseDetail(
+    args.task ?? args.description ?? args.prompt ?? args.command ?? args.cmd,
+  )
+  const recipient = conciseDetail(args.subagent_type ?? args.agent_type ?? args.name)
+
+  if (name === 'Task' || name === 'spawn_agent' || name === 'team_delegate') {
+    if (provider === 'claude_code') {
+      return `Claude Code delegated${recipient ? ` to ${recipient}` : ' a task'}${detail ? `: ${detail}` : ''}.`
+    }
+    return `Codex delegated a task${recipient ? ` to ${recipient}` : ''}${detail ? `: ${detail}` : ''}.`
+  }
+  if (name === 'exec_command' || name === 'Bash' || name === 'shell_command') {
+    const actor = provider === 'claude_code' ? 'Claude Code' : 'Codex'
+    return `${actor} ran a terminal command.`
+  }
+  if (name === 'Read' || name === 'read_file') {
+    const file = conciseDetail(args.file_path ?? args.path)
+    const actor = provider === 'claude_code' ? 'Claude Code' : 'Codex'
+    return file ? `${actor} read ${file}.` : `${actor} read a file.`
+  }
+  if (name === 'Edit' || name === 'Write' || name === 'apply_patch') {
+    const file = conciseDetail(args.file_path ?? args.path)
+    const actor = provider === 'claude_code' ? 'Claude Code' : 'Codex'
+    return file ? `${actor} edited ${file}.` : `${actor} edited files.`
+  }
+  const actor = provider === 'claude_code' ? 'Claude Code' : 'Codex'
+  return `${actor} used ${name.replace(/[_-]+/g, ' ')}.`
+}
+
+function legacyImportedText(content: string): string {
+  return content
+    .split(/\r?\n/)
+    .map((line) => {
+      if (/^\[(?:thinking|reasoning)\]$/i.test(line.trim())) return ''
+      const toolCall = line.match(/^\[Tool call:\s*(.+?)\]$/i)
+      if (toolCall) {
+        const name = toolCall[1].replace(/[_-]+/g, ' ')
+        return `Codex used ${name}; the earlier import did not save its details.`
+      }
+      if (/^\[Tool result\]$/i.test(line.trim())) {
+        return 'The earlier import did not save this tool result.'
+      }
+      return line
+    })
+    .filter((line) => line.trim())
+    .join('\n')
+}
+
+function finishImportedToolBlocks(pendingToolBlocks: Map<string, ContentBlock>): void {
+  for (const block of pendingToolBlocks.values()) {
+    const provider = block.extra?.import_source
+      && typeof block.extra.import_source === 'object'
+      ? (block.extra.import_source as Record<string, unknown>).provider
+      : undefined
+    if (!block.toolDone && (provider === 'claude_code' || provider === 'codex')) {
+      block.toolDone = true
+      block.toolResult = IMPORTED_TOOL_RESULT_MISSING
+    }
+  }
+}
+
 // Me extract ContentBlock[] from one assistant MessageResponse
 function assistantBlocks(
   msg: MessageResponse,
@@ -75,28 +164,54 @@ function assistantBlocks(
     lifecycle?: unknown
     turn_usage?: unknown
     usage?: unknown
+    import_source?: Record<string, unknown>
   } | null
+  const importedSource = extra?.import_source
   const responseDurationMs = typeof extra?.duration_ms === 'number' ? extra.duration_ms : undefined
   const model = typeof extra?.model === 'string' ? extra.model : undefined
   const lifecycle = extra?.lifecycle === 'sleep' ? 'sleep' : undefined
   const turnUsage = resolveTurnUsage(extra?.turn_usage, extra?.usage)
 
   // Me text before tools — LLM emits content first, then tool_calls
-  if (msg.content || lifecycle) {
+  const visibleImportedContent = legacyImportedText(msg.content || '')
+  if (visibleImportedContent || lifecycle) {
     blocks.push({
       id: `${msg.id}:text`,
       type: 'text',
-      content: msg.content || '',
+      content: visibleImportedContent,
       timestamp,
       responseDurationMs,
       turnUsage,
-      extra: model || lifecycle ? { ...(model ? { model } : {}), ...(lifecycle ? { lifecycle } : {}) } : undefined,
+      extra: model || lifecycle || importedSource
+        ? {
+            ...(model ? { model } : {}),
+            ...(lifecycle ? { lifecycle } : {}),
+            ...(importedSource ? { import_source: importedSource } : {}),
+          }
+        : undefined,
     })
   }
 
-  for (const [toolIndex, tool] of (msg.tool_calls ?? [])
+  const toolCalls = (msg.tool_calls ?? [])
     .filter((item) => item.function?.name !== 'todo_manage')
-    .entries()) {
+  const importedSummaries = toolCalls
+    .map((tool) => importedToolSummary(
+      importedSource?.provider,
+      tool.function?.name ?? tool.id,
+      tool.function?.arguments,
+    ))
+    .filter((summary): summary is string => Boolean(summary))
+  if (!visibleImportedContent && importedSummaries.length > 0) {
+    blocks.push({
+      id: `${msg.id}:import-summary`,
+      type: 'text',
+      content: importedSummaries.join('\n'),
+      timestamp,
+      extra: importedSource ? { import_source: importedSource } : undefined,
+    })
+  }
+
+  for (const [toolIndex, tool] of toolCalls.entries()) {
     const name = tool.function?.name ?? tool.id
     let parsedArgs: Record<string, unknown> | undefined
     let args: string | undefined
@@ -135,6 +250,7 @@ function assistantBlocks(
       toolCallId: tool.id,
       toolDone: false,
       timestamp,
+      extra: importedSource ? { import_source: importedSource } : undefined,
     }
     blocks.push(block)
     if (tool.id) pendingToolBlocks.set(tool.id, block)
@@ -252,6 +368,8 @@ export function parseApiMessages(msgs: MessageResponse[]): ChatMessage[] {
       })
     }
   }
+
+  finishImportedToolBlocks(pendingToolBlocks)
 
   return result
 }
@@ -379,6 +497,8 @@ export function parseTeamBlocks(msgs: MessageResponse[]): ContentBlock[] {
       }
     }
   }
+
+  finishImportedToolBlocks(pendingToolBlocks)
 
   return result
 }
