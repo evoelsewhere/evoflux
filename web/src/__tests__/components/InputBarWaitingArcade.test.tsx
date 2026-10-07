@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { InputBar } from '@/components/InputBar'
 
-describe('InputBar waiting arcade slot', () => {
+describe('InputBar working actions slot', () => {
   beforeEach(() => {
     window.matchMedia = vi.fn().mockImplementation((media: string) => ({
       matches: false,
@@ -16,7 +16,7 @@ describe('InputBar waiting arcade slot', () => {
     }))
   })
 
-  it('shows the optional working action beside Stop without moving focus on render', () => {
+  it('shows the optional overflow trigger beside Stop without moving focus on render', () => {
     const { rerender } = render(<InputBar onSubmit={() => undefined} onStop={() => undefined} isStreaming />)
     const composer = screen.getByRole('textbox')
     composer.focus()
@@ -28,14 +28,14 @@ describe('InputBar waiting arcade slot', () => {
         onSubmit={() => undefined}
         onStop={() => undefined}
         isStreaming
-        workingActionSlot={<button type="button" aria-label="Play while waiting">Arcade</button>}
+        workingActionSlot={<button type="button" aria-label="More composer actions">More</button>}
       />,
     )
 
-    const arcade = screen.getByRole('button', { name: 'Play while waiting' })
+    const overflow = screen.getByRole('button', { name: 'More composer actions' })
     const stop = screen.getByRole('button', { name: 'Stop generation' })
-    expect(arcade).toBeInTheDocument()
-    expect(arcade.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(overflow).toBeInTheDocument()
+    expect(overflow.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(document.activeElement).toBe(composer)
   })
 
@@ -43,9 +43,9 @@ describe('InputBar waiting arcade slot', () => {
     render(
       <InputBar
         onSubmit={() => undefined}
-        workingActionSlot={<button type="button" aria-label="Play while waiting">Arcade</button>}
+        workingActionSlot={<button type="button" aria-label="More composer actions">More</button>}
       />,
     )
-    expect(screen.queryByRole('button', { name: 'Play while waiting' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More composer actions' })).not.toBeInTheDocument()
   })
 })

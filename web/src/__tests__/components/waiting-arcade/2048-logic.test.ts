@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { create2048State, move2048, type Game2048State } from '@/components/waiting-arcade/games/2048-logic'
+import { create2048State, get2048MergeCells, move2048, type Game2048State } from '@/components/waiting-arcade/games/2048-logic'
 
 const state = (board: number[], score = 0): Game2048State => ({ board, score, status: 'playing' })
 
@@ -51,6 +51,11 @@ describe('2048 rules', () => {
 
     expect([next.board[0], next.board[4], next.board[8], next.board[12]]).toEqual([0, 0, 0, 4])
     expect(next.score).toBe(4)
+  })
+
+  it('identifies merge destinations without mistaking a spawned tile for a merge', () => {
+    expect(get2048MergeCells([2, 2, 0, 0, ...Array(12).fill(0)], 'left')).toEqual([0])
+    expect(get2048MergeCells([2, 0, 0, 0, ...Array(12).fill(0)], 'left')).toEqual([])
   })
 
   it('marks the game won when a merge reaches 2048', () => {

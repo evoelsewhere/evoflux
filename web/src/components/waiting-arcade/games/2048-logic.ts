@@ -26,6 +26,23 @@ function lineFor(direction: Game2048Direction, line: number): number[] {
   })
 }
 
+export function get2048MergeCells(board: readonly number[], direction: Game2048Direction): number[] {
+  const mergedCells: number[] = []
+  for (let line = 0; line < SIZE; line += 1) {
+    const indices = lineFor(direction, line)
+    const sources = indices.filter((index) => board[index] > 0)
+    let destination = 0
+    for (let source = 0; source < sources.length; source += 1) {
+      if (board[sources[source]] === board[sources[source + 1]]) {
+        mergedCells.push(indices[destination])
+        source += 1
+      }
+      destination += 1
+    }
+  }
+  return mergedCells
+}
+
 function hasMoves(board: readonly number[]): boolean {
   for (let row = 0; row < SIZE; row += 1) {
     for (let column = 0; column < SIZE; column += 1) {

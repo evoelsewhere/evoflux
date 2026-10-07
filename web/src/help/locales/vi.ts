@@ -2722,12 +2722,12 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     category: 'chat',
     title: 'Waiting Arcade',
     summary: 'Mở trò chơi nhỏ chạy cục bộ khi agent Work hoặc Coding đang hoạt động.',
-      keywords: ['arcade', 'game', 'pixel', 'snake', 'minesweeper', 'tic-tac-toe', '2048', 'đang chờ', 'tạm dừng'],
+      keywords: ['arcade', 'game', 'pixel', 'snake', 'minesweeper', 'tic-tac-toe', '2048', 'memory pairs', 'breakout', 'đang chờ', 'tạm dừng'],
     blocks: [
-        { type: 'p', text: 'Sau khi agent làm việc được 1,5 giây, bạn có thể chọn Play while waiting bên cạnh Stop. Chọn Snake, Minesweeper Mini, Tic-tac-toe hoặc 2048. Launcher là tùy chọn, không che chat và không tự lấy focus.' },
+        { type: 'p', text: 'Sau khi agent làm việc được 1,5 giây, mở Thêm thao tác bên cạnh Stop rồi chọn Play while waiting. Chọn Snake, Minesweeper Mini, Tic-tac-toe, 2048, Ghép cặp hoặc Mini Breakout. Menu là tùy chọn, không che chat và không tự lấy focus.' },
       { type: 'p', text: 'Các game chạy cục bộ trong chat. Đối thủ Tic-tac-toe dùng luật cố định, không gọi model; điểm số không phản ánh tiến độ agent. Minesweeper không có đồng hồ đếm ngược.' },
       { type: 'p', text: 'Đóng panel để tạm dừng và giữ bàn cờ trong session hiện tại. Khi agent hỏi, xin quyền, dừng hoặc hoàn tất, panel sẽ đóng và game tạm dừng. Hãy xử lý yêu cầu rồi tự mở game nếu agent tiếp tục. Đổi session sẽ xóa bàn cờ.' },
-        { type: 'p', text: 'Snake nhận phím mũi tên hoặc WASD chỉ khi bàn cờ được focus; nhấn Space để tạm dừng hoặc tiếp tục. Khi bật giảm chuyển động, Snake chạy chậm hơn. Dùng phím mũi tên để di chuyển giữa các ô Minesweeper Mini và Tic-tac-toe, rồi nhấn Enter hoặc Space để thao tác. Với 2048, hãy focus bàn cờ trước khi dùng phím mũi tên. Đóng bằng nút Close, Escape hoặc click bên ngoài panel.' },
+        { type: 'p', text: 'Snake nhận phím mũi tên hoặc WASD chỉ khi bàn cờ được focus; nhấn Space để tạm dừng hoặc tiếp tục. Khi bật giảm chuyển động, Snake chạy chậm hơn và hiệu ứng 2048 được tắt. Dùng phím mũi tên để di chuyển giữa các ô Minesweeper Mini, Tic-tac-toe và Ghép cặp, rồi nhấn Enter hoặc Space để thao tác. Mini Breakout dùng phím trái/phải hoặc A/D để điều khiển thanh đỡ; Space để bắt đầu hoặc tạm dừng. Với 2048, hãy focus bàn cờ trước khi dùng phím mũi tên. Đóng bằng nút Close, Escape hoặc click bên ngoài panel.' },
     ],
     related: ['chat', 'composer-power', 'troubleshooting'],
   }

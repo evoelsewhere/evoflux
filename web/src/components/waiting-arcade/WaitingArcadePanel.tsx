@@ -1,15 +1,17 @@
-import { lazy, Suspense, useState, type ComponentType, type LazyExoticComponent } from 'react'
+import { lazy, Suspense, useId, useState, type ComponentType, type LazyExoticComponent } from 'react'
+import { Gamepad2, MoreHorizontal } from 'lucide-react'
 import {
   Popover,
   PopoverContent,
   PopoverDescription,
   PopoverHeader,
-  PopoverTitle,
   PopoverTrigger,
+  PopoverTitle,
 } from '@/components/ui/popover'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useI18n } from '@/i18n'
 
-type GameId = 'snake' | 'minesweeper' | 'tic-tac-toe' | '2048'
+type GameId = 'snake' | 'minesweeper' | 'tic-tac-toe' | '2048' | 'memory' | 'breakout'
 interface GameProps { active: boolean }
 
 const gameComponents: Record<GameId, LazyExoticComponent<ComponentType<GameProps>>> = {
@@ -17,6 +19,8 @@ const gameComponents: Record<GameId, LazyExoticComponent<ComponentType<GameProps
   minesweeper: lazy(() => import('./games/MinesweeperGame').then(({ MinesweeperGame }) => ({ default: MinesweeperGame }))),
   'tic-tac-toe': lazy(() => import('./games/TicTacToeGame').then(({ TicTacToeGame }) => ({ default: TicTacToeGame }))),
   '2048': lazy(() => import('./games/Game2048').then(({ Game2048 }) => ({ default: Game2048 }))),
+  memory: lazy(() => import('./games/MemoryGame').then(({ MemoryGame }) => ({ default: MemoryGame }))),
+  breakout: lazy(() => import('./games/BreakoutGame').then(({ BreakoutGame }) => ({ default: BreakoutGame }))),
 }
 
 const gameNames: Record<GameId, string> = {
@@ -24,6 +28,20 @@ const gameNames: Record<GameId, string> = {
   minesweeper: 'Minesweeper Mini',
   'tic-tac-toe': 'Tic-tac-toe',
   '2048': '2048',
+  memory: 'Memory Pairs',
+  breakout: 'Mini Breakout',
+}
+
+function GameGlyph({ game }: { game: GameId }) {
+  const common = { fill: 'currentColor', shapeRendering: 'crispEdges' as const }
+  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-5 shrink-0 text-(--color-accent)" {...common}>
+    {game === 'snake' && <><path d="M2 3h4v3H3v4h5v3H2zM8 7h5v3H8zM11 4h3v3h-3z" /><path d="M12 5h1v1h-1z" fill="var(--bg-page)" /></>}
+    {game === 'minesweeper' && <><path d="M6 1h4v2h3v3h2v4h-2v3h-3v2H6v-2H3v-3H1V6h2V3h3z" /><path d="M6 5h4v6H6z" fill="var(--bg-page)" /></>}
+    {game === 'tic-tac-toe' && <path d="M5 2h2v4H5zM10 2h2v4h-2zM5 10h2v4H5zM10 10h2v4h-2zM2 5h4v2H2zM10 5h4v2h-4zM2 10h4v2H2zM10 10h4v2h-4z" />}
+    {game === '2048' && <><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z" /><path d="M4 4h1v1H4zM11 4h1v1h-1zM4 11h1v1H4z" fill="var(--bg-page)" /></>}
+    {game === 'memory' && <><path d="M1 3h6v10H1zM9 3h6v10H9z" /><path d="M3 5h2v2H3zM11 9h2v2h-2z" fill="var(--bg-page)" /></>}
+    {game === 'breakout' && <path d="M1 2h4v2H1zM6 2h4v2H6zM11 2h4v2h-4zM3 5h4v2H3zM8 5h4v2H8zM7 9h2v2H7zM5 13h6v2H5z" />}
+  </svg>
 }
 
 export interface WaitingArcadePanelProps {
@@ -36,20 +54,31 @@ export interface WaitingArcadePanelProps {
 export function WaitingArcadePanel({ open, onOpenChange, active, launcherVisible }: WaitingArcadePanelProps) {
   const { t } = useI18n()
   const [selectedGame, setSelectedGame] = useState<GameId | null>(null)
+  const triggerId = useId()
   const SelectedGame = selectedGame ? gameComponents[selectedGame] : null
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger
-        type="button"
-        hidden={!launcherVisible}
-        aria-label={t('Play while waiting')}
-        title={t('Play while waiting')}
-        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-(--color-border) bg-(--bg-page) px-2.5 text-xs font-medium text-(--color-text-muted) transition-colors hover:border-(--color-border-strong) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-2 focus-visible:outline-(--color-accent)"
-      >
-        <span aria-hidden="true" className="font-mono text-(--color-accent)">▦</span>
-        <span>{t('Play while waiting')}</span>
-      </PopoverTrigger>
+    <>
+      <Popover open={open} onOpenChange={onOpenChange} triggerId={triggerId}>
+        <DropdownMenu>
+          <PopoverTrigger
+            id={triggerId}
+            type="button"
+            render={<DropdownMenuTrigger />}
+            hidden={!launcherVisible}
+            aria-label={t('More composer actions')}
+            title={t('More composer actions')}
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent text-(--color-text-muted) transition-colors hover:border-(--color-border) hover:bg-(--bg-key) hover:text-(--color-text) focus-visible:outline-2 focus-visible:outline-(--color-accent)"
+          >
+            <MoreHorizontal size={16} aria-hidden="true" />
+          </PopoverTrigger>
+          <DropdownMenuContent align="end" side="top" className="w-52">
+            <DropdownMenuItem onClick={() => onOpenChange(true)}>
+              <Gamepad2 className="text-(--color-accent)" aria-hidden="true" />
+              {t('Play while waiting')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       <PopoverContent
         keepMounted
         side="top"
@@ -81,16 +110,16 @@ export function WaitingArcadePanel({ open, onOpenChange, active, launcherVisible
             </Suspense>
           </div>
         ) : (
-          <div className="grid gap-2" aria-label={t('Choose a game')}>
-            {(['snake', 'minesweeper', 'tic-tac-toe', '2048'] as const).map((game) => (
+          <div className="grid grid-cols-2 gap-2" aria-label={t('Choose a game')}>
+            {(['snake', 'minesweeper', 'tic-tac-toe', '2048', 'memory', 'breakout'] as const).map((game) => (
               <button
                 key={game}
                 type="button"
                 onClick={() => setSelectedGame(game)}
-                className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-(--color-border) bg-(--bg-page) px-3 text-left hover:border-(--color-accent)/60 hover:bg-(--bg-key) focus-visible:outline-2 focus-visible:outline-(--color-accent)"
+                className="flex min-h-[4.5rem] items-center justify-between gap-2 rounded-md border border-(--color-border) bg-(--bg-page) px-3 text-left transition-[border-color,background-color,transform] duration-150 hover:-translate-y-0.5 hover:border-(--color-accent)/60 hover:bg-(--bg-key) active:translate-y-0 motion-reduce:transform-none motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-(--color-accent)"
               >
-                <span className="text-sm font-medium">{t(gameNames[game])}</span>
-                <span aria-hidden="true" className="font-mono text-sm text-(--color-accent)">↗</span>
+                <span className="min-w-0 text-sm font-medium leading-tight">{t(gameNames[game])}</span>
+                <GameGlyph game={game} />
               </button>
             ))}
           </div>
@@ -99,6 +128,7 @@ export function WaitingArcadePanel({ open, onOpenChange, active, launcherVisible
           {t('Local games only. Score does not represent agent progress.')}
         </p>
       </PopoverContent>
-    </Popover>
+      </Popover>
+    </>
   )
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useI18n } from '@/i18n'
-import { create2048State, move2048, type Game2048Direction } from './2048-logic'
+import { create2048State, get2048MergeCells, move2048, type Game2048Direction } from './2048-logic'
 
 interface Game2048Props {
   active: boolean
@@ -10,10 +10,36 @@ const DIRECTIONS: Record<string, Game2048Direction> = {
   ArrowUp: 'up', ArrowRight: 'right', ArrowDown: 'down', ArrowLeft: 'left',
 }
 
+function tileOrigins(previous: number[], next: number[], direction: Game2048Direction) {
+  const origins: Record<number, { x: number; y: number }> = {}
+  const used = new Set<number>()
+  next.forEach((value, destination) => {
+    if (!value || previous[destination] === value) return
+    const row = Math.floor(destination / 4)
+    const column = destination % 4
+    const candidates = previous.flatMap((candidateValue, source) => {
+      if (candidateValue !== value || used.has(source)) return []
+      const sourceRow = Math.floor(source / 4)
+      const sourceColumn = source % 4
+      const upstream = direction === 'down' ? sourceColumn === column && sourceRow < row
+        : direction === 'up' ? sourceColumn === column && sourceRow > row
+          : direction === 'right' ? sourceRow === row && sourceColumn < column
+            : sourceRow === row && sourceColumn > column
+      return upstream ? [source] : []
+    }).sort((a, b) => Math.abs(a - destination) - Math.abs(b - destination))
+    const source = candidates[0]
+    if (source === undefined) return
+    used.add(source)
+    origins[destination] = { x: source % 4 - column, y: Math.floor(source / 4) - row }
+  })
+  return origins
+}
+
 export function Game2048({ active }: Game2048Props) {
   const { t } = useI18n()
   const [state, setState] = useState(() => create2048State())
   const [moveCount, setMoveCount] = useState(0)
+  const [motion, setMotion] = useState<{ id: number; direction: Game2048Direction; merged: number[]; origins: Record<number, { x: number; y: number }>; previous: number[] } | null>(null)
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (!active || event.target !== event.currentTarget) return
@@ -22,6 +48,8 @@ export function Game2048({ active }: Game2048Props) {
     event.preventDefault()
     const next = move2048(state, direction)
     if (next === state) return
+    const merged = get2048MergeCells(state.board, direction)
+    setMotion((current) => ({ id: (current?.id ?? 0) + 1, direction, merged, origins: tileOrigins(state.board, next.board, direction), previous: state.board }))
     setState(next)
     setMoveCount((count) => count + 1)
   }
@@ -42,6 +70,7 @@ export function Game2048({ active }: Game2048Props) {
           onClick={() => {
             setState(create2048State())
             setMoveCount(0)
+            setMotion(null)
           }}
         >
           {t('New game')}
@@ -58,13 +87,20 @@ export function Game2048({ active }: Game2048Props) {
         {state.board.map((value, index) => {
           const row = Math.floor(index / 4) + 1
           const column = index % 4 + 1
+          const moved = Boolean(value && motion && motion.previous[index] !== value)
+          const animationClass = !motion || !moved ? '' : motion.merged.includes(index) ? 'waiting-2048-merge' : motion.origins[index] ? 'waiting-2048-slide' : 'waiting-2048-spawn'
           return (
             <span
-              key={index}
+              key={`${index}-${motion?.id ?? 0}`}
               role="img"
               aria-label={value ? t('Tile {0} at row {1}, column {2}', [value, row, column]) : t('Empty row {0}, column {1}', [row, column])}
               data-testid={`2048-cell-${index}`}
-              className={`flex min-h-0 items-center justify-center rounded-sm border font-mono text-lg font-semibold tabular-nums ${value ? 'border-(--color-accent)/60 bg-(--bg-page) text-(--color-accent)' : 'border-(--color-border) bg-(--bg-page)/45 text-transparent'}`}
+              data-motion-direction={value && motion ? motion.direction : undefined}
+              style={motion?.origins[index] ? {
+                '--waiting-offset-x': `calc(${motion.origins[index].x * 100}% + ${motion.origins[index].x * 0.375}rem)`,
+                '--waiting-offset-y': `calc(${motion.origins[index].y * 100}% + ${motion.origins[index].y * 0.375}rem)`,
+              } as React.CSSProperties : undefined}
+              className={`flex min-h-0 items-center justify-center rounded-sm border font-mono text-lg font-semibold tabular-nums ${value ? `border-(--color-accent)/60 bg-(--bg-page) text-(--color-accent) ${animationClass}` : 'border-(--color-border) bg-(--bg-page)/45 text-transparent'}`}
             >
               {value || '·'}
             </span>
