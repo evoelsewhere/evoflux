@@ -69,6 +69,12 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- The sandbox's shell-command audit on Windows no longer logs paths that never
+  existed. Git Bash spellings such as `/c/Users/...` and `/dev/null`, and
+  strings that merely contain a slash (a `curl -w` format, a `python -c` body),
+  were turned into `C:/c/Users/...`, `C:/dev/null` and garbage, so the audit
+  trail could not be trusted. Drives are mapped to `C:/...`, harmless devices
+  and non-path strings are skipped. Commands are still never blocked by this scan.
 - Team members can read the large tool results they offload. A member such as
   `explorer#1` was refused its own `.tool_results` file ("is inside a denied
   sandbox root") and had to `cat` it through a shell, repeatedly, at full token
