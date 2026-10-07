@@ -229,6 +229,12 @@ class _OpenCodeCompletionsHandler(CompletionsHandler):
     ) -> dict[str, Any]:
         body = super().build_request(messages, tools, stream, merged)
         self._drop_rejected_sampling(body)
+        # A tool result is matched to its call by ``tool_call_id``; ``name`` is
+        # redundant, and ``glm-5.3-flash`` answers 400 "name is not supported
+        # by this endpoint" to it on the turn after any tool call.
+        for message in body.get("messages", []):
+            if message.get("role") == "tool":
+                message.pop("name", None)
         if not self.echo_reasoning:
             return body
 

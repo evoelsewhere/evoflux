@@ -74,6 +74,9 @@ All notable changes to EvoFlux are documented in this file.
   runtime asked them to stop thinking, and `kimi-k2.7-code` failed with "invalid
   temperature: only 1 is allowed" because a Kimi default temperature was added
   to a model that takes none. Both parameters are now left out for those models.
+  `glm-5.3-flash` failed on the turn after its first tool call with "`name` is
+  not supported" because tool results carried the tool name; they now carry only
+  the call id, which is all OpenCode matches on.
 - The hourly browser-capture cleanup no longer reads and parses every message's
   metadata, and its first run waits two minutes instead of competing with
   startup. On a 33,000-message history the query dropped from about 0.76 s over
