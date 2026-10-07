@@ -4,6 +4,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.0.5] - 2026-10-08
+
 ### Added
 
 - **Waiting Arcade** offers six optional local games from the composer’s **More actions** menu during active Work and Coding runs, including animated 2048, Memory Pairs, and Mini Breakout. Games pause when the panel closes or a run needs the user's attention.

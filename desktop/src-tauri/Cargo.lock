@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "evoflux-desktop"
-version = "3.0.4"
+version = "3.0.5"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
