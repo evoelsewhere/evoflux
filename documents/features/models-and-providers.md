@@ -104,7 +104,7 @@ it.
 products in front of several vendors, reached over **three wire protocols**.
 Each has its own credential — `OPENCODE_API_KEY` for Zen,
 `OPENCODE_GO_API_KEY` for Go — so connecting one never marks the other
-connected (they are billed differently, and only Zen has a free tier). Unlike every other registry-driven provider, the protocol is a
+connected (they are billed differently). Unlike every other registry-driven provider, the protocol is a
 property of the *model*, so `build_provider` hands these two IDs to
 `build_opencode_provider` (`app/agent/providers/opencode/`) instead of a
 single OpenAI-compatible class.

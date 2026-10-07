@@ -39,10 +39,6 @@ passes) use an id minted once per provider instance, so they are still routed
 as one stable session. ``x-opencode-project`` is omitted because a project ID
 is local state the gateway has no use for from us.
 
-Anonymous access: OpenCode's client falls back to the public key ``public``
-for ``$0`` Zen models when no credential is configured.
-:func:`anonymous_api_key` mirrors that for the same models and nothing else.
-
 Chat Completions models (``@ai-sdk/openai-compatible`` upstream) inherit two
 divergences from the generic handler:
 
@@ -98,9 +94,6 @@ _THINKING_ONLY: frozenset[tuple[str, str]] = frozenset(
     {("opencode-go", model) for model in ("glm-5.1", "glm-5.2", "glm-5.3")}
 )
 
-#: What OpenCode's client sends when a ``$0`` model is used without a key.
-PUBLIC_API_KEY = "public"
-
 #: Value of ``x-opencode-client``: which application is calling the gateway.
 CLIENT_ID = "evoflux"
 
@@ -131,21 +124,6 @@ def opencode_request_headers(
         "x-opencode-session": session,
         "x-opencode-session-id": session,
     }
-
-
-def anonymous_api_key(provider_id: str, model: str) -> str | None:
-    """The public key OpenCode's client uses for a free Zen model, else ``None``.
-
-    Only Zen has a free tier, and only a model the catalog prices at exactly
-    ``$0`` input qualifies — an unpriced model is not assumed free.
-    """
-    if provider_id != "opencode":
-        return None
-    from app.agent.providers.model_metadata import get_model_metadata
-
-    if get_model_metadata(f"{provider_id}:{model}").cost.input == 0:
-        return PUBLIC_API_KEY
-    return None
 
 
 def opencode_transport(provider_id: str, model: str) -> Transport:
