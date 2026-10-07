@@ -21,6 +21,23 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- **OpenCode Zen** and **OpenCode Go** now send each model to the endpoint
+  OpenCode documents for it: Claude, MiniMax and Qwen over Messages, GPT, Grok
+  and Muse Spark over Responses, Gemini over its native API, and the open
+  models over Chat Completions. Previously every model was sent to Chat
+  Completions regardless of family. DeepSeek, Kimi and
+  MiMo models keep their reasoning across tool calls, and `OPENCODE_BASE_URL`
+  and `OPENCODE_GO_BASE_URL` override each plan's endpoint.
+- **Settings → Providers → OpenCode Go** shows your rolling 5-hour, weekly and
+  monthly usage as percent used with each window's reset time, refreshed every
+  minute, and flags a window that has reached its limit.
+- **OpenCode Go** now keeps its own key (`OPENCODE_GO_API_KEY`) instead of
+  sharing Zen's, so saving a Go key no longer shows **OpenCode Zen** as
+  connected. Both entries also have proper descriptions in
+  **Settings → Providers**.
+- **Settings → Providers** no longer has a **List models** button on API-key and
+  cloud providers. **Save** verifies the key by listing the provider's models,
+  saves it only if the provider answers, and leaves the model list open.
 - Plugin API verification applies POSIX credential-file mode checks only on POSIX
   systems, avoiding unsupported permission assertions on Windows.
 - **Plugins → Marketplace** reflows setup and source cards to panel width, explains

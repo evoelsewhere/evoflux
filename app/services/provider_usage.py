@@ -12,6 +12,11 @@ from app.agent.providers.copilot.usage import (
     CopilotUsageUnavailableError,
     get_usage as get_copilot_usage,
 )
+from app.agent.providers.opencode.usage import (
+    OpenCodeUsageCredentialsError,
+    OpenCodeUsageUnavailableError,
+    get_usage as get_opencode_go_usage,
+)
 from app.agent.providers.plugin_registry import (
     ProviderCredentialStore,
     find_provider_plugin,
@@ -37,9 +42,19 @@ async def get_provider_usage(provider_id: str) -> ProviderUsageResponse:
             return await get_codex_usage()
         if provider_id == "copilot":
             return await get_copilot_usage()
-    except (CodexUsageCredentialsError, CopilotUsageCredentialsError) as exc:
+        if provider_id == "opencode-go":
+            return await get_opencode_go_usage()
+    except (
+        CodexUsageCredentialsError,
+        CopilotUsageCredentialsError,
+        OpenCodeUsageCredentialsError,
+    ) as exc:
         raise ProviderUsageCredentialsError(str(exc)) from exc
-    except (CodexUsageUnavailableError, CopilotUsageUnavailableError) as exc:
+    except (
+        CodexUsageUnavailableError,
+        CopilotUsageUnavailableError,
+        OpenCodeUsageUnavailableError,
+    ) as exc:
         raise ProviderUsageUnavailableError(str(exc)) from exc
 
     plugin = find_provider_plugin(provider_id)

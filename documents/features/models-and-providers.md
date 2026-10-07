@@ -98,6 +98,61 @@ curated ID's own prefix as well as its catalog row's. That is the difference
 between `stepfun-ai-step-plan` and `stepfun-step-plan`, and only StepFun has
 it.
 
+### OpenCode Zen and OpenCode Go
+
+`opencode` (Zen, pay-as-you-go) and `opencode-go` (Go, subscription) are two
+products in front of several vendors, reached over **three wire protocols**.
+Each has its own credential — `OPENCODE_API_KEY` for Zen,
+`OPENCODE_GO_API_KEY` for Go — so connecting one never marks the other
+connected (they are billed differently, and only Zen has a free tier). Unlike every other registry-driven provider, the protocol is a
+property of the *model*, so `build_provider` hands these two IDs to
+`build_opencode_provider` (`app/agent/providers/opencode/`) instead of a
+single OpenAI-compatible class.
+
+| Models | Endpoint | Adapter |
+| --- | --- | --- |
+| GLM, Kimi, DeepSeek, MiMo, Qwen, free models (Zen also MiniMax) | `{base}/chat/completions` | `OpenCodeProvider` |
+| GPT, Grok 4, Muse Spark | `{base}/responses` | `OpenCodeProvider` |
+| Claude, Qwen3.8 Flash (Zen); MiniMax, Qwen3.8/3.7 (Go) | `{root}/v1/messages` | `OpenCodeMessagesProvider` |
+| Gemini (Zen only) | `{base}/models/{model}` | `OpenCodeGeminiProvider` |
+
+`{base}` is `https://opencode.ai/zen/v1` (Zen) or
+`https://opencode.ai/zen/go/v1` (Go); override with `OPENCODE_BASE_URL` and
+`OPENCODE_GO_BASE_URL`. The routing table is `model_transports` on the two
+`PROVIDER_REGISTRY` entries, taken from the official Zen and Go docs. It is
+data on the registry rather than code in the adapter so that reasoning
+translation (`thinking.model_transport`) and model discovery read the same
+answer as the factory. Models no rule names fall back to the catalogue's
+per-model `npm`, then to Chat Completions.
+
+Per-model routing means `thinking_level` and `responses_api` never move a
+model between endpoints: GPT-class models always use `/responses`, everything
+else always uses `/chat/completions`.
+
+Chat Completions models also get two divergences from the generic handler:
+`max_tokens` instead of `max_completion_tokens` (what the upstream
+OpenAI-compatible SDK sends), and `reasoning_content` echoed back on
+assistant turns for models whose catalogue row sets
+`interleaved_field: reasoning_content` (DeepSeek V4, Kimi, MiMo). Without the
+echo those backends reject the next request in the conversation.
+
+Go limits are enforced by OpenCode per model in dollars (5-hour 20%, weekly
+50%, monthly 100% of the monthly allowance). When a limit is hit, requests
+are blocked unless **Use balance** is enabled in the OpenCode Console, which
+falls back to the Zen balance.
+
+**Settings → Providers → OpenCode Go** shows the same three meters the
+console does — rolling 5-hour, weekly and monthly, each with percent used and
+its reset time. They come from `GET {go base}/usage` with the Go key
+(`app/agent/providers/opencode/usage.py`, dispatched by
+`app/services/provider_usage.py`), refresh every minute, and reuse the shared
+usage panel that Codex and Copilot use. The endpoint publishes percentages and
+reset times only, not dollars, and is not in OpenCode's documented API, so
+every field is read defensively: a full window or a status other than `ok`
+shows as **Limit reached**, and an unreachable endpoint shows "Usage monitor
+unavailable" instead of failing the card. Zen has no equivalent endpoint, so
+it shows no usage panel.
+
 ### Provider logos
 
 models.dev publishes a mark for every provider it lists, at

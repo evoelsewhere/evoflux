@@ -88,11 +88,16 @@ before atomic save. Models use `provider:model`.
 Common keys include `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`,
 `OPENROUTER_API_KEY`, `ZAI_API_KEY`, `NVIDIA_API_KEY`, `XAI_API_KEY`,
 `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, `XIAOMI_API_KEY`, `STEPFUN_API_KEY`,
-`FCI_API_KEY`, `MOONSHOT_API_KEY`,
+`FCI_API_KEY`, `MOONSHOT_API_KEY`, `OPENCODE_API_KEY`, `OPENCODE_GO_API_KEY`,
 `FOUNDRY_API_KEY`, and provider-specific base URL/resource fields. Bedrock uses
 the standard AWS credential chain/profile and region. Vertex uses Google cloud
 project/location credentials. Codex and Copilot use OAuth cache files created
 by `evoflux auth` or Settings.
+
+OpenCode Zen reads `OPENCODE_API_KEY` and OpenCode Go reads
+`OPENCODE_GO_API_KEY`; their endpoints are overridden independently with `OPENCODE_BASE_URL` (default
+`https://opencode.ai/zen/v1`) and `OPENCODE_GO_BASE_URL` (default
+`https://opencode.ai/zen/go/v1`).
 
 QwenCloud uses `DASHSCOPE_BASE_URL` when the key belongs to Token Plan, Coding
 Plan, or another host instead of the default international pay-as-you-go API.
