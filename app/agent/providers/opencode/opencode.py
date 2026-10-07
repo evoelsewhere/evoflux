@@ -90,6 +90,14 @@ GO_BASE_URL = "https://opencode.ai/zen/go/v1"
 _ECHO_REASONING_FAMILIES: tuple[str, ...] = ("deepseek-", "kimi-", "mimo-")
 
 
+#: Models whose gateway rejects ``reasoning_effort: "none"`` — "GLM-5.3 is a
+#: thinking-only model; disabling thinking is not supported" (HTTP 400, observed
+#: against Go on 2026-10-08 for these three; ``glm-5.3-flash`` accepts it).
+#: ``(provider id, model id)`` because the evidence is for Go only.
+_THINKING_ONLY: frozenset[tuple[str, str]] = frozenset(
+    {("opencode-go", model) for model in ("glm-5.1", "glm-5.2", "glm-5.3")}
+)
+
 #: What OpenCode's client sends when a ``$0`` model is used without a key.
 PUBLIC_API_KEY = "public"
 
@@ -196,6 +204,22 @@ class _OpenCodeCompletionsHandler(CompletionsHandler):
             **opencode_request_headers(merged, self._fallback_session),
         }
 
+    def customize_thinking(self, merged: dict[str, Any], body: dict[str, Any]) -> None:
+        """Never ask a thinking-only model to stop thinking.
+
+        The runtime resolves "the lowest effort" to the nearest level a model
+        accepts, and for a model whose weakest effort is ``high`` that tie
+        lands on ``none``. Go's GLM-5.x answers that with a 400 even though its
+        catalog row advertises an off switch.
+        """
+        super().customize_thinking(merged, body)
+        provider_id = self.provider_id or "opencode"
+        if (
+            body.get("reasoning_effort") == "none"
+            and (provider_id, self.model) in _THINKING_ONLY
+        ):
+            del body["reasoning_effort"]
+
     def build_request(
         self,
         messages: list[ChatMessage],
@@ -204,6 +228,7 @@ class _OpenCodeCompletionsHandler(CompletionsHandler):
         merged: dict[str, Any],
     ) -> dict[str, Any]:
         body = super().build_request(messages, tools, stream, merged)
+        self._drop_rejected_sampling(body)
         if not self.echo_reasoning:
             return body
 
@@ -228,6 +253,20 @@ class _OpenCodeCompletionsHandler(CompletionsHandler):
             if trace:
                 wire_message["reasoning_content"] = trace
         return body
+
+    def _drop_rejected_sampling(self, body: dict[str, Any]) -> None:
+        """Omit sampling fields a model's catalog row says it does not take.
+
+        The runtime adds a per-family default (``temperature=0.6`` for Kimi K2),
+        but ``kimi-k2.7-code`` answers 400 "only 1 is allowed" to it. The
+        catalog marks such models ``temperature: false``; for them the field is
+        left out and the model uses its own.
+        """
+        from app.agent.providers.model_metadata import get_model_features
+
+        if get_model_features(self.qualified_model).temperature is False:
+            for field in ("temperature", "top_p", "top_k"):
+                body.pop(field, None)
 
 
 class _OpenCodeResponsesHandler(ResponsesHandler):

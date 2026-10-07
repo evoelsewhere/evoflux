@@ -414,3 +414,49 @@ class TestDiscoveryFilter:
 
     def test_claude_listed_on_zen(self):
         assert is_agent_model_id("opencode", "claude-sonnet-5") is True
+
+
+class TestGatewayRejectedParameters:
+    """Found by driving every Go model against the real gateway (2026-10-08).
+
+    ``glm-5.2`` answered 400 "thinking-only model; disabling thinking is not
+    supported" and ``kimi-k2.7-code`` 400 "only 1 is allowed" for a
+    temperature the runtime added on its own.
+    """
+
+    def _body(self, ref: str, **kwargs):
+        p = build_provider(ref)
+        return p._completions.build_request(
+            [HumanMessage(content="hi")], None, False, p._merged_kwargs(**kwargs)
+        )
+
+    @pytest.mark.parametrize("model", ["glm-5.1", "glm-5.2", "glm-5.3"])
+    def test_thinking_only_models_are_never_told_to_stop_thinking(self, model):
+        body = self._body(f"opencode-go:{model}", thinking_level="none")
+        assert "reasoning_effort" not in body
+
+    def test_a_real_effort_is_still_sent_to_a_thinking_only_model(self):
+        body = self._body("opencode-go:glm-5.2", thinking_level="high")
+        assert body["reasoning_effort"] == "high"
+
+    def test_models_that_can_stop_thinking_are_still_told_to(self):
+        for ref in ("opencode-go:glm-5.3-flash", "opencode-go:kimi-k3"):
+            assert self._body(ref, thinking_level="none")["reasoning_effort"] == "none"
+
+    def test_the_rule_is_scoped_to_the_plan_the_evidence_is_for(self):
+        """Zen's GLM rows were not observed to behave this way."""
+        from app.agent.providers.opencode import opencode as module
+
+        assert ("opencode", "glm-5.2") not in module._THINKING_ONLY
+
+    @pytest.mark.parametrize(
+        "ref", ["opencode-go:kimi-k2.7-code", "opencode-go:kimi-k3"]
+    )
+    def test_models_that_take_no_temperature_get_none(self, ref):
+        body = self._body(ref, temperature=0.6, top_p=0.9)
+        assert "temperature" not in body
+        assert "top_p" not in body
+
+    def test_models_that_take_a_temperature_keep_the_family_default(self):
+        body = self._body("opencode-go:kimi-k2.6")
+        assert body["temperature"] == 0.6
