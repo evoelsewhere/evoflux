@@ -4,6 +4,8 @@ import { MinesweeperGame } from '@/components/waiting-arcade/games/MinesweeperGa
 import { SnakeGame } from '@/components/waiting-arcade/games/SnakeGame'
 import { TicTacToeGame } from '@/components/waiting-arcade/games/TicTacToeGame'
 import { Game2048 } from '@/components/waiting-arcade/games/Game2048'
+import { MemoryGame } from '@/components/waiting-arcade/games/MemoryGame'
+import { BreakoutGame } from '@/components/waiting-arcade/games/BreakoutGame'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -162,6 +164,88 @@ describe('2048 game view', () => {
     fireEvent.keyDown(board, { key: 'ArrowDown' })
     expect(screen.getByTestId('2048-cell-12')).toHaveTextContent('2')
     expect(screen.getByTestId('2048-cell-13')).toHaveTextContent('2')
+    expect(screen.getByTestId('2048-cell-12')).toHaveAttribute('data-motion-direction', 'down')
+    expect(screen.getByTestId('2048-cell-12').className).toContain('waiting-2048-slide')
+    expect(screen.getByTestId('2048-cell-12').getAttribute('style')).toContain('--waiting-offset-y: calc(-300% + -1.125rem)')
     expect(screen.getByText('Move 1, score 0')).toBeInTheDocument()
+  })
+})
+
+describe('Memory Pairs game view', () => {
+  it('uses one Tab stop and Enter to reveal a card', () => {
+    render(<MemoryGame active />)
+    const first = screen.getAllByRole('button', { name: 'Hidden card' })[0]
+    expect(first).toHaveAttribute('tabindex', '0')
+    first.focus()
+    fireEvent.keyDown(first, { key: 'Enter' })
+    expect(screen.getByRole('button', { name: /Revealed card/ })).toBeInTheDocument()
+  })
+
+  it('moves focus with arrows and clears a mismatch after a short reveal', () => {
+    vi.useFakeTimers()
+    render(<MemoryGame active />)
+    const cells = screen.getAllByRole('button', { name: 'Hidden card' })
+    cells[0].focus()
+    fireEvent.keyDown(cells[0], { key: 'ArrowRight' })
+    expect(cells[1]).toHaveFocus()
+    fireEvent.click(cells[0])
+    fireEvent.click(cells[1])
+    act(() => vi.advanceTimersByTime(700))
+    expect(screen.getAllByRole('button', { name: 'Hidden card' })).toHaveLength(16)
+  })
+})
+
+describe('Mini Breakout game view', () => {
+  it('moves the paddle with keyboard controls and pauses/resumes with Space', () => {
+    vi.useFakeTimers()
+    render(<BreakoutGame active />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start Breakout' }))
+    const board = screen.getByRole('group', { name: 'Mini Breakout board' })
+    const paddle = screen.getByTestId('breakout-paddle')
+    const initialLeft = paddle.style.left
+    fireEvent.keyDown(board, { key: 'ArrowLeft' })
+    expect(paddle.style.left).not.toBe(initialLeft)
+    fireEvent.keyDown(board, { key: ' ' })
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }))
+    expect(screen.getByRole('button', { name: 'Pause Breakout' })).toBeInTheDocument()
+  })
+
+  it('stops its animation loop while inactive', () => {
+    vi.useFakeTimers()
+    const view = render(<BreakoutGame active />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start Breakout' }))
+    const ball = screen.getByTestId('breakout-ball')
+    act(() => vi.advanceTimersByTime(64))
+    const moved = ball.style.top
+    view.rerender(<BreakoutGame active={false} />)
+    act(() => vi.advanceTimersByTime(320))
+    expect(screen.getByTestId('breakout-ball').style.top).toBe(moved)
+  })
+
+  it('slows the ball tick when reduced motion is preferred', () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+    render(<BreakoutGame active />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start Breakout' }))
+    const ball = screen.getByTestId('breakout-ball')
+    act(() => vi.advanceTimersByTime(32))
+    expect(ball.style.top).toBe('83%')
+    act(() => vi.advanceTimersByTime(32))
+    expect(ball.style.top).not.toBe('83%')
+  })
+
+  it('stops its animation loop while the document is hidden', () => {
+    vi.useFakeTimers()
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    render(<BreakoutGame active />)
+    fireEvent.click(screen.getByRole('button', { name: 'Start Breakout' }))
+    const ball = screen.getByTestId('breakout-ball')
+    act(() => vi.advanceTimersByTime(64))
+    const current = ball.style.top
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    act(() => vi.advanceTimersByTime(320))
+    expect(ball.style.top).toBe(current)
   })
 })

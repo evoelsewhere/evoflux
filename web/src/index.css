@@ -6,6 +6,7 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/source-sans-3";
 @import "@fontsource/caveat";
+
 @import "highlight.js/styles/atom-one-dark.css";
 
 @font-face {
@@ -2089,4 +2090,28 @@ html[data-windows-titlebar] .mobile-viewport {
     opacity: 0.45;
     transform: none;
   }
+}
+
+@keyframes waiting-2048-merge {
+  0% { transform: translate(var(--waiting-offset-x, 0), var(--waiting-offset-y, 0)) scale(.86); }
+  65% { transform: translate(0, 0) scale(1.1); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes waiting-2048-slide {
+  from { transform: translate(var(--waiting-offset-x, 0), var(--waiting-offset-y, 0)); opacity: .8; }
+  to { transform: translate(0, 0); opacity: 1; }
+}
+@keyframes waiting-2048-spawn {
+  from { transform: scale(.55); opacity: .55; }
+  to { transform: scale(1); opacity: 1; }
+}
+.waiting-2048-slide { animation: waiting-2048-slide 150ms cubic-bezier(.2,.75,.25,1) both; }
+.waiting-2048-spawn { animation: waiting-2048-spawn 130ms cubic-bezier(.2,.75,.25,1) both; }
+.waiting-2048-merge { animation: waiting-2048-merge 190ms cubic-bezier(.2,.75,.25,1) both; }
+.waiting-memory-card { transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, scale 120ms ease; }
+.waiting-memory-card[aria-pressed="true"] { scale: .97; }
+.waiting-breakout-brick { transition: opacity 100ms ease, scale 100ms ease; }
+@media (prefers-reduced-motion: reduce) {
+  .waiting-2048-slide, .waiting-2048-spawn, .waiting-2048-merge,
+  .waiting-memory-card, .waiting-breakout-brick { animation: none !important; transition-duration: .01ms !important; }
 }

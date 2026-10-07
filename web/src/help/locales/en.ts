@@ -2789,12 +2789,12 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
     category: 'chat',
     title: 'Waiting Arcade',
     summary: 'Open a small local game while a Work or Coding agent is running.',
-      keywords: ['arcade', 'game', 'pixel', 'snake', 'minesweeper', 'tic-tac-toe', '2048', 'waiting', 'pause'],
+      keywords: ['arcade', 'game', 'pixel', 'snake', 'minesweeper', 'tic-tac-toe', '2048', 'memory pairs', 'breakout', 'waiting', 'pause'],
     blocks: [
-        { type: 'p', text: 'After an agent has worked for 1.5 seconds, choose Play while waiting beside Stop. Pick Snake, Minesweeper Mini, Tic-tac-toe, or 2048. The launcher is optional and does not cover the chat or take focus until you activate a control.' },
+        { type: 'p', text: 'After an agent has worked for 1.5 seconds, open More composer actions beside Stop and choose Play while waiting. Pick Snake, Minesweeper Mini, Tic-tac-toe, 2048, Memory Pairs, or Mini Breakout. The menu is optional and does not cover the chat or take focus until you activate a control.' },
       { type: 'p', text: 'Games run locally in the chat. The Tic-tac-toe opponent is a fixed local rule set; scores never describe agent progress. Minesweeper has no countdown.' },
       { type: 'p', text: 'Close the panel to pause and keep the board for this session. A question, permission request, stopped run, or completed run closes the panel and pauses the game. Resolve the request, then open the game yourself if work resumes. Changing sessions clears the board.' },
-        { type: 'p', text: 'Snake responds to arrow keys or WASD only when its board has keyboard focus; Space pauses or resumes it. With reduced motion enabled, Snake moves more slowly. Use arrow keys to move through the Minesweeper Mini and Tic-tac-toe cells, then Enter or Space to act. For 2048, focus its board before using arrow keys. Use the close button, Escape, or an outside click to dismiss the panel.' },
+        { type: 'p', text: 'Snake responds to arrow keys or WASD only when its board has keyboard focus; Space pauses or resumes it. With reduced motion enabled, Snake moves more slowly and 2048 tile animations are disabled. Use arrow keys to move through Minesweeper Mini, Tic-tac-toe, and Memory Pairs cells, then Enter or Space to act. Mini Breakout uses left/right arrows or A/D for the paddle; Space launches or pauses. For 2048, focus its board before using arrow keys. Use the close button, Escape, or an outside click to dismiss the panel.' },
     ],
     related: ['chat', 'composer-power', 'troubleshooting'],
   }
