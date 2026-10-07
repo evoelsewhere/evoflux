@@ -13,6 +13,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -265,9 +266,7 @@ MANUAL_HINTS: dict[str, str] = {
     # package ships without DotnetToolSettings.xml, so `dotnet tool install`
     # refuses it at every version. The spec still looks for csharp-ls on PATH,
     # so a hand-installed one is picked up.
-    "csharp": (
-        "Install OmniSharp or csharp-ls and expose it on PATH."
-    ),
+    "csharp": ("Install OmniSharp or csharp-ls and expose it on PATH."),
     "c": "Install clangd with the LLVM toolchain.",
     "cpp": "Install clangd with the LLVM toolchain.",
     "java": "Install Eclipse JDT Language Server (jdtls).",
@@ -524,9 +523,7 @@ async def _run_installer_command(
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=timeout
-        )
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except TimeoutError as exc:
         process.kill()
         await process.wait()
@@ -680,15 +677,50 @@ async def _install_into_toolchain(recipe: InstallRecipe, cwd: Path) -> None:
     )
 
 
+#: Windows refuses to rename a directory while anything holds a handle inside it:
+#: the antivirus or indexer scanning a ``node_modules`` that was just written, a
+#: child of the installer that has not quite exited, or the previous server.
+#: Those holds last moments, so a rename is retried before it is reported.
+_RENAME_ATTEMPTS = 6
+_RENAME_RETRY_DELAY_SECONDS = 0.25
+
+
+def _rename_dir(source: Path, destination: Path) -> None:
+    """``source.rename(destination)``, riding out a transient lock on Windows."""
+    for attempt in range(1, _RENAME_ATTEMPTS + 1):
+        try:
+            source.rename(destination)
+            return
+        except PermissionError:
+            if attempt == _RENAME_ATTEMPTS:
+                raise
+            time.sleep(_RENAME_RETRY_DELAY_SECONDS * attempt)
+
+
+def _remove_stale_install_dirs(parent: Path, name: str) -> None:
+    """Delete staging and backup directories a crashed install left behind."""
+    for pattern in (f".{name}-install-*", f".{name}.previous-*"):
+        for stale in parent.glob(pattern):
+            shutil.rmtree(stale, ignore_errors=True)
+
+
 def _activate_stage(stage: Path, target: Path) -> None:
     backup: Path | None = None
-    if target.exists():
-        backup = target.with_name(f".{target.name}.previous-{os.getpid()}")
-        if backup.exists():
-            shutil.rmtree(backup)
-        target.rename(backup)
     try:
-        stage.rename(target)
+        if target.exists():
+            backup = target.with_name(f".{target.name}.previous-{os.getpid()}")
+            if backup.exists():
+                shutil.rmtree(backup)
+            _rename_dir(target, backup)
+        _rename_dir(stage, target)
+    except PermissionError as exc:
+        if backup is not None and backup.exists() and not target.exists():
+            _rename_dir(backup, target)
+        raise LanguageServerInstallError(
+            f"Could not move the installed server into place ({exc}). A program "
+            "still has files in it open — close any editor or terminal using "
+            "this language server and try again."
+        ) from exc
     except Exception:
         if backup is not None and backup.exists() and not target.exists():
             backup.rename(target)
@@ -741,6 +773,7 @@ async def install_language_server(language_id: str) -> LanguageServerStatus:
 
         target = managed_language_server_root(language_id)
         target.parent.mkdir(parents=True, exist_ok=True)
+        _remove_stale_install_dirs(target.parent, language_id)
         stage = Path(
             tempfile.mkdtemp(prefix=f".{language_id}-install-", dir=target.parent)
         )
@@ -766,8 +799,10 @@ async def install_language_server(language_id: str) -> LanguageServerStatus:
                 + "\n",
                 encoding="utf-8",
             )
-            _activate_stage(stage, target)
+            # Stop the running server first: on Windows its open files are what
+            # keeps the old directory from being renamed out of the way.
             await close_language_servers(language_id)
+            await asyncio.to_thread(_activate_stage, stage, target)
             logger.info(
                 "language_server_installed language={} version={} installer={}",
                 language_id,
@@ -783,7 +818,6 @@ async def install_language_server(language_id: str) -> LanguageServerStatus:
         for item in language_server_overview().servers
         if item.language_id == language_id
     )
-
 
 
 def _now() -> str:
@@ -813,9 +847,7 @@ def start_language_server_install(language_id: str) -> InstallJob:
         )
     if shutil.which(recipe.prerequisite) is None:
         raise LanguageServerInstallError(
-            PREREQUISITE_HINTS.get(
-                recipe.kind, f"Install {recipe.prerequisite} first."
-            )
+            PREREQUISITE_HINTS.get(recipe.kind, f"Install {recipe.prerequisite} first.")
         )
 
     existing = _install_tasks.get(language_id)
