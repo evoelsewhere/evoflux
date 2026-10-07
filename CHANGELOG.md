@@ -69,6 +69,11 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- The hourly browser-capture cleanup no longer reads and parses every message's
+  metadata, and its first run waits two minutes instead of competing with
+  startup. On a 33,000-message history the query dropped from about 0.76 s over
+  33,151 rows to 0.14 s over none, which also removes the "slow database"
+  warnings and pool waits seen while the app was opening.
 - Installing a language server on Windows no longer fails with "Access is denied"
   when moving the new install into place. A momentary file lock (antivirus, the
   indexer, or the old server still running) is retried, the running server is
