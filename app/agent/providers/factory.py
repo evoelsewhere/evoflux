@@ -56,7 +56,6 @@ from app.agent.providers.kimi import KimiCodeProvider  # noqa: F401
 from app.agent.providers.ollama import OllamaProvider  # noqa: F401
 from app.agent.providers.opencode import (
     OPENCODE_PROVIDER_IDS,
-    anonymous_api_key,
     build_opencode_provider,
 )
 from app.agent.providers.openai import ChatCompletionsOnlyProvider, OpenAIProvider
@@ -186,8 +185,6 @@ def _resolve_config_key_and_url(
     name: str,
     s: object,
     config: ProviderConfig | None = None,
-    *,
-    anonymous_key: str | None = None,
 ) -> tuple[str | SecretStr, str]:
     """Resolve the API key and base URL for an OpenAI-compatible provider.
 
@@ -220,14 +217,7 @@ def _resolve_config_key_and_url(
         else:
             api_key = configured_key
     else:
-        try:
-            api_key = require_api_key(configured_key, resolved.env_var, resolved.label)
-        except ValueError:
-            # A keyless-but-allowed model (OpenCode's free tier) uses the
-            # public key its own client sends; anything else still fails.
-            if anonymous_key is None:
-                raise
-            api_key = anonymous_key
+        api_key = require_api_key(configured_key, resolved.env_var, resolved.label)
 
     typed_api_key = cast(str | SecretStr | None, api_key)
 
@@ -446,9 +436,7 @@ def _build_from_registry(
     """
     config = resolve_provider(name)
     if config is not None and name in OPENCODE_PROVIDER_IDS:
-        typed_api_key, base_url = _resolve_config_key_and_url(
-            name, s, config, anonymous_key=anonymous_api_key(name, model)
-        )
+        typed_api_key, base_url = _resolve_config_key_and_url(name, s, config)
         return _with_provider_name(
             build_opencode_provider(
                 name,

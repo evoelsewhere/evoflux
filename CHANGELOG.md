@@ -43,6 +43,9 @@ All notable changes to EvoFlux are documented in this file.
   request now carries the `x-opencode-session` header OpenCode Go requires, so
   title generation and other calls outside a chat no longer fail with
   `MissingSessionID`.
+  **OpenCode Zen** always needs its key: OpenCode serves its free models only
+  inside its own app and answers other clients with "free tier can only be
+  used from within OpenCode", so EvoFlux no longer tries them keyless.
 - **Settings → Providers → OpenCode Go** shows your rolling 5-hour, weekly and
   monthly usage as percent used with each window's reset time, refreshed every
   minute, and flags a window that has reached its limit.

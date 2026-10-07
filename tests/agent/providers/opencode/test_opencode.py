@@ -375,8 +375,13 @@ class TestClientHeaders:
         assert headers["x-opencode-session"].startswith("evoflux-v1:")
 
 
-class TestAnonymousFreeTier:
-    """OpenCode's client uses the public key for ``$0`` Zen models only."""
+class TestKeyRequired:
+    """No OpenCode model is built without a key.
+
+    OpenCode's gateway answers a keyless (``public``) call to a free Zen model
+    with 403 "free tier can only be used from within OpenCode", so a missing key
+    has to surface as a missing key, not as that error.
+    """
 
     @pytest.fixture(autouse=True)
     def _no_key(self, monkeypatch):
@@ -384,26 +389,20 @@ class TestAnonymousFreeTier:
         monkeypatch.delenv("OPENCODE_GO_API_KEY", raising=False)
         from app.core.config import settings
 
-        if getattr(settings, "OPENCODE_API_KEY", None):
-            pytest.skip("OPENCODE_API_KEY configured through settings")
+        if getattr(settings, "OPENCODE_API_KEY", None) or getattr(
+            settings, "OPENCODE_GO_API_KEY", None
+        ):
+            pytest.skip("an OpenCode key is configured through settings")
 
-    def test_free_zen_model_builds_with_public_key(self):
-        p = build_provider("opencode:big-pickle")
-        assert p.api_key == "public"
-
-    def test_paid_zen_model_still_requires_a_key(self):
+    @pytest.mark.parametrize(
+        "model",
+        ["opencode:big-pickle", "opencode:claude-sonnet-5", "opencode-go:kimi-k3"],
+    )
+    def test_keyless_model_raises(self, model):
         with pytest.raises(ValueError, match="API key"):
-            build_provider("opencode:claude-sonnet-5")
+            build_provider(model)
 
-    def test_go_has_no_anonymous_tier(self):
-        from app.core.config import settings
-
-        if getattr(settings, "OPENCODE_GO_API_KEY", None):
-            pytest.skip("OPENCODE_GO_API_KEY configured through settings")
-        with pytest.raises(ValueError, match="API key"):
-            build_provider("opencode-go:longcat-2.5-preview-free")
-
-    def test_configured_key_wins_over_public(self, monkeypatch):
+    def test_configured_key_is_used(self, monkeypatch):
         monkeypatch.setenv("OPENCODE_API_KEY", "oc-real")
         assert build_provider("opencode:big-pickle").api_key == "oc-real"
 
