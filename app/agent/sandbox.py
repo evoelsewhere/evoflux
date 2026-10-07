@@ -42,6 +42,7 @@ from __future__ import annotations
 import contextvars
 import fnmatch
 import os
+import re
 import shlex
 import stat as stat_module
 import sys
@@ -394,7 +395,10 @@ class SandboxConfig:
         for index, tok in enumerate(tokens):
             if not _looks_path_like(tok):
                 continue
-            expanded = os.path.expanduser(tok)
+            operand = _host_path_operand(tok)
+            if operand is None:
+                continue
+            expanded = os.path.expanduser(operand)
             p = Path(expanded)
             candidate = p if p.is_absolute() else (self.workspace_root / p)
             try:
@@ -519,6 +523,59 @@ def _looks_path_like(token: str) -> bool:
     if token.startswith("."):
         return True
     return False
+
+
+#: Git Bash / MSYS spells a drive as ``/c/...``.
+_MSYS_DRIVE = re.compile(r"^/([A-Za-z])(?=/|$)")
+
+#: Characters that make a token a string or format specifier rather than a path:
+#: a newline (``curl -w "\nHTTP:%{http_code}\n"``), braces (a ``python -c`` body,
+#: a brace expansion) or a backtick substitution.
+_NOT_A_PATH_CHARS = frozenset("\n\r{}`")
+
+#: Character devices every shell command may name, on any host. Redirecting to
+#: ``/dev/null`` is not file access, and on Windows it is not a path at all.
+_BENIGN_DEVICES = frozenset(
+    {
+        "/dev/null",
+        "/dev/zero",
+        "/dev/full",
+        "/dev/random",
+        "/dev/urandom",
+        "/dev/tty",
+        "/dev/stdin",
+        "/dev/stdout",
+        "/dev/stderr",
+    }
+)
+
+
+def _host_path_operand(token: str) -> str | None:
+    """The host filesystem path *token* names, or ``None`` when it names none.
+
+    The scanner only needs to be right about what it reports. Agents drive
+    Git Bash on Windows, so a command carries POSIX spellings the host does not
+    share: ``/c/Users/x`` is ``C:/Users/x``, ``/dev/null`` is a device, and
+    ``/usr/bin/env`` has no Windows location we can name. Handing those to
+    ``Path`` made them *relative* (``C:/c/Users/...`` under the workspace,
+    ``C:/dev/null``) and the audit log recorded paths that never existed.
+    Strings that merely contain a slash (a curl ``-w`` format, a ``python -c``
+    body) are not operands at all.
+    """
+    if any(ch in _NOT_A_PATH_CHARS for ch in token) or "$(" in token:
+        return None
+    if token in _BENIGN_DEVICES:
+        return None
+    if sys.platform != "win32" or not token.startswith("/"):
+        return token
+    # ``//server/share`` is a UNC path and means the same on both sides.
+    if token.startswith("//"):
+        return token
+    drive = _MSYS_DRIVE.match(token)
+    if drive is not None:
+        return f"{drive.group(1).upper()}:{token[drive.end() :] or '/'}"
+    # /dev/null and friends, /usr/..., /tmp/...: a POSIX location with no host path.
+    return None
 
 
 _default_sandbox_instance: SandboxConfig | None = None
