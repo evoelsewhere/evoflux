@@ -226,6 +226,7 @@ function PanelLoadingFallback() {
 
 interface TeamChatViewProps {
   sessionId?: string
+  importedSource?: string | null
   mode?: 'work' | 'coding'
   workspace?: string | null
   codingSessionLoading?: boolean
@@ -311,7 +312,7 @@ function ActiveAgentTranscript({
   )
 }
 
-export function TeamChatView({ sessionId, mode = 'work', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
+export function TeamChatView({ sessionId, importedSource, mode = 'work', workspace = null, codingSessionLoading = false }: TeamChatViewProps) {
   const workOrCodingMode: 'work' | 'coding' = mode === 'coding' ? 'coding' : 'work'
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -1787,6 +1788,7 @@ export function TeamChatView({ sessionId, mode = 'work', workspace = null, codin
           onViewModeChange={setViewMode}
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           mode={mode}
+          importedSource={importedSource}
           workspace={workbenchWorkspace}
           repositories={mode === 'coding' ? sessionRepositoryPaths : undefined}
           onChooseWorkspace={mode === 'coding' ? handleOpenWorkspaceDialog : undefined}

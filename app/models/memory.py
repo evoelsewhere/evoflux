@@ -74,6 +74,16 @@ class MemoryFact(SQLModel, table=True):
             server_default="{}",
         ),
     )
+    # Import metadata — set for facts imported from external tools.
+    source: str | None = Field(
+        default=None,
+        max_length=50,
+        sa_column=Column(sa.String(50), nullable=True, index=True),
+    )
+    imported_at: datetime | None = Field(
+        default=None,
+        sa_column=Column(TZDateTime(), nullable=True),
+    )
     created_at: datetime = Field(
         default_factory=_utcnow, sa_column=Column(TZDateTime(), nullable=False)
     )

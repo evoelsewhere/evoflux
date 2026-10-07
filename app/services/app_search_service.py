@@ -574,7 +574,9 @@ def _skill_items(query: str, limit: int) -> list[AppSearchItem]:
 
     needle = query.casefold()
     items: list[AppSearchItem] = []
-    for skill in discover_skills().all()[:FILE_SCAN_LIMIT]:
+    # Search the complete discovered catalogue. Slicing before matching made
+    # valid skills beyond the alphabetical scan window impossible to find.
+    for skill in discover_skills().all():
         if not _matches(needle, skill.name, skill.description):
             continue
         items.append(

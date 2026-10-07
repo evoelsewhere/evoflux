@@ -30,6 +30,51 @@ beforeEach(() => {
 })
 
 describe('BlockRenderer assistant artifacts', () => {
+  it('labels text from an imported Claude subagent', () => {
+    render(
+      <BlockRenderer
+        block={{
+          id: 'subagent-text',
+          type: 'text',
+          content: 'The review is complete.',
+          extra: {
+            import_source: {
+              provider: 'claude_code',
+              is_sidechain: true,
+              agent_id: 'reviewer',
+            },
+          },
+        }}
+        isStreaming={false}
+      />,
+    )
+
+    expect(screen.getByText('Subagent · reviewer')).toBeInTheDocument()
+    expect(screen.getByText('The review is complete.')).toBeInTheDocument()
+  })
+
+  it('labels parent-agent text separately from imported Claude subagents', () => {
+    render(
+      <BlockRenderer
+        block={{
+          id: 'parent-text',
+          type: 'text',
+          content: 'The review is complete.',
+          extra: {
+            import_source: {
+              provider: 'claude_code',
+              event_kind: 'assistant',
+            },
+          },
+        }}
+        isStreaming={false}
+      />,
+    )
+
+    expect(screen.getByText('Main agent · Claude Code')).toBeInTheDocument()
+    expect(screen.getByText('The review is complete.')).toBeInTheDocument()
+  })
+
   it('does not turn inline-code file mentions into attachment cards', () => {
     render(
       <BlockRenderer
