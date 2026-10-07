@@ -3,8 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WaitingArcadeHost } from '@/components/waiting-arcade/WaitingArcadeHost'
 
 async function openSnake() {
-  fireEvent.click(screen.getByRole('button', { name: 'More composer actions' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: 'Play while waiting' }))
+  const directLauncher = screen.queryByRole('button', { name: 'Play while waiting' })
+  if (directLauncher) {
+    fireEvent.click(directLauncher)
+  } else {
+    fireEvent.click(screen.getByRole('button', { name: 'More composer actions' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Play while waiting' }))
+  }
   fireEvent.click(screen.getByRole('button', { name: 'Snake' }))
   await act(async () => vi.dynamicImportSettled())
   fireEvent.click(screen.getByRole('button', { name: 'Start Snake' }))
@@ -16,13 +21,18 @@ afterEach(() => {
 })
 
 describe('WaitingArcadeHost lifecycle', () => {
-  it('shows the composer overflow after 1.5 seconds of active work', () => {
+  it('shows the labeled game launcher for 10 seconds, then collapses it into composer overflow', () => {
     vi.useFakeTimers()
     render(<WaitingArcadeHost isWorking sessionId="s1" mode="work" hasUserActionGate={false} />)
     expect(screen.queryByRole('button', { name: 'More composer actions' })).not.toBeInTheDocument()
 
     act(() => vi.advanceTimersByTime(1499))
     expect(screen.queryByRole('button', { name: 'More composer actions' })).not.toBeInTheDocument()
+    act(() => vi.advanceTimersByTime(1))
+    expect(screen.getByRole('button', { name: 'Play while waiting' })).toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(9999))
+    expect(screen.getByRole('button', { name: 'Play while waiting' })).toBeInTheDocument()
     act(() => vi.advanceTimersByTime(1))
     expect(screen.getByRole('button', { name: 'More composer actions' })).toBeInTheDocument()
   })
@@ -56,10 +66,9 @@ describe('WaitingArcadeHost lifecycle', () => {
 
     rerender(<WaitingArcadeHost isWorking sessionId="s1" mode="work" hasUserActionGate={false} />)
     act(() => vi.advanceTimersByTime(1500))
-    expect(screen.getByRole('button', { name: 'More composer actions' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Play while waiting' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Start Snake' })).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'More composer actions' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Play while waiting' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play while waiting' }))
     expect(screen.getByTestId('snake-head')).toHaveAttribute('data-x', x)
   })
 
@@ -67,18 +76,16 @@ describe('WaitingArcadeHost lifecycle', () => {
     vi.useFakeTimers()
     const { rerender } = render(<WaitingArcadeHost isWorking sessionId="s1" mode="coding" hasUserActionGate={false} />)
     act(() => vi.advanceTimersByTime(1500))
-    fireEvent.click(screen.getByRole('button', { name: 'More composer actions' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Play while waiting' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play while waiting' }))
     fireEvent.click(screen.getByRole('button', { name: 'Snake' }))
     await act(async () => vi.dynamicImportSettled())
     expect(screen.getByRole('button', { name: 'Start Snake' })).toBeInTheDocument()
 
     rerender(<WaitingArcadeHost isWorking sessionId="s2" mode="coding" hasUserActionGate={false} />)
     act(() => vi.advanceTimersByTime(1499))
-    expect(screen.queryByRole('button', { name: 'More composer actions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Play while waiting' })).not.toBeInTheDocument()
     act(() => vi.advanceTimersByTime(1))
-    fireEvent.click(screen.getByRole('button', { name: 'More composer actions' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Play while waiting' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play while waiting' }))
     expect(screen.getByRole('button', { name: 'Snake' })).toBeInTheDocument()
   })
 
