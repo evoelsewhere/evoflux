@@ -69,6 +69,11 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- Every OpenCode Go model now answers. `glm-5.1`, `glm-5.2` and `glm-5.3` failed
+  with "thinking-only model; disabling thinking is not supported" because the
+  runtime asked them to stop thinking, and `kimi-k2.7-code` failed with "invalid
+  temperature: only 1 is allowed" because a Kimi default temperature was added
+  to a model that takes none. Both parameters are now left out for those models.
 - The hourly browser-capture cleanup no longer reads and parses every message's
   metadata, and its first run waits two minutes instead of competing with
   startup. On a 33,000-message history the query dropped from about 0.76 s over
