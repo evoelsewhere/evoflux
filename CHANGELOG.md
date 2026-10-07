@@ -69,6 +69,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- Team members can read the large tool results they offload. A member such as
+  `explorer#1` was refused its own `.tool_results` file ("is inside a denied
+  sandbox root") and had to `cat` it through a shell, repeatedly, at full token
+  cost; results now land in the session directory the member's sandbox allows.
 - A turn no longer dies when the model connection drops mid-response. "Peer
   closed connection without sending complete message body" and "Server
   disconnected without sending a response" are now retried and resumed like a
