@@ -881,6 +881,43 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
 ],
   },
   {
+    id: 'multi-source-import',
+    category: 'sessions',
+    title: '他の AI ツールからチャットをインポート',
+    summary:
+      'Settings → Import から対応する会話とローカルのエージェントリソースを EvoFlux に取り込みます。インポートしたチャットにはサイドバーと会話バーにソースが表示されます。',
+    keywords: ['import', 'Claude', 'ChatGPT', 'Codex', 'Cursor', 'migration', 'export'],
+    openAction: { type: 'settings', path: 'import' },
+    setup:
+      'Settings → Import を開き、ローカルのエクスポートファイルまたはデータディレクトリを選択します。検出項目と競合を確認してください。Auto-sync を有効にすると、EvoFlux の起動中に新しい会話、Skill、Agent を取り込みます。',
+    tricks: [
+      'ネイティブのファイル選択はローカルで読み込みます。エクスポートがリモートサービスへアップロードされることはありません。',
+      'インポートした会話にはソースラベルが付き、EvoFlux で作成したチャットと区別できます。',
+      'Auto-sync は既存の競合を置き換えず、MCP 設定も自動で取り込みません。これらは手動で確認します。',
+      '競合項目の Re-import は一致した項目をその場で更新します。複数の競合を選んでまとめて再取り込みできます。',
+      '新しい journal 付きインポートは Undo できます。取り込み後に変更された対象はそのまま残し、部分的な結果を表示します。',
+      '大量のエクスポートはプレビュー内で名前検索、種類の絞り込み、ページ切り替えができます。',
+      '古いチャットはサイドバーの Search sessions & history で検索できます。Settings → Skills にも専用フィルターがあります。',
+    ],
+    blocks: [
+      {
+        type: 'p',
+        text: 'Settings → Import は Claude.ai、Claude Code、ChatGPT、Codex、Cursor、および対応する汎用ファイルをサポートします。Auto-sync は EvoFlux の起動中のみ動作し、新しい会話、Skill、Agent だけを自動で取り込みます。既存の競合と MCP 設定は手動確認の対象です。',
+      },
+      {
+        type: 'p',
+        text: 'Claude Code は ~/.claude/skills、Codex は共通の ~/.agents/skills から Skill を読み込みます。インポートした Skill は EvoFlux のユーザー用 Skill フォルダーに保存され、Settings → Skills に表示されます。長い一覧ではサイドバーで古いチャットを検索し、Settings → Skills のフィルターやインポートプレビューの検索・ページ切り替えを使ってください。',
+      },
+      {
+        type: 'callout',
+        tone: 'info',
+        title: 'インポート前に確認',
+        text: 'プレビューには読み取り可能な内容と検出された競合が表示されます。Re-import は一致した項目を更新します。Undo は変更されていない対象を削除または復元し、後から編集された内容は保持します。API キーや資格情報はインポートされません。',
+      },
+    ],
+    related: ['sessions-folders'],
+  },
+  {
     id: 'workbench-tools',
     category: 'workbench',
     title: 'Workbench ツール',

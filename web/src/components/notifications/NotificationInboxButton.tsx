@@ -35,6 +35,7 @@ function kindLabel(kind: InboxNotification['kind']): string {
     case 'background_done': return 'Background task'
     case 'reminder_fired': return 'Reminder'
     case 'assistant_done': return 'Assistant finished'
+    case 'import_sync': return 'Import sync'
   }
 }
 

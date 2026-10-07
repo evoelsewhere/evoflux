@@ -158,6 +158,8 @@ class SessionResponse(_ExcludeNoneModel):
     revert: dict | None = None
     tags: list[str] = []
     running: bool = False
+    source: str | None = None
+    imported_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

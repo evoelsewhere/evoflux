@@ -10,6 +10,13 @@ All notable changes to EvoFlux are documented in this file.
   sources, search their catalogs, and preview compatible components. Marketplace
   installs stay disabled until trust review; importing only supported parts of a
   partially compatible Claude plugin requires explicit consent.
+- **Settings → Import** supports local exports from Claude.ai, ChatGPT, Claude
+  Code, Codex CLI, Cursor, and supported generic configuration/resource files.
+  Imported sessions show their source in the sidebar and conversation view.
+  The import welcome flow can help set up a local import.
+- Import auto-sync handles new sessions, skills, and agents while EvoFlux is
+  open. Import history supports Undo with item-level results; targets changed
+  after import are preserved.
 
 ### Changed
 
@@ -24,6 +31,8 @@ All notable changes to EvoFlux are documented in this file.
 - **Plugin Center** uses compact plugin rows, with components, package files and
   technical details available on demand. Search stays visible while filters and
   marketplace management remain secondary controls.
+- Import preview supports search, type filters, paging, in-place re-import,
+  and explicit review for same-name Skills from other local sources.
 
 ### Fixed
 
@@ -41,6 +50,11 @@ All notable changes to EvoFlux are documented in this file.
   and filters" from an empty catalog that needs a sync.
 - The observability summary no longer returns HTTP 500 when a time-series
   bucket contains null aggregates.
+- Claude Code imports retain tool calls/results and subagent provenance while
+  keeping sidechain messages out of model context. ChatGPT imports use stable
+  provider IDs and safely bridge unique older title-based imports.
+- Unsupported settings and credential records are labeled and skipped instead
+  of appearing as importable items.
 
 - On Windows and macOS, the notification bell and its **Notifications** inbox
   panel now sit in the window title bar next to the window buttons (left of

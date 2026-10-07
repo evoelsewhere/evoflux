@@ -13,6 +13,7 @@ export type DesktopNotificationKind =
   | 'agent_not_configured'
   | 'terminal_error'
   | 'goal_blocked'
+  | 'import_sync'
 export type DesktopNotificationStatus = 'sent' | 'disabled' | 'unsupported' | 'permission-denied' | 'error'
 
 export interface DesktopNotificationPayload {
@@ -20,6 +21,7 @@ export interface DesktopNotificationPayload {
   title: string
   body: string
   activation?: NotificationActivation
+  actionTarget?: 'settings_import'
 }
 
 export interface DesktopNotificationResult {
@@ -129,7 +131,7 @@ export async function sendDesktopNotification(
   if (skipped) return skipped
 
   try {
-    const { isPermissionGranted, requestPermission } = await import('@tauri-apps/plugin-notification')
+    const { isPermissionGranted, requestPermission, sendNotification } = await import('@tauri-apps/plugin-notification')
     let granted = await isPermissionGranted()
     if (!granted && !permissionRequested) {
       permissionRequested = true
@@ -139,7 +141,7 @@ export async function sendDesktopNotification(
       return { status: 'permission-denied', message: 'OS notification permission was not granted.' }
     }
     const { invoke } = await import('@tauri-apps/api/core')
-    if (payload.activation || getPlatform().os === 'windows') {
+    if (!payload.actionTarget && (payload.activation || getPlatform().os === 'windows')) {
       try {
         await invoke('app_send_attention_notification', {
           title: translateText(payload.title),
@@ -155,21 +157,30 @@ export async function sendDesktopNotification(
             : null,
         })
         void playNotificationSound()
-        if (options.trackInbox !== false) addInboxNotification(payload)
+        if (options.trackInbox !== false && !payload.actionTarget) addInboxNotification(payload)
         return { status: 'sent', message: 'Native notification sent.' }
       } catch (error) {
         if (getPlatform().os === 'windows') throw error
       }
     }
-    await invoke('plugin:notification|notify', {
-      options: {
+    if (payload.actionTarget) {
+      await sendNotification({
         title: translateText(payload.title),
         body: translateText(payload.body),
         group: `EvoFlux-${payload.kind}`,
-      },
-    })
+        extra: { actionTarget: payload.actionTarget },
+      })
+    } else {
+      await invoke('plugin:notification|notify', {
+        options: {
+          title: translateText(payload.title),
+          body: translateText(payload.body),
+          group: `EvoFlux-${payload.kind}`,
+        },
+      })
+    }
     void playNotificationSound()
-    if (options.trackInbox !== false) addInboxNotification(payload)
+    if (options.trackInbox !== false && !payload.actionTarget) addInboxNotification(payload)
     return { status: 'sent', message: 'Native notification sent.' }
   } catch (err) {
     console.warn('desktop notification failed', err)

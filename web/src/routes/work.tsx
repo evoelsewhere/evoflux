@@ -55,7 +55,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const cachedSessionPages = queryClient.getQueryData<{
-    pages: Array<{ data: Array<{ id: string; workspace?: string | null; project_id?: string | null }> }>
+    pages: Array<{ data: Array<{ id: string; workspace?: string | null; project_id?: string | null; source?: string | null }> }>
   }>(queryKeys.team.sessions.infinite(mode === 'coding' ? 'coding' : 'work'))
   const cachedSession = sessionId
     ? cachedSessionPages?.pages
@@ -65,7 +65,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
   const sessionQuery = useQuery({
     queryKey: queryKeys.team.sessions.metadata(sessionId ?? ''),
     queryFn: ({ signal }) => getTeamSessionMetadata(sessionId as string, signal),
-    enabled: mode === 'coding' && Boolean(sessionId) && !cachedSession?.workspace,
+    enabled: Boolean(sessionId) && (!cachedSession || (mode === 'coding' && !cachedSession.workspace)),
     staleTime: 30_000,
     // A missing chat stays missing; retrying only delays the way back home.
     retry: (failureCount, error) => !isNotFoundError(error) && failureCount < 3,
@@ -428,6 +428,7 @@ function TeamLayoutBase({ forcedMode }: { forcedMode?: 'work' | 'coding' }) {
     <>
       <TeamChatView
         sessionId={sessionId}
+        importedSource={cachedSession?.source ?? sessionQuery.data?.source}
         mode={mode}
         workspace={workspace}
         codingSessionLoading={
