@@ -148,6 +148,21 @@ _NON_RETRYABLE_429_MARKERS = (
     "no resource package",
     "billing_not_active",
 )
+
+#: Connection-level failures that say nothing about the request itself, so
+#: replaying it is safe: a timeout of any kind, a socket that could not be
+#: opened or dropped (``ConnectError``/``ReadError``/…), and a peer that closed
+#: mid-response (``RemoteProtocolError`` — "incomplete chunked read" and "Server
+#: disconnected without sending a response"). The last is what a long SSE
+#: stream looks like when a proxy or the provider hangs up. Deliberately not
+#: all of ``httpx.TransportError``: ``LocalProtocolError``, ``UnsupportedProtocol``
+#: and ``ProxyError`` are bugs or misconfiguration that retrying cannot fix.
+TRANSIENT_TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
+    httpx.TimeoutException,
+    httpx.NetworkError,
+    httpx.RemoteProtocolError,
+    TimeoutError,
+)
 _BASE_DELAY = 1.0  # seconds — exponential base 3: 1, 3, 9, 27, 81
 _MAX_DELAY = 60.0  # seconds
 
@@ -484,7 +499,7 @@ async def stream_with_retry(
                 )
                 if await _sleep_or_interrupted(delay, interrupt_event):
                     return
-            except (httpx.ConnectError, httpx.ReadTimeout, TimeoutError) as exc:
+            except TRANSIENT_TRANSPORT_ERRORS as exc:
                 last_exc = exc
                 # Skip sleep on the last attempt
                 if attempt + 1 >= MAX_RETRIES:

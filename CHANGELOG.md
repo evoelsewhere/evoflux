@@ -69,6 +69,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- A turn no longer dies when the model connection drops mid-response. "Peer
+  closed connection without sending complete message body" and "Server
+  disconnected without sending a response" are now retried and resumed like a
+  timeout, instead of cancelling the whole turn.
 - Claude Code MCP plugins receive a normalized `mcp.json`; invalid component
   diagnostics block marketplace installation, package review masks credentials,
   and remote MCP servers awaiting authorization show **Authentication required**.
