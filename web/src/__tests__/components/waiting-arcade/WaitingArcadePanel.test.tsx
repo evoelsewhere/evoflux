@@ -11,10 +11,16 @@ function ArcadeHarness() {
 describe('Waiting Arcade picker', () => {
   it('shows six distinct pixel game marks without the broken arrow glyph', () => {
     render(<ArcadeHarness />)
-    fireEvent.click(screen.getByRole('button', { name: 'More composer actions' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Play while waiting' }))
+    const moreButton = screen.getByRole('button', { name: 'More composer actions' })
+    fireEvent.click(moreButton)
+    expect(screen.getByRole('button', { name: 'Play while waiting' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Snake' })).not.toBeInTheDocument()
+    expect(moreButton).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(moreButton)
+    expect(screen.queryByRole('button', { name: 'Play while waiting' })).not.toBeInTheDocument()
+    fireEvent.click(moreButton)
+    fireEvent.click(screen.getByRole('button', { name: 'Play while waiting' }))
     expect(screen.getByRole('dialog', { name: 'Waiting Arcade' })).toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Play while waiting' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Play while waiting' })).not.toBeInTheDocument()
     const games = ['Snake', 'Minesweeper Mini', 'Tic-tac-toe', '2048', 'Memory Pairs', 'Mini Breakout']
     games.forEach((name) => expect(screen.getByRole('button', { name })).toBeInTheDocument())

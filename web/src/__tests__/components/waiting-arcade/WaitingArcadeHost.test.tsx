@@ -8,7 +8,7 @@ async function openSnake() {
     fireEvent.click(directLauncher)
   } else {
     fireEvent.click(screen.getByRole('button', { name: 'More composer actions' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Play while waiting' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Play while waiting' }))
   }
   fireEvent.click(screen.getByRole('button', { name: 'Snake' }))
   await act(async () => vi.dynamicImportSettled())
