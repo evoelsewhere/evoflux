@@ -110,11 +110,12 @@ describe('turn partitioning', () => {
       ...block('tool', 'delegate'),
       toolName: 'team_delegate',
     }
+    const sleepToolBlock: ContentBlock = { ...block('tool', 'sleep'), toolName: 'sleep' }
 
     const turns = partitionTurns([
       delegationBlock,
       waitNudge,
-      block('text', '<sleep>'),
+      sleepToolBlock,
       handoff,
       block('text', 'Final synthesis.'),
     ])
@@ -129,20 +130,17 @@ describe('turn partitioning', () => {
     }
   })
 
-  it('folds delegation waits represented by lifecycle metadata', () => {
+  it('folds the wait phase that ends in a sleep tool call', () => {
     const delegationBlock: ContentBlock = {
       ...block('tool', 'delegate'),
       toolName: 'team_delegate',
     }
-    const sleepBlock: ContentBlock = {
-      ...block('text', ''),
-      extra: { lifecycle: 'sleep' },
-    }
+    const sleepToolBlock: ContentBlock = { ...block('tool', 'sleep'), toolName: 'sleep' }
 
     const turns = partitionTurns([
       delegationBlock,
       block('text', 'Work is underway.'),
-      sleepBlock,
+      sleepToolBlock,
       block('text', 'Final synthesis.'),
     ])
 
@@ -152,6 +150,34 @@ describe('turn partitioning', () => {
       expect(turns[0].blocks.map((item) => item.content)).toEqual([
         'delegate',
         'Final synthesis.',
+      ])
+    }
+  })
+
+  it('never shows a sleep tool call, even without a delegation', () => {
+    const sleepToolBlock: ContentBlock = { ...block('tool', 'sleep'), toolName: 'sleep' }
+
+    const turns = partitionTurns([block('text', 'Waiting on a peer.'), sleepToolBlock])
+
+    expect(turns).toHaveLength(1)
+    if (turns[0]?.kind === 'assistant') {
+      expect(turns[0].blocks.map((item) => item.content)).toEqual(['Waiting on a peer.'])
+    }
+  })
+
+  it('drops a turn that contains nothing but sleep', () => {
+    const sleepToolBlock: ContentBlock = { ...block('tool', 'sleep'), toolName: 'sleep' }
+
+    expect(partitionTurns([sleepToolBlock])).toEqual([])
+  })
+
+  it('treats <sleep> text as ordinary content', () => {
+    const turns = partitionTurns([block('text', 'Use <sleep> only in prose.')])
+
+    expect(turns).toHaveLength(1)
+    if (turns[0]?.kind === 'assistant') {
+      expect(turns[0].blocks.map((item) => item.content)).toEqual([
+        'Use <sleep> only in prose.',
       ])
     }
   })

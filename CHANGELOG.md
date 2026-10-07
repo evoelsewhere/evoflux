@@ -21,6 +21,18 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Agents now wait with a real **`sleep`** tool instead of replying with the text
+  `<sleep>`. The tool takes no arguments, works for the lead and every member,
+  and its call is hidden from the transcript. The text marker is gone: a reply
+  containing `<sleep>` is just text. Saved conversations are cleaned on upgrade
+  — a trailing `<sleep>` / `[sleep]` is removed from old replies and nothing is
+  deleted.
+- Tool calls that models commonly get slightly wrong are now recoverable. A lone
+  string for `team_delegate`'s `to` (and `team_message`, `team_handoff`,
+  `team_reject`) is read as a one-element list, and `todo_manage` and
+  `team_delegate` now state their call shape — `actions=[{"action": ...}]`, not
+  `todos=` — in the description and show a valid example when validation fails,
+  so the model no longer repeats the same rejected call.
 - **OpenCode Zen** and **OpenCode Go** now send each model to the endpoint
   OpenCode documents for it: Claude, MiniMax and Qwen over Messages, GPT, Grok
   and Muse Spark over Responses, Gemini over its native API, and the open

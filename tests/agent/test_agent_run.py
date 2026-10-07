@@ -286,60 +286,38 @@ async def test_agent_run_returns_messages():
     assert last.content == "Hello!"
 
 
-async def test_agent_run_normalizes_chunked_sleep_suffix_before_hooks():
-    class CaptureDeltasHook(BaseAgentHook):
-        def __init__(self) -> None:
-            self.content: list[str] = []
-
-        async def on_model_delta(self, ctx, state, chunk) -> None:
-            if chunk.choices and chunk.choices[0].delta.content:
-                self.content.append(chunk.choices[0].delta.content)
-
-    provider = MockProvider(
-        [
-            [
-                make_text_chunk("Work is underway"),
-                make_text_chunk(" <"),
-                make_text_chunk("sle"),
-                make_text_chunk("ep>\n"),
-            ]
-        ]
-    )
-    capture = CaptureDeltasHook()
-    agent = Agent(name="bot", llm_provider=provider, hooks=[capture])
+async def test_agent_run_treats_sleep_text_as_ordinary_content():
+    """Waiting is the ``sleep`` tool; ``<sleep>`` in prose means nothing."""
+    provider = MockProvider([[make_text_chunk("Work is underway <sleep>")]])
+    agent = Agent(name="bot", llm_provider=provider)
 
     messages = await agent.run([HumanMessage(content="delegate")])
 
     last = last_assistant(messages)
     assert last is not None
-    assert last.content == "Work is underway"
-    assert last.extra and last.extra["lifecycle"] == "sleep"
-    assert "<sleep>" not in "".join(capture.content)
-
-
-@pytest.mark.parametrize("sentinel", ["<sleep>", "[sleep]"])
-async def test_agent_run_normalizes_exact_sleep_to_metadata(sentinel: str):
-    provider = MockProvider([[make_text_chunk(sentinel)]])
-    agent = Agent(name="bot", llm_provider=provider)
-
-    messages = await agent.run([HumanMessage(content="wait")])
-
-    last = last_assistant(messages)
-    assert last is not None
-    assert last.content is None
-    assert last.extra and last.extra["lifecycle"] == "sleep"
-
-
-async def test_agent_run_preserves_non_suffix_sleep_text():
-    provider = MockProvider([[make_text_chunk("Use <sleep> only while waiting.")]])
-    agent = Agent(name="bot", llm_provider=provider)
-
-    messages = await agent.run([HumanMessage(content="explain")])
-
-    last = last_assistant(messages)
-    assert last is not None
-    assert last.content == "Use <sleep> only while waiting."
+    assert last.content == "Work is underway <sleep>"
     assert not (last.extra and last.extra.get("lifecycle"))
+
+
+async def test_agent_run_stops_after_sleep_tool_without_another_model_call():
+    from app.agent.mode.team.sleep import make_sleep_tool
+
+    provider = MockProvider(
+        [
+            [make_tool_chunk("sleep", "call_sleep", "{}")],
+            [make_text_chunk("must never be requested")],
+        ]
+    )
+    agent = Agent(name="bot", llm_provider=provider, tools=[make_sleep_tool()])
+
+    messages = await agent.run([HumanMessage(content="wait for the member")])
+
+    assert [
+        message.content for message in messages if isinstance(message, ToolMessage)
+    ] == ["Sleeping until the next message."]
+    assert agent.stats.messages_count == 1
+    # The scripted second reply was never requested.
+    assert len(list(provider._responses)) == 1
 
 
 async def test_agent_run_stamps_agent_identity():

@@ -145,7 +145,7 @@ class TestProtocolInjection:
         prompt = await _get_injected_prompt(hook, state.system_prompt)
 
         assert "Communication protocol" in prompt
-        assert "ONLY tool calls" in prompt or "<sleep>" in prompt
+        assert "Call `sleep`" in prompt
 
     @pytest.mark.asyncio
     async def test_lead_gets_communication_rules(self):
@@ -233,11 +233,11 @@ class TestProtocolInjection:
             "Do not use plain text output for responses/results"
             in MEMBER_COMMUNICATION_RULES
         )
-        # Idle / waiting / done -> the only response is the sleep token.
-        assert "exactly `<sleep>`" in MEMBER_COMMUNICATION_RULES
+        # Idle / waiting / done -> call the ``sleep`` tool, never write text.
+        assert "Call `sleep`" in MEMBER_COMMUNICATION_RULES
         # Members can talk to peers directly, not lead-only.
         assert "Talk to peers directly" in MEMBER_COMMUNICATION_RULES
-        assert "return exactly `<sleep>` when waiting or idle" in MEMBER_PROTOCOL
+        assert "call `sleep` when waiting or idle" in MEMBER_PROTOCOL
 
 
 # ---------------------------------------------------------------------------
@@ -442,7 +442,7 @@ class TestProtocolConstants:
             ("repository scope", "target_repos"),
             ("worktree review", "team_worktree(action='review'"),
             ("worktree finalize", "team_worktree(action='finalize')"),
-            ("waiting", "exactly `<sleep>`"),
+            ("waiting", "Waiting on a member? Call `sleep`"),
             ("partial handoff", 'status: "partial"'),
             ("final handoff", 'wait for `"final"`'),
             ("handoff evidence fields", "`summary`, `findings`, `evidence`"),
@@ -469,6 +469,17 @@ class TestProtocolConstants:
         prompt = f"{LEAD_COMMUNICATION_RULES}\n\n{LEAD_PROTOCOL}"
         assert required in prompt, f"missing {contract} contract"
 
+    def test_prompts_never_teach_the_text_sleep_token(self):
+        """Waiting is the ``sleep`` tool; no prompt may mention ``<sleep>``."""
+        for prompt in (
+            LEAD_COMMUNICATION_RULES,
+            LEAD_PROTOCOL,
+            MEMBER_COMMUNICATION_RULES,
+            MEMBER_PROTOCOL,
+        ):
+            assert "<sleep>" not in prompt
+            assert "[sleep]" not in prompt
+
     def test_member_protocol_no_old_params(self):
         """Member protocol does not reference old mode/stop params."""
         assert "stop=true" not in MEMBER_PROTOCOL
@@ -478,7 +489,7 @@ class TestProtocolConstants:
 
     def test_member_protocol_has_workflow(self):
         assert "Member workflow" in MEMBER_PROTOCOL
-        assert "<sleep>" in MEMBER_PROTOCOL
+        assert "`sleep`" in MEMBER_PROTOCOL
         assert "todo_manage" in MEMBER_PROTOCOL
         assert "claim" in MEMBER_PROTOCOL
 
