@@ -4,7 +4,7 @@ The standard EvoFlux installer does not contain the speech engine or Whisper wei
 
 ## Build and verify assets
 
-1. Open **Actions → Local STT runtime** on a trusted branch.
+1. Ensure `.github/workflows/local-stt-runtime.yml` has been merged into the repository's default branch. GitHub only enables manual dispatch when a `workflow_dispatch` workflow exists on that branch. Then open **Actions → Local STT runtime** and select the trusted branch whose code should build the assets.
 2. Enter a new runtime version (for example, `0.1.0`) and leave **Publish verified assets** off for a verification run.
 3. Confirm the runtime builds and the offline model-load check succeeds on Windows x64, macOS Intel, macOS Apple Silicon, and Linux x64.
 4. Dispatch the workflow again with the same version and **Publish verified assets** on. This creates or updates the non-latest `local-stt-runtime-<version>` release with each platform runtime and the shared multilingual model.
