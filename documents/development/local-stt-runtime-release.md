@@ -27,14 +27,14 @@ Start or restart the EvoFlux sidecar/desktop app from that same PowerShell sessi
 
 ## Build and verify assets
 
-1. Ensure `.github/workflows/local-stt-runtime.yml` has been merged into the repository's default branch. GitHub only enables manual dispatch when a `workflow_dispatch` workflow exists on that branch. Then open **Actions → Local STT runtime** and select the trusted branch whose code should build the assets.
-2. Enter a new runtime version (for example, `0.1.0`) and leave **Publish verified assets** off for a verification run.
-3. Confirm the runtime builds and the offline model-load check succeeds on Windows x64, macOS Intel, macOS Apple Silicon, and Linux x64.
-4. Dispatch the workflow again with the same version and **Publish verified assets** on. This creates or updates the non-latest `local-stt-runtime-<version>` release with each platform runtime and the shared multilingual model.
+1. Open a pull request with runtime packaging changes. The workflow builds and verifies Windows x64, macOS Intel, macOS Apple Silicon, and Linux x64 on the PR without publishing a release.
+2. Review the matrix and offline model-load results before deciding whether to merge. PR workflow artifacts are temporary and are not used by app downloads.
+3. After the workflow is on the default branch, manually dispatch it from a trusted branch with **Publish verified assets** off for a separate verification run, if needed. GitHub requires a `workflow_dispatch` workflow on the default branch to enable manual dispatch.
+4. Dispatch the workflow with the same version and **Publish verified assets** on. This creates or updates the non-latest `local-stt-runtime-<version>` release with each platform runtime and the shared multilingual model.
 5. Copy the generated JSON manifest from the workflow summary into `PINNED_RUNTIME_ASSETS` and `PINNED_MODEL_ASSET` in `app/services/local_stt_runtime/manifest.py`. Keep the generated HTTPS URLs, byte sizes, and SHA-256 values unchanged.
 6. Review and release an EvoFlux app build containing those pins. The app's Settings screen can then show the download size and offer **Download to enable** on supported platforms.
 
-This workflow is manually triggered only; pull requests do not build or publish speech assets. Publishing requires explicitly selecting the publish input. The model is about 486 MB upstream; use the generated manifest as the authority for the actual download and installed sizes. Do not report a platform as available until its packaged app and local transcription have been checked on that platform.
+Pull request runs only build and verify; the publish job requires a manual dispatch and an explicit publish input. The model is about 486 MB upstream; use the generated manifest as the authority for the actual download and installed sizes. Do not report a platform as available until its packaged app and local transcription have been checked on that platform.
 
 ## Updating assets
 
