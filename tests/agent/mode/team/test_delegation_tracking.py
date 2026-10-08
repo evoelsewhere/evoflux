@@ -6,7 +6,7 @@ Covers:
 - team_handoff resolves pending delegations only on status="final"
 - TeamMemberBase._maybe_inject_delegation_wait_nudge: the system-level backstop
   that catches a lead answering before a delegated handoff arrives and forces
-  a <sleep>-and-wait correction on the next wake.
+  a `sleep`-and-wait correction on the next wake.
 """
 
 from __future__ import annotations
@@ -273,8 +273,11 @@ class TestLeadWaitNudge:
         await team.members["worker"]._maybe_inject_delegation_wait_nudge()
         assert team.mailbox.inbox_empty("worker")
 
-    async def test_noop_when_last_message_is_sleep(self):
-        team = await _make_team(rows=[_row("assistant", "<sleep>", None)])
+    async def test_noop_when_lead_already_slept(self):
+        """A ``sleep`` call leaves its tool result as the newest row."""
+        team = await _make_team(
+            rows=[_row("tool", "Sleeping until the next message.", None)]
+        )
         team.register_delegation("lead", ["executor#1"])
         await team.lead._maybe_inject_delegation_wait_nudge()
         assert team.mailbox.inbox_empty("lead")

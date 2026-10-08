@@ -45,6 +45,7 @@ from app.agent.mode.team.handoff import make_team_handoff_tool
 from app.agent.mode.team.manage import make_team_manage_tool
 from app.agent.mode.team.reject import make_team_reject_tool
 from app.agent.mode.team.shared_state import make_team_state_tool
+from app.agent.mode.team.sleep import make_sleep_tool
 from app.agent.mode.team.tools import make_team_message_tool
 from app.agent.mode.team.worktree import make_team_worktree_tool
 from app.agent.multimodal import build_parts_from_metas
@@ -2898,9 +2899,9 @@ class AgentTeam:
     def get_injected_tools(self, agent_name: str) -> list[Tool]:
         """Return runtime tools to inject into agent.run() for the given agent.
 
-        Everyone gets ``team_message`` and ``todo_manage`` so members can claim
-        assigned tasks. The lead additionally gets ``team_manage`` (roster
-        spawn/dismiss).
+        Everyone gets ``team_message``, ``todo_manage`` so members can claim
+        assigned tasks, and ``sleep`` to end a turn while waiting or idle. The
+        lead additionally gets ``team_manage`` (roster spawn/dismiss).
         """
         from app.agent.tools.builtin.todo import make_todo_manage_tool
 
@@ -2914,6 +2915,7 @@ class AgentTeam:
             ),
             make_todo_manage_tool(role),
             make_team_state_tool(agent_name),
+            make_sleep_tool(),
         ]
         if agent_name == self.lead.name:
             tools.append(make_team_manage_tool(self))

@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from app.agent.tools.coercion import StrList
 from app.agent.tools.registry import Tool
 
 if TYPE_CHECKING:
@@ -129,7 +130,7 @@ def make_team_reject_tool(
 
     async def team_reject(
         to: Annotated[
-            list[str],
+            StrList,
             Field(
                 description=(
                     "The member handle(s) whose handoff is being rejected "

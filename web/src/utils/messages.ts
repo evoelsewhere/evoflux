@@ -161,7 +161,6 @@ function assistantBlocks(
   const extra = msg.extra as {
     duration_ms?: number
     model?: unknown
-    lifecycle?: unknown
     turn_usage?: unknown
     usage?: unknown
     import_source?: Record<string, unknown>
@@ -169,12 +168,11 @@ function assistantBlocks(
   const importedSource = extra?.import_source
   const responseDurationMs = typeof extra?.duration_ms === 'number' ? extra.duration_ms : undefined
   const model = typeof extra?.model === 'string' ? extra.model : undefined
-  const lifecycle = extra?.lifecycle === 'sleep' ? 'sleep' : undefined
   const turnUsage = resolveTurnUsage(extra?.turn_usage, extra?.usage)
 
   // Me text before tools — LLM emits content first, then tool_calls
   const visibleImportedContent = legacyImportedText(msg.content || '')
-  if (visibleImportedContent || lifecycle) {
+  if (visibleImportedContent) {
     blocks.push({
       id: `${msg.id}:text`,
       type: 'text',
@@ -182,10 +180,9 @@ function assistantBlocks(
       timestamp,
       responseDurationMs,
       turnUsage,
-      extra: model || lifecycle || importedSource
+      extra: model || importedSource
         ? {
             ...(model ? { model } : {}),
-            ...(lifecycle ? { lifecycle } : {}),
             ...(importedSource ? { import_source: importedSource } : {}),
           }
         : undefined,

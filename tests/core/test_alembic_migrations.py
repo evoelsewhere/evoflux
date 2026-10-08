@@ -894,3 +894,98 @@ def test_a_database_left_on_a_retired_revision_still_starts(
         assert "asdd_change_id" not in columns
     finally:
         engine.dispose()
+
+
+def test_sleep_sentinel_migration_cleans_saved_history_in_place(tmp_path, monkeypatch):
+    """Both legacy forms of the ``<sleep>`` marker are removed; nothing else is.
+
+    Rows are updated, never deleted, so usage kept in ``extra`` survives.
+    """
+    import json
+
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "sleep-sentinel.sqlite"
+    monkeypatch.setattr(
+        settings, "DATABASE_URL", SecretStr(f"sqlite+aiosqlite:///{db_path}")
+    )
+    ini = Path(app.__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    command.upgrade(cfg, "00000073")
+
+    session = "a" * 32
+    usage = {"usage": {"input": 12, "output": 3}}
+    rows = {
+        # Raw text from before the marker moved into metadata.
+        "1": ("assistant", "<sleep>", None),
+        "2": ("assistant", "Work is underway. <sleep>\n", None),
+        "3": ("assistant", "Work is underway. [sleep]", usage),
+        # Metadata form: the flag goes, usage stays, text before it stays.
+        "4": ("assistant", None, {"lifecycle": "sleep", **usage}),
+        "5": ("assistant", "Delegated.", {"lifecycle": "sleep"}),
+        # Prose that merely mentions the token is not a marker.
+        "6": ("assistant", "Use <sleep> only in prose.", None),
+        "7": ("assistant", "The <sleep> marker is gone", {"lifecycle": "other"}),
+        # Only assistant turns are touched.
+        "8": ("user", "please <sleep>", None),
+        "9": ("assistant", "A normal answer.", usage),
+    }
+    ids = {key: key * 32 for key in rows}
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                sa.text(
+                    "INSERT INTO chat_sessions "
+                    "(id, created_at, updated_at, mode, permission_mode, session_type) "
+                    "VALUES (:id, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'work', "
+                    "'auto', 'main')"
+                ),
+                {"id": session},
+            )
+            for key, (role, content, extra) in rows.items():
+                conn.execute(
+                    sa.text(
+                        "INSERT INTO session_messages "
+                        "(id, session_id, role, content, extra, is_summary, "
+                        "exclude_from_context, created_at) VALUES "
+                        "(:id, :session, :role, :content, :extra, 0, 0, "
+                        "CURRENT_TIMESTAMP)"
+                    ),
+                    {
+                        "id": ids[key],
+                        "session": session,
+                        "role": role,
+                        "content": content,
+                        "extra": json.dumps(extra) if extra is not None else None,
+                    },
+                )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")
+
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.connect() as conn:
+            saved = {
+                row_id: (content, json.loads(extra) if extra else None)
+                for row_id, content, extra in conn.execute(
+                    sa.text("SELECT id, content, extra FROM session_messages")
+                ).all()
+            }
+    finally:
+        engine.dispose()
+
+    assert len(saved) == len(rows), "no row may be deleted"
+    assert saved[ids["1"]] == (None, None)
+    assert saved[ids["2"]] == ("Work is underway.", None)
+    assert saved[ids["3"]] == ("Work is underway.", usage)
+    assert saved[ids["4"]] == (None, usage)
+    assert saved[ids["5"]] == ("Delegated.", None)
+    assert saved[ids["6"]] == ("Use <sleep> only in prose.", None)
+    assert saved[ids["7"]] == ("The <sleep> marker is gone", {"lifecycle": "other"})
+    assert saved[ids["8"]] == ("please <sleep>", None)
+    assert saved[ids["9"]] == ("A normal answer.", usage)

@@ -286,60 +286,38 @@ async def test_agent_run_returns_messages():
     assert last.content == "Hello!"
 
 
-async def test_agent_run_normalizes_chunked_sleep_suffix_before_hooks():
-    class CaptureDeltasHook(BaseAgentHook):
-        def __init__(self) -> None:
-            self.content: list[str] = []
-
-        async def on_model_delta(self, ctx, state, chunk) -> None:
-            if chunk.choices and chunk.choices[0].delta.content:
-                self.content.append(chunk.choices[0].delta.content)
-
-    provider = MockProvider(
-        [
-            [
-                make_text_chunk("Work is underway"),
-                make_text_chunk(" <"),
-                make_text_chunk("sle"),
-                make_text_chunk("ep>\n"),
-            ]
-        ]
-    )
-    capture = CaptureDeltasHook()
-    agent = Agent(name="bot", llm_provider=provider, hooks=[capture])
+async def test_agent_run_treats_sleep_text_as_ordinary_content():
+    """Waiting is the ``sleep`` tool; ``<sleep>`` in prose means nothing."""
+    provider = MockProvider([[make_text_chunk("Work is underway <sleep>")]])
+    agent = Agent(name="bot", llm_provider=provider)
 
     messages = await agent.run([HumanMessage(content="delegate")])
 
     last = last_assistant(messages)
     assert last is not None
-    assert last.content == "Work is underway"
-    assert last.extra and last.extra["lifecycle"] == "sleep"
-    assert "<sleep>" not in "".join(capture.content)
-
-
-@pytest.mark.parametrize("sentinel", ["<sleep>", "[sleep]"])
-async def test_agent_run_normalizes_exact_sleep_to_metadata(sentinel: str):
-    provider = MockProvider([[make_text_chunk(sentinel)]])
-    agent = Agent(name="bot", llm_provider=provider)
-
-    messages = await agent.run([HumanMessage(content="wait")])
-
-    last = last_assistant(messages)
-    assert last is not None
-    assert last.content is None
-    assert last.extra and last.extra["lifecycle"] == "sleep"
-
-
-async def test_agent_run_preserves_non_suffix_sleep_text():
-    provider = MockProvider([[make_text_chunk("Use <sleep> only while waiting.")]])
-    agent = Agent(name="bot", llm_provider=provider)
-
-    messages = await agent.run([HumanMessage(content="explain")])
-
-    last = last_assistant(messages)
-    assert last is not None
-    assert last.content == "Use <sleep> only while waiting."
+    assert last.content == "Work is underway <sleep>"
     assert not (last.extra and last.extra.get("lifecycle"))
+
+
+async def test_agent_run_stops_after_sleep_tool_without_another_model_call():
+    from app.agent.mode.team.sleep import make_sleep_tool
+
+    provider = MockProvider(
+        [
+            [make_tool_chunk("sleep", "call_sleep", "{}")],
+            [make_text_chunk("must never be requested")],
+        ]
+    )
+    agent = Agent(name="bot", llm_provider=provider, tools=[make_sleep_tool()])
+
+    messages = await agent.run([HumanMessage(content="wait for the member")])
+
+    assert [
+        message.content for message in messages if isinstance(message, ToolMessage)
+    ] == ["Sleeping until the next message."]
+    assert agent.stats.messages_count == 1
+    # The scripted second reply was never requested.
+    assert len(list(provider._responses)) == 1
 
 
 async def test_agent_run_stamps_agent_identity():
@@ -1611,6 +1589,197 @@ async def test_stream_with_retry_on_connect_error():
 
     assert call_count == 2
     assert chunks[0].choices[0].delta.content == "reconnected"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "peer closed connection without sending complete message body "
+        "(incomplete chunked read)",
+        "Server disconnected without sending a response.",
+    ],
+)
+async def test_stream_with_retry_retries_remote_protocol_error(message: str):
+    """A peer that hangs up mid-response is a transient failure, not a dead turn."""
+    import httpx
+    from unittest.mock import patch
+
+    call_count = 0
+
+    async def mock_stream(
+        messages: list[ChatMessage],
+        tools: list[dict] | None = None,
+        **kwargs,
+    ):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            raise httpx.RemoteProtocolError(message)
+        yield make_text_chunk("recovered")
+
+    provider = MockProvider([[]])
+    provider.stream = mock_stream  # type: ignore[method-assign]
+    agent = Agent(name="bot", llm_provider=provider)
+
+    with patch("app.agent.agent_loop.retry.asyncio.sleep", new_callable=AsyncMock):
+        chunks = [
+            c
+            async for c in stream_with_retry(
+                **retry_args(agent), messages=[], tools=None
+            )
+        ]
+
+    assert call_count == 2
+    assert chunks[0].choices[0].delta.content == "recovered"
+
+
+async def test_remote_protocol_error_mid_stream_restarts_and_drops_the_partial():
+    """The restart path that already serves ReadTimeout serves this too."""
+    import httpx
+    from unittest.mock import patch
+
+    call_count = 0
+
+    async def cut_off_then_ok(
+        messages: list[ChatMessage],
+        tools: list[dict] | None = None,
+        **kwargs,
+    ):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield make_text_chunk("partial ")
+            raise httpx.RemoteProtocolError("incomplete chunked read")
+        yield make_text_chunk("Clean answer.")
+
+    provider = MockProvider([[]])
+    provider.stream = cut_off_then_ok  # type: ignore[method-assign]
+    agent = Agent(name="bot", llm_provider=provider)
+
+    with patch("app.agent.agent_loop.retry.asyncio.sleep", new_callable=AsyncMock):
+        msgs = await agent.run([HumanMessage(content="hi")])
+
+    last = last_assistant(msgs)
+    assert last is not None
+    assert last.content == "Clean answer."
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        "ReadError",
+        "WriteError",
+        "ConnectTimeout",
+        "WriteTimeout",
+        "PoolTimeout",
+        "RemoteProtocolError",
+    ],
+)
+async def test_transient_transport_errors_are_all_retried(error: str):
+    import httpx
+    from unittest.mock import patch
+
+    call_count = 0
+
+    async def mock_stream(
+        messages: list[ChatMessage],
+        tools: list[dict] | None = None,
+        **kwargs,
+    ):
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            raise getattr(httpx, error)("transient")
+        yield make_text_chunk("ok")
+
+    provider = MockProvider([[]])
+    provider.stream = mock_stream  # type: ignore[method-assign]
+    agent = Agent(name="bot", llm_provider=provider)
+
+    with patch("app.agent.agent_loop.retry.asyncio.sleep", new_callable=AsyncMock):
+        chunks = [
+            c
+            async for c in stream_with_retry(
+                **retry_args(agent), messages=[], tools=None
+            )
+        ]
+
+    assert call_count == 2
+    assert chunks[0].choices[0].delta.content == "ok"
+
+
+@pytest.mark.parametrize(
+    "error", ["LocalProtocolError", "UnsupportedProtocol", "ProxyError"]
+)
+async def test_misconfiguration_transport_errors_are_not_retried(error: str):
+    """Retrying cannot fix these, so they surface at once."""
+    import httpx
+    from unittest.mock import patch
+
+    call_count = 0
+
+    async def mock_stream(
+        messages: list[ChatMessage],
+        tools: list[dict] | None = None,
+        **kwargs,
+    ):
+        nonlocal call_count
+        call_count += 1
+        raise getattr(httpx, error)("misconfigured")
+        yield  # pragma: no cover — makes it an async generator
+
+    provider = MockProvider([[]])
+    provider.stream = mock_stream  # type: ignore[method-assign]
+    agent = Agent(name="bot", llm_provider=provider)
+
+    with patch("app.agent.agent_loop.retry.asyncio.sleep", new_callable=AsyncMock):
+        with pytest.raises(getattr(httpx, error)):
+            async for _ in stream_with_retry(
+                **retry_args(agent), messages=[], tools=None
+            ):
+                pass
+
+    assert call_count == 1
+
+
+async def test_agent_run_resumes_after_remote_protocol_error_mid_task():
+    """The turn-level resume covers a dropped connection after tool work too."""
+    import httpx
+    from unittest.mock import patch
+
+    call_count = 0
+
+    def lookup() -> str:
+        """Returns the value."""
+        return "value"
+
+    async def flaky_stream(
+        messages: list[ChatMessage],
+        tools: list[dict] | None = None,
+        **kwargs,
+    ):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield make_tool_chunk("lookup", "call_1", "{}")
+        elif call_count == 2:
+            raise httpx.RemoteProtocolError("incomplete chunked read")
+        else:
+            yield make_text_chunk("Recovered answer.")
+
+    provider = MockProvider([[]])
+    provider.stream = flaky_stream  # type: ignore[method-assign]
+    agent = Agent(name="bot", llm_provider=provider, tools=[Tool(lookup)])
+
+    with (
+        patch("app.agent.agent_loop.retry.asyncio.sleep", new_callable=AsyncMock),
+        patch("app.agent.agent_loop.core.asyncio.sleep", new_callable=AsyncMock),
+    ):
+        msgs = await agent.run([HumanMessage(content="lookup")])
+
+    last = last_assistant(msgs)
+    assert last is not None
+    assert last.content == "Recovered answer."
 
 
 async def test_stream_with_retry_exhausted_raises():

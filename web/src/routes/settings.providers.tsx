@@ -80,6 +80,9 @@ function providerKindLabel(kind: ProviderInfo['kind']): string {
   return 'Cloud'
 }
 
+/** API-key providers that publish live usage (OAuth providers always do). */
+const API_KEY_USAGE_PROVIDERS: ReadonlySet<string> = new Set(['opencode-go'])
+
 const DAEMON_BASE_URL: Record<string, { var: string; placeholder: string }> = {
   anthropic: { var: 'ANTHROPIC_BASE_URL', placeholder: 'https://api.anthropic.com' },
   openai: { var: 'OPENAI_BASE_URL', placeholder: 'https://api.openai.com/v1' },
@@ -90,6 +93,8 @@ const DAEMON_BASE_URL: Record<string, { var: string; placeholder: string }> = {
   xiaomi: { var: 'XIAOMI_BASE_URL', placeholder: 'https://api.xiaomi.com/v1' },
   stepfun: { var: 'STEPFUN_BASE_URL', placeholder: 'https://api.stepfun.ai/v1' },
   kimi: { var: 'MOONSHOT_BASE_URL', placeholder: 'https://api.kimi.com/coding/v1' },
+  opencode: { var: 'OPENCODE_BASE_URL', placeholder: 'https://opencode.ai/zen/v1' },
+  'opencode-go': { var: 'OPENCODE_GO_BASE_URL', placeholder: 'https://opencode.ai/zen/go/v1' },
   fci: { var: 'FCI_BASE_URL', placeholder: 'https://mkp-api.fptcloud.com/v1' },
 }
 
@@ -365,8 +370,8 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
   const hasVerifiedCloud = verifiedCloudSignature === cloudSignature && hasCloudCandidate
   const hasSavedBaseUrlChange = provider.is_saved && daemon !== undefined && trimmedBaseUrl !== savedBaseUrl
   const canSave =
-    ((provider.kind === 'api_key' || provider.kind === 'oauth') && (hasVerifiedKey || hasSavedBaseUrlChange)) ||
-    (provider.kind === 'cloud_creds' && hasVerifiedCloud)
+    ((provider.kind === 'api_key' || provider.kind === 'oauth') && (hasCandidateKey || hasSavedBaseUrlChange)) ||
+    (provider.kind === 'cloud_creds' && hasCloudCandidate)
 
   const extraForRequest = useMemo<Record<string, string> | undefined>(() => {
     if (!daemon || !trimmedBaseUrl) return undefined
@@ -386,10 +391,9 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
     enabled: autoFetchEnabled,
     staleTime: 60_000,
   })
-  const usageQ = useProviderUsageQuery(
-    provider.id,
-    provider.kind === 'oauth' && provider.is_configured,
-  )
+  const hasUsagePanel =
+    (provider.kind === 'oauth' || API_KEY_USAGE_PROVIDERS.has(provider.id)) && provider.is_configured
+  const usageQ = useProviderUsageQuery(provider.id, hasUsagePanel)
 
   const models = useMemo<string[]>(
     () => autoModelsQ.data?.models ?? [],
@@ -405,7 +409,8 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
     [autoModelsQ.data?.model_details],
   )
 
-  const handleListModels = async () => {
+  /** Lists the provider's models with the typed credentials; true when the provider answered. */
+  const handleListModels = async (): Promise<boolean> => {
     try {
       const listed = await modelsMutation.mutateAsync({
         providerId: provider.id,
@@ -426,6 +431,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
           description: 'Provider is unreachable.',
         })
       }
+      return reachedProvider
     } catch (err) {
       setHasReachabilityFailure(true)
       push({
@@ -433,10 +439,16 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
         title: 'Could not list models',
         description: err instanceof Error ? err.message : String(err),
       })
+      return false
     }
   }
 
   const handleSave = async () => {
+    // A new credential is verified by listing the provider's models first;
+    // the list then stays on screen, so Save is also how models are loaded.
+    const hasNewCredential =
+      (provider.kind === 'api_key' && hasCandidateKey) || (provider.kind === 'cloud_creds' && hasCloudCandidate)
+    if (hasNewCredential && !(await handleListModels())) return
     try {
       const extraForSave =
         provider.kind === 'cloud_creds'
@@ -613,20 +625,10 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                   <Button
                     type="button"
                     size="sm"
-                    variant="outline"
-                    onClick={handleListModels}
-                    disabled={(!hasCandidateKey && !provider.is_saved) || listing}
-                  >
-                    {listing && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-                    List models
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
                     onClick={handleSave}
-                    disabled={!canSave || saveMutation.isPending}
+                    disabled={!canSave || saveMutation.isPending || listing}
                   >
-                    {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                    {(saveMutation.isPending || listing) && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                     Save
                   </Button>
                   {provider.is_configured && (
@@ -648,7 +650,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                 )}
                 {hasCandidateKey && !hasVerifiedKey && (
                   <p className="text-xs text-(--color-text-muted)">
-                    Click <span className="font-medium text-(--color-text)">List models</span> to verify this key before saving.
+                    Click <span className="font-medium text-(--color-text)">Save</span> to verify this key and load its models.
                   </p>
                 )}
                 {!hasCandidateKey && provider.is_configured && (
@@ -755,12 +757,8 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                   ))}
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button type="button" size="sm" variant="outline" onClick={handleListModels} disabled={!hasCloudCandidate || listing}>
-                    {listing && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-                    List models
-                  </Button>
-                  <Button type="button" size="sm" onClick={handleSave} disabled={!canSave || saveMutation.isPending}>
-                    {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                  <Button type="button" size="sm" onClick={handleSave} disabled={!canSave || saveMutation.isPending || listing}>
+                    {(saveMutation.isPending || listing) && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                     Save
                   </Button>
                   {provider.is_configured && (
@@ -771,7 +769,7 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
                 </div>
                 {hasCloudCandidate && !hasVerifiedCloud && (
                   <p className="text-xs text-(--color-text-muted)">
-                    Click <span className="font-medium">List models</span> to verify these credentials before saving.
+                    Click <span className="font-medium">Save</span> to verify these credentials and load their models.
                   </p>
                 )}
                 {!hasCloudCandidate && provider.is_configured && (
@@ -790,8 +788,8 @@ function ProviderCard({ provider }: { provider: ProviderInfo }) {
             )}
           </div>
 
-          {/* ── OAuth usage panel ───────────────────────────────────────────── */}
-          {provider.kind === 'oauth' && provider.is_configured && (
+          {/* ── Usage panel (OAuth providers and subscription API keys) ─────── */}
+          {hasUsagePanel && (
             <div className="space-y-2">
               {usageQ.isLoading ? (
                 <div

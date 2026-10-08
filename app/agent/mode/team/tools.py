@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 from pydantic import Field
 
+from app.agent.tools.coercion import StrList
 from app.agent.tools.registry import Tool
 from app.uuid7 import uuid7
 
@@ -61,7 +62,7 @@ def make_team_message_tool(
 
     async def team_message(
         to: Annotated[
-            list[str],
+            StrList,
             Field(
                 description=(
                     "Recipient names — exact instance handles "

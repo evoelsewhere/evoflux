@@ -205,6 +205,7 @@ class Tool:
         observation_key: Callable[[dict[str, Any]], str | None] | None = None,
         observation_range: Callable[[dict[str, Any]], ObservationRange | None]
         | None = None,
+        usage_example: str | None = None,
     ) -> None:
         self._func = func
         # ``Callable`` is the abstract type; only function objects guarantee
@@ -253,6 +254,11 @@ class Tool:
         self.observation_kind = observation_kind
         self.observation_key = observation_key
         self.observation_range = observation_range
+        # A literal, valid call. Appended to argument-validation errors so a
+        # model that got the shape wrong sees the shape that works: Pydantic
+        # names the missing field but not what its value should look like, and
+        # a model that cannot see the difference repeats the same call.
+        self.usage_example = usage_example
 
         self._model, self._definition, self._injected_params = self._build()
         self._description_factory: Callable[[], str] | None = (
@@ -325,9 +331,10 @@ class Tool:
         try:
             validated_model = self._model(**llm_kwargs)
         except ValidationError as exc:
-            raise ToolArgumentError(
-                f"Invalid arguments for tool '{self.name}': {exc}"
-            ) from exc
+            message = f"Invalid arguments for tool '{self.name}': {exc}"
+            if self.usage_example:
+                message += f"\nExample of a valid call: {self.usage_example}"
+            raise ToolArgumentError(message) from exc
         # Build kwargs from model attributes — preserves nested Pydantic model
         # instances (e.g. list[RememberItem]) instead of collapsing them to dicts
         # as model_dump() would do.

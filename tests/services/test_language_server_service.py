@@ -118,3 +118,175 @@ async def test_npm_installer_uses_fixed_registry_and_disables_scripts(
         "NPM_CONFIG_CACHE": str(tmp_path / ".npm-cache"),
         "NPM_CONFIG_UPDATE_NOTIFIER": "false",
     }
+
+
+# ---------------------------------------------------------------------------
+# Activating a staged install on Windows
+# ---------------------------------------------------------------------------
+
+
+def _make_stage(parent: Path, name: str = ".bash-install-rd96ikj2") -> Path:
+    stage = parent / name
+    (stage / "bin").mkdir(parents=True)
+    (stage / "bin" / "server").write_text("ok", encoding="utf-8")
+    return stage
+
+
+class _LockedRename:
+    """Make the first *failures* renames of a path raise like Windows does."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, failures: int) -> None:
+        self.remaining = failures
+        self.attempts = 0
+        real_rename = Path.rename
+
+        def rename(path: Path, target):  # type: ignore[no-untyped-def]
+            self.attempts += 1
+            if self.remaining > 0:
+                self.remaining -= 1
+                raise PermissionError(
+                    5, "Access is denied", str(path), None, str(target)
+                )
+            return real_rename(path, target)
+
+        monkeypatch.setattr(Path, "rename", rename)
+        monkeypatch.setattr(service.time, "sleep", lambda _seconds: None)
+
+
+def test_activate_stage_rides_out_a_transient_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """``PermissionError: [WinError 5] '.bash-install-…' -> 'bash'`` was a moment's
+    lock from the scanner or the old server, not a failed install."""
+    stage = _make_stage(tmp_path)
+    target = tmp_path / "bash"
+    lock = _LockedRename(monkeypatch, failures=3)
+
+    service._activate_stage(stage, target)
+
+    assert lock.attempts == 4
+    assert (target / "bin" / "server").read_text(encoding="utf-8") == "ok"
+    assert not stage.exists()
+
+
+def test_activate_stage_replaces_an_existing_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    target = tmp_path / "bash"
+    (target / "bin").mkdir(parents=True)
+    (target / "bin" / "server").write_text("old", encoding="utf-8")
+    stage = _make_stage(tmp_path)
+    _LockedRename(monkeypatch, failures=2)
+
+    service._activate_stage(stage, target)
+
+    assert (target / "bin" / "server").read_text(encoding="utf-8") == "ok"
+    assert not list(tmp_path.glob(".bash.previous-*"))
+
+
+def test_activate_stage_gives_up_with_a_readable_error_and_keeps_the_old_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    target = tmp_path / "bash"
+    (target / "bin").mkdir(parents=True)
+    (target / "bin" / "server").write_text("old", encoding="utf-8")
+    stage = _make_stage(tmp_path)
+    real_rename = Path.rename
+
+    def rename(path: Path, destination):  # type: ignore[no-untyped-def]
+        # Moving the old install aside works; moving the new one in never does.
+        if path == stage:
+            raise PermissionError(
+                5, "Access is denied", str(path), None, str(destination)
+            )
+        return real_rename(path, destination)
+
+    monkeypatch.setattr(Path, "rename", rename)
+    monkeypatch.setattr(service.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(service.LanguageServerInstallError, match="still has files"):
+        service._activate_stage(stage, target)
+
+    assert (target / "bin" / "server").read_text(encoding="utf-8") == "old"
+    assert not list(tmp_path.glob(".bash.previous-*"))
+
+
+def test_remove_stale_install_dirs_only_touches_this_servers_leftovers(
+    tmp_path: Path,
+):
+    stale_stage = _make_stage(tmp_path, ".bash-install-aaaa1111")
+    stale_backup = _make_stage(tmp_path, ".bash.previous-1234")
+    other_stage = _make_stage(tmp_path, ".python-install-bbbb2222")
+    live = tmp_path / "bash"
+    live.mkdir()
+
+    service._remove_stale_install_dirs(tmp_path, "bash")
+
+    assert not stale_stage.exists()
+    assert not stale_backup.exists()
+    assert other_stage.exists()
+    assert live.exists()
+
+
+@pytest.mark.asyncio
+async def test_install_stops_the_running_server_before_swapping_directories(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The old server's open files are what blocks the rename on Windows."""
+    monkeypatch.setattr(service.settings, "EVOFLUX_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setattr(
+        service.shutil,
+        "which",
+        lambda name: "/usr/bin/npm" if name == "npm" else None,
+    )
+    order: list[str] = []
+
+    async def close(_language_id: str) -> None:
+        order.append("close")
+
+    real_activate = service._activate_stage
+
+    def activate(stage: Path, target: Path) -> None:
+        order.append("activate")
+        real_activate(stage, target)
+
+    async def fake_install(recipe: service.InstallRecipe, stage: Path) -> None:
+        executable = stage / "node_modules" / ".bin" / "typescript-language-server"
+        executable.parent.mkdir(parents=True)
+        executable.write_text("#!/bin/sh\n", encoding="utf-8")
+        executable.chmod(0o755)
+
+    monkeypatch.setattr(service, "close_language_servers", close)
+    monkeypatch.setattr(service, "_activate_stage", activate)
+    monkeypatch.setattr(service, "_install_into_stage", fake_install)
+
+    await service.install_language_server("typescript")
+
+    assert order == ["close", "activate"]
+
+
+@pytest.mark.asyncio
+async def test_install_clears_staging_left_by_a_crashed_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    cache = tmp_path / "cache"
+    monkeypatch.setattr(service.settings, "EVOFLUX_CACHE_DIR", str(cache))
+    monkeypatch.setattr(
+        service.shutil,
+        "which",
+        lambda name: "/usr/bin/npm" if name == "npm" else None,
+    )
+    monkeypatch.setattr(service, "close_language_servers", AsyncMock())
+    leftover = _make_stage(cache / "language-servers", ".typescript-install-dead0000")
+
+    async def fake_install(recipe: service.InstallRecipe, stage: Path) -> None:
+        executable = stage / "node_modules" / ".bin" / "typescript-language-server"
+        executable.parent.mkdir(parents=True)
+        executable.write_text("#!/bin/sh\n", encoding="utf-8")
+        executable.chmod(0o755)
+
+    monkeypatch.setattr(service, "_install_into_stage", fake_install)
+
+    await service.install_language_server("typescript")
+
+    assert not leftover.exists()

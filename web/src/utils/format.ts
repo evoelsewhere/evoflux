@@ -1,24 +1,3 @@
-/**
- * Me check if content ends with a sleep sentinel.
- * Returns the text before the sentinel (may be empty), or null if not present.
- */
-export function extractSleepPrefix(content: string): string | null {
-  const trimmed = content.trimEnd()
-  if (trimmed.endsWith('<sleep>')) return trimmed.slice(0, -'<sleep>'.length).trimEnd()
-  if (trimmed.endsWith('[sleep]')) return trimmed.slice(0, -'[sleep]'.length).trimEnd()
-  return null
-}
-
-/** Me check if content ends with a sleep sentinel */
-export function isSleepMessage(content: string): boolean {
-  return extractSleepPrefix(content) !== null
-}
-
-/** Runtime-owned replacement for the legacy text sentinel. */
-export function hasSleepLifecycle(extra?: Record<string, unknown> | null): boolean {
-  return extra?.lifecycle === 'sleep'
-}
-
 export function shortId(id: string): string {
   return id.slice(0, 8)
 }
@@ -205,10 +184,7 @@ import type { ContentBlock } from '@/api/types'
 /**
  * Extract copyable text from the last agent turn in a flat block list.
  *
- * A turn starts after the last `user` block. Within the turn, sleep-sentinel
- * text blocks (`<sleep>` / `[sleep]`) are stripped — they are internal signals,
- * not response content. For a text block that ends with a sentinel the prefix
- * before the sentinel is kept (it may still contain real content).
+ * A turn starts after the last `user` block; its text blocks are joined.
  *
  * Returns empty string when there is no assistant text in the last turn.
  */
@@ -227,14 +203,7 @@ export function lastTurnText(blocks: ContentBlock[]): string {
 
   for (const block of turnBlocks) {
     if (block.type !== 'text') continue
-    const sleepPrefix = extractSleepPrefix(block.content)
-    if (sleepPrefix !== null) {
-      // Block ends with a sentinel — keep any real content before it
-      if (sleepPrefix.length > 0) parts.push(sleepPrefix)
-      // Skip the sentinel itself — it's an internal signal
-    } else {
-      parts.push(block.content)
-    }
+    parts.push(block.content)
   }
 
   return parts.join('\n\n')

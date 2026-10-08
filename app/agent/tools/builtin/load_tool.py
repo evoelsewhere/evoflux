@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Annotated, Any
 
 from loguru import logger
-from pydantic import BeforeValidator, Field
+from pydantic import Field
 
+from app.agent.tools.coercion import StrList
 from app.agent.tools.registry import DeferredToolEntry, InjectedArg, tool
 
 
@@ -58,17 +58,6 @@ def _query_terms(query: str, vocabulary: frozenset[str]) -> set[str]:
     return meaningful or terms
 
 
-def _coerce_tool_names(value: Any) -> Any:
-    """Accept a JSON-array string emitted by models that double-encode arguments."""
-    if not isinstance(value, str):
-        return value
-    try:
-        decoded = json.loads(value)
-    except (TypeError, ValueError):
-        return value
-    return decoded if isinstance(decoded, list) else value
-
-
 @tool(
     name="load_tool",
     description=(
@@ -85,8 +74,7 @@ async def load_tool(
         Field(description="Exact deferred tool name returned by a prior search."),
     ] = None,
     tool_names: Annotated[
-        list[str] | None,
-        BeforeValidator(_coerce_tool_names),
+        StrList | None,
         Field(description="Exact deferred tool names to activate together."),
     ] = None,
     query: Annotated[

@@ -20,13 +20,12 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Generic, TypeVar
 
-import httpx
 from loguru import logger
 
+from app.agent.agent_loop.retry import TRANSIENT_TRANSPORT_ERRORS
 from app.agent.agent_loop.streaming import stream_and_assemble
 from app.agent.agent_loop.tool_dispatch import gather_or_cancel, run_serially
 from app.agent.agent_loop.tool_executor import make_tool_executor
-from app.agent.lifecycle import normalize_sleep_message
 from app.agent.usage import usage_to_dict
 from app.agent.checkpointer import Checkpointer
 from app.agent.errors import ContextOverflowError
@@ -64,8 +63,8 @@ MAX_AGENT_ITERATIONS = 5000
 MAX_CONCURRENT_TOOLS = 10
 # How many times the loop will re-issue the model call within the same turn
 # after the provider (and any fallback) exhausts its own retry budget on a
-# transient connectivity failure (ReadTimeout / ConnectError).  Without this,
-# such an exhaustion raises straight out of ``run()`` and abandons all
+# transient connectivity failure (timeout, dropped or half-closed connection).
+# Without this, such an exhaustion raises straight out of ``run()`` and abandons all
 # completed tool work mid-task — the "agent stopped after a tool call" symptom.
 MAX_PROVIDER_RESUME_ATTEMPTS = 5
 # Base backoff (seconds) between in-loop resume attempts; grows linearly.
@@ -842,7 +841,7 @@ class Agent(Generic[TContext]):
                 )
                 iteration -= 1  # this iteration produced no assistant message
                 continue
-            except (httpx.ConnectError, httpx.ReadTimeout, TimeoutError) as exc:
+            except TRANSIENT_TRANSPORT_ERRORS as exc:
                 # The provider (and any fallback) exhausted its retry budget on
                 # a transient connectivity failure.  Rather than letting this
                 # kill the whole turn mid-task — abandoning the tool work
@@ -901,13 +900,6 @@ class Agent(Generic[TContext]):
                 overflow_compaction_pending = False
                 state.metadata.pop("force_summarization", None)
 
-            # Convert the legacy model-facing sentinel into runtime-owned
-            # metadata before after_model hooks, persistence, or completion
-            # logic inspect the response. Streaming providers normally arrive
-            # normalized by stream_and_assemble; this also covers hooks that
-            # replace it.
-            _is_sleep = normalize_sleep_message(assistant_msg)
-
             tc_list = assistant_msg.tool_calls or []
             last_usage = iter_usage_holder[0]
             effective_model = state.metadata.pop("effective_model", None)
@@ -929,8 +921,7 @@ class Agent(Generic[TContext]):
             )
 
             has_assistant_payload = bool(
-                _is_sleep
-                or (assistant_msg.content and assistant_msg.content.strip())
+                (assistant_msg.content and assistant_msg.content.strip())
                 or (
                     assistant_msg.reasoning_content
                     and assistant_msg.reasoning_content.strip()
@@ -1032,10 +1023,9 @@ class Agent(Generic[TContext]):
                     )
                     continue
                 logger.debug(
-                    "agent_iteration_done agent={} iteration={} action={}",
+                    "agent_iteration_done agent={} iteration={} action=final_response",
                     self.name,
                     iteration,
-                    "sleep" if _is_sleep else "final_response",
                 )
                 break
 
@@ -1222,15 +1212,6 @@ class Agent(Generic[TContext]):
                     self.name,
                     iteration,
                     stop_after_tool,
-                )
-                break
-
-            # Me sleep + tool calls: tools executed, now exit without another LLM call
-            if _is_sleep:
-                logger.debug(
-                    "agent_iteration_done agent={} iteration={} action=sleep_after_tools",
-                    self.name,
-                    iteration,
                 )
                 break
 
