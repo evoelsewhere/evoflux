@@ -46,6 +46,11 @@ def ensure_workspace_initialized() -> None:
         backfill_placeholder_agent_models,
         ensure_builtin_agent_blueprints,
     )
+    from app.cli.seed import prune_retired_first_party_agents
+
+    retired_removed = prune_retired_first_party_agents(agents_dir)
+    if retired_removed:
+        logger.info("workspace_retired_agents_removed files={}", retired_removed)
 
     default_written = ensure_builtin_agent_blueprints(agents_dir, mode="work")
     coding_written = ensure_builtin_agent_blueprints(

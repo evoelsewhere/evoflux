@@ -6,7 +6,6 @@ import {
   Compass,
   DraftingCompass,
   Hammer,
-  Scale,
   Sparkles,
   type LucideIcon,
 } from 'lucide-react'
@@ -27,7 +26,6 @@ export type AgentVisualKind =
   | 'executor'
   | 'explorer'
   | 'consultant'
-  | 'debate'
   | 'coder'
   | 'architect'
   | 'custom'
@@ -68,13 +66,6 @@ export const AGENT_IDENTITY_VISUALS: Record<AgentVisualKind, AgentIdentityVisual
     accent: 'text-(--color-marker-yellow)',
     soft: 'bg-(--color-warning-subtle)',
     border: 'border-(--color-marker-yellow)/30',
-  },
-  debate: {
-    label: 'Debate',
-    icon: Scale,
-    accent: 'text-(--color-marker-pink)',
-    soft: 'bg-(--accent-pink-soft)',
-    border: 'border-(--color-marker-pink)/30',
   },
   coder: {
     label: 'Coder',
@@ -118,8 +109,8 @@ export const AGENT_TEAM_VISUALS: Record<AgentTeam, AgentTeamVisual> = {
   },
 }
 
-const WORK_BUILT_INS = new Set(['executor', 'explorer', 'consultant', 'debate'])
-const CODING_BUILT_INS = new Set(['coder', 'explorer', 'debate', 'architect'])
+const WORK_BUILT_INS = new Set(['executor', 'explorer', 'consultant'])
+const CODING_BUILT_INS = new Set(['coder', 'explorer', 'architect'])
 
 export function agentTeamFromName(name: string): AgentTeam {
   if (name.startsWith('coding/')) return 'coding'

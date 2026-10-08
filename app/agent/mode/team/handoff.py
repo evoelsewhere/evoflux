@@ -141,7 +141,7 @@ _HANDOFF_LEAD_DESCRIPTION = (
 
 _HANDOFF_MEMBER_DESCRIPTION = (
     "Deliver your work output as a structured artifact. "
-    "REQUIRED for all final deliverables — use team_message only for quick questions "
+    "Required for every final deliverable — use team_message only for quick questions "
     "or clarifications. The artifact's summary, findings, and evidence fields let "
     "the recipient act on your work without re-parsing prose."
 )

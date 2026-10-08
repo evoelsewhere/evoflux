@@ -755,7 +755,7 @@ def test_bootstrap_materializes_then_loader_reads_coding_builtin_members(tmp_pat
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer", "debate", "architect"}
+    assert set(team.blueprints) == {"coder", "explorer", "architect"}
     assert (d / "coder.md").is_file()
     assert (d / "explorer.md").is_file()
     assert "model: zai:glm-5-turbo" in (d / "explorer.md").read_text(encoding="utf-8")
@@ -960,12 +960,10 @@ def test_builtin_member_profiles_are_curated_to_default_agents():
         "executor",
         "explorer",
         "consultant",
-        "debate",
     }
     assert set(BUILTIN_MEMBER_PROFILES["coding"]) == {
         "coder",
         "explorer",
-        "debate",
         "architect",
     }
     for profiles in BUILTIN_MEMBER_PROFILES.values():

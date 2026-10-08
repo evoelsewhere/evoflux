@@ -4,7 +4,32 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- The built-in agent and team prompts now ask agents to scale their effort to
+  the task instead of always running a fixed, exhaustive procedure. Members no
+  longer have to use "3+ sources" for every question, rebuild a weighted matrix
+  or full assumptions table for small decisions, or re-read files they just
+  wrote; **explorer** and **consultant** now stop once the evidence answers the
+  question and lead their reports with the answer or recommendation. The
+  Work assistant answers quick questions directly instead of defaulting to long,
+  heavily formatted replies. Members are also told correctly that read-only
+  research hands off with `verified=False` rather than omitting verification,
+  which the runtime would have rejected.
+
+### Removed
+
+- The built-in **debate** member is gone from both the Work and Coding teams.
+  The lead no longer offers it as a specialist and new workspaces no longer
+  create `debate.md`. An existing `agents/debate.md` or
+  `agents/coding/debate.md` you never edited is removed on the next start;
+  one with your own prompt text stays as an ordinary custom agent.
+
+### Upgrade notes
+
+- If you relied on **debate** for reviews, keep your edited `debate.md` (it now
+  runs as a custom agent with only your text as its prompt) or ask the lead to
+  have **consultant** or **architect** review the work instead.
 
 ## [3.0.5] - 2026-10-08
 

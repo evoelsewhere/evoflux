@@ -928,9 +928,9 @@ Your working directory is the wiki root.  Use ``ls`` and ``read`` to inspect:
 - ``USER.md``, ``INDEX.md``, ``LOG.md`` (root files)
 - ``topics/``, ``entities/``, ``sources/``, ``comparisons/`` (knowledge pages)
 
-**YOU MUST WRITE A REPORT.**  The final action of this turn is a single
+**Always write a report.**  The final action of this turn is a single
 ``write`` call to ``LINT.md`` — even when the wiki is healthy and there
-are no issues.  Skipping the write is a failure mode.
+are no issues.
 
 Check for issues across these categories:
 
