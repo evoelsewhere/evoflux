@@ -21,12 +21,17 @@ All notable changes to EvoFlux are documented in this file.
 
 - **Settings → Telemetry** keeps recording on machines where another tool sets
   `OTEL_EXPORTER_OTLP_ENDPOINT` (the GitHub Copilot CLI, for example). EvoFlux
-  no longer treats that machine-wide variable as a replacement for its own
-  exporter: span and metric files are always written, so the Telemetry page
-  stops going blank. Forwarding to an OTLP collector is now opt-in through
-  `EVOFLUX_OTEL_OTLP_ENDPOINT`, which keeps writing the local files as well, and
-  a missing `opentelemetry-exporter-otlp-proto-grpc` logs
-  `otel_otlp_exporter_unavailable` instead of failing silently.
+  no longer treats machine-wide `OTEL_*` variables as its own configuration:
+  span and metric files are always written, so the Telemetry page stops going
+  blank, `OTEL_RESOURCE_ATTRIBUTES` no longer stamps another tool's host and org
+  onto EvoFlux records, and the generic OTLP headers, protocol and certificate
+  variables are hidden while EvoFlux builds its exporter so foreign credentials
+  never travel with EvoFlux spans. Forwarding to a collector is opt-in through
+  `EVOFLUX_OTEL_OTLP_ENDPOINT`, with `EVOFLUX_OTEL_OTLP_PROTOCOL`,
+  `EVOFLUX_OTEL_OTLP_HEADERS`, `EVOFLUX_OTEL_OTLP_TIMEOUT` and
+  `EVOFLUX_OTEL_RESOURCE_ATTRIBUTES` replacing what the generic variables used
+  to do; a missing exporter package logs `otel_otlp_exporter_unavailable`
+  instead of failing silently.
 
 ### Removed
 

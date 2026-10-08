@@ -83,6 +83,10 @@ before atomic save. Models use `provider:model`.
 | `EVOFLUX_BASH` | explicit Bash executable on Windows when auto-detection fails |
 | `EVOFLUX_WEBBRIDGE_EXTENSION_IDS` | optional allowed extension IDs |
 | `EVOFLUX_OTEL_OTLP_ENDPOINT` | also forward spans to an OTLP collector; local telemetry files are still written |
+| `EVOFLUX_OTEL_OTLP_PROTOCOL` | forwarder protocol: `grpc` (default) or `http/protobuf` |
+| `EVOFLUX_OTEL_OTLP_HEADERS` | `key=value,key2=value2` headers sent with each forwarded batch |
+| `EVOFLUX_OTEL_OTLP_TIMEOUT` | forwarder export timeout in seconds |
+| `EVOFLUX_OTEL_RESOURCE_ATTRIBUTES` | extra resource attributes on EvoFlux telemetry, `key=value,key2=value2` |
 
 ## Provider credentials
 
