@@ -120,6 +120,13 @@ import {
   codeReviewSessionTags,
   parseCodeReviewSessionTags,
 } from '@/lib/code-review-session'
+import {
+  consumeSkillRecordingChatHandoff,
+  createSkillRecordingChatFile,
+  loadCachedSkillRecordingChatHandoff,
+  SKILL_RECORDING_CHAT_PROMPT,
+  subscribeSkillRecordingChatHandoff,
+} from '@/lib/skill-recording-chat'
 
 const WorkspaceFilesPanel = lazy(() =>
   import('@/components/WorkspaceFilesPanel').then((module) => ({
@@ -349,6 +356,30 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   const [webBridgeDialogOpen, setWebBridgeDialogOpen] = useState(false)
   const [pendingCodeReviewStart, setPendingCodeReviewStart] =
     useState<PendingCodeReviewStart | null>(null)
+  const [skillRecordingHandoffRevision, setSkillRecordingHandoffRevision] = useState(0)
+  const newChatDraft = useTeamStore((state) => state.newChatDraft)
+
+  useEffect(() => {
+    return subscribeSkillRecordingChatHandoff(() => {
+      setSkillRecordingHandoffRevision((revision) => revision + 1)
+    })
+  }, [])
+
+  useEffect(() => {
+    const fillComposer = () => {
+      const stagedHandoff = consumeSkillRecordingChatHandoff()
+      const handoff = stagedHandoff ?? (
+        mode === 'work' && !sessionId
+          ? loadCachedSkillRecordingChatHandoff()
+          : null
+      )
+      if (!handoff || !inputRef.current?.isEmpty()) return
+      inputRef.current?.setValue(SKILL_RECORDING_CHAT_PROMPT)
+      inputRef.current?.setFiles([createSkillRecordingChatFile(handoff)])
+      inputRef.current?.focus()
+    }
+    fillComposer()
+  }, [mode, newChatDraft, sessionId, skillRecordingHandoffRevision])
 
   // On mobile, always force agent view — split requires a wide screen.
   // Also close any desktop-only panels when shrinking to mobile.

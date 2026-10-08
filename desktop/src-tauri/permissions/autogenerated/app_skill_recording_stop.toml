@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-skill-recording-stop"
+description = "Enables the app_skill_recording_stop command without any pre-configured scope."
+commands.allow = ["app_skill_recording_stop"]
+
+[[permission]]
+identifier = "deny-app-skill-recording-stop"
+description = "Denies the app_skill_recording_stop command without any pre-configured scope."
+commands.deny = ["app_skill_recording_stop"]

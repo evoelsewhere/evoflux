@@ -72,6 +72,7 @@ export const FloatingInputBar = forwardRef<InputBarHandle, FloatingInputBarProps
 
     useImperativeHandle(ref, () => ({
       focus: () => innerRef.current?.focus(),
+      isEmpty: () => innerRef.current?.isEmpty() ?? true,
       setValue: (text: string) => innerRef.current?.setValue(text),
       appendValue: (text: string) => innerRef.current?.appendValue(text),
       insertText: (text: string) => innerRef.current?.insertText(text),

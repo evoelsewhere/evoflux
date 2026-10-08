@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-app-skill-recording-start"
+description = "Enables the app_skill_recording_start command without any pre-configured scope."
+commands.allow = ["app_skill_recording_start"]
+
+[[permission]]
+identifier = "deny-app-skill-recording-start"
+description = "Denies the app_skill_recording_start command without any pre-configured scope."
+commands.deny = ["app_skill_recording_start"]

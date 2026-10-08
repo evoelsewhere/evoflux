@@ -56,6 +56,24 @@ class TestRequestSizeLimitMiddleware:
         )
         assert resp.json() == {"detail": "Request body too large."}
 
+    def test_bounded_video_route_has_its_own_upload_limit(self):
+        app = FastAPI()
+        app.add_middleware(RequestSizeLimitMiddleware, max_bytes=100)
+
+        @app.put("/api/skill-recordings/{recording_id}/video")
+        async def upload_video(recording_id: str):
+            return {"ok": True}
+
+        client = TestClient(app)
+        recording_id = "0f8fad5b-d9cb-469f-a165-70867728950e"
+        response = client.put(
+            f"/api/skill-recordings/{recording_id}/video",
+            content=b"x" * 101,
+            headers={"Content-Length": "101"},
+        )
+
+        assert response.status_code == 200
+
     def test_no_content_length_header_passes_through(self):
         """Requests without Content-Length (chunked) are allowed."""
         app = FastAPI()

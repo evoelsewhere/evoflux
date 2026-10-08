@@ -2170,6 +2170,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'A Skill is a folder with a SKILL.md. The agent sees each enabled skill\'s name and description and reads SKILL.md itself when a task matches.',
       'Type $skill-name anywhere in a message to use a skill explicitly; you can name several.',
       'Settings → Skills creates and edits skills in your user skills folder and has an on/off switch for every skill, including built-in, plugin, and project ones.',
+      'On Windows, use Create from recording to review a selected-app demonstration, then open a new chat with its trace attached and a Skill prompt ready. The trace is sent only when you press Send, using that chat’s selected model. If you navigate away, the reviewed trace can be restored to an empty new Work chat for up to one hour. Refine the result in chat, then save its SKILL.md in Settings → Skills.',
       'An agent\'s Skills field preloads those skills into that agent, so it starts with their instructions.',
       'MCP status dots: ready / starting / auth / error / stopped.',
       'MCP tools inherit the same permission rules as native tools.',
@@ -2191,6 +2192,10 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       {
         type: 'p',
         text: 'Settings → Agents to edit team members; Settings → Skills to create or edit your skills, check validation, and turn any skill on or off; Settings → MCP to add servers and watch status dots. From chat, type $skill-name to use a skill now, or open the palette for New Agent / New Skill. An agent\'s Skills field preloads those skills into that agent. Lead-only tools (ask_user, worktree helpers) are never granted to specialists.',
+      },
+      {
+        type: 'p',
+        text: 'To create a Skill from a demonstration, open Settings → Skills → Create from recording, choose a Windows app/window, and start capture when ready. Review and redact the event timeline, then open a new chat with the exact trace attached and a draft-Skill prompt ready. Nothing is sent until you press Send; the chat’s selected model handles the request, and you can refine the result in that conversation. If you navigate away, the reviewed trace is cached for up to one hour and restored only to an empty new Work chat. Copy its SKILL.md into Settings → Skills to validate and save it. Screenshots stay local. The source recording remains available for deletion in the recorder. Capture is currently unavailable on macOS and Linux.',
       },
       {
         type: 'tips',
