@@ -1,6 +1,6 @@
 /**
- * AskUserQuestionModal — modal card over the chat canvas (GateOverlay, same
- * layer as PermissionApprovalModal) showing one clarifying question at a time from the
+ * AskUserQuestionModal — card docked above the composer (GateOverlay, same
+ * dock as PermissionApprovalModal) showing one clarifying question at a time from the
  * batch the agent asked via the `ask_user` tool. Step through with
  * next/back; the last question shows Submit instead of Next. Suggested
  * answers are a numbered list — the digit keys pick one — with a free-text

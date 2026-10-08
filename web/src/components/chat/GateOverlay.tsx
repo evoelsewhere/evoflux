@@ -1,14 +1,21 @@
 /**
- * GateOverlay — modal layer for the gates that block a run (ask_user,
- * permission approval). It sits absolutely over the chat canvas (`<main>` is
- * the positioned ancestor), so opening one never reflows the transcript or
- * the composer, and the sidebar stays usable for switching sessions.
+ * GateOverlay — docked card for the gates that block a run (ask_user,
+ * permission approval). It grows upward from the top edge of the composer, so
+ * the question rises out of the chat input instead of covering the middle of
+ * the canvas. The mount point (`GateDock`) is a zero-height slot directly above
+ * the composer, so opening a gate never reflows the transcript or the
+ * composer, and the transcript and sidebar stay usable underneath.
  */
 import { forwardRef, type ReactNode } from 'react'
 import { motion } from 'framer-motion'
 
 import { useMotionPreset } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+
+/** Zero-height slot placed immediately above the composer; gates anchor to it. */
+export function GateDock({ children }: { children: ReactNode }) {
+  return <div className="pointer-events-none relative z-(--z-overlay) h-0 shrink-0">{children}</div>
+}
 
 export const GateOverlay = forwardRef<
   HTMLDivElement,
@@ -27,17 +34,19 @@ export const GateOverlay = forwardRef<
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={preset.spring}
-      className="absolute inset-0 z-(--z-overlay) flex items-center justify-center bg-black/10 p-4"
+      className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center px-4 pb-2"
     >
       <motion.div
         role="dialog"
-        aria-modal="true"
         aria-label={label}
-        initial={{ opacity: 0, y: 6 * preset.distance, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 6 * preset.distance, scale: 0.98 }}
+        initial={{ opacity: 0, y: 16 * preset.distance }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 16 * preset.distance }}
         transition={preset.spring}
-        className={cn('flex max-h-full w-full flex-col', className)}
+        className={cn(
+          'pointer-events-auto flex max-h-[min(60vh,32rem)] w-full flex-col',
+          className,
+        )}
       >
         {children}
       </motion.div>

@@ -6,6 +6,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- Agent questions (`ask_user`) and permission prompts now rise directly out of
+  the chat input instead of appearing as a centered popup over the
+  conversation. The transcript stays visible and scrollable behind them.
+
 - The built-in agent and team prompts now ask agents to scale their effort to
   the task instead of always running a fixed, exhaustive procedure. Members no
   longer have to use "3+ sources" for every question, rebuild a weighted matrix

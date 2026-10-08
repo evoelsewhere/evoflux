@@ -46,6 +46,7 @@ import { Sidebar } from '../Sidebar'
 import { ChatOverlayPanels, ChatTrailingPanels } from '@/components/chat/ChatPanels'
 import { PermissionApprovalModal } from '../PermissionApprovalModal'
 import { AskUserQuestionModal } from '../AskUserQuestionModal'
+import { GateDock } from '../chat/GateOverlay'
 import { useTodosQuery } from '@/queries/useTodosQuery'
 import {
   useFollowUpSettingsQuery,
@@ -1933,8 +1934,10 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
         ) : null
         })()}
 
-        <PermissionApprovalModal />
-        <AskUserQuestionModal />
+        <GateDock>
+          <PermissionApprovalModal />
+          <AskUserQuestionModal />
+        </GateDock>
         {(mode !== 'coding' || workspace) && (
           <FloatingInputBar
             ref={inputRef}
