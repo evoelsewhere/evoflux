@@ -82,6 +82,7 @@ before atomic save. Models use `provider:model`.
 | `EVOFLUX_ACCESS_KEY` | external/LAN bearer fallback |
 | `EVOFLUX_BASH` | explicit Bash executable on Windows when auto-detection fails |
 | `EVOFLUX_WEBBRIDGE_EXTENSION_IDS` | optional allowed extension IDs |
+| `EVOFLUX_OTEL_OTLP_ENDPOINT` | also forward spans to an OTLP collector; local telemetry files are still written |
 
 ## Provider credentials
 

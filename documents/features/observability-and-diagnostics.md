@@ -81,6 +81,15 @@ services. The local exporter writes hourly span and daily metric JSONL
 partitions below the state root. Retention runs as an optional background
 service and the process flushes on shutdown.
 
+Local files are written unconditionally, because the Telemetry page reads
+exactly those partitions. Setting `EVOFLUX_OTEL_OTLP_ENDPOINT` adds an OTLP
+forwarder for spans alongside them; that path needs the optional
+`opentelemetry-exporter-otlp-proto-grpc` package, and without it EvoFlux logs
+`otel_otlp_exporter_unavailable` and keeps writing files. The generic
+`OTEL_EXPORTER_OTLP_ENDPOINT` is deliberately ignored: other tools on the same
+machine set it, and treating it as a replacement used to stop span capture
+entirely.
+
 The observability service queries span partitions through DuckDB without a
 separate telemetry database. It provides:
 

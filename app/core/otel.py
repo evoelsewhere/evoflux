@@ -1,6 +1,6 @@
 """OpenTelemetry SDK bootstrap — file-based export, no external service required.
 
-Output layout (default; overridden when ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set):
+Output layout (always written; forwarding is additive):
 
     {STATE_DIR}/otel/spans/YYYY-MM-DD-HH.jsonl      (hourly partitions)
     {STATE_DIR}/otel/metrics/YYYY-MM-DD.jsonl       (daily partitions)
@@ -18,10 +18,16 @@ Design
        ratio only if span volume becomes unmanageable).
 - **JsonlBatchWriter** is used for both spans and metrics — bounded queue,
   drop-on-backpressure with a Prometheus counter, hourly span partitioning.
+- **Local files are unconditional.**  Forwarding to an OTLP collector is an
+  extra span processor, so exporting elsewhere can never blank the in-app
+  Telemetry page, which reads these files.
 
 Env vars
 --------
-- ``OTEL_EXPORTER_OTLP_ENDPOINT`` — forward to real OTLP backend, skip file.
+- ``EVOFLUX_OTEL_OTLP_ENDPOINT`` — EvoFlux's own endpoint.  When set, spans go
+  to the local files *and* to that collector.  The generic
+  ``OTEL_EXPORTER_OTLP_ENDPOINT`` is deliberately ignored: other tools on the
+  machine set it, and honouring it used to remove the file exporter.
 - ``OTEL_SPAN_SAMPLE_RATIO`` — float in [0.0, 1.0]; default 1.0. Keep the
   default so every tool invocation shows up in the waterfall; only lower it
   if span volume becomes unmanageable.
@@ -31,12 +37,12 @@ Env vars
 
 from __future__ import annotations
 
-import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
+from loguru import logger
 from opentelemetry import metrics, trace
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import (
@@ -63,7 +69,6 @@ from app.core.jsonl_writer import (
 from app.core.metrics import SPANS_DROPPED, SPANS_WRITTEN
 
 _INSTRUMENTATION_SCOPE = "EvoFlux"
-_logger = logging.getLogger(__name__)
 
 _tracer_provider: TracerProvider | None = None
 _meter_provider: MeterProvider | None = None
@@ -139,6 +144,74 @@ class _FilteringJsonlSpanExporter(SpanExporter):
 
     def shutdown(self) -> None:
         pass
+
+
+# ── Span export wiring ────────────────────────────────────────────────────────
+
+
+def _otlp_endpoint() -> str:
+    """Return EvoFlux's own OTLP endpoint, or ``""``.
+
+    Deliberately not the generic ``OTEL_EXPORTER_OTLP_ENDPOINT``: that variable
+    is process-global and other tools on the machine set it (Copilot, CI
+    agents, vendor SDKs).  Honouring it here used to replace the file exporter,
+    which silently blanked the in-app Telemetry page on those machines.
+    """
+    return os.getenv("EVOFLUX_OTEL_OTLP_ENDPOINT", "").strip()
+
+
+def _otlp_span_exporter(endpoint: str) -> SpanExporter | None:
+    """Build the optional OTLP forwarder, or ``None`` when the dep is absent."""
+    try:
+        # Optional dep: the pipeline works without it.
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # ty: ignore[unresolved-import]
+            OTLPSpanExporter,
+        )
+    except ImportError:
+        logger.warning(
+            "otel_otlp_exporter_unavailable endpoint={} "
+            "install opentelemetry-exporter-otlp-proto-grpc",
+            endpoint,
+        )
+        return None
+    return OTLPSpanExporter(endpoint=endpoint)
+
+
+def _configure_span_export(
+    tracer_provider: TracerProvider, otel_dir: Path
+) -> JsonlBatchWriter:
+    """Attach span processors: local JSONL always, OTLP only when opted in.
+
+    The local writer is unconditional because the Telemetry page reads those
+    files (:mod:`app.services.observability_service`), and because a machine
+    wide OTLP variable must not turn EvoFlux into a sender for someone else's
+    collector.  Returns the writer so :func:`shutdown_otel` can close it.
+    """
+    spans_dir = otel_dir / "spans"
+    writer = JsonlBatchWriter(
+        root=spans_dir,
+        partition_fn=hourly_partition,
+        on_write=lambda n: SPANS_WRITTEN.inc(n),
+        on_drop=lambda: SPANS_DROPPED.inc(),
+        name="spans",
+    )
+    tracer_provider.add_span_processor(
+        BatchSpanProcessor(_FilteringJsonlSpanExporter(writer))
+    )
+    logger.info(
+        "otel_trace_exporter=file dir={} sample_ratio={:.3f} slow_ms={}",
+        spans_dir,
+        _sample_ratio(),
+        _slow_span_threshold_ns() // 1_000_000,
+    )
+
+    endpoint = _otlp_endpoint()
+    if endpoint:
+        exporter = _otlp_span_exporter(endpoint)
+        if exporter is not None:
+            tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
+            logger.info("otel_trace_exporter=otlp endpoint={}", endpoint)
+    return writer
 
 
 class _JsonlMetricExporter(MetricExporter):
@@ -250,41 +323,7 @@ def setup_otel(
     # Head sampler is ALWAYS_ON; tiering happens at export via the filter.
     _tracer_provider = TracerProvider(resource=resource, sampler=ALWAYS_ON)
 
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    if otlp_endpoint:
-        try:
-            # Optional dep; ImportError is handled below.
-            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # ty: ignore[unresolved-import]
-                OTLPSpanExporter,
-            )
-
-            _tracer_provider.add_span_processor(
-                BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint))
-            )
-            _logger.info("otel_trace_exporter=otlp endpoint=%s", otlp_endpoint)
-        except ImportError:
-            _logger.warning(
-                "otel_otlp_exporter_unavailable "
-                "install opentelemetry-exporter-otlp-proto-grpc"
-            )
-    else:
-        spans_dir = otel_dir / "spans"
-        _span_writer = JsonlBatchWriter(
-            root=spans_dir,
-            partition_fn=hourly_partition,
-            on_write=lambda n: SPANS_WRITTEN.inc(n),
-            on_drop=lambda: SPANS_DROPPED.inc(),
-            name="spans",
-        )
-        _tracer_provider.add_span_processor(
-            BatchSpanProcessor(_FilteringJsonlSpanExporter(_span_writer))
-        )
-        _logger.info(
-            "otel_trace_exporter=file dir=%s sample_ratio=%.3f slow_ms=%d",
-            spans_dir,
-            _sample_ratio(),
-            _slow_span_threshold_ns() // 1_000_000,
-        )
+    _span_writer = _configure_span_export(_tracer_provider, otel_dir)
 
     trace.set_tracer_provider(_tracer_provider)
 
@@ -302,8 +341,8 @@ def setup_otel(
     _meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(_meter_provider)
 
-    _logger.info(
-        "otel_setup_complete service=%s spans_dir=%s metrics_dir=%s",
+    logger.info(
+        "otel_setup_complete service={} spans_dir={} metrics_dir={}",
         service_name,
         otel_dir / "spans",
         metrics_dir,

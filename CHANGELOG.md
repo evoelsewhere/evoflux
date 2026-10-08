@@ -17,6 +17,17 @@ All notable changes to EvoFlux are documented in this file.
   research hands off with `verified=False` rather than omitting verification,
   which the runtime would have rejected.
 
+### Fixed
+
+- **Settings → Telemetry** keeps recording on machines where another tool sets
+  `OTEL_EXPORTER_OTLP_ENDPOINT` (the GitHub Copilot CLI, for example). EvoFlux
+  no longer treats that machine-wide variable as a replacement for its own
+  exporter: span and metric files are always written, so the Telemetry page
+  stops going blank. Forwarding to an OTLP collector is now opt-in through
+  `EVOFLUX_OTEL_OTLP_ENDPOINT`, which keeps writing the local files as well, and
+  a missing `opentelemetry-exporter-otlp-proto-grpc` logs
+  `otel_otlp_exporter_unavailable` instead of failing silently.
+
 ### Removed
 
 - The built-in **debate** member is gone from both the Work and Coding teams.
