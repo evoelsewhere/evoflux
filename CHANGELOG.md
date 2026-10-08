@@ -7,6 +7,21 @@ All notable changes to EvoFlux are documented in this file.
 ### Added
 
 - **Voice input** adds push-to-talk with editable transcripts, multiple speech-to-text provider profiles, ordered failover, and a local/private-only routing option. An optional multilingual Local Whisper engine/model can be installed on demand when verified platform assets are published. Provider credentials remain on the EvoFlux backend.
+
+### Changed
+
+- **Voice input** places the microphone and recording controls beside **Send** in the chat composer.
+- **Settings → Voice input** identifies the current host platform and clearly reports when a Local Whisper download is not yet published.
+
+### Fixed
+
+- **Settings → Voice input** can load model catalogs from hosted OpenAI-compatible endpoints such as Groq without classifying their public addresses as private-network hosts.
+
+## [3.0.5] - 2026-10-08
+
+### Added
+
+- **Waiting Arcade** offers six optional local games from the composer’s **More actions** menu during active Work and Coding runs, including animated 2048, Memory Pairs, and Mini Breakout. Games pause when the panel closes or a run needs the user's attention.
 - **Plugins → Marketplace** can add and sync Agent Plugins 1.0.0 and Claude Code
   sources, search their catalogs, and preview compatible components. Marketplace
   installs stay disabled until trust review; importing only supported parts of a
@@ -21,8 +36,41 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
-- **Voice input** places the microphone and recording controls beside **Send** in the chat composer.
-- **Settings → Voice input** identifies the current host platform and clearly reports when a Local Whisper download is not yet published.
+- Agents now wait with a real **`sleep`** tool instead of replying with the text
+  `<sleep>`. The tool takes no arguments, works for the lead and every member,
+  and its call is hidden from the transcript. The text marker is gone: a reply
+  containing `<sleep>` is just text. Saved conversations are cleaned on upgrade
+  — a trailing `<sleep>` / `[sleep]` is removed from old replies and nothing is
+  deleted.
+- Tool calls that models commonly get slightly wrong are now recoverable. A lone
+  string for `team_delegate`'s `to` (and `team_message`, `team_handoff`,
+  `team_reject`) is read as a one-element list, and `todo_manage` and
+  `team_delegate` now state their call shape — `actions=[{"action": ...}]`, not
+  `todos=` — in the description and show a valid example when validation fails,
+  so the model no longer repeats the same rejected call.
+- **OpenCode Zen** and **OpenCode Go** now send each model to the endpoint
+  OpenCode documents for it: Claude, MiniMax and Qwen over Messages, GPT, Grok
+  and Muse Spark over Responses, Gemini over its native API, and the open
+  models over Chat Completions. Previously every model was sent to Chat
+  Completions regardless of family. DeepSeek, Kimi and
+  MiMo models keep their reasoning across tool calls, and `OPENCODE_BASE_URL`
+  and `OPENCODE_GO_BASE_URL` override each plan's endpoint. Every OpenCode
+  request now carries the `x-opencode-session` header OpenCode Go requires, so
+  title generation and other calls outside a chat no longer fail with
+  `MissingSessionID`.
+  **OpenCode Zen** always needs its key: OpenCode serves its free models only
+  inside its own app and answers other clients with "free tier can only be
+  used from within OpenCode", so EvoFlux no longer tries them keyless.
+- **Settings → Providers → OpenCode Go** shows your rolling 5-hour, weekly and
+  monthly usage as percent used with each window's reset time, refreshed every
+  minute, and flags a window that has reached its limit.
+- **OpenCode Go** now keeps its own key (`OPENCODE_GO_API_KEY`) instead of
+  sharing Zen's, so saving a Go key no longer shows **OpenCode Zen** as
+  connected. Both entries also have proper descriptions in
+  **Settings → Providers**.
+- **Settings → Providers** no longer has a **List models** button on API-key and
+  cloud providers. **Save** verifies the key by listing the provider's models,
+  saves it only if the provider answers, and leaves the model list open.
 - Plugin API verification applies POSIX credential-file mode checks only on POSIX
   systems, avoiding unsupported permission assertions on Windows.
 - **Plugins → Marketplace** reflows setup and source cards to panel width, explains
@@ -39,7 +87,39 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
-- **Settings → Voice input** can load model catalogs from hosted OpenAI-compatible endpoints such as Groq without classifying their public addresses as private-network hosts.
+- Every OpenCode Go model now answers. `glm-5.1`, `glm-5.2` and `glm-5.3` failed
+  with "thinking-only model; disabling thinking is not supported" because the
+  runtime asked them to stop thinking, and `kimi-k2.7-code` failed with "invalid
+  temperature: only 1 is allowed" because a Kimi default temperature was added
+  to a model that takes none. Both parameters are now left out for those models.
+  `glm-5.3-flash` failed on the turn after its first tool call with "`name` is
+  not supported" because tool results carried the tool name; they now carry only
+  the call id, which is all OpenCode matches on.
+- The hourly browser-capture cleanup no longer reads and parses every message's
+  metadata, and its first run waits two minutes instead of competing with
+  startup. On a 33,000-message history the query dropped from about 0.76 s over
+  33,151 rows to 0.14 s over none, which also removes the "slow database"
+  warnings and pool waits seen while the app was opening.
+- Installing a language server on Windows no longer fails with "Access is denied"
+  when moving the new install into place. A momentary file lock (antivirus, the
+  indexer, or the old server still running) is retried, the running server is
+  stopped first, leftover staging folders from a crashed install are cleaned up,
+  and a lock that does not clear now says what to close instead of a raw
+  `PermissionError`.
+- The sandbox's shell-command audit on Windows no longer logs paths that never
+  existed. Git Bash spellings such as `/c/Users/...` and `/dev/null`, and
+  strings that merely contain a slash (a `curl -w` format, a `python -c` body),
+  were turned into `C:/c/Users/...`, `C:/dev/null` and garbage, so the audit
+  trail could not be trusted. Drives are mapped to `C:/...`, harmless devices
+  and non-path strings are skipped. Commands are still never blocked by this scan.
+- Team members can read the large tool results they offload. A member such as
+  `explorer#1` was refused its own `.tool_results` file ("is inside a denied
+  sandbox root") and had to `cat` it through a shell, repeatedly, at full token
+  cost; results now land in the session directory the member's sandbox allows.
+- A turn no longer dies when the model connection drops mid-response. "Peer
+  closed connection without sending complete message body" and "Server
+  disconnected without sending a response" are now retried and resumed like a
+  timeout, instead of cancelling the whole turn.
 - Claude Code MCP plugins receive a normalized `mcp.json`; invalid component
   diagnostics block marketplace installation, package review masks credentials,
   and remote MCP servers awaiting authorization show **Authentication required**.

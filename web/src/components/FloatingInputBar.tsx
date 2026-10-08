@@ -23,6 +23,7 @@ interface FloatingInputBarProps {
   fileRefs?: FileRef[]
   onFileRefsNeeded?: () => void
   isStreaming?: boolean
+  workingActionSlot?: React.ReactNode
   followUpLane?: 'steer' | 'queue' | null
   disabled?: boolean
   placeholder?: string

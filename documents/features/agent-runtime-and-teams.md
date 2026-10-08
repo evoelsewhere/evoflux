@@ -98,7 +98,24 @@ Team-native actions cover:
 - reject a handoff and request targeted rework;
 - manage team instances and shared state;
 - create isolated Git worktrees for parallel Coding work;
-- manage todos and durable delegation status.
+- manage todos and durable delegation status;
+- `sleep` — end a turn while idle, waiting on a peer or dependency, or done.
+
+`sleep` takes no arguments and is available to the lead and every member. The
+runtime stops the loop once the turn's tool results are persisted, and the agent
+wakes on its next mailbox message. Waiting is a tool call, never text: a
+`<sleep>` in a reply is ordinary prose and ends nothing. A turn that is only a
+`sleep` call is not shown in the transcript, and the lead's "work is underway"
+note between a `team_delegate` and its `sleep` is folded into the delegation
+card.
+
+Tool arguments are forgiving only where the intent is unambiguous: a recipient
+list (`to`, and the other string-list arguments of `team_delegate`) given as one
+string or a double-encoded array is read as the array it stands for, while the
+advertised schema stays `array`. A call that fails validation returns the
+failing field together with a literal example of a valid call for
+`todo_manage` and `team_delegate`, so the model can correct the shape instead of
+repeating it.
 
 The lead verifies handoffs before synthesizing the user-facing result. The
 Split view exposes member state, activity and transcript without merging all

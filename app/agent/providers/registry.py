@@ -174,6 +174,16 @@ class ProviderConfig:
     #: Declaring it here is what keeps those models listed.
     extra_transports: tuple[Transport, ...] = ()
 
+    #: Documented per-model protocol routing: ``(model-id prefix, transport)``.
+    #:
+    #: A gateway that fronts several vendors publishes which endpoint serves
+    #: which model family (OpenCode Zen sends Claude to ``/messages`` and GPT
+    #: to ``/responses``). That is a statement about the provider, so it lives
+    #: here rather than in the model catalog, which can lag the docs. Matched
+    #: first-to-last on the lower-cased model ID; models no rule names fall
+    #: back to the catalog's per-model ``npm``, then to :attr:`transport`.
+    model_transports: tuple[tuple[str, Transport], ...] = ()
+
     #: Whether this provider can mint its own key through a browser sign-in
     #: (``evoflux auth <id>`` / the Settings button), instead of the user
     #: creating one in a console and pasting it. Orthogonal to :attr:`auth`:
@@ -189,6 +199,14 @@ class ProviderConfig:
     def models_dev_provider_id(self) -> str:
         """The catalog ID to read this provider's model metadata under."""
         return self.models_dev_id or self.id
+
+    def transport_for_model(self, model: str) -> Transport | None:
+        """The transport :attr:`model_transports` assigns *model*, if any."""
+        lowered = model.lower()
+        for prefix, transport in self.model_transports:
+            if lowered.startswith(prefix):
+                return transport
+        return None
 
     def uses_responses_api(self, model: str) -> bool:
         """Whether *model* must be sent to ``/responses``.
@@ -471,6 +489,49 @@ PROVIDER_REGISTRY: dict[str, ProviderConfig] = {
         base_url_env_var="ZENMUX_BASE_URL",
         attribution_headers=dict(_ATTRIBUTION),
         docs_url="https://zenmux.ai/settings/keys",
+    ),
+    "opencode": ProviderConfig(
+        id="opencode",
+        label="OpenCode Zen",
+        env_var="OPENCODE_API_KEY",
+        base_url_env_var="OPENCODE_BASE_URL",
+        # Zen is one key over three wire protocols; which one a model uses is
+        # documented per family (https://opencode.ai/docs/zen/). Gemini is
+        # served at ``/models/<id>``, so it speaks the Gemini shape.
+        extra_transports=(
+            Transport.OPENAI_RESPONSES,
+            Transport.ANTHROPIC,
+            Transport.GOOGLE_GENAI,
+        ),
+        model_transports=(
+            ("claude-", Transport.ANTHROPIC),
+            ("qwen3.8-flash", Transport.ANTHROPIC),
+            ("gpt-5", Transport.OPENAI_RESPONSES),
+            ("gpt-6", Transport.OPENAI_RESPONSES),
+            ("grok-4", Transport.OPENAI_RESPONSES),
+            ("muse-spark-", Transport.OPENAI_RESPONSES),
+            ("gemini-", Transport.GOOGLE_GENAI),
+        ),
+        docs_url="https://opencode.ai/auth",
+    ),
+    "opencode-go": ProviderConfig(
+        id="opencode-go",
+        label="OpenCode Go",
+        # Not OPENCODE_API_KEY: Zen and Go are separate products, and sharing
+        # the variable made saving a Go key mark Zen as connected too.
+        env_var="OPENCODE_GO_API_KEY",
+        base_url_env_var="OPENCODE_GO_BASE_URL",
+        extra_transports=(Transport.OPENAI_RESPONSES, Transport.ANTHROPIC),
+        model_transports=(
+            ("minimax-", Transport.ANTHROPIC),
+            ("qwen3.8-", Transport.ANTHROPIC),
+            ("qwen3.7-", Transport.ANTHROPIC),
+            ("gpt-5", Transport.OPENAI_RESPONSES),
+            ("gpt-6", Transport.OPENAI_RESPONSES),
+            ("grok-4", Transport.OPENAI_RESPONSES),
+            ("muse-spark-", Transport.OPENAI_RESPONSES),
+        ),
+        docs_url="https://opencode.ai/docs/go/",
     ),
     # -- Cloud platforms (credentials are not a single API key) ---------
     "bedrock": ProviderConfig(

@@ -520,6 +520,7 @@ class TestAgentTeamToolInjection:
             "todo_manage",
             "team_manage",
             "team_state",
+            "sleep",
         }
         assert "remember" not in names
         assert "recall" not in names
@@ -558,7 +559,13 @@ class TestAgentTeamToolInjection:
         team = basic_team
         tools = team.get_injected_tools("member_a")
         names = {t.name for t in tools}
-        assert names == {"team_message", "team_handoff", "todo_manage", "team_state"}
+        assert names == {
+            "team_message",
+            "team_handoff",
+            "todo_manage",
+            "team_state",
+            "sleep",
+        }
 
     async def test_member_does_not_get_old_message_tools(self, basic_team):
         """Old message_leader and send_message removed from member tools."""
@@ -600,7 +607,13 @@ class TestAgentTeamToolInjection:
         assert "remember" not in names
         assert "recall" not in names
         assert "forget" not in names
-        assert names == {"team_message", "team_handoff", "todo_manage", "team_state"}
+        assert names == {
+            "team_message",
+            "team_handoff",
+            "todo_manage",
+            "team_state",
+            "sleep",
+        }
 
 
 class TestAgentTeamStatus:

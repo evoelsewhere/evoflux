@@ -10,7 +10,8 @@ from typing import Any, cast
 from uuid import UUID
 
 from loguru import logger
-from sqlalchemy import update
+from sqlalchemy import Text, update
+from sqlalchemy import cast as sql_cast
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -19,6 +20,14 @@ from app.core.paths import uploads_dir
 from app.models.chat import SessionMessage
 
 _CLEANUP_INTERVAL_SECONDS = 3600
+
+#: The first sweep waits this long. It reads every message's metadata, which on a
+#: large history is a full table scan on the read lane; run at startup it queued
+#: behind — and in front of — the requests the UI makes while it loads.
+_STARTUP_DELAY_SECONDS = 120.0
+
+#: Key under which an attachment carries its retention window.
+_ARTIFACT_KEY = "webbridge_artifact"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +40,7 @@ class _ArtifactCleanup:
 
 
 def artifact_expired(value: Any, *, now: datetime | None = None) -> bool:
-    artifact = value.get("webbridge_artifact") if isinstance(value, dict) else None
+    artifact = value.get(_ARTIFACT_KEY) if isinstance(value, dict) else None
     expires_at = artifact.get("expires_at") if isinstance(artifact, dict) else None
     if not isinstance(expires_at, str):
         return False
@@ -97,6 +106,19 @@ async def cleanup_expired_artifacts(
     return await _apply_artifact_cleanup(db, plan)
 
 
+def _candidate_rows_statement():
+    """Messages whose metadata mentions an artifact retention window.
+
+    Almost every message has metadata (usage, timing), so ``extra IS NOT NULL``
+    selects nearly the whole table and an index on it would too. Only the few
+    rows that carry an attachment with a retention window can ever expire, so
+    ask the database for those and parse only them.
+    """
+    return select(
+        SessionMessage.id, SessionMessage.session_id, SessionMessage.extra
+    ).where(sql_cast(col(SessionMessage.extra), Text).like(f'%"{_ARTIFACT_KEY}"%'))
+
+
 async def _plan_expired_artifact_cleanup(
     db: AsyncSession,
     *,
@@ -104,13 +126,7 @@ async def _plan_expired_artifact_cleanup(
 ) -> list[_ArtifactCleanup]:
     """Project only metadata columns; message bodies can occupy hundreds of MB."""
 
-    rows = (
-        await db.exec(
-            select(
-                SessionMessage.id, SessionMessage.session_id, SessionMessage.extra
-            ).where(col(SessionMessage.extra).is_not(None))
-        )
-    ).all()
+    rows = (await db.exec(_candidate_rows_statement())).all()
     plan: list[_ArtifactCleanup] = []
     for message_id, session_id, raw_extra in rows:
         extra = dict(raw_extra or {})
@@ -176,7 +192,8 @@ async def _apply_artifact_cleanup(
 
 
 async def run_artifact_cleanup_loop() -> None:
-    """Sweep once at startup and hourly until cancelled."""
+    """Sweep shortly after startup and hourly until cancelled."""
+    await asyncio.sleep(_STARTUP_DELAY_SECONDS)
     while True:
         try:
             from app.core import db as db_module

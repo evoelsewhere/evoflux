@@ -109,6 +109,8 @@ interface InputBarProps {
   fileRefs?: FileRef[]
   onFileRefsNeeded?: () => void
   isStreaming?: boolean
+  /** Optional, compact action rendered next to Stop while the agent works. */
+  workingActionSlot?: React.ReactNode
   /**
    * The lane the primary key (Enter) uses while the agent is working; Tab
    * takes the other one. Leave unset on composers whose `onSubmit` does not
@@ -247,6 +249,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   fileRefs = [],
   onFileRefsNeeded,
   isStreaming = false,
+  workingActionSlot,
   followUpLane = null,
   disabled,
   attachmentsEnabled = true,
@@ -2037,7 +2040,10 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                 {!shellMode && attachmentsEnabled && attachEl}
                 {chatEl}
                 <div className="w-0 -ml-2 min-w-0 overflow-hidden">{messageSlot}</div>
-                {sendOrStopEl}
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                  {isStreaming && workingActionSlot}
+                  {sendOrStopEl}
+                </div>
               </div>
             )}
 
@@ -2208,9 +2214,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       {charCount}
                     </span>
                   )}
-                  {voiceEl}
-                  {voiceCancelEl}
-                  {sendOrStopEl}
+                  <div className="ml-auto flex shrink-0 items-center gap-1.5">
+                    {voiceEl}
+                    {voiceCancelEl}
+                    {isStreaming && workingActionSlot}
+                    {sendOrStopEl}
+                  </div>
                 </div>
               </>
             )}

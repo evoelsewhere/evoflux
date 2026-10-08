@@ -59,6 +59,7 @@ from loguru import logger
 
 from app.agent.artifacts import tool_results_dir
 from app.agent.hooks.base import BaseAgentHook
+from app.agent.sandbox import get_sandbox
 
 if TYPE_CHECKING:
     from app.agent.state import AgentState, RunContext
@@ -75,6 +76,20 @@ DEFAULT_PREVIEW_CHARS = 1000
 # to the XDG session artifact directory) so this hook normally never sees
 # oversized shell results.
 _NEVER_OFFLOAD = frozenset({"read"})
+
+
+def _artifact_session_id(ctx: "RunContext") -> str | None:
+    """The session whose artifact directory this run may read back.
+
+    A team shares one artifact directory — the lead's — and the sandbox only
+    authorizes that one: it is where shell spills and todos already go. A
+    member's ``ctx.session_id`` is its own session, so writing there put the
+    result in a directory the member's sandbox then refused to read
+    ("is inside a denied sandbox root"), forcing it to cat the file through a
+    shell. Prefer the sandbox's session; fall back to the run's own when the
+    sandbox is not bound to one.
+    """
+    return get_sandbox().session_id or ctx.session_id
 
 
 class ToolResultOffloadHook(BaseAgentHook):
@@ -122,7 +137,7 @@ class ToolResultOffloadHook(BaseAgentHook):
                 ctx.agent_name,
                 tool_call_id,
                 result,
-                ctx.session_id,
+                _artifact_session_id(ctx),
             )
         except Exception as exc:
             # Me keep original result if write fails — never break tool execution

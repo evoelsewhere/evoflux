@@ -249,6 +249,7 @@ class TestDefaultDeferredTools:
             "read",
             "schedule_task",
             "shell",
+            "sleep",
             "team_delegate",
             "team_manage",
             "team_message",

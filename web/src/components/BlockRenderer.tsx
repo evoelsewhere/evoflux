@@ -26,7 +26,7 @@ import { CompactionDivider } from './CompactionDivider'
 import { ImageAttachment } from './ImageAttachment'
 import { FileCard } from './FileCard'
 import { CommandBlock } from './TechnicalText'
-import { extractSleepPrefix, formatTime, hasSleepLifecycle } from '@/utils/format'
+import { formatTime } from '@/utils/format'
 import { isConsolidatedDelegationMessage } from '@/utils/blocks'
 import { findCommittedMentions } from './InputBar.mentions'
 import { findCommandDirectives, findSkillDirectives } from './InputBar.skills'
@@ -488,20 +488,6 @@ export const BlockRenderer = memo(function BlockRenderer({ block, isStreaming, s
         ? 'Main agent · Claude Code'
         : null
       const sourceLabel = sidechainLabel ?? parentAgentLabel
-      // Lifecycle-only blocks are control state, not chat content. Keep the
-      // legacy suffix parser so old persisted history is sanitized too.
-      const sleepPrefix = extractSleepPrefix(block.content)
-      if (hasSleepLifecycle(block.extra) || sleepPrefix !== null) {
-        const visibleContent = sleepPrefix ?? block.content
-        if (!visibleContent) return null
-        return (
-          <div>
-            {sourceLabel && <div className="mb-1 text-[11px] font-medium text-(--color-text-subtle)">{sourceLabel}</div>}
-            <LazyMarkdownBlock content={visibleContent} sessionId={sessionId} isStreaming={isStreaming} />
-          </div>
-        )
-      }
-
       return (
         <div>
           {sourceLabel && <div className="mb-1 text-[11px] font-medium text-(--color-text-subtle)">{sourceLabel}</div>}

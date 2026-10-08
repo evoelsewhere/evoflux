@@ -138,3 +138,118 @@ async def test_cleanup_preserves_concurrent_message_metadata(monkeypatch, tmp_pa
         assert current.extra["concurrent"] is True
         assert current.extra["attachments"][0]["deleted_at"]
     assert cleaned == 1
+
+
+# ---------------------------------------------------------------------------
+# The sweep must not scan every message's metadata, or run at startup
+# ---------------------------------------------------------------------------
+
+
+def test_candidate_query_asks_the_database_for_artifact_rows_only():
+    """``extra IS NOT NULL`` matched ~every row (usage metadata), so the sweep
+    fetched and JSON-decoded the whole history on each pass."""
+    from app.services.webbridge_artifact_service import _candidate_rows_statement
+
+    sql = str(
+        _candidate_rows_statement().compile(compile_kwargs={"literal_binds": True})
+    )
+
+    assert "IS NOT NULL" not in sql.upper()
+    assert "LIKE" in sql.upper()
+    assert "webbridge_artifact" in sql
+
+
+@pytest.mark.asyncio
+async def test_only_rows_with_an_artifact_window_are_materialized(
+    monkeypatch, tmp_path
+):
+    from app.core import db as db_module
+    from app.core.config import settings
+    from app.services.webbridge_artifact_service import _candidate_rows_statement
+
+    monkeypatch.setattr(settings, "EVOFLUX_WORKSPACE_DIR", str(tmp_path))
+    session = ChatSession(title="Mostly usage metadata")
+    expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    async with db_module.async_session_factory() as db:
+        db.add(session)
+        await db.flush()
+        noise = [
+            SessionMessage(
+                session_id=session.id,
+                role="assistant",
+                content=f"reply {index}",
+                extra={"usage": {"input": index, "output": 1}, "model": "m"},
+            )
+            for index in range(25)
+        ]
+        # An ordinary upload: attachments, but no retention window.
+        upload = SessionMessage(
+            session_id=session.id,
+            role="user",
+            content="upload",
+            extra={"attachments": [{"filename": "a.png", "category": "image"}]},
+        )
+        capture = SessionMessage(
+            session_id=session.id,
+            role="tool",
+            content="capture",
+            extra={
+                "attachments": [
+                    {
+                        "filename": "b.png",
+                        "webbridge_artifact": {"expires_at": expired},
+                    }
+                ]
+            },
+        )
+        db.add_all([*noise, upload, capture])
+        await db.commit()
+        capture_id = capture.id
+
+    async with db_module.read_session_factory() as db:
+        candidates = (await db.exec(_candidate_rows_statement())).all()
+        plan = await _plan_expired_artifact_cleanup(db)
+
+    assert [row[0] for row in candidates] == [capture_id]
+    assert [item.message_id for item in plan] == [capture_id]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_loop_waits_before_the_first_sweep(monkeypatch):
+    """Startup is already busy; the first sweep must not join it."""
+    import asyncio
+
+    from app.services import webbridge_artifact_service as service
+
+    events: list[tuple[str, float | None]] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        events.append(("sleep", seconds))
+        if len([e for e in events if e[0] == "sleep"]) >= 2:
+            raise asyncio.CancelledError
+
+    async def fake_plan(db, *, now=None):
+        events.append(("sweep", None))
+        return []
+
+    class _Session:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, *_exc):
+            return None
+
+    monkeypatch.setattr(service.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(service, "_plan_expired_artifact_cleanup", fake_plan)
+    from app.core import db as db_module
+
+    monkeypatch.setattr(db_module, "read_session_factory", lambda: _Session())
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.run_artifact_cleanup_loop()
+
+    assert events == [
+        ("sleep", service._STARTUP_DELAY_SECONDS),
+        ("sweep", None),
+        ("sleep", service._CLEANUP_INTERVAL_SECONDS),
+    ]
