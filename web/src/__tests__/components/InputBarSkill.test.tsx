@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { InputBar, type ComposerSkill, type SlashCommand } from '@/components/InputBar'
+import { renderWithQueryClient as render } from '../helpers/query-render'
 import {
   findActiveSkillToken,
   findCommandDirectives,

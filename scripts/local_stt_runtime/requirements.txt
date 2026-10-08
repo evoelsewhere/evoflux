@@ -1,0 +1,7 @@
+# Keep in sync with the sidecar Python ABI and the artifact workflow. Release
+# archives are themselves pinned by byte count and SHA-256 before install.
+faster-whisper==1.2.1
+ctranslate2==4.8.1
+av==15.1.0
+huggingface-hub==0.35.3
+tokenizers==0.22.1

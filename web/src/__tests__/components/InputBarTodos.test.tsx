@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { TodoItem } from '@/api/types'
 import { InputBar } from '@/components/InputBar'
+import { renderWithQueryClient as render } from '../helpers/query-render'
 
 const unfinishedTodos: TodoItem[] = [
   {
