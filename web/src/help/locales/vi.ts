@@ -2116,6 +2116,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Skill là thư mục có SKILL.md. Agent thấy tên và mô tả của mọi skill đang bật và tự đọc SKILL.md khi việc khớp.',
       'Gõ $tên-skill ở bất kỳ đâu trong tin để dùng skill một cách rõ ràng; có thể ghi nhiều skill.',
       'Settings → Skills tạo và sửa skill trong thư mục skill của người dùng, và có công tắc bật/tắt cho mọi skill, kể cả built-in, plugin và project.',
+      'Trên Windows, dùng Create from recording để review thao tác demo trong app đã chọn, rồi mở chat mới có trace và prompt tạo Skill sẵn. Trace chỉ được gửi khi bạn bấm Send, dùng model đang chọn trong chat. Nếu điều hướng đi nơi khác, trace đã review có thể được khôi phục vào composer trống của chat Work mới trong vòng một giờ. Tinh chỉnh kết quả trong chat rồi lưu SKILL.md ở Settings → Skills.',
       'Trường Skills của một agent preload các skill đó vào agent, nên agent bắt đầu với sẵn hướng dẫn của chúng.',
       'Chấm trạng thái MCP: ready / starting / auth / error / stopped.',
       'MCP tool chịu cùng rule permission như tool native.',
@@ -2137,6 +2138,10 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       {
         type: 'p',
         text: 'Settings → Agents để sửa thành viên team; Settings → Skills để tạo, sửa skill của bạn, xem validation và bật/tắt bất kỳ skill nào; Settings → MCP để thêm server và xem chấm trạng thái. Từ chat, gõ $tên-skill để dùng skill ngay, hoặc mở palette cho New Agent / New Skill. Trường Skills của agent preload các skill đó vào agent. Tool chỉ Lead (ask_user, worktree helper) không bao giờ cấp cho specialist.',
+      },
+      {
+        type: 'p',
+        text: 'Để tạo Skill từ thao tác demo, mở Settings → Skills → Create from recording, chọn app/window trên Windows rồi bắt đầu ghi. Review timeline, bỏ event hoặc thay text nhạy cảm, sau đó mở chat mới có trace chính xác được đính kèm và prompt tạo Skill đã điền sẵn. Chưa có gì được gửi cho đến khi bạn bấm Send; chat dùng model đang chọn và bạn có thể tinh chỉnh kết quả ngay trong cuộc trò chuyện. Nếu điều hướng đi nơi khác, trace đã review được cache tối đa một giờ và chỉ khôi phục vào composer trống của chat Work mới. Copy SKILL.md vào Settings → Skills để kiểm tra và lưu. Ảnh chụp ở lại máy. Bản ghi gốc vẫn còn để bạn xóa trong màn hình recorder. macOS và Linux hiện chưa hỗ trợ capture.',
       },
       {
         type: 'tips',
