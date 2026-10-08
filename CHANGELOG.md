@@ -7,11 +7,12 @@ All notable changes to EvoFlux are documented in this file.
 ### Added
 
 - **Voice input** adds push-to-talk with editable transcripts, multiple speech-to-text provider profiles, ordered failover, and a local/private-only routing option. An optional multilingual Local Whisper engine/model can be installed on demand when verified platform assets are published. Provider credentials remain on the EvoFlux backend.
+- **Local Whisper** has a manually triggered, cross-platform build and verification workflow. It does not run for pull requests; downloads are enabled only after verified assets are published and pinned in the app.
 
 ### Changed
 
 - **Voice input** places the microphone and recording controls beside **Send** in the chat composer.
-- **Settings → Voice input** identifies the current host platform and clearly reports when a Local Whisper download is not yet published.
+- **Settings → Voice input** uses clearer provider-order and recording-privacy labels, moves technical profile details into Advanced settings, and distinguishes an unpublished Whisper download from a status-check error.
 
 ### Fixed
 

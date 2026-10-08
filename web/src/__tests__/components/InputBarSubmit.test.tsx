@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { InputBar } from '@/components/InputBar'
+import { renderWithQueryClient as render } from '../helpers/query-render'
 
 beforeEach(() => {
   Object.defineProperty(window, 'matchMedia', {

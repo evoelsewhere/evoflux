@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { BlockRenderer } from '@/components/BlockRenderer'
@@ -10,6 +10,7 @@ import {
   type DocumentAnnotation,
 } from '@/lib/document-annotations'
 import { useDocumentAnnotationsStore } from '@/stores/useDocumentAnnotationsStore'
+import { renderWithQueryClient as render } from '../helpers/query-render'
 
 const chart: DocumentAnnotation = {
   id: 'a1',
