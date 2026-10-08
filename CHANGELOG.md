@@ -16,6 +16,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- The optional Local Whisper asset builder can now package archives containing multiple runtime or model files on Windows, macOS, and Linux.
 - **Settings → Voice input** can load model catalogs from hosted OpenAI-compatible endpoints such as Groq without classifying their public addresses as private-network hosts.
 
 ## [3.0.5] - 2026-10-08

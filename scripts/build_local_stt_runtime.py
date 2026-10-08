@@ -47,18 +47,18 @@ def tree_size(path: Path) -> int:
     return sum(file.stat().st_size for file in path.rglob("*") if file.is_file())
 
 
-def zip_tree(source: Path, archive_path: Path) -> int:
+def zip_tree(source_root: Path, archive_path: Path) -> int:
     archive_path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_STORED, allowZip64=True) as archive:
-        for file in sorted(item for item in source.rglob("*") if item.is_file()):
-            relative = file.relative_to(source).as_posix()
+        for file_path in sorted(item for item in source_root.rglob("*") if item.is_file()):
+            relative = file_path.relative_to(source_root).as_posix()
             info = zipfile.ZipInfo(relative, date_time=(2020, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_STORED
-            mode = file.stat().st_mode
+            mode = file_path.stat().st_mode
             info.external_attr = (stat.S_IFREG | (mode & 0o777)) << 16
-            with file.open("rb") as source, archive.open(info, "w") as target:
-                shutil.copyfileobj(source, target, 1024 * 1024)
-    return tree_size(source)
+            with file_path.open("rb") as source_handle, archive.open(info, "w") as target:
+                shutil.copyfileobj(source_handle, target, 1024 * 1024)
+    return tree_size(source_root)
 
 
 def _run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:
