@@ -311,6 +311,44 @@ class MemoryExtractionSettings(BaseModel):
     model: str | None = None
 
 
+class VoiceSttProviderSettings(BaseModel):
+    """Non-secret configuration for one speech transcription endpoint."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    name: str
+    adapter: Literal[
+        "openai_compatible",
+        "deepgram",
+        "azure_speech",
+        "google_cloud",
+        "local_faster_whisper",
+    ]
+    base_url: str
+    models: list[str] = Field(default_factory=list)
+    locale: str | None = None
+    enabled: bool = True
+
+
+class VoiceSttRouteEntry(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    provider_id: str
+    model_id: str
+
+
+class VoiceSttSettings(BaseModel):
+    """Voice provider profiles and an explicit ordered transcription chain."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    providers: dict[str, VoiceSttProviderSettings] = Field(default_factory=dict)
+    chain: list[VoiceSttRouteEntry] = Field(default_factory=list)
+    allow_hosted_fallback: bool = False
+    local_private_only: bool = False
+
+
 class RuntimeSettings(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -336,6 +374,7 @@ class RuntimeSettings(BaseModel):
     conductor: ConductorSettings = Field(default_factory=ConductorSettings)
     team_spawn: TeamSpawnModeSettings = Field(default_factory=TeamSpawnModeSettings)
     follow_up: FollowUpSettings = Field(default_factory=FollowUpSettings)
+    voice_stt: VoiceSttSettings = Field(default_factory=VoiceSttSettings)
 
 
 def follow_up_delivery_default() -> str:

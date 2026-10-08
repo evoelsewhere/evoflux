@@ -25,6 +25,7 @@ import {
   Layers,
   MonitorCog,
   MonitorSmartphone,
+  Mic,
   Palette,
   Plug,
   Search,
@@ -60,6 +61,7 @@ import {
 
 type SidebarPath =
   | '/settings/providers'
+  | '/settings/voice'
   | '/settings/connection'
   | '/settings/remote-use'
   | '/settings/version-control'
@@ -228,6 +230,12 @@ export function SettingsSidebar({ currentPath, onNavigate, onBack }: SettingsSid
             label: t('Providers'),
             icon: KeyRound,
             matchPrefix: '/settings/providers',
+          },
+          {
+            to: '/settings/voice',
+            label: t('Voice input'),
+            icon: Mic,
+            matchPrefix: '/settings/voice',
           },
           {
             to: '/settings/agents',

@@ -28,6 +28,7 @@ import { ContextSettingsPage } from '@/routes/settings.context'
 import { MemorySettingsPage } from '@/routes/settings.memory'
 import { NotificationSettingsPage } from '@/routes/settings.notifications'
 import { ProvidersSettingsPage } from '@/routes/settings.providers'
+import { VoiceSettingsPage } from '@/routes/settings.voice'
 import { RemoteUseSettingsPage } from '@/routes/settings.remote-use'
 import { SandboxSettingsPage } from '@/routes/settings.sandbox'
 import { SkillEditorPage } from '@/routes/settings.skills.$name'
@@ -49,6 +50,7 @@ const LIST_SECTIONS: Readonly<Record<string, string>> = {
 
 const LEAF_SECTIONS: Readonly<Record<string, string>> = {
   providers: 'Providers',
+  voice: 'Voice input',
   'language-servers': 'Language servers',
   connection: 'Connection',
   'remote-use': 'Remote Control',
@@ -115,6 +117,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'remote-use') return <RemoteUseSettingsPage />
   if (section === 'version-control') return <VersionControlSettingsPage />
   if (section === 'providers') return <ProvidersSettingsPage />
+  if (section === 'voice') return <VoiceSettingsPage />
   if (section === 'language-servers') return <LanguageServersSettingsPage />
   if (section === 'sandbox') return <SandboxSettingsPage />
   // Keep old command/deep-link targets working after Dream was folded into Memory.

@@ -35,6 +35,7 @@ external deployments should configure an access key and restrictive CORS.
 | `/api/mcp` | global/plugin server status and global MCP lifecycle | `mcp.py` |
 | `/api/plugins` | package inspection/install/editor/credentials/lifecycle, marketplace sources/catalogs, prepared previews and marketplace installs | `plugins.py` |
 | `/api/settings` | providers, sandbox, Git, browser, Computer App Control and Conductor | `settings.py` |
+| `/api/voice` | speech-to-text provider profiles, routing and transient transcription | `voice.py` |
 | `/api/scheduler` | task CRUD, pause/resume and trigger | `scheduler.py` |
 | `/api/wiki` | validated Markdown tree/file operations | `wiki.py` |
 | `/api/dream` | config, manual run/status and lint | `dream.py` |
@@ -50,6 +51,55 @@ and defaults to `false`; the server refuses a preview with unsupported
 components until consent is supplied. Marketplace installs are disabled by
 default and use the same trust-review lifecycle as local packages. Request and
 response details are defined in the generated OpenAPI schema.
+
+## Voice transcription
+
+`GET /api/voice/settings` returns provider profiles, ordered provider/model
+pairs, adapter IDs, local/private-only policy, and credential-configured
+booleans. It never returns secret values. `PUT /api/voice/settings` replaces
+that configuration; optional API keys are accepted only in the write request
+and stored in the EvoFlux server-side `.env` credential file. Google Cloud
+Speech uses Application Default Credentials on the backend host.
+Provider profiles may be saved as drafts with an empty endpoint, but drafts
+cannot be routed or tested until an endpoint is configured. `GET
+/api/voice/providers/{provider_id}/models` fetches an OpenAI-compatible
+`/models` catalog through the backend and returns only model IDs; the API key
+is never returned to the browser.
+
+Hosted profiles are blocked until `allow_hosted_fallback` is explicitly enabled.
+`local_private_only` overrides that flag and excludes hosted destinations.
+`POST /api/voice/providers/{provider_id}/test` accepts a user-recorded multipart
+clip and `model_id` to test only that profile; the Settings UI records a
+four-second sample after the user clicks the test action.
+
+`POST /api/voice/transcribe` accepts multipart `audio` and optional `language`
+fields. Audio is limited to 25 MiB and supported audio MIME types. The response
+contains `text`, `provider_id`, `model_id`, `fallback_used`, and sanitized
+provider failure categories from earlier attempts. It never persists audio or
+transcript content. The client inserts the transcript into the composer for
+review; it does not submit a chat message.
+
+The optional Local Whisper runtime is managed separately from provider settings:
+
+| Route | Purpose |
+| --- | --- |
+| `GET /api/voice/runtime/status` | Return platform availability, installed/current versions, safe byte counts, health and install progress. |
+| `POST /api/voice/runtime/install` | Start an explicit download/install of the pinned engine and shared multilingual model. |
+| `POST /api/voice/runtime/install/cancel` | Cancel an active download or verification phase. |
+| `POST /api/voice/runtime/install/dismiss` | Dismiss the last failed install message. |
+| `POST /api/voice/runtime/check` | Load-check the installed model without sending audio to a provider. |
+| `DELETE /api/voice/runtime` | Remove only the managed engine and model assets. |
+
+The default manifest remains empty until verified release artifacts are
+published and pinned. A platform with no matching pinned assets reports
+`available: false`; the local profile cannot be added there, while configured
+remote/private providers remain available. The model and engine are separate
+archives. Install verifies byte size and SHA-256 before extraction, checks the
+model before activation, and retains the previous healthy version during an
+update. When configured, local inference runs on the EvoFlux backend host (also
+for audio captured by a remote phone), uses only local model files, and does not
+add a hosted fallback. Full request and response schemas are defined in the
+generated OpenAPI document.
 
 ## Team subresources
 

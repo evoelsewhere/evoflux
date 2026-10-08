@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useMemo } from 'react'
-import { ArrowUp, ChevronDown, ChevronUp, File, Folder, ListTodo, Loader2, MessageCircle, MessageSquareText, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronUp, File, Folder, ListTodo, Loader2, MessageCircle, MessageSquareText, Mic, Paperclip, Quote, Square, SquareCheck, Terminal, X } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { FilePreviewStrip } from './FilePreviewStrip'
 import { findActiveMention, rankFileRefs, type FileRef } from './InputBar.mentions'
 import { MentionOverlay } from './InputBar.overlay'
@@ -12,6 +13,9 @@ import { composeAnnotatedMessage, describeAnnotation } from '@/lib/document-anno
 import { useDocumentAnnotationsStore, usePendingAnnotations } from '@/stores/useDocumentAnnotationsStore'
 import type { AgentCapabilities, TodoItem } from '@/api/types'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { getVoiceSettings, transcribeVoiceRecording } from '@/api/client'
+import { useToastStore } from '@/stores/useToastStore'
+import { requestVoicePermission } from '@/lib/voice-permissions'
 
 // Re-export the public type so callers can import ``FileRef`` from this module
 // alongside the component. (The helper ``findActiveMention`` is imported from
@@ -314,8 +318,158 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   >(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const cancelRecordingRef = useRef(false)
+  const pointerStartedRef = useRef(false)
+  const pointerClickRef = useRef(false)
+  const recordingStartingRef = useRef(false)
+  const voiceTranscriptionAbortRef = useRef<AbortController | null>(null)
+  const voiceOperationIdRef = useRef(0)
+  const voiceSessionIdRef = useRef<string | null>(sessionId)
+  voiceSessionIdRef.current = sessionId
+  const recordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const maxDurationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const recordingStartedAtRef = useRef(0)
+  const [voiceState, setVoiceState] = useState<'idle' | 'recording' | 'transcribing'>('idle')
+  const [voiceElapsed, setVoiceElapsed] = useState(0)
+  const voiceSettings = useQuery({ queryKey: ['voice-settings'], queryFn: getVoiceSettings, staleTime: 60_000 })
+  const pushToast = useToastStore((state) => state.push)
   const dragCounterRef = useRef(0)
   const isMobile = useIsMobile()
+
+  const releaseVoiceTracks = useCallback(() => {
+    if (recordingTimerRef.current) clearTimeout(recordingTimerRef.current)
+    if (maxDurationTimerRef.current) clearTimeout(maxDurationTimerRef.current)
+    recordingTimerRef.current = null
+    maxDurationTimerRef.current = null
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+    mediaStreamRef.current = null
+  }, [])
+
+  const startVoiceRecording = useCallback(async () => {
+    if (voiceState !== 'idle' || disabled || recordingStartingRef.current) return
+    const operationId = ++voiceOperationIdRef.current
+    const recordingSessionId = sessionId
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      pushToast({ tone: 'error', title: 'Microphone unavailable', description: 'This browser does not support microphone recording.' })
+      return
+    }
+    cancelRecordingRef.current = false
+    recordingStartingRef.current = true
+    setVoiceState('recording')
+    try {
+      await requestVoicePermission()
+      if (operationId !== voiceOperationIdRef.current || cancelRecordingRef.current) {
+        recordingStartingRef.current = false
+        if (operationId === voiceOperationIdRef.current) setVoiceState('idle')
+        return
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      recordingStartingRef.current = false
+      if (cancelRecordingRef.current || operationId !== voiceOperationIdRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        if (operationId === voiceOperationIdRef.current) setVoiceState('idle')
+        return
+      }
+      mediaStreamRef.current = stream
+      const candidates = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4']
+      const mimeType = candidates.find((type) => MediaRecorder.isTypeSupported(type))
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      const chunks: Blob[] = []
+      recorder.ondataavailable = (event) => { if (event.data.size > 0) chunks.push(event.data) }
+      recorder.onstop = async () => {
+        const type = recorder.mimeType || chunks[0]?.type || 'audio/webm'
+        if (operationId === voiceOperationIdRef.current) {
+          releaseVoiceTracks()
+          setVoiceState('idle')
+        } else {
+          stream.getTracks().forEach((track) => track.stop())
+        }
+        if (
+          cancelRecordingRef.current ||
+          operationId !== voiceOperationIdRef.current ||
+          recordingSessionId !== voiceSessionIdRef.current ||
+          chunks.length === 0
+        ) return
+        setVoiceState('transcribing')
+        const abortController = new AbortController()
+        voiceTranscriptionAbortRef.current = abortController
+        try {
+          const extension = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : 'webm'
+          const file = new globalThis.File(chunks, `recording.${extension}`, { type })
+          const result = await transcribeVoiceRecording(file, undefined, abortController.signal)
+          if (operationId !== voiceOperationIdRef.current || recordingSessionId !== voiceSessionIdRef.current) return
+          const el = textareaRef.current
+          setValue((previous) => {
+            if (recordingSessionId !== voiceSessionIdRef.current) return previous
+            const start = el?.selectionStart ?? previous.length
+            const end = el?.selectionEnd ?? start
+            const separator = start > 0 && !/\s$/.test(previous.slice(0, start)) ? ' ' : ''
+            const text = `${separator}${result.text}`
+            const next = previous.slice(0, start) + text + previous.slice(end)
+            requestAnimationFrame(() => {
+              const caret = start + text.length
+              el?.focus()
+              el?.setSelectionRange(caret, caret)
+              if (el) {
+                el.style.height = 'auto'
+                el.style.height = `${Math.min(el.scrollHeight, 120)}px`
+              }
+            })
+            return next
+          })
+          if (result.fallback_used) pushToast({ tone: 'info', title: 'Voice transcript ready', description: `Used fallback ${result.provider_id} · ${result.model_id}. Review it before sending.` })
+        } catch (error) {
+          if (!abortController.signal.aborted) {
+            pushToast({ tone: 'error', title: 'Voice transcription failed', description: error instanceof Error ? error.message : 'Check Voice input settings and try again.' })
+          }
+        } finally {
+          if (voiceTranscriptionAbortRef.current === abortController) voiceTranscriptionAbortRef.current = null
+          if (operationId === voiceOperationIdRef.current) setVoiceState('idle')
+        }
+      }
+      mediaRecorderRef.current = recorder
+      recordingStartedAtRef.current = Date.now()
+      setVoiceElapsed(0)
+      recorder.start()
+      const tick = () => {
+        setVoiceElapsed(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000))
+        if (mediaRecorderRef.current?.state === 'recording') recordingTimerRef.current = setTimeout(tick, 250)
+      }
+      tick()
+      maxDurationTimerRef.current = setTimeout(() => {
+        if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+        pushToast({ tone: 'info', title: 'Recording stopped', description: 'Voice recordings are limited to two minutes.' })
+      }, 120_000)
+    } catch (error) {
+      if (operationId !== voiceOperationIdRef.current) return
+      recordingStartingRef.current = false
+      releaseVoiceTracks()
+      setVoiceState('idle')
+      pushToast({ tone: 'error', title: 'Microphone unavailable', description: error instanceof Error ? error.message : 'Allow microphone access in your browser or device settings.' })
+    }
+  }, [disabled, pushToast, releaseVoiceTracks, sessionId, voiceState])
+
+  const stopVoiceRecording = useCallback((cancel = false) => {
+    cancelRecordingRef.current = cancel
+    const recorder = mediaRecorderRef.current
+    mediaRecorderRef.current = null
+    if (recorder?.state === 'recording') recorder.stop()
+    else {
+      if (!recorder) cancelRecordingRef.current = true
+      recordingStartingRef.current = false
+      releaseVoiceTracks()
+    }
+    if (cancel || !recorder) setVoiceState('idle')
+  }, [releaseVoiceTracks])
+
+  useEffect(() => () => {
+    cancelRecordingRef.current = true
+    voiceTranscriptionAbortRef.current?.abort()
+    if (mediaRecorderRef.current?.state === 'recording') mediaRecorderRef.current.stop()
+    releaseVoiceTracks()
+  }, [releaseVoiceTracks])
 
   // Per-session composer drafts — switching sessions must not bleed text
   // or attachments into the next chat.
@@ -340,6 +494,15 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
   useEffect(() => {
     const prev = activeSessionRef.current
     if (prev === sessionId) return
+    voiceOperationIdRef.current += 1
+    cancelRecordingRef.current = true
+    recordingStartingRef.current = false
+    const recorder = mediaRecorderRef.current
+    mediaRecorderRef.current = null
+    if (recorder?.state === 'recording') recorder.stop()
+    voiceTranscriptionAbortRef.current?.abort()
+    releaseVoiceTracks()
+    setVoiceState('idle')
     draftsRef.current.set(prev ?? '', draftSnapshotRef.current)
     const next = draftsRef.current.get(sessionId ?? '')
     setValue(next?.value ?? '')
@@ -351,7 +514,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     setSkillRange(null)
     setHistoryIndex(-1)
     activeSessionRef.current = sessionId
-  }, [sessionId])
+  }, [releaseVoiceTracks, sessionId])
 
   // Terminal → composer handoff: the AI Terminal's "Send to agent" dispatches
   // this event so selected output lands in the chat draft, without coupling
@@ -1317,6 +1480,57 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     </button>
   )
 
+  const voiceEl = !minimized && voiceSettings.data?.chain.length ? (
+    <button
+      type="button"
+      onPointerDown={(event) => {
+        if (isMobile || event.button !== 0) return
+        event.preventDefault()
+        event.currentTarget.setPointerCapture(event.pointerId)
+        pointerStartedRef.current = true
+        pointerClickRef.current = true
+        void startVoiceRecording()
+      }}
+      onPointerUp={() => {
+        if (!isMobile && pointerStartedRef.current) {
+          pointerStartedRef.current = false
+          stopVoiceRecording()
+        }
+      }}
+      onPointerCancel={() => { pointerStartedRef.current = false; pointerClickRef.current = false; stopVoiceRecording(true) }}
+      onClick={() => {
+        if (pointerClickRef.current) { pointerClickRef.current = false; return }
+        if (pointerStartedRef.current) return
+        if (isMobile || voiceState === 'recording') {
+          if (voiceState === 'recording') stopVoiceRecording()
+          else void startVoiceRecording()
+        } else if (voiceState === 'idle') void startVoiceRecording()
+      }}
+      disabled={disabled || voiceState === 'transcribing'}
+      aria-label={voiceState === 'recording' ? `Stop recording, ${voiceElapsed} seconds` : voiceState === 'transcribing' ? 'Transcribing recording' : 'Hold to record voice input'}
+      title={voiceState === 'recording' ? `Release to transcribe · ${voiceElapsed}s` : voiceState === 'transcribing' ? 'Transcribing…' : isMobile ? 'Tap to record, tap again to stop' : 'Hold to talk'}
+      className={cn(actionBtnClass, voiceState === 'recording' && 'bg-(--color-error-subtle) text-(--color-error)')}
+    >
+      {voiceState === 'transcribing' ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Mic size={14} aria-hidden="true" />}
+    </button>
+  ) : null
+  const voiceCancelEl = voiceState === 'recording' || voiceState === 'transcribing' ? (
+    <button
+      type="button"
+      onClick={() => {
+        if (voiceState === 'recording') stopVoiceRecording(true)
+        else {
+          voiceTranscriptionAbortRef.current?.abort()
+        }
+      }}
+      aria-label={voiceState === 'recording' ? 'Cancel recording' : 'Cancel transcription'}
+      title={voiceState === 'recording' ? 'Discard recording' : 'Cancel transcription'}
+      className={actionBtnClass}
+    >
+      <X size={14} aria-hidden="true" />
+    </button>
+  ) : null
+
   const chatEl = minimized ? (
     <button
       type="button"
@@ -1994,6 +2208,8 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
                       {charCount}
                     </span>
                   )}
+                  {voiceEl}
+                  {voiceCancelEl}
                   {sendOrStopEl}
                 </div>
               </>

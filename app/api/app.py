@@ -34,6 +34,7 @@ from app.api.routes.skills import router as skills_router
 from app.api.routes.snippets import router as snippets_router
 from app.api.routes.team import router as team_router
 from app.api.routes.wiki import router as wiki_router
+from app.api.routes.voice import router as voice_router
 from app.core.config import settings
 from app.core.desktop_auth import DesktopTokenMiddleware
 from app.core.exception_handlers import EXCEPTION_HANDLERS
@@ -296,6 +297,12 @@ async def lifespan(app: FastAPI):
     )
     if webbridge_artifact_cleanup_task:
         webbridge_artifact_cleanup_task.cancel()
+    try:
+        from app.services.local_stt_runtime.worker_client import worker
+
+        await worker.close()
+    except Exception as exc:  # noqa: BLE001 - shutdown should continue if the optional worker is gone
+        logger.warning("local_stt_worker_shutdown_failed error_type={}", type(exc).__name__)
     await dream_scheduler.stop()
     await task_scheduler.stop()
     await team_manager.stop()
@@ -393,6 +400,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router, prefix="/api/mcp", tags=["mcp"])
     app.include_router(plugins_router, prefix="/api/plugins", tags=["plugins"])
     app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
+    app.include_router(voice_router, prefix="/api/voice", tags=["voice"])
     app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
     app.include_router(dream_router, prefix="/api", tags=["dream"])
     app.include_router(

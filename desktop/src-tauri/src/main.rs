@@ -530,7 +530,6 @@ fn request_voice_permissions() -> Result<bool, String> {
     use block2::RcBlock;
     use objc2::runtime::Bool;
     use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
-    use objc2_speech::{SFSpeechRecognizer, SFSpeechRecognizerAuthorizationStatus};
     use std::sync::mpsc;
 
     let audio_type = unsafe { AVMediaTypeAudio.expect("AVMediaTypeAudio is available") };
@@ -553,27 +552,9 @@ fn request_voice_permissions() -> Result<bool, String> {
             .map_err(|_| "microphone permission request was cancelled".to_string())?
     };
 
-    let speech_status = unsafe { SFSpeechRecognizer::authorizationStatus() };
-    let speech_granted = if speech_status == SFSpeechRecognizerAuthorizationStatus::Authorized {
-        true
-    } else if speech_status == SFSpeechRecognizerAuthorizationStatus::Denied
-        || speech_status == SFSpeechRecognizerAuthorizationStatus::Restricted
-    {
-        false
-    } else {
-        let (tx, rx) = mpsc::channel();
-        let handler: RcBlock<dyn Fn(SFSpeechRecognizerAuthorizationStatus)> =
-            RcBlock::new(move |status: SFSpeechRecognizerAuthorizationStatus| {
-                let _ = tx.send(status == SFSpeechRecognizerAuthorizationStatus::Authorized);
-            });
-        unsafe {
-            SFSpeechRecognizer::requestAuthorization(&handler);
-        }
-        rx.recv()
-            .map_err(|_| "speech recognition permission request was cancelled".to_string())?
-    };
-
-    Ok(microphone_granted && speech_granted)
+    // EvoFlux sends audio to the user's configured STT endpoint. Native OS
+    // speech-recognition access is not needed for this provider-owned flow.
+    Ok(microphone_granted)
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
