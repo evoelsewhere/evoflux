@@ -83,6 +83,15 @@ _REMOVED_FIRST_PARTY_AGENT_FILES: dict[str, str] = {
     "agents/coding/qa.md": "qa",
 }
 
+# First-party members retired from every mode, keyed relative to the agents
+# directory. Unlike the seed-install list above, these are pruned on every
+# start, and the seed's comment-only placeholder body also counts as untouched.
+_RETIRED_FIRST_PARTY_AGENT_FILES: dict[str, str] = {
+    "debate.md": "debate",
+    "coding/debate.md": "debate",
+}
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+
 
 @dataclass(slots=True)
 class SeedResult:
@@ -449,7 +458,23 @@ def _prune_removed_first_party_agents(config_dir: Path) -> list[str]:
     return sorted(removed)
 
 
-def _is_prunable_legacy_agent(path: Path, expected_name: str) -> bool:
+def prune_retired_first_party_agents(agents_dir: Path) -> list[str]:
+    """Remove retired first-party member files the user never customised."""
+    removed: list[str] = []
+    for rel, expected_name in _RETIRED_FIRST_PARTY_AGENT_FILES.items():
+        path = agents_dir / rel
+        if not path.exists() or not _is_prunable_legacy_agent(
+            path, expected_name, allow_placeholder_body=True
+        ):
+            continue
+        path.unlink()
+        removed.append(rel)
+    return sorted(removed)
+
+
+def _is_prunable_legacy_agent(
+    path: Path, expected_name: str, *, allow_placeholder_body: bool = False
+) -> bool:
     from app.agent.loader import _FRONTMATTER_RE
 
     try:
@@ -461,6 +486,8 @@ def _is_prunable_legacy_agent(path: Path, expected_name: str) -> bool:
         return False
     raw_meta = yaml.safe_load(match.group(1)) or {}
     body = match.group(2).strip()
+    if allow_placeholder_body:
+        body = _HTML_COMMENT_RE.sub("", body).strip()
     if raw_meta.get("name") != expected_name or raw_meta.get("role") != "member":
         return False
     return not body or body.startswith(

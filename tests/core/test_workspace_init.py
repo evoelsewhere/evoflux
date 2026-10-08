@@ -5,6 +5,7 @@ from pathlib import Path
 from app.cli.seed import SeedResult
 from app.cli.seed import _install_from_local
 from app.cli.seed import _replace_placeholder_if_needed
+from app.cli.seed import prune_retired_first_party_agents
 from app.core.workspace_init import ensure_workspace_initialized
 
 
@@ -155,6 +156,51 @@ def test_ensure_workspace_initialized_materializes_builtins_without_seed(
     # without a lead agent (the seed bundle normally supplies it).
     assert (config / "agents" / "evoflux.md").is_file()
     assert (config / "agents" / "coding" / "evoflux.md").is_file()
+    # Debate is retired from both modes and must not be materialised.
+    assert not (config / "agents" / "debate.md").exists()
+    assert not (config / "agents" / "coding" / "debate.md").exists()
+
+
+def test_prune_retired_first_party_agents_removes_untouched_debate(
+    tmp_path: Path,
+) -> None:
+    agents = tmp_path / "agents"
+    placeholder = agents / "debate.md"
+    materialised = agents / "coding" / "debate.md"
+    materialised.parent.mkdir(parents=True)
+    placeholder.write_text(
+        "---\nname: debate\nrole: member\nmodel: codex:gpt-5\n---\n\n"
+        "<!-- Built-in debate instructions, description, and tools are "
+        "provided by EvoFlux. Add extra prompt text below. -->\n",
+        encoding="utf-8",
+    )
+    materialised.write_text(
+        "---\nname: debate\nrole: member\ndescription: Code critic.\n"
+        "model: codex:gpt-5\nthinking_level: high\n---\n\n",
+        encoding="utf-8",
+    )
+
+    removed = prune_retired_first_party_agents(agents)
+
+    assert removed == ["coding/debate.md", "debate.md"]
+    assert not placeholder.exists()
+    assert not materialised.exists()
+
+
+def test_prune_retired_first_party_agents_keeps_customised_debate(
+    tmp_path: Path,
+) -> None:
+    agents = tmp_path / "agents"
+    agents.mkdir()
+    custom = agents / "debate.md"
+    custom.write_text(
+        "---\nname: debate\nrole: member\nmodel: codex:gpt-5\n---\n\n"
+        "<!-- seed note -->\nChallenge every pricing assumption.\n",
+        encoding="utf-8",
+    )
+
+    assert prune_retired_first_party_agents(agents) == []
+    assert custom.exists()
 
 
 def test_ensure_workspace_initialized_heals_preexisting_leadless_workspace(

@@ -26,12 +26,15 @@ describe('agent settings visuals', () => {
   it('resolves settings paths and live handles to specialized emblems', () => {
     expect(agentVisualKind('coding/coder')).toBe('coder')
     expect(agentVisualKind('architect#2')).toBe('architect')
-    expect(agentVisualKind('debate#3')).toBe('debate')
     expect(agentVisualKind('explorer#1')).toBe('explorer')
   })
 
   it('uses the lead and custom emblems when appropriate', () => {
     expect(agentVisualKind('anything', 'lead')).toBe('EvoFlux')
     expect(agentVisualKind('custom-reviewer')).toBe('custom')
+    // Debate is retired; a leftover customised file renders as a custom agent.
+    expect(agentVisualKind('debate#3')).toBe('custom')
+    expect(isBuiltInAgentName('debate', 'member')).toBe(false)
+    expect(isBuiltInAgentName('coding/debate', 'member')).toBe(false)
   })
 })
