@@ -1,0 +1,193 @@
+name: Local STT runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version for the optional local engine bundle
+        required: true
+        default: "0.1.0"
+      publish:
+        description: Publish verified assets as a non-latest GitHub release
+        type: boolean
+        default: false
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  RUNTIME_VERSION: ${{ inputs.version || '0.1.0' }}
+  RELEASE_TAG: local-stt-runtime-${{ inputs.version || '0.1.0' }}
+
+jobs:
+  validate:
+    name: Validate release version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject unsafe version strings
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$ ]]; then
+            echo "Version must be 1-64 safe identifier characters." >&2
+            exit 1
+          fi
+
+  build-runtime:
+    name: Runtime · ${{ matrix.platform }}
+    needs: [validate]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: win32-x64
+          - os: macos-15-intel
+            platform: darwin-x64
+          - os: macos-15
+            platform: darwin-arm64
+          - os: ubuntu-22.04
+            platform: linux-x64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Build pinned engine packages
+        shell: bash
+        run: |
+          uv run python scripts/build_local_stt_runtime.py \
+            --asset runtime \
+            --version "$RUNTIME_VERSION" \
+            --out dist/local-stt-runtime \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-stt-runtime-${{ matrix.platform }}
+          path: dist/local-stt-runtime/*
+          if-no-files-found: error
+          retention-days: 7
+
+  build-model:
+    name: Multilingual Whisper model
+    needs: [validate]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Package the pinned multilingual model
+        shell: bash
+        run: |
+          python scripts/build_local_stt_runtime.py \
+            --asset model \
+            --out dist/local-stt-runtime \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-stt-model
+          path: dist/local-stt-runtime/*
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    name: Offline load · ${{ matrix.platform }}
+    needs: [build-runtime, build-model]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            platform: win32-x64
+          - os: macos-15-intel
+            platform: darwin-x64
+          - os: macos-15
+            platform: darwin-arm64
+          - os: ubuntu-22.04
+            platform: linux-x64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install repository verification dependencies
+        run: uv sync --frozen
+      - uses: actions/download-artifact@v5
+        with:
+          name: local-stt-runtime-${{ matrix.platform }}
+          path: dist/runtime
+      - uses: actions/download-artifact@v5
+        with:
+          name: local-stt-model
+          path: dist/model
+      - name: Verify archives and load the model offline
+        shell: bash
+        run: |
+          runtime_archive=(dist/runtime/evoflux-local-stt-*.zip)
+          model_archive=(dist/model/evoflux-whisper-small-*.zip)
+          uv run python scripts/verify_local_stt_runtime.py \
+            --runtime "${runtime_archive[0]}" \
+            --model "${model_archive[0]}"
+
+  publish:
+    name: Publish verified runtime assets
+    needs: [verify]
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: local-stt-*
+          path: release-assets
+          merge-multiple: true
+      - name: Merge generated manifest
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          root = Path("release-assets")
+          manifest = {"runtime_assets": {}, "model_asset": None}
+          for path in sorted(root.glob("runtime-*.json")):
+              item = json.loads(path.read_text())
+              manifest["runtime_assets"][item["platform"]] = item
+          for path in sorted(root.glob("model-*.json")):
+              manifest["model_asset"] = json.loads(path.read_text())
+          if not manifest["runtime_assets"] or manifest["model_asset"] is None:
+              raise SystemExit("The runtime/model manifest is incomplete")
+          output = root / "local-stt-runtime-manifest.json"
+          output.write_text(json.dumps(manifest, indent=2) + "\n")
+          print(json.dumps(manifest, indent=2))
+          PY
+          {
+            echo "### Pin verified assets in app/services/local_stt_runtime/manifest.py"
+            echo '```json'
+            cat release-assets/local-stt-runtime-manifest.json
+            echo '```'
+            echo "Do not mark an app platform supported until its packaged-sidecar and multilingual audio checks pass."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish non-latest release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --title "EvoFlux Local STT runtime $RUNTIME_VERSION" \
+              --notes "Optional faster-whisper runtime and multilingual Whisper small model assets for EvoFlux." \
+              --latest=false
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber

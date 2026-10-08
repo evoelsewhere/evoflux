@@ -1,8 +1,9 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { createRef } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { InputBar, type InputBarHandle } from '@/components/InputBar'
+import { renderWithQueryClient as render } from '../helpers/query-render'
 
 describe('InputBar selected-chat context', () => {
   beforeEach(() => {

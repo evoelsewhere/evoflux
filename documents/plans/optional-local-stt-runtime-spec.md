@@ -1,6 +1,6 @@
 # Optional Local STT Runtime — Design Specification
 
-Status: Proposed; awaiting product review.
+Status: Approved for implementation.
 
 ## Summary
 

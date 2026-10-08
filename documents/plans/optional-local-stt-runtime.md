@@ -99,7 +99,7 @@
 
 ### Task 6: Release integration and documentation
 
-1. Add a manual runtime build workflow for Windows x64, macOS Intel, macOS Apple Silicon and Linux x64. Verification runs on PRs touching runtime code; release upload is guarded by an explicit input and contents-write permission.
+1. Add a manual-only runtime build workflow for Windows x64, macOS Intel, macOS Apple Silicon and Linux x64. It does not run on pull requests; release upload is guarded by an explicit input and contents-write permission.
 2. Add generated manifest instructions in workflow summary. Pin asset records in source only after checksums and sizes are produced by a successful build; never invent values.
 3. Update the voice feature guide, docs index, HTTP API reference, in-app help for English/Vietnamese/Japanese, and the existing `[Unreleased]` changelog section.
 4. Record any platform that has not passed packaged-sidecar and real audio validation as unavailable; do not call the feature release-ready until each declared platform and all three languages meet product thresholds.
@@ -119,3 +119,10 @@
 - [`faster-whisper`](https://github.com/SYSTRAN/faster-whisper): PyAV audio decoding and Python requirements.
 - [CTranslate2 installation](https://github.com/OpenNMT/CTranslate2/blob/master/docs/installation.md): published wheel platform coverage.
 - [CTranslate2 hardware support](https://opennmt.net/CTranslate2/hardware_support.html): CPU architecture support and runtime expectations.
+
+## Download availability follow-up
+
+- [x] Restore the cross-platform asset build and offline verification workflow as manual-only; validate release version input and retain the explicit publish gate.
+- [x] Document how to publish the verified artifacts and pin their generated checksums in the app manifest.
+- [x] Clarify provider order, hosted audio consent, advanced profile fields and Whisper availability in Settings and localized Help.
+- [ ] Run the workflow, publish the verified assets, pin its generated manifest, then build and smoke-test an app version that can download them.

@@ -63,8 +63,27 @@ describe('VoiceSettingsPage local runtime availability', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(<QueryClientProvider client={client}><VoiceSettingsPage /></QueryClientProvider>)
 
-    expect(await screen.findByText((_, element) => element?.tagName === 'P' && element.textContent?.includes('Windows x64 · download not published') === true)).toBeInTheDocument()
-    expect(screen.getByText('Local STT assets are not included in this app release yet. Configured remote/custom speech providers remain available.')).toBeInTheDocument()
+    expect(await screen.findByText((_, element) => element?.tagName === 'P' && element.textContent?.includes('Windows x64 · download not published for this platform') === true)).toBeInTheDocument()
+    expect(screen.getByText('Whisper downloads are not published for this app version yet. Other speech providers still work.')).toBeInTheDocument()
+  })
+
+  it('explains provider order and recording privacy in plain language', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><VoiceSettingsPage /></QueryClientProvider>)
+
+    expect(await screen.findByRole('heading', { name: 'Speech providers' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Provider order and recording privacy' })).toBeInTheDocument()
+    expect(screen.getByText('EvoFlux tries the first service, then the backups in order if it fails.')).toBeInTheDocument()
+    expect(screen.getByText('Allow online speech services to receive recordings')).toBeInTheDocument()
+  })
+
+  it('shows a retry action when runtime status cannot be checked', async () => {
+    api.getLocalSttRuntime.mockRejectedValueOnce(new Error('sidecar unavailable'))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><VoiceSettingsPage /></QueryClientProvider>)
+
+    expect(await screen.findByText('Download status could not be checked')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry status' })).toBeInTheDocument()
   })
 
   it('starts a new provider with an empty endpoint and a useful placeholder', async () => {

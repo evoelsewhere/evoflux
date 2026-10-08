@@ -182,6 +182,7 @@ describe('Memory Pairs game view', () => {
   })
 
   it('moves focus with arrows and clears a mismatch after a short reveal', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
     vi.useFakeTimers()
     render(<MemoryGame active />)
     const cells = screen.getAllByRole('button', { name: 'Hidden card' })
