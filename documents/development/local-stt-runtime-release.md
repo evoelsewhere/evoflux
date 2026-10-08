@@ -36,6 +36,12 @@ Start or restart the EvoFlux sidecar/desktop app from that same PowerShell sessi
 
 Pull request runs only build and verify; the publish job requires a manual dispatch and an explicit publish input. The model is about 486 MB upstream; use the generated manifest as the authority for the actual download and installed sizes. Do not report a platform as available until its packaged app and local transcription have been checked on that platform.
 
+## Pre-merge app download test
+
+When a real HTTPS download is needed before merging, push a unique tag named `local-stt-test-<identifier>` to the verified feature-branch commit. The same workflow rebuilds and verifies the assets, then publishes a non-latest GitHub prerelease only after every platform check succeeds. This does not merge the branch. The prerelease is public, so create the tag only when publishing temporary public test assets is intended.
+
+Copy the generated manifest JSON from the successful workflow summary to a local file, set `EVOFLUX_LOCAL_STT_MANIFEST` to that file before launching the EvoFlux sidecar, and use **Settings → Voice input → Download to enable**. The override lets the local app use the exact HTTPS release URLs and real checksums without editing source pins or merging the PR. Delete the test prerelease after testing if it is no longer needed.
+
 ## Updating assets
 
 Use a new runtime version for every published asset set. Keep the model revision pinned unless a separately reviewed model update is intended. After publication, update the app manifest with the generated checksums and ship a new app build so the embedded pins match the release assets. Existing installed versions remain usable until the user chooses to update or remove them.
