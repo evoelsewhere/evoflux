@@ -20,6 +20,10 @@ documents/
 `features/`, `architecture/` and `reference/` describe what ships today. The
 dated directories are historical and never override them.
 
+## Feature guides
+
+- [Voice input and provider failover](features/voice-input.md)
+
 ## What does not belong here
 
 Adoption is an explicit approved change.

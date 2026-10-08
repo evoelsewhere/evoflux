@@ -6,6 +6,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Added
 
+- **Voice input** adds push-to-talk with editable transcripts, multiple speech-to-text provider profiles, ordered failover, and a local/private-only routing option. An optional multilingual Local Whisper engine/model can be installed on demand when verified platform assets are published. Provider credentials remain on the EvoFlux backend.
 - **Plugins → Marketplace** can add and sync Agent Plugins 1.0.0 and Claude Code
   sources, search their catalogs, and preview compatible components. Marketplace
   installs stay disabled until trust review; importing only supported parts of a
@@ -20,6 +21,8 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Changed
 
+- **Voice input** places the microphone and recording controls beside **Send** in the chat composer.
+- **Settings → Voice input** identifies the current host platform and clearly reports when a Local Whisper download is not yet published.
 - Plugin API verification applies POSIX credential-file mode checks only on POSIX
   systems, avoiding unsupported permission assertions on Windows.
 - **Plugins → Marketplace** reflows setup and source cards to panel width, explains
@@ -36,6 +39,7 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- **Settings → Voice input** can load model catalogs from hosted OpenAI-compatible endpoints such as Groq without classifying their public addresses as private-network hosts.
 - Claude Code MCP plugins receive a normalized `mcp.json`; invalid component
   diagnostics block marketplace installation, package review masks credentials,
   and remote MCP servers awaiting authorization show **Authentication required**.

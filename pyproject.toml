@@ -23,6 +23,8 @@ classifiers = [
 dependencies = [
     "pydantic-settings>=2.14.2",
     "httpx>=0.28.1",
+    "httpcore>=1.0.9,<2",
+    "google-auth[requests]>=2.40.0",
     "sqlmodel>=0.0.22",
     # SQLAlchemy's asyncio bridge requires greenlet at runtime. Declare it
     # directly because SQLAlchemy's platform marker misses Darwin ``arm64``,
