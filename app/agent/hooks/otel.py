@@ -35,9 +35,10 @@ All spans carry the standard ``gen_ai.*`` attributes where data is available.
 
 Exporter
 --------
-By default spans/metrics go to the console (Python logging / structlog).
-Set ``OTEL_EXPORTER_OTLP_ENDPOINT`` env var to forward to Jaeger / SigNoz /
-Grafana without touching any hook code.
+Spans and metrics are always written as JSONL under ``{STATE_DIR}/otel/`` (the
+in-app Telemetry page reads them).  Set ``EVOFLUX_OTEL_OTLP_ENDPOINT`` to also
+forward spans to Jaeger / SigNoz / Grafana without touching any hook code; the
+generic ``OTEL_EXPORTER_OTLP_ENDPOINT`` belongs to other tools and is ignored.
 
 Usage::
 
