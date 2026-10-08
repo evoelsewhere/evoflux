@@ -96,9 +96,6 @@ def build_runtime(out: Path, version: str, base_url: str, requirements: Path) ->
 
 
 def build_model(out: Path, base_url: str) -> dict[str, object]:
-    target = host_platform()
-    if target != "linux-x64":
-        raise SystemExit("Build the shared model archive on the Linux x64 workflow runner.")
     with tempfile.TemporaryDirectory(prefix="evoflux-stt-model-") as temporary:
         stage = Path(temporary)
         model_root = stage / "model"
@@ -144,7 +141,11 @@ def main() -> int:
     parser.add_argument("--asset", choices=("runtime", "model"), required=True)
     parser.add_argument("--version", default="0.1.0", help="Managed runtime artifact version.")
     parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--base-url", required=True, help="HTTPS GitHub release asset base URL.")
+    parser.add_argument(
+        "--base-url",
+        required=True,
+        help="HTTPS release asset base URL, or a file:// directory for local testing.",
+    )
     parser.add_argument(
         "--requirements",
         type=Path,
@@ -152,8 +153,8 @@ def main() -> int:
         help="Pinned runtime dependency list.",
     )
     args = parser.parse_args()
-    if not args.base_url.startswith("https://"):
-        parser.error("--base-url must use HTTPS")
+    if not args.base_url.startswith(("https://", "file://")):
+        parser.error("--base-url must use HTTPS or file:// for local testing")
     args.out.mkdir(parents=True, exist_ok=True)
     if args.asset == "runtime":
         record = build_runtime(args.out, args.version, args.base_url, args.requirements)
