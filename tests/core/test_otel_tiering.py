@@ -160,6 +160,7 @@ def test_setup_otel_idempotent(tmp_path, monkeypatch: pytest.MonkeyPatch):
         otel._metric_writer.close()
         otel._metric_writer = None
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+    monkeypatch.delenv("EVOFLUX_OTEL_OTLP_ENDPOINT", raising=False)
     try:
         otel.setup_otel(service_name="test", otel_dir=tmp_path)
         first = otel._tracer_provider

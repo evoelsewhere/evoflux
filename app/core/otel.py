@@ -1,6 +1,6 @@
 """OpenTelemetry SDK bootstrap — file-based export, no external service required.
 
-Output layout (default; overridden when ``OTEL_EXPORTER_OTLP_ENDPOINT`` is set):
+Output layout (always written; forwarding is additive):
 
     {STATE_DIR}/otel/spans/YYYY-MM-DD-HH.jsonl      (hourly partitions)
     {STATE_DIR}/otel/metrics/YYYY-MM-DD.jsonl       (daily partitions)
@@ -18,10 +18,25 @@ Design
        ratio only if span volume becomes unmanageable).
 - **JsonlBatchWriter** is used for both spans and metrics — bounded queue,
   drop-on-backpressure with a Prometheus counter, hourly span partitioning.
+- **Local files are unconditional.**  Forwarding to an OTLP collector is an
+  extra span processor, so exporting elsewhere can never blank the in-app
+  Telemetry page, which reads these files.
 
 Env vars
 --------
-- ``OTEL_EXPORTER_OTLP_ENDPOINT`` — forward to real OTLP backend, skip file.
+EvoFlux reads only its own variables.  The generic ``OTEL_*`` ones belong to
+whatever else runs on the machine (Copilot, CI agents, vendor SDKs), so they
+never change what EvoFlux records, where it sends it, or which credentials and
+identity attributes travel with it.
+
+- ``EVOFLUX_OTEL_OTLP_ENDPOINT`` — collector to forward spans to.  When set,
+  spans go to the local files *and* to that collector.
+- ``EVOFLUX_OTEL_OTLP_PROTOCOL`` — ``grpc`` (default) or ``http/protobuf``.
+- ``EVOFLUX_OTEL_OTLP_HEADERS`` — ``key=value,key2=value2`` sent with each
+  export.
+- ``EVOFLUX_OTEL_OTLP_TIMEOUT`` — export timeout in seconds.
+- ``EVOFLUX_OTEL_RESOURCE_ATTRIBUTES`` — extra resource attributes,
+  ``key=value,key2=value2``, on top of ``service.name``.
 - ``OTEL_SPAN_SAMPLE_RATIO`` — float in [0.0, 1.0]; default 1.0. Keep the
   default so every tool invocation shows up in the waterfall; only lower it
   if span volume becomes unmanageable.
@@ -31,12 +46,14 @@ Env vars
 
 from __future__ import annotations
 
-import logging
 import os
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
+from loguru import logger
 from opentelemetry import metrics, trace
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import (
@@ -63,7 +80,6 @@ from app.core.jsonl_writer import (
 from app.core.metrics import SPANS_DROPPED, SPANS_WRITTEN
 
 _INSTRUMENTATION_SCOPE = "EvoFlux"
-_logger = logging.getLogger(__name__)
 
 _tracer_provider: TracerProvider | None = None
 _meter_provider: MeterProvider | None = None
@@ -139,6 +155,193 @@ class _FilteringJsonlSpanExporter(SpanExporter):
 
     def shutdown(self) -> None:
         pass
+
+
+# ── Span export wiring ────────────────────────────────────────────────────────
+
+
+def _otlp_endpoint() -> str:
+    """Return EvoFlux's own OTLP endpoint, or ``""``.
+
+    Deliberately not the generic ``OTEL_EXPORTER_OTLP_ENDPOINT``: that variable
+    is process-global and other tools on the machine set it (Copilot, CI
+    agents, vendor SDKs).  Honouring it here used to replace the file exporter,
+    which silently blanked the in-app Telemetry page on those machines.
+    """
+    return os.getenv("EVOFLUX_OTEL_OTLP_ENDPOINT", "").strip()
+
+
+#: Every generic variable the OTLP exporters consult for a value that was not
+#: passed explicitly.  EvoFlux hides them while it builds its own exporter so a
+#: collector configured for another tool cannot receive EvoFlux spans, and its
+#: credentials cannot travel with them.
+_OTLP_ENV_VARS: tuple[str, ...] = (
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    "OTEL_EXPORTER_OTLP_TIMEOUT",
+    "OTEL_EXPORTER_OTLP_COMPRESSION",
+    "OTEL_EXPORTER_OTLP_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_CLIENT_KEY",
+    "OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_INSECURE",
+    "OTEL_EXPORTER_OTLP_PROTOCOL",
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+    "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT",
+    "OTEL_EXPORTER_OTLP_TRACES_COMPRESSION",
+    "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY",
+    "OTEL_EXPORTER_OTLP_TRACES_CLIENT_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_TRACES_INSECURE",
+    "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
+)
+
+
+@contextmanager
+def _isolated_otlp_env() -> Iterator[None]:
+    """Hide the generic OTLP variables for the duration of the block."""
+    saved = {
+        name: os.environ.pop(name) for name in _OTLP_ENV_VARS if name in os.environ
+    }
+    try:
+        yield
+    finally:
+        os.environ.update(saved)
+
+
+def _parse_pairs(raw: str) -> dict[str, str]:
+    """Parse ``key=value,key2=value2`` into a mapping, skipping malformed pairs."""
+    pairs: dict[str, str] = {}
+    for chunk in raw.split(","):
+        key, separator, value = chunk.partition("=")
+        key = key.strip()
+        if not separator or not key:
+            if chunk.strip():
+                logger.warning("otel_env_pair_ignored value={}", chunk.strip())
+            continue
+        pairs[key] = value.strip()
+    return pairs
+
+
+def _resource(service_name: str) -> Resource:
+    """Build the resource EvoFlux stamps on its own telemetry.
+
+    ``Resource.create`` would merge the machine-wide ``OTEL_RESOURCE_ATTRIBUTES``
+    that other tools set (host, user, org), stamping their identity onto EvoFlux
+    files.  Only EvoFlux's own variable is read here.
+    """
+    attributes = {"service.name": service_name}
+    attributes.update(_parse_pairs(os.getenv("EVOFLUX_OTEL_RESOURCE_ATTRIBUTES", "")))
+    return Resource(attributes=attributes)
+
+
+def _otlp_protocol() -> str:
+    """``grpc`` (default) or ``http/protobuf``, from EvoFlux's own variable."""
+    raw = os.getenv("EVOFLUX_OTEL_OTLP_PROTOCOL", "grpc").strip().lower()
+    return (
+        "http/protobuf" if raw in {"http", "http/protobuf", "http-protobuf"} else "grpc"
+    )
+
+
+def _otlp_headers() -> dict[str, str]:
+    return _parse_pairs(os.getenv("EVOFLUX_OTEL_OTLP_HEADERS", ""))
+
+
+def _otlp_timeout_seconds() -> float | None:
+    raw = os.getenv("EVOFLUX_OTEL_OTLP_TIMEOUT", "").strip()
+    if not raw:
+        return None
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        logger.warning("otel_otlp_timeout_ignored value={}", raw)
+        return None
+
+
+def _load_otlp_exporter(protocol: str) -> Callable[..., SpanExporter] | None:
+    """Return the OTLP exporter class for ``protocol``, or ``None`` when absent.
+
+    Both exporters are optional dependencies: the local pipeline works without
+    them.  Typed as a factory because the classes are duck-typed here and the
+    packages are not installed for static analysis.
+    """
+    try:
+        if protocol == "http/protobuf":
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # ty: ignore[unresolved-import]
+                OTLPSpanExporter,
+            )
+        else:
+            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # ty: ignore[unresolved-import]
+                OTLPSpanExporter,
+            )
+    except ImportError:
+        return None
+    return OTLPSpanExporter
+
+
+def _otlp_span_exporter(endpoint: str) -> SpanExporter | None:
+    """Build the optional OTLP forwarder, or ``None`` when the dep is absent.
+
+    Everything the exporter needs is passed explicitly, and the generic OTLP
+    variables are hidden while it is built: the gRPC exporter falls back to
+    ``OTEL_EXPORTER_OTLP_TRACES_HEADERS`` for a falsy ``headers`` argument and
+    the HTTP one merges those headers unconditionally.
+    """
+    protocol = _otlp_protocol()
+    exporter_cls = _load_otlp_exporter(protocol)
+    if exporter_cls is None:
+        logger.warning(
+            "otel_otlp_exporter_unavailable endpoint={} protocol={} package={}",
+            endpoint,
+            protocol,
+            "opentelemetry-exporter-otlp-proto-http"
+            if protocol == "http/protobuf"
+            else "opentelemetry-exporter-otlp-proto-grpc",
+        )
+        return None
+    with _isolated_otlp_env():
+        return exporter_cls(
+            endpoint=endpoint,
+            headers=_otlp_headers(),
+            timeout=_otlp_timeout_seconds(),
+        )
+
+
+def _configure_span_export(
+    tracer_provider: TracerProvider, otel_dir: Path
+) -> JsonlBatchWriter:
+    """Attach span processors: local JSONL always, OTLP only when opted in.
+
+    The local writer is unconditional because the Telemetry page reads those
+    files (:mod:`app.services.observability_service`), and because a machine
+    wide OTLP variable must not turn EvoFlux into a sender for someone else's
+    collector.  Returns the writer so :func:`shutdown_otel` can close it.
+    """
+    spans_dir = otel_dir / "spans"
+    writer = JsonlBatchWriter(
+        root=spans_dir,
+        partition_fn=hourly_partition,
+        on_write=lambda n: SPANS_WRITTEN.inc(n),
+        on_drop=lambda: SPANS_DROPPED.inc(),
+        name="spans",
+    )
+    tracer_provider.add_span_processor(
+        BatchSpanProcessor(_FilteringJsonlSpanExporter(writer))
+    )
+    logger.info(
+        "otel_trace_exporter=file dir={} sample_ratio={:.3f} slow_ms={}",
+        spans_dir,
+        _sample_ratio(),
+        _slow_span_threshold_ns() // 1_000_000,
+    )
+
+    endpoint = _otlp_endpoint()
+    if endpoint:
+        exporter = _otlp_span_exporter(endpoint)
+        if exporter is not None:
+            tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
+            logger.info("otel_trace_exporter=otlp endpoint={}", endpoint)
+    return writer
 
 
 class _JsonlMetricExporter(MetricExporter):
@@ -244,47 +447,13 @@ def setup_otel(
 
         otel_dir = Path(settings.EVOFLUX_STATE_DIR) / "otel"
 
-    resource = Resource.create({"service.name": service_name})
+    resource = _resource(service_name)
 
     # ── Tracer provider ───────────────────────────────────────────────────────
     # Head sampler is ALWAYS_ON; tiering happens at export via the filter.
     _tracer_provider = TracerProvider(resource=resource, sampler=ALWAYS_ON)
 
-    otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    if otlp_endpoint:
-        try:
-            # Optional dep; ImportError is handled below.
-            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # ty: ignore[unresolved-import]
-                OTLPSpanExporter,
-            )
-
-            _tracer_provider.add_span_processor(
-                BatchSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint))
-            )
-            _logger.info("otel_trace_exporter=otlp endpoint=%s", otlp_endpoint)
-        except ImportError:
-            _logger.warning(
-                "otel_otlp_exporter_unavailable "
-                "install opentelemetry-exporter-otlp-proto-grpc"
-            )
-    else:
-        spans_dir = otel_dir / "spans"
-        _span_writer = JsonlBatchWriter(
-            root=spans_dir,
-            partition_fn=hourly_partition,
-            on_write=lambda n: SPANS_WRITTEN.inc(n),
-            on_drop=lambda: SPANS_DROPPED.inc(),
-            name="spans",
-        )
-        _tracer_provider.add_span_processor(
-            BatchSpanProcessor(_FilteringJsonlSpanExporter(_span_writer))
-        )
-        _logger.info(
-            "otel_trace_exporter=file dir=%s sample_ratio=%.3f slow_ms=%d",
-            spans_dir,
-            _sample_ratio(),
-            _slow_span_threshold_ns() // 1_000_000,
-        )
+    _span_writer = _configure_span_export(_tracer_provider, otel_dir)
 
     trace.set_tracer_provider(_tracer_provider)
 
@@ -302,8 +471,8 @@ def setup_otel(
     _meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(_meter_provider)
 
-    _logger.info(
-        "otel_setup_complete service=%s spans_dir=%s metrics_dir=%s",
+    logger.info(
+        "otel_setup_complete service={} spans_dir={} metrics_dir={}",
         service_name,
         otel_dir / "spans",
         metrics_dir,

@@ -8,8 +8,8 @@ default specialists, tools, verification and navigation.
 
 Work starts from an outcome and gives the session an isolated workspace under
 the EvoFlux workspace root. Uploads, generated files and quick scripts live in
-that session root. The default team favors execution, exploration, consulting
-and debate without requiring a repository.
+that session root. The default team favors execution, exploration and
+consulting without requiring a repository.
 
 Work sessions can be organized into user-created folders. A folder may share a
 bounded sibling-session digest with the lead; the sessions keep independent
@@ -44,7 +44,7 @@ side chats and generated files. Rows created after startup are left alone, and
 the scheduler never fires a Coding task with no project. Repository sources are
 never touched.
 
-The default team favors coding, exploration, architecture and debate. Coding
+The default team favors coding, exploration and architecture. Coding
 adds repository tree/editor, Git, language-server, Problems,
 ChangeSet and code-review surfaces.
 

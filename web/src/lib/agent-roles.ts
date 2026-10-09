@@ -14,7 +14,6 @@ export const AGENT_ROLES: readonly AgentRole[] = [
   'executor',
   'consultant',
   'explorer',
-  'debate',
   'coder',
   'architect',
   'custom',

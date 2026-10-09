@@ -4,7 +4,52 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Changed
+
+- Agent questions (`ask_user`) and permission prompts now rise directly out of
+  the chat input instead of appearing as a centered popup over the
+  conversation. The transcript stays visible and scrollable behind them.
+
+- The built-in agent and team prompts now ask agents to scale their effort to
+  the task instead of always running a fixed, exhaustive procedure. Members no
+  longer have to use "3+ sources" for every question, rebuild a weighted matrix
+  or full assumptions table for small decisions, or re-read files they just
+  wrote; **explorer** and **consultant** now stop once the evidence answers the
+  question and lead their reports with the answer or recommendation. The
+  Work assistant answers quick questions directly instead of defaulting to long,
+  heavily formatted replies. Members are also told correctly that read-only
+  research hands off with `verified=False` rather than omitting verification,
+  which the runtime would have rejected.
+
+### Fixed
+
+- **Settings → Telemetry** keeps recording on machines where another tool sets
+  `OTEL_EXPORTER_OTLP_ENDPOINT` (the GitHub Copilot CLI, for example). EvoFlux
+  no longer treats machine-wide `OTEL_*` variables as its own configuration:
+  span and metric files are always written, so the Telemetry page stops going
+  blank, `OTEL_RESOURCE_ATTRIBUTES` no longer stamps another tool's host and org
+  onto EvoFlux records, and the generic OTLP headers, protocol and certificate
+  variables are hidden while EvoFlux builds its exporter so foreign credentials
+  never travel with EvoFlux spans. Forwarding to a collector is opt-in through
+  `EVOFLUX_OTEL_OTLP_ENDPOINT`, with `EVOFLUX_OTEL_OTLP_PROTOCOL`,
+  `EVOFLUX_OTEL_OTLP_HEADERS`, `EVOFLUX_OTEL_OTLP_TIMEOUT` and
+  `EVOFLUX_OTEL_RESOURCE_ATTRIBUTES` replacing what the generic variables used
+  to do; a missing exporter package logs `otel_otlp_exporter_unavailable`
+  instead of failing silently.
+
+### Removed
+
+- The built-in **debate** member is gone from both the Work and Coding teams.
+  The lead no longer offers it as a specialist and new workspaces no longer
+  create `debate.md`. An existing `agents/debate.md` or
+  `agents/coding/debate.md` you never edited is removed on the next start;
+  one with your own prompt text stays as an ordinary custom agent.
+
+### Upgrade notes
+
+- If you relied on **debate** for reviews, keep your edited `debate.md` (it now
+  runs as a custom agent with only your text as its prompt) or ask the lead to
+  have **consultant** or **architect** review the work instead.
 
 ## [3.0.5] - 2026-10-08
 
