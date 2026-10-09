@@ -1,7 +1,7 @@
 /**
  * /settings/skills — every discovered Skill, with an on/off switch per row.
  */
-import { Sparkles } from 'lucide-react'
+import { ClipboardPenLine, Plus, Sparkles } from 'lucide-react'
 import { useMemo } from 'react'
 
 import type { SkillSummary } from '@/api/types'
@@ -14,9 +14,10 @@ import {
 } from '@/components/settings/skillFacts'
 import { Switch } from '@/components/ui/switch'
 import { useSetSkillEnabledMutation, useSkillFilesQuery } from '@/queries'
-import { useSettingsParams } from '@/contexts/SettingsContext'
+import { useSettingsNavigate, useSettingsParams } from '@/contexts/SettingsContext'
 import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
 import { useToastStore } from '@/stores/useToastStore'
+import { Button } from '@/components/ui/button'
 
 export function SkillsListPage() {
   const skillScope = useActiveSkillDiscoveryScope()
@@ -25,6 +26,7 @@ export function SkillsListPage() {
   const enableMut = useSetSkillEnabledMutation(skillScope)
   const push = useToastStore((s) => s.push)
   const { name: selected } = useSettingsParams() as { name?: string }
+  const navigate = useSettingsNavigate()
   const pendingName = enableMut.isPending ? enableMut.variables?.name : undefined
   const setEnabled = enableMut.mutate
 
@@ -82,6 +84,18 @@ export function SkillsListPage() {
       lede="Skills are folders with a SKILL.md. The agent sees each enabled skill's name and description and reads SKILL.md when a task matches; type $skill-name to use one yourself."
       newTo="/settings/skills/new"
       newLabel="New skill"
+      newAction={
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => navigate('/settings/skills/record')}>
+            <ClipboardPenLine size={14} aria-hidden="true" />
+            Create from recording
+          </Button>
+          <Button size="sm" onClick={() => navigate('/settings/skills/new')}>
+            <Plus size={14} aria-hidden="true" />
+            New skill
+          </Button>
+        </div>
+      }
       filterPlaceholder="Filter skills…"
       rows={rows}
       isLoading={isLoading}

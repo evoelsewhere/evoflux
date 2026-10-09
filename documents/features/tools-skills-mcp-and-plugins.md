@@ -45,6 +45,23 @@ EvoFlux follows Anthropic's Agent Skills architecture; the full contract is
   discovered Skill with its diagnostics, creates and edits user Skills, and
   turns any Skill on or off (`skill-settings.json`).
 
+### Create a Skill from a recorded demonstration
+
+On Windows, Settings → Skills can record accessibility events from a selected
+application and top-level window while the user demonstrates a workflow. The
+observer does not attach to or control the app. Focus names/values are omitted;
+value changes are captured only after a positive non-password check. Screenshots
+require an explicit checkpoint and stay local. The user chooses events, replaces
+private text and reviews the exact trace, then opens a new work chat with the
+trace attached and a draft-Skill prompt prefilled. The attachment is not sent
+until the user presses Send; the chat's selected model/provider handles the
+request and can be used to refine the result. The prompt treats the trace as
+untrusted evidence and asks the agent not to use tools, while normal chat
+permissions remain in effect. The user can copy the resulting `SKILL.md` into
+the existing Skills editor and save it there. The local source recording stays
+available for explicit deletion from recorder review. macOS and Linux capture
+are unavailable.
+
 EvoFlux does not impose an aggregate byte ceiling on Skill bundle resources.
 Managed create/update and validation still enforce the per-resource size and
 entry-count budgets, reject symlinks and unsafe paths, require regular files,

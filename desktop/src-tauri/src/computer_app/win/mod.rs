@@ -54,8 +54,8 @@ use windows::Win32::Graphics::Dwm::{
 };
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
-    GetWindowDC, ReleaseDC, ScreenToClient, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
-    HBITMAP, HDC, SRCCOPY,
+    GetWindowDC, ReleaseDC, ScreenToClient, SelectObject, BITMAPINFO, BITMAPINFOHEADER,
+    DIB_RGB_COLORS, HBITMAP, HDC, SRCCOPY,
 };
 use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
 use windows::Win32::System::Com::{
@@ -65,57 +65,56 @@ use windows::Win32::System::Threading::{
     AttachThreadInput, GetCurrentProcessId, GetCurrentThreadId, OpenProcess,
     QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
 };
-use windows::Win32::UI::Accessibility::{
-    AccessibleObjectFromWindow, CUIAutomation, SetWinEventHook, HWINEVENTHOOK, ExpandCollapseState_Collapsed,
-    ExpandCollapseState_PartiallyExpanded, IAccessible, IUIAutomation, IUIAutomationElement,
-    IUIAutomationTextPattern, IUIAutomationTextRange, TextPatternRangeEndpoint_End,
-    TextPatternRangeEndpoint_Start, TreeScope_Children, UIA_BoundingRectanglePropertyId,
-    UIA_ControlTypePropertyId, UIA_IsGridPatternAvailablePropertyId,
-    UIA_IsTablePatternAvailablePropertyId, UIA_IsTextPatternAvailablePropertyId, UIA_TextPatternId,
-    IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
-    IUIAutomationLegacyIAccessiblePattern, IUIAutomationSelectionItemPattern,
-    IUIAutomationRangeValuePattern, IUIAutomationScrollPattern, IUIAutomationTogglePattern,
-    IUIAutomationTreeWalker, IUIAutomationValuePattern, ScrollAmount_NoAmount,
-    ScrollAmount_SmallDecrement, ScrollAmount_SmallIncrement, ToggleState_On,
-    UIA_ExpandCollapsePatternId, UIA_InvokePatternId, UIA_RangeValuePatternId,
-    UIA_ScrollPatternId,
-    UIA_LegacyIAccessiblePatternId, UIA_SelectionItemPatternId, UIA_TogglePatternId,
-    UIA_ValuePatternId,
-};
 use windows::Win32::System::Variant::VARIANT;
+use windows::Win32::UI::Accessibility::{
+    AccessibleObjectFromWindow, CUIAutomation, ExpandCollapseState_Collapsed,
+    ExpandCollapseState_PartiallyExpanded, IAccessible, IUIAutomation, IUIAutomationElement,
+    IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
+    IUIAutomationLegacyIAccessiblePattern, IUIAutomationRangeValuePattern,
+    IUIAutomationScrollPattern, IUIAutomationSelectionItemPattern, IUIAutomationTextPattern,
+    IUIAutomationTextRange, IUIAutomationTogglePattern, IUIAutomationTreeWalker,
+    IUIAutomationValuePattern, ScrollAmount_NoAmount, ScrollAmount_SmallDecrement,
+    ScrollAmount_SmallIncrement, SetWinEventHook, TextPatternRangeEndpoint_End,
+    TextPatternRangeEndpoint_Start, ToggleState_On, TreeScope_Children,
+    UIA_BoundingRectanglePropertyId, UIA_ControlTypePropertyId, UIA_ExpandCollapsePatternId,
+    UIA_InvokePatternId, UIA_IsGridPatternAvailablePropertyId,
+    UIA_IsTablePatternAvailablePropertyId, UIA_IsTextPatternAvailablePropertyId,
+    UIA_LegacyIAccessiblePatternId, UIA_RangeValuePatternId, UIA_ScrollPatternId,
+    UIA_SelectionItemPatternId, UIA_TextPatternId, UIA_TogglePatternId, UIA_ValuePatternId,
+    HWINEVENTHOOK,
+};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardState, IsWindowEnabled, MapVirtualKeyW, SetKeyboardState, VkKeyScanW,
-    MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9,
-    VK_A, VK_ADD, VK_APPS, VK_B, VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_D, VK_DECIMAL,
-    VK_DELETE, VK_DIVIDE, VK_DOWN, VK_E, VK_END, VK_ESCAPE, VK_F, VK_F1, VK_F10, VK_F11, VK_F12,
-    VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_G, VK_H, VK_HOME, VK_I, VK_INSERT,
-    VK_J, VK_K, VK_L, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_M, VK_MENU, VK_MULTIPLY, VK_N,
-    VK_NEXT, VK_NUMLOCK, VK_O, VK_OEM_1, VK_OEM_2, VK_OEM_3, VK_OEM_4, VK_OEM_5, VK_OEM_6,
-    VK_OEM_7, VK_OEM_COMMA, VK_OEM_MINUS, VK_OEM_PERIOD, VK_OEM_PLUS, VK_P, VK_PAUSE, VK_PRIOR,
-    VK_Q, VK_R, VK_RCONTROL, VK_RETURN, VK_RIGHT, VK_RMENU, VK_S, VK_SCROLL, VK_SHIFT, VK_SNAPSHOT,
-    VK_SPACE, VK_SUBTRACT, VK_T, VK_TAB, VK_U, VK_UP, VK_V, VK_W, VK_X, VK_Y, VK_Z,
+    MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5, VK_6, VK_7, VK_8, VK_9, VK_A,
+    VK_ADD, VK_APPS, VK_B, VK_BACK, VK_C, VK_CAPITAL, VK_CONTROL, VK_D, VK_DECIMAL, VK_DELETE,
+    VK_DIVIDE, VK_DOWN, VK_E, VK_END, VK_ESCAPE, VK_F, VK_F1, VK_F10, VK_F11, VK_F12, VK_F2, VK_F3,
+    VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_G, VK_H, VK_HOME, VK_I, VK_INSERT, VK_J, VK_K,
+    VK_L, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_M, VK_MENU, VK_MULTIPLY, VK_N, VK_NEXT,
+    VK_NUMLOCK, VK_O, VK_OEM_1, VK_OEM_2, VK_OEM_3, VK_OEM_4, VK_OEM_5, VK_OEM_6, VK_OEM_7,
+    VK_OEM_COMMA, VK_OEM_MINUS, VK_OEM_PERIOD, VK_OEM_PLUS, VK_P, VK_PAUSE, VK_PRIOR, VK_Q, VK_R,
+    VK_RCONTROL, VK_RETURN, VK_RIGHT, VK_RMENU, VK_S, VK_SCROLL, VK_SHIFT, VK_SNAPSHOT, VK_SPACE,
+    VK_SUBTRACT, VK_T, VK_TAB, VK_U, VK_UP, VK_V, VK_W, VK_X, VK_Y, VK_Z,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    BM_CLICK, ChildWindowFromPointEx, EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow,
-    GetGUIThreadInfo, GetSystemMetrics, GetWindow, GetWindowLongPtrW, GetWindowPlacement,
-    GetWindowRect, GetWindowTextW, IsZoomed, SetWindowPlacement, SetWindowPos,
-    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-    SET_WINDOW_POS_FLAGS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
-    SWP_NOZORDER, SW_SHOWMAXIMIZED, GetLayeredWindowAttributes, SetLayeredWindowAttributes, SetWindowLongPtrW,
-    LAYERED_WINDOW_ATTRIBUTES_FLAGS,
-    GW_HWNDPREV, LWA_ALPHA, WS_EX_LAYERED, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
-    SW_SHOWMINIMIZED, SW_SHOWMINNOACTIVE, WINDOWPLACEMENT, WINDOWPLACEMENT_FLAGS,
-    WPF_RESTORETOMAXIMIZED,
-    GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible, PostMessageW,
-    SendMessageTimeoutW, SetForegroundWindow, ShowWindow, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
-    CWP_SKIPTRANSPARENT, GA_ROOT, GUITHREADINFO, GWL_EXSTYLE, GW_ENABLEDPOPUP, GW_OWNER,
-    GWL_STYLE, WS_CAPTION, WS_CHILD, WS_POPUP, WS_THICKFRAME, CHILDID_SELF, EVENT_OBJECT_SHOW, OBJID_WINDOW,
-    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, MSG, GetMessageW, DispatchMessageW,
-    SMTO_ABORTIFHUNG, SW_RESTORE, SW_SHOWNOACTIVATE, WM_CHAR, WM_CONTEXTMENU, WM_KEYDOWN, WM_KEYUP,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN,
-    WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST, WM_NULL, WM_RBUTTONDBLCLK,
-    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP, WS_EX_TOOLWINDOW,
+    ChildWindowFromPointEx, DispatchMessageW, EnumWindows, GetAncestor, GetClassNameW,
+    GetForegroundWindow, GetGUIThreadInfo, GetLayeredWindowAttributes, GetMessageW,
+    GetSystemMetrics, GetWindow, GetWindowLongPtrW, GetWindowPlacement, GetWindowRect,
+    GetWindowTextW, GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible,
+    IsZoomed, PostMessageW, SendMessageTimeoutW, SetForegroundWindow, SetLayeredWindowAttributes,
+    SetWindowLongPtrW, SetWindowPlacement, SetWindowPos, ShowWindow, BM_CLICK, CHILDID_SELF,
+    CWP_SKIPDISABLED, CWP_SKIPINVISIBLE, CWP_SKIPTRANSPARENT, EVENT_OBJECT_SHOW, GA_ROOT,
+    GUITHREADINFO, GWL_EXSTYLE, GWL_STYLE, GW_ENABLEDPOPUP, GW_HWNDPREV, GW_OWNER,
+    LAYERED_WINDOW_ATTRIBUTES_FLAGS, LWA_ALPHA, MSG, OBJID_WINDOW, SET_WINDOW_POS_FLAGS,
+    SMTO_ABORTIFHUNG, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE,
+    SW_SHOWMAXIMIZED, SW_SHOWMINIMIZED, SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE, WINDOWPLACEMENT,
+    WINDOWPLACEMENT_FLAGS, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WM_CHAR, WM_CONTEXTMENU,
+    WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK,
+    WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCHITTEST,
+    WM_NULL, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WPF_RESTORETOMAXIMIZED, WS_CAPTION, WS_CHILD, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_EX_TRANSPARENT, WS_POPUP, WS_THICKFRAME,
 };
 
 use super::action::Action;
@@ -130,6 +129,7 @@ use super::workers::{on_worker, post as post_to_worker};
 mod attachment;
 mod capture;
 mod catalog;
+pub(super) mod desktop_recording;
 mod keyboard;
 mod lifecycle;
 mod listing;
@@ -139,6 +139,7 @@ mod parking;
 mod peek;
 mod pointer;
 mod popups;
+pub(super) mod recording;
 mod registry;
 mod target;
 mod text_surface;
@@ -197,7 +198,13 @@ impl ComputerAppBackend for WindowsBackend {
         registry().attached.contains_key(session_id)
     }
 
-    fn run_action(&self, emit: &dyn Fn(Value), session_id: &str, action: Action, params: &Value) -> Result<Value, String> {
+    fn run_action(
+        &self,
+        emit: &dyn Fn(Value),
+        session_id: &str,
+        action: Action,
+        params: &Value,
+    ) -> Result<Value, String> {
         dispatch(emit, session_id, action, params)
     }
 
@@ -234,7 +241,12 @@ impl ComputerAppBackend for WindowsBackend {
 
 // ── Dispatch ────────────────────────────────────────────────────────────
 
-fn dispatch(emit: &dyn Fn(Value), session_id: &str, action: Action, params: &Value) -> Result<Value, String> {
+fn dispatch(
+    emit: &dyn Fn(Value),
+    session_id: &str,
+    action: Action,
+    params: &Value,
+) -> Result<Value, String> {
     // The window is resolved per action, not per session: the agent may
     // have been detached, or the window closed, since the last one.
     let target = || -> Result<Target, String> {

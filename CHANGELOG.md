@@ -55,6 +55,12 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Added
 
+- Added Windows desktop demonstration recording in Settings → Skills and a
+  reviewed trace handoff to a new work chat. The trace stays in the composer
+  until Send; that chat's selected model analyzes it and can refine the
+  resulting Skill instructions. Screenshot checkpoints stay local. The reviewed
+  trace can be restored to an empty new Work chat for up to one hour after
+  navigating away.
 - **Waiting Arcade** offers six optional local games from the composer’s **More actions** menu during active Work and Coding runs, including animated 2048, Memory Pairs, and Mini Breakout. Games pause when the panel closes or a run needs the user's attention.
 - **Plugins → Marketplace** can add and sync Agent Plugins 1.0.0 and Claude Code
   sources, search their catalogs, and preview compatible components. Marketplace
