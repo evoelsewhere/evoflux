@@ -4,6 +4,10 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [3.0.6] - 2026-10-10
+
 ### Changed
 
 - Agent questions (`ask_user`) and permission prompts now rise directly out of
