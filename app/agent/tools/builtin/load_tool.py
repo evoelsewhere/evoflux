@@ -103,7 +103,9 @@ async def load_tool(
 
     requested_names = list(
         dict.fromkeys(
-            [*(tool_names or []), *([tool_name] if tool_name is not None else [])]
+            name
+            for name in [*(tool_names or []), tool_name]
+            if name is not None and name.strip()
         )
     )
     if requested_names:

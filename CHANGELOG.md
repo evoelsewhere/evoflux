@@ -23,6 +23,9 @@ All notable changes to EvoFlux are documented in this file.
 
 ### Fixed
 
+- `load_tool` now searches the supplied query when a model sends an empty
+  `tool_name`, instead of reporting the empty name as unavailable.
+
 - **Settings → Telemetry** keeps recording on machines where another tool sets
   `OTEL_EXPORTER_OTLP_ENDPOINT` (the GitHub Copilot CLI, for example). EvoFlux
   no longer treats machine-wide `OTEL_*` variables as its own configuration:
