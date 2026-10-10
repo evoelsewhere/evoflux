@@ -1606,6 +1606,30 @@ async def _search(state: AgentState, query: str) -> list[str]:
     return re.findall(r"^- (\S+):", result, re.M)
 
 
+async def test_load_tool_search_ignores_empty_name_arguments():
+    from app.agent.tools.builtin.load_tool import load_tool
+
+    state = _search_state(
+        {
+            "browser_use": DeferredToolEntry(
+                summary="Inspect browser pages and review their console."
+            )
+        }
+    )
+    result = await load_tool.arun(
+        tool_name="",
+        tool_names=[],
+        query=(
+            "open browser inspect local web application click through "
+            "screenshot console network"
+        ),
+        _injected={"_state": state},
+    )
+
+    assert "Matching deferred tools:" in result
+    assert "- browser_use:" in result
+
+
 async def test_load_tool_search_matches_alias_absent_from_summary():
     """A word the summary never uses still finds the tool via its aliases."""
     state = _search_state(
