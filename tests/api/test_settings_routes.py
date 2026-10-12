@@ -1514,8 +1514,10 @@ def test_webbridge_settings_round_trip(tmp_path, monkeypatch):
     assert defaults.json()["enabled"] is True
     assert defaults.json()["allow_evaluate"] is True
     assert defaults.json()["built_in_allow_cookie_values"] is False
+    assert defaults.json()["require_tab_binding"] is True
 
     payload = {
+        "require_tab_binding": True,
         "enabled": False,
         "allow_evaluate": False,
         "built_in_allowed_domains": ["example.com"],
@@ -1568,9 +1570,10 @@ def test_webbridge_agent_browsing_toggle_applies_live(tmp_path, monkeypatch):
         encoding="utf-8"
     )
 
-    # Saving the Settings form, which does not carry the toggle, keeps it.
+
     form = client.get("/api/settings/webbridge").json()
     assert "agent_browsing" not in form
+
     assert client.put("/api/settings/webbridge", json=form).status_code == 200
     assert client.get("/api/settings/webbridge/agent-browsing").json() == {
         "enabled": False
@@ -1578,6 +1581,37 @@ def test_webbridge_agent_browsing_toggle_applies_live(tmp_path, monkeypatch):
 
     client.put("/api/settings/webbridge/agent-browsing", json={"enabled": True})
     assert webbridge_manager.agent_browsing_allowed() is True
+
+
+def test_agent_browsing_off_broadcasts_release_session(tmp_path, monkeypatch):
+    """Turning agent_browsing OFF releases the browsing session on every
+    connected extension: it broadcasts release_session so the agent's grouped
+    tabs and control overlay are torn down (nothing left open "in debugging")."""
+    from app.api.app import create_app
+    from app.core.config import settings
+    from app.services.webbridge_service import webbridge_manager
+
+    monkeypatch.setattr(settings, "EVOFLUX_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setattr(webbridge_manager, "_policy_cache", None)
+
+    calls = []
+
+    async def fake_broadcast():
+        calls.append(True)
+        return 1
+
+    monkeypatch.setattr(webbridge_manager, "broadcast_release_session", fake_broadcast)
+    client = TestClient(create_app())
+
+    # Turning ON must NOT broadcast (nothing to release yet).
+    on = client.put("/api/settings/webbridge/agent-browsing", json={"enabled": True})
+    assert on.status_code == 200
+    assert calls == []
+
+    # Turning OFF broadcasts exactly once.
+    off = client.put("/api/settings/webbridge/agent-browsing", json={"enabled": False})
+    assert off.status_code == 200
+    assert calls == [True]
 
 
 def test_computer_app_settings_default_off_and_round_trip(tmp_path, monkeypatch):

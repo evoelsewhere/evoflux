@@ -19,7 +19,7 @@ from typing import Annotated, Any, Literal
 from urllib.parse import unquote, urlsplit
 
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.agent.schemas.chat import ImageDataBlock, TextBlock, ToolResult
 from app.agent.tools.builtin.browser_shared import (
@@ -243,6 +243,15 @@ class StartAction(BaseModel):
 
 class StopAction(BaseModel):
     action: Literal["stop"]
+
+
+class DoneBrowsingAction(BaseModel):
+    """Agent-driven teardown once it has collected enough information.
+
+    Releases immediately (turn-end remains a fallback if never called).
+    """
+
+    action: Literal["done_browsing"]
 
 
 class NavigateAction(BaseModel):
@@ -643,10 +652,38 @@ class WaitAction(BaseModel):
     load_state: Literal["loading", "interactive", "complete"] | None = None
     seconds: float = Field(default=2.0, ge=0, le=30)
 
+    @field_validator("load_state", mode="before")
+    @classmethod
+    def _normalize_load_state(cls, value: Any) -> Any:
+        """Map Playwright/CDP load-state aliases to readyState names.
+
+        Models emit ``domcontentloaded``/``load``/``networkidle``; mapping
+        them before the Literal check keeps those values valid.
+        """
+        if value is None:
+            return None
+        alias = {
+            "commit": "loading",
+            "domcontentloaded": "interactive",
+            "load": "complete",
+            "networkidle": "complete",
+            "network_idle": "complete",
+        }
+        key = str(value).strip().lower()
+        return alias.get(key, key)
+
 
 class NewTabAction(BaseModel):
     action: Literal["new_tab"]
     url: str
+    label: str | None = Field(
+        default=None,
+        description=(
+            "Optional short label naming the Chrome tab-group this tab joins — "
+            "the current action/intention (e.g. 'Compare prices'). Forwarded to "
+            "open_tab so the group title reflects what you are doing."
+        ),
+    )
 
 
 class CloseTabAction(BaseModel):
@@ -708,6 +745,7 @@ AnyAction = Annotated[
     | ClearLogsAction
     | StorageAction
     | CookiesAction
+    | DoneBrowsingAction
     | HttpAction
     | DebugSummaryAction
     | ResizeAction
@@ -872,6 +910,7 @@ def _needs_surface(actions: list[AnyAction]) -> bool:
 
     return any(
         str(getattr(action, "action", "")) not in SURFACE_FREE_ACTIONS
+        and str(getattr(action, "action", "")) != "done_browsing"
         for action in actions
     )
 
@@ -1003,6 +1042,9 @@ def _to_webbridge_steps(
             "element screenshots only exist in the in-app browser; scroll the "
             "element into view and take a viewport screenshot, or inspect it"
         )
+    if name == "done_browsing":
+        # done_browsing: collected enough — release now, not at turn-end.
+        return [{"action": "release_session"}]
     if name in _WEBBRIDGE_SAME:
         return [params]
     if name in {"start", "stop"}:
@@ -1065,7 +1107,11 @@ def _to_webbridge_steps(
     if name == "inspect":
         return [{"action": "inspect", "properties": params.get("styles"), **target}]
     if name == "new_tab":
-        return [{"action": "open_tab", "url": params["url"]}]
+        # Optional label -> Chrome tab-group title (page title is the fallback).
+        step = {"action": "open_tab", "url": params["url"]}
+        if params.get("label"):
+            step["label"] = params["label"]
+        return [step]
     if name == "wait":
         return [_webbridge_wait(params)]
     return (
@@ -1192,6 +1238,11 @@ async def browser_use(
     for action in actions:
         params = action.model_dump(exclude_none=True)
         name = str(params.pop("action"))
+        if name == "done_browsing":
+            results.append(
+                "done_browsing applies to WebBridge (no-op in the in-app browser)."
+            )
+            continue
         refusal = _browser_policy_refusal(name, params, current_url, policy)
         if refusal is not None:
             results.append(f"Error ({name}): {refusal}")

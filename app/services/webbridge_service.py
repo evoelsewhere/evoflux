@@ -154,6 +154,7 @@ _TAB_SCOPED_ACTIONS: frozenset[str] = frozenset(
         "click_text",
         "hover",
         "focus",
+        "focus_tab",
         "select_option",
         "set_checked",
         "drag",
@@ -307,6 +308,8 @@ class WebBridgeManager:
         # Persisted bindings loaded after a reconnect stay fail-closed until
         # the extension's complete tab snapshot confirms both tab ID + origin.
         self._pending_session_tabs: dict[str, tuple[str, int, str]] = {}
+        # session_ids that opened a Chrome tab-group this turn (auto-release).
+        self._browsing_sessions: set[str] = set()
         # Newest-last audit ring buffer of executed commands.
         self._audit: deque[dict[str, Any]] = deque(maxlen=_AUDIT_HARD_CAP)
         # In-memory WebBridge policy; refreshed off the request path by
@@ -642,6 +645,80 @@ class WebBridgeManager:
                 )
         self.unregister_extension(extension_id)
         return True
+
+    async def broadcast_release_session(self) -> int:
+        """Tell every connected extension the browsing session is over.
+
+        Each extension closes its tab-group, clears the overlay/pointer and
+        refreshes its badge. Best-effort: returns how many were sent to.
+        """
+        sent = 0
+        for ext in self.active_extensions():
+            request_id = uuid.uuid4().hex
+            command = {
+                "type": "command",
+                "request_id": request_id,
+                "action": "release_session",
+                "params": {},
+            }
+            try:
+                async with self._send_lock:
+                    await ext.send(json.dumps(command))
+                sent += 1
+            except Exception as exc:
+                logger.debug(
+                    "webbridge_release_broadcast_failed extension_id={} error={}",
+                    ext.extension_id,
+                    exc,
+                )
+        if sent:
+            logger.info("webbridge_release_session_broadcast extensions=%d", sent)
+        return sent
+
+    def mark_browsing(self, session_id: str | None) -> None:
+        """Record that *session_id* opened a Chrome tab-group this turn.
+
+        The turn-end hook releases it (auto-cleanup of grouped tabs, control
+        overlay, and badge) once the agent finishes. Manual ``agent_browsing``
+        OFF still broadcasts a release independently.
+        """
+        if session_id:
+            self._browsing_sessions.add(str(session_id))
+
+    async def release_browsing(self, session_id: str | None) -> int:
+        """Release a session's browsing group at turn-end if it browsed.
+
+        Best-effort and non-raising: no-op when the session never opened a
+        group this turn, so ordinary non-browser turns don't touch the browser.
+        Returns 1 when a release was sent, else 0.
+        """
+        if not session_id:
+            return 0
+        key = str(session_id)
+        if key not in self._browsing_sessions:
+            return 0
+        self._browsing_sessions.discard(key)
+        sent = 0
+        for ext in self.active_extensions():
+            command = {
+                "type": "command",
+                "request_id": uuid.uuid4().hex,
+                "action": "release_session",
+                "params": {"_webbridge_session_id": key},
+            }
+            try:
+                async with self._send_lock:
+                    await ext.send(json.dumps(command))
+                sent += 1
+            except Exception as exc:
+                logger.debug(
+                    "webbridge_turn_release_failed extension_id={} error={}",
+                    ext.extension_id,
+                    exc,
+                )
+        if sent:
+            logger.info("webbridge_turn_release session=%s extensions=%d", key, sent)
+        return 1 if sent else 0
 
     def touch(
         self,
@@ -1040,6 +1117,18 @@ class WebBridgeManager:
         if ext is None:
             return {"success": False, "data": None, "error": NO_EXTENSION_ERROR}
         advertised_commands = ext.capabilities.get("commands")
+        if action == "focus_tab" and (
+            not isinstance(advertised_commands, list)
+            or "focus_tab" not in advertised_commands
+        ):
+            return {
+                "success": False,
+                "data": None,
+                "error": (
+                    "Connected WebBridge extension does not advertise focus_tab; "
+                    "update the extension before requesting explicit focus."
+                ),
+            }
         if (
             ext.protocol_version >= 2
             and isinstance(advertised_commands, list)
@@ -1058,6 +1147,37 @@ class WebBridgeManager:
         binding = self._session_tabs.get(session_id)
         pending_binding = self._pending_session_tabs.get(session_id)
         binding_expires_at = self._session_tab_expires.get(session_id)
+        explicit_active_target = params.get("target") == "active"
+        if action in _TAB_SCOPED_ACTIONS and explicit_active_target:
+            if binding is not None and binding[0] == ext.extension_id:
+                # A bound session tab wins. target=active is documented for use
+                # "when no tab is bound"; honoring it over the binding aimed
+                # every command at whatever tab the user had in front —
+                # reloading *their* page instead of the group's tab under test.
+                params.pop("target", None)
+                explicit_active_target = False
+                self._record_audit(
+                    session_id=session_id,
+                    extension_id=ext.extension_id,
+                    action="target_active_ignored_bound",
+                    url=ext.current_url,
+                    success=True,
+                    error=(
+                        f"target=active ignored for {action}: session stays on "
+                        f"bound tab {binding[1]}"
+                    ),
+                )
+            else:
+                params.pop("tab_id", None)
+                params.pop("_webbridge_expected_origin", None)
+                self._record_audit(
+                    session_id=session_id,
+                    extension_id=ext.extension_id,
+                    action="target_active",
+                    url=ext.current_url,
+                    success=True,
+                    error=f"Explicit target=active requested for tab-scoped action: {action}",
+                )
         if (
             action in _TAB_SCOPED_ACTIONS
             and (binding is not None or pending_binding is not None)
@@ -1087,6 +1207,7 @@ class WebBridgeManager:
         if (
             action in _TAB_SCOPED_ACTIONS
             and "tab_id" not in params
+            and not explicit_active_target
             and pending_binding is not None
             and pending_binding[0] == ext.extension_id
         ):
@@ -1097,7 +1218,8 @@ class WebBridgeManager:
             }
         if (
             action in _TAB_SCOPED_ACTIONS
-            and "tab_id" not in params
+            and params.get("tab_id") is None
+            and not explicit_active_target
             and binding is not None
             and binding[0] == ext.extension_id
         ):
@@ -1143,8 +1265,10 @@ class WebBridgeManager:
         # A session starts with one primary tab. If it opens additional tabs,
         # the extension groups them with that primary tab while keeping the
         # fail-closed default target unchanged.
+        if action in {"open_tab", "release_session"}:
+            params.setdefault("_webbridge_session_id", session_id)
         if action == "open_tab":
-            params["_webbridge_session_id"] = session_id
+            self.mark_browsing(session_id)
             if (
                 binding is not None
                 and binding[0] == ext.extension_id
@@ -1170,6 +1294,55 @@ class WebBridgeManager:
                 "webbridge_policy_refused action={} url={}", action, effective_url
             )
             return {"success": False, "data": None, "error": refusal}
+
+        if (
+            action in _TAB_SCOPED_ACTIONS
+            and params.get("tab_id") is None
+            and pending_binding is None
+            and (binding is None or binding[0] != ext.extension_id)
+        ):
+            policy = self._policy()
+            target = params.get("target")
+            legacy_fallback = not policy.require_tab_binding
+            if target == "active":
+                params["target"] = "active"
+            elif legacy_fallback:
+                params["target"] = "active"
+                self._record_audit(
+                    session_id=session_id,
+                    extension_id=ext.extension_id,
+                    action="legacy_active_fallback",
+                    url=ext.current_url,
+                    success=True,
+                    error=f"require_tab_binding rollback fallback for action: {action}",
+                )
+            elif target is not None:
+                refusal = f"Unsupported WebBridge target: {target!r}. Use target=active explicitly."
+                self._record_audit(
+                    session_id=session_id,
+                    extension_id=ext.extension_id,
+                    action="unbound_target",
+                    url=ext.current_url,
+                    success=False,
+                    error=f"UNBOUND_TARGET: {refusal}",
+                )
+                return {"success": False, "data": None, "error": f"UNBOUND_TARGET: {refusal}"}
+            elif policy.require_tab_binding:
+                refusal = (
+                    "No tab is bound to this WebBridge session. Call get_tabs/switch_tab "
+                    "to select a tab, pass an explicit tab_id, or deliberately request "
+                    "target=active to use the user's current tab."
+                )
+                self._record_audit(
+                    session_id=session_id,
+                    extension_id=ext.extension_id,
+                    action="unbound_target",
+                    url=ext.current_url,
+                    success=False,
+                    error=f"UNBOUND_TARGET: {refusal}",
+                )
+                logger.warning("webbridge_unbound_target action={} session={}", action, session_id)
+                return {"success": False, "data": None, "error": f"UNBOUND_TARGET: {refusal}"}
 
         result = await self._dispatch(ext, action, params, timeout)
         self._record_audit(
