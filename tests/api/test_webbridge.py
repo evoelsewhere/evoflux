@@ -1959,6 +1959,7 @@ async def test_manager_commands_correlate_by_request_id(manager: WebBridgeManage
     manager.register_extension(
         extension_id="e1", browser="chrome", version="1", send=fake_send
     )
+    manager.bind_session_tab("sess", "e1", 42)
 
     t1 = asyncio.create_task(manager.send_command("sess", "click", {"x": 1, "y": 2}))
     t2 = asyncio.create_task(manager.send_command("sess", "type", {"text": "hi"}))
@@ -6023,6 +6024,7 @@ async def test_tool_routes_commands_to_session_selected_extension(
 ):
     first = _recorder_ext(manager, "browser-1")
     second = _recorder_ext(manager, "browser-2")
+    manager.bind_session_tab("session-1", "browser-1", 42)
 
     await _run(
         manager,
@@ -6449,6 +6451,7 @@ async def test_policy_gates_page_state_power_behind_allow_evaluate(
     """Secrets and page rewrites need allow_evaluate; names and lists do not."""
     _set_policy(manager, allow_evaluate=False)
     sent = _recorder_ext(manager, "e1")
+    manager.bind_session_tab("sess", "e1", 42)
     if refused:
         result = await manager.send_command("sess", action, dict(params))
         assert result["success"] is False
@@ -6908,13 +6911,13 @@ async def test_tool_switch_tab_accepts_id_without_index(
         manager,
         lambda action, params: (
             seen.append((action, params))
-            or {"success": True, "data": {}, "error": None}
+            or {"success": True, "data": {"tab_id": 42}, "error": None}
         ),
     )
 
     result = await webbridge(actions=[_action({"action": "switch_tab", "id": 42})])
 
-    assert result == "Switched to tab id=42"
+    assert result == "Selected tab id=42 (id=42); browser focus was not changed."
     assert seen == [("switch_tab", {"id": 42})]
 
 
@@ -7239,3 +7242,345 @@ async def test_tool_crawl_close_tabs_false_skips_close(
         ]
     )
     assert "close_tab" not in seen
+
+
+# ── Non-intrusive P0 contract ────────────────────────────────────────────────
+
+async def test_unbound_tab_action_fails_closed_and_is_audited(
+    manager: WebBridgeManager,
+):
+    sent: list[str] = []
+
+    async def fake_send(frame: str) -> None:
+        sent.append(frame)
+
+    manager.register_extension(
+        extension_id="p0", browser="chrome", version="p0", protocol_version=2,
+        capabilities={"commands": ["click"]}, send=fake_send,
+    )
+    result = await manager.send_command("unbound-session", "click", {"x": 1, "y": 2})
+
+    assert result["success"] is False
+    assert result["error"].startswith("UNBOUND_TARGET:")
+    assert sent == []
+    audit = manager.audit_entries(limit=5)
+    assert any(entry["action"] == "unbound_target" for entry in audit)
+
+
+async def test_explicit_active_target_is_forwarded_and_audited(
+    manager: WebBridgeManager,
+):
+    sent: list[str] = []
+
+    async def fake_send(frame: str) -> None:
+        sent.append(frame)
+
+    manager.register_extension(
+        extension_id="p0", browser="chrome", version="p0", protocol_version=2,
+        capabilities={"commands": ["click"]}, send=fake_send,
+    )
+    task = asyncio.create_task(
+        manager.send_command("active-session", "click", {"x": 1, "y": 2, "target": "active"})
+    )
+    await asyncio.sleep(0)
+    command = json.loads(sent[0])
+    assert command["params"]["target"] == "active"
+    manager.handle_response(command["request_id"], success=True, data={"clicked": True}, error=None)
+    assert (await task)["success"] is True
+    assert any(entry["action"] == "target_active" for entry in manager.audit_entries(limit=5))
+
+
+async def test_require_tab_binding_kill_switch_is_audited(manager: WebBridgeManager):
+    from app.core.runtime_settings import WebBridgeSettings
+
+    sent: list[str] = []
+
+    async def fake_send(frame: str) -> None:
+        sent.append(frame)
+
+    manager._policy_cache = WebBridgeSettings(require_tab_binding=False)
+    manager.register_extension(
+        extension_id="p0", browser="chrome", version="p0", protocol_version=2,
+        capabilities={"commands": ["click"]}, send=fake_send,
+    )
+    task = asyncio.create_task(
+        manager.send_command("rollback-session", "click", {"x": 1, "y": 2})
+    )
+    await asyncio.sleep(0)
+    command = json.loads(sent[0])
+    assert command["params"]["target"] == "active"
+    assert any(entry["action"] == "legacy_active_fallback" for entry in manager.audit_entries(limit=5))
+    manager.handle_response(command["request_id"], success=True, data={"clicked": True}, error=None)
+    assert (await task)["success"] is True
+
+
+async def test_focus_tab_requires_explicit_extension_advertisement(
+    manager: WebBridgeManager,
+):
+    sent: list[str] = []
+
+    async def fake_send(frame: str) -> None:
+        sent.append(frame)
+
+    manager.register_extension(
+        extension_id="old-ext", browser="chrome", version="old", protocol_version=2,
+        capabilities={"commands": ["click"]}, send=fake_send,
+    )
+    result = await manager.send_command("focus-session", "focus_tab", {"tab_id": 12})
+    assert result["success"] is False
+    assert "does not advertise focus_tab" in result["error"]
+    assert sent == []
+
+
+async def test_focus_tab_is_sent_when_extension_advertises_it(manager: WebBridgeManager):
+    sent: list[str] = []
+
+    async def fake_send(frame: str) -> None:
+        sent.append(frame)
+
+    manager.register_extension(
+        extension_id="new-ext", browser="chrome", version="new", protocol_version=2,
+        capabilities={"commands": ["focus_tab"]}, send=fake_send,
+    )
+    task = asyncio.create_task(
+        manager.send_command("focus-session", "focus_tab", {"tab_id": 12})
+    )
+    await asyncio.sleep(0)
+    command = json.loads(sent[0])
+    assert command["action"] == "focus_tab"
+    assert command["params"] == {"tab_id": 12}
+    manager.handle_response(command["request_id"], success=True, data={"focused": True}, error=None)
+    assert (await task)["success"] is True
+
+
+async def test_open_tab_uses_non_intrusive_focus_contract_for_new_extension(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch,
+):
+    from unittest.mock import AsyncMock
+    from app.agent.tools.builtin import webbridge_tool
+
+    manager.register_extension(
+        extension_id="new-ext", browser="chrome", version="p0", protocol_version=2,
+        capabilities={"commands": ["open_tab"], "features": ["non_intrusive_v1"]},
+        send=AsyncMock(),
+    )
+    send_command = AsyncMock(return_value={"success": True, "data": {"tab_id": 45}})
+    monkeypatch.setattr(webbridge_tool, "webbridge_manager", manager)
+    monkeypatch.setattr(webbridge_tool, "_send_command", send_command)
+    token = webbridge_tool._webbridge_target_id.set("new-ext")
+    try:
+        result = await webbridge_tool._handle_open_tab(
+            "open-session", webbridge_tool.OpenTabAction(action="open_tab", url="https://example.test")
+        )
+    finally:
+        webbridge_tool._webbridge_target_id.reset(token)
+    assert "Opened" in result
+    assert send_command.await_args.args[1] == "open_tab"
+    assert send_command.await_args.args[2] == {"url": "https://example.test", "focus": False}
+
+
+async def test_open_tab_uses_legacy_active_false_for_old_extension(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch,
+):
+    from unittest.mock import AsyncMock
+    from app.agent.tools.builtin import webbridge_tool
+
+    manager.register_extension(
+        extension_id="old-ext", browser="chrome", version="old", send=AsyncMock()
+    )
+    send_command = AsyncMock(return_value={"success": True, "data": {"tab_id": 46}})
+    monkeypatch.setattr(webbridge_tool, "webbridge_manager", manager)
+    monkeypatch.setattr(webbridge_tool, "_send_command", send_command)
+    token = webbridge_tool._webbridge_target_id.set("old-ext")
+    try:
+        await webbridge_tool._handle_open_tab(
+            "open-session", webbridge_tool.OpenTabAction(action="open_tab", url="https://example.test")
+        )
+    finally:
+        webbridge_tool._webbridge_target_id.reset(token)
+
+    assert send_command.await_args.args[2] == {"url": "https://example.test", "active": False}
+
+
+async def test_open_tab_label_becomes_group_label(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch,
+):
+    """open_tab ``label`` is forwarded as the tab-group title.
+
+    The label names the session's Chrome tab-group after the agent's
+    action/summary/intention so related tabs are easy to tell apart."""
+    from unittest.mock import AsyncMock
+    from app.agent.tools.builtin import webbridge_tool
+
+    manager.register_extension(
+        extension_id="new-ext", browser="chrome", version="p0", protocol_version=2,
+        capabilities={"commands": ["open_tab"], "features": ["non_intrusive_v1"]},
+        send=AsyncMock(),
+    )
+    send_command = AsyncMock(return_value={"success": True, "data": {"tab_id": 47}})
+    monkeypatch.setattr(webbridge_tool, "webbridge_manager", manager)
+    monkeypatch.setattr(webbridge_tool, "_send_command", send_command)
+    token = webbridge_tool._webbridge_target_id.set("new-ext")
+    try:
+        await webbridge_tool._handle_open_tab(
+            "open-session",
+            webbridge_tool.OpenTabAction(
+                action="open_tab", url="https://example.test", label="Compare prices"
+            ),
+        )
+    finally:
+        webbridge_tool._webbridge_target_id.reset(token)
+    assert send_command.await_args.args[2] == {
+        "url": "https://example.test",
+        "focus": False,
+        "_webbridge_group_label": "Compare prices",
+    }
+
+
+async def test_open_tab_blank_label_is_omitted(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch,
+):
+    """A whitespace-only label is treated as no label (no group label sent)."""
+    from unittest.mock import AsyncMock
+    from app.agent.tools.builtin import webbridge_tool
+
+    manager.register_extension(
+        extension_id="new-ext", browser="chrome", version="p0", protocol_version=2,
+        capabilities={"commands": ["open_tab"], "features": ["non_intrusive_v1"]},
+        send=AsyncMock(),
+    )
+    send_command = AsyncMock(return_value={"success": True, "data": {"tab_id": 48}})
+    monkeypatch.setattr(webbridge_tool, "webbridge_manager", manager)
+    monkeypatch.setattr(webbridge_tool, "_send_command", send_command)
+    token = webbridge_tool._webbridge_target_id.set("new-ext")
+    try:
+        await webbridge_tool._handle_open_tab(
+            "open-session",
+            webbridge_tool.OpenTabAction(action="open_tab", url="https://example.test", label="   "),
+        )
+    finally:
+        webbridge_tool._webbridge_target_id.reset(token)
+    assert send_command.await_args.args[2] == {"url": "https://example.test", "focus": False}
+
+
+async def test_tool_crawl_close_tabs_defaults_to_false(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    """crawl no longer tears down its tabs by default.
+
+    The opened tabs are grouped and left visible after the task completes;
+    ``close_tabs=True`` remains an explicit opt-in."""
+    seen: list[str] = []
+
+    def handler(action: str, params: dict):
+        seen.append(action)
+        if action == "open_tab":
+            return {"success": True, "data": {"tab_id": 1}, "error": None}
+        return {"success": True, "data": {"content": "ok"}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    await webbridge(actions=[_action({"action": "crawl", "urls": ["https://x/a"]})])
+    assert "close_tab" not in seen
+
+
+async def test_tool_crawl_open_tab_carries_group_label(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch
+):
+    """crawl's open_tab carries a ``Crawl`` group label so its tabs group."""
+    open_params: list[dict] = []
+
+    def handler(action: str, params: dict):
+        if action == "open_tab":
+            open_params.append(params)
+            return {"success": True, "data": {"tab_id": 1}, "error": None}
+        return {"success": True, "data": {"content": "ok"}, "error": None}
+
+    _stub_send(monkeypatch, manager, handler)
+    await webbridge(actions=[_action({"action": "crawl", "urls": ["https://x/a"]})])
+    assert open_params and open_params[0]["_webbridge_group_label"] == "Crawl"
+
+
+async def test_switch_tab_rebinds_session_to_selected_target(
+    manager: WebBridgeManager, monkeypatch: pytest.MonkeyPatch,
+):
+    from unittest.mock import AsyncMock
+    from app.agent.tools.builtin import webbridge_tool
+
+    ext = manager.register_extension(
+        extension_id="switch-ext", browser="chrome", version="p0", send=AsyncMock()
+    )
+    ext.tabs = [{"id": 52, "url": "https://selected.example/path"}]
+    manager.bind_session_tab("switch-session", "switch-ext", 41, "https://old.example")
+    send_command = AsyncMock(return_value={"success": True, "data": {"tab_id": 52}})
+    monkeypatch.setattr(webbridge_tool, "webbridge_manager", manager)
+    monkeypatch.setattr(webbridge_tool, "_send_command", send_command)
+    token = webbridge_tool._webbridge_target_id.set("switch-ext")
+    try:
+        result = await webbridge_tool._handle_switch_tab(
+            "switch-session", webbridge_tool.SwitchTabAction(action="switch_tab", id=52)
+        )
+    finally:
+        webbridge_tool._webbridge_target_id.reset(token)
+    assert "focus was not changed" in result
+    assert manager.session_tab_binding("switch-session") == ("switch-ext", 52)
+
+
+async def test_explicit_active_target_does_not_override_session_binding(
+    manager: WebBridgeManager,
+):
+    sent: list[str] = []
+
+    async def fake_send(frame: str) -> None:
+        sent.append(frame)
+
+    manager.register_extension(
+        extension_id="active-ext", browser="chrome", version="p0", protocol_version=2,
+        capabilities={"commands": ["click"]}, send=fake_send,
+    )
+    manager.bind_session_tab("bound-session", "active-ext", 19)
+    task = asyncio.create_task(
+        manager.send_command("bound-session", "click", {"x": 3, "y": 4, "target": "active"})
+    )
+    await asyncio.sleep(0)
+    command = json.loads(sent[0])
+    # The bound tab wins: target=active is dropped so commands keep hitting the
+    # session's own tab instead of whatever tab the user has in front.
+    assert "target" not in command["params"]
+    assert command["params"]["tab_id"] == 19
+    assert any(
+        entry["action"] == "target_active_ignored_bound"
+        for entry in manager.audit_entries(limit=5)
+    )
+    manager.handle_response(command["request_id"], success=True, data={"clicked": True}, error=None)
+    assert (await task)["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_release_browsing_noop_when_session_never_browsed(manager):
+    """Turn-end release is a no-op for turns that never opened a group."""
+    assert await manager.release_browsing("sess-none") == 0
+    assert await manager.release_browsing(None) == 0
+
+
+@pytest.mark.asyncio
+async def test_marked_session_is_released_once_at_turn_end(manager, monkeypatch):
+    """A marked browsing session is released once, then unmarked."""
+    sent: list[str] = []
+
+    class _Ext:
+        extension_id = "ext-1"
+
+        def is_active(self, now):
+            return True
+
+        async def send(self, payload):
+            sent.append(payload)
+
+    monkeypatch.setattr(manager, "active_extensions", lambda: [_Ext()])
+    manager.mark_browsing("sess-turn")
+    assert await manager.release_browsing("sess-turn") == 1
+    assert sent and '"release_session"' in sent[0]
+    assert '"_webbridge_session_id": "sess-turn"' in sent[0]
+    # Second turn-end: unmarked, so no further release.
+    assert await manager.release_browsing("sess-turn") == 0
+    assert len(sent) == 1

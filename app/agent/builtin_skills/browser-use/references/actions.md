@@ -60,7 +60,7 @@ Element actions take one of:
 |---|---|---|
 | `navigate` | `url` | `http://` and `https://` only |
 | `back`, `forward`, `reload` | — | |
-| `wait` | one of `selector` (+ `state`: attached, detached, visible, hidden), `text`, `url_contains`, `load_state` (loading, interactive, complete); `seconds` is the timeout, or the pause when nothing else is given | wait for what the next step needs |
+| `wait` | one of `selector` (+ `state`: attached, detached, visible, hidden), `text`, `url_contains`, `load_state` (loading, interactive, complete — Playwright aliases domcontentloaded→interactive, load/networkidle→complete also work); `seconds` is the timeout, or the pause when nothing else is given | wait for what the next step needs |
 | `scroll` | `direction` (up, down), `pixels` | |
 | `scroll_into_view` | target, `block` | in-app only |
 
@@ -92,6 +92,7 @@ Element actions take one of:
 | `switch_tab` | `index` | the chat works in that tab |
 | `close_tab` | `index` | close only tabs you opened |
 | `start`, `stop` | — | open or close the in-app browser surface |
+| `done_browsing` | — | you have all you need: closes the tab group, control overlay and badge **now** (don't wait for turn end) |
 
 ## Debug
 
@@ -150,6 +151,7 @@ them runs; one that cannot be rewritten fails the call with nothing done.
 | `html` | `extract` as HTML |
 | `new_tab` | `open_tab`, which becomes the chat's tab |
 | `start`, `stop` | `status` |
+| `done_browsing` | `release_session` — tears down the tab group, overlay and badge |
 
 Everything else in the "in-app only" notes above is refused through
 WebBridge, with a message naming what to use instead.

@@ -536,6 +536,7 @@ def _webbridge_settings_body() -> WebBridgeSettingsBody:
     return WebBridgeSettingsBody(
         enabled=cfg.webbridge.enabled,
         allow_evaluate=cfg.webbridge.allow_evaluate,
+        require_tab_binding=cfg.webbridge.require_tab_binding,
         built_in_allowed_domains=cfg.browser.allowed_domains,
         built_in_blocked_domains=cfg.browser.blocked_domains,
         built_in_allow_evaluate=cfg.browser.allow_evaluate,
@@ -570,6 +571,7 @@ async def update_webbridge_settings(
         enabled=body.enabled,
         agent_browsing=cfg.webbridge.agent_browsing,
         allow_evaluate=body.allow_evaluate,
+        require_tab_binding=body.require_tab_binding,
         allowed_domains=cfg.webbridge.allowed_domains,
         blocked_domains=cfg.webbridge.blocked_domains,
         audit_log_size=cfg.webbridge.audit_log_size,
@@ -624,6 +626,13 @@ async def update_webbridge_agent_browsing(
     from app.services.webbridge_service import webbridge_manager
 
     webbridge_manager.reload_policy()
+    if not body.enabled:
+        # Deliberate user action: broadcast teardown (tab-group + overlay +
+        # badge). Fire-and-forget — a failed broadcast must not fail this write.
+        try:
+            await webbridge_manager.broadcast_release_session()
+        except Exception:  # pragma: no cover — defensive
+            pass
     return WebBridgeAgentBrowsingBody(enabled=cfg.webbridge.agent_browsing)
 
 

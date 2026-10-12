@@ -111,6 +111,7 @@ class WebBridgeSettingsBody(BaseModel):
 
     enabled: bool = True
     allow_evaluate: bool = True
+    require_tab_binding: bool = True
     built_in_allowed_domains: list[str] = Field(default_factory=list)
     built_in_blocked_domains: list[str] = Field(default_factory=list)
     built_in_allow_evaluate: bool = True

@@ -511,6 +511,7 @@ async def test_browser_use_runs_through_webbridge_when_ready(monkeypatch) -> Non
     text = result if isinstance(result, str) else str(result)
     assert "through WebBridge" in text
     actions = [action for action, _ in sent]
+
     assert actions[:5] == [
         "open_tab",
         "fill",
@@ -522,6 +523,40 @@ async def test_browser_use_runs_through_webbridge_when_ready(monkeypatch) -> Non
     assert sent[2][1]["key"] == "A"
     assert sent[2][1]["modifiers"] == ["Control"]
     assert sent[4][1]["timeout_ms"] == 5000
+
+
+async def test_new_tab_forwards_group_label(monkeypatch):
+    """browser_use new_tab passes the agent's label through to open_tab so the
+    Chrome tab-group is titled after the intent (not a bare 'EvoFlux')."""
+    sent = _webbridge_on(monkeypatch)
+
+    await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "new_tab", "url": "https://e.com", "label": "Compare prices"}],
+    )
+
+    first = sent[0]
+    assert first[0] == "open_tab"
+    # Wire key is `_webbridge_group_label` (extension reads it, not `label`).
+    assert first[1]["_webbridge_group_label"] == "Compare prices"
+
+
+async def test_new_tab_without_label_omits_label(monkeypatch):
+    """new_tab with no label sends no label key (extension falls back to title)."""
+    sent = _webbridge_on(monkeypatch)
+
+    await browser_tool.browser_use.arun(
+        _injected={"_state": _state()},
+        actions=[{"action": "new_tab", "url": "https://e.com"}],
+    )
+
+    first = sent[0]
+    assert first[0] == "open_tab"
+    # No label supplied -> no group-label wire key (extension falls back to title).
+    assert "_webbridge_group_label" not in first[1]
+    assert "label" not in first[1]
+    # Only the new_tab action was sent here (single-action batch).
+    assert len(sent) == 1
 
 
 @pytest.mark.asyncio
@@ -710,3 +745,28 @@ async def test_webbridge_tool_refuses_once_the_toggle_is_off(monkeypatch) -> Non
 
     assert isinstance(result, str)
     assert "turned off for agent browsing" in result
+
+
+def test_wait_load_state_accepts_playwright_aliases():
+    """Playwright/CDP load-state names normalize to readyState (no tool error)."""
+    from app.agent.tools.builtin.browser_use_tool import WaitAction
+
+    assert WaitAction(action="wait", load_state="domcontentloaded").load_state == "interactive"
+    assert WaitAction(action="wait", load_state="load").load_state == "complete"
+    assert WaitAction(action="wait", load_state="networkidle").load_state == "complete"
+    assert WaitAction(action="wait", load_state="commit").load_state == "loading"
+    # Canonical readyState values still pass through.
+    assert WaitAction(action="wait", load_state="loading").load_state == "loading"
+    assert WaitAction(action="wait", load_state="interactive").load_state == "interactive"
+    assert WaitAction(action="wait", load_state="complete").load_state == "complete"
+    assert WaitAction(action="wait").load_state is None
+
+
+def test_done_browsing_translates_to_release_session():
+    """done_browsing rewrites to release_session so teardown is immediate."""
+    from app.agent.tools.builtin.browser_use_tool import DoneBrowsingAction, _to_webbridge_steps
+
+    parsed = DoneBrowsingAction.model_validate({"action": "done_browsing"})
+    assert parsed.action == "done_browsing"
+    steps = _to_webbridge_steps(parsed.model_dump(), targeted=False)
+    assert steps == [{"action": "release_session"}]

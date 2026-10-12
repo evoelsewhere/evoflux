@@ -1242,6 +1242,17 @@ class Agent(Generic[TContext]):
             total_tokens,
             last_assistant_msg is not None,
         )
+
+        # Turn-end auto-release: if this turn opened a Chrome tab-group, tear it
+        # down (tabs + overlay + badge). Best-effort; manual toggle still works.
+        try:
+            from app.services.webbridge_service import webbridge_manager
+
+            _turn_session = (config.session_id if config is not None else None) or getattr(ctx, "session_id", None)
+            await webbridge_manager.release_browsing(_turn_session)
+        except Exception:  # pragma: no cover - teardown must never break a turn
+            logger.debug("webbridge_turn_release_failed", exc_info=True)
+
         return messages
 
     async def _run_tool(

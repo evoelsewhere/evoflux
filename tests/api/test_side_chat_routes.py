@@ -89,6 +89,35 @@ async def test_create_side_chat_session_custom_title(session):
 
 
 @pytest.mark.asyncio
+async def test_create_side_chat_route_reuses_existing(session):
+    """POST create_side_chat reuses the main session's existing side chat.
+
+    The side-chat/webbridge panel calls ensureSideChat() eagerly on every open
+    / remount (e.g. a new browser tab). At the API boundary a main session owns
+    exactly one side chat, so repeat calls must return the same session instead
+    of minting a new empty one each time."""
+    from app.api.routes.team.chat import create_side_chat
+
+    main = await create_chat_session(session, title="Main Session")
+
+    first = await create_side_chat(main.id, session, None)
+    second = await create_side_chat(main.id, session, None)
+
+    # Same side chat returned every time — no proliferation.
+    assert first.id == second.id
+
+    # Exactly one side chat row exists for this source session.
+    from sqlalchemy import select as _select
+
+    rows = (
+        await session.execute(
+            _select(ChatSession).where(ChatSession.source_session_id == main.id)
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
 async def test_create_side_chat_session_not_found(session):
     """create_side_chat_session raises ValueError for missing main session."""
     from uuid import uuid4
