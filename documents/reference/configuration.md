@@ -68,6 +68,13 @@ of committed repository files.
 Unknown keys are ignored for forward compatibility; known values are validated
 before atomic save. Models use `provider:model`.
 
+The built-in Coding `security` member is materialised as
+`<config>/agents/coding/security.md` on bootstrap if missing. It inherits the
+lead model and defaults to high thinking with inspection tools. Its Markdown
+body adds to the code-owned review prompt. Explicit `tools`/MCP additions can
+extend its capabilities; `tools_opt_out` removes defaults. Existing files are
+preserved. See [Coding security reviewer](../features/agent-runtime-and-teams.md#coding-security-reviewer).
+
 ## Core environment settings
 
 | Setting | Meaning |

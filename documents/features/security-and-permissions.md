@@ -6,6 +6,12 @@ authorization and scope.
 
 ## Tool permission engine
 
+Coding's built-in `security` member provides independent, evidence-based code
+review with inspection tools by default. It reports exploitable findings,
+remediation and coverage limits; it does not replace the permission engine,
+sandbox or security testing. See [Coding security reviewer](agent-runtime-and-teams.md#coding-security-reviewer)
+for delegation, capability extensions and upgrade behavior.
+
 Rules map `(tool glob, argument/path pattern)` to `allow`, `deny` or `ask`.
 Evaluation is last-match-wins so a later specific rule can override a broad
 default. When nothing matches, the result is `ask`. Read-only inspection,

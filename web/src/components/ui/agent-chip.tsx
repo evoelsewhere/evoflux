@@ -32,6 +32,7 @@ const chipVariants = cva(
         explorer: '',
         coder: '',
         architect: '',
+        security: '',
         custom: '',
       },
       active: {
@@ -48,6 +49,7 @@ const chipVariants = cva(
       { role: 'explorer', active: true, className: 'border-(--color-text-muted)' },
       { role: 'coder', active: true, className: 'border-(--color-violet)' },
       { role: 'architect', active: true, className: 'border-(--color-marker-blue)' },
+      { role: 'security', active: true, className: 'border-(--color-marker-mint)' },
       { role: 'custom', active: true, className: 'border-(--color-border-strong)' },
     ],
     defaultVariants: {

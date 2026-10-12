@@ -27,6 +27,10 @@ describe('agent settings visuals', () => {
     expect(agentVisualKind('coding/coder')).toBe('coder')
     expect(agentVisualKind('architect#2')).toBe('architect')
     expect(agentVisualKind('explorer#1')).toBe('explorer')
+    expect(agentVisualKind('security#1')).toBe('security')
+    expect(agentVisualKind('coding/security')).toBe('security')
+    expect(isBuiltInAgentName('coding/security', 'member')).toBe(true)
+    expect(isBuiltInAgentName('security', 'member')).toBe(false)
   })
 
   it('uses the lead and custom emblems when appropriate', () => {

@@ -31,6 +31,32 @@ changes are detected at the next turn without stopping other running sessions.
 See [Application harness](../architecture/application-harness.md) for the exact
 frontmatter and precedence contract.
 
+## Coding security reviewer
+
+The default Coding team includes `coder`, `explorer`, `architect` and `security`.
+The `security` member reviews realistic abuse paths and returns severity,
+confidence, validation status, file/line evidence, impact, remediation and
+regression checks. Suspicions and untested coverage are reported separately.
+It leaves fixes to the lead/coder and re-checks the affected path after a fix.
+
+The lead prompt requests independent review for changes involving authentication,
+authorization, untrusted input, secrets, dependencies, shell/filesystem access,
+sandbox policy or agent/plugin/MCP trust boundaries. This is model guidance, not
+an automatic release gate. Low-risk changes do not require a specialist run.
+
+`security` receives a closed set of inspection tools by default, rather than
+every Coding-tier tool. Shell execution, source mutation, browser control and PR
+mutations are not default grants. Explicit `tools`, MCP assignments and activated
+plugin capabilities can extend the agent; normal permissions and sandbox checks
+still apply. Ask the lead/coder for execution evidence when inspection alone is
+insufficient. Active testing needs an authorized test target and scope.
+
+Bootstrap adds a missing `agents/coding/security.md` using the configured lead
+model and high thinking level. Existing files and user prompt additions survive.
+The profile is Coding-only; a Work agent named `security` remains custom.
+A clean report means no supported findings in the reviewed scope, not proof that
+the whole system is secure. See [Security and permissions](security-and-permissions.md).
+
 ## Turn pipeline
 
 The agent loop streams one provider request, assembles tool calls, executes

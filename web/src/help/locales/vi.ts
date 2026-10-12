@@ -2120,6 +2120,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
       'Chấm trạng thái MCP: ready / starting / auth / error / stopped.',
       'MCP tool chịu cùng rule permission như tool native.',
       'Team scope theo work / coding.',
+      'Coding có agent security để review độc lập các thay đổi nhạy cảm. Mặc định agent dùng công cụ đọc và khảo sát, báo lỗi kèm bằng chứng và hướng sửa, rồi giao coder sửa. Tool, MCP hoặc khả năng từ plugin được bổ sung có thể mở rộng quyền; review không phát hiện lỗi không đảm bảo hệ thống hoàn toàn an toàn.',
       'Command palette nhảy tới Edit <agent>… hoặc tạo agent và skill mới.',
       'Dùng tools_opt_out để tắt default tool code-owned; bỏ skill đã assign trực tiếp khỏi danh sách skills.',
       'Tool chỉ Lead (ask_user, một số worktree helper) không bao giờ cấp cho specialist.',
