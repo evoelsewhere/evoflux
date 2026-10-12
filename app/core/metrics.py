@@ -28,6 +28,7 @@ from __future__ import annotations
 import time
 
 from fastapi import Request
+from loguru import logger
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
@@ -193,10 +194,15 @@ def _route_template(request: Request) -> str:
 
     Falls back to the raw path when no route matches (404, /metrics, etc).
     """
+    partial_match: str | None = None
     for route in request.app.router.routes:
         match, _ = route.matches(request.scope)
         if match == Match.FULL:
             return getattr(route, "path", request.url.path)
+        if match == Match.PARTIAL and partial_match is None:
+            partial_match = getattr(route, "path", None)
+    if partial_match is not None:
+        return partial_match
     return request.url.path
 
 
@@ -242,6 +248,13 @@ class HTTPMetricsMiddleware(BaseHTTPMiddleware):
         HTTP_REQUEST_DURATION.labels(method=request.method, route=route).observe(
             elapsed
         )
+        if status_code == 405:
+            logger.warning(
+                "http_method_not_allowed method={} route={} allow={}",
+                request.method,
+                route,
+                response.headers.get("allow", ""),
+            )
         return response
 
 

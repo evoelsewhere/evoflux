@@ -122,10 +122,12 @@ import {
   parseCodeReviewSessionTags,
 } from '@/lib/code-review-session'
 import {
+  clearCachedSkillRecordingChatHandoff,
   consumeSkillRecordingChatHandoff,
   createSkillRecordingChatFile,
+  createSkillRecordingChatPrompt,
+  createSkillRecordingChatFiles,
   loadCachedSkillRecordingChatHandoff,
-  SKILL_RECORDING_CHAT_PROMPT,
   subscribeSkillRecordingChatHandoff,
 } from '@/lib/skill-recording-chat'
 
@@ -358,6 +360,7 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   const [pendingCodeReviewStart, setPendingCodeReviewStart] =
     useState<PendingCodeReviewStart | null>(null)
   const [skillRecordingHandoffRevision, setSkillRecordingHandoffRevision] = useState(0)
+  const skillRecordingHandoffInFlightRef = useRef<string | null>(null)
   const newChatDraft = useTeamStore((state) => state.newChatDraft)
 
   useEffect(() => {
@@ -367,19 +370,35 @@ export function TeamChatView({ sessionId, importedSource, mode = 'work', workspa
   }, [])
 
   useEffect(() => {
-    const fillComposer = () => {
-      const stagedHandoff = consumeSkillRecordingChatHandoff()
-      const handoff = stagedHandoff ?? (
-        mode === 'work' && !sessionId
-          ? loadCachedSkillRecordingChatHandoff()
-          : null
+    const composer = inputRef.current
+    if (!composer?.isEmpty()) return
+    const stagedHandoff = consumeSkillRecordingChatHandoff()
+    const handoff = stagedHandoff ?? (
+      mode === 'work' && !sessionId
+        ? loadCachedSkillRecordingChatHandoff()
+        : null
+    )
+    if (!handoff || skillRecordingHandoffInFlightRef.current === handoff.recordingId) return
+    skillRecordingHandoffInFlightRef.current = handoff.recordingId
+    composer.setValue(createSkillRecordingChatPrompt(handoff))
+    composer.focus()
+    void createSkillRecordingChatFiles(handoff).then((files) => {
+      const currentComposer = inputRef.current
+      if (!currentComposer) return
+      currentComposer.setFiles(files)
+      clearCachedSkillRecordingChatHandoff(undefined, handoff.recordingId)
+      skillRecordingHandoffInFlightRef.current = null
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      const currentComposer = inputRef.current
+      if (!currentComposer) return
+      currentComposer.setValue(
+        `${createSkillRecordingChatPrompt(handoff)}\n\n[Screen evidence could not be attached: ${message}]`,
       )
-      if (!handoff || !inputRef.current?.isEmpty()) return
-      inputRef.current?.setValue(SKILL_RECORDING_CHAT_PROMPT)
-      inputRef.current?.setFiles([createSkillRecordingChatFile(handoff)])
-      inputRef.current?.focus()
-    }
-    fillComposer()
+      currentComposer.setFiles([createSkillRecordingChatFile(handoff)])
+      clearCachedSkillRecordingChatHandoff(undefined, handoff.recordingId)
+      skillRecordingHandoffInFlightRef.current = null
+    })
   }, [mode, newChatDraft, sessionId, skillRecordingHandoffRevision])
 
   // On mobile, always force agent view — split requires a wide screen.

@@ -1,6 +1,18 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { SkillRecordingEvent, SkillRecordingWindow } from '@/api/client/skillRecordings'
 
+export async function focusEvofluxAfterSkillRecording(): Promise<void> {
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    const appWindow = getCurrentWindow()
+    await appWindow.unminimize()
+    await appWindow.show()
+    await appWindow.setFocus()
+  } catch {
+    // Recording can also be previewed in a browser where Tauri window APIs are unavailable.
+  }
+}
+
 export async function listSkillRecordingWindows(): Promise<SkillRecordingWindow[]> {
   return invoke<SkillRecordingWindow[]>('app_skill_recording_windows')
 }

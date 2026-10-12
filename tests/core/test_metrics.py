@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from loguru import logger
 
 from app.core.metrics import (
     HTTPMetricsMiddleware,
@@ -35,6 +36,26 @@ def _make_app() -> FastAPI:
 
 
 class TestMetricsEndpoint:
+    def test_method_not_allowed_logs_route_template_and_allow_header(self):
+        captured: list[str] = []
+        sink_id = logger.add(
+            lambda message: captured.append(str(message)), level="WARNING"
+        )
+        try:
+            response = TestClient(_make_app()).post("/items/private-id")
+        finally:
+            logger.remove(sink_id)
+
+        assert response.status_code == 405
+        assert any(
+            "http_method_not_allowed" in message
+            and "method=POST" in message
+            and "route=/items/{item_id}" in message
+            and "allow=GET, HEAD" in message
+            and "private-id" not in message
+            for message in captured
+        )
+
     def test_serves_prometheus_text(self):
         client = TestClient(_make_app())
         resp = client.get("/metrics")

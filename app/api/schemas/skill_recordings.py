@@ -56,6 +56,14 @@ class RecordingElementTarget(BaseModel):
     automation_id: str | None = Field(default=None, max_length=2048)
     control_type: str | None = Field(default=None, max_length=128)
     name: str | None = Field(default=None, max_length=2048)
+    label: str | None = Field(default=None, max_length=2048)
+
+
+class RecordingWindowContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    app: str | None = Field(default=None, max_length=260)
+    title: str | None = Field(default=None, max_length=2048)
 
 
 class SkillRecordingEvent(BaseModel):
@@ -64,6 +72,7 @@ class SkillRecordingEvent(BaseModel):
     sequence: int = Field(ge=1)
     elapsed_ms: int = Field(ge=0)
     kind: RecordingEventKind
+    window: RecordingWindowContext | None = None
     point: RecordingPoint | None = None
     button: RecordingPointerButton | None = None
     scroll_delta: RecordingScrollDelta | None = None
@@ -121,11 +130,21 @@ class SkillRecordingEventBatch(BaseModel):
         return self
 
 
+class SkillRecordingReviewedInputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sequence: StrictInt = Field(ge=1)
+    value: str = Field(max_length=16_384)
+
+
 class SkillRecordingPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     selected_event_ids: list[StrictInt] = Field(min_length=1, max_length=64)
     redactions: dict[str, str] = Field(default_factory=dict, max_length=32)
+    reviewed_input_values: list[SkillRecordingReviewedInputValue] = Field(
+        default_factory=list, max_length=64
+    )
     goal: str = Field(default="", max_length=2000)
     model: str | None = Field(default=None, max_length=256)
 

@@ -112,6 +112,56 @@ def test_pointer_actions_roundtrip_coordinates_and_button(recording_root: Path) 
     assert stored[2]["scroll_delta"] == {"x": 0, "y": -120}
 
 
+def test_event_keeps_window_context_and_field_label_but_never_persists_typed_value(
+    recording_root: Path,
+) -> None:
+    session_id = recordings.create_session()["id"]
+
+    recordings.append_events(
+        session_id,
+        [
+            {
+                **event(1, kind="value_changed"),
+                "window": {"app": "browser.exe", "title": "Search results"},
+                "target": {
+                    "automation_id": "search-box",
+                    "control_type": "edit",
+                    "name": None,
+                    "label": "Search query",
+                },
+                "value_state": "captured",
+                "value": "private search text",
+            }
+        ],
+    )
+
+    stored = recordings.get_session(session_id)["events"][0]
+
+    assert stored["window"] == {"app": "browser.exe", "title": "Search results"}
+    assert stored["target"]["label"] == "Search query"
+    assert stored["value_state"] == "unavailable"
+    assert stored["value"] is None
+
+
+def test_password_input_value_is_never_stored(recording_root: Path) -> None:
+    session_id = recordings.create_session()["id"]
+    recordings.append_events(
+        session_id,
+        [
+            {
+                **event(1, kind="value_changed"),
+                "value_state": "omitted_secure",
+                "value": None,
+            }
+        ],
+    )
+
+    stored = recordings.get_session(session_id)["events"][0]
+
+    assert stored["value_state"] == "omitted_secure"
+    assert stored["value"] is None
+
+
 @pytest.mark.parametrize(
     "pointer_fields",
     [

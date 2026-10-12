@@ -1,5 +1,6 @@
 import { apiBaseUrl } from '../base-url'
-import { parseDetailOrThrow } from './_shared'
+import { withTokenParam } from '../auth'
+import { ApiValidationError, parseDetailOrThrow } from './_shared'
 
 export type SkillRecordingWindow = {
   id: number
@@ -11,6 +12,7 @@ export type SkillRecordingWindow = {
 
 export type SkillRecordingEvent = {
   sequence: number
+  source_sequence?: number
   elapsed_ms: number
   kind:
     | 'click'
@@ -26,10 +28,11 @@ export type SkillRecordingEvent = {
     | 'window_closed'
     | 'gap'
     | 'screenshot'
+  window?: { app: string | null; title: string | null } | null
   point?: { x: number; y: number; display_id: string | null } | null
   button?: 'left' | 'middle' | 'right' | null
   scroll_delta?: { x: number; y: number } | null
-  target: { automation_id: string | null; control_type: string | null; name: string | null } | null
+  target: { automation_id: string | null; control_type: string | null; name: string | null; label?: string | null } | null
   value_state: 'not_captured' | 'captured' | 'omitted_secure' | 'unavailable'
   value: string | null
   screenshot: string | null
@@ -60,7 +63,33 @@ export type SkillRecordingVideoUpload = {
 export type SkillRecordingReview = {
   selected_event_ids: number[]
   redactions: Record<string, string>
+  reviewed_input_values: Array<{ sequence: number; value: string }>
   goal: string
+}
+
+function routeLabel(path: string): string {
+  const safePath = path.replace(/^\/[^/]+(?=\/|$)/, '/{recording_id}')
+  return `/api/skill-recordings${safePath}`
+}
+
+async function throwSkillRecordingError(
+  response: Response,
+  method: string,
+  path: string,
+): Promise<never> {
+  const label = `${method} ${routeLabel(path)}`
+  try {
+    await parseDetailOrThrow(response, label)
+  } catch (error) {
+    if (error instanceof ApiValidationError) {
+      throw new ApiValidationError(
+        error.status,
+        `${label} returned HTTP ${error.status}: ${error.message}`,
+      )
+    }
+    throw error
+  }
+  throw new Error(`${label} failed without an API error`)
 }
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -69,7 +98,7 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
-  if (!response.ok) await parseDetailOrThrow(response, `POST ${path}`)
+  if (!response.ok) await throwSkillRecordingError(response, 'POST', path)
   return response.json()
 }
 
@@ -103,13 +132,13 @@ export async function uploadSkillRecordingVideo(
       body: video,
     },
   )
-  if (!response.ok) await parseDetailOrThrow(response, `PUT skill recording video ${id}`)
+  if (!response.ok) await throwSkillRecordingError(response, 'PUT', `/${encodeURIComponent(id)}/video`)
   return response.json()
 }
 
 export async function getSkillRecording(id: string): Promise<SkillRecording> {
   const response = await fetch(`${apiBaseUrl()}/skill-recordings/${encodeURIComponent(id)}`)
-  if (!response.ok) await parseDetailOrThrow(response, `GET skill recording ${id}`)
+  if (!response.ok) await throwSkillRecordingError(response, 'GET', `/${encodeURIComponent(id)}`)
   return response.json()
 }
 
@@ -117,7 +146,7 @@ export async function deleteSkillRecording(id: string): Promise<void> {
   const response = await fetch(`${apiBaseUrl()}/skill-recordings/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
-  if (!response.ok) await parseDetailOrThrow(response, `DELETE skill recording ${id}`)
+  if (!response.ok) await throwSkillRecordingError(response, 'DELETE', `/${encodeURIComponent(id)}`)
 }
 
 export async function previewSkillRecordingDraft(
@@ -138,9 +167,13 @@ export async function createSkillRecordingDraft(
 }
 
 export function skillRecordingScreenshotUrl(id: string, sequence: number): string {
-  return `${apiBaseUrl()}/skill-recordings/${encodeURIComponent(id)}/screenshots/${sequence}`
+  return withTokenParam(
+    `${apiBaseUrl()}/skill-recordings/${encodeURIComponent(id)}/screenshots/${sequence}`,
+  )
 }
 
 export function skillRecordingVideoUrl(id: string): string {
-  return `${apiBaseUrl()}/skill-recordings/${encodeURIComponent(id)}/video`
+  return withTokenParam(
+    `${apiBaseUrl()}/skill-recordings/${encodeURIComponent(id)}/video`,
+  )
 }
