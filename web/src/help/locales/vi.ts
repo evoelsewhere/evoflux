@@ -1506,7 +1506,7 @@ export const HELP_ARTICLES_VI: HelpArticle[] = [
     blocks: [
       {
         type: 'p',
-        text: 'Hai đường browser: (1) built-in browser workbench trong app cho trang agent-driven trong EvoFlux, và (2) WebBridge — extension relay CDP tới profile Chrome hoặc Edge thật kèm domain policy và audit trail. Chọn đường khớp login và trust model của việc.',
+        text: 'Hai đường browser: (1) built-in browser workbench trong app cho trang agent-driven trong EvoFlux, và (2) WebBridge — extension relay CDP tới profile Chrome hoặc Edge thật kèm domain policy và audit trail. Chọn đường khớp login và trust model của việc. Click, hover và drag trong built-in browser dùng sự kiện tổng hợp trong trang, không di chuyển con trỏ desktop; trang yêu cầu thao tác OS đáng tin cậy có thể không chấp nhận chúng, và trạng thái CSS `:hover` của trình duyệt có thể không bật.',
       },
       {
         type: 'p',

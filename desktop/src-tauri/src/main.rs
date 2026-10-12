@@ -896,219 +896,6 @@ fn browser_navigation_url(value: &str) -> Result<url::Url, String> {
 }
 
 #[cfg(target_os = "macos")]
-fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
-    use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton};
-    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-    use core_graphics::geometry::CGPoint;
-
-    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-        .map_err(|_| "Could not create macOS input event source".to_string())?;
-    let point = CGPoint::new(x, y);
-    let mouse_button = match button {
-        "right" => CGMouseButton::Right,
-        "middle" => CGMouseButton::Center,
-        _ => CGMouseButton::Left,
-    };
-    let (down, up) = match mouse_button {
-        CGMouseButton::Right => (CGEventType::RightMouseDown, CGEventType::RightMouseUp),
-        CGMouseButton::Center => (CGEventType::OtherMouseDown, CGEventType::OtherMouseUp),
-        CGMouseButton::Left => (CGEventType::LeftMouseDown, CGEventType::LeftMouseUp),
-    };
-    CGEvent::new_mouse_event(source.clone(), CGEventType::MouseMoved, point, mouse_button)
-        .map_err(|_| "Could not create macOS pointer move".to_string())?
-        .post(CGEventTapLocation::HID);
-    if action == "hover" {
-        return Ok(());
-    }
-    let clicks = if action == "dblclick" { 2 } else { 1 };
-    for _ in 0..clicks {
-        CGEvent::new_mouse_event(source.clone(), down, point, mouse_button)
-            .map_err(|_| "Could not create macOS pointer down".to_string())?
-            .post(CGEventTapLocation::HID);
-        std::thread::sleep(Duration::from_millis(42));
-        CGEvent::new_mouse_event(source.clone(), up, point, mouse_button)
-            .map_err(|_| "Could not create macOS pointer up".to_string())?
-            .post(CGEventTapLocation::HID);
-        std::thread::sleep(Duration::from_millis(58));
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        mouse_event, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
-        MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
-
-    unsafe { SetCursorPos(x.round() as i32, y.round() as i32) }
-        .map_err(|error| format!("Could not move Windows pointer: {error}"))?;
-    if action == "hover" {
-        return Ok(());
-    }
-    let (down, up) = match button {
-        "right" => (MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP),
-        "middle" => (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP),
-        _ => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
-    };
-    let clicks = if action == "dblclick" { 2 } else { 1 };
-    for _ in 0..clicks {
-        unsafe { mouse_event(down, 0, 0, 0, 0) };
-        std::thread::sleep(Duration::from_millis(42));
-        unsafe { mouse_event(up, 0, 0, 0, 0) };
-        std::thread::sleep(Duration::from_millis(58));
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn send_native_browser_pointer(action: &str, x: f64, y: f64, button: &str) -> Result<(), String> {
-    let button_number = match button {
-        "middle" => "2",
-        "right" => "3",
-        _ => "1",
-    };
-    let x = x.round().to_string();
-    let y = y.round().to_string();
-    let mut command = std::process::Command::new("xdotool");
-    command.args(["mousemove", "--sync", &x, &y]);
-    if action != "hover" {
-        command.args([
-            "click",
-            "--repeat",
-            if action == "dblclick" { "2" } else { "1" },
-            button_number,
-        ]);
-    }
-    let status = command
-        .status()
-        .map_err(|error| format!("xdotool pointer input unavailable: {error}"))?;
-    if !status.success() {
-        return Err(format!("xdotool pointer input exited with {status}"));
-    }
-    Ok(())
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-fn send_native_browser_pointer(
-    _action: &str,
-    _x: f64,
-    _y: f64,
-    _button: &str,
-) -> Result<(), String> {
-    Err("Native browser pointer injection is unavailable on this platform".into())
-}
-
-#[cfg(target_os = "macos")]
-fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
-    use core_graphics::event::{CGEvent, CGEventTapLocation, CGEventType, CGMouseButton};
-    use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-    use core_graphics::geometry::CGPoint;
-
-    let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-        .map_err(|_| "Could not create macOS drag event source".to_string())?;
-    let point = |value: (f64, f64)| CGPoint::new(value.0, value.1);
-    CGEvent::new_mouse_event(
-        source.clone(),
-        CGEventType::MouseMoved,
-        point(from),
-        CGMouseButton::Left,
-    )
-    .map_err(|_| "Could not create macOS drag move".to_string())?
-    .post(CGEventTapLocation::HID);
-    CGEvent::new_mouse_event(
-        source.clone(),
-        CGEventType::LeftMouseDown,
-        point(from),
-        CGMouseButton::Left,
-    )
-    .map_err(|_| "Could not create macOS drag down".to_string())?
-    .post(CGEventTapLocation::HID);
-    for step in 1..=14 {
-        let progress = step as f64 / 14.0;
-        let current = (
-            from.0 + (to.0 - from.0) * progress,
-            from.1 + (to.1 - from.1) * progress,
-        );
-        CGEvent::new_mouse_event(
-            source.clone(),
-            CGEventType::LeftMouseDragged,
-            point(current),
-            CGMouseButton::Left,
-        )
-        .map_err(|_| "Could not create macOS drag step".to_string())?
-        .post(CGEventTapLocation::HID);
-        std::thread::sleep(Duration::from_millis(18));
-    }
-    CGEvent::new_mouse_event(
-        source,
-        CGEventType::LeftMouseUp,
-        point(to),
-        CGMouseButton::Left,
-    )
-    .map_err(|_| "Could not create macOS drag release".to_string())?
-    .post(CGEventTapLocation::HID);
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        mouse_event, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
-    };
-    use windows::Win32::UI::WindowsAndMessaging::SetCursorPos;
-
-    unsafe { SetCursorPos(from.0.round() as i32, from.1.round() as i32) }
-        .map_err(|error| format!("Could not position Windows drag pointer: {error}"))?;
-    unsafe { mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0) };
-    for step in 1..=14 {
-        let progress = step as f64 / 14.0;
-        let x = from.0 + (to.0 - from.0) * progress;
-        let y = from.1 + (to.1 - from.1) * progress;
-        unsafe { SetCursorPos(x.round() as i32, y.round() as i32) }
-            .map_err(|error| format!("Could not move Windows drag pointer: {error}"))?;
-        std::thread::sleep(Duration::from_millis(18));
-    }
-    unsafe { mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0) };
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn send_native_browser_drag(from: (f64, f64), to: (f64, f64)) -> Result<(), String> {
-    let from_x = from.0.round().to_string();
-    let from_y = from.1.round().to_string();
-    let to_x = to.0.round().to_string();
-    let to_y = to.1.round().to_string();
-    let status = std::process::Command::new("xdotool")
-        .args([
-            "mousemove",
-            "--sync",
-            &from_x,
-            &from_y,
-            "mousedown",
-            "1",
-            "mousemove",
-            "--sync",
-            &to_x,
-            &to_y,
-            "mouseup",
-            "1",
-        ])
-        .status()
-        .map_err(|error| format!("xdotool drag input unavailable: {error}"))?;
-    if !status.success() {
-        return Err(format!("xdotool drag input exited with {status}"));
-    }
-    Ok(())
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-fn send_native_browser_drag(_from: (f64, f64), _to: (f64, f64)) -> Result<(), String> {
-    Err("Native browser drag injection is unavailable on this platform".into())
-}
-
-#[cfg(target_os = "macos")]
 fn send_native_browser_text(text: &str) -> Result<(), String> {
     use core_graphics::event::{CGEvent, CGEventTapLocation, KeyCode};
     use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
@@ -1335,139 +1122,6 @@ fn send_native_browser_key(key: &str, modifiers: &[String]) -> Result<(), String
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 fn send_native_browser_key(_key: &str, _modifiers: &[String]) -> Result<(), String> {
     Err("Native browser keyboard injection is unavailable on this platform".into())
-}
-
-async fn run_native_browser_pointer_action(
-    app: &AppHandle,
-    label: &str,
-    action: &str,
-    params: &serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let target = eval_browser_webview_action(app, label, "native_target", params).await?;
-    let webview = app_browser_webview(app, label)?;
-    let child_position = webview
-        .position()
-        .map_err(|error| format!("Could not read browser position: {error}"))?;
-    let child_size = webview
-        .size()
-        .map_err(|error| format!("Could not read browser size: {error}"))?;
-    let window = webview.window();
-    let window_position = window
-        .inner_position()
-        .map_err(|error| format!("Could not read browser window position: {error}"))?;
-    let viewport_width = target
-        .get("viewport_width")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(child_size.width as f64)
-        .max(1.0);
-    let viewport_height = target
-        .get("viewport_height")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(child_size.height as f64)
-        .max(1.0);
-    let css_x = target
-        .get("x")
-        .and_then(serde_json::Value::as_f64)
-        .ok_or_else(|| "Native pointer target has no x coordinate".to_string())?;
-    let css_y = target
-        .get("y")
-        .and_then(serde_json::Value::as_f64)
-        .ok_or_else(|| "Native pointer target has no y coordinate".to_string())?;
-    let mut screen_x = window_position.x as f64
-        + child_position.x as f64
-        + css_x * child_size.width as f64 / viewport_width;
-    let mut screen_y = window_position.y as f64
-        + child_position.y as f64
-        + css_y * child_size.height as f64 / viewport_height;
-    #[cfg(target_os = "macos")]
-    if let Ok(Some(monitor)) = window.current_monitor() {
-        let scale = monitor.scale_factor().max(1.0);
-        screen_x /= scale;
-        screen_y /= scale;
-    }
-    let _ = window.set_focus();
-    let _ = webview.set_focus();
-    tokio::time::sleep(Duration::from_millis(25)).await;
-    let button = params
-        .get("button")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("left");
-    send_native_browser_pointer(action, screen_x, screen_y, button)?;
-    Ok(serde_json::json!({
-        "trusted": true,
-        "action": action,
-        "target": target.get("description"),
-        "x": css_x,
-        "y": css_y,
-    }))
-}
-
-async fn run_native_browser_drag_action(
-    app: &AppHandle,
-    label: &str,
-    params: &serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let targets = eval_browser_webview_action(app, label, "native_drag_targets", params).await?;
-    let webview = app_browser_webview(app, label)?;
-    let child_position = webview
-        .position()
-        .map_err(|error| format!("Could not read browser position: {error}"))?;
-    let child_size = webview
-        .size()
-        .map_err(|error| format!("Could not read browser size: {error}"))?;
-    let window = webview.window();
-    let window_position = window
-        .inner_position()
-        .map_err(|error| format!("Could not read browser window position: {error}"))?;
-    let viewport_width = targets
-        .get("viewport_width")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(child_size.width as f64)
-        .max(1.0);
-    let viewport_height = targets
-        .get("viewport_height")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(child_size.height as f64)
-        .max(1.0);
-    let screen_point = |name: &str| -> Result<(f64, f64), String> {
-        let value = targets
-            .get(name)
-            .ok_or_else(|| format!("Native drag has no {name} target"))?;
-        let x = value
-            .get("x")
-            .and_then(serde_json::Value::as_f64)
-            .ok_or_else(|| format!("Native drag {name} has no x coordinate"))?;
-        let y = value
-            .get("y")
-            .and_then(serde_json::Value::as_f64)
-            .ok_or_else(|| format!("Native drag {name} has no y coordinate"))?;
-        Ok((
-            window_position.x as f64
-                + child_position.x as f64
-                + x * child_size.width as f64 / viewport_width,
-            window_position.y as f64
-                + child_position.y as f64
-                + y * child_size.height as f64 / viewport_height,
-        ))
-    };
-    let mut source = screen_point("source")?;
-    let mut target = screen_point("target")?;
-    #[cfg(target_os = "macos")]
-    if let Ok(Some(monitor)) = window.current_monitor() {
-        let scale = monitor.scale_factor().max(1.0);
-        source = (source.0 / scale, source.1 / scale);
-        target = (target.0 / scale, target.1 / scale);
-    }
-    let _ = window.set_focus();
-    let _ = webview.set_focus();
-    tokio::time::sleep(Duration::from_millis(25)).await;
-    send_native_browser_drag(source, target)?;
-    Ok(serde_json::json!({
-        "trusted": true,
-        "action": "drag",
-        "source": targets.get("source").and_then(|value| value.get("description")),
-        "target": targets.get("target").and_then(|value| value.get("description")),
-    }))
 }
 
 async fn run_native_browser_keyboard_action(
@@ -2242,21 +1896,12 @@ async fn app_browser_webview_agent_action(
     if action == "cookies" {
         return manage_browser_cookies(&app, &label, &params);
     }
+    // Browser pointer input is page-local; never move the desktop cursor.
     if matches!(action.as_str(), "click" | "dblclick" | "hover" | "click_at") {
-        match run_native_browser_pointer_action(&app, &label, &action, &params).await {
-            Ok(result) => return Ok(result),
-            Err(error) => {
-                log::debug!("native browser pointer fallback action={action} error={error}");
-            }
-        }
+        return eval_browser_webview_action(&app, &label, &action, &params).await;
     }
     if action == "drag" {
-        match run_native_browser_drag_action(&app, &label, &params).await {
-            Ok(result) => return Ok(result),
-            Err(error) => {
-                log::debug!("native browser drag fallback error={error}");
-            }
-        }
+        return eval_browser_webview_action(&app, &label, "drag", &params).await;
     }
     if matches!(action.as_str(), "type" | "fill" | "press") {
         match run_native_browser_keyboard_action(&app, &label, &action, &params).await {
@@ -3276,9 +2921,7 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
         "debug_summary",
         "evaluate",
         "element_rect",
-        "native_target",
         "native_focus",
-        "native_drag_targets",
         "exists",
         "probe",
         "status",
@@ -3667,20 +3310,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                         return {{ x: Math.max(0, rect.x), y: Math.max(0, rect.y), width: rect.width, height: rect.height, viewport_width: innerWidth, viewport_height: innerHeight }};
                     }}
 
-                    if (action === 'native_target') {{
-                        let x = Number(params.x);
-                        let y = Number(params.y);
-                        let element = Number.isFinite(x) && Number.isFinite(y) ? document.elementFromPoint(x, y) : resolveElement();
-                        if (!element) throw new Error('Native pointer target not found');
-                        if (!Number.isFinite(x) || !Number.isFinite(y)) {{
-                            element.scrollIntoView({{ block: 'center', inline: 'center' }});
-                            const rect = element.getBoundingClientRect();
-                            x = rect.left + rect.width / 2;
-                            y = rect.top + rect.height / 2;
-                        }}
-                        return {{ x, y, viewport_width: innerWidth, viewport_height: innerHeight, description: describe(element) }};
-                    }}
-
                     if (action === 'native_focus') {{
                         const element = resolveElement() || document.activeElement;
                         if (!element) throw new Error('Native keyboard target not found');
@@ -3704,20 +3333,6 @@ fn browser_agent_action_script(action: &str, params: &serde_json::Value) -> Resu
                             selection.addRange(range);
                         }}
                         return {{ description: describe(element) }};
-                    }}
-
-                    if (action === 'native_drag_targets') {{
-                        const source = resolveElement();
-                        const target = resolveTarget();
-                        if (!source || !target) throw new Error('Native drag source or target not found');
-                        source.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
-                        target.scrollIntoView({{ block: 'nearest', inline: 'nearest' }});
-                        const sourceRect = source.getBoundingClientRect();
-                        const targetRect = target.getBoundingClientRect();
-                        const point = (element, rect) => ({{ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, description: describe(element) }});
-                        const sourcePoint = point(source, sourceRect);
-                        const targetPoint = point(target, targetRect);
-                        return {{ source: sourcePoint, target: targetPoint, viewport_width: innerWidth, viewport_height: innerHeight }};
                     }}
 
                     if (action === 'click') {{
@@ -6841,9 +6456,7 @@ mod tests {
             "debug_summary",
             "evaluate",
             "element_rect",
-            "native_target",
             "native_focus",
-            "native_drag_targets",
             "exists",
             "probe",
             "status",
@@ -6853,6 +6466,18 @@ mod tests {
             browser_agent_action_script(action, &serde_json::json!({}))
                 .unwrap_or_else(|error| panic!("{action} should be supported: {error}"));
         }
+    }
+
+    #[test]
+    fn browser_pointer_actions_use_page_events_without_native_targets() {
+        let script =
+            browser_agent_action_script("click_at", &serde_json::json!({"x": 12, "y": 24}))
+                .expect("click_at should use the in-page event path");
+
+        assert!(script.contains("action === 'click_at'"));
+        assert!(script.contains("dispatchEvent"));
+        assert!(!script.contains("native_target"));
+        assert!(!script.contains("native_drag_targets"));
     }
 
     #[test]
