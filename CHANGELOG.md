@@ -4,6 +4,24 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added an isolated, loopback-only Teams SDK connectivity spike under
+  `connectors/teams_bot/`.
+  It replies to explicit `@EvoFlux` mentions with a fixed acknowledgement; it
+  does not read thread history, access EvoFlux sessions or repositories, or
+  execute agent actions. Root dev dependencies include the connector for
+  focused test runs. Clarified that command-line credential setup is
+  developer/operator-only. Replanned the integration around the proposed
+  enterprise-governed runtime in
+  `documents/architecture/decisions/enterprise-governed-ai-runtime.md`; the
+  former single-owner Teams ADR is marked superseded. The proposal now records
+  per-user project grants and private 1:1 Teams replies. The confirmed runtime is
+  shared customer/operator-hosted with project-isolated workspaces and one customer
+  Entra tenant per deployment. The proposal uses validated `tid` + `oid` for
+  cross-client identity matching; the Teams adapter remains behind authenticated
+  activity and project-authorization gates.
+
 ### Changed
 
 - Agent questions (`ask_user`) and permission prompts now rise directly out of

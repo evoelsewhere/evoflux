@@ -67,7 +67,9 @@ def _selected_payload(
     session: dict[str, Any],
     selected_event_ids: list[int],
     redactions: dict[str, str],
+    reviewed_input_values: dict[int, str] | None = None,
 ) -> list[dict[str, Any]]:
+    reviewed_input_values = reviewed_input_values or {}
     if not selected_event_ids or len(selected_event_ids) > MAX_SELECTED_EVENTS:
         raise SkillDistillationValidationError(
             f"Select between 1 and {MAX_SELECTED_EVENTS} events."
@@ -87,6 +89,17 @@ def _selected_payload(
         raise SkillDistillationValidationError(
             "Selection contains an event that is not in this recording."
         )
+    if len(reviewed_input_values) > MAX_SELECTED_EVENTS or any(
+        sequence not in selected_event_ids
+        or sequence not in event_by_id
+        or event_by_id[sequence].get("kind") != "value_changed"
+        or not isinstance(value, str)
+        or len(value.encode("utf-8")) > 16_384
+        for sequence, value in reviewed_input_values.items()
+    ):
+        raise SkillDistillationValidationError(
+            "Reviewed input values must belong to selected input-change events."
+        )
 
     selected: list[dict[str, Any]] = []
     used_redactions: set[str] = set()
@@ -98,14 +111,19 @@ def _selected_payload(
                 "sequence",
                 "elapsed_ms",
                 "kind",
+                "window",
                 "point",
                 "button",
                 "scroll_delta",
                 "target",
                 "value_state",
                 "value",
+                "screenshot",
             )
         }
+        if sequence in reviewed_input_values:
+            event["value_state"] = "captured"
+            event["value"] = reviewed_input_values[sequence]
         if event["value_state"] != "captured":
             event["value"] = None
         else:
@@ -119,14 +137,27 @@ def _selected_payload(
         target = event.get("target")
         if isinstance(target, dict):
             target = dict(target)
-            label = target.get("name")
-            if isinstance(label, str):
+            for field in ("name", "label"):
+                label = target.get(field)
+                if not isinstance(label, str):
+                    continue
                 for secret, replacement in redactions.items():
                     if secret in label:
                         label = label.replace(secret, replacement)
                         used_redactions.add(secret)
-                target["name"] = label
+                target[field] = label
             event["target"] = target
+        window = event.get("window")
+        if isinstance(window, dict):
+            window = dict(window)
+            title = window.get("title")
+            if isinstance(title, str):
+                for secret, replacement in redactions.items():
+                    if secret in title:
+                        title = title.replace(secret, replacement)
+                        used_redactions.add(secret)
+                window["title"] = title
+            event["window"] = window
         selected.append(event)
 
     if used_redactions != set(redactions):
@@ -141,6 +172,7 @@ def preview_payload(
     *,
     selected_event_ids: list[int],
     redactions: dict[str, str],
+    reviewed_input_values: dict[int, str] | None = None,
     goal: str = "",
     model: str | None = None,
 ) -> dict[str, str | None]:
@@ -159,7 +191,9 @@ def preview_payload(
         raise SkillDistillationValidationError(
             "Stop the recording before previewing a draft."
         )
-    selected = _selected_payload(session, selected_event_ids, redactions)
+    selected = _selected_payload(
+        session, selected_event_ids, redactions, reviewed_input_values
+    )
     payload = json.dumps(
         {"goal": goal, "events": selected}, ensure_ascii=False, separators=(",", ":")
     )
@@ -210,6 +244,7 @@ async def create_skill_draft(
     confirm_processing: bool,
     selected_event_ids: list[int],
     redactions: dict[str, str],
+    reviewed_input_values: dict[int, str] | None = None,
     preview_sha256: str,
     model: str,
     goal: str = "",
@@ -236,6 +271,7 @@ async def create_skill_draft(
         recording_id,
         selected_event_ids=selected_event_ids,
         redactions=redactions,
+        reviewed_input_values=reviewed_input_values,
         goal=goal,
         model=model,
     )

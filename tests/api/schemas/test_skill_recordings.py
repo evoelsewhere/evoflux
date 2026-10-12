@@ -133,6 +133,32 @@ def test_preview_request_does_not_require_a_manually_written_goal():
     assert request.model is None
 
 
+def test_desktop_context_and_reviewed_input_values_are_validated():
+    event = SkillRecordingEvent.model_validate(
+        {
+            "sequence": 1,
+            "elapsed_ms": 20,
+            "kind": "value_changed",
+            "window": {"app": "browser.exe", "title": "Search"},
+            "target": {
+                "automation_id": "query",
+                "control_type": "Edit",
+                "label": "Search query",
+            },
+            "value_state": "captured",
+            "value": "demo text",
+        }
+    )
+    request = SkillRecordingPreviewRequest(
+        selected_event_ids=[1],
+        reviewed_input_values=[{"sequence": 1, "value": "reviewed text"}],
+    )
+
+    assert event.window.title == "Search"
+    assert event.target.label == "Search query"
+    assert request.reviewed_input_values[0].value == "reviewed text"
+
+
 def test_chat_draft_request_still_requires_a_provider_model():
     with pytest.raises(ValidationError):
         SkillRecordingDraftRequest(

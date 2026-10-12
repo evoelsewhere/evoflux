@@ -3,7 +3,7 @@
 
 use super::*;
 
-fn control_type_name(id: i32) -> &'static str {
+pub(super) fn control_type_name(id: i32) -> &'static str {
     match id {
         50000 => "Button", 50001 => "Calendar", 50002 => "CheckBox", 50003 => "ComboBox",
         50004 => "Edit", 50005 => "Hyperlink", 50006 => "Image", 50007 => "ListItem",

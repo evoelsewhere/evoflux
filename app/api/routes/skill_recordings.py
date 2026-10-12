@@ -125,6 +125,9 @@ async def create_draft(recording_id: str, body: SkillRecordingDraftRequest) -> d
             confirm_processing=body.confirm_processing,
             selected_event_ids=body.selected_event_ids,
             redactions=body.redactions,
+            reviewed_input_values={
+                item.sequence: item.value for item in body.reviewed_input_values
+            },
             preview_sha256=body.preview_sha256,
             model=body.model,
             goal=body.goal,
@@ -142,6 +145,9 @@ async def preview_draft(recording_id: str, body: SkillRecordingPreviewRequest) -
             recording_id,
             selected_event_ids=body.selected_event_ids,
             redactions=body.redactions,
+            reviewed_input_values={
+                item.sequence: item.value for item in body.reviewed_input_values
+            },
             goal=body.goal,
             model=body.model,
         )

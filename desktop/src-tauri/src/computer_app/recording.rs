@@ -55,6 +55,13 @@ pub(super) struct ElementTarget {
     pub automation_id: Option<String>,
     pub control_type: Option<String>,
     pub name: Option<String>,
+    pub label: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct WindowContext {
+    pub app: Option<String>,
+    pub title: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,6 +77,7 @@ pub(super) struct CaptureObservation {
     /// this root window identity.
     pub root_window_id: u64,
     pub kind: CaptureKind,
+    pub window: Option<WindowContext>,
     pub point: Option<PointerPoint>,
     pub button: Option<PointerButton>,
     pub scroll_delta: Option<ScrollDelta>,
@@ -84,6 +92,7 @@ pub(super) struct SkillRecordingEvent {
     pub sequence: u64,
     pub elapsed_ms: u64,
     pub kind: CaptureKind,
+    pub window: Option<WindowContext>,
     pub point: Option<PointerPoint>,
     pub button: Option<PointerButton>,
     pub scroll_delta: Option<ScrollDelta>,
@@ -131,12 +140,13 @@ pub(super) fn normalize_observation(
 
     if let Some(target) = observation.target.as_mut() {
         let control_type = target.control_type.as_deref().unwrap_or_default();
-        if observation.kind == CaptureKind::Focus
-            || matches!(
-                control_type.to_ascii_lowercase().as_str(),
-                "edit" | "text" | "pane"
-            )
-        {
+        if matches!(
+            observation.kind,
+            CaptureKind::Focus | CaptureKind::ValueChanged
+        ) || matches!(
+            control_type.to_ascii_lowercase().as_str(),
+            "edit" | "text" | "pane"
+        ) {
             target.name = None;
         }
     }
@@ -145,7 +155,7 @@ pub(super) fn normalize_observation(
         match (observation.is_password, observation.value.take()) {
             (Some(false), Some(value)) => (ValueState::Captured, Some(value)),
             (Some(true), _) => (ValueState::OmittedSecure, None),
-            (None, _) | (Some(false), None) => (ValueState::Unavailable, None),
+            _ => (ValueState::Unavailable, None),
         }
     } else {
         (ValueState::NotCaptured, None)
@@ -159,10 +169,22 @@ pub(super) fn normalize_observation(
         None
     };
 
+    let window = observation.window.map(|window| WindowContext {
+        app: window
+            .app
+            .filter(|app| !app.trim().is_empty())
+            .map(|app| app.chars().take(260).collect()),
+        title: window
+            .title
+            .filter(|title| !title.trim().is_empty())
+            .map(|title| title.chars().take(2048).collect()),
+    });
+
     Some(SkillRecordingEvent {
         sequence,
         elapsed_ms,
         kind: observation.kind,
+        window,
         point: pointer_fields.0,
         button: pointer_fields.1,
         scroll_delta: pointer_fields.2,
@@ -177,7 +199,7 @@ pub(super) fn normalize_observation(
 mod tests {
     use super::{
         normalize_observation, CaptureKind, CaptureObservation, ElementTarget, PointerButton,
-        PointerPoint, ScrollDelta, SelectedTarget, ValueState,
+        PointerPoint, ScrollDelta, SelectedTarget, ValueState, WindowContext,
     };
 
     fn target() -> SelectedTarget {
@@ -187,6 +209,10 @@ mod tests {
     fn observation(kind: CaptureKind) -> CaptureObservation {
         CaptureObservation {
             root_window_id: 42,
+            window: Some(WindowContext {
+                app: Some("browser.exe".into()),
+                title: Some("Article page".into()),
+            }),
             kind,
             point: None,
             button: None,
@@ -195,6 +221,7 @@ mod tests {
                 automation_id: Some("field-1".into()),
                 control_type: Some("edit".into()),
                 name: Some("label".into()),
+                label: Some("Search query".into()),
             }),
             is_password: Some(false),
             value: None,
@@ -219,16 +246,46 @@ mod tests {
     }
 
     #[test]
-    fn value_change_is_captured_only_when_password_property_is_false() {
+    fn non_password_input_is_available_for_local_review() {
         let mut input = observation(CaptureKind::ValueChanged);
-        input.value = Some("ordinary value".into());
+        input.value = Some("international news".into());
 
         let event = normalize_observation(2, 40, &target(), input).unwrap();
 
-        assert_eq!(event.value.as_deref(), Some("ordinary value"));
+        assert_eq!(event.value.as_deref(), Some("international news"));
         assert_eq!(event.value_state, ValueState::Captured);
         assert_eq!(event.sequence, 2);
         assert_eq!(event.elapsed_ms, 40);
+    }
+
+    #[test]
+    fn window_context_and_reviewable_input_are_kept() {
+        let mut input = observation(CaptureKind::ValueChanged);
+        input.window = Some(WindowContext {
+            app: Some("browser.exe".into()),
+            title: Some("Search results".into()),
+        });
+        input.is_password = Some(false);
+        input.value = Some("private draft text".into());
+
+        let event = normalize_observation(9, 90, &target(), input).unwrap();
+
+        assert_eq!(
+            event
+                .window
+                .as_ref()
+                .and_then(|window| window.app.as_deref()),
+            Some("browser.exe")
+        );
+        assert_eq!(
+            event
+                .window
+                .as_ref()
+                .and_then(|window| window.title.as_deref()),
+            Some("Search results")
+        );
+        assert_eq!(event.value_state, ValueState::Captured);
+        assert_eq!(event.value.as_deref(), Some("private draft text"));
     }
 
     #[test]
@@ -290,6 +347,7 @@ mod tests {
             &selected_desktop,
             CaptureObservation {
                 root_window_id: 99,
+                window: None,
                 kind: CaptureKind::DoubleClick,
                 point: Some(PointerPoint {
                     x: -120,
@@ -314,6 +372,7 @@ mod tests {
             &selected_desktop,
             CaptureObservation {
                 root_window_id: 123,
+                window: None,
                 kind: CaptureKind::Scroll,
                 point: Some(PointerPoint {
                     x: 12,
@@ -337,6 +396,7 @@ mod tests {
         let selected_desktop = SelectedTarget { window_id: 0 };
         let malformed = CaptureObservation {
             root_window_id: 99,
+            window: None,
             kind: CaptureKind::Click,
             point: None,
             button: Some(PointerButton::Left),

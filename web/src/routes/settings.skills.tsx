@@ -2,7 +2,7 @@
  * /settings/skills — every discovered Skill, with an on/off switch per row.
  */
 import { ClipboardPenLine, Plus, Sparkles } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
 import type { SkillSummary } from '@/api/types'
 import { SettingsListView, type ListViewRow } from '@/components/settings/SettingsListView'
@@ -18,8 +18,10 @@ import { useSettingsNavigate, useSettingsParams } from '@/contexts/SettingsConte
 import { useActiveSkillDiscoveryScope } from '@/hooks/useActiveSkillDiscoveryScope'
 import { useToastStore } from '@/stores/useToastStore'
 import { Button } from '@/components/ui/button'
+import { SkillRecordingWizard } from '@/components/settings/SkillRecordingWizard'
 
-export function SkillsListPage() {
+export function SkillsListPage({ initialRecordingOpen = false }: { initialRecordingOpen?: boolean }) {
+  const [recordOpen, setRecordOpen] = useState(initialRecordingOpen)
   const skillScope = useActiveSkillDiscoveryScope()
   const { data, isLoading, isFetching, isError, error, refetch } =
     useSkillFilesQuery(skillScope)
@@ -78,6 +80,7 @@ export function SkillsListPage() {
   }, [data?.skills, setEnabled, pendingName, push, selected])
 
   return (
+    <>
     <SettingsListView
       title="Skills"
       icon={Sparkles}
@@ -86,7 +89,7 @@ export function SkillsListPage() {
       newLabel="New skill"
       newAction={
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => navigate('/settings/skills/record')}>
+          <Button size="sm" variant="outline" onClick={() => setRecordOpen(true)}>
             <ClipboardPenLine size={14} aria-hidden="true" />
             Create from recording
           </Button>
@@ -106,5 +109,13 @@ export function SkillsListPage() {
       emptyTitle="No skills yet"
       emptyBody="Create a skill, or add a folder with a SKILL.md to a project's .agents/skills or your user skills directory."
     />
+    <SkillRecordingWizard
+      open={recordOpen}
+      onOpenChange={(open) => {
+        setRecordOpen(open)
+        if (!open && initialRecordingOpen) navigate('/settings/skills', { force: true })
+      }}
+    />
+    </>
   )
 }

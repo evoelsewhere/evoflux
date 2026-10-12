@@ -40,4 +40,21 @@ describe('skill recording video API', () => {
       'http://127.0.0.1:4082/api/skill-recordings/recording-id/video',
     )
   })
+
+  it('includes the HTTP method and route when the video upload is rejected', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: 'Method Not Allowed' }), { status: 405 }),
+      ),
+    )
+    window.__OAD_API_BASE_URL__ = 'http://127.0.0.1:4082/api'
+
+    await expect(
+      uploadSkillRecordingVideo('recording-id', new Blob(['synthetic webm'], { type: 'video/webm' })),
+    ).rejects.toThrow(
+      'PUT /api/skill-recordings/{recording_id}/video returned HTTP 405: Method Not Allowed',
+    )
+  })
+
 })

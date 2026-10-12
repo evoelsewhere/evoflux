@@ -255,6 +255,14 @@ def _normalize_event(
         raise SkillRecordingValidationError(
             "Only value-change events may contain a value."
         )
+    if kind == "value_changed":
+        # Keep typed text in the desktop review flow only. The event API stores
+        # the change and its field context; values are sent separately only
+        # after the user reviews and selects them for a preview.
+        value_state = (
+            "omitted_secure" if value_state == "omitted_secure" else "unavailable"
+        )
+        value = None
 
     point = raw.get("point")
     button = raw.get("button")
@@ -305,19 +313,33 @@ def _normalize_event(
         if not isinstance(target, dict):
             raise SkillRecordingValidationError("Event target is malformed.")
         target = {
-            key: target.get(key) for key in ("automation_id", "control_type", "name")
+            key: target.get(key)
+            for key in ("automation_id", "control_type", "name", "label")
         }
         for key, text in target.items():
             if text is not None and (not isinstance(text, str) or len(text) > 2048):
                 raise SkillRecordingValidationError(
                     "Event target is too large or malformed."
                 )
-        if kind == "focus" or (target.get("control_type") or "").lower() in {
+        if kind in {"focus", "value_changed"} or (
+            target.get("control_type") or ""
+        ).lower() in {
             "edit",
             "text",
             "pane",
         }:
             target["name"] = None
+
+    window = raw.get("window")
+    if window is not None:
+        if not isinstance(window, dict):
+            raise SkillRecordingValidationError("Event window context is malformed.")
+        window = {key: window.get(key) for key in ("app", "title")}
+        for key, text in window.items():
+            if text is not None and (not isinstance(text, str) or len(text) > 2048):
+                raise SkillRecordingValidationError(
+                    "Event window context is too large or malformed."
+                )
 
     screenshot = raw.get("screenshot")
     screenshot_bytes = None
@@ -351,6 +373,7 @@ def _normalize_event(
         "source_sequence": source_sequence,
         "elapsed_ms": elapsed_ms,
         "kind": kind,
+        "window": window,
         "point": point,
         "button": button,
         "scroll_delta": scroll_delta,

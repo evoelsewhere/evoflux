@@ -69,6 +69,7 @@ def stopped_session() -> tuple[str, list[int]]:
                 "sequence": 1,
                 "elapsed_ms": 20,
                 "kind": "invoked",
+                "window": {"app": "browser.exe", "title": "private-customer-123"},
                 "target": {
                     "automation_id": "export",
                     "control_type": "button",
@@ -82,7 +83,11 @@ def stopped_session() -> tuple[str, list[int]]:
                 "sequence": 2,
                 "elapsed_ms": 40,
                 "kind": "value_changed",
-                "target": {"automation_id": "account", "control_type": "edit"},
+                "target": {
+                    "automation_id": "account",
+                    "control_type": "edit",
+                    "label": "private-customer-123",
+                },
                 "value_state": "captured",
                 "value": "private-customer-123",
                 "screenshot": None,
@@ -108,11 +113,13 @@ def preview_hash(
     redactions: dict,
     goal: str,
     model: str = "test:model",
+    reviewed_input_values: dict[int, str] | None = None,
 ) -> str:
     return distiller.preview_payload(
         session_id,
         selected_event_ids=ids,
         redactions=redactions,
+        reviewed_input_values=reviewed_input_values,
         goal=goal,
         model=model,
     )["sha256"]
@@ -131,12 +138,14 @@ async def test_distill_uses_only_selected_redacted_evidence_without_tools(
         confirm_processing=True,
         selected_event_ids=[1, 2],
         redactions={"private-customer-123": "{account_id}"},
+        reviewed_input_values={2: "private-customer-123"},
         preview_sha256=preview_hash(
             session_id,
             [1, 2],
             {"private-customer-123": "{account_id}"},
             "Export the chosen customer's invoices.",
             "test:local-test-model",
+            {2: "private-customer-123"},
         ),
         model="test:local-test-model",
         goal="Export the chosen customer's invoices.",
@@ -163,8 +172,49 @@ def test_chat_preview_is_bound_to_trace_without_a_provider(
     )
 
     assert preview["provider_model"] is None
+
+
+def test_preview_redacts_typed_values_and_their_field_labels(recording_root: Path):
+    session_id, _ = stopped_session()
+
+    preview = distiller.preview_payload(
+        session_id,
+        selected_event_ids=[1, 2],
+        redactions={"private-customer-123": "{account_id}"},
+        reviewed_input_values={2: "private-customer-123"},
+        goal="",
+    )
+    payload = json.loads(preview["payload"])
+
+    assert payload["events"][1]["value"] == "{account_id}"
+    assert payload["events"][1]["target"]["label"] == "{account_id}"
     assert '"goal":""' in preview["payload"]
     assert preview["sha256"]
+
+
+def test_reviewed_input_values_are_only_added_for_selected_input_events(
+    recording_root: Path,
+):
+    session_id, _ = stopped_session()
+
+    preview = distiller.preview_payload(
+        session_id,
+        selected_event_ids=[1, 2],
+        redactions={},
+        reviewed_input_values={2: "the reviewed search query"},
+    )
+    payload = json.loads(preview["payload"])
+
+    assert payload["events"][1]["value_state"] == "captured"
+    assert payload["events"][1]["value"] == "the reviewed search query"
+
+    with pytest.raises(distiller.SkillDistillationValidationError):
+        distiller.preview_payload(
+            session_id,
+            selected_event_ids=[1],
+            redactions={},
+            reviewed_input_values={2: "not selected"},
+        )
 
 
 def test_chat_preview_preserves_reviewed_desktop_pointer_actions(
@@ -227,7 +277,7 @@ async def test_distiller_infers_workflow_when_no_goal_was_entered(
 
 
 @pytest.mark.asyncio
-async def test_selected_checkpoint_pixels_never_enter_provider_payload(
+async def test_selected_checkpoint_is_referenced_without_inlining_pixels(
     recording_root: Path, monkeypatch: pytest.MonkeyPatch
 ):
     def chunk(kind: bytes, data: bytes) -> bytes:
@@ -290,6 +340,7 @@ async def test_selected_checkpoint_pixels_never_enter_provider_payload(
 
     assert provider.messages[1].parts is None
     assert "data:image/png" not in provider.messages[1].content
+    assert '"screenshot":"screenshots/000001.png"' in provider.messages[1].content
     assert '"sequence": 2' not in provider.messages[1].content
 
 

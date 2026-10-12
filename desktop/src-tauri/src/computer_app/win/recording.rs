@@ -8,9 +8,6 @@ use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
-use windows::Win32::UI::Accessibility::{
-    CUIAutomation, IUIAutomation, IUIAutomationValuePattern, UIA_ValuePatternId,
-};
 use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, GetAncestor, PeekMessageW, EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY,
@@ -55,6 +52,7 @@ impl Session {
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed) + 1;
         let input = CaptureObservation {
             root_window_id: hwnd_id(HWND(self.hwnd as *mut core::ffi::c_void)),
+            window: None,
             kind,
             point: None,
             button: None,
@@ -79,43 +77,12 @@ impl Session {
         }
     }
 
-    fn emit_value_from(&self, source_hwnd: HWND) {
-        unsafe {
-            // ValueChanged is the trigger; inspect that event's HWND inside
-            // this selected app, and check IsPassword before CurrentValue.
-            let automation: IUIAutomation =
-                match CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) {
-                    Ok(automation) => automation,
-                    Err(_) => {
-                        self.emit(CaptureKind::ValueChanged, None, None);
-                        return;
-                    }
-                };
-            let element = match automation.ElementFromHandle(source_hwnd) {
-                Ok(element) => element,
-                Err(_) => {
-                    self.emit(CaptureKind::ValueChanged, None, None);
-                    return;
-                }
-            };
-            let element_hwnd = element.CurrentNativeWindowHandle().unwrap_or_default();
-            if hwnd_id(GetAncestor(element_hwnd, GA_ROOTOWNER))
-                != hwnd_id(HWND(self.hwnd as *mut core::ffi::c_void))
-            {
-                return;
-            }
-            let password = element.CurrentIsPassword().ok().map(|flag| flag.as_bool());
-            let value = if password == Some(false) {
-                element
-                    .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
-                    .ok()
-                    .and_then(|pattern| pattern.CurrentValue().ok())
-                    .map(|value| value.to_string())
-            } else {
-                None
-            };
-            self.emit(CaptureKind::ValueChanged, password, value);
-        }
+    fn emit_value_from(&self, _source_hwnd: HWND) {
+        // Keep the fact that an accessible value changed, but never read the
+        // value. Skill demonstrations only need to know that the user
+        // completed an input step; screenshots and window/element metadata
+        // provide local context for review.
+        self.emit(CaptureKind::ValueChanged, None, None);
     }
 }
 
@@ -370,6 +337,7 @@ impl Session {
             },
             CaptureObservation {
                 root_window_id: hwnd_id(HWND(self.hwnd as *mut core::ffi::c_void)),
+                window: None,
                 kind: CaptureKind::Screenshot,
                 point: None,
                 button: None,

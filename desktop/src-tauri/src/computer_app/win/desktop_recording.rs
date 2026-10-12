@@ -6,16 +6,22 @@
 
 use super::*;
 use crate::computer_app::recording::{
-    normalize_observation, CaptureKind, CaptureObservation, PointerButton, PointerPoint,
-    ScrollDelta, SelectedTarget,
+    normalize_observation, CaptureKind, CaptureObservation, ElementTarget, PointerButton,
+    PointerPoint, ScrollDelta, SelectedTarget, WindowContext,
 };
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender, TryRecvError, TrySendError};
 use std::thread;
 use std::time::Instant;
 use tauri::Emitter;
-use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
-use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVENTHOOK};
+use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
+};
+use windows::Win32::UI::Accessibility::{
+    CUIAutomation, IUIAutomation, IUIAutomationValuePattern, SetWinEventHook, UIA_ValuePatternId,
+    UnhookWinEvent, HWINEVENTHOOK,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, PeekMessageW, SetWindowsHookExW, UnhookWindowsHookEx,
     HC_ACTION, MSLLHOOKSTRUCT, PM_REMOVE, WH_MOUSE_LL, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
@@ -23,7 +29,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WM_RBUTTONDOWN,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EVENT_SYSTEM_FOREGROUND, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+    GetAncestor, GetForegroundWindow, WindowFromPoint, EVENT_OBJECT_FOCUS,
+    EVENT_OBJECT_VALUECHANGE, EVENT_SYSTEM_FOREGROUND, GA_ROOTOWNER, WINEVENT_OUTOFCONTEXT,
+    WINEVENT_SKIPOWNPROCESS,
 };
 
 const MOUSE_QUEUE_CAPACITY: usize = 256;
@@ -57,6 +65,7 @@ struct RawMouseEvent {
 enum RawDesktopEvent {
     Mouse(RawMouseEvent),
     ForegroundChanged,
+    Accessibility { kind: CaptureKind, hwnd: isize },
 }
 
 fn classify_mouse_event(raw: RawMouseEvent) -> Option<CaptureObservation> {
@@ -152,6 +161,7 @@ fn classify_mouse_event(raw: RawMouseEvent) -> Option<CaptureObservation> {
 
     Some(CaptureObservation {
         root_window_id: 0,
+        window: None,
         kind,
         point,
         button,
@@ -226,6 +236,143 @@ unsafe extern "system" fn foreground_event_callback(
         ) {
             MOUSE_DROPPED.store(true, Ordering::Release);
         }
+    }
+}
+
+unsafe extern "system" fn accessibility_event_callback(
+    _hook: HWINEVENTHOOK,
+    event: u32,
+    hwnd: HWND,
+    _object: i32,
+    _child: i32,
+    _thread: u32,
+    _time: u32,
+) {
+    if MOUSE_PAUSED.load(Ordering::Acquire) || hwnd.is_invalid() {
+        return;
+    }
+    let kind = match event {
+        EVENT_OBJECT_FOCUS => CaptureKind::Focus,
+        EVENT_OBJECT_VALUECHANGE => CaptureKind::ValueChanged,
+        _ => return,
+    };
+    let sink = MOUSE_SINK
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().cloned());
+    if let Some(sink) = sink {
+        if matches!(
+            sink.try_send(RawDesktopEvent::Accessibility {
+                kind,
+                hwnd: hwnd.0 as isize,
+            }),
+            Err(TrySendError::Full(_))
+        ) {
+            MOUSE_DROPPED.store(true, Ordering::Release);
+        }
+    }
+}
+
+fn window_context(hwnd: HWND) -> Option<WindowContext> {
+    let root = unsafe { GetAncestor(hwnd, GA_ROOTOWNER) };
+    if root.is_invalid() {
+        return None;
+    }
+    let row = super::listing::describe_window(root)?;
+    Some(WindowContext {
+        app: Some(row.app),
+        title: Some(row.title),
+    })
+}
+
+fn target_from_element(
+    element: &windows::Win32::UI::Accessibility::IUIAutomationElement,
+) -> Option<ElementTarget> {
+    unsafe {
+        let control_type = element
+            .CurrentControlType()
+            .ok()
+            .map(|id| super::uia_tree::control_type_name(id.0).to_string());
+        let name = element.CurrentName().ok().map(|value| value.to_string());
+        let automation_id = element
+            .CurrentAutomationId()
+            .ok()
+            .map(|value| value.to_string());
+        let label = element
+            .CurrentLabeledBy()
+            .ok()
+            .and_then(|label| label.CurrentName().ok())
+            .map(|value| value.to_string());
+        Some(ElementTarget {
+            automation_id: automation_id.filter(|value| !value.trim().is_empty()),
+            control_type,
+            name: name.filter(|value| !value.trim().is_empty()),
+            label: label.filter(|value| !value.trim().is_empty()),
+        })
+    }
+}
+
+fn focused_element_context(
+    event_hwnd: HWND,
+    kind: CaptureKind,
+) -> (Option<ElementTarget>, Option<bool>, Option<String>) {
+    unsafe {
+        let automation: IUIAutomation =
+            match CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) {
+                Ok(automation) => automation,
+                Err(_) => return (target_from_window(event_hwnd), None, None),
+            };
+        let element = match automation.GetFocusedElement() {
+            Ok(element) => element,
+            Err(_) => return (target_from_window(event_hwnd), None, None),
+        };
+        let event_root = GetAncestor(event_hwnd, GA_ROOTOWNER);
+        let element_hwnd = element.CurrentNativeWindowHandle().unwrap_or_default();
+        if !element_hwnd.is_invalid() && GetAncestor(element_hwnd, GA_ROOTOWNER) != event_root {
+            return (target_from_window(event_hwnd), None, None);
+        }
+
+        let password = element
+            .CurrentIsPassword()
+            .ok()
+            .map(|value| value.as_bool());
+        let editable_control = element
+            .CurrentControlType()
+            .ok()
+            .map(|control_type| matches!(control_type.0, 50003 | 50004))
+            .unwrap_or(false);
+        let value = if kind == CaptureKind::ValueChanged
+            && password == Some(false)
+            && editable_control
+        {
+            element
+                .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
+                .ok()
+                .and_then(|pattern| pattern.CurrentValue().ok())
+                .map(|value| value.to_string())
+                .filter(|value| value.len() <= 16_384)
+        } else {
+            None
+        };
+        (target_from_element(&element), password, value)
+    }
+}
+
+fn target_from_point(point: POINT) -> Option<ElementTarget> {
+    unsafe {
+        let automation: IUIAutomation =
+            CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+        let element = automation.ElementFromPoint(point).ok()?;
+        target_from_element(&element)
+    }
+}
+
+fn target_from_window(hwnd: HWND) -> Option<ElementTarget> {
+    unsafe {
+        let automation: IUIAutomation =
+            CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+        let element = automation.ElementFromHandle(hwnd).ok()?;
+        target_from_element(&element)
     }
 }
 
@@ -326,6 +473,9 @@ pub(in crate::computer_app) fn start(app: tauri::AppHandle, id: String) -> Resul
 }
 
 fn observer_loop(session: Arc<DesktopSession>, ready: SyncSender<Result<(), String>>) {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
     let (sender, receiver) = mpsc::sync_channel(MOUSE_QUEUE_CAPACITY);
     if let Ok(mut sink) = MOUSE_SINK.lock() {
         *sink = Some(sender);
@@ -360,6 +510,23 @@ fn observer_loop(session: Arc<DesktopSession>, ready: SyncSender<Result<(), Stri
         )
     };
     let foreground_hook = (!foreground_hook.0.is_null()).then_some(foreground_hook);
+    let accessibility_hooks: Vec<HWINEVENTHOOK> = [EVENT_OBJECT_FOCUS, EVENT_OBJECT_VALUECHANGE]
+        .into_iter()
+        .filter_map(|event| {
+            let hook = unsafe {
+                SetWinEventHook(
+                    event,
+                    event,
+                    None,
+                    Some(accessibility_event_callback),
+                    0,
+                    0,
+                    WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+                )
+            };
+            (!hook.0.is_null()).then_some(hook)
+        })
+        .collect();
     let _ = ready.send(Ok(()));
 
     let mut message = MSG::default();
@@ -373,6 +540,7 @@ fn observer_loop(session: Arc<DesktopSession>, ready: SyncSender<Result<(), Stri
                     if MOUSE_DROPPED.swap(false, Ordering::AcqRel) {
                         session.emit(CaptureObservation {
                             root_window_id: 0,
+                            window: None,
                             kind: CaptureKind::Gap,
                             point: None,
                             button: None,
@@ -385,21 +553,50 @@ fn observer_loop(session: Arc<DesktopSession>, ready: SyncSender<Result<(), Stri
                     }
                     match raw {
                         RawDesktopEvent::Mouse(mouse) => {
-                            if let Some(observation) = classify_mouse_event(mouse) {
+                            if let Some(mut observation) = classify_mouse_event(mouse) {
+                                if let Some(point) = observation.point.as_ref() {
+                                    let screen_point = POINT {
+                                        x: point.x,
+                                        y: point.y,
+                                    };
+                                    let hwnd = unsafe { WindowFromPoint(screen_point) };
+                                    observation.window = window_context(hwnd);
+                                    observation.target = target_from_point(screen_point);
+                                }
                                 session.emit(observation);
                             }
                         }
-                        RawDesktopEvent::ForegroundChanged => session.emit(CaptureObservation {
-                            root_window_id: 0,
-                            kind: CaptureKind::WindowChange,
-                            point: None,
-                            button: None,
-                            scroll_delta: None,
-                            target: None,
-                            is_password: None,
-                            value: None,
-                            screenshot: None,
-                        }),
+                        RawDesktopEvent::ForegroundChanged => {
+                            let foreground = unsafe { GetForegroundWindow() };
+                            session.emit(CaptureObservation {
+                                root_window_id: 0,
+                                window: window_context(foreground),
+                                kind: CaptureKind::WindowChange,
+                                point: None,
+                                button: None,
+                                scroll_delta: None,
+                                target: None,
+                                is_password: None,
+                                value: None,
+                                screenshot: None,
+                            });
+                        }
+                        RawDesktopEvent::Accessibility { kind, hwnd } => {
+                            let hwnd = HWND(hwnd as *mut core::ffi::c_void);
+                            let (target, is_password, value) = focused_element_context(hwnd, kind);
+                            session.emit(CaptureObservation {
+                                root_window_id: unsafe { hwnd_id(GetAncestor(hwnd, GA_ROOTOWNER)) },
+                                window: window_context(hwnd),
+                                kind,
+                                point: None,
+                                button: None,
+                                scroll_delta: None,
+                                target,
+                                is_password,
+                                value,
+                                screenshot: None,
+                            });
+                        }
                     }
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
@@ -412,10 +609,16 @@ fn observer_loop(session: Arc<DesktopSession>, ready: SyncSender<Result<(), Stri
     if let Some(foreground_hook) = foreground_hook {
         let _ = unsafe { UnhookWinEvent(foreground_hook) };
     }
+    for hook in accessibility_hooks {
+        let _ = unsafe { UnhookWinEvent(hook) };
+    }
     if let Ok(mut sink) = MOUSE_SINK.lock() {
         *sink = None;
     }
     HOOK_ACTIVE.store(false, Ordering::Release);
+    unsafe {
+        CoUninitialize();
+    }
 }
 
 pub(in crate::computer_app) fn contains(id: &str) -> bool {

@@ -135,6 +135,53 @@ async def test_malformed_or_sensitive_value_payload_is_rejected(client):
 
 
 @pytest.mark.asyncio
+async def test_typed_input_stays_out_of_trace_until_review_preview(client):
+    created = await client.post("/api/skill-recordings")
+    recording_id = created.json()["id"]
+    appended = await client.post(
+        f"/api/skill-recordings/{recording_id}/events",
+        json={
+            "events": [
+                {
+                    "sequence": 17,
+                    "elapsed_ms": 800,
+                    "kind": "value_changed",
+                    "window": {"app": "browser.exe", "title": "Search"},
+                    "target": {
+                        "automation_id": "query",
+                        "control_type": "Edit",
+                        "label": "Search query",
+                    },
+                    "value_state": "captured",
+                    "value": "secret query",
+                }
+            ]
+        },
+    )
+    assert appended.status_code == 200
+
+    await client.post(f"/api/skill-recordings/{recording_id}/stop")
+    stored = await client.get(f"/api/skill-recordings/{recording_id}")
+    stored_event = stored.json()["events"][0]
+    assert stored_event["window"]["title"] == "Search"
+    assert stored_event["target"]["label"] == "Search query"
+    assert stored_event["value"] is None
+    assert stored_event["value_state"] == "unavailable"
+
+    preview = await client.post(
+        f"/api/skill-recordings/{recording_id}/preview",
+        json={
+            "selected_event_ids": [1],
+            "redactions": {},
+            "reviewed_input_values": [{"sequence": 1, "value": "reviewed query"}],
+        },
+    )
+    assert preview.status_code == 200
+    assert preview.json()["payload"]
+    assert '"value":"reviewed query"' in preview.json()["payload"]
+
+
+@pytest.mark.asyncio
 async def test_unknown_session_and_path_traversal_are_not_found(client):
     for recording_id in ("../outside", "not-a-uuid"):
         response = await client.get(f"/api/skill-recordings/{recording_id}")
