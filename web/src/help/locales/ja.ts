@@ -2125,6 +2125,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'スキルは SKILL.md を持つフォルダです。エージェントは有効なスキルの名前と説明を把握し、タスクが合うと自分で SKILL.md を読みます。',
       'メッセージのどこかに $skill-name と書くとスキルを明示的に使えます。複数指定も可能です。',
       'Settings → Skills ではユーザーのスキルフォルダにスキルを作成・編集でき、組み込み・plugin・project を含むすべてのスキルにオン/オフのスイッチがあります。',
+      'Windows では Create from recording で選択したアプリのデモを確認し、トレースを添付した Skill 作成プロンプト入りの新しいチャットを開けます。送信は Send を押すまで行われず、そのチャットで選択中のモデルが使われます。移動後も、レビュー済みトレースは最大 1 時間、新しい空の Work チャットに復元できます。チャットで結果を調整し、SKILL.md を Settings → Skills で保存します。',
       'エージェントの Skills フィールドはそのスキルをエージェントに事前読み込みし、最初から指示を持った状態で始めさせます。',
       'MCP ステータスドット: ready / starting / auth / error / stopped。',
       'MCP ツールはネイティブと同じ権限ルールを継承。',
@@ -2146,6 +2147,10 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       {
         type: 'p',
         text: 'Settings → Agents でチームメンバー編集; Settings → Skills で自分のスキルの作成・編集、検証の確認、各スキルのオン/オフ; Settings → MCP でサーバー追加とステータスドット監視。チャットでは $skill-name でスキルを今すぐ使うか、パレットの New Agent / New Skill。エージェントの Skills フィールドはそのスキルをエージェントに事前読み込みします。Lead 専用ツール（ask_user、worktree ヘルパー）は specialist に付与されません。',
+      },
+      {
+        type: 'p',
+        text: 'デモから Skill を作るには、Settings → Skills → Create from recording を開き、Windows アプリ/ウィンドウを選んで録画を開始します。タイムラインを確認してイベントを除外したり機密テキストを置換したりし、新しいチャットを開きます。レビュー済みトレースが添付され、Skill 作成プロンプトが入力されています。Send を押すまで送信されず、チャットで選択中のモデルが使われます。移動した場合、レビュー済みトレースは最大 1 時間キャッシュされ、新しい空の Work チャットにのみ復元されます。結果は会話内で調整し、SKILL.md を Settings → Skills に貼り付けて検証・保存します。スクリーンショットはローカルに保存されます。元の録画は recorder 画面から削除できます。macOS と Linux の capture は未対応です。',
       },
       {
         type: 'tips',

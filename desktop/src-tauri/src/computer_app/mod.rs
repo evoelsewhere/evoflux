@@ -33,6 +33,7 @@
 mod action;
 mod backend;
 mod interrupt;
+mod recording;
 mod workers;
 
 // Helpers only the platform backends use.
@@ -60,6 +61,119 @@ use interrupt::{generation, interrupt, with_ticket};
 /// Tauri event carrying the agent's virtual pointer for the preview card.
 pub const POINTER_EVENT: &str = "computer-app:pointer";
 
+/// Tauri event carrying one selected-app recording event.
+pub const SKILL_RECORDING_EVENT: &str = "skill-recording:event";
+
+fn recording_unavailable() -> String {
+    "Skill recording is not available on this platform; native capture has not passed its feasibility gate.".into()
+}
+
+#[tauri::command]
+pub fn app_skill_recording_windows() -> Result<Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return win::recording::list_windows();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err(recording_unavailable())
+    }
+}
+
+#[tauri::command]
+pub fn app_skill_recording_start(
+    app: tauri::AppHandle,
+    recording_id: String,
+    window_id: Option<u64>,
+) -> Result<Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return match window_id {
+            Some(window_id) => win::recording::start(app, recording_id, window_id),
+            None => win::desktop_recording::start(app, recording_id),
+        };
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, recording_id, window_id);
+        Err(recording_unavailable())
+    }
+}
+
+#[tauri::command]
+pub fn app_skill_recording_pause(recording_id: String) -> Result<Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return if win::desktop_recording::contains(&recording_id) {
+            win::desktop_recording::pause(&recording_id)
+        } else {
+            win::recording::pause(&recording_id)
+        };
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = recording_id;
+        Err(recording_unavailable())
+    }
+}
+
+#[tauri::command]
+pub fn app_skill_recording_resume(recording_id: String) -> Result<Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return if win::desktop_recording::contains(&recording_id) {
+            win::desktop_recording::resume(&recording_id)
+        } else {
+            win::recording::resume(&recording_id)
+        };
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = recording_id;
+        Err(recording_unavailable())
+    }
+}
+
+/// Capture a selected-window image only when the recorder explicitly asks for a checkpoint.
+#[tauri::command]
+pub fn app_skill_recording_checkpoint(recording_id: String) -> Result<Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return win::recording::checkpoint(&recording_id);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = recording_id;
+        Err(recording_unavailable())
+    }
+}
+
+#[tauri::command]
+pub fn app_skill_recording_stop(recording_id: String) -> Result<Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return if win::desktop_recording::contains(&recording_id) {
+            win::desktop_recording::stop(&recording_id)
+        } else {
+            win::recording::stop(&recording_id)
+        };
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = recording_id;
+        Err(recording_unavailable())
+    }
+}
+
+/// Stop native observers before Desktop shutdown.
+pub fn stop_skill_recordings() {
+    #[cfg(target_os = "windows")]
+    {
+        win::recording::stop_all();
+        win::desktop_recording::stop_all();
+    }
+}
+
 /// Run one agent action against the session's attached window.
 #[tauri::command]
 pub async fn app_computer_action(
@@ -81,7 +195,9 @@ pub async fn app_computer_action(
         let emit = |payload: Value| {
             let _ = app.emit(POINTER_EVENT, payload);
         };
-        with_ticket(&session_id, ticket, || backend().run_action(&emit, &session_id, action, &params))
+        with_ticket(&session_id, ticket, || {
+            backend().run_action(&emit, &session_id, action, &params)
+        })
     })
     .await
 }
@@ -99,7 +215,10 @@ pub async fn app_computer_list_apps() -> Result<Value, String> {
 
 /// One preview frame of the session's attached window, JPEG-encoded.
 #[tauri::command]
-pub async fn app_computer_frame(session_id: String, max_width: Option<u32>) -> Result<Value, String> {
+pub async fn app_computer_frame(
+    session_id: String,
+    max_width: Option<u32>,
+) -> Result<Value, String> {
     let max_width = max_width.unwrap_or(960).clamp(160, 1920);
     tauri::async_runtime::spawn_blocking(move || backend().preview_frame(&session_id, max_width))
         .await
@@ -157,6 +276,7 @@ pub fn app_computer_reveal(session_id: String) -> Result<Value, String> {
 /// EvoFlux exits so no app is left stranded off-screen.
 pub fn release_all() {
     backend().release_all();
+    stop_skill_recordings();
 }
 
 /// Record parked windows in `state_dir` from now on, and put back any a

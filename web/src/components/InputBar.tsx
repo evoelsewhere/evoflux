@@ -197,6 +197,7 @@ interface InputBarProps {
 
 export interface InputBarHandle {
   focus: () => void
+  isEmpty: () => boolean
   setValue: (text: string) => void
   appendValue: (text: string) => void
   insertText: (text: string) => void
@@ -453,6 +454,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
+    isEmpty: () => !(
+      textareaRef.current?.value.trim() ||
+      draftSnapshotRef.current.files.length ||
+      draftSnapshotRef.current.quoteContext
+    ),
     setValue: (text: string) => {
       setValue(text)
       setQuoteContext(null)

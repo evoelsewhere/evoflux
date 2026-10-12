@@ -56,3 +56,8 @@ def session_uploads_dir(session_id: str) -> Path:
     storage follows the same APP_ENV-derived roots as normal sessions.
     """
     return uploads_dir(session_id)
+
+
+def skill_recordings_dir() -> Path:
+    """Return the app-owned local root for private skill demonstration traces."""
+    return Path(settings.EVOFLUX_CONFIG_DIR) / "skill-recordings"

@@ -33,6 +33,7 @@ import { SandboxSettingsPage } from '@/routes/settings.sandbox'
 import { SkillEditorPage } from '@/routes/settings.skills.$name'
 import { NewSkillPage } from '@/routes/settings.skills.new'
 import { SkillsListPage } from '@/routes/settings.skills'
+import { SkillRecordingWizard } from '@/components/settings/SkillRecordingWizard'
 import { TelemetrySettingsPage } from '@/routes/settings.telemetry'
 import { VersionControlSettingsPage } from '@/routes/settings.version-control'
 import { BrowserSettingsPage } from '@/routes/settings.browser'
@@ -83,7 +84,14 @@ function crumbsFor(path: string): Crumb[] {
     const trail: Crumb[] = [{ label: 'Settings', to: '' }]
     if (item) {
       trail.push({ label: listLabel, to: section })
-      trail.push({ label: item === 'new' ? 'New' : item })
+      trail.push({
+        label:
+          item === 'new'
+            ? 'New'
+            : section === 'skills' && item === 'record'
+              ? 'Create from recording'
+              : item,
+      })
     } else {
       trail.push({ label: listLabel })
     }
@@ -104,6 +112,7 @@ function SettingsContent({ path }: { path: string }) {
   if (section === 'agents' && sub) return <AgentEditorPage />
   if (section === 'agents') return <AgentsListPage />
   if (section === 'skills' && sub === 'new') return <NewSkillPage />
+  if (section === 'skills' && sub === 'record') return <SkillRecordingWizard />
   if (section === 'skills' && sub) return <SkillEditorPage />
   if (section === 'skills') return <SkillsListPage />
   if (section === 'mcp' && sub === 'new') return <NewMcpServerPage />

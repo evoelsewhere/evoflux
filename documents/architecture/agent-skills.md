@@ -170,6 +170,34 @@ and toggles a Skill on or off. The on/off state lives in
 Built-in, plugin, symlinked and Conductor-managed Skills are read-only in
 Settings; they can still be disabled.
 
+### Create a Skill from an app demonstration
+
+On Windows, **Settings → Skills → Create from recording** can observe a selected
+application process and its chosen top-level window while the user demonstrates
+a workflow. Capture uses process-scoped accessibility events; it does not attach
+to, move, or control the target app. Focus observations omit element names and
+values, and values are read only for value-change events after the native layer
+positively confirms that the control is not a password field. Unsupported or
+uncertain values are omitted. Screenshots are explicit checkpoints and remain
+local for review.
+
+Recordings and screenshot artifacts live under
+`{CONFIG_DIR}/skill-recordings/<recording-id>/`. The user selects events, edits
+or excludes captured text and reviews the exact trace before opening a new work
+chat with that text attached and a draft-Skill prompt prefilled. The trace stays
+in the composer until the user presses Send; the chat's selected model/provider
+handles the request and follow-up edits. The prompt treats app content as
+untrusted evidence and asks the agent not to use tools. Since this is a normal
+work chat, its configured tools and permission gates remain active. Screenshot
+pixels are not sent. The user can copy the resulting `SKILL.md` into the
+existing Skills editor; saving writes through Skill CRUD. Handoff does not
+delete the source recording; the user can delete it from recorder review.
+Closing the selected window ends capture and opens review; macOS/Linux native
+capture is unavailable. Each session has a 32 MiB storage cap and can be deleted
+during review; automatic age-based cleanup is not implemented. Apps that do not
+expose supported accessibility events may produce an incomplete trace; capture
+does not fall back to whole-desktop recording.
+
 ## Authoring rules for bundled Skills
 
 Bundled Skills in `app/agent/builtin_skills/` follow the best-practices

@@ -12,6 +12,8 @@ Usage::
 
 from __future__ import annotations
 
+import uuid
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from loguru import logger
@@ -20,6 +22,7 @@ from starlette.types import ASGIApp
 
 # Default: 4 MB
 _DEFAULT_MAX_BYTES = 100 * 1024 * 1024
+_MAX_SKILL_RECORDING_VIDEO_BYTES = 512 * 1024 * 1024
 
 # ── Security headers ─────────────────────────────────────────────────────────
 # EvoFlux is an on-machine single-owner app.  The bundled web UI is served
@@ -119,9 +122,31 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._max_bytes = max_bytes
 
+    @staticmethod
+    def _is_skill_recording_video_upload(request: Request) -> bool:
+        if request.method != "PUT":
+            return False
+        parts = request.url.path.strip("/").split("/")
+        if (
+            len(parts) != 4
+            or parts[:2] != ["api", "skill-recordings"]
+            or parts[3] != "video"
+        ):
+            return False
+        try:
+            uuid.UUID(parts[2])
+        except ValueError:
+            return False
+        return True
+
     async def dispatch(self, request: Request, call_next):
         content_length = request.headers.get("content-length")
-        if content_length and int(content_length) > self._max_bytes:
+        max_bytes = (
+            _MAX_SKILL_RECORDING_VIDEO_BYTES
+            if self._is_skill_recording_video_upload(request)
+            else self._max_bytes
+        )
+        if content_length and int(content_length) > max_bytes:
             logger.warning(
                 "request_too_large content_length={} limit={}",
                 content_length,

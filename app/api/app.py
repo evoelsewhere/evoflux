@@ -31,6 +31,7 @@ from app.api.routes.remote_use import router as remote_use_router
 from app.api.routes.scheduler import router as scheduler_router
 from app.api.routes.settings import router as settings_router
 from app.api.routes.skills import router as skills_router
+from app.api.routes.skill_recordings import router as skill_recordings_router
 from app.api.routes.snippets import router as snippets_router
 from app.api.routes.team import router as team_router
 from app.api.routes.wiki import router as wiki_router
@@ -207,6 +208,22 @@ async def _start_optional_services(app: FastAPI, process_started: float) -> None
     )
 
 
+async def _run_skill_recording_cleanup_loop() -> None:
+    """Delete expired screen recordings while the sidecar remains running."""
+    from app.services.skill_recording_service import cleanup_expired_sessions
+
+    while True:
+        try:
+            removed_recordings = await asyncio.to_thread(cleanup_expired_sessions)
+            if removed_recordings:
+                logger.info("skill_recordings_cleanup removed={}", removed_recordings)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - maintenance must stay best-effort
+            logger.warning("skill_recordings_cleanup_failed error={}", exc)
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
@@ -216,6 +233,21 @@ async def lifespan(app: FastAPI):
     phase_started = perf_counter()
     ensure_workspace_initialized()
     _log_startup_timing("workspace_init", phase_started, process_started)
+
+    phase_started = perf_counter()
+    try:
+        from app.services.skill_recording_service import cleanup_expired_sessions
+
+        removed_recordings = await asyncio.to_thread(
+            cleanup_expired_sessions, recover_interrupted=True
+        )
+        logger.info("skill_recordings_cleanup removed={}", removed_recordings)
+    except Exception as exc:  # noqa: BLE001 - cleanup must not block app startup
+        logger.error(
+            "optional_service_start_failed service=skill_recording_cleanup error={}",
+            exc,
+        )
+    _log_startup_timing("skill_recording_cleanup", phase_started, process_started)
 
     # ── Auto-migrate DB in production ───────────────────────────────
     if settings.APP_ENV == "production":
@@ -268,6 +300,10 @@ async def lifespan(app: FastAPI):
 
     webbridge_artifact_cleanup_task = asyncio.create_task(run_artifact_cleanup_loop())
     app.state.webbridge_artifact_cleanup_task = webbridge_artifact_cleanup_task
+    skill_recording_cleanup_task = asyncio.create_task(
+        _run_skill_recording_cleanup_loop(), name="skill-recording-cleanup"
+    )
+    app.state.skill_recording_cleanup_task = skill_recording_cleanup_task
     optional_startup_task = asyncio.create_task(
         _start_optional_services(app, process_started),
         name="optional-service-startup",
@@ -296,6 +332,12 @@ async def lifespan(app: FastAPI):
     )
     if webbridge_artifact_cleanup_task:
         webbridge_artifact_cleanup_task.cancel()
+    skill_recording_cleanup_task = getattr(
+        app.state, "skill_recording_cleanup_task", None
+    )
+    if skill_recording_cleanup_task:
+        skill_recording_cleanup_task.cancel()
+        await asyncio.gather(skill_recording_cleanup_task, return_exceptions=True)
     await dream_scheduler.stop()
     await task_scheduler.stop()
     await team_manager.stop()
@@ -384,6 +426,11 @@ def create_app() -> FastAPI:
     app.include_router(wiki_router, prefix="/api/wiki", tags=["wiki"])
     app.include_router(agents_router, prefix="/api/agents", tags=["agents"])
     app.include_router(skills_router, prefix="/api/skills", tags=["skills"])
+    app.include_router(
+        skill_recordings_router,
+        prefix="/api/skill-recordings",
+        tags=["skill-recordings"],
+    )
     app.include_router(commands_router, prefix="/api/commands", tags=["commands"])
     app.include_router(snippets_router, prefix="/api/snippets", tags=["snippets"])
     app.include_router(
