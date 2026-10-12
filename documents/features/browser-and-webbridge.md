@@ -26,6 +26,8 @@ Primary code: `app/services/direct_browser_bridge.py`, team browser routes,
 For native desktop applications rather than web pages, see
 [Computer App Control](computer-app-control.md).
 
+Agent clicks, hover, coordinate clicks and drag run through page-local DOM events; they no longer move the desktop cursor. These events are synthetic rather than trusted OS input, so a page that requires a trusted user gesture may reject them; they also do not change the browser-managed CSS `:hover` state.
+
 ### Dev-server launcher
 
 In Coding mode the browser's new-tab page lists the workspace's `launch.json`
