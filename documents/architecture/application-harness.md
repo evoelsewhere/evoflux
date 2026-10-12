@@ -21,7 +21,8 @@ tool policy. `compile_agent_config` is the only merge implementation used by
 both the runtime and settings API:
 
 1. Load raw Markdown without side effects.
-2. Apply the matching code-owned profile.
+2. Apply the matching code-owned profile, including a closed default tool grant
+   when the profile defines one (`security` in Coding).
 3. Add user-authored tools, explicitly assigned skills, MCP servers, and prompt text.
 4. Apply `tools_opt_out` to code-owned tier tools.
 5. Deduplicate the effective result.
@@ -65,6 +66,12 @@ effective agent config may add allowed extras or opt out of defaults. Runtime
 protocols may name guaranteed lifecycle/team tools, but first-party role
 prompts remain capability-agnostic because optional tool schemas can be
 deferred or excluded.
+
+The Coding `security` profile narrows its default tier grant to named inspection
+tools. Newly registered Coding tools are not automatically granted to it. User
+`tools` additions and `tools_opt_out` still apply after that default, and MCP or
+plugin grants remain additive. This is a default capability policy, not a new
+sandbox or a claim that explicitly extended agents cannot mutate resources.
 
 ## Runtime context and hooks
 

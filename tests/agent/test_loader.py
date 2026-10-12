@@ -755,9 +755,10 @@ def test_bootstrap_materializes_then_loader_reads_coding_builtin_members(tmp_pat
     factory, _ = _make_provider_factory()
     team = load_team_from_dir(d, provider_factory=factory, mode="coding")
     assert team is not None
-    assert set(team.blueprints) == {"coder", "explorer", "architect"}
+    assert set(team.blueprints) == {"coder", "explorer", "architect", "security"}
     assert (d / "coder.md").is_file()
     assert (d / "explorer.md").is_file()
+    assert (d / "security.md").is_file()
     assert "model: zai:glm-5-turbo" in (d / "explorer.md").read_text(encoding="utf-8")
     assert (
         team.blueprints["explorer"].description
@@ -766,6 +767,31 @@ def test_bootstrap_materializes_then_loader_reads_coding_builtin_members(tmp_pat
     for name in team.blueprints:
         materialized = (d / f"{name}.md").read_text(encoding="utf-8")
         assert "\nskills:" not in materialized
+
+
+@pytest.mark.asyncio
+async def test_security_can_spawn_from_bootstrapped_coding_team(tmp_path):
+    from app.agent.loader import ensure_builtin_agent_blueprints, load_team_from_dir
+
+    d = _make_agents_dir(
+        tmp_path,
+        [{"name": "evoflux", "role": "lead", "model": "zai:glm-5-turbo"}],
+    )
+    ensure_builtin_agent_blueprints(d, mode="coding")
+    factory, _ = _make_provider_factory()
+    team = load_team_from_dir(d, provider_factory=factory, mode="coding")
+    assert team is not None
+    await team.start()
+    try:
+        member = await team.spawn("security")
+        assert member.name == "security#1"
+        assert "independent security reviewer" in member.agent.system_prompt
+        assert "read" in member.agent._tools
+        assert "load_tool" in member.agent._tools
+        assert "shell" not in member.agent._tools
+        assert "write" not in member.agent._tools
+    finally:
+        await team.stop()
 
 
 def test_load_team_from_dir_does_not_overwrite_existing_builtin_member(tmp_path):
@@ -965,12 +991,95 @@ def test_builtin_member_profiles_are_curated_to_default_agents():
         "coder",
         "explorer",
         "architect",
+        "security",
     }
     for profiles in BUILTIN_MEMBER_PROFILES.values():
         for profile in profiles.values():
             assert "skills" not in profile
     for profile in BUILTIN_MEMBER_PROFILES["coding"].values():
         assert "## Navigation strategy" not in profile["prompt"]
+
+
+def test_security_default_grant_is_closed_and_mode_scoped():
+    from app.agent.effective_config import compile_agent_config
+
+    registry = _default_tool_registry()
+    registry["future_mutating_tool"] = MagicMock(tiers=("coding",), lead_only=False)
+    raw = AgentConfig(name="security", system_prompt="Review this project.")
+    coding = compile_agent_config(raw, mode="coding", tool_registry=registry)
+    work = compile_agent_config(raw, mode="work", tool_registry=registry)
+
+    assert {"read", "grep", "load_tool", "get_code_review"} <= set(coding.tools)
+    assert all(registry[name].read_only for name in coding.tools)
+    assert not {
+        "write",
+        "edit",
+        "patch",
+        "rm",
+        "shell",
+        "process",
+        "python",
+        "browser_use",
+        "computer_app",
+        "merge_code_review",
+        "submit_code_review",
+        "future_mutating_tool",
+    } & set(coding.tools)
+    assert "shell" in work.tools
+    assert work.system_prompt == raw.system_prompt
+    assert raw.tools == []
+
+
+def test_security_capability_additions_and_opt_outs_remain_explicit():
+    from app.agent.effective_config import compile_agent_config
+
+    config = compile_agent_config(
+        AgentConfig(
+            name="security",
+            tools=["shell", "read"],
+            tools_opt_out=["get_code_review"],
+            system_prompt="Check tenant isolation.",
+        ),
+        mode="coding",
+        tool_registry=_default_tool_registry(),
+    )
+
+    assert "shell" in config.tools
+    assert "get_code_review" not in config.tools
+    assert config.tools.count("read") == 1
+    assert "## User extra prompt\n\nCheck tenant isolation." in config.system_prompt
+
+
+def test_security_bootstrap_preserves_existing_overrides_and_seed(tmp_path):
+    from app.agent.loader import (
+        ensure_builtin_agent_blueprints,
+        rebuild_agent_from_disk,
+    )
+
+    d = _make_agents_dir(
+        tmp_path,
+        [{"name": "evoflux", "role": "lead", "model": "zai:glm-5-turbo"}],
+    )
+    original = _write_agent_md(
+        d / "security.md",
+        {"name": "security", "model": "zai:glm-5-turbo", "description": "My reviewer"},
+        "Focus on authorization.",
+    ).read_text(encoding="utf-8")
+    ensure_builtin_agent_blueprints(d, mode="coding")
+    assert (d / "security.md").read_text(encoding="utf-8") == original
+
+    seed_path = Path(__file__).resolve().parents[2] / "seed/agents/coding/security.md"
+    seed = parse_agent_md(seed_path)
+    assert seed.name == "security" and seed.role == "member"
+    assert seed.thinking_level == "high"
+    factory, _ = _make_provider_factory()
+    agent = rebuild_agent_from_disk(
+        d / "security.md", provider_factory=factory, mode="coding"
+    )
+    assert agent.description == "My reviewer"
+    assert "Focus on authorization." in agent.system_prompt
+    assert "read" in agent._tools
+    assert "shell" not in agent._tools
 
 
 def test_builtin_member_user_description_overrides_code_default(tmp_path):

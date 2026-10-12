@@ -417,6 +417,31 @@ async def test_list_existing_coding_explorer_uses_builtin_profile(
 
 
 @pytest.mark.asyncio
+async def test_list_security_uses_the_same_restricted_defaults_as_runtime(
+    fs_dirs, client: AsyncClient
+):
+    agents_dir, _ = fs_dirs
+    coding_dir = agents_dir / "coding"
+    coding_dir.mkdir()
+    (coding_dir / "evoflux.md").write_text(
+        "---\nname: evoflux\nrole: lead\nmodel: codex:gpt-5.4\n---\n"
+    )
+    (coding_dir / "security.md").write_text(
+        "---\nname: security\nrole: member\nmodel: codex:gpt-5.4\n---\n"
+    )
+
+    res = await client.get("/api/agents")
+
+    assert res.status_code == 200
+    rows = {row["name"]: row for row in res.json()["agents"]}
+    security = rows["coding/security"]
+    assert security["description"].startswith("Reviews coding changes")
+    assert {"read", "grep", "get_code_review"} <= set(security["tools"])
+    assert not {"shell", "write", "merge_code_review"} & set(security["tools"])
+    assert security["mcp"] == []
+
+
+@pytest.mark.asyncio
 async def test_list_ignores_retired_or_unknown_mode_directories(
     fs_dirs, client: AsyncClient
 ):

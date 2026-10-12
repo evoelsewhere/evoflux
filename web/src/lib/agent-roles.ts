@@ -16,6 +16,7 @@ export const AGENT_ROLES: readonly AgentRole[] = [
   'explorer',
   'coder',
   'architect',
+  'security',
   'custom',
 ] as const
 

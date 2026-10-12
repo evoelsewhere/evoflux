@@ -2174,6 +2174,7 @@ export const HELP_ARTICLES_EN: HelpArticle[] = [
       'MCP status dots: ready / starting / auth / error / stopped.',
       'MCP tools inherit the same permission rules as native tools.',
       'Teams are scoped to work / coding.',
+      'Coding includes security for independent review of sensitive changes. It gets inspection tools by default, reports evidence and remediation, and leaves fixes to the coder. Explicit tools, MCP or plugin capabilities can extend it; a clean review is not a security guarantee.',
       'Command palette jumps to Edit <agent>… or create new agents and skills.',
       'Use tools_opt_out to disable code-owned tool defaults for one agent; remove an assigned skill directly from its skills list.',
       'Lead-only tools (ask_user, some worktree helpers) are never granted to specialists.',

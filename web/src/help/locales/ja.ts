@@ -2129,6 +2129,7 @@ export const HELP_ARTICLES_JA: HelpArticle[] = [
       'MCP ステータスドット: ready / starting / auth / error / stopped。',
       'MCP ツールはネイティブと同じ権限ルールを継承。',
       'チームは work / coding にスコープ。',
+      'Coding の security は重要な変更を独立レビューします。既定は調査ツールのみで、根拠と修正案を報告し、修正は coder が担当します。明示的なツール、MCP、plugin 機能で権限を拡張できます。指摘がなくても安全性の保証ではありません。',
       'コマンドパレットで Edit <agent>… や新規エージェント/スキル作成へジャンプ。',
       'tools_opt_out で code-owned ツール既定を無効化し、割り当て済み skill は skills リストから直接削除。',
       'Lead 専用ツール（ask_user、一部 worktree ヘルパー）は specialist に付与されません。',

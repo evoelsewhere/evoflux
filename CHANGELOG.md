@@ -4,6 +4,15 @@ All notable changes to EvoFlux are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Coding teams now include a built-in **security** reviewer with inspection
+  tools by default. The lead is instructed to request focused reviews for security-sensitive
+  changes; findings include evidence, impact, remediation and coverage limits.
+  Source edits, shell execution and PR mutations require explicitly added
+  capabilities rather than inheriting the Coding tool tier.
+  Review delegation is prompt-guided rather than runtime-enforced.
+
 ### Fixed
 
 - **Built-in Browser** keeps agent pointer actions inside the page instead of moving the desktop cursor; pages that require trusted OS gestures or browser-managed CSS `:hover` may still need another control path.

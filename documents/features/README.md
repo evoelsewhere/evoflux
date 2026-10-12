@@ -6,4 +6,5 @@ proposals and not evidence that an unimplemented Spec has shipped.
 
 | Feature | Page |
 |---|---|
+| Agent configuration, teams and Coding security review | [Agent runtime and teams](agent-runtime-and-teams.md) |
 | Import conversations and agent resources from other AI tools | [Multi-source import](multi-source-import.md) |

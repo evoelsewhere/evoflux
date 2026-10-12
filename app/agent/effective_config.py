@@ -34,6 +34,7 @@ def compile_agent_config(
 
     resolved_mode = parse_app_mode(mode).value
     config = raw.model_copy(deep=True)
+    profile = None
 
     if config.role == "lead" and config.name.casefold() == "evoflux":
         config.description = config.description or EVOFLUX_description_for_mode(
@@ -57,6 +58,8 @@ def compile_agent_config(
         if tool_registry is not None
         else []
     )
+    if profile is not None and "tools" in profile:
+        granted = [name for name in granted if name in profile["tools"]]
     # Implicit lifecycle tools are runtime invariants and cannot be opted out.
     explicit_and_granted = [*granted, *config.tools]
     config.tools = explicit_and_granted
